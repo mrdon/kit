@@ -1,0 +1,70 @@
+package config
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+)
+
+type Config struct {
+	DatabaseURL        string
+	Port               string
+	SlackClientID      string
+	SlackClientSecret  string
+	SlackSigningSecret string
+	AnthropicAPIKey    string
+	EncryptionKey      string
+	BaseURL            string
+}
+
+func Load() (*Config, error) {
+	loadDotEnv(".env")
+
+	cfg := &Config{
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		Port:               os.Getenv("PORT"),
+		SlackClientID:      os.Getenv("SLACK_CLIENT_ID"),
+		SlackClientSecret:  os.Getenv("SLACK_CLIENT_SECRET"),
+		SlackSigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
+		AnthropicAPIKey:    os.Getenv("ANTHROPIC_API_KEY"),
+		EncryptionKey:      os.Getenv("ENCRYPTION_KEY"),
+		BaseURL:            os.Getenv("BASE_URL"),
+	}
+
+	if cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	if cfg.Port == "" {
+		cfg.Port = "8080"
+	}
+
+	return cfg, nil
+}
+
+// loadDotEnv reads a .env file and sets any vars not already in the environment.
+func loadDotEnv(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return // missing .env is fine
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		// Don't override existing env vars
+		if _, exists := os.LookupEnv(key); !exists {
+			os.Setenv(key, val)
+		}
+	}
+}

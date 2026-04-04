@@ -1,0 +1,123 @@
+package models
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Role struct {
+	ID          uuid.UUID
+	TenantID    uuid.UUID
+	Name        string
+	Description *string
+	CreatedAt   time.Time
+}
+
+func ListRoles(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Role, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, tenant_id, name, description, created_at
+		FROM roles WHERE tenant_id = $1 ORDER BY name
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing roles: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []Role
+	for rows.Next() {
+		var r Role
+		if err := rows.Scan(&r.ID, &r.TenantID, &r.Name, &r.Description, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning role: %w", err)
+		}
+		roles = append(roles, r)
+	}
+	return roles, rows.Err()
+}
+
+func CreateRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, description string) (*Role, error) {
+	role := &Role{}
+	err := pool.QueryRow(ctx, `
+		INSERT INTO roles (id, tenant_id, name, description)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, tenant_id, name, description, created_at
+	`, uuid.New(), tenantID, name, nilIfEmpty(description)).Scan(
+		&role.ID, &role.TenantID, &role.Name, &role.Description, &role.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating role: %w", err)
+	}
+	return role, nil
+}
+
+func AssignRole(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleName string) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO user_roles (tenant_id, user_id, role_id)
+		SELECT $1, $2, r.id FROM roles r WHERE r.tenant_id = $1 AND r.name = $3
+		ON CONFLICT DO NOTHING
+	`, tenantID, userID, roleName)
+	if err != nil {
+		return fmt.Errorf("assigning role: %w", err)
+	}
+	return nil
+}
+
+func UnassignRole(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleName string) error {
+	_, err := pool.Exec(ctx, `
+		DELETE FROM user_roles
+		WHERE tenant_id = $1 AND user_id = $2 AND role_id = (
+			SELECT id FROM roles WHERE tenant_id = $1 AND name = $3
+		)
+	`, tenantID, userID, roleName)
+	if err != nil {
+		return fmt.Errorf("unassigning role: %w", err)
+	}
+	return nil
+}
+
+func UpdateRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, description string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE roles SET description = $3 WHERE tenant_id = $1 AND name = $2
+	`, tenantID, name, description)
+	if err != nil {
+		return fmt.Errorf("updating role: %w", err)
+	}
+	return nil
+}
+
+func DeleteRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) error {
+	_, err := pool.Exec(ctx, `
+		DELETE FROM roles WHERE tenant_id = $1 AND name = $2
+	`, tenantID, name)
+	if err != nil {
+		return fmt.Errorf("deleting role: %w", err)
+	}
+	return nil
+}
+
+// GetUserRoleNames returns the role names for a user.
+func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) ([]string, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT r.name FROM user_roles ur
+		JOIN roles r ON r.id = ur.role_id
+		WHERE ur.tenant_id = $1 AND ur.user_id = $2
+		ORDER BY r.name
+	`, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user roles: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}

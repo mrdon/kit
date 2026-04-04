@@ -1,0 +1,87 @@
+version: "2"
+
+run:
+  go: "1.25"
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - gocyclo
+    - errorlint
+    - nilnil
+    - bodyclose
+    - fatcontext
+    - sqlclosecheck
+    - staticcheck
+    - unused
+    - ineffassign
+    - exhaustive
+    - dogsled
+    - misspell
+    - dupword
+    - whitespace
+    - usestdlibvars
+    - perfsprint
+    - testifylint
+    - modernize
+    - copyloopvar
+    - intrange
+    - exptostd
+    - mirror
+
+  settings:
+    funlen:
+      lines: 60
+      statements: 40
+    gocognit:
+      min-complexity: 15
+    cyclop:
+      max-complexity: 10
+    varnamelen:
+      max-distance: 5
+      min-name-length: 3
+      ignore-names: [err, ok, ctx, tt, tc, ts, tp, w, r, b, d, id, db]
+      ignore-decls:
+        - t testing.T
+        - i int
+        - T any
+    lll:
+      line-length: 140
+    exhaustive:
+      default-signifies-exhaustive: false
+
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters: [revive]
+        text: file-length-limit
+      - path: _test\.go
+        linters: [revive]
+        text: cognitive-complexity
+      - path: _test\.go
+        linters: [gocognit, gocyclo, cyclop, funlen, nestif]
+    paths:
+      - third_party$
+      - builtin$
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/mrdon/kit)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
