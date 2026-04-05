@@ -2,7 +2,7 @@ package config
 
 import (
 	"bufio"
-	"fmt"
+	"errors"
 	"os"
 	"strings"
 )
@@ -33,7 +33,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
+		return nil, errors.New("DATABASE_URL is required")
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"

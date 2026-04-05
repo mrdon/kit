@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -109,13 +110,13 @@ func (r *Response) ToolUses() []Content {
 
 // TextContent extracts the concatenated text from all text blocks.
 func (r *Response) TextContent() string {
-	var text string
+	var b strings.Builder
 	for _, c := range r.Content {
 		if c.Type == "text" {
-			text += c.Text
+			b.WriteString(c.Text)
 		}
 	}
-	return text
+	return b.String()
 }
 
 // Ephemeral returns a cache control marker for prompt caching.

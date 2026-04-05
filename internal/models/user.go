@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -48,8 +49,8 @@ func GetUserBySlackID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUI
 		&user.ID, &user.TenantID, &user.SlackUserID, &user.DisplayName,
 		&user.IsAdmin, &user.CreatedAt,
 	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting user: %w", err)

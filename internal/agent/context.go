@@ -32,16 +32,16 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 - Bold: *bold* (single asterisks, not double)
 - Italic: _italic_ (underscores)
 - Strikethrough: ~strikethrough~
-- Code: ` + "`code`" + ` (backticks) or ` + "```code block```" + `
+- Code: `+"`code`"+` (backticks) or `+"```code block```"+`
 - Links: <https://url|link text>
 - Lists: use bullet character • or dash - (no markdown-style headers)
 - DO NOT use ## headers or **double asterisks** — Slack renders them literally`)
 
 	// Business context
 	if tenant.BusinessType != nil && *tenant.BusinessType != "" {
-		parts = append(parts, fmt.Sprintf("Business type: %s", *tenant.BusinessType))
+		parts = append(parts, "Business type: "+*tenant.BusinessType)
 	}
-	parts = append(parts, fmt.Sprintf("Timezone: %s", tenant.Timezone))
+	parts = append(parts, "Timezone: "+tenant.Timezone)
 
 	// User context
 	displayName := user.SlackUserID
@@ -53,7 +53,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	// User roles
 	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
 	if len(roleNames) > 0 {
-		parts = append(parts, fmt.Sprintf("User roles: %s", strings.Join(roleNames, ", ")))
+		parts = append(parts, "User roles: "+strings.Join(roleNames, ", "))
 	} else {
 		parts = append(parts, "User has no assigned roles.")
 	}
@@ -72,7 +72,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	if len(rules) > 0 {
 		parts = append(parts, "\n## Rules")
 		for _, r := range rules {
-			parts = append(parts, fmt.Sprintf("- %s", r.Content))
+			parts = append(parts, "- "+r.Content)
 		}
 	}
 
@@ -81,7 +81,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	if len(skills) > 0 {
 		parts = append(parts, "\n## Available Knowledge (use search_skills or load_skill to access)")
 		for _, s := range skills {
-			parts = append(parts, fmt.Sprintf("- [%s] %s — %s", s.ID, s.Name, s.Description))
+			parts = append(parts, "- ["+s.ID.String()+"] "+s.Name+" — "+s.Description)
 		}
 	}
 
@@ -90,7 +90,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	if len(memories) > 0 {
 		parts = append(parts, "\n## Remembered Facts")
 		for _, m := range memories {
-			parts = append(parts, fmt.Sprintf("- %s", m.Content))
+			parts = append(parts, "- "+m.Content)
 		}
 	}
 

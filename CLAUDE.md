@@ -25,6 +25,7 @@ make db-reset    # Wipe and restart Postgres
 
 ## Code Rules
 
+- **Run `make prepush` before every commit.** This formats, lints, tests, and builds. Do not commit code that fails prepush.
 - No file over 500 lines. Split into focused files when approaching the limit.
 - No function over 60 lines. Extract helpers when complexity grows.
 - All DB queries MUST include `WHERE tenant_id = ?` — no exceptions. This is the tenant isolation boundary.

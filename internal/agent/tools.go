@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,14 +16,14 @@ import (
 
 // ExecContext holds everything a tool needs to execute.
 type ExecContext struct {
-	Ctx       context.Context
-	Pool      *pgxpool.Pool
-	Slack     *kitslack.Client
-	Tenant    *models.Tenant
-	User      *models.User
-	Session   *models.Session
-	Channel   string
-	ThreadTS  string
+	Ctx      context.Context
+	Pool     *pgxpool.Pool
+	Slack    *kitslack.Client
+	Tenant   *models.Tenant
+	User     *models.User
+	Session  *models.Session
+	Channel  string
+	ThreadTS string
 }
 
 // ToolFunc is a function that executes a tool and returns a string result.
@@ -235,10 +236,10 @@ func (r *ToolRegistry) RegisterAdminTools() {
 	r.register("create_rule", "Create a behavioral rule for Kit.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"content":  map[string]any{"type": "string", "description": "The rule content"},
-			"scope":    map[string]any{"type": "string", "description": "Scope type: 'tenant', 'role', or 'task_type'", "default": "tenant"},
+			"content":     map[string]any{"type": "string", "description": "The rule content"},
+			"scope":       map[string]any{"type": "string", "description": "Scope type: 'tenant', 'role', or 'task_type'", "default": "tenant"},
 			"scope_value": map[string]any{"type": "string", "description": "Scope value: '*' for tenant-wide, role name, or task type", "default": "*"},
-			"priority": map[string]any{"type": "integer", "description": "Priority (higher = more important)", "default": 0},
+			"priority":    map[string]any{"type": "integer", "description": "Priority (higher = more important)", "default": 0},
 		},
 		"required": []string{"content"},
 	}, toolCreateRule)
@@ -271,8 +272,8 @@ func (r *ToolRegistry) RegisterAdminTools() {
 	r.register("update_tenant", "Update the organization's business info and mark setup as complete.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"business_type": map[string]any{"type": "string", "description": "Type of business (e.g., 'brewery', 'nonprofit', 'marching band')"},
-			"timezone":      map[string]any{"type": "string", "description": "IANA timezone (e.g., 'America/Denver')", "default": "UTC"},
+			"business_type":  map[string]any{"type": "string", "description": "Type of business (e.g., 'brewery', 'nonprofit', 'marching band')"},
+			"timezone":       map[string]any{"type": "string", "description": "IANA timezone (e.g., 'America/Denver')", "default": "UTC"},
 			"setup_complete": map[string]any{"type": "boolean", "description": "Whether to mark initial setup as complete", "default": false},
 		},
 		"required": []string{"business_type"},
@@ -333,15 +334,16 @@ func toolListRoles(ec *ExecContext, input json.RawMessage) (string, error) {
 	if len(roles) == 0 {
 		return "No roles defined yet.", nil
 	}
-	result := "Roles:\n"
+	var b strings.Builder
+	b.WriteString("Roles:\n")
 	for _, r := range roles {
 		desc := ""
 		if r.Description != nil {
 			desc = " — " + *r.Description
 		}
-		result += fmt.Sprintf("- %s%s\n", r.Name, desc)
+		b.WriteString("- " + r.Name + desc + "\n")
 	}
-	return result, nil
+	return b.String(), nil
 }
 
 func toolCreateRole(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -469,11 +471,12 @@ func toolListSkills(ec *ExecContext, _ json.RawMessage) (string, error) {
 	if len(skills) == 0 {
 		return "No skills defined yet.", nil
 	}
-	result := "Skills:\n"
+	var b strings.Builder
+	b.WriteString("Skills:\n")
 	for _, s := range skills {
-		result += fmt.Sprintf("- [%s] %s — %s\n", s.ID, s.Name, s.Description)
+		b.WriteString("- [" + s.ID.String() + "] " + s.Name + " — " + s.Description + "\n")
 	}
-	return result, nil
+	return b.String(), nil
 }
 
 func toolCreateSkill(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -574,11 +577,12 @@ func toolListSkillFiles(ec *ExecContext, input json.RawMessage) (string, error) 
 	if len(files) == 0 {
 		return "No files attached to this skill.", nil
 	}
-	out := "Files:\n"
+	var b strings.Builder
+	b.WriteString("Files:\n")
 	for _, f := range files {
-		out += fmt.Sprintf("- [%s] %s\n", f.ID, f.Filename)
+		b.WriteString("- [" + f.ID.String() + "] " + f.Filename + "\n")
 	}
-	return out, nil
+	return b.String(), nil
 }
 
 func toolDeleteSkillFile(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -614,11 +618,12 @@ func toolSearchSkills(ec *ExecContext, input json.RawMessage) (string, error) {
 	if len(results) == 0 {
 		return "No matching skills found.", nil
 	}
-	out := "Search results:\n"
+	var b strings.Builder
+	b.WriteString("Search results:\n")
 	for _, s := range results {
-		out += fmt.Sprintf("- [%s] %s — %s\n", s.ID, s.Name, s.Description)
+		b.WriteString("- [" + s.ID.String() + "] " + s.Name + " — " + s.Description + "\n")
 	}
-	return out, nil
+	return b.String(), nil
 }
 
 func toolLoadSkill(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -641,19 +646,20 @@ func toolLoadSkill(ec *ExecContext, input json.RawMessage) (string, error) {
 	}
 
 	// Output in SKILL.md format
-	out := skill.ToSKILLMD()
+	var b strings.Builder
+	b.WriteString(skill.ToSKILLMD())
 
 	// Append file listing if any exist
 	files, _ := models.ListSkillFiles(ec.Ctx, ec.Pool, ec.Tenant.ID, skillID)
 	if len(files) > 0 {
-		out += "\n\n## Files\n"
+		b.WriteString("\n\n## Files\n")
 		for _, f := range files {
-			out += fmt.Sprintf("- [%s] %s\n", f.ID, f.Filename)
+			b.WriteString("- [" + f.ID.String() + "] " + f.Filename + "\n")
 		}
-		out += "\nUse load_skill_file to read a specific file."
+		b.WriteString("\nUse load_skill_file to read a specific file.")
 	}
 
-	return out, nil
+	return b.String(), nil
 }
 
 func toolLoadSkillFile(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -720,11 +726,12 @@ func toolSearchMemories(ec *ExecContext, input json.RawMessage) (string, error) 
 	if len(results) == 0 {
 		return "No relevant memories found.", nil
 	}
-	out := "Memories:\n"
+	var b strings.Builder
+	b.WriteString("Memories:\n")
 	for _, m := range results {
-		out += fmt.Sprintf("- [%s] %s\n", m.ID, m.Content)
+		b.WriteString("- [" + m.ID.String() + "] " + m.Content + "\n")
 	}
-	return out, nil
+	return b.String(), nil
 }
 
 func toolListRules(ec *ExecContext, _ json.RawMessage) (string, error) {
@@ -735,11 +742,12 @@ func toolListRules(ec *ExecContext, _ json.RawMessage) (string, error) {
 	if len(rules) == 0 {
 		return "No rules defined yet.", nil
 	}
-	result := "Rules:\n"
+	var b strings.Builder
+	b.WriteString("Rules:\n")
 	for _, r := range rules {
-		result += fmt.Sprintf("- [%s] (priority %d) %s\n", r.ID, r.Priority, r.Content)
+		b.WriteString(fmt.Sprintf("- [%s] (priority %d) %s\n", r.ID, r.Priority, r.Content))
 	}
-	return result, nil
+	return b.String(), nil
 }
 
 func toolCreateRule(ec *ExecContext, input json.RawMessage) (string, error) {

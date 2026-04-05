@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -49,8 +50,8 @@ func GetTenantBySlackTeamID(ctx context.Context, pool *pgxpool.Pool, slackTeamID
 		&tenant.ID, &tenant.SlackTeamID, &tenant.Name, &tenant.BotToken,
 		&tenant.BusinessType, &tenant.Timezone, &tenant.SetupComplete, &tenant.DefaultRoleID, &tenant.CreatedAt,
 	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting tenant: %w", err)

@@ -1,14 +1,12 @@
 package crypto
 
 import (
-	"encoding/hex"
 	"testing"
 )
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
-	key := hex.EncodeToString(make([]byte, 32))
 	// Use a deterministic key for testing
-	key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	key := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 	enc, err := NewEncryptor(key)
 	if err != nil {

@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mrdon/kit/internal/anthropic"
 )
@@ -96,11 +97,13 @@ func joinLines(lines []string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	result := lines[0]
+	var b strings.Builder
+	b.WriteString(lines[0])
 	for _, l := range lines[1:] {
-		result += "\n" + l
+		b.WriteString("\n")
+		b.WriteString(l)
 	}
-	return result
+	return b.String()
 }
 
 func hasPrefix(s, prefix string) bool {

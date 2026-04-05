@@ -3,6 +3,7 @@ package ingest
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,7 +27,7 @@ func ExtractText(data []byte, filename, mimeType string) (string, error) {
 		return extractDocx(data)
 
 	case ext == ".zip" || mimeType == "application/zip":
-		return "", fmt.Errorf("zip files should be processed via ExtractZip")
+		return "", errors.New("zip files should be processed via ExtractZip")
 
 	default:
 		// Try as plain text
@@ -87,7 +88,7 @@ func extractDocx(data []byte) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("document.xml not found in docx")
+	return "", errors.New("document.xml not found in docx")
 }
 
 // ExtractZip processes a zip file and returns a map of filename -> content.

@@ -22,9 +22,8 @@ const (
 
 // Agent runs the observe/reason/act loop for a single message.
 type Agent struct {
-	pool     *pgxpool.Pool
-	llm      *anthropic.Client
-	registry *ToolRegistry
+	pool *pgxpool.Pool
+	llm  *anthropic.Client
 }
 
 // NewAgent creates a new agent instance.
@@ -154,7 +153,7 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
 				if err != nil {
 					slog.Error("tool execution failed", "tool", toolUse.Name, "error", err)
-					result = fmt.Sprintf("Error: %s", err.Error())
+					result = "Error: " + err.Error()
 				}
 
 				toolResults = append(toolResults, anthropic.Content{

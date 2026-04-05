@@ -18,15 +18,15 @@ type MessageHandler func(teamID string, event json.RawMessage, eventType string)
 
 // Handler handles incoming Slack Events API requests.
 type Handler struct {
-	signingSecret  string
-	onMessage      MessageHandler
+	signingSecret string
+	onMessage     MessageHandler
 }
 
 // NewHandler creates a new Slack event handler.
 func NewHandler(signingSecret string, onMessage MessageHandler) *Handler {
 	return &Handler{
-		signingSecret:  signingSecret,
-		onMessage:      onMessage,
+		signingSecret: signingSecret,
+		onMessage:     onMessage,
 	}
 }
 

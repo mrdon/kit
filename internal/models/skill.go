@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -40,7 +41,7 @@ var validNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // ValidateSkillName checks if a name meets the Agent Skills spec.
 func ValidateSkillName(name string) error {
 	if len(name) == 0 || len(name) > 64 {
-		return fmt.Errorf("name must be 1-64 characters")
+		return errors.New("name must be 1-64 characters")
 	}
 	if !validNameRe.MatchString(name) {
 		return fmt.Errorf("name must be lowercase letters, numbers, and single hyphens (got %q)", name)
@@ -92,13 +93,13 @@ func ParseSKILLMD(raw string) (name, description, content string, err error) {
 
 	// Find closing ---
 	rest := raw[3:]
-	if i := strings.Index(rest, "\n---"); i < 0 {
+	if before, after, found := strings.Cut(rest, "\n---"); !found {
 		return "", "", raw, nil
 	} else {
-		frontmatter := rest[:i]
-		content = strings.TrimSpace(rest[i+4:])
+		frontmatter := before
+		content = strings.TrimSpace(after)
 
-		for _, line := range strings.Split(frontmatter, "\n") {
+		for line := range strings.SplitSeq(frontmatter, "\n") {
 			line = strings.TrimSpace(line)
 			if k, v, ok := strings.Cut(line, ":"); ok {
 				k = strings.TrimSpace(k)
@@ -263,8 +264,8 @@ func GetSkill(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UU
 		&s.ID, &s.TenantID, &s.Name, &s.Description, &s.Content,
 		&s.UserInvocable, &s.Source, &s.CreatedAt, &s.UpdatedAt,
 	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting skill: %w", err)
@@ -325,8 +326,8 @@ func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID 
 		SELECT id, skill_id, tenant_id, filename, content
 		FROM skill_references WHERE tenant_id = $1 AND id = $2
 	`, tenantID, refID).Scan(&ref.ID, &ref.SkillID, &ref.TenantID, &ref.Filename, &ref.Content)
-	if err == pgx.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting skill file: %w", err)

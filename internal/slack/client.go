@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,11 +70,11 @@ func (c *Client) OpenConversation(ctx context.Context, userID string) (string, e
 
 	channel, ok := resp["channel"].(map[string]any)
 	if !ok {
-		return "", fmt.Errorf("unexpected response format")
+		return "", errors.New("unexpected response format")
 	}
 	channelID, ok := channel["id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing channel id")
+		return "", errors.New("missing channel id")
 	}
 	return channelID, nil
 }
@@ -97,11 +98,6 @@ func (c *Client) GetFileContent(ctx context.Context, fileURL string) ([]byte, er
 	}
 
 	return io.ReadAll(resp.Body)
-}
-
-type slackResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error"`
 }
 
 func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[string]any, error) {
