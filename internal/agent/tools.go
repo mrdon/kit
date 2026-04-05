@@ -606,7 +606,7 @@ func toolSearchSkills(ec *ExecContext, input json.RawMessage) (string, error) {
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	userRoles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID)
+	userRoles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
 	results, err := models.SearchSkills(ec.Ctx, ec.Pool, ec.Tenant.ID, userRoles, inp.Query)
 	if err != nil {
 		return "", err
@@ -712,7 +712,7 @@ func toolSearchMemories(ec *ExecContext, input json.RawMessage) (string, error) 
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	userRoles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID)
+	userRoles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
 	results, err := models.SearchMemories(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.SlackUserID, userRoles, inp.Query)
 	if err != nil {
 		return "", err

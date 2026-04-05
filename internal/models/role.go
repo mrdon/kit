@@ -99,7 +99,9 @@ func DeleteRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 }
 
 // GetUserRoleNames returns the role names for a user.
-func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) ([]string, error) {
+// If the user has no assigned roles and the tenant has a default role,
+// the user is auto-assigned to it and that role name is returned.
+func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, defaultRoleID *uuid.UUID) ([]string, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT r.name FROM user_roles ur
 		JOIN roles r ON r.id = ur.role_id
@@ -119,5 +121,26 @@ func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID 
 		}
 		names = append(names, name)
 	}
-	return names, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Auto-assign default role if user has none
+	if len(names) == 0 && defaultRoleID != nil {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO user_roles (tenant_id, user_id, role_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT DO NOTHING
+		`, tenantID, userID, *defaultRoleID)
+		if err != nil {
+			return nil, fmt.Errorf("auto-assigning default role: %w", err)
+		}
+		var name string
+		err = pool.QueryRow(ctx, `SELECT name FROM roles WHERE id = $1`, *defaultRoleID).Scan(&name)
+		if err == nil {
+			names = append(names, name)
+		}
+	}
+
+	return names, nil
 }

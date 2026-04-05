@@ -103,6 +103,16 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create default "member" role if tenant doesn't have one yet
+	if tenant.DefaultRoleID == nil {
+		role, err := models.CreateRole(ctx, h.pool, tenant.ID, "member", "Default role for all team members")
+		if err != nil {
+			slog.Warn("creating default role", "error", err)
+		} else {
+			_ = models.SetDefaultRole(ctx, h.pool, tenant.ID, &role.ID)
+		}
+	}
+
 	// Create admin user (the person who installed)
 	_, err = models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, "", true)
 	if err != nil {

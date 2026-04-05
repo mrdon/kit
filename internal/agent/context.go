@@ -19,7 +19,16 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.T
 	parts = append(parts, fmt.Sprintf(`You are Kit, an AI assistant for %s.`, tenant.Name))
 
 	// Communication constraint
-	parts = append(parts, `IMPORTANT: You MUST use the send_slack_message tool to respond to the user. Never output a final text response without calling send_slack_message. Every response to the user must go through this tool.`)
+	parts = append(parts, `IMPORTANT: You MUST use the send_slack_message tool to respond to the user. Never output a final text response without calling send_slack_message. Every response to the user must go through this tool.
+
+Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
+- Bold: *bold* (single asterisks, not double)
+- Italic: _italic_ (underscores)
+- Strikethrough: ~strikethrough~
+- Code: ` + "`code`" + ` (backticks) or ` + "```code block```" + `
+- Links: <https://url|link text>
+- Lists: use bullet character • or dash - (no markdown-style headers)
+- DO NOT use ## headers or **double asterisks** — Slack renders them literally`)
 
 	// Business context
 	if tenant.BusinessType != nil && *tenant.BusinessType != "" {
@@ -35,7 +44,7 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.T
 	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v)", displayName, user.IsAdmin))
 
 	// User roles
-	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID)
+	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
 	if len(roleNames) > 0 {
 		parts = append(parts, fmt.Sprintf("User roles: %s", strings.Join(roleNames, ", ")))
 	} else {
