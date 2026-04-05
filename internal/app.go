@@ -197,7 +197,7 @@ func (a *App) HandlePostInstall(ctx context.Context, tenant *models.Tenant, inst
 	}
 
 	// Run the agent with an onboarding prompt
-	onboardingPrompt := "Hi! I just installed Kit for our Slack workspace. Help me get started with setting things up."
+	onboardingPrompt := "I just installed Kit. Let's get it set up."
 	if err := a.Agent.Run(ctx, client, tenant, user, session, dmChannel, "", onboardingPrompt); err != nil {
 		slog.Error("onboarding agent run failed", "error", err)
 	}

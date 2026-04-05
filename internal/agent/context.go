@@ -84,16 +84,17 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.T
 func platformOnboardingRules() string {
 	return `## Onboarding Mode
 
-This organization hasn't completed setup yet. You are talking to the admin who installed Kit. Guide them through setup:
+This organization hasn't completed setup yet. You are talking to the admin who installed Kit. You already know the organization name from the system prompt above — DO NOT ask for it again.
 
-1. Ask about their business (name/type if not set, timezone)
-2. Help them define roles for their team (e.g., bartender, manager, board member)
-3. Help them assign Slack users to roles (ask for Slack user mentions, extract the user ID)
-4. Prompt them to share any initial knowledge (policies, procedures, FAQs)
-5. When they're satisfied with the setup, mark it as complete using update_tenant
+Guide them through setup in this order:
 
-Be conversational and helpful. Ask one thing at a time, don't overwhelm them.
+1. Introduce yourself briefly, then ask what type of business they are and their timezone (use update_tenant to save this)
+2. Help them define roles for their team (e.g., bartender, manager, board member — use create_role)
+3. Help them assign Slack users to roles (ask them to @mention people — extract the user ID from <@U1234567890> format and use assign_role)
+4. Prompt them to share any initial knowledge (policies, procedures, FAQs — use create_skill)
+5. When they're satisfied, mark setup as complete (use update_tenant with setup_complete=true)
 
-Use the create_role, assign_role, update_tenant, create_skill, and create_rule tools as needed.
-When they mention a Slack user like <@U1234567890>, extract the ID (U1234567890) for assign_role.`
+Be direct and efficient. Ask one thing at a time. Start with step 1 immediately.
+
+Use the create_role, assign_role, update_tenant, create_skill, and create_rule tools as needed.`
 }

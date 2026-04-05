@@ -42,6 +42,23 @@ func (ing *Ingester) ProcessFile(ctx context.Context, tenantID uuid.UUID, file k
 		return ing.processZip(ctx, tenantID, data)
 	}
 
+	// If it's a SKILL.md file, parse directly without LLM
+	if strings.ToLower(filepath.Base(file.Name)) == "skill.md" || ext == ".skill.md" {
+		name, description, content, err := models.ParseSKILLMD(string(data))
+		if err != nil {
+			return nil, fmt.Errorf("parsing SKILL.md %s: %w", file.Name, err)
+		}
+		if name == "" {
+			name = strings.TrimSuffix(filepath.Base(file.Name), filepath.Ext(file.Name))
+		}
+		skill, err := models.CreateSkill(ctx, ing.pool, tenantID, name, description, content, "upload", "tenant")
+		if err != nil {
+			return nil, fmt.Errorf("creating skill from SKILL.md %s: %w", file.Name, err)
+		}
+		slog.Info("imported SKILL.md", "skill_id", skill.ID, "name", name)
+		return []string{name}, nil
+	}
+
 	// Extract text
 	rawText, err := ExtractText(data, file.Name, file.MimeType)
 	if err != nil {

@@ -201,6 +201,32 @@ func (r *ToolRegistry) RegisterAdminTools() {
 		"required": []string{"skill_id"},
 	}, toolDeleteSkill)
 
+	r.register("add_skill_file", "Attach a file to a skill (script, reference, image, etc.).", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"skill_id": map[string]any{"type": "string", "description": "The skill UUID to attach the file to"},
+			"filename": map[string]any{"type": "string", "description": "The filename (e.g., 'setup.sh', 'menu.md', 'logo.png')"},
+			"content":  map[string]any{"type": "string", "description": "The file content"},
+		},
+		"required": []string{"skill_id", "filename", "content"},
+	}, toolAddSkillFile)
+
+	r.register("list_skill_files", "List files attached to a skill.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"skill_id": map[string]any{"type": "string", "description": "The skill UUID"},
+		},
+		"required": []string{"skill_id"},
+	}, toolListSkillFiles)
+
+	r.register("delete_skill_file", "Delete a file attached to a skill.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"file_id": map[string]any{"type": "string", "description": "The file UUID to delete"},
+		},
+		"required": []string{"file_id"},
+	}, toolDeleteSkillFile)
+
 	r.register("list_rules", "List all rules (all scopes).", map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
@@ -271,13 +297,13 @@ func (r *ToolRegistry) RegisterUserTools() {
 		"required": []string{"skill_id"},
 	}, toolLoadSkill)
 
-	r.register("load_reference", "Load a skill reference file by ID.", map[string]any{
+	r.register("load_skill_file", "Load a file attached to a skill by its ID.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"reference_id": map[string]any{"type": "string", "description": "The reference UUID to load"},
+			"file_id": map[string]any{"type": "string", "description": "The file UUID to load"},
 		},
-		"required": []string{"reference_id"},
-	}, toolLoadReference)
+		"required": []string{"file_id"},
+	}, toolLoadSkillFile)
 
 	r.register("save_memory", "Save a fact for future conversations.", map[string]any{
 		"type": "object",
@@ -510,6 +536,69 @@ func toolDeleteSkill(ec *ExecContext, input json.RawMessage) (string, error) {
 	return "Skill deleted.", nil
 }
 
+func toolAddSkillFile(ec *ExecContext, input json.RawMessage) (string, error) {
+	var inp struct {
+		SkillID  string `json:"skill_id"`
+		Filename string `json:"filename"`
+		Content  string `json:"content"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil {
+		return "", err
+	}
+	skillID, err := uuid.Parse(inp.SkillID)
+	if err != nil {
+		return "Invalid skill ID.", nil
+	}
+	f, err := models.AddSkillFile(ec.Ctx, ec.Pool, ec.Tenant.ID, skillID, inp.Filename, inp.Content)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("File '%s' attached to skill (ID: %s).", f.Filename, f.ID), nil
+}
+
+func toolListSkillFiles(ec *ExecContext, input json.RawMessage) (string, error) {
+	var inp struct {
+		SkillID string `json:"skill_id"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil {
+		return "", err
+	}
+	skillID, err := uuid.Parse(inp.SkillID)
+	if err != nil {
+		return "Invalid skill ID.", nil
+	}
+	files, err := models.ListSkillFiles(ec.Ctx, ec.Pool, ec.Tenant.ID, skillID)
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		return "No files attached to this skill.", nil
+	}
+	out := "Files:\n"
+	for _, f := range files {
+		out += fmt.Sprintf("- [%s] %s\n", f.ID, f.Filename)
+	}
+	return out, nil
+}
+
+func toolDeleteSkillFile(ec *ExecContext, input json.RawMessage) (string, error) {
+	var inp struct {
+		FileID string `json:"file_id"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil {
+		return "", err
+	}
+	fileID, err := uuid.Parse(inp.FileID)
+	if err != nil {
+		return "Invalid file ID.", nil
+	}
+	err = models.DeleteSkillFile(ec.Ctx, ec.Pool, ec.Tenant.ID, fileID)
+	if err != nil {
+		return "", err
+	}
+	return "File deleted.", nil
+}
+
 func toolSearchSkills(ec *ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		Query string `json:"query"`
@@ -550,26 +639,40 @@ func toolLoadSkill(ec *ExecContext, input json.RawMessage) (string, error) {
 	if skill == nil {
 		return "Skill not found.", nil
 	}
-	return fmt.Sprintf("# %s\n\n%s", skill.Name, skill.Content), nil
+
+	// Output in SKILL.md format
+	out := skill.ToSKILLMD()
+
+	// Append file listing if any exist
+	files, _ := models.ListSkillFiles(ec.Ctx, ec.Pool, ec.Tenant.ID, skillID)
+	if len(files) > 0 {
+		out += "\n\n## Files\n"
+		for _, f := range files {
+			out += fmt.Sprintf("- [%s] %s\n", f.ID, f.Filename)
+		}
+		out += "\nUse load_skill_file to read a specific file."
+	}
+
+	return out, nil
 }
 
-func toolLoadReference(ec *ExecContext, input json.RawMessage) (string, error) {
+func toolLoadSkillFile(ec *ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
-		ReferenceID string `json:"reference_id"`
+		FileID string `json:"file_id"`
 	}
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	refID, err := uuid.Parse(inp.ReferenceID)
+	fileID, err := uuid.Parse(inp.FileID)
 	if err != nil {
-		return "Invalid reference ID.", nil
+		return "Invalid file ID.", nil
 	}
-	ref, err := models.GetSkillReference(ec.Ctx, ec.Pool, ec.Tenant.ID, refID)
+	ref, err := models.GetSkillReference(ec.Ctx, ec.Pool, ec.Tenant.ID, fileID)
 	if err != nil {
 		return "", err
 	}
 	if ref == nil {
-		return "Reference not found.", nil
+		return "File not found.", nil
 	}
 	return fmt.Sprintf("# %s\n\n%s", ref.Filename, ref.Content), nil
 }
