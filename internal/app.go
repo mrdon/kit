@@ -19,8 +19,6 @@ import (
 	"github.com/mrdon/kit/internal/web"
 )
 
-const thinkingEmoji = "hourglass_flowing_sand"
-
 // App is the core application that ties together Slack events, the agent, and the database.
 type App struct {
 	Pool      *pgxpool.Pool
@@ -74,7 +72,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	client := kitslack.NewClient(botToken)
 
 	// Parse the event based on type
-	var slackUserID, text, channel, threadTS, messageTS string
+	var slackUserID, text, channel, threadTS string
 	var files []kitslack.File
 	switch eventType {
 	case "message":
@@ -90,7 +88,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		text = msg.Text
 		channel = msg.Channel
 		threadTS = msg.ThreadTimestamp()
-		messageTS = msg.Timestamp
+
 		files = msg.Files
 
 	case "app_mention":
@@ -103,7 +101,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		text = mention.Text
 		channel = mention.Channel
 		threadTS = mention.ThreadTimestamp()
-		messageTS = mention.Timestamp
+
 		files = mention.Files
 
 	default:
@@ -130,9 +128,6 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		slog.Error("resolving session", "error", err)
 		return
 	}
-
-	// Add thinking indicator
-	_ = client.AddReaction(ctx, channel, messageTS, thinkingEmoji)
 
 	slog.Info("processing message",
 		"tenant_id", tenant.ID,
@@ -166,9 +161,6 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	if err := a.Agent.Run(ctx, client, tenant, user, session, channel, threadTS, text); err != nil {
 		slog.Error("agent run failed", "error", err, "session_id", session.ID)
 	}
-
-	// Remove thinking indicator
-	_ = client.RemoveReaction(ctx, channel, messageTS, thinkingEmoji)
 }
 
 // HandlePostInstall is called after a successful OAuth install to start onboarding.

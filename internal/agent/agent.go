@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,6 +57,11 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		ThreadTS: threadTS,
 	}
 
+	// Post status message immediately so user sees feedback
+	status := newStatusTracker(slack, channel, threadTS)
+	status.update(ctx, "Thinking...")
+	defer status.cleanup(ctx)
+
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "message_received", map[string]any{
 		"user_id": user.ID,
 		"text":    userText,
@@ -78,8 +84,11 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 	toolDefs := registry.Definitions()
 
 	sentMessage := false
+	var totalIn, totalOut, totalCacheRead, totalCacheWrite int
+
 	for i := range maxIterations {
 		iterStart := time.Now()
+		status.update(ctx, "Thinking...")
 
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_request", map[string]any{
 			"model":     modelHaiku,
@@ -102,6 +111,11 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			})
 			return fmt.Errorf("llm call: %w", err)
 		}
+
+		totalIn += resp.Usage.InputTokens
+		totalOut += resp.Usage.OutputTokens
+		totalCacheRead += resp.Usage.CacheReadInputTokens
+		totalCacheWrite += resp.Usage.CacheCreationInputTokens
 
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_response", map[string]any{
 			"model":                       resp.Model,
@@ -137,6 +151,8 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			for _, toolUse := range resp.ToolUses() {
 				inputJSON, _ := json.Marshal(toolUse.Input)
 				slog.Info("executing tool", "tool", toolUse.Name, "session_id", session.ID)
+
+				status.addTool(ctx, toolUse.Name)
 
 				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
 				if err != nil {
@@ -174,7 +190,10 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 	}
 
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "session_complete", map[string]any{
-		"duration_ms": time.Since(start).Milliseconds(),
+		"duration_ms":      time.Since(start).Milliseconds(),
+		"total_input":      totalIn,
+		"total_output":     totalOut,
+		"total_cache_read": totalCacheRead,
 	})
 
 	return nil
@@ -226,4 +245,54 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 	}
 
 	return messages
+}
+
+// statusTracker posts and updates a live status message in Slack.
+type statusTracker struct {
+	slack    *kitslack.Client
+	channel  string
+	threadTS string
+	msgTS    string // timestamp of the status message
+	tools    []string
+}
+
+func newStatusTracker(slack *kitslack.Client, channel, threadTS string) *statusTracker {
+	return &statusTracker{slack: slack, channel: channel, threadTS: threadTS}
+}
+
+func (s *statusTracker) update(ctx context.Context, status string) {
+	text := s.render(status)
+	if s.msgTS == "" {
+		ts, err := s.slack.PostMessageReturningTS(ctx, s.channel, s.threadTS, text)
+		if err == nil {
+			s.msgTS = ts
+		}
+	} else {
+		_ = s.slack.UpdateMessage(ctx, s.channel, s.msgTS, text)
+	}
+}
+
+func (s *statusTracker) addTool(ctx context.Context, name string) {
+	s.tools = append(s.tools, name)
+	s.update(ctx, "")
+}
+
+func (s *statusTracker) render(status string) string {
+	var b strings.Builder
+	for _, t := range s.tools {
+		b.WriteString("• `" + t + "`\n")
+	}
+	if status != "" {
+		b.WriteString("_" + status + "_")
+	}
+	if b.Len() == 0 {
+		return "_Thinking..._"
+	}
+	return b.String()
+}
+
+func (s *statusTracker) cleanup(ctx context.Context) {
+	if s.msgTS != "" {
+		_ = s.slack.DeleteMessage(ctx, s.channel, s.msgTS)
+	}
 }

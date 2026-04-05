@@ -36,6 +36,42 @@ func (c *Client) PostMessage(ctx context.Context, channel, threadTS, text string
 	return err
 }
 
+// PostMessageReturningTS sends a message and returns its timestamp (for later update/delete).
+func (c *Client) PostMessageReturningTS(ctx context.Context, channel, threadTS, text string) (string, error) {
+	payload := map[string]string{
+		"channel":   channel,
+		"thread_ts": threadTS,
+		"text":      text,
+	}
+	resp, err := c.apiCall(ctx, "chat.postMessage", payload)
+	if err != nil {
+		return "", err
+	}
+	ts, _ := resp["ts"].(string)
+	return ts, nil
+}
+
+// UpdateMessage updates an existing message.
+func (c *Client) UpdateMessage(ctx context.Context, channel, messageTS, text string) error {
+	payload := map[string]string{
+		"channel": channel,
+		"ts":      messageTS,
+		"text":    text,
+	}
+	_, err := c.apiCall(ctx, "chat.update", payload)
+	return err
+}
+
+// DeleteMessage deletes a message.
+func (c *Client) DeleteMessage(ctx context.Context, channel, messageTS string) error {
+	payload := map[string]string{
+		"channel": channel,
+		"ts":      messageTS,
+	}
+	_, err := c.apiCall(ctx, "chat.delete", payload)
+	return err
+}
+
 // AddReaction adds an emoji reaction to a message.
 func (c *Client) AddReaction(ctx context.Context, channel, timestamp, emoji string) error {
 	payload := map[string]string{
