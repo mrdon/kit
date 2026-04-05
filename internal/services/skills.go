@@ -8,12 +8,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/skills"
 )
 
 // SkillTools defines the shared tool metadata for skill operations.
 var SkillTools = []ToolMeta{
 	{Name: "search_skills", Description: "Search knowledge base for relevant skills using full-text search.", Schema: propsReq(map[string]any{"query": field("string", "Search query")}, "query")},
-	{Name: "load_skill", Description: "Load the full content of a specific skill by ID.", Schema: propsReq(map[string]any{"skill_id": field("string", "The skill UUID")}, "skill_id")},
+	{Name: "load_skill", Description: "Load the full content of a specific skill by ID or name.", Schema: propsReq(map[string]any{"skill_id": field("string", "The skill UUID or built-in skill name")}, "skill_id")},
 	{Name: "load_skill_file", Description: "Load a file attached to a skill by its ID.", Schema: propsReq(map[string]any{"file_id": field("string", "The file UUID")}, "file_id")},
 	{Name: "list_skills", Description: "List skills you have access to, with scope info. Admins see all skills.", Schema: props(map[string]any{"search": field("string", "Optional search filter on name or description")})},
 	{Name: "create_skill", Description: "Create a new skill (knowledge article). Updates if name already exists.", Schema: propsReq(map[string]any{
@@ -44,6 +45,7 @@ func (s *SkillService) Search(ctx context.Context, c *Caller, query string) ([]m
 }
 
 // Load returns a skill by ID with authorization check.
+// Also accepts built-in skill names (e.g. "user-guide").
 func (s *SkillService) Load(ctx context.Context, c *Caller, skillID uuid.UUID) (*models.Skill, []models.SkillFile, error) {
 	skill, err := models.GetSkill(ctx, s.pool, c.TenantID, skillID)
 	if err != nil {
@@ -59,6 +61,19 @@ func (s *SkillService) Load(ctx context.Context, c *Caller, skillID uuid.UUID) (
 	}
 	files, _ := models.ListSkillFiles(ctx, s.pool, c.TenantID, skillID)
 	return skill, files, nil
+}
+
+// LoadByName returns a built-in skill by name.
+func (s *SkillService) LoadByName(name string) (*models.Skill, error) {
+	b := skills.GetBuiltin(name)
+	if b == nil {
+		return nil, ErrNotFound
+	}
+	return &models.Skill{
+		Name:        b.Name,
+		Description: b.Description,
+		Content:     b.Content,
+	}, nil
 }
 
 // LoadFile returns a skill file by ID with authorization on the parent skill.
@@ -80,8 +95,22 @@ func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID
 
 // List returns skills visible to the caller with optional search.
 // Admins see all skills; non-admins see only scope-matched skills.
+// Built-in skills are included at the top of the list.
 func (s *SkillService) List(ctx context.Context, c *Caller, search string) ([]models.SkillSummary, error) {
-	return models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.Identity, c.Roles, search)
+	dbSkills, err := models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.Identity, c.Roles, search)
+	if err != nil {
+		return nil, err
+	}
+	builtins := skills.MatchBuiltins(search)
+	result := make([]models.SkillSummary, 0, len(builtins)+len(dbSkills))
+	for _, b := range builtins {
+		result = append(result, models.SkillSummary{
+			Name:        b.Name,
+			Description: b.Description,
+			Scopes:      []models.SkillScope{{ScopeType: "platform", ScopeValue: "*"}},
+		})
+	}
+	return append(result, dbSkills...), nil
 }
 
 // Create creates a new skill. Admin only.

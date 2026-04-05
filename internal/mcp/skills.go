@@ -64,7 +64,15 @@ func mcpLoadSkill(svc *services.Services, caller *services.Caller) mcpserver.Too
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid skill ID."), nil
+			// Not a UUID — try as a built-in skill name.
+			skill, berr := svc.Skills.LoadByName(idStr)
+			if errors.Is(berr, services.ErrNotFound) {
+				return mcp.NewToolResultError("Skill not found."), nil
+			}
+			if berr != nil {
+				return nil, berr
+			}
+			return mcp.NewToolResultText(skill.ToSKILLMD()), nil
 		}
 		skill, files, err := svc.Skills.Load(ctx, caller, skillID)
 		if errors.Is(err, services.ErrNotFound) {

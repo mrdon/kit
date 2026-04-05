@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/skills"
 )
 
 // BuildKnowledgeContext assembles the knowledge-relevant parts of the system context:
@@ -38,10 +39,11 @@ func BuildKnowledgeContext(ctx context.Context, pool *pgxpool.Pool, c *Caller, t
 		}
 	}
 
-	// Skill catalog (scope-filtered)
-	skills, _ := models.GetSkillCatalog(ctx, pool, c.TenantID, c.Roles)
-	if len(skills) > 0 {
-		parts = append(parts, buildSkillCatalog(skills))
+	// Skill catalog (scope-filtered + built-ins)
+	dbSkills, _ := models.GetSkillCatalog(ctx, pool, c.TenantID, c.Roles)
+	builtinSkills := skills.Builtins()
+	if len(dbSkills) > 0 || len(builtinSkills) > 0 {
+		parts = append(parts, buildSkillCatalog(dbSkills, builtinSkills))
 	}
 
 	// Recent memories (scope-filtered)
@@ -56,12 +58,15 @@ func BuildKnowledgeContext(ctx context.Context, pool *pgxpool.Pool, c *Caller, t
 	return strings.Join(parts, "\n\n")
 }
 
-func buildSkillCatalog(skills []models.Skill) string {
+func buildSkillCatalog(dbSkills []models.Skill, builtinSkills []skills.BuiltinSkill) string {
 	var b strings.Builder
 	b.WriteString("\n## Available Knowledge\n")
-	b.WriteString("To read a skill's full content, use the `load_skill` tool with the skill's ID.\n")
+	b.WriteString("To read a skill's full content, use the `load_skill` tool with the skill's ID or name.\n")
 	b.WriteString("To search across skills, use the `search_skills` tool.\n")
-	for _, s := range skills {
+	for _, s := range builtinSkills {
+		fmt.Fprintf(&b, "- [builtin] %s — %s\n", s.Name, s.Description)
+	}
+	for _, s := range dbSkills {
 		fmt.Fprintf(&b, "- [%s] %s — %s\n", s.ID, s.Name, s.Description)
 	}
 	return b.String()

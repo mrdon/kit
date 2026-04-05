@@ -11,7 +11,11 @@ import (
 func FormatSkillSummaries(skills []models.SkillSummary) string {
 	var b strings.Builder
 	for _, s := range skills {
-		fmt.Fprintf(&b, "- [%s] %s — %s (%s)\n", s.ID, s.Name, s.Description, FormatScopes(s.Scopes))
+		id := s.ID.String()
+		if id == "00000000-0000-0000-0000-000000000000" {
+			id = "builtin"
+		}
+		fmt.Fprintf(&b, "- [%s] %s — %s (%s)\n", id, s.Name, s.Description, FormatScopes(s.Scopes))
 	}
 	return b.String()
 }
@@ -23,9 +27,12 @@ func FormatScopes(scopes []models.SkillScope) string {
 	}
 	parts := make([]string, len(scopes))
 	for i, sc := range scopes {
-		if sc.ScopeType == "tenant" {
+		switch sc.ScopeType {
+		case "platform":
+			parts[i] = "built-in"
+		case "tenant":
 			parts[i] = "everyone"
-		} else {
+		default:
 			parts[i] = sc.ScopeType + ":" + sc.ScopeValue
 		}
 	}

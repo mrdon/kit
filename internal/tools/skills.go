@@ -86,7 +86,15 @@ func handleLoadSkill(ec *ExecContext, input json.RawMessage) (string, error) {
 	}
 	skillID, err := uuid.Parse(inp.SkillID)
 	if err != nil {
-		return "Invalid skill ID.", nil
+		// Not a UUID — try as a built-in skill name.
+		skill, berr := ec.Svc.Skills.LoadByName(inp.SkillID)
+		if errors.Is(berr, services.ErrNotFound) {
+			return "Skill not found.", nil
+		}
+		if berr != nil {
+			return "", berr
+		}
+		return skill.ToSKILLMD(), nil
 	}
 	skill, files, err := ec.Svc.Skills.Load(ec.Ctx, ec.Caller(), skillID)
 	if errors.Is(err, services.ErrNotFound) {
