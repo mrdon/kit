@@ -188,6 +188,8 @@ func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, na
 	err = tx.QueryRow(ctx, `
 		INSERT INTO skills (id, tenant_id, name, description, content, source)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (tenant_id, name)
+		DO UPDATE SET description = EXCLUDED.description, content = EXCLUDED.content, source = EXCLUDED.source, updated_at = now()
 		RETURNING id, tenant_id, name, description, content, user_invocable, source, created_at, updated_at
 	`, skillID, tenantID, name, description, content, source).Scan(
 		&skill.ID, &skill.TenantID, &skill.Name, &skill.Description, &skill.Content,
@@ -206,7 +208,8 @@ func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, na
 	_, err = tx.Exec(ctx, `
 		INSERT INTO skill_scopes (tenant_id, skill_id, scope_type, scope_value)
 		VALUES ($1, $2, $3, $4)
-	`, tenantID, skillID, scopeType, scopeValue)
+		ON CONFLICT DO NOTHING
+	`, tenantID, skill.ID, scopeType, scopeValue)
 	if err != nil {
 		return nil, fmt.Errorf("creating skill scope: %w", err)
 	}

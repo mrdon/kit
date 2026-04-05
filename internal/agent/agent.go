@@ -115,7 +115,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 
 		// If model returned end_turn with no tool calls, it tried to respond directly
 		if resp.StopReason == "end_turn" && len(resp.ToolUses()) == 0 {
-			// Model responded with text instead of tool call — send it as fallback
 			text := resp.TextContent()
 			if text != "" {
 				_ = slack.PostMessage(ctx, channel, threadTS, text)
@@ -124,7 +123,10 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			break
 		}
 
-		// Append assistant response to messages
+		// Log and append the full assistant turn (text + tool_use blocks)
+		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "assistant_turn", map[string]any{
+			"content": resp.Content,
+		})
 		messages = append(messages, anthropic.Message{
 			Role:    "assistant",
 			Content: resp.Content,
@@ -136,13 +138,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 
 			for _, toolUse := range resp.ToolUses() {
 				inputJSON, _ := json.Marshal(toolUse.Input)
-
-				// Log tool call
-				_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "tool_call", map[string]any{
-					"tool":  toolUse.Name,
-					"input": string(inputJSON),
-				})
-
 				slog.Info("executing tool", "tool", toolUse.Name, "session_id", session.ID)
 
 				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
@@ -150,12 +145,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 					slog.Error("tool execution failed", "tool", toolUse.Name, "error", err)
 					result = fmt.Sprintf("Error: %s", err.Error())
 				}
-
-				// Log tool result
-				_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "tool_result", map[string]any{
-					"tool":   toolUse.Name,
-					"result": result,
-				})
 
 				toolResults = append(toolResults, anthropic.Content{
 					Type:      "tool_result",
@@ -168,7 +157,10 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 				}
 			}
 
-			// Append tool results as user message
+			// Log and append tool results
+			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "tool_results", map[string]any{
+				"content": toolResults,
+			})
 			messages = append(messages, anthropic.Message{
 				Role:    "user",
 				Content: toolResults,
@@ -216,14 +208,25 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 				})
 			}
 
-		case "message_sent":
+		case "assistant_turn":
 			var data struct {
-				Text string `json:"text"`
+				Content []anthropic.Content `json:"content"`
 			}
-			if json.Unmarshal(evt.Data, &data) == nil && data.Text != "" {
+			if json.Unmarshal(evt.Data, &data) == nil && len(data.Content) > 0 {
 				messages = append(messages, anthropic.Message{
 					Role:    "assistant",
-					Content: []anthropic.Content{{Type: "text", Text: data.Text}},
+					Content: data.Content,
+				})
+			}
+
+		case "tool_results":
+			var data struct {
+				Content []anthropic.Content `json:"content"`
+			}
+			if json.Unmarshal(evt.Data, &data) == nil && len(data.Content) > 0 {
+				messages = append(messages, anthropic.Message{
+					Role:    "user",
+					Content: data.Content,
 				})
 			}
 		}
