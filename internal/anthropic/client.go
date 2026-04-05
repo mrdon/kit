@@ -26,6 +26,11 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
+// CacheControl marks a content block for prompt caching.
+type CacheControl struct {
+	Type string `json:"type"`
+}
+
 // Message represents a conversation message.
 type Message struct {
 	Role    string    `json:"role"`
@@ -43,6 +48,16 @@ type Content struct {
 	// For tool_result blocks
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
+
+	// For prompt caching
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// SystemBlock is a content block in the system prompt array.
+type SystemBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
 
 // Tool describes a tool the model can call.
@@ -54,28 +69,31 @@ type Tool struct {
 
 // Request is the Messages API request body.
 type Request struct {
-	Model     string    `json:"model"`
-	MaxTokens int       `json:"max_tokens"`
-	System    string    `json:"system,omitempty"`
-	Messages  []Message `json:"messages"`
-	Tools     []Tool    `json:"tools,omitempty"`
+	Model        string        `json:"model"`
+	MaxTokens    int           `json:"max_tokens"`
+	System       []SystemBlock `json:"system,omitempty"`
+	Messages     []Message     `json:"messages"`
+	Tools        []Tool        `json:"tools,omitempty"`
+	CacheControl *CacheControl `json:"cache_control,omitempty"` // automatic caching
 }
 
 // Response is the Messages API response body.
 type Response struct {
-	ID           string    `json:"id"`
-	Type         string    `json:"type"`
-	Role         string    `json:"role"`
-	Content      []Content `json:"content"`
-	Model        string    `json:"model"`
-	StopReason   string    `json:"stop_reason"`
-	Usage        Usage     `json:"usage"`
+	ID         string    `json:"id"`
+	Type       string    `json:"type"`
+	Role       string    `json:"role"`
+	Content    []Content `json:"content"`
+	Model      string    `json:"model"`
+	StopReason string    `json:"stop_reason"`
+	Usage      Usage     `json:"usage"`
 }
 
 // Usage contains token usage information.
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 // ToolUses extracts all tool_use blocks from the response.
@@ -98,6 +116,11 @@ func (r *Response) TextContent() string {
 		}
 	}
 	return text
+}
+
+// Ephemeral returns a cache control marker for prompt caching.
+func Ephemeral() *CacheControl {
+	return &CacheControl{Type: "ephemeral"}
 }
 
 // CreateMessage sends a request to the Claude Messages API.

@@ -73,8 +73,16 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		Content: []anthropic.Content{{Type: "text", Text: userText}},
 	})
 
-	// Build system prompt
-	systemPrompt := BuildSystemPrompt(ctx, a.pool, tenant, user)
+	// Build system prompt with cache breakpoint (stable across turns in a session)
+	systemPrompt := []anthropic.SystemBlock{
+		{
+			Type:         "text",
+			Text:         BuildSystemPrompt(ctx, a.pool, tenant, user),
+			CacheControl: anthropic.Ephemeral(),
+		},
+	}
+
+	toolDefs := registry.Definitions()
 
 	// Agent loop
 	sentMessage := false
@@ -88,11 +96,12 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		})
 
 		resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
-			Model:     modelHaiku,
-			MaxTokens: maxTokens,
-			System:    systemPrompt,
-			Messages:  messages,
-			Tools:     registry.Definitions(),
+			Model:        modelHaiku,
+			MaxTokens:    maxTokens,
+			System:       systemPrompt,
+			Messages:     messages,
+			Tools:        toolDefs,
+			CacheControl: anthropic.Ephemeral(),
 		})
 		if err != nil {
 			slog.Error("llm call failed", "error", err, "iteration", i)
@@ -105,12 +114,14 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 
 		// Log LLM response
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_response", map[string]any{
-			"model":         resp.Model,
-			"stop_reason":   resp.StopReason,
-			"input_tokens":  resp.Usage.InputTokens,
-			"output_tokens": resp.Usage.OutputTokens,
-			"duration_ms":   time.Since(iterStart).Milliseconds(),
-			"iteration":     i,
+			"model":                       resp.Model,
+			"stop_reason":                 resp.StopReason,
+			"input_tokens":                resp.Usage.InputTokens,
+			"output_tokens":               resp.Usage.OutputTokens,
+			"cache_creation_input_tokens": resp.Usage.CacheCreationInputTokens,
+			"cache_read_input_tokens":     resp.Usage.CacheReadInputTokens,
+			"duration_ms":                 time.Since(iterStart).Milliseconds(),
+			"iteration":                   i,
 		})
 
 		// If model returned end_turn with no tool calls, it tried to respond directly
