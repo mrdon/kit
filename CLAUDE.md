@@ -16,6 +16,12 @@ make db          # Connect to local Postgres
 make db-reset    # Wipe and restart Postgres
 ```
 
+## Deploying
+
+- `git push origin main` — push to GitHub
+- `git push dokku main` — deploy to Dokku (apps.twdata.org)
+- Always push to both origin and dokku when deploying.
+
 ## Tech Stack
 
 - Go 1.25, Postgres 16 (pgvector image)
@@ -47,12 +53,13 @@ make db-reset    # Wipe and restart Postgres
 - `internal/crypto/` — AES-256-GCM for sensitive data
 - `internal/database/` — pgxpool connection, goose migrations (embedded in `database/migrations/`)
 - `internal/ingest/` — File upload processing (PDF via pdftotext, DOCX, markdown, ZIP)
-- `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, session, session_event)
+- `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, task, session, session_event, scope)
+- `internal/scheduler/` — Background task runner (cron) + nightly user profile sync
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 
 ## Data Model
 
-12 tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, sessions, session_events. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
+14 tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, tasks, task_scopes, sessions, session_events. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
 
 ## Agent Loop
 
