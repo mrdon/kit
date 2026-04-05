@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/anthropic"
@@ -15,6 +16,7 @@ import (
 	"github.com/mrdon/kit/internal/ingest"
 	"github.com/mrdon/kit/internal/models"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/web"
 )
 
 const thinkingEmoji = "hourglass_flowing_sand"
@@ -25,15 +27,18 @@ type App struct {
 	Encryptor *crypto.Encryptor
 	Agent     *agent.Agent
 	LLM       *anthropic.Client
+	Fetcher   *web.Fetcher
 }
 
 // NewApp creates a new App with all dependencies.
-func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey string) *App {
+func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey string, rdb *redis.Client) *App {
 	llm := anthropic.NewClient(apiKey)
+	fetcher := web.NewFetcher(rdb)
 	return &App{
 		Pool:      pool,
 		Encryptor: enc,
-		Agent:     agent.NewAgent(pool, llm),
+		Fetcher:   fetcher,
+		Agent:     agent.NewAgent(pool, llm, fetcher),
 		LLM:       llm,
 	}
 }

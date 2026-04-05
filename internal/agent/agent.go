@@ -12,6 +12,8 @@ import (
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/models"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/tools"
+	"github.com/mrdon/kit/internal/web"
 )
 
 const (
@@ -22,15 +24,17 @@ const (
 
 // Agent runs the observe/reason/act loop for a single message.
 type Agent struct {
-	pool *pgxpool.Pool
-	llm  *anthropic.Client
+	pool    *pgxpool.Pool
+	llm     *anthropic.Client
+	fetcher *web.Fetcher
 }
 
 // NewAgent creates a new agent instance.
-func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client) *Agent {
+func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *Agent {
 	return &Agent{
-		pool: pool,
-		llm:  llm,
+		pool:    pool,
+		llm:     llm,
+		fetcher: fetcher,
 	}
 }
 
@@ -38,17 +42,13 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client) *Agent {
 func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.Tenant, user *models.User, session *models.Session, channel, threadTS, userText string) error {
 	start := time.Now()
 
-	// Build tool registry based on user permissions
-	registry := NewToolRegistry()
-	registry.RegisterUserTools()
-	if user.IsAdmin {
-		registry.RegisterAdminTools()
-	}
+	registry := tools.NewRegistry(user.IsAdmin)
 
-	ec := &ExecContext{
+	ec := &tools.ExecContext{
 		Ctx:      ctx,
 		Pool:     a.pool,
 		Slack:    slack,
+		Fetcher:  a.fetcher,
 		Tenant:   tenant,
 		User:     user,
 		Session:  session,
@@ -56,23 +56,18 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		ThreadTS: threadTS,
 	}
 
-	// Log incoming message
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "message_received", map[string]any{
 		"user_id": user.ID,
 		"text":    userText,
 		"channel": channel,
 	})
 
-	// Rebuild conversation history from session events
 	messages := a.rebuildHistory(ctx, tenant, session)
-
-	// Append current user message
 	messages = append(messages, anthropic.Message{
 		Role:    "user",
 		Content: []anthropic.Content{{Type: "text", Text: userText}},
 	})
 
-	// Build system prompt with cache breakpoint (stable across turns in a session)
 	systemPrompt := []anthropic.SystemBlock{
 		{
 			Type:         "text",
@@ -80,15 +75,12 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			CacheControl: anthropic.Ephemeral(),
 		},
 	}
-
 	toolDefs := registry.Definitions()
 
-	// Agent loop
 	sentMessage := false
 	for i := range maxIterations {
 		iterStart := time.Now()
 
-		// Log LLM request
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_request", map[string]any{
 			"model":     modelHaiku,
 			"iteration": i,
@@ -111,7 +103,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			return fmt.Errorf("llm call: %w", err)
 		}
 
-		// Log LLM response
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_response", map[string]any{
 			"model":                       resp.Model,
 			"stop_reason":                 resp.StopReason,
@@ -123,7 +114,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			"iteration":                   i,
 		})
 
-		// If model returned end_turn with no tool calls, it tried to respond directly
 		if resp.StopReason == "end_turn" && len(resp.ToolUses()) == 0 {
 			text := resp.TextContent()
 			if text != "" {
@@ -133,7 +123,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			break
 		}
 
-		// Log and append the full assistant turn (text + tool_use blocks)
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "assistant_turn", map[string]any{
 			"content": resp.Content,
 		})
@@ -142,7 +131,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 			Content: resp.Content,
 		})
 
-		// Process tool calls
 		if resp.StopReason == "tool_use" {
 			var toolResults []anthropic.Content
 
@@ -162,12 +150,11 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 					Content:   result,
 				})
 
-				if IsTerminal(toolUse.Name) {
+				if registry.IsTerminal(toolUse.Name) {
 					sentMessage = true
 				}
 			}
 
-			// Log and append tool results
 			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "tool_results", map[string]any{
 				"content": toolResults,
 			})
@@ -176,19 +163,16 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 				Content: toolResults,
 			})
 
-			// If a terminal tool was called, stop the loop
 			if sentMessage {
 				break
 			}
 		}
 	}
 
-	// Fallback if agent never sent a message
 	if !sentMessage {
 		_ = slack.PostMessage(ctx, channel, threadTS, "I'm sorry, I wasn't able to process your request. Please try again.")
 	}
 
-	// Log session completion
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "session_complete", map[string]any{
 		"duration_ms": time.Since(start).Milliseconds(),
 	})
@@ -196,7 +180,6 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 	return nil
 }
 
-// rebuildHistory reconstructs the conversation from session events.
 func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, session *models.Session) []anthropic.Message {
 	events, err := models.GetSessionEvents(ctx, a.pool, tenant.ID, session.ID)
 	if err != nil {

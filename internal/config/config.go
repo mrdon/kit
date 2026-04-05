@@ -16,6 +16,7 @@ type Config struct {
 	AnthropicAPIKey    string
 	EncryptionKey      string
 	BaseURL            string
+	RedisURL           string
 }
 
 func Load() (*Config, error) {
@@ -30,6 +31,7 @@ func Load() (*Config, error) {
 		AnthropicAPIKey:    os.Getenv("ANTHROPIC_API_KEY"),
 		EncryptionKey:      os.Getenv("ENCRYPTION_KEY"),
 		BaseURL:            os.Getenv("BASE_URL"),
+		RedisURL:           os.Getenv("REDIS_URL"),
 	}
 
 	if cfg.DatabaseURL == "" {

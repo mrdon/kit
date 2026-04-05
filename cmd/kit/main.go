@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal"
 	"github.com/mrdon/kit/internal/buildinfo"
@@ -62,8 +63,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Redis (optional — web_fetch caching)
+	var rdb *redis.Client
+	if cfg.RedisURL != "" {
+		opts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			slog.Error("parsing redis URL", "error", err)
+			os.Exit(1)
+		}
+		rdb = redis.NewClient(opts)
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			slog.Warn("redis not available, web_fetch caching disabled", "error", err)
+			rdb = nil
+		} else {
+			slog.Info("redis connected")
+			defer rdb.Close()
+		}
+	}
+
 	// Core application
-	app := internal.NewApp(pool, enc, cfg.AnthropicAPIKey)
+	app := internal.NewApp(pool, enc, cfg.AnthropicAPIKey, rdb)
 
 	// Slack event handler
 	slackHandler := kitslack.NewHandler(cfg.SlackSigningSecret, app.HandleSlackEvent)
