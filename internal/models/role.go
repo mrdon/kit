@@ -98,6 +98,32 @@ func DeleteRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 	return nil
 }
 
+// ListRoleMembers returns all users assigned to a role by name.
+func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roleName string) ([]User, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT u.id, u.tenant_id, u.slack_user_id, u.display_name, u.is_admin, u.created_at
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+		JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+		WHERE u.tenant_id = $1 AND r.name = $2
+		ORDER BY u.slack_user_id
+	`, tenantID, roleName)
+	if err != nil {
+		return nil, fmt.Errorf("listing role members: %w", err)
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.SlackUserID, &u.DisplayName, &u.IsAdmin, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
 // GetUserRoleNames returns the role names for a user.
 // If the user has no assigned roles and the tenant has a default role,
 // the user is auto-assigned to it and that role name is returned.

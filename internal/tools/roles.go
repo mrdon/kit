@@ -38,6 +38,38 @@ func registerRoleTools(r *Registry, isAdmin bool) {
 	})
 
 	r.Register(Def{
+		Name: "list_role_members", Description: "List all users assigned to a specific role.",
+		Schema: propsReq(map[string]any{
+			"role_name": field("string", "The role name to list members of"),
+		}, "role_name"), AdminOnly: true,
+		Handler: func(ec *ExecContext, input json.RawMessage) (string, error) {
+			var inp struct {
+				RoleName string `json:"role_name"`
+			}
+			if err := json.Unmarshal(input, &inp); err != nil {
+				return "", err
+			}
+			members, err := models.ListRoleMembers(ec.Ctx, ec.Pool, ec.Tenant.ID, inp.RoleName)
+			if err != nil {
+				return "", err
+			}
+			if len(members) == 0 {
+				return "No users assigned to role '" + inp.RoleName + "'.", nil
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "Members of '%s':\n", inp.RoleName)
+			for _, m := range members {
+				name := m.SlackUserID
+				if m.DisplayName != nil {
+					name = *m.DisplayName + " (" + m.SlackUserID + ")"
+				}
+				b.WriteString("- " + name + "\n")
+			}
+			return b.String(), nil
+		},
+	})
+
+	r.Register(Def{
 		Name: "create_role", Description: "Create a new role.",
 		Schema: propsReq(map[string]any{
 			"name":        field("string", "Role name (e.g., 'bartender')"),
