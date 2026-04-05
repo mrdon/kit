@@ -15,7 +15,7 @@ var SkillTools = []ToolMeta{
 	{Name: "search_skills", Description: "Search knowledge base for relevant skills using full-text search.", Schema: propsReq(map[string]any{"query": field("string", "Search query")}, "query")},
 	{Name: "load_skill", Description: "Load the full content of a specific skill by ID.", Schema: propsReq(map[string]any{"skill_id": field("string", "The skill UUID")}, "skill_id")},
 	{Name: "load_skill_file", Description: "Load a file attached to a skill by its ID.", Schema: propsReq(map[string]any{"file_id": field("string", "The file UUID")}, "file_id")},
-	{Name: "list_skills", Description: "List all skills (all scopes).", Schema: props(map[string]any{}), AdminOnly: true},
+	{Name: "list_skills", Description: "List skills you have access to, with scope info. Admins see all skills.", Schema: props(map[string]any{"search": field("string", "Optional search filter on name or description")})},
 	{Name: "create_skill", Description: "Create a new skill (knowledge article). Updates if name already exists.", Schema: propsReq(map[string]any{
 		"name": field("string", "Skill name"), "description": field("string", "Brief description"),
 		"content": field("string", "Full content (markdown)"), "scope": field("string", "Scope: 'tenant' for everyone, or a role name"),
@@ -78,12 +78,10 @@ func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID
 	return ref, nil
 }
 
-// List returns all skills in the tenant. Admin only.
-func (s *SkillService) List(ctx context.Context, c *Caller) ([]models.Skill, error) {
-	if !c.IsAdmin {
-		return nil, ErrForbidden
-	}
-	return models.ListSkills(ctx, s.pool, c.TenantID)
+// List returns skills visible to the caller with optional search.
+// Admins see all skills; non-admins see only scope-matched skills.
+func (s *SkillService) List(ctx context.Context, c *Caller, search string) ([]models.SkillSummary, error) {
+	return models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.Identity, c.Roles, search)
 }
 
 // Create creates a new skill. Admin only.

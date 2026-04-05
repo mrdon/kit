@@ -134,20 +134,21 @@ func handleLoadSkillFile(ec *ExecContext, input json.RawMessage) (string, error)
 	return fmt.Sprintf("# %s\n\n%s", ref.Filename, ref.Content), nil
 }
 
-func handleListSkills(ec *ExecContext, _ json.RawMessage) (string, error) {
-	skills, err := ec.Svc.Skills.List(ec.Ctx, ec.Caller())
+func handleListSkills(ec *ExecContext, input json.RawMessage) (string, error) {
+	var inp struct {
+		Search string `json:"search"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil {
+		return "", err
+	}
+	skills, err := ec.Svc.Skills.List(ec.Ctx, ec.Caller(), inp.Search)
 	if err != nil {
 		return "", err
 	}
 	if len(skills) == 0 {
-		return "No skills defined yet.", nil
+		return "No skills found.", nil
 	}
-	var b strings.Builder
-	b.WriteString("Skills:\n")
-	for _, s := range skills {
-		fmt.Fprintf(&b, "- [%s] %s — %s\n", s.ID, s.Name, s.Description)
-	}
-	return b.String(), nil
+	return "Skills:\n" + services.FormatSkillSummaries(skills), nil
 }
 
 func handleCreateSkill(ec *ExecContext, input json.RawMessage) (string, error) {

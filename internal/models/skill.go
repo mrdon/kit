@@ -167,6 +167,108 @@ func GetSkillCatalog(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	return skills, rows.Err()
 }
 
+// SkillSummary is a skill with its scope information, used for listing.
+type SkillSummary struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	Scopes      []SkillScope
+}
+
+// ListSkillsFiltered returns skills visible to the caller with optional search.
+// If admin is true, all skills in the tenant are returned.
+// Otherwise, only skills matching the caller's roles/identity are returned.
+func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, admin bool, identity string, roles []string, search string) ([]SkillSummary, error) {
+	var args []any
+	args = append(args, tenantID) // $1
+
+	var where strings.Builder
+	where.WriteString("WHERE s.tenant_id = $1")
+
+	if !admin {
+		scopeSQL, scopeArgs := ScopeFilter("ss", len(args)+1, identity, roles)
+		args = append(args, scopeArgs...)
+		where.WriteString("\n\t\t\tAND (" + scopeSQL + ")")
+	}
+
+	if search != "" {
+		args = append(args, "%"+strings.ToLower(search)+"%")
+		where.WriteString(fmt.Sprintf("\n\t\t\tAND (LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", len(args), len(args)))
+	}
+
+	join := ""
+	if !admin {
+		join = "JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id"
+	}
+
+	q := fmt.Sprintf(`
+		SELECT DISTINCT s.id, s.name, s.description
+		FROM skills s
+		%s
+		%s
+		ORDER BY s.name
+	`, join, where.String())
+
+	rows, err := pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing skills: %w", err)
+	}
+	defer rows.Close()
+
+	var skills []SkillSummary
+	for rows.Next() {
+		var s SkillSummary
+		if err := rows.Scan(&s.ID, &s.Name, &s.Description); err != nil {
+			return nil, err
+		}
+		skills = append(skills, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Batch-load scopes for all returned skills.
+	if len(skills) > 0 {
+		ids := make([]uuid.UUID, len(skills))
+		for i, s := range skills {
+			ids[i] = s.ID
+		}
+		scopeMap, err := getSkillScopesBatch(ctx, pool, tenantID, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range skills {
+			skills[i].Scopes = scopeMap[skills[i].ID]
+		}
+	}
+
+	return skills, nil
+}
+
+// getSkillScopesBatch returns scopes for multiple skills in one query.
+func getSkillScopesBatch(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID][]SkillScope, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT skill_id, scope_type, scope_value
+		FROM skill_scopes
+		WHERE tenant_id = $1 AND skill_id = ANY($2)
+	`, tenantID, skillIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch loading skill scopes: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID][]SkillScope)
+	for rows.Next() {
+		var skillID uuid.UUID
+		var sc SkillScope
+		if err := rows.Scan(&skillID, &sc.ScopeType, &sc.ScopeValue); err != nil {
+			return nil, err
+		}
+		result[skillID] = append(result[skillID], sc)
+	}
+	return result, rows.Err()
+}
+
 func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, description, content, source, scope string) (*Skill, error) {
 	// Slugify and validate name
 	name = SlugifyName(name)

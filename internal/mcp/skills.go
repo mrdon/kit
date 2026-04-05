@@ -110,19 +110,16 @@ func mcpLoadSkillFile(svc *services.Services, caller *services.Caller) mcpserver
 }
 
 func mcpListSkills(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		skills, err := svc.Skills.List(ctx, caller)
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		search := req.GetString("search", "")
+		skills, err := svc.Skills.List(ctx, caller, search)
 		if err != nil {
 			return nil, err
 		}
 		if len(skills) == 0 {
-			return mcp.NewToolResultText("No skills defined yet."), nil
+			return mcp.NewToolResultText("No skills found."), nil
 		}
-		var b strings.Builder
-		for _, s := range skills {
-			fmt.Fprintf(&b, "- [%s] %s — %s\n", s.ID, s.Name, s.Description)
-		}
-		return mcp.NewToolResultText(b.String()), nil
+		return mcp.NewToolResultText(services.FormatSkillSummaries(skills)), nil
 	}
 }
 

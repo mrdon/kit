@@ -42,6 +42,7 @@ make db-reset    # Wipe and restart Postgres
 - Use `slog` for logging, never `fmt.Println` or `log.Println`.
 - Parameterized queries only — never interpolate user input into SQL strings.
 - Default deny for scoping: skills, rules, and memories with no scope rows are invisible.
+- LLM agent tools (`internal/tools/`) and MCP tools (`internal/mcp/`) share tool metadata via `internal/services/`. Changes to one should be considered for the other.
 - Format: `gofmt -s`. Lint: `golangci-lint` (see .golangci.yml). Tests: `go test -race -cover ./...`
 
 ## Architecture
