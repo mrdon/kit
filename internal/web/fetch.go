@@ -47,9 +47,9 @@ func (p *Page) Outline() string {
 	var b strings.Builder
 	b.WriteString("*" + p.Title + "*\n" + p.URL + "\n\n")
 	for _, s := range p.Sections {
-		indent := strings.Repeat("  ", s.Level-1)
-		if s.Level == 0 {
-			indent = ""
+		indent := ""
+		if s.Level > 1 {
+			indent = strings.Repeat("  ", s.Level-1)
 		}
 		heading := s.Heading
 		if heading == "" {
