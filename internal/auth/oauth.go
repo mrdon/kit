@@ -232,6 +232,7 @@ func (s *OAuthServer) exchangeSlackCode(code string) (*slackUserInfo, error) {
 		"client_secret": {s.clientSecret},
 		"code":          {code},
 		"redirect_uri":  {s.baseURL + "/oauth/callback"},
+		"grant_type":    {"authorization_code"},
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -241,19 +242,26 @@ func (s *OAuthServer) exchangeSlackCode(code string) (*slackUserInfo, error) {
 	}
 	defer resp.Body.Close()
 
-	var result struct {
-		OK    bool   `json:"ok"`
-		Error string `json:"error"`
+	var tokenResp struct {
+		OK          bool   `json:"ok"`
+		Error       string `json:"error"`
+		AccessToken string `json:"access_token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("decoding token response: %w", err)
 	}
-	if !result.OK {
-		return nil, fmt.Errorf("slack token exchange: %s", result.Error)
+	if !tokenResp.OK {
+		return nil, fmt.Errorf("slack token exchange: %s", tokenResp.Error)
 	}
 
-	// Get user info from the userinfo endpoint
-	infoResp, err := client.PostForm("https://slack.com/api/openid.connect.userInfo", data)
+	// Get user info using the access token
+	req, err := http.NewRequest(http.MethodGet, "https://slack.com/api/openid.connect.userInfo", nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating userinfo request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
+
+	infoResp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("getting user info: %w", err)
 	}
@@ -261,14 +269,18 @@ func (s *OAuthServer) exchangeSlackCode(code string) (*slackUserInfo, error) {
 
 	var info struct {
 		OK     bool   `json:"ok"`
-		Sub    string `json:"sub"` // Slack user ID
-		TeamID string `json:"https://slack.com/team_id"`
+		Sub    string `json:"sub"`                       // Slack user ID
+		TeamID string `json:"https://slack.com/team_id"` // Slack team ID
+		Error  string `json:"error"`
 	}
 	if err := json.NewDecoder(infoResp.Body).Decode(&info); err != nil {
 		return nil, fmt.Errorf("decoding userinfo: %w", err)
 	}
-	if !info.OK || info.Sub == "" {
-		return nil, errors.New("invalid userinfo response")
+	if !info.OK {
+		return nil, fmt.Errorf("slack userinfo: %s", info.Error)
+	}
+	if info.Sub == "" || info.TeamID == "" {
+		return nil, errors.New("incomplete userinfo response: missing sub or team_id")
 	}
 
 	return &slackUserInfo{TeamID: info.TeamID, UserID: info.Sub}, nil
