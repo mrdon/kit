@@ -1,7 +1,7 @@
 -- +goose Up
 ALTER TABLE tenants ADD COLUMN default_role_id UUID REFERENCES roles(id) ON DELETE SET NULL;
 
--- Create a "member" default role for every existing tenant and set it
+-- +goose StatementBegin
 DO $$
 DECLARE
     t RECORD;
@@ -14,6 +14,7 @@ BEGIN
         UPDATE tenants SET default_role_id = role_id WHERE id = t.id;
     END LOOP;
 END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 ALTER TABLE tenants DROP COLUMN IF EXISTS default_role_id;
