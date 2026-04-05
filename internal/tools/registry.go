@@ -58,6 +58,7 @@ func NewRegistry(isAdmin bool) *Registry {
 	registerMemoryTools(r, isAdmin)
 	registerTenantTools(r, isAdmin)
 	registerWebTools(r)
+	registerTaskTools(r, isAdmin)
 
 	return r
 }

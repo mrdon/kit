@@ -41,17 +41,16 @@ func ListRules(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]R
 
 // GetRulesForContext returns rules matching the user's roles, ordered by priority.
 func GetRulesForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string) ([]Rule, error) {
+	scopeSQL, scopeArgs := ScopeFilter("rs", 2, "", userRoles)
+	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT r.id, r.tenant_id, r.content, r.priority, r.created_at, r.updated_at
 		FROM rules r
 		JOIN rule_scopes rs ON rs.rule_id = r.id AND rs.tenant_id = r.tenant_id
 		WHERE r.tenant_id = $1
-		AND (
-			(rs.scope_type = 'tenant' AND rs.scope_value = '*')
-			OR (rs.scope_type = 'role' AND rs.scope_value = ANY($2))
-		)
+		AND (`+scopeSQL+`)
 		ORDER BY r.priority DESC, r.created_at
-	`, tenantID, userRoles)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("getting rules for context: %w", err)
 	}

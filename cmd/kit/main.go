@@ -18,6 +18,7 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/database"
 	"github.com/mrdon/kit/internal/logger"
+	"github.com/mrdon/kit/internal/scheduler"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
@@ -83,6 +84,10 @@ func main() {
 
 	// Core application
 	app := internal.NewApp(pool, enc, cfg.AnthropicAPIKey, rdb)
+
+	// Task scheduler
+	sched := scheduler.New(pool, enc, app.Agent)
+	sched.Start(ctx)
 
 	// Slack event handler
 	slackHandler := kitslack.NewHandler(cfg.SlackSigningSecret, app.HandleSlackEvent)

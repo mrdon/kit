@@ -115,6 +115,33 @@ func (c *Client) OpenConversation(ctx context.Context, userID string) (string, e
 	return channelID, nil
 }
 
+// UserInfo holds profile fields fetched from Slack.
+type UserInfo struct {
+	DisplayName string
+	Timezone    string
+}
+
+// GetUserInfo fetches a user's display name and timezone from Slack.
+func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, error) {
+	resp, err := c.apiCall(ctx, "users.info", map[string]string{"user": userID})
+	if err != nil {
+		return nil, err
+	}
+	user, ok := resp["user"].(map[string]any)
+	if !ok {
+		return nil, errors.New("unexpected users.info response format")
+	}
+	info := &UserInfo{}
+	info.Timezone, _ = user["tz"].(string)
+	if profile, ok := user["profile"].(map[string]any); ok {
+		info.DisplayName, _ = profile["display_name"].(string)
+		if info.DisplayName == "" {
+			info.DisplayName, _ = profile["real_name"].(string)
+		}
+	}
+	return info, nil
+}
+
 // GetFileContent downloads a file from Slack using the bot token for auth.
 func (c *Client) GetFileContent(ctx context.Context, fileURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)

@@ -38,6 +38,18 @@ func ListRoles(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]R
 	return roles, rows.Err()
 }
 
+// RoleExists checks if a role with the given name exists for a tenant.
+func RoleExists(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (bool, error) {
+	var exists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM roles WHERE tenant_id = $1 AND name = $2)
+	`, tenantID, name).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking role exists: %w", err)
+	}
+	return exists, nil
+}
+
 func CreateRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, description string) (*Role, error) {
 	role := &Role{}
 	err := pool.QueryRow(ctx, `
@@ -101,7 +113,7 @@ func DeleteRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 // ListRoleMembers returns all users assigned to a role by name.
 func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roleName string) ([]User, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT u.id, u.tenant_id, u.slack_user_id, u.display_name, u.is_admin, u.created_at
+		SELECT u.id, u.tenant_id, u.slack_user_id, u.display_name, u.is_admin, u.timezone, u.created_at
 		FROM users u
 		JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
 		JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
@@ -116,7 +128,7 @@ func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	var users []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.SlackUserID, &u.DisplayName, &u.IsAdmin, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.SlackUserID, &u.DisplayName, &u.IsAdmin, &u.Timezone, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)

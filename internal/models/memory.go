@@ -41,19 +41,19 @@ func DeleteMemory(ctx context.Context, pool *pgxpool.Pool, tenantID, memoryID uu
 
 // SearchMemories searches memories visible to the user (user-scoped + tenant-scoped + role-scoped).
 func SearchMemories(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string, userRoles []string, query string) ([]Memory, error) {
-	rows, err := pool.Query(ctx, `
+	scopeSQL, scopeArgs := ScopeFilter("", 2, slackUserID, userRoles)
+	ftsParam := 2 + len(scopeArgs)
+	args := append([]any{tenantID}, scopeArgs...)
+	args = append(args, query)
+	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, content, scope_type, scope_value, source_session_id, created_at, updated_at
 		FROM memories
 		WHERE tenant_id = $1
-		AND (
-			(scope_type = 'user' AND scope_value = $2)
-			OR (scope_type = 'tenant' AND scope_value = '*')
-			OR (scope_type = 'role' AND scope_value = ANY($3))
-		)
-		AND to_tsvector('english', content) @@ plainto_tsquery('english', $4)
+		AND (%s)
+		AND to_tsvector('english', content) @@ plainto_tsquery('english', $%d)
 		ORDER BY created_at DESC
 		LIMIT 10
-	`, tenantID, slackUserID, userRoles, query)
+	`, scopeSQL, ftsParam), args...)
 	if err != nil {
 		return nil, fmt.Errorf("searching memories: %w", err)
 	}
@@ -73,18 +73,18 @@ func SearchMemories(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 
 // GetRecentMemories returns the N most recent memories visible to the user.
 func GetRecentMemories(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string, userRoles []string, limit int) ([]Memory, error) {
-	rows, err := pool.Query(ctx, `
+	scopeSQL, scopeArgs := ScopeFilter("", 2, slackUserID, userRoles)
+	limitParam := 2 + len(scopeArgs)
+	args := append([]any{tenantID}, scopeArgs...)
+	args = append(args, limit)
+	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, content, scope_type, scope_value, source_session_id, created_at, updated_at
 		FROM memories
 		WHERE tenant_id = $1
-		AND (
-			(scope_type = 'user' AND scope_value = $2)
-			OR (scope_type = 'tenant' AND scope_value = '*')
-			OR (scope_type = 'role' AND scope_value = ANY($3))
-		)
+		AND (%s)
 		ORDER BY created_at DESC
-		LIMIT $4
-	`, tenantID, slackUserID, userRoles, limit)
+		LIMIT $%d
+	`, scopeSQL, limitParam), args...)
 	if err != nil {
 		return nil, fmt.Errorf("getting recent memories: %w", err)
 	}

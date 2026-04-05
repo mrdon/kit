@@ -41,14 +41,18 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	if tenant.BusinessType != nil && *tenant.BusinessType != "" {
 		parts = append(parts, "Business type: "+*tenant.BusinessType)
 	}
-	parts = append(parts, "Timezone: "+tenant.Timezone)
+	parts = append(parts, "Business timezone: "+tenant.Timezone)
 
 	// User context
 	displayName := user.SlackUserID
 	if user.DisplayName != nil {
 		displayName = *user.DisplayName
 	}
-	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v)", displayName, user.IsAdmin))
+	userTZ := user.Timezone
+	if userTZ == "" {
+		userTZ = tenant.Timezone
+	}
+	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v, timezone: %s)", displayName, user.IsAdmin, userTZ))
 
 	// User roles
 	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
@@ -84,6 +88,21 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 			parts = append(parts, "- ["+s.ID.String()+"] "+s.Name+" — "+s.Description)
 		}
 	}
+
+	// Task scheduling guidance
+	parts = append(parts, `## Scheduled Tasks
+You can create recurring tasks using create_task. When a user asks for something like "remind me every morning" or "send a daily report", convert their request into a cron expression and create a task.
+
+Cron format: minute hour day-of-month month day-of-week
+Examples:
+- "every morning at 9am" = 0 9 * * *
+- "weekdays at 5pm" = 0 17 * * 1-5
+- "every Monday at 10am" = 0 10 * * 1
+- "first of the month at 8am" = 0 8 1 * *
+
+The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Use the current channel as the channel_id unless the user specifies otherwise.
+
+Tasks run in the user's timezone. Use list_tasks and delete_task to manage existing tasks.`)
 
 	// Relevant memories
 	memories, _ := models.GetRecentMemories(ctx, pool, tenant.ID, user.SlackUserID, roleNames, 5)

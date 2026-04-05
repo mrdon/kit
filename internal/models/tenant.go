@@ -70,6 +70,48 @@ func UpdateTenantSetup(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UU
 	return nil
 }
 
+// GetTenantByID finds a tenant by ID.
+func GetTenantByID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (*Tenant, error) {
+	tenant := &Tenant{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, slack_team_id, name, bot_token, business_type, timezone, setup_complete, default_role_id, created_at
+		FROM tenants WHERE id = $1
+	`, tenantID).Scan(
+		&tenant.ID, &tenant.SlackTeamID, &tenant.Name, &tenant.BotToken,
+		&tenant.BusinessType, &tenant.Timezone, &tenant.SetupComplete, &tenant.DefaultRoleID, &tenant.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting tenant by id: %w", err)
+	}
+	return tenant, nil
+}
+
+// ListAllTenants returns all tenants.
+func ListAllTenants(ctx context.Context, pool *pgxpool.Pool) ([]Tenant, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, slack_team_id, name, bot_token, business_type, timezone, setup_complete, default_role_id, created_at
+		FROM tenants
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("listing tenants: %w", err)
+	}
+	defer rows.Close()
+
+	var tenants []Tenant
+	for rows.Next() {
+		var t Tenant
+		if err := rows.Scan(&t.ID, &t.SlackTeamID, &t.Name, &t.BotToken,
+			&t.BusinessType, &t.Timezone, &t.SetupComplete, &t.DefaultRoleID, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning tenant: %w", err)
+		}
+		tenants = append(tenants, t)
+	}
+	return tenants, nil
+}
+
 func SetDefaultRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roleID *uuid.UUID) error {
 	_, err := pool.Exec(ctx, `
 		UPDATE tenants SET default_role_id = $2 WHERE id = $1

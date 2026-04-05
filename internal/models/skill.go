@@ -141,17 +141,16 @@ func ListSkills(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]
 }
 
 func GetSkillCatalog(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string) ([]Skill, error) {
+	scopeSQL, scopeArgs := ScopeFilter("ss", 2, "", userRoles)
+	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT s.id, s.name, s.description
 		FROM skills s
 		JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id
 		WHERE s.tenant_id = $1
-		AND (
-			(ss.scope_type = 'tenant' AND ss.scope_value = '*')
-			OR (ss.scope_type = 'role' AND ss.scope_value = ANY($2))
-		)
+		AND (`+scopeSQL+`)
 		ORDER BY s.name
-	`, tenantID, userRoles)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("getting skill catalog: %w", err)
 	}
@@ -337,22 +336,23 @@ func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID 
 
 // SearchSkills performs FTS on skills visible to the user's roles.
 func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string, query string) ([]Skill, error) {
-	rows, err := pool.Query(ctx, `
+	scopeSQL, scopeArgs := ScopeFilter("ss", 2, "", userRoles)
+	ftsParam := 2 + len(scopeArgs)
+	args := append([]any{tenantID}, scopeArgs...)
+	args = append(args, query)
+	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT DISTINCT s.id, s.name, s.description
 		FROM skills s
 		JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id
 		WHERE s.tenant_id = $1
+		AND (%s)
 		AND (
-			(ss.scope_type = 'tenant' AND ss.scope_value = '*')
-			OR (ss.scope_type = 'role' AND ss.scope_value = ANY($2))
-		)
-		AND (
-			to_tsvector('english', s.content) @@ plainto_tsquery('english', $3)
-			OR to_tsvector('english', s.description) @@ plainto_tsquery('english', $3)
+			to_tsvector('english', s.content) @@ plainto_tsquery('english', $%d)
+			OR to_tsvector('english', s.description) @@ plainto_tsquery('english', $%d)
 		)
 		ORDER BY s.name
 		LIMIT 10
-	`, tenantID, userRoles, query)
+	`, scopeSQL, ftsParam, ftsParam), args...)
 	if err != nil {
 		return nil, fmt.Errorf("searching skills: %w", err)
 	}

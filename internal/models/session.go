@@ -19,6 +19,23 @@ type Session struct {
 	UpdatedAt      time.Time
 }
 
+// CreateSession creates a new session with a unique thread_ts.
+func CreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string, userID uuid.UUID) (*Session, error) {
+	session := &Session{}
+	err := pool.QueryRow(ctx, `
+		INSERT INTO sessions (id, tenant_id, slack_channel_id, slack_thread_ts, user_id)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, tenant_id, slack_channel_id, slack_thread_ts, user_id, created_at, updated_at
+	`, uuid.New(), tenantID, channelID, threadTS, userID).Scan(
+		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
+		&session.UserID, &session.CreatedAt, &session.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating session: %w", err)
+	}
+	return session, nil
+}
+
 // GetOrCreateSession finds or creates a session by tenant + channel + thread_ts.
 func GetOrCreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string, userID uuid.UUID) (*Session, error) {
 	session := &Session{}
