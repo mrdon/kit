@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+.env
+.env.*
+dist/
+*.md
+compose.yaml
+testdata/
+*_test.go

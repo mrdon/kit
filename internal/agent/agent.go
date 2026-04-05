@@ -244,7 +244,55 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 		}
 	}
 
-	return messages
+	return sanitizeHistory(messages)
+}
+
+// sanitizeHistory removes orphaned tool_use/tool_result pairs that would
+// cause the API to reject the request. An assistant message with tool_use
+// blocks must be immediately followed by a user message with matching
+// tool_result blocks.
+func sanitizeHistory(messages []anthropic.Message) []anthropic.Message {
+	var clean []anthropic.Message
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
+
+		// Check if this assistant message has tool_use blocks
+		if msg.Role == "assistant" {
+			hasToolUse := false
+			for _, c := range msg.Content {
+				if c.Type == "tool_use" {
+					hasToolUse = true
+					break
+				}
+			}
+			if hasToolUse {
+				// Next message must be user with tool_result blocks
+				if i+1 < len(messages) && hasToolResults(messages[i+1]) {
+					clean = append(clean, msg, messages[i+1])
+					i++ // skip the tool_results message, already added
+					continue
+				}
+				// Orphaned tool_use — skip it
+				slog.Warn("dropping orphaned tool_use from history", "index", i)
+				continue
+			}
+		}
+
+		clean = append(clean, msg)
+	}
+	return clean
+}
+
+func hasToolResults(msg anthropic.Message) bool {
+	if msg.Role != "user" {
+		return false
+	}
+	for _, c := range msg.Content {
+		if c.Type == "tool_result" {
+			return true
+		}
+	}
+	return false
 }
 
 // statusTracker posts and updates a live status message in Slack.
