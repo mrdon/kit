@@ -21,6 +21,7 @@ make db-reset    # Wipe and restart Postgres
 - `git push origin main` — push to GitHub
 - `git push dokku main` — deploy to Dokku (apps.twdata.org)
 - Always push to both origin and dokku when deploying.
+- Logs: `ssh dokku@apps.twdata.org 'dokku logs kit --num 100'`
 
 ## Tech Stack
 

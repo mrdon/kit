@@ -69,9 +69,10 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 	})
 
 	messages := a.rebuildHistory(ctx, tenant, session)
+	currentTime := fmt.Sprintf("[Current time: %s UTC]", time.Now().UTC().Format("2006-01-02T15:04"))
 	messages = append(messages, anthropic.Message{
 		Role:    "user",
-		Content: []anthropic.Content{{Type: "text", Text: userText}},
+		Content: []anthropic.Content{{Type: "text", Text: currentTime + "\n" + userText}},
 	})
 
 	systemPrompt := []anthropic.SystemBlock{
@@ -150,14 +151,16 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 
 			for _, toolUse := range resp.ToolUses() {
 				inputJSON, _ := json.Marshal(toolUse.Input)
-				slog.Info("executing tool", "tool", toolUse.Name, "session_id", session.ID)
+				slog.Info("executing tool", "tool", toolUse.Name, "input", string(inputJSON), "session_id", session.ID)
 
 				status.addTool(ctx, toolUse.Name)
 
 				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
 				if err != nil {
-					slog.Error("tool execution failed", "tool", toolUse.Name, "error", err)
+					slog.Error("tool execution failed", "tool", toolUse.Name, "error", err, "session_id", session.ID)
 					result = "Error: " + err.Error()
+				} else {
+					slog.Info("tool result", "tool", toolUse.Name, "result", result, "session_id", session.ID)
 				}
 
 				toolResults = append(toolResults, anthropic.Content{

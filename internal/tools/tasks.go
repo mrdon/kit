@@ -20,9 +20,9 @@ func registerTaskTools(r *Registry, isAdmin bool) {
 			"description": field("string", "What to do when the task runs (e.g. 'Send a daily sales summary to this channel')"),
 			"cron_expr":   field("string", "Cron expression for recurring tasks: minute hour day-of-month month day-of-week (e.g. '0 9 * * 1-5')"),
 			"run_at":      field("string", "ISO 8601 datetime for one-time tasks (e.g. '2026-04-05T21:20:00'). Interpreted in the user's timezone. Use this OR cron_expr, not both."),
-			"channel_id":  field("string", "Slack channel ID where output should be posted"),
+			"channel_id":  field("string", "Slack channel ID where output should be posted. Omit to use the current channel."),
 			"scope":       field("string", "Scope: 'user' (default, current user only), 'tenant' (everyone, admin only), or a role name"),
-		}, "description", "channel_id"),
+		}, "description"),
 		Handler: handleCreateTask,
 	})
 
@@ -51,6 +51,10 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage) (string, error) {
 	}
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
+	}
+
+	if inp.ChannelID == "" {
+		inp.ChannelID = ec.Channel
 	}
 
 	if inp.CronExpr == "" && inp.RunAt == "" {

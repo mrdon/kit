@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -43,7 +42,6 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 		parts = append(parts, "Business type: "+*tenant.BusinessType)
 	}
 	parts = append(parts, "Business timezone: "+tenant.Timezone)
-	parts = append(parts, "Current time (UTC): "+time.Now().UTC().Format("2006-01-02T15:04:05"))
 
 	// User context
 	displayName := user.SlackUserID
@@ -108,7 +106,7 @@ For one-time tasks, use run_at with an ISO 8601 datetime:
 
 The run_at time is interpreted in the user's timezone. Use EITHER cron_expr OR run_at, not both.
 
-The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Use the current channel as the channel_id unless the user specifies otherwise.
+The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Omit channel_id to use the current channel. For DMs, omit it — the task will run in the same DM.
 
 Tasks run in the user's timezone. Use list_tasks and delete_task to manage existing tasks.`)
 
