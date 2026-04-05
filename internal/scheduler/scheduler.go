@@ -83,14 +83,14 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 	tenant, err := models.GetTenantByID(ctx, s.pool, task.TenantID)
 	if err != nil || tenant == nil {
 		slog.Error("looking up tenant for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "looking up tenant")
+		s.recordTaskError(ctx, task, "looking up tenant", nil)
 		return
 	}
 
 	botToken, err := s.enc.Decrypt(tenant.BotToken)
 	if err != nil {
 		slog.Error("decrypting bot token for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "decrypting bot token")
+		s.recordTaskError(ctx, task, "decrypting bot token", nil)
 		return
 	}
 	slack := kitslack.NewClient(botToken)
@@ -98,7 +98,7 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 	user, err := models.GetUserByID(ctx, s.pool, tenant.ID, task.CreatedBy)
 	if err != nil || user == nil {
 		slog.Error("looking up user for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "looking up user")
+		s.recordTaskError(ctx, task, "looking up user", slack)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 	session, err := models.CreateSession(ctx, s.pool, tenant.ID, task.ChannelID, threadTS, user.ID)
 	if err != nil {
 		slog.Error("creating session for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "creating session")
+		s.recordTaskError(ctx, task, "creating session", slack)
 		return
 	}
 
@@ -116,6 +116,8 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 		slog.Error("task agent run failed", "task_id", task.ID, "error", err)
 		errStr := err.Error()
 		lastError = &errStr
+		_ = slack.PostMessage(ctx, task.ChannelID, "",
+			fmt.Sprintf("⚠️ Scheduled task failed: _%s_\nError: %s", task.Description, errStr))
 	}
 
 	if task.RunOnce {
@@ -139,7 +141,11 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 	slog.Info("task completed", "task_id", task.ID, "next_run", nextRun)
 }
 
-func (s *Scheduler) recordTaskError(ctx context.Context, task models.Task, msg string) {
+func (s *Scheduler) recordTaskError(ctx context.Context, task models.Task, msg string, slack *kitslack.Client) {
+	if slack != nil {
+		_ = slack.PostMessage(ctx, task.ChannelID, "",
+			fmt.Sprintf("⚠️ Scheduled task failed: _%s_\nError: %s", task.Description, msg))
+	}
 	if task.RunOnce {
 		_ = models.CompleteTask(ctx, s.pool, task.TenantID, task.ID, &msg)
 		return

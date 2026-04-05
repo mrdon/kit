@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 )
 
 // BuildSystemPrompt assembles the system prompt from platform rules, tenant info,
@@ -25,7 +26,7 @@ Communication style:
 - Don't ask "anything else?" after every response. Just answer and stop.
 - Only ask follow-up questions during onboarding or when you genuinely need clarification.`, tenant.Name))
 
-	// Communication constraint
+	// Communication constraint (Slack-specific)
 	parts = append(parts, `IMPORTANT: You MUST use the send_slack_message tool to respond to the user. Never output a final text response without calling send_slack_message. Every response to the user must go through this tool.
 
 Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
@@ -37,13 +38,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 - Lists: use bullet character • or dash - (no markdown-style headers)
 - DO NOT use ## headers or **double asterisks** — Slack renders them literally`)
 
-	// Business context
-	if tenant.BusinessType != nil && *tenant.BusinessType != "" {
-		parts = append(parts, "Business type: "+*tenant.BusinessType)
-	}
-	parts = append(parts, "Business timezone: "+tenant.Timezone)
-
-	// User context
+	// User display info (Slack-specific)
 	displayName := user.SlackUserID
 	if user.DisplayName != nil {
 		displayName = *user.DisplayName
@@ -54,14 +49,6 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	}
 	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v, timezone: %s)", displayName, user.IsAdmin, userTZ))
 
-	// User roles
-	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
-	if len(roleNames) > 0 {
-		parts = append(parts, "User roles: "+strings.Join(roleNames, ", "))
-	} else {
-		parts = append(parts, "User has no assigned roles.")
-	}
-
 	// Setup status
 	if !tenant.SetupComplete {
 		if user.IsAdmin {
@@ -71,26 +58,25 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 		}
 	}
 
-	// Tenant rules (from DB)
-	rules, _ := models.GetRulesForContext(ctx, pool, tenant.ID, roleNames)
-	if len(rules) > 0 {
-		parts = append(parts, "\n## Rules")
-		for _, r := range rules {
-			parts = append(parts, "- "+r.Content)
-		}
+	// Shared knowledge context (rules, skills, memories)
+	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	caller := &services.Caller{
+		TenantID: tenant.ID,
+		UserID:   user.ID,
+		Identity: user.SlackUserID,
+		Roles:    roleNames,
+		IsAdmin:  user.IsAdmin,
 	}
+	parts = append(parts, services.BuildKnowledgeContext(ctx, pool, caller, tenant))
 
-	// Skill catalog (name + description only, scope-filtered)
-	skills, _ := models.GetSkillCatalog(ctx, pool, tenant.ID, roleNames)
-	if len(skills) > 0 {
-		parts = append(parts, "\n## Available Knowledge (use search_skills or load_skill to access)")
-		for _, s := range skills {
-			parts = append(parts, "- ["+s.ID.String()+"] "+s.Name+" — "+s.Description)
-		}
-	}
+	// Task scheduling guidance (Slack-specific)
+	parts = append(parts, taskSchedulingGuidance())
 
-	// Task scheduling guidance
-	parts = append(parts, `## Scheduled Tasks
+	return strings.Join(parts, "\n\n")
+}
+
+func taskSchedulingGuidance() string {
+	return `## Scheduled Tasks
 You can create recurring or one-time tasks using create_task.
 
 For recurring tasks, use cron_expr:
@@ -108,18 +94,7 @@ The run_at time is interpreted in the user's timezone. Use EITHER cron_expr OR r
 
 The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Omit channel_id to use the current channel. For DMs, omit it — the task will run in the same DM.
 
-Tasks run in the user's timezone. Use list_tasks and delete_task to manage existing tasks.`)
-
-	// Relevant memories
-	memories, _ := models.GetRecentMemories(ctx, pool, tenant.ID, user.SlackUserID, roleNames, 5)
-	if len(memories) > 0 {
-		parts = append(parts, "\n## Remembered Facts")
-		for _, m := range memories {
-			parts = append(parts, "- "+m.Content)
-		}
-	}
-
-	return strings.Join(parts, "\n\n")
+Tasks run in the user's timezone. Use list_tasks and delete_task to manage existing tasks.`
 }
 
 func platformOnboardingRules() string {

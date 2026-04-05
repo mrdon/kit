@@ -334,6 +334,34 @@ func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID 
 	return ref, nil
 }
 
+// SkillScope represents a single scope row for a skill.
+type SkillScope struct {
+	ScopeType  string
+	ScopeValue string
+}
+
+// GetSkillScopes returns the scope rows for a skill.
+func GetSkillScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID) ([]SkillScope, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT scope_type, scope_value
+		FROM skill_scopes WHERE tenant_id = $1 AND skill_id = $2
+	`, tenantID, skillID)
+	if err != nil {
+		return nil, fmt.Errorf("getting skill scopes: %w", err)
+	}
+	defer rows.Close()
+
+	var scopes []SkillScope
+	for rows.Next() {
+		var s SkillScope
+		if err := rows.Scan(&s.ScopeType, &s.ScopeValue); err != nil {
+			return nil, err
+		}
+		scopes = append(scopes, s)
+	}
+	return scopes, rows.Err()
+}
+
 // SearchSkills performs FTS on skills visible to the user's roles.
 func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string, query string) ([]Skill, error) {
 	scopeSQL, scopeArgs := ScopeFilter("ss", 2, "", userRoles)

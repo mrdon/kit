@@ -12,6 +12,7 @@ import (
 
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
 	"github.com/mrdon/kit/internal/tools"
 	"github.com/mrdon/kit/internal/web"
@@ -28,6 +29,7 @@ type Agent struct {
 	pool    *pgxpool.Pool
 	llm     *anthropic.Client
 	fetcher *web.Fetcher
+	svc     *services.Services
 }
 
 // NewAgent creates a new agent instance.
@@ -36,6 +38,7 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *
 		pool:    pool,
 		llm:     llm,
 		fetcher: fetcher,
+		svc:     services.New(pool),
 	}
 }
 
@@ -55,6 +58,7 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		Session:  session,
 		Channel:  channel,
 		ThreadTS: threadTS,
+		Svc:      a.svc,
 	}
 
 	// Post status message immediately so user sees feedback

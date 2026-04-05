@@ -2,10 +2,12 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -110,6 +112,50 @@ func UpdateRule(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.U
 		return fmt.Errorf("updating rule: %w", err)
 	}
 	return nil
+}
+
+// RuleScope represents a single scope row for a rule.
+type RuleScope struct {
+	ScopeType  string
+	ScopeValue string
+}
+
+// GetRuleScopes returns the scope rows for a rule.
+func GetRuleScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.UUID) ([]RuleScope, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT scope_type, scope_value
+		FROM rule_scopes WHERE tenant_id = $1 AND rule_id = $2
+	`, tenantID, ruleID)
+	if err != nil {
+		return nil, fmt.Errorf("getting rule scopes: %w", err)
+	}
+	defer rows.Close()
+
+	var scopes []RuleScope
+	for rows.Next() {
+		var s RuleScope
+		if err := rows.Scan(&s.ScopeType, &s.ScopeValue); err != nil {
+			return nil, err
+		}
+		scopes = append(scopes, s)
+	}
+	return scopes, rows.Err()
+}
+
+// GetRule returns a single rule by ID.
+func GetRule(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.UUID) (*Rule, error) {
+	r := &Rule{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, tenant_id, content, priority, created_at, updated_at
+		FROM rules WHERE tenant_id = $1 AND id = $2
+	`, tenantID, ruleID).Scan(&r.ID, &r.TenantID, &r.Content, &r.Priority, &r.CreatedAt, &r.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting rule: %w", err)
+	}
+	return r, nil
 }
 
 func DeleteRule(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.UUID) error {

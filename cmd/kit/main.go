@@ -10,16 +10,21 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/stdlib"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal"
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/database"
 	"github.com/mrdon/kit/internal/logger"
+	kitmcp "github.com/mrdon/kit/internal/mcp"
 	"github.com/mrdon/kit/internal/scheduler"
+	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/web"
 )
 
 func main() {
@@ -95,6 +100,17 @@ func main() {
 	// OAuth handler
 	oauthHandler := kitslack.NewOAuthHandler(cfg.SlackClientID, cfg.SlackClientSecret, pool, enc, app.HandlePostInstall)
 
+	// MCP server + OAuth
+	svc := services.New(pool)
+	mcpHolder := kitmcp.NewServer(pool, svc)
+	mcpHTTP := mcpserver.NewStreamableHTTPServer(mcpHolder.Server,
+		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
+			return auth.InjectCallerFromRequest(ctx, pool, r)
+		}),
+	)
+	oauthServer := auth.NewOAuthServer(pool, cfg.BaseURL, cfg.SlackClientID, cfg.SlackClientSecret)
+	regHandler := auth.NewRegistrationHandler(pool)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
@@ -107,6 +123,19 @@ func main() {
 	mux.Handle("POST /slack/events", slackHandler)
 	mux.HandleFunc("GET /slack/install", oauthHandler.HandleInstall)
 	mux.HandleFunc("GET /slack/oauth/callback", oauthHandler.HandleCallback)
+
+	// MCP endpoint (streamable HTTP)
+	mux.Handle("/mcp", mcpHTTP)
+
+	// OAuth endpoints for MCP authentication
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", oauthServer.HandleMetadata)
+	mux.HandleFunc("GET /oauth/authorize", oauthServer.HandleAuthorize)
+	mux.HandleFunc("POST /oauth/token", oauthServer.HandleToken)
+	mux.HandleFunc("GET /oauth/callback", oauthServer.HandleCallback)
+	mux.HandleFunc("POST /oauth/register", regHandler.HandleRegister)
+
+	// Landing page
+	mux.HandleFunc("GET /{$}", web.HandleLanding)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
 	"github.com/mrdon/kit/internal/web"
 )
@@ -24,6 +25,19 @@ type ExecContext struct {
 	Session  *models.Session
 	Channel  string
 	ThreadTS string
+	Svc      *services.Services
+}
+
+// Caller builds a services.Caller from the current execution context.
+func (ec *ExecContext) Caller() *services.Caller {
+	roles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
+	return &services.Caller{
+		TenantID: ec.Tenant.ID,
+		UserID:   ec.User.ID,
+		Identity: ec.User.SlackUserID,
+		Roles:    roles,
+		IsAdmin:  ec.User.IsAdmin,
+	}
 }
 
 // HandlerFunc executes a tool and returns a string result.
@@ -101,15 +115,7 @@ func (r *Registry) IsTerminal(name string) bool {
 	return false
 }
 
-// props is a shorthand for building JSON schema properties.
-func props(fields map[string]any) map[string]any {
-	return map[string]any{
-		"type":       "object",
-		"properties": fields,
-	}
-}
-
-// propsReq is props with required fields.
+// propsReq builds a JSON schema with required fields.
 func propsReq(fields map[string]any, required ...string) map[string]any {
 	return map[string]any{
 		"type":       "object",

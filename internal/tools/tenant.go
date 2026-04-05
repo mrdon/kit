@@ -3,43 +3,47 @@ package tools
 import (
 	"encoding/json"
 
-	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 )
 
 func registerTenantTools(r *Registry, isAdmin bool) {
-	if !isAdmin {
-		return
+	for _, meta := range services.TenantTools {
+		if meta.AdminOnly && !isAdmin {
+			continue
+		}
+		r.Register(Def{
+			Name:        meta.Name,
+			Description: meta.Description,
+			Schema:      meta.Schema,
+			AdminOnly:   meta.AdminOnly,
+			Handler:     tenantHandler(meta.Name),
+		})
 	}
+}
 
-	r.Register(Def{
-		Name:        "update_tenant",
-		Description: "Update the organization's business info and mark setup as complete.",
-		Schema: propsReq(map[string]any{
-			"business_type":  field("string", "Type of business (e.g., 'brewery', 'nonprofit')"),
-			"timezone":       field("string", "IANA timezone (e.g., 'America/Denver')"),
-			"setup_complete": map[string]any{"type": "boolean", "description": "Mark setup as complete"},
-		}, "business_type"),
-		AdminOnly: true,
-		Handler: func(ec *ExecContext, input json.RawMessage) (string, error) {
-			var inp struct {
-				BusinessType  string `json:"business_type"`
-				Timezone      string `json:"timezone"`
-				SetupComplete bool   `json:"setup_complete"`
-			}
-			if err := json.Unmarshal(input, &inp); err != nil {
-				return "", err
-			}
-			tz := inp.Timezone
-			if tz == "" {
-				tz = "UTC"
-			}
-			if err := models.UpdateTenantSetup(ec.Ctx, ec.Pool, ec.Tenant.ID, inp.BusinessType, tz); err != nil {
-				return "", err
-			}
-			if inp.SetupComplete {
-				return "Organization info saved and setup marked as complete!", nil
-			}
-			return "Organization info updated.", nil
-		},
-	})
+func tenantHandler(name string) HandlerFunc {
+	switch name {
+	case "update_tenant":
+		return handleUpdateTenant
+	default:
+		return nil
+	}
+}
+
+func handleUpdateTenant(ec *ExecContext, input json.RawMessage) (string, error) {
+	var inp struct {
+		BusinessType  string `json:"business_type"`
+		Timezone      string `json:"timezone"`
+		SetupComplete bool   `json:"setup_complete"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil {
+		return "", err
+	}
+	if err := ec.Svc.Tenants.Update(ec.Ctx, ec.Caller(), inp.BusinessType, inp.Timezone); err != nil {
+		return "", err
+	}
+	if inp.SetupComplete {
+		return "Organization info saved and setup marked as complete!", nil
+	}
+	return "Organization info updated.", nil
 }
