@@ -135,7 +135,7 @@ func main() {
 	mux.HandleFunc("POST /oauth/register", regHandler.HandleRegister)
 
 	// Landing page
-	mux.HandleFunc("GET /{$}", web.HandleLanding)
+	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL))
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
