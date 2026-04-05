@@ -20,6 +20,7 @@ type Task struct {
 	CronExpr    string
 	Timezone    string
 	ChannelID   string
+	RunOnce     bool
 	Status      string
 	NextRunAt   time.Time
 	LastRunAt   *time.Time
@@ -42,10 +43,17 @@ func NextCronRun(cronExpr, tz string, after time.Time) (time.Time, error) {
 }
 
 // CreateTask creates a scheduled task with a scope row.
-func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID, scopeType, scopeValue string) (*Task, error) {
-	nextRun, err := NextCronRun(cronExpr, tz, time.Now())
-	if err != nil {
-		return nil, err
+// For recurring tasks, provide cronExpr. For one-time tasks, provide runAt and set runOnce=true.
+func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, scopeType, scopeValue string) (*Task, error) {
+	var nextRun time.Time
+	if runOnce && runAt != nil {
+		nextRun = runAt.UTC()
+	} else {
+		var err error
+		nextRun, err = NextCronRun(cronExpr, tz, time.Now())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	tx, err := pool.Begin(ctx)
@@ -57,12 +65,12 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 	task := &Task{}
 	taskID := uuid.New()
 	err = tx.QueryRow(ctx, `
-		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, next_run_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, status, next_run_at, last_run_at, last_error, created_at
-	`, taskID, tenantID, createdBy, description, cronExpr, tz, channelID, nextRun).Scan(
+		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
+	`, taskID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun).Scan(
 		&task.ID, &task.TenantID, &task.CreatedBy, &task.Description, &task.CronExpr,
-		&task.Timezone, &task.ChannelID, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.CreatedAt,
+		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
@@ -86,7 +94,7 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 func GetTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) (*Task, error) {
 	t := &Task{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, status, next_run_at, last_run_at, last_error, created_at
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
 		FROM tasks WHERE tenant_id = $1 AND id = $2
 	`, tenantID, taskID).Scan(
 		&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
@@ -107,7 +115,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone,
-			t.channel_id, t.status, t.next_run_at, t.last_run_at, t.created_at
+			t.channel_id, t.run_once, t.status, t.next_run_at, t.last_run_at, t.last_error, t.created_at
 		FROM tasks t
 		JOIN task_scopes ts ON ts.task_id = t.id AND ts.tenant_id = t.tenant_id
 		WHERE t.tenant_id = $1
@@ -123,7 +131,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -135,7 +143,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, status, next_run_at, last_run_at, last_error, created_at
+			channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
 		FROM tasks WHERE tenant_id = $1
 		ORDER BY created_at
 	`, tenantID)
@@ -148,7 +156,7 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -168,7 +176,7 @@ func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.U
 // GetDueTasks returns all active tasks across tenants that are due to run.
 func GetDueTasks(ctx context.Context, pool *pgxpool.Pool) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, status, next_run_at, last_run_at, last_error, created_at
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
 		FROM tasks
 		WHERE status = 'active' AND next_run_at <= now()
 		ORDER BY next_run_at
@@ -182,12 +190,24 @@ func GetDueTasks(ctx context.Context, pool *pgxpool.Pool) ([]Task, error) {
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning due task: %w", err)
 		}
 		tasks = append(tasks, t)
 	}
 	return tasks, rows.Err()
+}
+
+// CompleteTask marks a one-time task as completed after execution.
+func CompleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, lastError *string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE tasks SET last_run_at = now(), status = 'completed', last_error = $3
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, taskID, lastError)
+	if err != nil {
+		return fmt.Errorf("completing task: %w", err)
+	}
+	return nil
 }
 
 // UpdateTaskAfterRun updates last_run_at, next_run_at, and last_error after execution.

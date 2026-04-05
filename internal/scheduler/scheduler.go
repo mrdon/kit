@@ -118,6 +118,14 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 		lastError = &errStr
 	}
 
+	if task.RunOnce {
+		if err := models.CompleteTask(ctx, s.pool, task.TenantID, task.ID, lastError); err != nil {
+			slog.Error("completing one-time task", "task_id", task.ID, "error", err)
+		}
+		slog.Info("one-time task completed", "task_id", task.ID)
+		return
+	}
+
 	nextRun, err := models.NextCronRun(task.CronExpr, task.Timezone, time.Now())
 	if err != nil {
 		slog.Error("computing next run", "task_id", task.ID, "error", err)
@@ -132,6 +140,10 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 }
 
 func (s *Scheduler) recordTaskError(ctx context.Context, task models.Task, msg string) {
+	if task.RunOnce {
+		_ = models.CompleteTask(ctx, s.pool, task.TenantID, task.ID, &msg)
+		return
+	}
 	nextRun, err := models.NextCronRun(task.CronExpr, task.Timezone, time.Now())
 	if err != nil {
 		slog.Error("computing next run for error recording", "task_id", task.ID, "error", err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -14,13 +15,14 @@ import (
 func registerTaskTools(r *Registry, isAdmin bool) {
 	r.Register(Def{
 		Name:        "create_task",
-		Description: "Schedule a recurring task. Kit will run the task description through the full agent at each scheduled time.",
+		Description: "Schedule a recurring or one-time task. Kit will run the task description through the full agent at the scheduled time.",
 		Schema: propsReq(map[string]any{
-			"description": field("string", "What to do each time the task runs (e.g. 'Send a daily sales summary to this channel')"),
-			"cron_expr":   field("string", "Cron expression: minute hour day-of-month month day-of-week (e.g. '0 9 * * 1-5' for weekdays at 9am)"),
+			"description": field("string", "What to do when the task runs (e.g. 'Send a daily sales summary to this channel')"),
+			"cron_expr":   field("string", "Cron expression for recurring tasks: minute hour day-of-month month day-of-week (e.g. '0 9 * * 1-5')"),
+			"run_at":      field("string", "ISO 8601 datetime for one-time tasks (e.g. '2026-04-05T21:20:00'). Interpreted in the user's timezone. Use this OR cron_expr, not both."),
 			"channel_id":  field("string", "Slack channel ID where output should be posted"),
 			"scope":       field("string", "Scope: 'user' (default, current user only), 'tenant' (everyone, admin only), or a role name"),
-		}, "description", "cron_expr", "channel_id"),
+		}, "description", "channel_id"),
 		Handler: handleCreateTask,
 	})
 
@@ -43,11 +45,19 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		Description string `json:"description"`
 		CronExpr    string `json:"cron_expr"`
+		RunAt       string `json:"run_at"`
 		ChannelID   string `json:"channel_id"`
 		Scope       string `json:"scope"`
 	}
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
+	}
+
+	if inp.CronExpr == "" && inp.RunAt == "" {
+		return "Provide either cron_expr (recurring) or run_at (one-time).", nil
+	}
+	if inp.CronExpr != "" && inp.RunAt != "" {
+		return "Provide cron_expr or run_at, not both.", nil
 	}
 
 	scopeType, scopeValue, errMsg := resolveTaskScope(ec, inp.Scope)
@@ -56,14 +66,39 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage) (string, error) {
 	}
 
 	tz := resolveTimezone(ec)
+	runOnce := inp.RunAt != ""
+
+	var runAt *time.Time
+	if runOnce {
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			return fmt.Sprintf("Invalid timezone %q.", tz), nil
+		}
+		t, err := time.ParseInLocation("2006-01-02T15:04:05", inp.RunAt, loc)
+		if err != nil {
+			t, err = time.ParseInLocation("2006-01-02T15:04", inp.RunAt, loc)
+		}
+		if err != nil {
+			return "Invalid run_at format. Use ISO 8601: 2026-04-05T21:20:00", nil
+		}
+		if t.Before(time.Now()) {
+			return "run_at must be in the future.", nil
+		}
+		runAt = &t
+	}
 
 	task, err := models.CreateTask(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID,
-		inp.Description, inp.CronExpr, tz, inp.ChannelID, scopeType, scopeValue)
+		inp.Description, inp.CronExpr, tz, inp.ChannelID, runOnce, runAt, scopeType, scopeValue)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Task created (ID: %s). Next run: %s (%s)",
-		task.ID, task.NextRunAt.Format("Mon Jan 2 3:04 PM"), tz), nil
+
+	label := "Next run"
+	if runOnce {
+		label = "Runs at"
+	}
+	return fmt.Sprintf("Task created (ID: %s). %s: %s (%s)",
+		task.ID, label, task.NextRunAt.Format("Mon Jan 2 3:04 PM"), tz), nil
 }
 
 func resolveTaskScope(ec *ExecContext, scope string) (scopeType, scopeValue, errMsg string) {
@@ -137,8 +172,12 @@ func handleListTasks(isAdmin bool) HandlerFunc {
 				status += " (last error: " + *t.LastError + ")"
 			}
 			next := t.NextRunAt.Format("Mon Jan 2 3:04 PM")
-			fmt.Fprintf(&b, "- [%s] %s | cron: `%s` | next: %s | status: %s\n",
-				t.ID, t.Description, t.CronExpr, next, status)
+			schedule := "cron: `" + t.CronExpr + "`"
+			if t.RunOnce {
+				schedule = "one-time"
+			}
+			fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s\n",
+				t.ID, t.Description, schedule, next, status)
 		}
 		return b.String(), nil
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -42,6 +43,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 		parts = append(parts, "Business type: "+*tenant.BusinessType)
 	}
 	parts = append(parts, "Business timezone: "+tenant.Timezone)
+	parts = append(parts, "Current time (UTC): "+time.Now().UTC().Format("2006-01-02T15:04:05"))
 
 	// User context
 	displayName := user.SlackUserID
@@ -91,14 +93,20 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 
 	// Task scheduling guidance
 	parts = append(parts, `## Scheduled Tasks
-You can create recurring tasks using create_task. When a user asks for something like "remind me every morning" or "send a daily report", convert their request into a cron expression and create a task.
+You can create recurring or one-time tasks using create_task.
 
-Cron format: minute hour day-of-month month day-of-week
-Examples:
+For recurring tasks, use cron_expr:
+- Cron format: minute hour day-of-month month day-of-week
 - "every morning at 9am" = 0 9 * * *
 - "weekdays at 5pm" = 0 17 * * 1-5
 - "every Monday at 10am" = 0 10 * * 1
-- "first of the month at 8am" = 0 8 1 * *
+
+For one-time tasks, use run_at with an ISO 8601 datetime:
+- "in 5 minutes" = calculate the time and use run_at
+- "at 9:20pm today" = run_at with today's date and 21:20
+- "tomorrow at 8am" = run_at with tomorrow's date and 08:00
+
+The run_at time is interpreted in the user's timezone. Use EITHER cron_expr OR run_at, not both.
 
 The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Use the current channel as the channel_id unless the user specifies otherwise.
 
