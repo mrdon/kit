@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kit — Your team's knowledge, everywhere</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1a1a2e; background: #fafafa; }
+  .container { max-width: 680px; margin: 0 auto; padding: 80px 24px; }
+  h1 { font-size: 2.5rem; margin-bottom: 8px; }
+  .tagline { font-size: 1.25rem; color: #555; margin-bottom: 48px; line-height: 1.5; }
+  .section { margin-bottom: 48px; }
+  h2 { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 12px; }
+  p { line-height: 1.6; margin-bottom: 16px; }
+  ul { margin: 0 0 16px 20px; line-height: 1.8; }
+  .btn { display: inline-block; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1rem; }
+  .btn-slack { background: #4A154B; color: #fff; }
+  .btn-slack:hover { background: #611f69; }
+  code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #f0f0f0; padding: 16px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; margin-bottom: 16px; }
+  .tab-bar { display: flex; gap: 0; margin-bottom: 0; }
+  .tab { padding: 8px 16px; background: #e0e0e0; border: none; cursor: pointer; font-size: 0.9rem; font-family: inherit; border-radius: 6px 6px 0 0; }
+  .tab.active { background: #f0f0f0; font-weight: 600; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .tab-content pre { border-radius: 0 6px 6px 6px; margin-bottom: 0; }
+  details { margin-bottom: 12px; }
+  details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+  details summary:hover { color: #4A154B; }
+  details[open] summary { margin-bottom: 8px; }
+  details .answer { padding: 0 0 8px 16px; line-height: 1.6; }
+  details .answer pre { margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Kit</h1>
+  <p class="tagline">Your team's knowledge and automation — accessible from Slack, AI tools, or anything you build.</p>
+
+  <div class="section">
+    <p>Every team has answers trapped in docs, threads, and people's heads. Kit puts it all in one place and makes it available everywhere your team already works.</p>
+    <ul>
+      <li>New hire needs the closing checklist? They ask in Slack.</li>
+      <li>Building a report with Claude Code? It pulls the data straight from Kit.</li>
+      <li>Daily standup summary? Kit runs it automatically at 9am.</li>
+    </ul>
+    <p>One source of truth. Every tool your team uses can tap into it.</p>
+  </div>
+
+  <div class="section">
+    <h2>Get Started with Slack</h2>
+    <p>Add Kit to your Slack workspace. Your team can ask questions, manage knowledge, and schedule tasks through natural conversation.</p>
+    <a href="/slack/install" class="btn btn-slack">Add to Slack</a>
+  </div>
+
+  <div class="section">
+    <h2>Connect Your AI Tools</h2>
+    <p>Use Kit from any MCP-compatible AI client. Create skills, manage rules, and access your team's knowledge without leaving your editor.</p>
+
+    <div class="tab-bar">
+      <button class="tab active" onclick="showTab('claude-code')">Claude Code</button>
+      <button class="tab" onclick="showTab('cursor')">Cursor</button>
+    </div>
+
+    <div id="claude-code" class="tab-content active">
+      <pre>claude mcp add --transport http kit {{.BaseURL}}/mcp</pre>
+    </div>
+
+    <div id="cursor" class="tab-content">
+      <pre>// Add to .cursor/mcp.json
+{
+  "mcpServers": {
+    "kit": {
+      "type": "streamable-http",
+      "url": "{{.BaseURL}}/mcp"
+    }
+  }
+}</pre>
+    </div>
+
+    <p>On first connect, you'll sign in with Slack — same identity, no extra accounts.</p>
+  </div>
+
+  <div class="section">
+    <h2>How To</h2>
+
+    <details>
+      <summary>Add a skill (knowledge article)</summary>
+      <div class="answer">
+        <p>Skills are reusable pieces of knowledge — procedures, policies, FAQs, or anything your team needs to reference. In Slack, just tell Kit what you want to save:</p>
+        <pre>"Create a skill called closing-checklist with our end-of-day steps: lock the front door, run the register report, and set the alarm."</pre>
+        <p>You can also upload files directly in Slack — PDFs, Word docs, markdown, or even ZIP archives. Kit will read them and create skills automatically.</p>
+        <p>Via MCP, use the <code>create_skill</code> tool with a name, description, and content. Skills are written in markdown.</p>
+        <p>By default, skills are visible to everyone. You can scope them to a specific role (e.g. "managers") when creating.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Add a rule (agent behavior)</summary>
+      <div class="answer">
+        <p>Rules tell Kit's AI agent how to behave — tone, policies, guardrails. Think of them as standing instructions. In Slack:</p>
+        <pre>"Add a rule: always suggest checking the employee handbook before answering HR questions."</pre>
+        <p>Via MCP, use <code>create_rule</code> with the rule content and an optional priority (lower number = higher priority).</p>
+        <p>Rules can be scoped to specific roles so different teams get different behavior.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Schedule a task</summary>
+      <div class="answer">
+        <p>Tasks let Kit do things on a schedule — daily summaries, weekly reminders, recurring reports. Just describe when in plain language:</p>
+        <pre>"Every weekday at 9am, post a morning briefing to this channel."
+"Every Monday at 8am, remind the team about the weekly standup."
+"Tomorrow at 3pm, send me the sales report."</pre>
+        <p>Kit understands natural schedules — no cron syntax needed. You can also create one-time tasks by specifying a date and time.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Control who sees what (scoping)</summary>
+      <div class="answer">
+        <p>Kit uses roles to control access. Create roles (e.g. "managers", "kitchen-staff"), assign users, then scope skills, rules, and tasks to those roles.</p>
+        <pre>"Create a role called managers"
+"Assign @jane to managers"
+"Create a skill called payroll-process scoped to managers"</pre>
+        <p>Anything scoped to "tenant" is visible to everyone. Anything with no scopes is invisible (default deny).</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Search your knowledge base</summary>
+      <div class="answer">
+        <p>In Slack, just ask a question — Kit automatically searches relevant skills and memories to answer.</p>
+        <pre>"What's our return policy?"
+"How do I close out the register?"</pre>
+        <p>Via MCP, use <code>search_skills</code> with a query, or <code>list_skills</code> to browse everything you have access to.</p>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
