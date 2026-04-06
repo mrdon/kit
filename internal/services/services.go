@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mrdon/kit/internal/crypto"
 )
 
 // Caller represents the authenticated user making a request.
@@ -40,10 +42,11 @@ type Services struct {
 	Roles    *RoleService
 	Tasks    *TaskService
 	Tenants  *TenantService
+	Enc      *crypto.Encryptor
 }
 
 // New creates a Services bundle with all service instances.
-func New(pool *pgxpool.Pool) *Services {
+func New(pool *pgxpool.Pool, enc *crypto.Encryptor) *Services {
 	return &Services{
 		Skills:   &SkillService{pool: pool},
 		Rules:    &RuleService{pool: pool},
@@ -51,6 +54,7 @@ func New(pool *pgxpool.Pool) *Services {
 		Roles:    &RoleService{pool: pool},
 		Tasks:    &TaskService{pool: pool},
 		Tenants:  &TenantService{pool: pool},
+		Enc:      enc,
 	}
 }
 

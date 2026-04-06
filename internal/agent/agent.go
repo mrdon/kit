@@ -38,7 +38,7 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *
 		pool:    pool,
 		llm:     llm,
 		fetcher: fetcher,
-		svc:     services.New(pool),
+		svc:     services.New(pool, nil),
 	}
 }
 

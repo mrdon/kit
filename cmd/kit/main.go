@@ -15,6 +15,7 @@ import (
 
 	"github.com/mrdon/kit/internal"
 	"github.com/mrdon/kit/internal/apps"
+	_ "github.com/mrdon/kit/internal/apps/slack"
 	_ "github.com/mrdon/kit/internal/apps/todo"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
@@ -106,7 +107,7 @@ func main() {
 	oauthHandler := kitslack.NewOAuthHandler(cfg.SlackClientID, cfg.SlackClientSecret, pool, enc, app.HandlePostInstall)
 
 	// MCP server + OAuth
-	svc := services.New(pool)
+	svc := services.New(pool, enc)
 	mcpHolder := kitmcp.NewServer(pool, svc)
 	mcpHTTP := mcpserver.NewStreamableHTTPServer(mcpHolder.Server,
 		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {

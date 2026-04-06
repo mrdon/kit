@@ -163,6 +163,102 @@ func (c *Client) GetFileContent(ctx context.Context, fileURL string) ([]byte, er
 	return io.ReadAll(resp.Body)
 }
 
+// ConversationInfo holds basic channel information.
+type ConversationInfo struct {
+	Name     string
+	IsMember bool
+}
+
+// GetConversationInfo fetches channel info. Returns name and whether the bot is a member.
+func (c *Client) GetConversationInfo(ctx context.Context, channelID string) (*ConversationInfo, error) {
+	resp, err := c.apiCall(ctx, "conversations.info", map[string]string{"channel": channelID})
+	if err != nil {
+		return nil, err
+	}
+	ch, ok := resp["channel"].(map[string]any)
+	if !ok {
+		return nil, errors.New("unexpected conversations.info response format")
+	}
+	info := &ConversationInfo{}
+	info.Name, _ = ch["name"].(string)
+	info.IsMember, _ = ch["is_member"].(bool)
+	return info, nil
+}
+
+// HistoryOpts configures a conversation history request.
+type HistoryOpts struct {
+	Limit  int
+	Cursor string
+	Oldest string // Unix timestamp string
+}
+
+// Message represents a Slack message from channel history.
+type Message struct {
+	UserID    string
+	Text      string
+	Timestamp string
+	ThreadTS  string
+}
+
+// HistoryResult holds the result of a conversation history call.
+type HistoryResult struct {
+	Messages   []Message
+	NextCursor string
+	HasMore    bool
+}
+
+// GetConversationHistory fetches messages from a channel.
+func (c *Client) GetConversationHistory(ctx context.Context, channelID string, opts HistoryOpts) (*HistoryResult, error) {
+	payload := map[string]any{"channel": channelID}
+	if opts.Limit > 0 {
+		payload["limit"] = opts.Limit
+	} else {
+		payload["limit"] = 20
+	}
+	if opts.Cursor != "" {
+		payload["cursor"] = opts.Cursor
+	}
+	if opts.Oldest != "" {
+		payload["oldest"] = opts.Oldest
+	}
+
+	resp, err := c.apiCall(ctx, "conversations.history", payload)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &HistoryResult{}
+	result.HasMore, _ = resp["has_more"].(bool)
+	if meta, ok := resp["response_metadata"].(map[string]any); ok {
+		result.NextCursor, _ = meta["next_cursor"].(string)
+	}
+
+	msgs, _ := resp["messages"].([]any)
+	for _, m := range msgs {
+		msg, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		result.Messages = append(result.Messages, Message{
+			UserID:    strVal(msg, "user"),
+			Text:      strVal(msg, "text"),
+			Timestamp: strVal(msg, "ts"),
+			ThreadTS:  strVal(msg, "thread_ts"),
+		})
+	}
+	return result, nil
+}
+
+// FormatTimestamp converts a Unix timestamp to a readable date-time string.
+func FormatTimestamp(unixSec int64) string {
+	return time.Unix(unixSec, 0).UTC().Format("2006-01-02 15:04")
+}
+
+func strVal(m map[string]any, key string) string {
+	v, _ := m[key].(string)
+	return v
+}
+
 func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[string]any, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
