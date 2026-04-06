@@ -44,15 +44,16 @@ func slackAgentHandler(name string, svc *SlackChannelService) tools.HandlerFunc 
 func handleConfigureChannel(svc *SlackChannelService) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			ChannelID  string   `json:"channel_id"`
-			RoleScopes []string `json:"role_scopes"`
+			ChannelID   string   `json:"channel_id"`
+			ChannelName string   `json:"channel_name"`
+			RoleScopes  []string `json:"role_scopes"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
 
 		caller := ec.Caller()
-		ch, err := svc.Configure(ec.Ctx, caller, ec.Slack, inp.ChannelID, inp.RoleScopes)
+		ch, err := svc.Configure(ec.Ctx, caller, ec.Slack, inp.ChannelID, inp.ChannelName, inp.RoleScopes)
 		if err != nil {
 			if errors.Is(err, services.ErrForbidden) {
 				return "Only admins can configure Slack channels.", nil

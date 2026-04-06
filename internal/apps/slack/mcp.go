@@ -64,6 +64,7 @@ func makeSlackClient(ctx context.Context, pool *pgxpool.Pool, svc *services.Serv
 func mcpConfigureChannel(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService, caller *services.Caller) mcpserver.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		channelID, _ := req.RequireString("channel_id")
+		channelName := req.GetString("channel_name", "")
 		args := req.GetArguments()
 
 		var roleScopes []string
@@ -81,7 +82,7 @@ func mcpConfigureChannel(pool *pgxpool.Pool, svc *services.Services, chanSvc *Sl
 			return mcp.NewToolResultError("Failed to create Slack client."), nil
 		}
 
-		ch, err := chanSvc.Configure(ctx, caller, sc, channelID, roleScopes)
+		ch, err := chanSvc.Configure(ctx, caller, sc, channelID, channelName, roleScopes)
 		if err != nil {
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil

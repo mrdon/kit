@@ -21,20 +21,25 @@ type SlackChannelService struct {
 }
 
 // Configure adds a channel for message search. Admin-only.
-func (s *SlackChannelService) Configure(ctx context.Context, c *services.Caller, sc *kitslack.Client, slackChannelID string, roleScopes []string) (*SlackChannel, error) {
+func (s *SlackChannelService) Configure(ctx context.Context, c *services.Caller, sc *kitslack.Client, slackChannelID, channelName string, roleScopes []string) (*SlackChannel, error) {
 	if !c.IsAdmin {
 		return nil, services.ErrForbidden
 	}
 
+	// Try to get channel info for validation + name; fall back to provided name
+	name := channelName
 	info, err := sc.GetConversationInfo(ctx, slackChannelID)
-	if err != nil {
-		return nil, fmt.Errorf("getting channel info: %w", err)
+	if err == nil {
+		if !info.IsMember {
+			return nil, errors.New("bot is not a member of this channel — invite it first")
+		}
+		name = info.Name
 	}
-	if !info.IsMember {
-		return nil, errors.New("bot is not a member of this channel — invite it first")
+	if name == "" {
+		name = slackChannelID
 	}
 
-	ch, err := createChannel(ctx, s.pool, c.TenantID, slackChannelID, info.Name)
+	ch, err := createChannel(ctx, s.pool, c.TenantID, slackChannelID, name)
 	if err != nil {
 		return nil, err
 	}

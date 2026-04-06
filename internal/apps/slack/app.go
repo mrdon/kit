@@ -55,8 +55,9 @@ var slackTools = []services.ToolMeta{
 		Description: "Add a Slack channel for message search. The bot must already be invited to the channel. Specify role_scopes to restrict access.",
 		AdminOnly:   true,
 		Schema: services.PropsReq(map[string]any{
-			"channel_id":  services.Field("string", "Slack channel ID (e.g. C1234567890)"),
-			"role_scopes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Role names that can access this channel. Empty = all users in tenant."},
+			"channel_id":   services.Field("string", "Slack channel ID (e.g. C1234567890)"),
+			"channel_name": services.Field("string", "Channel name (e.g. general). Auto-detected if possible."),
+			"role_scopes":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Role names that can access this channel. Empty = all users in tenant."},
 		}, "channel_id"),
 	},
 	{
