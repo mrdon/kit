@@ -69,15 +69,25 @@ type TodoUpdates struct {
 
 func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	var t Todo
+	var description, blockedReason, roleScope *string
 	var dueDate *time.Time
 	err := row.Scan(
-		&t.ID, &t.TenantID, &t.Title, &t.Description,
-		&t.Status, &t.Priority, &t.BlockedReason, &t.Private,
-		&t.AssignedTo, &t.RoleScope, &dueDate,
+		&t.ID, &t.TenantID, &t.Title, &description,
+		&t.Status, &t.Priority, &blockedReason, &t.Private,
+		&t.AssignedTo, &roleScope, &dueDate,
 		&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if description != nil {
+		t.Description = *description
+	}
+	if blockedReason != nil {
+		t.BlockedReason = *blockedReason
+	}
+	if roleScope != nil {
+		t.RoleScope = *roleScope
 	}
 	t.DueDate = dueDate
 	return &t, nil
@@ -301,8 +311,18 @@ func getRecentEvents(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID u
 	var events []TodoEvent
 	for rows.Next() {
 		var e TodoEvent
-		if err := rows.Scan(&e.ID, &e.TenantID, &e.TodoID, &e.AuthorID, &e.EventType, &e.Content, &e.OldValue, &e.NewValue, &e.CreatedAt); err != nil {
+		var content, oldValue, newValue *string
+		if err := rows.Scan(&e.ID, &e.TenantID, &e.TodoID, &e.AuthorID, &e.EventType, &content, &oldValue, &newValue, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning todo event: %w", err)
+		}
+		if content != nil {
+			e.Content = *content
+		}
+		if oldValue != nil {
+			e.OldValue = *oldValue
+		}
+		if newValue != nil {
+			e.NewValue = *newValue
 		}
 		events = append(events, e)
 	}
