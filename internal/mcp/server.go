@@ -35,6 +35,17 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services) *ServerHolder {
 			return
 		}
 		tools := buildSessionTools(pool, svc, caller)
+		toolNames := make([]string, len(tools))
+		for i, t := range tools {
+			toolNames[i] = t.Tool.Name
+		}
+		slog.Info("mcp session tools built",
+			"session_id", session.SessionID(),
+			"caller_user_id", caller.UserID,
+			"is_admin", caller.IsAdmin,
+			"tool_count", len(tools),
+			"tools", toolNames,
+		)
 		if err := sh.Server.AddSessionTools(session.SessionID(), tools...); err != nil {
 			slog.Error("adding session tools", "error", err, "session_id", session.SessionID())
 		}

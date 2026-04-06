@@ -3,6 +3,7 @@ package apps
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -86,9 +87,20 @@ func RegisterAllRoutes(mux *http.ServeMux) {
 
 // BuildMCPTools builds MCP tools from all apps for a given caller.
 func BuildMCPTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool {
+	slog.Info("building app MCP tools", "registered_apps", len(registry))
 	var allTools []mcpserver.ServerTool
 	for _, a := range registry {
-		allTools = append(allTools, a.RegisterMCPTools(pool, svc, caller)...)
+		appTools := a.RegisterMCPTools(pool, svc, caller)
+		toolNames := make([]string, len(appTools))
+		for i, t := range appTools {
+			toolNames[i] = t.Tool.Name
+		}
+		slog.Info("app MCP tools registered",
+			"app", a.Name(),
+			"tool_count", len(appTools),
+			"tools", toolNames,
+		)
+		allTools = append(allTools, appTools...)
 	}
 	return allTools
 }
