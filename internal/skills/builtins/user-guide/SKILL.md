@@ -70,3 +70,21 @@ Kit remembers important facts from conversations. These are short-lived, context
 > "Remember that our holiday hours start December 20th."
 
 Use `search_memories` to find previously saved facts, or `forget_memory` to remove one.
+
+## Todos
+
+Kit tracks todos for your team. Create them from conversation or explicitly:
+
+> "Create a todo to restock the paper towels, assign it to me."
+> "What todos are overdue?"
+
+Todos support priorities, due dates, role scoping, and an activity log. Use `list_todos` to see open items or `complete_todo` to mark one done.
+
+## Slack Channel Search
+
+Admins can configure Slack channels for Kit to search. Once configured, Kit can read and search messages in those channels:
+
+> "Look in #general for any action items from today."
+> "Search #ops for mentions of the deploy."
+
+Channels are scoped to roles, so users only see messages from channels they have access to. Use `list_slack_channels` to see available channels.

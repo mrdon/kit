@@ -44,6 +44,7 @@ make db-reset    # Wipe and restart Postgres
 - Default deny for scoping: skills, rules, and memories with no scope rows are invisible.
 - LLM agent tools (`internal/tools/`) and MCP tools (`internal/mcp/`) share tool metadata via `internal/services/`. Changes to one should be considered for the other.
 - Format: `gofmt -s`. Lint: `golangci-lint` (see .golangci.yml). Tests: `go test -race -cover ./...`
+- When adding user-facing features, update the relevant docs: user guide (`internal/skills/builtins/user-guide/SKILL.md`), landing page (`internal/web/templates/landing.html`). Keep additions proportional to the feature's importance.
 
 ## Architecture
 
@@ -56,12 +57,13 @@ make db-reset    # Wipe and restart Postgres
 - `internal/database/` — pgxpool connection, goose migrations (embedded in `database/migrations/`)
 - `internal/ingest/` — File upload processing (PDF via pdftotext, DOCX, markdown, ZIP)
 - `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, task, session, session_event, scope)
+- `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, routes, and cron jobs.
 - `internal/scheduler/` — Background task runner (cron) + nightly user profile sync
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 
 ## Data Model
 
-14 tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, tasks, task_scopes, sessions, session_events. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
+14 core tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, tasks, task_scopes, sessions, session_events. Apps add their own tables prefixed with `app_`. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
 
 ## Agent Loop
 
