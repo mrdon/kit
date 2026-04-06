@@ -19,7 +19,9 @@ import (
 var oauthScopes = []string{
 	"app_mentions:read",
 	"chat:write",
+	"channels:read",
 	"channels:history",
+	"groups:read",
 	"groups:history",
 	"im:history",
 	"im:write",
