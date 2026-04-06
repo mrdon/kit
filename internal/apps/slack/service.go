@@ -27,14 +27,24 @@ func (s *SlackChannelService) Configure(ctx context.Context, c *services.Caller,
 		return nil, services.ErrForbidden
 	}
 
-	// Try to get channel info for validation + name; fall back to provided name
+	// Validate the bot can actually read this channel
 	name := channelName
 	info, err := sc.GetConversationInfo(ctx, slackChannelID)
 	if err == nil {
 		if !info.IsMember {
-			return nil, errors.New("bot is not a member of this channel — invite it first")
+			return nil, errors.New("bot is not a member of this channel — invite it with /invite @Kit first")
 		}
 		name = info.Name
+	} else {
+		// conversations.info failed (maybe missing scope) — verify with a history probe
+		_, histErr := sc.GetConversationHistory(ctx, slackChannelID, kitslack.HistoryOpts{Limit: 1})
+		if histErr != nil {
+			errMsg := histErr.Error()
+			if strings.Contains(errMsg, "channel_not_found") || strings.Contains(errMsg, "not_in_channel") {
+				return nil, errors.New("cannot access this channel — make sure the bot is invited with /invite @Kit")
+			}
+			return nil, fmt.Errorf("cannot verify channel access: %w", histErr)
+		}
 	}
 	if name == "" {
 		name = slackChannelID
