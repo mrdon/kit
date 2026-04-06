@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -129,8 +130,14 @@ func (s *SlackChannelService) GetMessages(ctx context.Context, c *services.Calle
 		histOpts.Limit = 20
 	}
 
+	slog.Info("fetching channel history", "channel_id", opts.ChannelID, "oldest", histOpts.Oldest, "limit", histOpts.Limit)
 	result, err := sc.GetConversationHistory(ctx, opts.ChannelID, histOpts)
 	if err != nil {
+		slog.Error("channel history failed", "channel_id", opts.ChannelID, "error", err)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "channel_not_found") || strings.Contains(errMsg, "not_in_channel") {
+			return nil, errors.New("the bot is not a member of this channel — invite it with /invite @Kit in the channel first")
+		}
 		return nil, fmt.Errorf("fetching channel history: %w", err)
 	}
 
