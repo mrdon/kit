@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/anthropic"
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
@@ -73,6 +74,11 @@ func NewRegistry(isAdmin bool) *Registry {
 	registerTenantTools(r, isAdmin)
 	registerWebTools(r)
 	registerTaskTools(r, isAdmin)
+
+	// App tools
+	for _, a := range apps.All() {
+		a.RegisterAgentTools(r, isAdmin)
+	}
 
 	return r
 }

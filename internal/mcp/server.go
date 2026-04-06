@@ -9,6 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -80,5 +81,8 @@ func buildSessionTools(pool *pgxpool.Pool, svc *services.Services, caller *servi
 			})
 		}
 	}
+	// App tools
+	tools = append(tools, apps.BuildMCPTools(pool, svc, caller)...)
+
 	return tools
 }

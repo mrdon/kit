@@ -14,6 +14,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal"
+	"github.com/mrdon/kit/internal/apps"
+	_ "github.com/mrdon/kit/internal/apps/todo"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"
@@ -61,6 +63,9 @@ func main() {
 	sqlDB.Close()
 
 	slog.Info("migrations complete")
+
+	// Initialize apps (lets them set up services after DB is ready)
+	apps.Init(pool)
 
 	// Encryption for bot tokens
 	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
@@ -133,6 +138,9 @@ func main() {
 	mux.HandleFunc("POST /oauth/token", oauthServer.HandleToken)
 	mux.HandleFunc("GET /oauth/callback", oauthServer.HandleCallback)
 	mux.HandleFunc("POST /oauth/register", regHandler.HandleRegister)
+
+	// App routes
+	apps.RegisterAllRoutes(mux)
 
 	// Landing page
 	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL))

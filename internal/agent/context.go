@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -71,6 +72,11 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 
 	// Task scheduling guidance (Slack-specific)
 	parts = append(parts, taskSchedulingGuidance())
+
+	// App system prompts
+	if appPrompts := apps.SystemPrompts(); appPrompts != "" {
+		parts = append(parts, appPrompts)
+	}
 
 	return strings.Join(parts, "\n\n")
 }

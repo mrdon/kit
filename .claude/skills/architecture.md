@@ -324,6 +324,12 @@ Malformed or unauthorized tool calls return clear error messages to the agent in
 ### Approval Gates
 High-stakes actions (sending emails, modifying records, spending money) trigger Slack interactive messages (buttons) for user confirmation before execution. The agent loop pauses and resumes when the user responds.
 
+## Apps Framework
+
+Apps are self-contained feature modules in `internal/apps/{name}/` that extend Kit without touching core platform code. Each app contributes tools (agent + MCP), HTTP routes, cron jobs, and system prompt guidance through a standard interface with `init()` self-registration.
+
+Core platform features (skills, roles, rules, memories) stay in `internal/services/` — the agent loop depends on them. Apps are additive features that can be enabled/disabled independently. Permission scoping for app data happens in the app's service layer using the same `Caller` struct, ensuring identical checks for LLM and MCP.
+
 ## Multi-Tenant Design
 
 ### Tenant Isolation
