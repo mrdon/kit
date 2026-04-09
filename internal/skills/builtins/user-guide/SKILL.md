@@ -88,3 +88,18 @@ Admins can configure Slack channels for Kit to search. Once configured, Kit can 
 > "Search #ops for mentions of the deploy."
 
 Channels are scoped to roles, so users only see messages from channels they have access to. Use `list_slack_channels` to see available channels.
+
+## Calendars
+
+Admins can plug in any public iCal (`.ics`) URL — a Google Calendar share link, a band tour calendar, a brewery shift schedule — and Kit will keep it in sync and answer questions about the events on it.
+
+> "Configure a calendar called shifts using https://example.com/shifts.ics"
+> "Configure a calendar called festivals at https://band.example.org/calendar.ics scoped to parents."
+
+Once configured, just ask:
+
+> "Who's working tonight?"
+> "When is the next festival?"
+> "Anything on the calendar this Saturday?"
+
+Calendars are scoped to roles like other Kit resources. Use `list_calendars` to see what's configured (and the last sync status), and `get_calendar_events` for date or keyword queries. Kit re-fetches each calendar in the background, so changes on the source feed show up automatically.

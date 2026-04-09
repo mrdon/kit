@@ -15,6 +15,7 @@ import (
 
 	"github.com/mrdon/kit/internal"
 	"github.com/mrdon/kit/internal/apps"
+	_ "github.com/mrdon/kit/internal/apps/calendar"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	_ "github.com/mrdon/kit/internal/apps/todo"
 	"github.com/mrdon/kit/internal/auth"
@@ -99,6 +100,9 @@ func main() {
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)
 	sched.Start(ctx)
+
+	// App-level periodic jobs (e.g. calendar sync)
+	apps.RunCronJobs(ctx, pool, enc)
 
 	// Slack event handler
 	slackHandler := kitslack.NewHandler(cfg.SlackSigningSecret, app.HandleSlackEvent)
