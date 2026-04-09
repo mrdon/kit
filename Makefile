@@ -19,7 +19,7 @@ build: ## Build the binary
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
 
-test: ## Run tests
+test: up ## Run tests (requires Postgres via `make up`)
 	@echo "Running tests..."
 	@OUTPUT=$$(go test -race -cover ./... 2>&1 | grep -v 'no such tool "covdata"'); \
 	RESULT=$$?; \
@@ -133,6 +133,6 @@ init: ## Initialize development environment (install tools, download deps)
 	@echo ""
 	@echo "✓ Development environment initialized"
 
-prepush: format lint test build ## Run before pushing (format, lint, test, build)
+prepush: format lint build ## Run before pushing (format, lint, build) — run `make test` separately
 
 postpull: init ## Run after pulling (install tools and download dependencies)
