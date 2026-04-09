@@ -19,6 +19,8 @@ You can also upload files directly — PDFs, Word docs, markdown, or ZIP archive
 
 **Via MCP**, use the `create_skill` tool with a name, description, and content (markdown).
 
+Before authoring or summarizing a skill, consult the `creating-skills` skill — it covers how to pick a name, write a description that the bot can find, and keep content dense enough for the chat agent to give short, useful answers.
+
 By default, skills are visible to everyone. You can scope them to a specific role when creating:
 
 > "Create a skill called payroll-process scoped to managers."
