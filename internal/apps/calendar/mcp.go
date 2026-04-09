@@ -121,6 +121,6 @@ func mcpGetCalendarEvents(svc *CalendarService, caller *services.Caller) mcpserv
 			}
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(formatEvents(events)), nil
+		return mcp.NewToolResultText(formatEvents(events, caller.Location())), nil
 	}
 }

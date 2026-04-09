@@ -110,5 +110,6 @@ func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*servi
 		Identity: user.SlackUserID,
 		Roles:    roles,
 		IsAdmin:  user.IsAdmin,
+		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}, nil
 }

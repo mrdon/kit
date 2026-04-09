@@ -84,11 +84,7 @@ func handleListRoleMembers(ec *ExecContext, input json.RawMessage) (string, erro
 	var b strings.Builder
 	fmt.Fprintf(&b, "Members of '%s':\n", inp.RoleName)
 	for _, m := range members {
-		name := m.SlackUserID
-		if m.DisplayName != nil {
-			name = *m.DisplayName + " (" + m.SlackUserID + ")"
-		}
-		b.WriteString("- " + name + "\n")
+		b.WriteString("- " + services.FormatUserLine(&m) + "\n")
 	}
 	return b.String(), nil
 }

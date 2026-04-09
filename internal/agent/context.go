@@ -67,6 +67,7 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 		Identity: user.SlackUserID,
 		Roles:    roleNames,
 		IsAdmin:  user.IsAdmin,
+		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}
 	parts = append(parts, services.BuildKnowledgeContext(ctx, pool, caller, tenant))
 

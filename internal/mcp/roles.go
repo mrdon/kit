@@ -46,11 +46,7 @@ func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 			}
 			var b strings.Builder
 			for _, m := range members {
-				name := m.SlackUserID
-				if m.DisplayName != nil {
-					name = *m.DisplayName + " (" + m.SlackUserID + ")"
-				}
-				b.WriteString("- " + name + "\n")
+				b.WriteString("- " + services.FormatUserLine(&m) + "\n")
 			}
 			return mcp.NewToolResultText(b.String()), nil
 		}

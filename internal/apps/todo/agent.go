@@ -73,11 +73,11 @@ func handleCreateTodo(svc *TodoService) tools.HandlerFunc {
 		}
 
 		if inp.AssignedTo != "" {
-			id, err := uuid.Parse(inp.AssignedTo)
-			if err != nil {
-				return "Invalid assigned_to UUID.", nil
+			id, msg := svc.ResolveAssignee(ec.Ctx, ec.Caller(), inp.AssignedTo)
+			if msg != "" {
+				return msg, nil
 			}
-			t.AssignedTo = &id
+			t.AssignedTo = id
 		}
 
 		if inp.DueDate != "" {
@@ -219,11 +219,11 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 			u.BlockedReason = &inp.BlockedReason
 		}
 		if inp.AssignedTo != "" {
-			id, err := uuid.Parse(inp.AssignedTo)
-			if err != nil {
-				return "Invalid assigned_to UUID.", nil
+			id, msg := svc.ResolveAssignee(ec.Ctx, ec.Caller(), inp.AssignedTo)
+			if msg != "" {
+				return msg, nil
 			}
-			u.AssignedTo = &id
+			u.AssignedTo = id
 		}
 		if inp.RoleScope != "" {
 			u.RoleScope = &inp.RoleScope

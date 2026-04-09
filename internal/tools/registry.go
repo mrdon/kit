@@ -38,6 +38,7 @@ func (ec *ExecContext) Caller() *services.Caller {
 		Identity: ec.User.SlackUserID,
 		Roles:    roles,
 		IsAdmin:  ec.User.IsAdmin,
+		Timezone: services.ResolveTimezone(ec.User.Timezone, ec.Tenant.Timezone),
 	}
 }
 
@@ -74,6 +75,7 @@ func NewRegistry(isAdmin bool) *Registry {
 	registerTenantTools(r, isAdmin)
 	registerWebTools(r)
 	registerTaskTools(r, isAdmin)
+	registerUserTools(r)
 
 	// App tools
 	for _, a := range apps.All() {

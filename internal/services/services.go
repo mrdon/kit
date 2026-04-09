@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,33 @@ type Caller struct {
 	Identity string   // scope_value for user-scoped items (slack_user_id or MCP identity)
 	Roles    []string // role names the user holds
 	IsAdmin  bool
+	// Timezone is the IANA tz of the caller, resolved as user.Timezone with
+	// fallback to tenant.Timezone, then "UTC". Always populated.
+	Timezone string
+}
+
+// Location returns the caller's *time.Location, falling back to UTC on parse failure.
+func (c *Caller) Location() *time.Location {
+	if c.Timezone == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// ResolveTimezone picks the caller-appropriate IANA timezone given user and
+// tenant defaults. user wins, then tenant, then "UTC".
+func ResolveTimezone(userTZ, tenantTZ string) string {
+	if userTZ != "" {
+		return userTZ
+	}
+	if tenantTZ != "" {
+		return tenantTZ
+	}
+	return "UTC"
 }
 
 // ToolMeta defines a tool's metadata, shared between agent and MCP adapters.
@@ -42,6 +70,7 @@ type Services struct {
 	Roles    *RoleService
 	Tasks    *TaskService
 	Tenants  *TenantService
+	Users    *UserService
 	Enc      *crypto.Encryptor
 }
 
@@ -54,6 +83,7 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor) *Services {
 		Roles:    &RoleService{pool: pool},
 		Tasks:    &TaskService{pool: pool},
 		Tenants:  &TenantService{pool: pool},
+		Users:    &UserService{pool: pool},
 		Enc:      enc,
 	}
 }

@@ -71,11 +71,11 @@ func mcpCreateTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHand
 		}
 
 		if assignedToStr != "" {
-			id, err := uuid.Parse(assignedToStr)
-			if err != nil {
-				return mcp.NewToolResultError("Invalid assigned_to UUID."), nil
+			id, msg := svc.ResolveAssignee(ctx, caller, assignedToStr)
+			if msg != "" {
+				return mcp.NewToolResultError(msg), nil
 			}
-			t.AssignedTo = &id
+			t.AssignedTo = id
 		}
 
 		if dueDateStr != "" {
@@ -189,11 +189,11 @@ func mcpUpdateTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHand
 			u.BlockedReason = &v
 		}
 		if v := req.GetString("assigned_to", ""); v != "" {
-			id, err := uuid.Parse(v)
-			if err != nil {
-				return mcp.NewToolResultError("Invalid assigned_to UUID."), nil
+			id, msg := svc.ResolveAssignee(ctx, caller, v)
+			if msg != "" {
+				return mcp.NewToolResultError(msg), nil
 			}
-			u.AssignedTo = &id
+			u.AssignedTo = id
 		}
 		if v := req.GetString("role_scope", ""); v != "" {
 			u.RoleScope = &v

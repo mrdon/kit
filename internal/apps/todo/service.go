@@ -12,12 +12,28 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
 // TodoService handles todo operations with authorization.
 type TodoService struct {
 	pool *pgxpool.Pool
+}
+
+// ResolveAssignee turns a flexible user reference (UUID, Slack user ID, or
+// display-name fragment) into a kit user UUID. Returns a user-facing message
+// in the second return when the reference can't be resolved unambiguously;
+// callers should surface that string to the agent or MCP client.
+func (s *TodoService) ResolveAssignee(ctx context.Context, c *services.Caller, ref string) (*uuid.UUID, string) {
+	u, err := models.ResolveUserRef(ctx, s.pool, c.TenantID, ref)
+	if err != nil {
+		return nil, services.FormatUserRefError(ref, err)
+	}
+	if u == nil {
+		return nil, services.FormatUserRefError(ref, services.ErrNotFound)
+	}
+	return &u.ID, ""
 }
 
 // Create creates a new todo. Non-admins can only self-assign and scope to their own roles.

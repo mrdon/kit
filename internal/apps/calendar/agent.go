@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -136,7 +137,7 @@ func handleGetCalendarEvents(svc *CalendarService) tools.HandlerFunc {
 			}
 			return "Error: " + err.Error(), nil
 		}
-		return formatEvents(events), nil
+		return formatEvents(events, ec.Caller().Location()), nil
 	}
 }
 
@@ -159,16 +160,21 @@ func formatCalendarList(cals []CalendarWithStats) string {
 	return b.String()
 }
 
-func formatEvents(events []Event) string {
+func formatEvents(events []Event, loc *time.Location) string {
 	if len(events) == 0 {
 		return "No events found in that range."
+	}
+	if loc == nil {
+		loc = time.UTC
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d event(s):\n\n", len(events))
 	for _, e := range events {
-		when := e.StartTime.Format("Mon 2006-01-02 15:04 MST")
+		when := e.StartTime.In(loc).Format("Mon 2006-01-02 15:04 MST")
 		if e.AllDay {
-			when = e.StartTime.Format("Mon 2006-01-02") + " (all day)"
+			// All-day events are stored at UTC midnight on the calendar date.
+			// Don't shift them — just format the date.
+			when = e.StartTime.UTC().Format("Mon 2006-01-02") + " (all day)"
 		}
 		fmt.Fprintf(&b, "• %s — %s\n", when, e.Summary)
 		if e.Location != "" {

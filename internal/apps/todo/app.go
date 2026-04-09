@@ -61,7 +61,7 @@ var todoTools = []services.ToolMeta{
 			"title":       services.Field("string", "Short title for the todo"),
 			"description": services.Field("string", "Detailed description"),
 			"priority":    services.Field("string", "Priority: low, medium, high, urgent"),
-			"assigned_to": services.Field("string", "User UUID to assign to"),
+			"assigned_to": services.Field("string", "User to assign to. Accepts a kit UUID, Slack user ID (e.g. U09AN7KJU3G), or a unique display-name fragment (e.g. 'matt'). Use find_user first if you're not sure who matches."),
 			"role_scope":  services.Field("string", "Role name this todo belongs to (e.g. bartender)"),
 			"due_date":    services.Field("string", "Due date in YYYY-MM-DD format"),
 			"private":     map[string]any{"type": "boolean", "description": "If true, only creator and assignee can see this todo"},

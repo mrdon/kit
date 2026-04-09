@@ -76,6 +76,7 @@ func buildSessionTools(pool *pgxpool.Pool, svc *services.Services, caller *servi
 		{services.RoleTools, roleMCPHandler},
 		{services.TaskTools, taskMCPHandler},
 		{services.TenantTools, tenantMCPHandler},
+		{services.UserTools, userMCPHandler},
 	}
 
 	var tools []mcpserver.ServerTool
