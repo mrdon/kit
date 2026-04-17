@@ -21,6 +21,7 @@ type Task struct {
 	Timezone    string
 	ChannelID   string
 	RunOnce     bool
+	TaskType    string // "agent" or "builtin"
 	Status      string
 	NextRunAt   time.Time
 	LastRunAt   *time.Time
@@ -67,10 +68,10 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 	err = tx.QueryRow(ctx, `
 		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
+		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
 	`, taskID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun).Scan(
 		&task.ID, &task.TenantID, &task.CreatedBy, &task.Description, &task.CronExpr,
-		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.CreatedAt,
+		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.TaskType, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
@@ -94,11 +95,11 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 func GetTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) (*Task, error) {
 	t := &Task{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
 		FROM tasks WHERE tenant_id = $1 AND id = $2
 	`, tenantID, taskID).Scan(
 		&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt,
+		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
@@ -115,7 +116,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone,
-			t.channel_id, t.run_once, t.status, t.next_run_at, t.last_run_at, t.last_error, t.created_at
+			t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.created_at
 		FROM tasks t
 		JOIN task_scopes ts ON ts.task_id = t.id AND ts.tenant_id = t.tenant_id
 		WHERE t.tenant_id = $1
@@ -131,7 +132,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -143,7 +144,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
+			channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
 		FROM tasks WHERE tenant_id = $1
 		ORDER BY created_at
 	`, tenantID)
@@ -156,7 +157,7 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -164,11 +165,50 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return tasks, rows.Err()
 }
 
-// DeleteTask deletes a task and its scope rows (via CASCADE).
+// DeleteTask deletes a task and its scope rows (via CASCADE). Builtin tasks cannot be deleted.
 func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) error {
-	_, err := pool.Exec(ctx, `DELETE FROM tasks WHERE tenant_id = $1 AND id = $2`, tenantID, taskID)
+	tag, err := pool.Exec(ctx, `DELETE FROM tasks WHERE tenant_id = $1 AND id = $2 AND task_type != 'builtin'`, tenantID, taskID)
 	if err != nil {
 		return fmt.Errorf("deleting task: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Either not found or builtin — check which
+		t, err := GetTask(ctx, pool, tenantID, taskID)
+		if err != nil {
+			return err
+		}
+		if t != nil && t.TaskType == "builtin" {
+			return errors.New("builtin tasks cannot be deleted")
+		}
+	}
+	return nil
+}
+
+// EnsureBuiltinTask creates a builtin task if it doesn't already exist for the tenant.
+// Uses the description as a unique key per tenant (builtin tasks have fixed descriptions).
+func EnsureBuiltinTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz string) error {
+	var exists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM tasks WHERE tenant_id = $1 AND task_type = 'builtin' AND description = $2)
+	`, tenantID, description).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("checking builtin task: %w", err)
+	}
+	if exists {
+		return nil
+	}
+
+	nextRun, err := NextCronRun(cronExpr, tz, time.Now())
+	if err != nil {
+		return fmt.Errorf("computing next run: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, task_type, next_run_at)
+		VALUES ($1, $2, $3, $4, $5, $6, '', 'builtin', $7)
+	`, uuid.New(), tenantID, createdBy, description, cronExpr, tz, nextRun)
+	if err != nil {
+		return fmt.Errorf("creating builtin task: %w", err)
 	}
 	return nil
 }
@@ -176,7 +216,7 @@ func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.U
 // GetDueTasks returns all active tasks across tenants that are due to run.
 func GetDueTasks(ctx context.Context, pool *pgxpool.Pool) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, status, next_run_at, last_run_at, last_error, created_at
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
 		FROM tasks
 		WHERE status = 'active' AND next_run_at <= now()
 		ORDER BY next_run_at
@@ -190,7 +230,7 @@ func GetDueTasks(ctx context.Context, pool *pgxpool.Pool) ([]Task, error) {
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning due task: %w", err)
 		}
 		tasks = append(tasks, t)

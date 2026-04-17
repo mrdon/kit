@@ -115,8 +115,13 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create admin user (the person who installed)
-	_, err = models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, "", true)
+	// Create admin user (the person who installed) — fetch name from Slack
+	adminName := ""
+	botClient := NewClient(resp.AccessToken)
+	if info, err := botClient.GetUserInfo(ctx, resp.AuthedUser.ID); err == nil {
+		adminName = info.DisplayName
+	}
+	_, err = models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, adminName, true)
 	if err != nil {
 		slog.Error("creating admin user", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

@@ -29,10 +29,11 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 	return &Scheduler{pool: pool, enc: enc, agent: a}
 }
 
-// Start launches the task runner and nightly profile sync goroutines.
+// Start launches the task runner. Builtin tasks (like profile sync) are ensured
+// on startup and run via the same task loop as user-created tasks.
 func (s *Scheduler) Start(ctx context.Context) {
+	s.ensureBuiltinTasks(ctx)
 	go s.runTaskLoop(ctx)
-	go s.runProfileSync(ctx)
 }
 
 func (s *Scheduler) runTaskLoop(ctx context.Context) {
@@ -78,7 +79,13 @@ func (s *Scheduler) processDueTasks(ctx context.Context) {
 }
 
 func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
-	slog.Info("executing scheduled task", "task_id", task.ID, "description", task.Description)
+	slog.Info("executing scheduled task", "task_id", task.ID, "task_type", task.TaskType, "description", task.Description)
+
+	// Route builtin tasks to native handlers
+	if task.TaskType == "builtin" {
+		s.ExecuteBuiltinTask(ctx, task)
+		return
+	}
 
 	tenant, err := models.GetTenantByID(ctx, s.pool, task.TenantID)
 	if err != nil || tenant == nil {
@@ -175,46 +182,6 @@ func (s *Scheduler) recordTaskError(ctx context.Context, task models.Task, msg s
 		return
 	}
 	_ = models.UpdateTaskAfterRun(ctx, s.pool, task.TenantID, task.ID, nextRun, &msg)
-}
-
-func (s *Scheduler) runProfileSync(ctx context.Context) {
-	now := time.Now().UTC()
-	next3am := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, time.UTC)
-	if now.After(next3am) {
-		next3am = next3am.Add(24 * time.Hour)
-	}
-
-	timer := time.NewTimer(time.Until(next3am))
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			s.syncAllProfiles(ctx)
-			// Recalculate next 3am to avoid drift
-			now := time.Now().UTC()
-			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, time.UTC)
-			timer.Reset(time.Until(next))
-		}
-	}
-}
-
-func (s *Scheduler) syncAllProfiles(ctx context.Context) {
-	slog.Info("starting nightly profile sync")
-
-	tenants, err := models.ListAllTenants(ctx, s.pool)
-	if err != nil {
-		slog.Error("listing tenants for profile sync", "error", err)
-		return
-	}
-
-	for _, tenant := range tenants {
-		s.syncTenantProfiles(ctx, tenant)
-	}
-
-	slog.Info("nightly profile sync complete")
 }
 
 func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant) {

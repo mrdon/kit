@@ -16,6 +16,7 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
@@ -90,7 +91,7 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 
 // buildRunTaskTool creates the run_task MCP tool, which needs agent + encryptor
 // beyond the standard handler signature.
-func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor) mcpserver.ServerTool {
+func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler) mcpserver.ServerTool {
 	schema := services.PropsReq(map[string]any{
 		"task_id": services.Field("string", "The task UUID to run"),
 		"dry_run": services.Field("boolean", "If true, capture messages instead of posting to Slack"),
@@ -117,6 +118,15 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		// Non-admins can only run their own tasks
 		if !caller.IsAdmin && task.CreatedBy != caller.UserID {
 			return mcp.NewToolResultError("You can only run your own tasks."), nil
+		}
+
+		// Builtin tasks run native code, not the LLM agent
+		if task.TaskType == "builtin" {
+			if dryRun {
+				return mcp.NewToolResultText(fmt.Sprintf("Dry run: builtin task %q would execute native handler.", task.Description)), nil
+			}
+			sched.ExecuteBuiltinTask(ctx, *task)
+			return mcp.NewToolResultText(fmt.Sprintf("Builtin task %q executed.", task.Description)), nil
 		}
 
 		tenant, err := models.GetTenantByID(ctx, pool, task.TenantID)

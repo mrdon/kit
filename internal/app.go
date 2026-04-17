@@ -108,8 +108,12 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		return
 	}
 
-	// Get or create user
-	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, slackUserID, "", false)
+	// Get or create user — fetch display name from Slack on first contact
+	displayName := ""
+	if info, err := client.GetUserInfo(ctx, slackUserID); err == nil {
+		displayName = info.DisplayName
+	}
+	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, slackUserID, displayName, false)
 	if err != nil {
 		slog.Error("resolving user", "error", err)
 		return

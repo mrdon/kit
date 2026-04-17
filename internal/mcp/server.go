@@ -13,6 +13,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
+	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -23,6 +24,7 @@ type ServerHolder struct {
 	svc    *services.Services
 	agent  *agent.Agent
 	enc    *crypto.Encryptor
+	sched  *scheduler.Scheduler
 }
 
 // NewServer creates an MCP server with all tools registered at the server level.
@@ -30,8 +32,8 @@ type ServerHolder struct {
 // mcpauth.WithCaller wrapper, so restarts don't wipe client-visible tool state.
 // Admin-only tools are hidden from non-admins via a ToolFilter on tools/list;
 // the service layer still enforces authorization independently.
-func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor) *ServerHolder {
-	sh := &ServerHolder{pool: pool, svc: svc, agent: a, enc: enc}
+func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler) *ServerHolder {
+	sh := &ServerHolder{pool: pool, svc: svc, agent: a, enc: enc, sched: sched}
 
 	adminOnly := collectAdminOnlyToolNames()
 
@@ -58,7 +60,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 	registerResources(sh.Server, pool, svc)
 
-	tools := buildAllTools(pool, svc, a, enc)
+	tools := buildAllTools(pool, svc, a, enc, sched)
 	sh.Server.AddTools(tools...)
 
 	toolNames := make([]string, len(tools))
@@ -72,7 +74,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 // buildAllTools collects every MCP tool — core + app-contributed — into a single
 // slice for server-level registration. Handlers resolve the caller per request.
-func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor) []mcpserver.ServerTool {
+func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler) []mcpserver.ServerTool {
 	allMetas := []struct {
 		metas   []services.ToolMeta
 		handler func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
@@ -100,8 +102,8 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 	}
 	tools = append(tools, apps.BuildMCPTools(pool, svc)...)
 
-	// run_task needs agent + enc, registered separately from the standard loop
-	tools = append(tools, buildRunTaskTool(pool, svc, a, enc))
+	// run_task needs agent + enc + scheduler, registered separately from the standard loop
+	tools = append(tools, buildRunTaskTool(pool, svc, a, enc, sched))
 
 	return tools
 }
