@@ -290,6 +290,17 @@ func strVal(m map[string]any, key string) string {
 	return v
 }
 
+// AuthTest calls auth.test and returns the team_id and bot_user_id the token belongs to.
+func (c *Client) AuthTest(ctx context.Context) (teamID, botUserID string, err error) {
+	resp, err := c.apiCall(ctx, "auth.test", map[string]string{})
+	if err != nil {
+		return "", "", err
+	}
+	teamID, _ = resp["team_id"].(string)
+	botUserID, _ = resp["user_id"].(string)
+	return teamID, botUserID, nil
+}
+
 func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[string]any, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {

@@ -194,6 +194,20 @@ func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant
 	}
 	slack := kitslack.NewClient(botToken)
 
+	// Verify the token belongs to the expected workspace
+	actualTeamID, botUserID, err := slack.AuthTest(ctx)
+	if err != nil {
+		slog.Error("auth.test failed for sync", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "error", err)
+		return
+	}
+	if actualTeamID != tenant.SlackTeamID {
+		slog.Error("bot token team mismatch",
+			"tenant_id", tenant.ID, "tenant_name", tenant.Name,
+			"expected_team", tenant.SlackTeamID, "actual_team", actualTeamID)
+		return
+	}
+	slog.Info("token verified", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "bot_user_id", botUserID)
+
 	users, err := models.ListUsersByTenant(ctx, s.pool, tenant.ID)
 	if err != nil {
 		slog.Error("listing users for sync", "tenant_id", tenant.ID, "error", err)
