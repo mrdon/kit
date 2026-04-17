@@ -56,7 +56,9 @@ func (s *Scheduler) ensureBuiltinTasks(ctx context.Context) {
 
 		for _, bt := range builtinTasks {
 			if err := models.EnsureBuiltinTask(ctx, s.pool, tenant.ID, adminID, bt.Description, bt.CronExpr, tenant.Timezone); err != nil {
-				slog.Error("ensuring builtin task", "description", bt.Description, "tenant_id", tenant.ID, "error", err)
+				slog.Error("ensuring builtin task", "description", bt.Description, "tenant_id", tenant.ID, "tenant_name", tenant.Name, "error", err)
+			} else {
+				slog.Info("ensured builtin task", "description", bt.Description, "tenant_id", tenant.ID, "tenant_name", tenant.Name)
 			}
 		}
 	}

@@ -185,9 +185,11 @@ func (s *Scheduler) recordTaskError(ctx context.Context, task models.Task, msg s
 }
 
 func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant) {
+	slog.Info("syncing profiles", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "slack_team_id", tenant.SlackTeamID)
+
 	botToken, err := s.enc.Decrypt(tenant.BotToken)
 	if err != nil {
-		slog.Error("decrypting bot token for sync", "tenant_id", tenant.ID, "error", err)
+		slog.Error("decrypting bot token for sync", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "error", err)
 		return
 	}
 	slack := kitslack.NewClient(botToken)
@@ -198,18 +200,29 @@ func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant
 		return
 	}
 
+	slog.Info("syncing user profiles", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "user_count", len(users))
+
+	var synced, failed int
 	for _, user := range users {
 		info, err := slack.GetUserInfo(ctx, user.SlackUserID)
 		if err != nil {
-			slog.Warn("fetching slack profile", "user_id", user.ID, "error", err)
+			slog.Warn("fetching slack profile",
+				"tenant_id", tenant.ID, "tenant_name", tenant.Name,
+				"user_id", user.ID, "slack_user_id", user.SlackUserID, "error", err)
+			failed++
 			continue
 		}
 
 		if err := models.UpdateUserProfile(ctx, s.pool, tenant.ID, user.ID, info.DisplayName, info.Timezone); err != nil {
 			slog.Warn("updating user profile", "user_id", user.ID, "error", err)
+			failed++
+			continue
 		}
+		synced++
 
 		// Rate limit: 50ms between API calls (~20 req/sec, well within Slack's tier 2 limit)
 		time.Sleep(50 * time.Millisecond)
 	}
+
+	slog.Info("profile sync complete", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "synced", synced, "failed", failed)
 }
