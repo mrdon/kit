@@ -98,7 +98,7 @@ func GetTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID
 		FROM tasks WHERE tenant_id = $1 AND id = $2
 	`, tenantID, taskID).Scan(
 		&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-		&t.Timezone, &t.ChannelID, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt,
+		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
