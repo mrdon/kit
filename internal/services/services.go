@@ -71,6 +71,7 @@ type Services struct {
 	Tasks    *TaskService
 	Tenants  *TenantService
 	Users    *UserService
+	Sessions *SessionService
 	Enc      *crypto.Encryptor
 }
 
@@ -84,6 +85,7 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor) *Services {
 		Tasks:    &TaskService{pool: pool},
 		Tenants:  &TenantService{pool: pool},
 		Users:    &UserService{pool: pool},
+		Sessions: &SessionService{pool: pool},
 		Enc:      enc,
 	}
 }

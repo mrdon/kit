@@ -114,10 +114,22 @@ func (r *Registry) Execute(ec *ExecContext, name string, input json.RawMessage) 
 }
 
 // IsTerminal returns true if calling this tool should end the agent loop.
-func (r *Registry) IsTerminal(name string) bool {
+// For send_slack_message, it is only terminal when posting to the conversation
+// channel (no user_id), not when DMing a specific user.
+func (r *Registry) IsTerminal(name string, input json.RawMessage) bool {
 	for _, d := range r.defs {
 		if d.Name == name {
-			return d.Terminal
+			if !d.Terminal {
+				return false
+			}
+			// Check if input overrides terminal behavior
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(input, &fields) == nil {
+				if uid, ok := fields["user_id"]; ok && string(uid) != `""` && string(uid) != "null" {
+					return false
+				}
+			}
+			return true
 		}
 	}
 	return false

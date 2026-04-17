@@ -12,9 +12,16 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
+// TaskContext provides metadata when the agent is running a scheduled task.
+type TaskContext struct {
+	Description   string
+	AuthorSlackID string
+	AuthorName    string
+}
+
 // BuildSystemPrompt assembles the system prompt from platform rules, tenant info,
 // user context, matching rules, skill catalog, and relevant memories.
-func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, user *models.User) string {
+func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, user *models.User, taskCtx *TaskContext) string {
 	var parts []string
 
 	// Platform identity and behavior
@@ -79,6 +86,11 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 		parts = append(parts, appPrompts)
 	}
 
+	// Scheduled task context
+	if taskCtx != nil {
+		parts = append(parts, taskExecutionGuidance(taskCtx))
+	}
+
 	return strings.Join(parts, "\n\n")
 }
 
@@ -102,6 +114,16 @@ The run_at time is interpreted in the user's timezone. Use EITHER cron_expr OR r
 The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Omit channel_id to use the current channel. For DMs, omit it — the task will run in the same DM.
 
 Tasks run in the user's timezone. Use list_tasks and delete_task to manage existing tasks.`
+}
+
+func taskExecutionGuidance(tc *TaskContext) string {
+	return fmt.Sprintf(`## Scheduled Task Execution
+You are executing a scheduled task, not responding to a live conversation.
+Task: %s
+Created by: %s (<@%s>)
+
+If you need help or clarification, use send_slack_message with user_id set to %q to DM the task author.
+Do NOT post questions or errors to the channel — only post the task's intended output there.`, tc.Description, tc.AuthorName, tc.AuthorSlackID, tc.AuthorSlackID)
 }
 
 func platformOnboardingRules() string {

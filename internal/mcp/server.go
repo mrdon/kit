@@ -9,8 +9,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -19,6 +21,8 @@ type ServerHolder struct {
 	Server *mcpserver.MCPServer
 	pool   *pgxpool.Pool
 	svc    *services.Services
+	agent  *agent.Agent
+	enc    *crypto.Encryptor
 }
 
 // NewServer creates an MCP server with all tools registered at the server level.
@@ -26,8 +30,8 @@ type ServerHolder struct {
 // mcpauth.WithCaller wrapper, so restarts don't wipe client-visible tool state.
 // Admin-only tools are hidden from non-admins via a ToolFilter on tools/list;
 // the service layer still enforces authorization independently.
-func NewServer(pool *pgxpool.Pool, svc *services.Services) *ServerHolder {
-	sh := &ServerHolder{pool: pool, svc: svc}
+func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor) *ServerHolder {
+	sh := &ServerHolder{pool: pool, svc: svc, agent: a, enc: enc}
 
 	adminOnly := collectAdminOnlyToolNames()
 
@@ -54,7 +58,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services) *ServerHolder {
 
 	registerResources(sh.Server, pool, svc)
 
-	tools := buildAllTools(pool, svc)
+	tools := buildAllTools(pool, svc, a, enc)
 	sh.Server.AddTools(tools...)
 
 	toolNames := make([]string, len(tools))
@@ -68,7 +72,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services) *ServerHolder {
 
 // buildAllTools collects every MCP tool — core + app-contributed — into a single
 // slice for server-level registration. Handlers resolve the caller per request.
-func buildAllTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool {
+func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor) []mcpserver.ServerTool {
 	allMetas := []struct {
 		metas   []services.ToolMeta
 		handler func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
@@ -80,6 +84,7 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.Serve
 		{services.TaskTools, taskMCPHandler},
 		{services.TenantTools, tenantMCPHandler},
 		{services.UserTools, userMCPHandler},
+		{services.SessionTools, sessionMCPHandler},
 	}
 
 	var tools []mcpserver.ServerTool
@@ -95,6 +100,9 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.Serve
 	}
 	tools = append(tools, apps.BuildMCPTools(pool, svc)...)
 
+	// run_task needs agent + enc, registered separately from the standard loop
+	tools = append(tools, buildRunTaskTool(pool, svc, a, enc))
+
 	return tools
 }
 
@@ -106,7 +114,7 @@ func collectAdminOnlyToolNames() map[string]bool {
 	groups := [][]services.ToolMeta{
 		services.SkillTools, services.RuleTools, services.MemoryTools,
 		services.RoleTools, services.TaskTools, services.TenantTools,
-		services.UserTools,
+		services.UserTools, services.SessionTools,
 	}
 	for _, g := range groups {
 		for _, m := range g {

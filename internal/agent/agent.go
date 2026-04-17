@@ -43,7 +43,7 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *
 }
 
 // Run executes the agent loop for a user message.
-func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.Tenant, user *models.User, session *models.Session, channel, threadTS, userText string) error {
+func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.Tenant, user *models.User, session *models.Session, channel, threadTS, userText string, taskCtx *TaskContext) error {
 	start := time.Now()
 
 	registry := tools.NewRegistry(user.IsAdmin)
@@ -82,7 +82,7 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 	systemPrompt := []anthropic.SystemBlock{
 		{
 			Type:         "text",
-			Text:         BuildSystemPrompt(ctx, a.pool, tenant, user),
+			Text:         BuildSystemPrompt(ctx, a.pool, tenant, user, taskCtx),
 			CacheControl: anthropic.Ephemeral(),
 		},
 	}
@@ -173,7 +173,7 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 					Content:   result,
 				})
 
-				if registry.IsTerminal(toolUse.Name) {
+				if registry.IsTerminal(toolUse.Name, inputJSON) {
 					sentMessage = true
 				}
 			}

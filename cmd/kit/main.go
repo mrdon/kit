@@ -112,7 +112,7 @@ func main() {
 
 	// MCP server + OAuth
 	svc := services.New(pool, enc)
-	mcpHolder := kitmcp.NewServer(pool, svc)
+	mcpHolder := kitmcp.NewServer(pool, svc, app.Agent, enc)
 	mcpHTTP := mcpserver.NewStreamableHTTPServer(mcpHolder.Server,
 		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
 			return auth.InjectCallerFromRequest(ctx, pool, r)

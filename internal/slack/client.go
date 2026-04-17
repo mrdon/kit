@@ -11,10 +11,19 @@ import (
 	"time"
 )
 
+// CapturedMessage records a message that would have been sent in dry-run mode.
+type CapturedMessage struct {
+	Channel  string `json:"channel"`
+	ThreadTS string `json:"thread_ts,omitempty"`
+	Text     string `json:"text"`
+}
+
 // Client wraps the Slack Web API for posting messages and managing reactions.
 type Client struct {
 	token      string
 	httpClient *http.Client
+	dryRun     bool
+	Captured   []CapturedMessage
 }
 
 // NewClient creates a new Slack API client with the given bot token.
@@ -25,8 +34,20 @@ func NewClient(botToken string) *Client {
 	}
 }
 
+// NewDryRunClient creates a client that captures messages instead of sending them.
+// Read-only API calls (GetUserInfo, OpenConversation, etc.) still hit Slack.
+func NewDryRunClient(botToken string) *Client {
+	c := NewClient(botToken)
+	c.dryRun = true
+	return c
+}
+
 // PostMessage sends a message to a Slack channel, optionally in a thread.
 func (c *Client) PostMessage(ctx context.Context, channel, threadTS, text string) error {
+	if c.dryRun {
+		c.Captured = append(c.Captured, CapturedMessage{Channel: channel, ThreadTS: threadTS, Text: text})
+		return nil
+	}
 	payload := map[string]string{
 		"channel":   channel,
 		"thread_ts": threadTS,
@@ -38,6 +59,10 @@ func (c *Client) PostMessage(ctx context.Context, channel, threadTS, text string
 
 // PostMessageReturningTS sends a message and returns its timestamp (for later update/delete).
 func (c *Client) PostMessageReturningTS(ctx context.Context, channel, threadTS, text string) (string, error) {
+	if c.dryRun {
+		c.Captured = append(c.Captured, CapturedMessage{Channel: channel, ThreadTS: threadTS, Text: text})
+		return "dry-run-ts", nil
+	}
 	payload := map[string]string{
 		"channel":   channel,
 		"thread_ts": threadTS,
@@ -53,6 +78,9 @@ func (c *Client) PostMessageReturningTS(ctx context.Context, channel, threadTS, 
 
 // UpdateMessage updates an existing message.
 func (c *Client) UpdateMessage(ctx context.Context, channel, messageTS, text string) error {
+	if c.dryRun {
+		return nil
+	}
 	payload := map[string]string{
 		"channel": channel,
 		"ts":      messageTS,
@@ -64,6 +92,9 @@ func (c *Client) UpdateMessage(ctx context.Context, channel, messageTS, text str
 
 // DeleteMessage deletes a message.
 func (c *Client) DeleteMessage(ctx context.Context, channel, messageTS string) error {
+	if c.dryRun {
+		return nil
+	}
 	payload := map[string]string{
 		"channel": channel,
 		"ts":      messageTS,
