@@ -27,7 +27,7 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return mcp.NewToolResultError("cron_expr is required for MCP task creation."), nil
 			}
 
-			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, "UTC", channelID, scope, false, nil)
+			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, caller.Timezone, channelID, scope, false, nil)
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
 			}
@@ -35,7 +35,7 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s). Next run: %s",
-				task.ID, task.NextRunAt.Format("Mon Jan 2 3:04 PM UTC"))), nil
+				task.ID, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
 		}
 	case "list_tasks":
 		return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
