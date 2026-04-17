@@ -10,13 +10,14 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func ruleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func ruleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "list_rules":
-		return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			rules, err := svc.Rules.List(ctx, caller)
 			if err != nil {
 				return nil, err
@@ -29,9 +30,9 @@ func ruleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				fmt.Fprintf(&b, "- [%s] (priority %d) %s\n", r.ID, r.Priority, r.Content)
 			}
 			return mcp.NewToolResultText(b.String()), nil
-		}
+		})
 	case "create_rule":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			content, _ := req.RequireString("content")
 			scope := req.GetString("scope", "tenant")
 			scopeValue := req.GetString("scope_value", "*")
@@ -41,9 +42,9 @@ func ruleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Rule created (ID: %s).", rule.ID)), nil
-		}
+		})
 	case "update_rule":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			idStr, _ := req.RequireString("rule_id")
 			ruleID, err := uuid.Parse(idStr)
 			if err != nil {
@@ -54,9 +55,9 @@ func ruleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText("Rule updated."), nil
-		}
+		})
 	case "delete_rule":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			idStr, _ := req.RequireString("rule_id")
 			ruleID, err := uuid.Parse(idStr)
 			if err != nil {
@@ -66,7 +67,7 @@ func ruleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText("Rule deleted."), nil
-		}
+		})
 	default:
 		return nil
 	}

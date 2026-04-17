@@ -10,13 +10,14 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "list_roles":
-		return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			roles, err := svc.Roles.List(ctx, caller)
 			if err != nil {
 				return nil, err
@@ -33,9 +34,9 @@ func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				fmt.Fprintf(&b, "- %s%s\n", r.Name, desc)
 			}
 			return mcp.NewToolResultText(b.String()), nil
-		}
+		})
 	case "list_role_members":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			roleName, _ := req.RequireString("role_name")
 			members, err := svc.Roles.ListMembers(ctx, caller, roleName)
 			if err != nil {
@@ -49,9 +50,9 @@ func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				b.WriteString("- " + services.FormatUserLine(&m) + "\n")
 			}
 			return mcp.NewToolResultText(b.String()), nil
-		}
+		})
 	case "create_role":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			name, _ := req.RequireString("name")
 			desc := req.GetString("description", "")
 			role, err := svc.Roles.Create(ctx, caller, name, desc)
@@ -59,18 +60,18 @@ func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Role '%s' created.", role.Name)), nil
-		}
+		})
 	case "assign_role":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			slackUserID, _ := req.RequireString("slack_user_id")
 			roleName, _ := req.RequireString("role_name")
 			if err := svc.Roles.Assign(ctx, caller, slackUserID, roleName); err != nil {
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Role '%s' assigned to %s.", roleName, slackUserID)), nil
-		}
+		})
 	case "unassign_role":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			slackUserID, _ := req.RequireString("slack_user_id")
 			roleName, _ := req.RequireString("role_name")
 			err := svc.Roles.Unassign(ctx, caller, slackUserID, roleName)
@@ -81,24 +82,24 @@ func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Role '%s' removed from %s.", roleName, slackUserID)), nil
-		}
+		})
 	case "update_role":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			name, _ := req.RequireString("name")
 			desc, _ := req.RequireString("description")
 			if err := svc.Roles.Update(ctx, caller, name, desc); err != nil {
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Role '%s' updated.", name)), nil
-		}
+		})
 	case "delete_role":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			name, _ := req.RequireString("name")
 			if err := svc.Roles.Delete(ctx, caller, name); err != nil {
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Role '%s' deleted.", name)), nil
-		}
+		})
 	default:
 		return nil
 	}

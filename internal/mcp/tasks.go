@@ -11,13 +11,14 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "create_task":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			desc, _ := req.RequireString("description")
 			cronExpr := req.GetString("cron_expr", "")
 			channelID := req.GetString("channel_id", "")
@@ -36,9 +37,9 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s). Next run: %s",
 				task.ID, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
-		}
+		})
 	case "list_tasks":
-		return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			tasks, err := svc.Tasks.List(ctx, caller)
 			if err != nil {
 				return nil, err
@@ -57,12 +58,12 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 					schedule = "one-time"
 				}
 				fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s\n",
-					t.ID, t.Description, schedule, t.NextRunAt.Format("Mon Jan 2 3:04 PM"), status)
+					t.ID, t.Description, schedule, t.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"), status)
 			}
 			return mcp.NewToolResultText(b.String()), nil
-		}
+		})
 	case "delete_task":
-		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			idStr, _ := req.RequireString("task_id")
 			taskID, err := uuid.Parse(idStr)
 			if err != nil {
@@ -76,7 +77,7 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller
 				return nil, err
 			}
 			return mcp.NewToolResultText("Task deleted."), nil
-		}
+		})
 	default:
 		return nil
 	}

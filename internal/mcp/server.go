@@ -14,61 +14,64 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// ServerHolder wraps the MCPServer so the hook closure can reference it.
+// ServerHolder wraps the MCPServer so external code can reach the registered server.
 type ServerHolder struct {
 	Server *mcpserver.MCPServer
 	pool   *pgxpool.Pool
 	svc    *services.Services
 }
 
-// NewServer creates an MCP server that uses per-session tool filtering.
-// No tools are registered at the server level — they're added per session
-// based on the authenticated caller's permissions.
+// NewServer creates an MCP server with all tools registered at the server level.
+// Each handler resolves the authenticated caller from ctx at call time via the
+// mcpauth.WithCaller wrapper, so restarts don't wipe client-visible tool state.
+// Admin-only tools are hidden from non-admins via a ToolFilter on tools/list;
+// the service layer still enforces authorization independently.
 func NewServer(pool *pgxpool.Pool, svc *services.Services) *ServerHolder {
 	sh := &ServerHolder{pool: pool, svc: svc}
 
-	hooks := &mcpserver.Hooks{}
-	hooks.AddOnRegisterSession(func(ctx context.Context, session mcpserver.ClientSession) {
-		caller := auth.CallerFromContext(ctx)
-		if caller == nil {
-			slog.Warn("mcp session registered without caller", "session_id", session.SessionID())
-			return
-		}
-		tools := buildSessionTools(pool, svc, caller)
-		toolNames := make([]string, len(tools))
-		for i, t := range tools {
-			toolNames[i] = t.Tool.Name
-		}
-		slog.Info("mcp session tools built",
-			"session_id", session.SessionID(),
-			"caller_user_id", caller.UserID,
-			"is_admin", caller.IsAdmin,
-			"tool_count", len(tools),
-			"tools", toolNames,
-		)
-		if err := sh.Server.AddSessionTools(session.SessionID(), tools...); err != nil {
-			slog.Error("adding session tools", "error", err, "session_id", session.SessionID())
-		}
-	})
+	adminOnly := collectAdminOnlyToolNames()
 
 	sh.Server = mcpserver.NewMCPServer(
 		"kit",
 		"1.0.0",
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithResourceCapabilities(true, false),
-		mcpserver.WithHooks(hooks),
+		mcpserver.WithToolFilter(func(ctx context.Context, tools []mcp.Tool) []mcp.Tool {
+			caller := auth.CallerFromContext(ctx)
+			if caller != nil && caller.IsAdmin {
+				return tools
+			}
+			filtered := make([]mcp.Tool, 0, len(tools))
+			for _, t := range tools {
+				if adminOnly[t.Name] {
+					continue
+				}
+				filtered = append(filtered, t)
+			}
+			return filtered
+		}),
 	)
 
 	registerResources(sh.Server, pool, svc)
 
+	tools := buildAllTools(pool, svc)
+	sh.Server.AddTools(tools...)
+
+	toolNames := make([]string, len(tools))
+	for i, t := range tools {
+		toolNames[i] = t.Tool.Name
+	}
+	slog.Info("mcp server tools registered", "tool_count", len(tools), "tools", toolNames)
+
 	return sh
 }
 
-// buildSessionTools returns the tools this caller is authorized to use.
-func buildSessionTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool {
+// buildAllTools collects every MCP tool — core + app-contributed — into a single
+// slice for server-level registration. Handlers resolve the caller per request.
+func buildAllTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool {
 	allMetas := []struct {
 		metas   []services.ToolMeta
-		handler func(string, *pgxpool.Pool, *services.Services, *services.Caller) mcpserver.ToolHandlerFunc
+		handler func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
 	}{
 		{services.SkillTools, skillMCPHandler},
 		{services.RuleTools, ruleMCPHandler},
@@ -82,19 +85,42 @@ func buildSessionTools(pool *pgxpool.Pool, svc *services.Services, caller *servi
 	var tools []mcpserver.ServerTool
 	for _, group := range allMetas {
 		for _, meta := range group.metas {
-			if meta.AdminOnly && !caller.IsAdmin {
-				continue
-			}
 			schemaJSON, _ := json.Marshal(meta.Schema)
 			tool := mcp.NewToolWithRawSchema(meta.Name, meta.Description, schemaJSON)
 			tools = append(tools, mcpserver.ServerTool{
 				Tool:    tool,
-				Handler: group.handler(meta.Name, pool, svc, caller),
+				Handler: group.handler(meta.Name, pool, svc),
 			})
 		}
 	}
-	// App tools
-	tools = append(tools, apps.BuildMCPTools(pool, svc, caller)...)
+	tools = append(tools, apps.BuildMCPTools(pool, svc)...)
 
 	return tools
+}
+
+// collectAdminOnlyToolNames builds the set of tool names flagged AdminOnly,
+// across both core service ToolMetas and each registered app's ToolMetas.
+// Used by the tools/list filter to hide admin tools from non-admins.
+func collectAdminOnlyToolNames() map[string]bool {
+	out := map[string]bool{}
+	groups := [][]services.ToolMeta{
+		services.SkillTools, services.RuleTools, services.MemoryTools,
+		services.RoleTools, services.TaskTools, services.TenantTools,
+		services.UserTools,
+	}
+	for _, g := range groups {
+		for _, m := range g {
+			if m.AdminOnly {
+				out[m.Name] = true
+			}
+		}
+	}
+	for _, a := range apps.All() {
+		for _, m := range a.ToolMetas() {
+			if m.AdminOnly {
+				out[m.Name] = true
+			}
+		}
+	}
+	return out
 }

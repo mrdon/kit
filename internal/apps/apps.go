@@ -39,8 +39,10 @@ type App interface {
 	// The registerer is *tools.Registry but declared as any to avoid import cycles.
 	RegisterAgentTools(registerer any, isAdmin bool)
 
-	// RegisterMCPTools returns MCP tools for the given caller.
-	RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool
+	// RegisterMCPTools returns this app's MCP tools. Handlers resolve the
+	// caller from ctx at call time, so tools can be registered once at
+	// server startup instead of per session.
+	RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool
 
 	// RegisterRoutes adds HTTP routes (convention: /apps/{name}/...).
 	RegisterRoutes(mux *http.ServeMux)
@@ -85,12 +87,13 @@ func RegisterAllRoutes(mux *http.ServeMux) {
 	}
 }
 
-// BuildMCPTools builds MCP tools from all apps for a given caller.
-func BuildMCPTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool {
+// BuildMCPTools builds MCP tools from all apps. Tools are caller-agnostic
+// at registration — each handler resolves the caller from ctx per request.
+func BuildMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool {
 	slog.Info("building app MCP tools", "registered_apps", len(registry))
 	var allTools []mcpserver.ServerTool
 	for _, a := range registry {
-		appTools := a.RegisterMCPTools(pool, svc, caller)
+		appTools := a.RegisterMCPTools(pool, svc)
 		toolNames := make([]string, len(appTools))
 		for i, t := range appTools {
 			toolNames[i] = t.Tool.Name

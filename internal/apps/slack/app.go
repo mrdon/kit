@@ -41,8 +41,8 @@ func (a *SlackApp) RegisterAgentTools(registerer any, isAdmin bool) {
 	registerSlackAgentTools(r, isAdmin, a.svc)
 }
 
-func (a *SlackApp) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool {
-	return buildSlackMCPTools(pool, svc, a.svc, caller)
+func (a *SlackApp) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool {
+	return buildSlackMCPTools(pool, svc, a.svc)
 }
 
 func (a *SlackApp) RegisterRoutes(_ *http.ServeMux) {}

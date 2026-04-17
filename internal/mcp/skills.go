@@ -11,38 +11,39 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func skillMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func skillMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "search_skills":
-		return mcpSearchSkills(svc, caller)
+		return mcpSearchSkills(svc)
 	case "load_skill":
-		return mcpLoadSkill(svc, caller)
+		return mcpLoadSkill(svc)
 	case "load_skill_file":
-		return mcpLoadSkillFile(svc, caller)
+		return mcpLoadSkillFile(svc)
 	case "list_skills":
-		return mcpListSkills(svc, caller)
+		return mcpListSkills(svc)
 	case "create_skill":
-		return mcpCreateSkill(svc, caller)
+		return mcpCreateSkill(svc)
 	case "update_skill":
-		return mcpUpdateSkill(svc, caller)
+		return mcpUpdateSkill(svc)
 	case "delete_skill":
-		return mcpDeleteSkill(svc, caller)
+		return mcpDeleteSkill(svc)
 	case "add_skill_file":
-		return mcpAddSkillFile(svc, caller)
+		return mcpAddSkillFile(svc)
 	case "list_skill_files":
-		return mcpListSkillFiles(svc, caller)
+		return mcpListSkillFiles(svc)
 	case "delete_skill_file":
-		return mcpDeleteSkillFile(svc, caller)
+		return mcpDeleteSkillFile(svc)
 	default:
 		return nil
 	}
 }
 
-func mcpSearchSkills(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpSearchSkills(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		query, _ := req.RequireString("query")
 		results, err := svc.Skills.Search(ctx, caller, query)
 		if err != nil {
@@ -56,11 +57,11 @@ func mcpSearchSkills(svc *services.Services, caller *services.Caller) mcpserver.
 			fmt.Fprintf(&b, "- [%s] %s — %s\n", s.ID, s.Name, s.Description)
 		}
 		return mcp.NewToolResultText(b.String()), nil
-	}
+	})
 }
 
-func mcpLoadSkill(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpLoadSkill(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -93,11 +94,11 @@ func mcpLoadSkill(svc *services.Services, caller *services.Caller) mcpserver.Too
 			}
 		}
 		return mcp.NewToolResultText(b.String()), nil
-	}
+	})
 }
 
-func mcpLoadSkillFile(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpLoadSkillFile(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("file_id")
 		fileID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -114,11 +115,11 @@ func mcpLoadSkillFile(svc *services.Services, caller *services.Caller) mcpserver
 			return nil, err
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("# %s\n\n%s", ref.Filename, ref.Content)), nil
-	}
+	})
 }
 
-func mcpListSkills(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpListSkills(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		search := req.GetString("search", "")
 		skills, err := svc.Skills.List(ctx, caller, search)
 		if err != nil {
@@ -128,11 +129,11 @@ func mcpListSkills(svc *services.Services, caller *services.Caller) mcpserver.To
 			return mcp.NewToolResultText("No skills found."), nil
 		}
 		return mcp.NewToolResultText(services.FormatSkillSummaries(skills)), nil
-	}
+	})
 }
 
-func mcpCreateSkill(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpCreateSkill(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		name, _ := req.RequireString("name")
 		desc, _ := req.RequireString("description")
 		content, _ := req.RequireString("content")
@@ -142,11 +143,11 @@ func mcpCreateSkill(svc *services.Services, caller *services.Caller) mcpserver.T
 			return nil, err
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Skill '%s' created (ID: %s).", skill.Name, skill.ID)), nil
-	}
+	})
 }
 
-func mcpUpdateSkill(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpUpdateSkill(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -167,11 +168,11 @@ func mcpUpdateSkill(svc *services.Services, caller *services.Caller) mcpserver.T
 			return nil, err
 		}
 		return mcp.NewToolResultText("Skill updated."), nil
-	}
+	})
 }
 
-func mcpDeleteSkill(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpDeleteSkill(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -181,11 +182,11 @@ func mcpDeleteSkill(svc *services.Services, caller *services.Caller) mcpserver.T
 			return nil, err
 		}
 		return mcp.NewToolResultText("Skill deleted."), nil
-	}
+	})
 }
 
-func mcpAddSkillFile(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpAddSkillFile(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -198,11 +199,11 @@ func mcpAddSkillFile(svc *services.Services, caller *services.Caller) mcpserver.
 			return nil, err
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("File '%s' attached (ID: %s).", f.Filename, f.ID)), nil
-	}
+	})
 }
 
-func mcpListSkillFiles(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpListSkillFiles(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -220,11 +221,11 @@ func mcpListSkillFiles(svc *services.Services, caller *services.Caller) mcpserve
 			fmt.Fprintf(&b, "- [%s] %s\n", f.ID, f.Filename)
 		}
 		return mcp.NewToolResultText(b.String()), nil
-	}
+	})
 }
 
-func mcpDeleteSkillFile(svc *services.Services, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpDeleteSkillFile(svc *services.Services) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("file_id")
 		fileID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -234,5 +235,5 @@ func mcpDeleteSkillFile(svc *services.Services, caller *services.Caller) mcpserv
 			return nil, err
 		}
 		return mcp.NewToolResultText("File deleted."), nil
-	}
+	})
 }

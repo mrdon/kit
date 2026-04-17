@@ -9,16 +9,14 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func buildCalendarMCPTools(svc *CalendarService, caller *services.Caller) []mcpserver.ServerTool {
+func buildCalendarMCPTools(svc *CalendarService) []mcpserver.ServerTool {
 	var out []mcpserver.ServerTool
 	for _, meta := range calendarTools {
-		if meta.AdminOnly && !caller.IsAdmin {
-			continue
-		}
-		handler := calendarMCPHandler(meta.Name, svc, caller)
+		handler := calendarMCPHandler(meta.Name, svc)
 		if handler == nil {
 			continue
 		}
@@ -27,23 +25,23 @@ func buildCalendarMCPTools(svc *CalendarService, caller *services.Caller) []mcps
 	return out
 }
 
-func calendarMCPHandler(name string, svc *CalendarService, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func calendarMCPHandler(name string, svc *CalendarService) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "configure_calendar":
-		return mcpConfigureCalendar(svc, caller)
+		return mcpConfigureCalendar(svc)
 	case "delete_calendar":
-		return mcpDeleteCalendar(svc, caller)
+		return mcpDeleteCalendar(svc)
 	case "list_calendars":
-		return mcpListCalendars(svc, caller)
+		return mcpListCalendars(svc)
 	case "get_calendar_events":
-		return mcpGetCalendarEvents(svc, caller)
+		return mcpGetCalendarEvents(svc)
 	default:
 		return nil
 	}
 }
 
-func mcpConfigureCalendar(svc *CalendarService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpConfigureCalendar(svc *CalendarService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		name, _ := req.RequireString("name")
 		rawURL, _ := req.RequireString("url")
 		args := req.GetArguments()
@@ -68,11 +66,11 @@ func mcpConfigureCalendar(svc *CalendarService, caller *services.Caller) mcpserv
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText("Configured calendar " + cal.Name + " (" + cal.ID.String() + ")."), nil
-	}
+	})
 }
 
-func mcpDeleteCalendar(svc *CalendarService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpDeleteCalendar(svc *CalendarService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("calendar_id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
@@ -88,21 +86,21 @@ func mcpDeleteCalendar(svc *CalendarService, caller *services.Caller) mcpserver.
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText("Calendar deleted."), nil
-	}
+	})
 }
 
-func mcpListCalendars(svc *CalendarService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpListCalendars(svc *CalendarService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		cals, err := svc.List(ctx, caller)
 		if err != nil {
 			return nil, err
 		}
 		return mcp.NewToolResultText(formatCalendarList(cals)), nil
-	}
+	})
 }
 
-func mcpGetCalendarEvents(svc *CalendarService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpGetCalendarEvents(svc *CalendarService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		limit := 0
 		if l, ok := args["limit"].(float64); ok {
@@ -122,5 +120,5 @@ func mcpGetCalendarEvents(svc *CalendarService, caller *services.Caller) mcpserv
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(formatEvents(events, caller.Location())), nil
-	}
+	})
 }

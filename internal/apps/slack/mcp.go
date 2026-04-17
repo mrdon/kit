@@ -12,18 +12,16 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
-func buildSlackMCPTools(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService, caller *services.Caller) []mcpserver.ServerTool {
+func buildSlackMCPTools(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService) []mcpserver.ServerTool {
 	var result []mcpserver.ServerTool
 	for _, meta := range slackTools {
-		if meta.AdminOnly && !caller.IsAdmin {
-			continue
-		}
-		handler := slackMCPHandler(meta.Name, pool, svc, chanSvc, caller)
+		handler := slackMCPHandler(meta.Name, pool, svc, chanSvc)
 		if handler == nil {
 			continue
 		}
@@ -32,14 +30,14 @@ func buildSlackMCPTools(pool *pgxpool.Pool, svc *services.Services, chanSvc *Sla
 	return result
 }
 
-func slackMCPHandler(name string, pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func slackMCPHandler(name string, pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "configure_slack_channel":
-		return mcpConfigureChannel(pool, svc, chanSvc, caller)
+		return mcpConfigureChannel(pool, svc, chanSvc)
 	case "list_slack_channels":
-		return mcpListChannels(chanSvc, caller)
+		return mcpListChannels(chanSvc)
 	case "get_slack_messages":
-		return mcpGetMessages(pool, svc, chanSvc, caller)
+		return mcpGetMessages(pool, svc, chanSvc)
 	default:
 		return nil
 	}
@@ -61,8 +59,8 @@ func makeSlackClient(ctx context.Context, pool *pgxpool.Pool, svc *services.Serv
 	return kitslack.NewClient(token), nil
 }
 
-func mcpConfigureChannel(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpConfigureChannel(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		channelID, _ := req.RequireString("channel_id")
 		channelName := req.GetString("channel_name", "")
 		args := req.GetArguments()
@@ -95,11 +93,11 @@ func mcpConfigureChannel(pool *pgxpool.Pool, svc *services.Services, chanSvc *Sl
 			scope = "roles: " + strings.Join(roleScopes, ", ")
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Configured channel #%s (%s). Access: %s.", ch.ChannelName, ch.SlackChannelID, scope)), nil
-	}
+	})
 }
 
-func mcpListChannels(chanSvc *SlackChannelService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpListChannels(chanSvc *SlackChannelService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		channels, err := chanSvc.List(ctx, caller)
 		if err != nil {
 			return nil, err
@@ -108,11 +106,11 @@ func mcpListChannels(chanSvc *SlackChannelService, caller *services.Caller) mcps
 			return mcp.NewToolResultText("No Slack channels configured for search."), nil
 		}
 		return mcp.NewToolResultText(formatChannelList(channels)), nil
-	}
+	})
 }
 
-func mcpGetMessages(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpGetMessages(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackChannelService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		channelID, _ := req.RequireString("channel_id")
 
 		sc, err := makeSlackClient(ctx, pool, svc, caller)
@@ -135,5 +133,5 @@ func mcpGetMessages(pool *pgxpool.Pool, svc *services.Services, chanSvc *SlackCh
 		}
 
 		return mcp.NewToolResultText(formatMessages(result)), nil
-	}
+	})
 }

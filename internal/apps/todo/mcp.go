@@ -12,16 +12,14 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func buildTodoMCPTools(svc *TodoService, caller *services.Caller) []mcpserver.ServerTool {
+func buildTodoMCPTools(svc *TodoService) []mcpserver.ServerTool {
 	var result []mcpserver.ServerTool
 	for _, meta := range todoTools {
-		if meta.AdminOnly && !caller.IsAdmin {
-			continue
-		}
-		handler := todoMCPHandler(meta.Name, svc, caller)
+		handler := todoMCPHandler(meta.Name, svc)
 		if handler == nil {
 			continue
 		}
@@ -30,27 +28,27 @@ func buildTodoMCPTools(svc *TodoService, caller *services.Caller) []mcpserver.Se
 	return result
 }
 
-func todoMCPHandler(name string, svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
+func todoMCPHandler(name string, svc *TodoService) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "create_todo":
-		return mcpCreateTodo(svc, caller)
+		return mcpCreateTodo(svc)
 	case "list_todos":
-		return mcpListTodos(svc, caller)
+		return mcpListTodos(svc)
 	case "get_todo":
-		return mcpGetTodo(svc, caller)
+		return mcpGetTodo(svc)
 	case "update_todo":
-		return mcpUpdateTodo(svc, caller)
+		return mcpUpdateTodo(svc)
 	case "add_todo_comment":
-		return mcpAddTodoComment(svc, caller)
+		return mcpAddTodoComment(svc)
 	case "complete_todo":
-		return mcpCompleteTodo(svc, caller)
+		return mcpCompleteTodo(svc)
 	default:
 		return nil
 	}
 }
 
-func mcpCreateTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		title, _ := req.RequireString("title")
 		desc := req.GetString("description", "")
 		priority := req.GetString("priority", "")
@@ -94,11 +92,11 @@ func mcpCreateTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHand
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf("Created todo [%s]: %s", t.ID, t.Title)), nil
-	}
+	})
 }
 
-func mcpListTodos(svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpListTodos(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 
 		f := TodoFilters{
@@ -139,11 +137,11 @@ func mcpListTodos(svc *TodoService, caller *services.Caller) mcpserver.ToolHandl
 			b.WriteString("\n\n")
 		}
 		return mcp.NewToolResultText(b.String()), nil
-	}
+	})
 }
 
-func mcpGetTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpGetTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("todo_id")
 		todoID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -159,11 +157,11 @@ func mcpGetTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHandler
 		}
 
 		return mcp.NewToolResultText(FormatTodoDetailed(t, events)), nil
-	}
+	})
 }
 
-func mcpUpdateTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("todo_id")
 		todoID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -221,11 +219,11 @@ func mcpUpdateTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHand
 		}
 
 		return mcp.NewToolResultText("Updated todo:\n" + FormatTodo(t)), nil
-	}
+	})
 }
 
-func mcpAddTodoComment(svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpAddTodoComment(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("todo_id")
 		content, _ := req.RequireString("content")
 
@@ -242,11 +240,11 @@ func mcpAddTodoComment(svc *TodoService, caller *services.Caller) mcpserver.Tool
 		}
 
 		return mcp.NewToolResultText("Comment added."), nil
-	}
+	})
 }
 
-func mcpCompleteTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func mcpCompleteTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("todo_id")
 		todoID, err := uuid.Parse(idStr)
 		if err != nil {
@@ -265,5 +263,5 @@ func mcpCompleteTodo(svc *TodoService, caller *services.Caller) mcpserver.ToolHa
 		}
 
 		return mcp.NewToolResultText("Completed: " + t.Title), nil
-	}
+	})
 }

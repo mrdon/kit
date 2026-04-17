@@ -41,8 +41,8 @@ func (a *TodoApp) RegisterAgentTools(registerer any, isAdmin bool) {
 	registerTodoAgentTools(r, isAdmin, a.svc)
 }
 
-func (a *TodoApp) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool {
-	return buildTodoMCPTools(a.svc, caller)
+func (a *TodoApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
+	return buildTodoMCPTools(a.svc)
 }
 
 func (a *TodoApp) RegisterRoutes(_ *http.ServeMux) {

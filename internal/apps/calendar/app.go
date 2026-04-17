@@ -44,8 +44,8 @@ func (a *CalendarApp) RegisterAgentTools(registerer any, isAdmin bool) {
 	registerCalendarAgentTools(r, isAdmin, a.svc)
 }
 
-func (a *CalendarApp) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services, caller *services.Caller) []mcpserver.ServerTool {
-	return buildCalendarMCPTools(a.svc, caller)
+func (a *CalendarApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
+	return buildCalendarMCPTools(a.svc)
 }
 
 func (a *CalendarApp) RegisterRoutes(_ *http.ServeMux) {}
