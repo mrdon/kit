@@ -58,12 +58,44 @@ make db-reset    # Wipe and restart Postgres
 - `internal/ingest/` — File upload processing (PDF via pdftotext, DOCX, markdown, ZIP)
 - `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, task, session, session_event, scope)
 - `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, routes, and cron jobs.
-- `internal/scheduler/` — Background task runner (cron) + nightly user profile sync
+- `internal/scheduler/` — Background task runner (cron + builtin tasks like profile sync)
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 
 ## Data Model
 
 14 core tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, tasks, task_scopes, sessions, session_events. Apps add their own tables prefixed with `app_`. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
+
+## Production Debugging
+
+### Logs
+```bash
+# Recent logs (adjust --num as needed)
+ssh dokku@apps.twdata.org 'dokku logs kit --num 200'
+
+# Filter for specific topics
+ssh dokku@apps.twdata.org 'dokku logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
+```
+
+### Database queries
+```bash
+# Interactive psql session
+ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db'
+
+# One-shot query
+ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db <<SQL
+SELECT id, slack_team_id, name FROM tenants ORDER BY created_at;
+SQL'
+```
+
+### MCP tools for debugging
+- `list_sessions` / `get_session_events` — inspect agent session history (admin only)
+- `run_task` — run any task immediately; use `dry_run: true` to capture messages without posting
+- `find_user` — verify user display names and IDs
+
+### Common checks
+- **User has no display name?** Run the "Sync user profiles from Slack" builtin task via `run_task`, or the user's name will be fetched on their next Slack message.
+- **Task misbehaving?** Use `list_sessions` to find the task session (thread_ts starts with `task-`), then `get_session_events` to see the full agent trace.
+- **Tenant confusion?** Query `tenants` table to see all workspaces and their `slack_team_id`.
 
 ## Agent Loop
 
