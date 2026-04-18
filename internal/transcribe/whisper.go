@@ -160,7 +160,11 @@ func (c *WhisperCLI) runWhisper(ctx context.Context, wavPath string, onSegment f
 	if err := cmd.Wait(); err != nil {
 		return "", fmt.Errorf("whisper exited: %w (%s)", err, strings.TrimSpace(stderr.String()))
 	}
-	return strings.TrimSpace(strings.Join(segments, " ")), nil
+	// Join segments with newlines so multi-sentence dictation keeps
+	// its natural line breaks in the transcript textarea. Whisper
+	// emits one segment per pause/phrase, which is close to sentence
+	// boundaries for most speech.
+	return strings.TrimSpace(strings.Join(segments, "\n")), nil
 }
 
 // extForMime returns a file extension that keeps ffmpeg happy and makes

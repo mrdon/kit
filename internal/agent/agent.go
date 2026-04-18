@@ -199,8 +199,22 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			// Any stray final text is a terse acknowledgement ("Done.")
 			// and would land in the user's DM as noise. Drop it.
 			if text != "" && !session.BotInitiated {
-				_ = slack.PostMessage(ctx, channel, threadTS, text)
-				sentMessage = true
+				// Log the turn so rebuildHistory replays it on follow-ups.
+				_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "assistant_turn", map[string]any{
+					"content": resp.Content,
+				})
+				if ec.Responder != nil {
+					// Route through the Responder so web chat sees it.
+					// The Slack path's default SlackResponder calls
+					// PostMessage + binds the thread just like the old
+					// direct call did.
+					if err := ec.Responder.Send(ctx, text); err == nil {
+						sentMessage = true
+					}
+				} else {
+					_ = slack.PostMessage(ctx, channel, threadTS, text)
+					sentMessage = true
+				}
 			}
 			break
 		}

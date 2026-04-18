@@ -159,8 +159,17 @@ func buildCardSystemSuffix(card *shared.StackItem) string {
 	if label == "" {
 		label = card.Kind
 	}
-	return fmt.Sprintf(
-		"## Card context\nThe user is talking to you about a card they're viewing in the stack.\n- Kind: %s\n- Title: %q\n- Compound id: %s:%s:%s\n- Body:\n%s",
+	return fmt.Sprintf(`## Card chat context
+The user long-pressed a card in the stack and is now chatting with you about it. Treat every message as an instruction to act on or answer questions about this card — not as a past-tense statement of something they already did. If the message sounds like past tense ("created a todo", "marked it done"), assume whisper transcribed imperative speech and interpret it as a request ("create a todo", "mark it done").
+
+Card:
+- Kind: %s
+- Title: %q
+- Compound id: %s:%s:%s
+- Body:
+%s
+
+Use the relevant tools (complete_todo, create_todo, update_todo, create_task, etc.) to carry out what the user asks. Reply briefly in reply_in_thread confirming what you did — or ask one targeted question if the request is ambiguous.`,
 		label, card.Title, card.SourceApp, card.Kind, card.ID, card.Body,
 	)
 }

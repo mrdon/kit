@@ -37,9 +37,12 @@ export default function ChatComposer({ card, busy, onSubmit }: Props) {
     taRef.current?.focus();
   }, []);
 
-  // Pipe voice partials into the textarea while recording.
+  // Pipe voice partials into the textarea while recording OR while
+  // waiting for the final (transcribing) event. Stopping too early
+  // hides partials that arrive after release but before final lands,
+  // so the user sees nothing during the "Transcribing…" phase.
   useEffect(() => {
-    if (recorder.state !== 'recording') return;
+    if (recorder.state === 'idle') return;
     const stitched = joinPreAndPartial(preRecordRef.current, recorder.partial);
     setText(stitched);
   }, [recorder.partial, recorder.state]);

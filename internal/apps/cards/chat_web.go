@@ -127,6 +127,7 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message too long", http.StatusRequestEntityTooLarge)
 		return
 	}
+	slog.Info("chat execute request", "user_id", caller.UserID, "text_len", len(req.Text))
 
 	// Rate limit + concurrency cap, still pre-stream so the client can
 	// retry without parsing an SSE error frame.
