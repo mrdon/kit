@@ -229,4 +229,46 @@ main.feed > .card-screen {
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
+.burst {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 180px;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 100;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5));
+}
+
+/* Markdown body styling inside cards. Keeps paragraphs tight so long
+   bodies don't blow past the viewport clip. */
+.markdown p {
+  margin: 0 0 10px;
+}
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+.markdown ul, .markdown ol {
+  margin: 4px 0 10px;
+  padding-left: 20px;
+}
+.markdown li {
+  margin: 2px 0;
+}
+.markdown strong { color: #f1f5f9; }
+.markdown em { color: #cbd5e1; }
+.markdown code {
+  background: #0f172a;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.markdown h1, .markdown h2, .markdown h3 {
+  color: #f1f5f9;
+  margin: 12px 0 6px;
+  font-size: 1em;
+}
+.markdown a { color: #60a5fa; }
+
 a { color: #94a3b8; }

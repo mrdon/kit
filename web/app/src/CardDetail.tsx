@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from './api';
 import type { Card, TaskStatus } from './types';
 
@@ -66,7 +68,9 @@ export default function CardDetail() {
     <main className="detail">
       <Link to="/" className="back">← Back</Link>
       <h1>{card.title}</h1>
-      <div className="body">{card.body}</div>
+      <div className="body markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.body}</ReactMarkdown>
+      </div>
 
       {card.kind === 'decision' && card.decision && !isTerminal && (
         <div className="options">

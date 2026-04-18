@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from './api';
 import type { Card } from './types';
+
+type CommitDirection = 'right' | 'left';
 
 export default function Stack() {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [burst, setBurst] = useState<{ id: string; kind: 'up' | 'down' | 'approve' } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -30,14 +34,14 @@ export default function Stack() {
     };
   }, [load]);
 
-  const onCommit = (c: Card, direction: 'right' | 'left') => {
+  const onCommit = (c: Card, direction: CommitDirection) => {
+    // Fire the burst first so the user sees the confirmation *on top of*
+    // the still-present card while the exit animation runs.
+    const burstKind: 'up' | 'down' | 'approve' =
+      c.kind === 'decision' ? 'approve' : direction === 'right' ? 'up' : 'down';
+    setBurst({ id: c.id, kind: burstKind });
     setCards((cs) => (cs ? cs.filter((x) => x.id !== c.id) : cs));
-    if (c.kind === 'decision') {
-      setToast(direction === 'right' ? 'Working on it…' : 'Skipped');
-    } else {
-      setToast(direction === 'right' ? '👍 Archived' : '👎 Dismissed');
-    }
-    setTimeout(() => setToast(null), 2000);
+    setTimeout(() => setBurst(null), 900);
   };
 
   if (err) return <div className="empty">Error: {err}</div>;
@@ -48,30 +52,56 @@ export default function Stack() {
 
   return (
     <main className="feed">
-      {cards.map((c) => (
-        <section key={c.id} className="card-screen">
-          <SwipeCard card={c} onCommit={onCommit} />
-        </section>
-      ))}
-      {toast && <div className="toast">{toast}</div>}
+      <AnimatePresence initial={false}>
+        {cards.map((c) => (
+          <motion.section
+            key={c.id}
+            className="card-screen"
+            layout
+            exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
+          >
+            <SwipeCard card={c} onCommit={onCommit} />
+          </motion.section>
+        ))}
+      </AnimatePresence>
+      <AnimatePresence>
+        {burst && <Burst key={burst.id} kind={burst.kind} />}
+      </AnimatePresence>
     </main>
   );
 }
 
-function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, direction: 'right' | 'left') => void }) {
+function Burst({ kind }: { kind: 'up' | 'down' | 'approve' }) {
+  const emoji = kind === 'up' ? '👍' : kind === 'down' ? '👎' : '✅';
+  return (
+    <motion.div
+      className="burst"
+      initial={{ opacity: 0, scale: 0.5 }}
+      animate={{ opacity: 1, scale: 1.2 }}
+      exit={{ opacity: 0, scale: 1.6, transition: { duration: 0.35 } }}
+      transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+    >
+      <span aria-hidden>{emoji}</span>
+    </motion.div>
+  );
+}
+
+function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, direction: CommitDirection) => void }) {
   const x = useMotionValue(0);
   const rightOpacity = useTransform(x, [0, 100], [0, 1]);
   const leftOpacity = useTransform(x, [-100, 0], [1, 0]);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [swipingOut, setSwipingOut] = useState<CommitDirection | null>(null);
 
   const tagClass = cardClass(card);
-  const canSwipeLeft = card.kind === 'briefing'; // decisions need an explicit option; no default "no"
+  const canSwipeLeft = card.kind === 'briefing';
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
     if (info.offset.x > 120) {
       setBusy(true);
+      setSwipingOut('right');
       try {
         if (card.kind === 'decision') {
           await api.resolve(card.id);
@@ -81,33 +111,46 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
         onCommit(card, 'right');
       } catch (e) {
         setBusy(false);
+        setSwipingOut(null);
         alert((e as Error).message);
       }
       return;
     }
     if (canSwipeLeft && info.offset.x < -120) {
       setBusy(true);
+      setSwipingOut('left');
       try {
         await api.ack(card.id, 'dismissed');
         onCommit(card, 'left');
       } catch (e) {
         setBusy(false);
+        setSwipingOut(null);
         alert((e as Error).message);
       }
       return;
     }
-    // Snap back.
+    // Snap back via drag's own spring.
   };
 
   return (
     <motion.article
       className={`card ${tagClass}`}
-      drag="x"
-      dragConstraints={canSwipeLeft ? { left: -300, right: 300 } : { left: 0, right: 300 }}
-      dragElastic={0.4}
+      drag={busy ? false : 'x'}
+      dragConstraints={canSwipeLeft ? { left: 0, right: 0 } : { left: 0, right: 0 }}
+      dragElastic={0.6}
       style={{ x }}
+      animate={
+        swipingOut === 'right'
+          ? { x: 520, opacity: 0, transition: { duration: 0.25 } }
+          : swipingOut === 'left'
+            ? { x: -520, opacity: 0, transition: { duration: 0.25 } }
+            : undefined
+      }
       onDragEnd={onDragEnd}
-      onClick={() => navigate(`/cards/${card.id}`)}
+      onClick={() => {
+        if (busy) return;
+        navigate(`/cards/${card.id}`);
+      }}
     >
       <div className="kind-tag">
         {card.kind === 'decision'
@@ -115,7 +158,9 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
           : `Briefing · ${card.briefing?.severity ?? 'info'}`}
       </div>
       <h2>{card.title}</h2>
-      <div className="body">{card.body}</div>
+      <div className="body markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.body}</ReactMarkdown>
+      </div>
       <div className="hint">
         {card.kind === 'decision'
           ? `Swipe right to ${recommendedLabel(card) ?? 'approve default'} · tap for options`
