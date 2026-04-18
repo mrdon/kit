@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import { animate, AnimatePresence, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from './api';
@@ -113,10 +113,11 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
-    // Commit only when the card has travelled ~2/3 of the viewport width.
-    // Previously a 120px threshold (≈30% on a phone) felt twitchy and
-    // triggered on barely-a-swipe.
-    const threshold = Math.max(240, window.innerWidth * 0.6);
+    // Commit only when the card has travelled ~90% of the viewport width.
+    // Anything short of that snaps back.
+    const threshold = Math.max(320, window.innerWidth * 0.9);
+    const snapBack = () =>
+      animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
     if (info.offset.x > threshold) {
       setBusy(true);
       setSwipingOut('right');
@@ -147,16 +148,16 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
       }
       return;
     }
-    // Snap back via dragSnapToOrigin.
+    // Didn't cross the threshold — pull back to origin explicitly.
+    snapBack();
   };
 
   return (
     <motion.article
       className={`card ${tagClass}`}
       drag={busy ? false : 'x'}
-      dragConstraints={canSwipeLeft ? { left: -400, right: 400 } : { left: 0, right: 400 }}
-      dragElastic={0.4}
-      dragSnapToOrigin={true}
+      dragConstraints={canSwipeLeft ? { left: -500, right: 500 } : { left: 0, right: 500 }}
+      dragElastic={0.3}
       style={{ x }}
       animate={
         swipingOut === 'right'
