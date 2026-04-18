@@ -33,6 +33,14 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 // on startup and run via the same task loop as user-created tasks.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.ensureBuiltinTasks(ctx)
+	// Tasks left in 'running' by a previous crash get reclaimed. Use a
+	// generous cutoff so we don't race a sibling scheduler that is still
+	// running the task in a rolling-deploy window.
+	if n, err := models.RecoverStuckTasks(ctx, s.pool, 15*time.Minute); err != nil {
+		slog.Warn("recovering stuck tasks", "error", err)
+	} else if n > 0 {
+		slog.Info("recovered stuck tasks", "count", n)
+	}
 	go s.runTaskLoop(ctx)
 }
 
@@ -53,9 +61,12 @@ func (s *Scheduler) runTaskLoop(ctx context.Context) {
 }
 
 func (s *Scheduler) processDueTasks(ctx context.Context) {
-	tasks, err := models.GetDueTasks(ctx, s.pool)
+	// ClaimDueTasks atomically flips status to 'running' under SKIP LOCKED,
+	// so concurrent schedulers (e.g. during a rolling deploy) never run the
+	// same task twice.
+	tasks, err := models.ClaimDueTasks(ctx, s.pool, maxConcurrentTasks*2)
 	if err != nil {
-		slog.Error("fetching due tasks", "error", err)
+		slog.Error("claiming due tasks", "error", err)
 		return
 	}
 	if len(tasks) == 0 {
@@ -82,7 +93,7 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 	slog.Info("executing scheduled task", "task_id", task.ID, "task_type", task.TaskType, "description", task.Description)
 
 	// Route builtin tasks to native handlers
-	if task.TaskType == "builtin" {
+	if task.TaskType == models.TaskTypeBuiltin {
 		s.ExecuteBuiltinTask(ctx, task)
 		return
 	}

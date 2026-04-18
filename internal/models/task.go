@@ -12,6 +12,23 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+// TaskStatus is the lifecycle state of a task row.
+type TaskStatus string
+
+const (
+	TaskStatusActive    TaskStatus = "active"    // due to run next
+	TaskStatusRunning   TaskStatus = "running"   // claimed by a scheduler, currently executing
+	TaskStatusCompleted TaskStatus = "completed" // one-time task that finished
+)
+
+// TaskType discriminates between native handlers and full agent runs.
+type TaskType string
+
+const (
+	TaskTypeAgent   TaskType = "agent"
+	TaskTypeBuiltin TaskType = "builtin"
+)
+
 type Task struct {
 	ID          uuid.UUID
 	TenantID    uuid.UUID
@@ -21,8 +38,8 @@ type Task struct {
 	Timezone    string
 	ChannelID   string
 	RunOnce     bool
-	TaskType    string // "agent" or "builtin"
-	Status      string
+	TaskType    TaskType
+	Status      TaskStatus
 	NextRunAt   time.Time
 	LastRunAt   *time.Time
 	LastError   *string
@@ -178,8 +195,8 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 // UpdateTaskDescription updates a task's description. Builtin tasks cannot be updated.
 func UpdateTaskDescription(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, description string) error {
 	tag, err := pool.Exec(ctx, `
-		UPDATE tasks SET description = $3 WHERE tenant_id = $1 AND id = $2 AND task_type != 'builtin'
-	`, tenantID, taskID, description)
+		UPDATE tasks SET description = $3 WHERE tenant_id = $1 AND id = $2 AND task_type != $4
+	`, tenantID, taskID, description, TaskTypeBuiltin)
 	if err != nil {
 		return fmt.Errorf("updating task: %w", err)
 	}
@@ -191,7 +208,7 @@ func UpdateTaskDescription(ctx context.Context, pool *pgxpool.Pool, tenantID, ta
 		if t == nil {
 			return errors.New("task not found")
 		}
-		if t.TaskType == "builtin" {
+		if t.TaskType == TaskTypeBuiltin {
 			return errors.New("builtin tasks cannot be updated")
 		}
 	}
@@ -200,7 +217,7 @@ func UpdateTaskDescription(ctx context.Context, pool *pgxpool.Pool, tenantID, ta
 
 // DeleteTask deletes a task and its scope rows (via CASCADE). Builtin tasks cannot be deleted.
 func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) error {
-	tag, err := pool.Exec(ctx, `DELETE FROM tasks WHERE tenant_id = $1 AND id = $2 AND task_type != 'builtin'`, tenantID, taskID)
+	tag, err := pool.Exec(ctx, `DELETE FROM tasks WHERE tenant_id = $1 AND id = $2 AND task_type != $3`, tenantID, taskID, TaskTypeBuiltin)
 	if err != nil {
 		return fmt.Errorf("deleting task: %w", err)
 	}
@@ -210,7 +227,7 @@ func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.U
 		if err != nil {
 			return err
 		}
-		if t != nil && t.TaskType == "builtin" {
+		if t != nil && t.TaskType == TaskTypeBuiltin {
 			return errors.New("builtin tasks cannot be deleted")
 		}
 	}
@@ -222,8 +239,8 @@ func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.U
 func EnsureBuiltinTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz string) error {
 	var exists bool
 	err := pool.QueryRow(ctx, `
-		SELECT EXISTS(SELECT 1 FROM tasks WHERE tenant_id = $1 AND task_type = 'builtin' AND description = $2)
-	`, tenantID, description).Scan(&exists)
+		SELECT EXISTS(SELECT 1 FROM tasks WHERE tenant_id = $1 AND task_type = $3 AND description = $2)
+	`, tenantID, description, TaskTypeBuiltin).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("checking builtin task: %w", err)
 	}
@@ -238,24 +255,39 @@ func EnsureBuiltinTask(ctx context.Context, pool *pgxpool.Pool, tenantID, create
 
 	_, err = pool.Exec(ctx, `
 		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, task_type, next_run_at)
-		VALUES ($1, $2, $3, $4, $5, $6, '', 'builtin', $7)
-	`, uuid.New(), tenantID, createdBy, description, cronExpr, tz, nextRun)
+		VALUES ($1, $2, $3, $4, $5, $6, '', $8, $7)
+	`, uuid.New(), tenantID, createdBy, description, cronExpr, tz, nextRun, TaskTypeBuiltin)
 	if err != nil {
 		return fmt.Errorf("creating builtin task: %w", err)
 	}
 	return nil
 }
 
-// GetDueTasks returns all active tasks across tenants that are due to run.
-func GetDueTasks(ctx context.Context, pool *pgxpool.Pool) ([]Task, error) {
+// ClaimDueTasks atomically claims up to `limit` active tasks whose
+// next_run_at has passed. Claim = flip status from 'active' to 'running'
+// under SELECT FOR UPDATE SKIP LOCKED, so multiple scheduler instances
+// (e.g. during a rolling deploy) never pick up the same task.
+//
+// After the returned tasks finish, the caller must set status to
+// 'completed' (one-time) or back to 'active' with a new next_run_at
+// (recurring) — see CompleteTask / UpdateTaskAfterRun.
+func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
-		FROM tasks
-		WHERE status = 'active' AND next_run_at <= now()
-		ORDER BY next_run_at
-	`)
+		WITH claimed AS (
+			SELECT id FROM tasks
+			WHERE status = $2 AND next_run_at <= now()
+			ORDER BY next_run_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT $1
+		)
+		UPDATE tasks t
+		SET status = $3
+		FROM claimed c
+		WHERE t.id = c.id
+		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.created_at
+	`, limit, TaskStatusActive, TaskStatusRunning)
 	if err != nil {
-		return nil, fmt.Errorf("getting due tasks: %w", err)
+		return nil, fmt.Errorf("claiming due tasks: %w", err)
 	}
 	defer rows.Close()
 
@@ -264,31 +296,48 @@ func GetDueTasks(ctx context.Context, pool *pgxpool.Pool) ([]Task, error) {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
 			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning due task: %w", err)
+			return nil, fmt.Errorf("scanning claimed task: %w", err)
 		}
 		tasks = append(tasks, t)
 	}
 	return tasks, rows.Err()
 }
 
+// RecoverStuckTasks resets any task stuck in 'running' older than the
+// cutoff back to 'active' so another scheduler can re-claim it. Runs at
+// scheduler startup to handle crashes where a previous run didn't reach
+// CompleteTask / UpdateTaskAfterRun.
+func RecoverStuckTasks(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) (int64, error) {
+	cmd, err := pool.Exec(ctx, `
+		UPDATE tasks SET status = $1
+		WHERE status = $2 AND (last_run_at IS NULL OR last_run_at < now() - $3::interval)
+	`, TaskStatusActive, TaskStatusRunning, olderThan.String())
+	if err != nil {
+		return 0, fmt.Errorf("recovering stuck tasks: %w", err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
 // CompleteTask marks a one-time task as completed after execution.
 func CompleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, lastError *string) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE tasks SET last_run_at = now(), status = 'completed', last_error = $3
+		UPDATE tasks SET last_run_at = now(), status = $3, last_error = $4
 		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, taskID, lastError)
+	`, tenantID, taskID, TaskStatusCompleted, lastError)
 	if err != nil {
 		return fmt.Errorf("completing task: %w", err)
 	}
 	return nil
 }
 
-// UpdateTaskAfterRun updates last_run_at, next_run_at, and last_error after execution.
+// UpdateTaskAfterRun updates last_run_at, next_run_at, and last_error
+// after execution. Flips status back to 'active' so the next cron tick
+// can re-claim this recurring task.
 func UpdateTaskAfterRun(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, nextRun time.Time, lastError *string) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE tasks SET last_run_at = now(), next_run_at = $3, last_error = $4
+		UPDATE tasks SET status = $5, last_run_at = now(), next_run_at = $3, last_error = $4
 		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, taskID, nextRun, lastError)
+	`, tenantID, taskID, nextRun, lastError, TaskStatusActive)
 	if err != nil {
 		return fmt.Errorf("updating task after run: %w", err)
 	}

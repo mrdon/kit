@@ -129,7 +129,7 @@ func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
 	var b strings.Builder
 	b.WriteString("Scheduled tasks:\n")
 	for _, t := range tasks {
-		status := t.Status
+		status := string(t.Status)
 		if t.LastError != nil {
 			status += " (last error: " + *t.LastError + ")"
 		}

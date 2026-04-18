@@ -56,7 +56,7 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 			}
 			var b strings.Builder
 			for _, t := range tasks {
-				status := t.Status
+				status := string(t.Status)
 				if t.LastError != nil {
 					status += " (error: " + *t.LastError + ")"
 				}
@@ -136,7 +136,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		}
 
 		// Builtin tasks run native code, not the LLM agent
-		if task.TaskType == "builtin" {
+		if task.TaskType == models.TaskTypeBuiltin {
 			if dryRun {
 				return mcp.NewToolResultText(fmt.Sprintf("Dry run: builtin task %q would execute native handler.", task.Description)), nil
 			}
