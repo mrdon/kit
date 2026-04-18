@@ -81,6 +81,21 @@ func ListRecentSessions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return sessions, rows.Err()
 }
 
+// UpdateSessionThreadTS replaces a session's slack_thread_ts. Used after a
+// bot-initiated session (e.g. scheduled task) posts its first Slack message
+// and we now know the real thread root ts.
+func UpdateSessionThreadTS(ctx context.Context, pool *pgxpool.Pool, tenantID, sessionID uuid.UUID, threadTS string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE sessions
+		SET slack_thread_ts = $1, updated_at = now()
+		WHERE tenant_id = $2 AND id = $3
+	`, threadTS, tenantID, sessionID)
+	if err != nil {
+		return fmt.Errorf("updating session thread_ts: %w", err)
+	}
+	return nil
+}
+
 // GetOrCreateSession finds or creates a session by tenant + channel + thread_ts.
 func GetOrCreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string, userID uuid.UUID) (*Session, error) {
 	session := &Session{}

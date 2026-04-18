@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,14 +44,22 @@ func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey string, rdb *redis
 
 // HandleSlackEvent is called by the Slack handler when a message or app_mention is received.
 func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventType string) {
-	// Panic recovery
+	ctx := context.Background()
+
+	// Captured for the panic handler so we can best-effort notify the user.
+	var dmClient *kitslack.Client
+	var dmUserID string
+
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("panic in event handler", "panic", r, "team_id", teamID)
+			slog.Error("panic in event handler", "panic", r, "team_id", teamID, "stack", string(debug.Stack()))
+			if dmClient != nil && dmUserID != "" {
+				if ch, err := dmClient.OpenConversation(ctx, dmUserID); err == nil {
+					_ = dmClient.PostMessage(ctx, ch, "", "Something went wrong processing your message. We're looking into it.")
+				}
+			}
 		}
 	}()
-
-	ctx := context.Background()
 
 	// Resolve tenant
 	tenant, err := models.GetTenantBySlackTeamID(ctx, a.Pool, teamID)
@@ -70,6 +79,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		return
 	}
 	client := kitslack.NewClient(botToken)
+	dmClient = client
 
 	// Parse the event based on type
 	var slackUserID, text, channel, threadTS string
@@ -82,6 +92,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 			return
 		}
 		if !msg.ShouldProcess() {
+			slog.Info("message filtered by ShouldProcess", "subtype", msg.SubType, "bot_id", msg.BotID, "user", msg.User, "channel", msg.Channel)
 			return
 		}
 		slackUserID = msg.User
@@ -107,6 +118,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	default:
 		return
 	}
+	dmUserID = slackUserID
 
 	// Get or create user — fetch display name from Slack on first contact
 	displayName := ""
@@ -121,6 +133,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 
 	// Check if setup is incomplete and user is not admin
 	if !tenant.SetupComplete && !user.IsAdmin {
+		slog.Info("setup incomplete, suppressing response", "tenant_id", tenant.ID, "user_id", user.ID)
 		_ = client.PostMessage(ctx, channel, threadTS,
 			"I'm still being set up! Please ask your admin to finish setting me up.")
 		return

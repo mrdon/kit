@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/mrdon/kit/internal/models"
 )
@@ -47,8 +48,28 @@ func registerCoreTools(r *Registry) {
 				threadTS = ""
 			}
 
-			if err := ec.Slack.PostMessage(ec.Ctx, channel, threadTS, inp.Text); err != nil {
-				return "", err
+			// If this is the session's first top-level post in its own channel,
+			// capture the real Slack ts and bind the session to it so replies
+			// in the resulting thread route back to this session.
+			bindSession := !isDM && channel == ec.Channel && threadTS == "" && ec.Session != nil
+			if bindSession {
+				ts, err := ec.Slack.PostMessageReturningTS(ec.Ctx, channel, "", inp.Text)
+				if err != nil {
+					return "", err
+				}
+				if ts != "" {
+					if err := models.UpdateSessionThreadTS(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, ts); err != nil {
+						slog.Warn("binding session to slack thread", "session_id", ec.Session.ID, "error", err)
+					} else {
+						ec.Session.SlackThreadTS = ts
+						ec.ThreadTS = ts
+						threadTS = ts
+					}
+				}
+			} else {
+				if err := ec.Slack.PostMessage(ec.Ctx, channel, threadTS, inp.Text); err != nil {
+					return "", err
+				}
 			}
 			_ = models.AppendSessionEvent(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, "message_sent", map[string]any{
 				"channel":   channel,

@@ -326,11 +326,15 @@ func (s *statusTracker) update(ctx context.Context, status string) {
 	text := s.render(status)
 	if s.msgTS == "" {
 		ts, err := s.slack.PostMessageReturningTS(ctx, s.channel, s.threadTS, text)
-		if err == nil {
-			s.msgTS = ts
+		if err != nil {
+			slog.Warn("posting status message", "error", err, "channel", s.channel, "thread_ts", s.threadTS)
+			return
 		}
+		s.msgTS = ts
 	} else {
-		_ = s.slack.UpdateMessage(ctx, s.channel, s.msgTS, text)
+		if err := s.slack.UpdateMessage(ctx, s.channel, s.msgTS, text); err != nil {
+			slog.Warn("updating status message", "error", err, "channel", s.channel, "msg_ts", s.msgTS)
+		}
 	}
 }
 

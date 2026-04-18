@@ -94,7 +94,7 @@ SQL'
 
 ### Common checks
 - **User has no display name?** Run the "Sync user profiles from Slack" builtin task via `run_task`, or the user's name will be fetched on their next Slack message.
-- **Task misbehaving?** Use `list_sessions` to find the task session (thread_ts starts with `task-`), then `get_session_events` to see the full agent trace.
+- **Task misbehaving?** After the task posts its first message, its session's `slack_thread_ts` is the real Slack message ts (not a synthetic `task-*` value). Use `list_sessions` to find recent sessions in the task's channel, then `get_session_events` for the full agent trace.
 - **Tenant confusion?** Query `tenants` table to see all workspaces and their `slack_team_id`.
 
 ## Agent Loop
