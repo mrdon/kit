@@ -10,16 +10,18 @@ import (
 func registerCoreTools(r *Registry) {
 	r.Register(Def{
 		Name:        "send_slack_message",
-		Description: "Send a message to the user in the current Slack thread. This is the ONLY way to respond to the user. To DM a specific user instead, set user_id to their Slack user ID.",
+		Description: "Send a message to the user in the current Slack thread. This is the ONLY way to respond to the user. To DM a specific user, set user_id. To post to a different channel, set channel.",
 		Schema: propsReq(map[string]any{
 			"text":    field("string", "The message text (Slack mrkdwn)"),
 			"user_id": field("string", "Optional: Slack user ID to DM instead of posting to the current channel"),
+			"channel": field("string", "Optional: Slack channel ID to post to instead of the current channel"),
 		}, "text"),
 		Terminal: true,
 		Handler: func(ec *ExecContext, input json.RawMessage) (string, error) {
 			var inp struct {
-				Text   string `json:"text"`
-				UserID string `json:"user_id"`
+				Text    string `json:"text"`
+				UserID  string `json:"user_id"`
+				Channel string `json:"channel"`
 			}
 			if err := json.Unmarshal(input, &inp); err != nil {
 				return "", err
@@ -40,6 +42,9 @@ func registerCoreTools(r *Registry) {
 				channel = dmChannel
 				threadTS = ""
 				isDM = true
+			} else if inp.Channel != "" {
+				channel = inp.Channel
+				threadTS = ""
 			}
 
 			if err := ec.Slack.PostMessage(ec.Ctx, channel, threadTS, inp.Text); err != nil {

@@ -128,6 +128,9 @@ func (r *Registry) IsTerminal(name string, input json.RawMessage) bool {
 				if uid, ok := fields["user_id"]; ok && string(uid) != `""` && string(uid) != "null" {
 					return false
 				}
+				if ch, ok := fields["channel"]; ok && string(ch) != `""` && string(ch) != "null" {
+					return false
+				}
 			}
 			return true
 		}

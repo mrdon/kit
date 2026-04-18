@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -175,7 +176,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			AuthorName:    authorName,
 		}
 
-		threadTS := fmt.Sprintf("task-%s-test", task.ID)
+		threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
 		session, err := models.CreateSession(ctx, pool, tenant.ID, task.ChannelID, threadTS, user.ID)
 		if err != nil {
 			return nil, fmt.Errorf("creating session: %w", err)
