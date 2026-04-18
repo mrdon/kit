@@ -42,7 +42,7 @@ func registerCoreTools(r *Registry) {
 				channel = dmChannel
 				threadTS = ""
 				isDM = true
-			} else if inp.Channel != "" {
+			} else if inp.Channel != "" && inp.Channel != ec.Channel {
 				channel = inp.Channel
 				threadTS = ""
 			}

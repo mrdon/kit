@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -115,8 +116,8 @@ func (r *Registry) Execute(ec *ExecContext, name string, input json.RawMessage) 
 
 // IsTerminal returns true if calling this tool should end the agent loop.
 // For send_slack_message, it is only terminal when posting to the conversation
-// channel (no user_id), not when DMing a specific user.
-func (r *Registry) IsTerminal(name string, input json.RawMessage) bool {
+// channel, not when DMing a user or posting to a different channel.
+func (r *Registry) IsTerminal(name string, input json.RawMessage, currentChannel string) bool {
 	for _, d := range r.defs {
 		if d.Name == name {
 			if !d.Terminal {
@@ -128,8 +129,11 @@ func (r *Registry) IsTerminal(name string, input json.RawMessage) bool {
 				if uid, ok := fields["user_id"]; ok && string(uid) != `""` && string(uid) != "null" {
 					return false
 				}
-				if ch, ok := fields["channel"]; ok && string(ch) != `""` && string(ch) != "null" {
-					return false
+				if ch, ok := fields["channel"]; ok {
+					chStr := strings.Trim(string(ch), `"`)
+					if chStr != "" && chStr != "null" && chStr != currentChannel {
+						return false
+					}
 				}
 			}
 			return true

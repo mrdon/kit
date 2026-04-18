@@ -61,10 +61,13 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		Svc:      a.svc,
 	}
 
-	// Post status message immediately so user sees feedback
-	status := newStatusTracker(slack, channel, threadTS)
-	status.update(ctx, "Thinking...")
-	defer status.cleanup(ctx)
+	// Post status message immediately so user sees feedback (skip for tasks)
+	var status *statusTracker
+	if taskCtx == nil {
+		status = newStatusTracker(slack, channel, threadTS)
+		status.update(ctx, "Thinking...")
+		defer status.cleanup(ctx)
+	}
 
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "message_received", map[string]any{
 		"user_id": user.ID,
@@ -93,7 +96,9 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 
 	for i := range maxIterations {
 		iterStart := time.Now()
-		status.update(ctx, "Thinking...")
+		if status != nil {
+			status.update(ctx, "Thinking...")
+		}
 
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_request", map[string]any{
 			"model":     modelHaiku,
@@ -157,7 +162,9 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 				inputJSON, _ := json.Marshal(toolUse.Input)
 				slog.Info("executing tool", "tool", toolUse.Name, "input", string(inputJSON), "session_id", session.ID)
 
-				status.addTool(ctx, toolUse.Name)
+				if status != nil {
+					status.addTool(ctx, toolUse.Name)
+				}
 
 				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
 				if err != nil {
@@ -173,7 +180,7 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 					Content:   result,
 				})
 
-				if registry.IsTerminal(toolUse.Name, inputJSON) {
+				if registry.IsTerminal(toolUse.Name, inputJSON, channel) {
 					sentMessage = true
 				}
 			}
