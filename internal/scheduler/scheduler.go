@@ -19,14 +19,28 @@ const maxConcurrentTasks = 5
 
 // Scheduler runs due tasks and syncs user profiles on a schedule.
 type Scheduler struct {
-	pool  *pgxpool.Pool
-	enc   *crypto.Encryptor
-	agent *agent.Agent
+	pool   *pgxpool.Pool
+	enc    *crypto.Encryptor
+	agent  *agent.Agent
+	kickCh chan struct{}
 }
 
 // New creates a new Scheduler.
 func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
-	return &Scheduler{pool: pool, enc: enc, agent: a}
+	// Buffered so Kick never blocks; if a kick is already pending, extra
+	// kicks coalesce into that one run.
+	return &Scheduler{pool: pool, enc: enc, agent: a, kickCh: make(chan struct{}, 1)}
+}
+
+// Kick wakes the task loop immediately instead of waiting for the next
+// poll tick. Used by decision-resolution so a resumed workflow advances
+// within a second of the user tapping, not up to 60s later. Non-blocking
+// — concurrent kicks coalesce into a single extra claim cycle.
+func (s *Scheduler) Kick() {
+	select {
+	case s.kickCh <- struct{}{}:
+	default:
+	}
 }
 
 // Start launches the task runner. Builtin tasks (like profile sync) are ensured
@@ -45,17 +59,28 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) runTaskLoop(ctx context.Context) {
-	ticker := time.NewTicker(60 * time.Second)
+	const pollInterval = 60 * time.Second
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	s.processDueTasks(ctx)
+	process := func() {
+		s.processDueTasks(ctx)
+		// Reset so a kick both runs now AND pushes the next natural
+		// tick a full interval out, guaranteeing ≥ pollInterval between
+		// runs (no redundant back-to-back scans).
+		ticker.Reset(pollInterval)
+	}
+
+	process()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.processDueTasks(ctx)
+			process()
+		case <-s.kickCh:
+			process()
 		}
 	}
 }

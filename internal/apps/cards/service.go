@@ -15,13 +15,21 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
+// TaskKicker is the minimal scheduler surface CardService needs to nudge
+// the task loop after a resume. Decoupled interface (instead of importing
+// scheduler) keeps the cards package dependency-light.
+type TaskKicker interface {
+	Kick()
+}
+
 // CardService bundles card create/update/list + scope enforcement for both
 // decision and briefing kinds. Terminal transitions (resolve, ack) live in
 // this same service but have extra moving parts (agent task creation, Slack
 // DM lookup) wired up by the caller.
 type CardService struct {
-	pool *pgxpool.Pool
-	enc  *crypto.Encryptor // set by CardsApp.RegisterMCPTools; used for DM lookup
+	pool   *pgxpool.Pool
+	enc    *crypto.Encryptor // set by CardsApp.RegisterMCPTools; used for DM lookup
+	kicker TaskKicker        // set by CardsApp.ConfigureKicker; optional
 }
 
 // CreateDecision creates a new decision card. Non-admin callers may only
@@ -266,6 +274,12 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("committing: %w", err)
+	}
+
+	// Post-commit: wake the scheduler immediately so a resumed workflow
+	// doesn't wait up to 60s for the next poll tick. Kick is non-blocking.
+	if resumed && s.kicker != nil {
+		s.kicker.Kick()
 	}
 	return s.Get(ctx, c, cardID)
 }

@@ -52,6 +52,16 @@ func ConfigureChat(ag *agent.Agent, enc *crypto.Encryptor, transcriber transcrib
 	instance.chatLimiter = chat.NewExecuteLimiter()
 }
 
+// ConfigureKicker wires the scheduler's Kick callback so ResolveDecision
+// can wake the task loop immediately on resume instead of waiting for
+// the next poll tick.
+func ConfigureKicker(k TaskKicker) {
+	if instance == nil || instance.svc == nil {
+		return
+	}
+	instance.svc.kicker = k
+}
+
 // CardsApp is the decisions/briefings swipe-stack app.
 type CardsApp struct {
 	svc         *CardService

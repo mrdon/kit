@@ -134,6 +134,10 @@ func main() {
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)
 	sched.Start(ctx)
+	// Let ResolveDecision wake the scheduler immediately on resume so
+	// workflows advance within a second of the user tapping, not up to
+	// the next 60s poll.
+	cards.ConfigureKicker(sched)
 
 	// App-level periodic jobs (e.g. calendar sync)
 	apps.RunCronJobs(ctx, pool, enc)
