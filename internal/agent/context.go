@@ -113,7 +113,7 @@ The run_at time is interpreted in the user's timezone. Use EITHER cron_expr OR r
 
 The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Omit channel_id to use the current channel. For DMs, omit it — the task will run in the same DM.
 
-Tasks run in the user's timezone. Use list_tasks and delete_task to manage existing tasks.`
+Tasks run in the user's timezone. Use list_tasks and update_task to manage existing tasks.`
 }
 
 func taskExecutionGuidance(tc *TaskContext) string {

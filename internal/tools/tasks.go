@@ -33,8 +33,8 @@ func taskHandler(name string) HandlerFunc {
 		return handleCreateTask
 	case "list_tasks":
 		return handleListTasks
-	case "delete_task":
-		return handleDeleteTask
+	case "update_task":
+		return handleUpdateTask
 	default:
 		return func(_ *ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown task tool: %s", name)
@@ -144,9 +144,11 @@ func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
 	return b.String(), nil
 }
 
-func handleDeleteTask(ec *ExecContext, input json.RawMessage) (string, error) {
+func handleUpdateTask(ec *ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
-		TaskID string `json:"task_id"`
+		TaskID      string `json:"task_id"`
+		Description string `json:"description"`
+		Delete      bool   `json:"delete"`
 	}
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
@@ -155,12 +157,28 @@ func handleDeleteTask(ec *ExecContext, input json.RawMessage) (string, error) {
 	if err != nil {
 		return "Invalid task ID.", nil
 	}
-	err = ec.Svc.Tasks.Delete(ec.Ctx, ec.Caller(), taskID)
+
+	if inp.Delete {
+		err = ec.Svc.Tasks.Delete(ec.Ctx, ec.Caller(), taskID)
+		if errors.Is(err, services.ErrNotFound) {
+			return "Task not found or you don't have permission to delete it.", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return "Task deleted.", nil
+	}
+
+	if inp.Description == "" {
+		return "Provide description to update, or delete=true to remove.", nil
+	}
+
+	err = ec.Svc.Tasks.Update(ec.Ctx, ec.Caller(), taskID, inp.Description)
 	if errors.Is(err, services.ErrNotFound) {
-		return "Task not found or you don't have permission to delete it.", nil
+		return "Task not found or you don't have permission to update it.", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	return "Task deleted.", nil
+	return "Task updated.", nil
 }

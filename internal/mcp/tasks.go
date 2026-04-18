@@ -68,21 +68,35 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 			}
 			return mcp.NewToolResultText(b.String()), nil
 		})
-	case "delete_task":
+	case "update_task":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			idStr, _ := req.RequireString("task_id")
 			taskID, err := uuid.Parse(idStr)
 			if err != nil {
 				return mcp.NewToolResultError("Invalid task ID."), nil
 			}
-			err = svc.Tasks.Delete(ctx, caller, taskID)
+			if req.GetBool("delete", false) {
+				err = svc.Tasks.Delete(ctx, caller, taskID)
+				if errors.Is(err, services.ErrNotFound) {
+					return mcp.NewToolResultError("Task not found."), nil
+				}
+				if err != nil {
+					return nil, err
+				}
+				return mcp.NewToolResultText("Task deleted."), nil
+			}
+			desc := req.GetString("description", "")
+			if desc == "" {
+				return mcp.NewToolResultError("Provide description to update, or delete=true to remove."), nil
+			}
+			err = svc.Tasks.Update(ctx, caller, taskID, desc)
 			if errors.Is(err, services.ErrNotFound) {
 				return mcp.NewToolResultError("Task not found."), nil
 			}
 			if err != nil {
 				return nil, err
 			}
-			return mcp.NewToolResultText("Task deleted."), nil
+			return mcp.NewToolResultText("Task updated."), nil
 		})
 	default:
 		return nil

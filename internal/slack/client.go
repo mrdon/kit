@@ -128,11 +128,9 @@ func (c *Client) RemoveReaction(ctx context.Context, channel, timestamp, emoji s
 }
 
 // OpenConversation opens a DM channel with a user. Returns the channel ID.
+// Uses form-encoded POST because some Slack endpoints don't parse JSON bodies.
 func (c *Client) OpenConversation(ctx context.Context, userID string) (string, error) {
-	payload := map[string]string{
-		"users": userID,
-	}
-	resp, err := c.apiCall(ctx, "conversations.open", payload)
+	resp, err := c.apiFormCall(ctx, "conversations.open", map[string]string{"users": userID})
 	if err != nil {
 		return "", err
 	}

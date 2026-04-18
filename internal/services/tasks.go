@@ -21,7 +21,11 @@ var TaskTools = []ToolMeta{
 		"scope":       field("string", "Scope: 'user' (default), 'tenant' (admin only), or a role name"),
 	}, "description")},
 	{Name: "list_tasks", Description: "List scheduled tasks visible to the current user.", Schema: props(map[string]any{})},
-	{Name: "delete_task", Description: "Delete a scheduled task by ID.", Schema: propsReq(map[string]any{"task_id": field("string", "The task UUID")}, "task_id")},
+	{Name: "update_task", Description: "Update or delete a scheduled task. Provide description to change it, or set delete=true to remove the task.", Schema: propsReq(map[string]any{
+		"task_id":     field("string", "The task UUID"),
+		"description": field("string", "New task description (optional)"),
+		"delete":      field("boolean", "Set to true to delete the task (optional)"),
+	}, "task_id")},
 }
 
 // TaskService handles task operations with authorization.
@@ -61,6 +65,27 @@ func (s *TaskService) List(ctx context.Context, c *Caller) ([]models.Task, error
 		return models.ListAllTenantTasks(ctx, s.pool, c.TenantID)
 	}
 	return models.ListTasksForContext(ctx, s.pool, c.TenantID, c.Identity, c.Roles)
+}
+
+// Update updates a task's description. Admins can update any; non-admins only their visible tasks.
+func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, description string) error {
+	if !c.IsAdmin {
+		visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.Identity, c.Roles)
+		if err != nil {
+			return fmt.Errorf("listing visible tasks: %w", err)
+		}
+		found := false
+		for _, t := range visible {
+			if t.ID == taskID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return ErrNotFound
+		}
+	}
+	return models.UpdateTaskDescription(ctx, s.pool, c.TenantID, taskID, description)
 }
 
 // Delete deletes a task. Admins can delete any; non-admins only visible tasks.

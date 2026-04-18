@@ -165,6 +165,29 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return tasks, rows.Err()
 }
 
+// UpdateTaskDescription updates a task's description. Builtin tasks cannot be updated.
+func UpdateTaskDescription(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, description string) error {
+	tag, err := pool.Exec(ctx, `
+		UPDATE tasks SET description = $3 WHERE tenant_id = $1 AND id = $2 AND task_type != 'builtin'
+	`, tenantID, taskID, description)
+	if err != nil {
+		return fmt.Errorf("updating task: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		t, err := GetTask(ctx, pool, tenantID, taskID)
+		if err != nil {
+			return err
+		}
+		if t == nil {
+			return errors.New("task not found")
+		}
+		if t.TaskType == "builtin" {
+			return errors.New("builtin tasks cannot be updated")
+		}
+	}
+	return nil
+}
+
 // DeleteTask deletes a task and its scope rows (via CASCADE). Builtin tasks cannot be deleted.
 func DeleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) error {
 	tag, err := pool.Exec(ctx, `DELETE FROM tasks WHERE tenant_id = $1 AND id = $2 AND task_type != 'builtin'`, tenantID, taskID)
