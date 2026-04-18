@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -82,7 +83,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	dmClient = client
 
 	// Parse the event based on type
-	var slackUserID, text, channel, threadTS string
+	var slackUserID, text, channel, threadTS, triggerTS string
 	var files []kitslack.File
 	switch eventType {
 	case "message":
@@ -94,10 +95,9 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		if !msg.ShouldProcess() {
 			return
 		}
-		// Only respond to channel messages if it's a reply in a thread Kit
-		// already has a session for (e.g. a task message or prior @mention).
-		// DMs are always relevant. This prevents Kit from replying to every
-		// message in channels it's joined.
+		// Outside of 1:1 DMs, only respond when Kit started the thread
+		// (scheduled task, onboarding). Human-started threads require an
+		// explicit @mention (routed as app_mention, not here).
 		if msg.ChannelType != "im" {
 			if msg.ThreadTS == "" {
 				return
@@ -107,7 +107,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 				slog.Error("looking up session by thread", "error", err)
 				return
 			}
-			if existing == nil {
+			if existing == nil || !existing.BotInitiated {
 				return
 			}
 		}
@@ -115,6 +115,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		text = msg.Text
 		channel = msg.Channel
 		threadTS = msg.ThreadTimestamp()
+		triggerTS = msg.Timestamp
 
 		files = msg.Files
 
@@ -128,6 +129,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		text = mention.Text
 		channel = mention.Channel
 		threadTS = mention.ThreadTimestamp()
+		triggerTS = mention.Timestamp
 
 		files = mention.Files
 
@@ -155,8 +157,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		return
 	}
 
-	// Get or create session
-	session, err := models.GetOrCreateSession(ctx, a.Pool, tenant.ID, channel, threadTS, user.ID)
+	session, err := a.resolveSession(ctx, client, tenant.ID, user.ID, channel, threadTS, triggerTS)
 	if err != nil {
 		slog.Error("resolving session", "error", err)
 		return
@@ -230,5 +231,52 @@ func (a *App) HandlePostInstall(ctx context.Context, tenant *models.Tenant, inst
 	onboardingPrompt := "I just installed Kit. Let's get it set up."
 	if err := a.Agent.Run(ctx, client, tenant, user, session, dmChannel, "", onboardingPrompt, nil); err != nil {
 		slog.Error("onboarding agent run failed", "error", err)
+	}
+}
+
+// resolveSession finds an existing session for the thread or creates one.
+// On fresh creation in a Slack thread that already has messages, it seeds
+// the session with the thread's prior messages so the agent has context.
+func (a *App) resolveSession(ctx context.Context, client *kitslack.Client, tenantID, userID uuid.UUID, channel, threadTS, triggerTS string) (*models.Session, error) {
+	session, err := models.FindSessionByThread(ctx, a.Pool, tenantID, channel, threadTS)
+	if err != nil {
+		return nil, fmt.Errorf("finding session: %w", err)
+	}
+	if session != nil {
+		return session, nil
+	}
+	session, err = models.CreateSession(ctx, a.Pool, tenantID, channel, threadTS, userID, false)
+	if err != nil {
+		return nil, fmt.Errorf("creating session: %w", err)
+	}
+	if threadTS != "" && threadTS != triggerTS {
+		bootstrapThreadHistory(ctx, a.Pool, client, tenantID, session.ID, channel, threadTS, triggerTS)
+	}
+	return session, nil
+}
+
+// bootstrapThreadHistory seeds a fresh session's event log with the Slack
+// thread's prior messages so the agent has context when @-mentioned mid-thread.
+// The triggering message is skipped because agent.Run records it separately.
+func bootstrapThreadHistory(ctx context.Context, pool *pgxpool.Pool, client *kitslack.Client, tenantID uuid.UUID, sessionID uuid.UUID, channel, threadTS, triggerTS string) {
+	msgs, err := client.GetThreadReplies(ctx, channel, threadTS)
+	if err != nil {
+		slog.Warn("fetching thread replies for bootstrap", "error", err, "channel", channel, "thread_ts", threadTS)
+		return
+	}
+	for _, m := range msgs {
+		if m.Timestamp == triggerTS || m.Text == "" {
+			continue
+		}
+		if m.BotID != "" {
+			_ = models.AppendSessionEvent(ctx, pool, tenantID, sessionID, "assistant_turn", map[string]any{
+				"content": []map[string]any{{"type": "text", "text": m.Text}},
+			})
+		} else {
+			_ = models.AppendSessionEvent(ctx, pool, tenantID, sessionID, "message_received", map[string]any{
+				"text":    m.Text,
+				"channel": channel,
+			})
+		}
 	}
 }

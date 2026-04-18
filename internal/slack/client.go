@@ -274,6 +274,7 @@ type HistoryOpts struct {
 // Message represents a Slack message from channel history.
 type Message struct {
 	UserID    string
+	BotID     string
 	Text      string
 	Timestamp string
 	ThreadTS  string
@@ -320,12 +321,54 @@ func (c *Client) GetConversationHistory(ctx context.Context, channelID string, o
 		}
 		result.Messages = append(result.Messages, Message{
 			UserID:    strVal(msg, "user"),
+			BotID:     strVal(msg, "bot_id"),
 			Text:      strVal(msg, "text"),
 			Timestamp: strVal(msg, "ts"),
 			ThreadTS:  strVal(msg, "thread_ts"),
 		})
 	}
 	return result, nil
+}
+
+// GetThreadReplies fetches all messages in a thread in chronological order.
+// Use this to bootstrap context when Kit joins a thread that was already in progress.
+func (c *Client) GetThreadReplies(ctx context.Context, channelID, threadTS string) ([]Message, error) {
+	var all []Message
+	cursor := ""
+	for {
+		payload := map[string]any{
+			"channel": channelID,
+			"ts":      threadTS,
+			"limit":   200,
+		}
+		if cursor != "" {
+			payload["cursor"] = cursor
+		}
+		resp, err := c.apiCall(ctx, "conversations.replies", payload)
+		if err != nil {
+			return nil, err
+		}
+		msgs, _ := resp["messages"].([]any)
+		for _, m := range msgs {
+			msg, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			all = append(all, Message{
+				UserID:    strVal(msg, "user"),
+				BotID:     strVal(msg, "bot_id"),
+				Text:      strVal(msg, "text"),
+				Timestamp: strVal(msg, "ts"),
+				ThreadTS:  strVal(msg, "thread_ts"),
+			})
+		}
+		meta, _ := resp["response_metadata"].(map[string]any)
+		cursor, _ = meta["next_cursor"].(string)
+		if cursor == "" {
+			break
+		}
+	}
+	return all, nil
 }
 
 // FormatTimestamp converts a Unix timestamp to a readable date-time string.

@@ -111,7 +111,7 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 
 	// Each task run gets its own session using the task ID + timestamp as thread_ts
 	threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
-	session, err := models.CreateSession(ctx, s.pool, tenant.ID, task.ChannelID, threadTS, user.ID)
+	session, err := models.CreateSession(ctx, s.pool, tenant.ID, task.ChannelID, threadTS, user.ID, true)
 	if err != nil {
 		slog.Error("creating session for task", "task_id", task.ID, "error", err)
 		s.recordTaskError(ctx, task, "creating session", slack, user)
