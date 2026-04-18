@@ -122,8 +122,15 @@ You are executing a scheduled task, not responding to a live conversation.
 Task: %s
 Created by: %s (<@%s>)
 
-If you need help or clarification, use send_slack_message with user_id set to %q to DM the task author.
-Do NOT post questions or errors to the channel — only post the task's intended output there.`, tc.Description, tc.AuthorName, tc.AuthorSlackID, tc.AuthorSlackID)
+The "current channel" for this task is the author's private DM with Kit. If
+send_slack_message is called without a channel argument, the message goes
+to that DM — which is usually NOT what the task wants. When the task tells
+you to post to a named channel (e.g. "#tmp" or "the ops channel"), you MUST
+pass that channel name (or id) explicitly via send_slack_message's channel
+argument. Never assume the default channel is the target.
+
+If you need help or clarification, use send_slack_message with user_id set
+to %q to DM the task author.`, tc.Description, tc.AuthorName, tc.AuthorSlackID, tc.AuthorSlackID)
 }
 
 func platformOnboardingRules() string {

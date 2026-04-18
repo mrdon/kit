@@ -35,27 +35,14 @@ main.feed > .card-screen {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 24px 20px;
+  padding: 8px 12px;
   box-sizing: border-box;
-}
-
-.feed-title {
-  position: fixed;
-  top: calc(env(safe-area-inset-top) + 14px);
-  left: 20px;
-  font-size: 18px;
-  font-weight: 700;
-  color: #f8fafc;
-  pointer-events: none;
-  z-index: 1;
-  letter-spacing: 0.02em;
-  opacity: 0.8;
 }
 
 .card {
   background: #1e293b;
   border-radius: 20px;
-  padding: 24px 22px;
+  padding: 28px 24px;
   border-left: 4px solid #475569;
   position: relative;
   cursor: grab;
@@ -63,7 +50,8 @@ main.feed > .card-screen {
   touch-action: pan-y;
   display: flex;
   flex-direction: column;
-  min-height: min(78vh, 78dvh);
+  flex: 1;
+  min-height: 0;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 

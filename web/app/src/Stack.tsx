@@ -48,7 +48,6 @@ export default function Stack() {
 
   return (
     <main className="feed">
-      <div className="feed-title">Kit</div>
       {cards.map((c) => (
         <section key={c.id} className="card-screen">
           <SwipeCard card={c} onCommit={onCommit} />
