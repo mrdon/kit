@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -62,13 +61,17 @@ type Registry struct {
 	handlers map[string]HandlerFunc
 }
 
-// NewRegistry creates a registry and runs all register functions for the given user.
-func NewRegistry(isAdmin bool) *Registry {
+// NewRegistry creates a registry and runs all register functions for the
+// given user. botInitiated toggles which messaging tools are registered:
+// live Slack conversations get reply_in_thread; bot-initiated runs
+// (scheduled tasks, decision resolves) do not — the agent must pick a
+// named channel or user explicitly.
+func NewRegistry(isAdmin, botInitiated bool) *Registry {
 	r := &Registry{handlers: make(map[string]HandlerFunc)}
 
 	// Each tool group registers itself here.
 	// To add a new tool: create a file, add a Register call below.
-	registerCoreTools(r)
+	registerCoreTools(r, botInitiated)
 	registerSkillTools(r, isAdmin)
 	registerRoleTools(r, isAdmin)
 	registerRuleTools(r, isAdmin)
@@ -115,28 +118,20 @@ func (r *Registry) Execute(ec *ExecContext, name string, input json.RawMessage) 
 }
 
 // IsTerminal returns true if calling this tool should end the agent loop.
-// For send_slack_message, it is only terminal when posting to the conversation
-// channel, not when DMing a user or posting to a different channel.
-func (r *Registry) IsTerminal(name string, input json.RawMessage, currentChannel string) bool {
+// Only reply_in_thread is truly terminal: a dm_user or post_to_channel
+// call dispatches a message but the agent may still need to follow up in
+// the originating thread. The caller passes the current channel for
+// compatibility with the previous signature; it is unused now.
+func (r *Registry) IsTerminal(name string, _ json.RawMessage, _ string) bool {
 	for _, d := range r.defs {
 		if d.Name == name {
 			if !d.Terminal {
 				return false
 			}
-			// Check if input overrides terminal behavior
-			var fields map[string]json.RawMessage
-			if json.Unmarshal(input, &fields) == nil {
-				if uid, ok := fields["user_id"]; ok && string(uid) != `""` && string(uid) != "null" {
-					return false
-				}
-				if ch, ok := fields["channel"]; ok {
-					chStr := strings.Trim(string(ch), `"`)
-					if chStr != "" && chStr != "null" && chStr != currentChannel {
-						return false
-					}
-				}
-			}
-			return true
+			// Only reply_in_thread ends the loop — other messaging tools
+			// just dispatch and keep the agent active for multi-step work
+			// (e.g. post to #tmp then DM the author).
+			return name == "reply_in_thread"
 		}
 	}
 	return false

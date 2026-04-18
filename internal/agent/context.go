@@ -35,7 +35,13 @@ Communication style:
 - Only ask follow-up questions during onboarding or when you genuinely need clarification.`, tenant.Name))
 
 	// Communication constraint (Slack-specific)
-	parts = append(parts, `IMPORTANT: You MUST use the send_slack_message tool to respond to the user. Never output a final text response without calling send_slack_message. Every response to the user must go through this tool.
+	parts = append(parts, `IMPORTANT: You MUST respond to the user via a messaging tool — never output a final text response. Pick the tool that matches the target:
+
+- reply_in_thread(text) — answer the user where they're talking to you (the current thread or DM). Use this for live conversations.
+- post_to_channel(channel, text) — post to a named Slack channel. Use this when a task or instruction names a channel (e.g. "#tmp", "the ops channel").
+- dm_user(user_id, text) — send a private DM to a specific Slack user id. Use for user-directed notifications that aren't the live conversation.
+
+In task or decision-resolve contexts, reply_in_thread is not available — choose post_to_channel or dm_user. Never leave a run with no tool call.
 
 Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 - Bold: *bold* (single asterisks, not double)
@@ -122,15 +128,13 @@ You are executing a scheduled task, not responding to a live conversation.
 Task: %s
 Created by: %s (<@%s>)
 
-The "current channel" for this task is the author's private DM with Kit. If
-send_slack_message is called without a channel argument, the message goes
-to that DM — which is usually NOT what the task wants. When the task tells
-you to post to a named channel (e.g. "#tmp" or "the ops channel"), you MUST
-pass that channel name (or id) explicitly via send_slack_message's channel
-argument. Never assume the default channel is the target.
-
-If you need help or clarification, use send_slack_message with user_id set
-to %q to DM the task author.`, tc.Description, tc.AuthorName, tc.AuthorSlackID, tc.AuthorSlackID)
+reply_in_thread is not available in this context. Pick the target
+explicitly for every message:
+- When the task names a channel (e.g. "#tmp"), call post_to_channel with
+  that channel and the output text.
+- When the task is about notifying the author or a specific user, call
+  dm_user with the Slack user id.
+- The author's id is %q — use it with dm_user if you need to reach them.`, tc.Description, tc.AuthorName, tc.AuthorSlackID, tc.AuthorSlackID)
 }
 
 func platformOnboardingRules() string {
