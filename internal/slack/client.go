@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -154,7 +157,16 @@ type UserInfo struct {
 
 // GetUserInfo fetches a user's display name and timezone from Slack.
 func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, error) {
-	resp, err := c.apiCall(ctx, "users.info", map[string]string{"user": userID})
+	params := map[string]string{"user": userID}
+	resp, err := c.apiCall(ctx, "users.info", params)
+	if err != nil {
+		// Fall back to form-encoded in case JSON body isn't parsed
+		slog.Info("users.info json failed, trying form-encoded", "user_id", userID, "error", err)
+		resp, err = c.apiFormCall(ctx, "users.info", params)
+	}
+	if err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +313,38 @@ func (c *Client) AuthTest(ctx context.Context) (teamID, botUserID string, err er
 	return teamID, botUserID, nil
 }
 
+func (c *Client) apiFormCall(ctx context.Context, method string, params map[string]string) (map[string]any, error) {
+	form := make(url.Values)
+	for k, v := range params {
+		form.Set(k, v)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://slack.com/api/"+method, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling %s: %w", method, err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	if ok, _ := result["ok"].(bool); !ok {
+		errMsg, _ := result["error"].(string)
+		return nil, fmt.Errorf("slack api %s: %s", method, errMsg)
+	}
+
+	return result, nil
+}
+
 func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[string]any, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -320,8 +364,18 @@ func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[s
 	}
 	defer resp.Body.Close()
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	// Debug log for failing API calls
+	if method == "users.info" {
+		slog.Debug("slack api call", "method", method, "request_body", string(body), "response_body", string(respBody))
+	}
+
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
