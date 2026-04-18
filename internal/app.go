@@ -92,7 +92,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 			return
 		}
 		if !msg.ShouldProcess() {
-			slog.Info("message filtered by ShouldProcess", "subtype", msg.SubType, "bot_id", msg.BotID, "user", msg.User, "channel", msg.Channel)
+			slog.Debug("message filtered by ShouldProcess", "subtype", msg.SubType, "bot_id", msg.BotID, "user", msg.User, "channel", msg.Channel)
 			return
 		}
 		slackUserID = msg.User
