@@ -140,7 +140,12 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 
 		if resp.StopReason == "end_turn" && len(resp.ToolUses()) == 0 {
 			text := resp.TextContent()
-			if text != "" {
+			// For bot-initiated runs (scheduled tasks, decision resolves),
+			// the prompt tells the agent exactly where to post via
+			// send_slack_message. Any stray final text is a terse
+			// acknowledgement ("Done.") and would land in the user's DM
+			// as noise. Drop it.
+			if text != "" && !session.BotInitiated {
 				_ = slack.PostMessage(ctx, channel, threadTS, text)
 				sentMessage = true
 			}

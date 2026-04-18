@@ -77,15 +77,17 @@ func main() {
 	if sessionSecret == "" {
 		sessionSecret = cfg.EncryptionKey
 	}
-	if signer, err := auth.NewSessionSigner(sessionSecret); err == nil {
+	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
+	if err != nil {
+		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
+		sessionSigner = nil
+	} else {
 		cards.Configure(
-			signer,
+			sessionSigner,
 			auth.SlackOpenIDConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret},
 			cfg.BaseURL,
 			cfg.Env == "dev",
 		)
-	} else {
-		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
 	}
 
 	// Encryption for bot tokens
@@ -137,7 +139,7 @@ func main() {
 			return auth.InjectCallerFromRequest(ctx, pool, r)
 		}),
 	)
-	oauthServer := auth.NewOAuthServer(pool, cfg.BaseURL, cfg.SlackClientID, cfg.SlackClientSecret)
+	oauthServer := auth.NewOAuthServer(pool, cfg.BaseURL, cfg.SlackClientID, cfg.SlackClientSecret, sessionSigner)
 	regHandler := auth.NewRegistrationHandler(pool)
 
 	mux := http.NewServeMux()

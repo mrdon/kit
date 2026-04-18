@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,20 +27,34 @@ const (
 // OAuthServer implements the OAuth 2.1 endpoints for MCP authentication.
 // Kit acts as both Authorization Server and Resource Server.
 // User identity is delegated to Slack via "Sign in with Slack".
+//
+// The same /oauth/callback is reused by the PWA session-cookie flow:
+// when the `state` parameter starts with pwaStatePrefix, HandleCallback
+// issues a session cookie via the attached SessionSigner instead of a
+// Kit oauth_code. This avoids registering a second redirect URI with
+// Slack.
 type OAuthServer struct {
 	pool         *pgxpool.Pool
 	baseURL      string // e.g. "https://kit.example.com"
 	clientID     string // Slack app client ID
 	clientSecret string // Slack app client secret
+	signer       *SessionSigner
 }
 
-// NewOAuthServer creates a new OAuth server.
-func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecret string) *OAuthServer {
+// pwaStatePrefix marks a state param as belonging to the PWA cookie flow.
+// The MCP OAuth flow uses base64-encoded JSON states which will never
+// begin with this prefix.
+const pwaStatePrefix = "pwa:"
+
+// NewOAuthServer creates a new OAuth server. signer may be nil; if set,
+// PWA-prefixed callbacks mint a session cookie via it.
+func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecret string, signer *SessionSigner) *OAuthServer {
 	return &OAuthServer{
 		pool:         pool,
 		baseURL:      baseURL,
 		clientID:     slackClientID,
 		clientSecret: slackClientSecret,
+		signer:       signer,
 	}
 }
 
@@ -98,11 +113,19 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCallback receives the redirect from Slack after user authorizes.
+// Two modes, chosen by the `state` shape:
+//   - PWA session-cookie flow when state starts with pwaStatePrefix
+//   - MCP OAuth 2.1 code flow otherwise
 func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	stateParam := r.URL.Query().Get("state")
 	if code == "" {
 		http.Error(w, "missing code", http.StatusBadRequest)
+		return
+	}
+
+	if strings.HasPrefix(stateParam, pwaStatePrefix) {
+		s.handlePWACallback(w, r, code)
 		return
 	}
 
@@ -156,6 +179,38 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	u.RawQuery = q.Encode()
 	http.Redirect(w, r, u.String(), http.StatusFound)
+}
+
+// handlePWACallback is the session-cookie branch of HandleCallback —
+// exchanges the Slack code, looks up the Kit user, and issues a session
+// cookie via s.signer.
+func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, code string) {
+	if s.signer == nil {
+		http.Error(w, "session signer not configured", http.StatusInternalServerError)
+		return
+	}
+	ident, err := ExchangeSlackCode(r.Context(), SlackOpenIDConfig{ClientID: s.clientID, ClientSecret: s.clientSecret}, code, s.baseURL+"/oauth/callback")
+	if err != nil {
+		slog.Error("pwa slack exchange", "error", err)
+		http.Error(w, "slack authentication failed", http.StatusBadGateway)
+		return
+	}
+	tenant, err := models.GetTenantBySlackTeamID(r.Context(), s.pool, ident.TeamID)
+	if err != nil || tenant == nil {
+		http.Error(w, "organization not found — install Kit into your Slack workspace first", http.StatusNotFound)
+		return
+	}
+	user, err := models.GetUserBySlackID(r.Context(), s.pool, tenant.ID, ident.UserID)
+	if err != nil || user == nil {
+		http.Error(w, "user not found — message Kit in Slack first to create your account", http.StatusNotFound)
+		return
+	}
+	if err := s.signer.Issue(r.Context(), w, s.pool, tenant.ID, user.ID); err != nil {
+		slog.Error("issuing pwa session", "error", err)
+		http.Error(w, "issuing session", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/app/", http.StatusSeeOther)
 }
 
 // HandleToken exchanges an authorization code for an access token.

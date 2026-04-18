@@ -41,9 +41,11 @@ func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
 	}
 
 	// Real sign-in via Slack OpenID. Only registered if client creds are set.
+	// The callback reuses the MCP /oauth/callback endpoint — same redirect
+	// URI registered with the Slack app. The OAuthServer dispatches to
+	// PWA-cookie issuance when state starts with "pwa:".
 	if a.slack.ClientID != "" && a.slack.ClientSecret != "" {
 		mux.HandleFunc("GET /app/login", a.handleLogin)
-		mux.HandleFunc("GET /app/callback", a.handleLoginCallback)
 	} else {
 		slog.Warn("cards: Slack client creds not set — /app/login disabled; use /app/dev-login in dev or bearer tokens")
 	}
@@ -52,72 +54,19 @@ func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
 	mux.Handle("GET /app/", webapp.Handler())
 }
 
-// handleLogin starts the PWA Slack OpenID flow. State carries a CSRF nonce
-// (stored in a short-lived cookie we verify in the callback) and an
-// optional return-to URL for post-login redirect.
+// handleLogin starts the PWA Slack OpenID flow. The state carries a
+// "pwa:" prefix + high-entropy nonce so the shared /oauth/callback
+// handler can tell it apart from the MCP OAuth flow and issue a session
+// cookie instead of an OAuth code.
 func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	nonce, _, err := models.GenerateToken()
 	if err != nil {
 		http.Error(w, "nonce error", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     loginStateCookie,
-		Value:    nonce,
-		Path:     "/app/callback",
-		MaxAge:   300,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/app/callback", nonce)
+	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce)
 	http.Redirect(w, r, slackURL, http.StatusFound)
 }
-
-// handleLoginCallback receives the redirect from Slack after the user
-// signs in. It verifies the state cookie, exchanges the code for an
-// identity, looks up the Kit user, and issues a session cookie.
-func (a *CardsApp) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
-	state := r.URL.Query().Get("state")
-	if code == "" || state == "" {
-		http.Error(w, "missing code or state", http.StatusBadRequest)
-		return
-	}
-	stateCookie, err := r.Cookie(loginStateCookie)
-	if err != nil || stateCookie.Value == "" || stateCookie.Value != state {
-		http.Error(w, "state mismatch — retry from /app/login", http.StatusBadRequest)
-		return
-	}
-	// Clear the state cookie.
-	http.SetCookie(w, &http.Cookie{
-		Name: loginStateCookie, Value: "", Path: "/app/callback", MaxAge: -1,
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-	})
-
-	ident, err := auth.ExchangeSlackCode(r.Context(), a.slack, code, a.baseURL+"/app/callback")
-	if err != nil {
-		http.Error(w, "slack auth failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	tenant, err := models.GetTenantBySlackTeamID(r.Context(), a.pool, ident.TeamID)
-	if err != nil || tenant == nil {
-		http.Error(w, "organization not found — install Kit into your Slack workspace first", http.StatusNotFound)
-		return
-	}
-	user, err := models.GetUserBySlackID(r.Context(), a.pool, tenant.ID, ident.UserID)
-	if err != nil || user == nil {
-		http.Error(w, "user not found — message Kit in Slack first to create your account", http.StatusNotFound)
-		return
-	}
-	if err := a.signer.Issue(r.Context(), w, a.pool, tenant.ID, user.ID); err != nil {
-		http.Error(w, "issuing session: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
-}
-
-const loginStateCookie = "kit_login_state"
 
 // requireJSON rejects cross-origin simple-requests by insisting on
 // application/json for POSTs. GETs pass through. See auth/session.go for
