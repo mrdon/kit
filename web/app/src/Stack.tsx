@@ -73,15 +73,25 @@ export default function Stack() {
 
 function Burst({ kind }: { kind: 'up' | 'down' | 'approve' }) {
   const emoji = kind === 'up' ? '👍' : kind === 'down' ? '👎' : '✅';
+  // Outer div stays a pure flex centerer; the inner motion.span owns the
+  // animated transform. Putting the scale on the outer element replaces
+  // the flex centering and pushes the emoji off-screen to the right.
   return (
     <motion.div
       className="burst"
-      initial={{ opacity: 0, scale: 0.5 }}
-      animate={{ opacity: 1, scale: 1.2 }}
-      exit={{ opacity: 0, scale: 1.6, transition: { duration: 0.35 } }}
-      transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.25 } }}
     >
-      <span aria-hidden>{emoji}</span>
+      <motion.span
+        aria-hidden
+        initial={{ scale: 0.5 }}
+        animate={{ scale: 1.2 }}
+        exit={{ scale: 1.6, transition: { duration: 0.35 } }}
+        transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+      >
+        {emoji}
+      </motion.span>
     </motion.div>
   );
 }
@@ -136,8 +146,8 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
     <motion.article
       className={`card ${tagClass}`}
       drag={busy ? false : 'x'}
-      dragConstraints={canSwipeLeft ? { left: 0, right: 0 } : { left: 0, right: 0 }}
-      dragElastic={0.6}
+      dragConstraints={canSwipeLeft ? { left: -400, right: 400 } : { left: 0, right: 400 }}
+      dragElastic={0.4}
       style={{ x }}
       animate={
         swipingOut === 'right'

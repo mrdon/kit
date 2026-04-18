@@ -12,12 +12,14 @@ Kit manages knowledge and tasks, all scoped by role so people see what's relevan
 - **Rules** — Behavioral guidelines that shape how Kit responds
 - **Memories** — Persistent facts Kit remembers across conversations
 - **Tasks** — Scheduled and one-time automation via cron expressions
+- **Cards** — Decisions and briefings Kit surfaces in a swipeable mobile stack (see below)
 - **Roles** — Scope any content to specific team roles (bartender, manager, etc.)
 
 Your team reaches Kit through interfaces:
 
 - **Slack** — Ask questions, manage content, and trigger tasks through natural conversation
 - **MCP Server** — Connect from Claude Code, Cursor, or any MCP-compatible AI client
+- **Mobile PWA** — Swipeable card stack at `/app/` for decisions needing approval and briefings worth seeing. Installs to the home screen (iOS and Android)
 - **API** — Everything is accessible programmatically for integrations
 
 Kit owns the knowledge and automation layer. Interfaces are how people and tools reach it.
@@ -36,6 +38,7 @@ git clone https://github.com/mrdon/kit.git
 cd kit
 cp .env.example .env  # edit with your values
 make up               # start Postgres via Docker
+make app-init         # install frontend deps for the card-stack PWA
 make dev              # start with hot reload
 ```
 
@@ -85,13 +88,17 @@ On first connection, your client will open a browser for Slack sign-in. After th
 ```bash
 make up          # Start Postgres via Docker Compose
 make dev         # Start Postgres + hot reload
-make build       # Build binary to ./dist/kit
+make build       # Build binary to ./dist/kit (includes app-build)
 make test        # Run tests with race detection
 make lint        # Run golangci-lint
 make format      # Format code + tidy modules
 make prepush     # format + lint + test + build
 make db          # Connect to local Postgres
 make db-reset    # Wipe and restart Postgres
+make app-init    # Install frontend deps (web/app)
+make app-dev     # Run Vite dev server for the card-stack PWA
+make app-build   # Build the PWA to web/app/dist (embedded by Go)
+make app-clean   # Remove frontend build output + node_modules
 ```
 
 ## Architecture
@@ -101,7 +108,8 @@ cmd/kit/           Entry point, HTTP server, route wiring
 internal/
   agent/           Agent loop, system prompt assembly
   anthropic/       Claude API client
-  auth/            OAuth for MCP (Sign in with Slack)
+  apps/            Modular feature apps (todo, cards, calendar, slack, …)
+  auth/            OAuth for MCP + PWA session cookies (Sign in with Slack)
   config/          Environment-based configuration
   crypto/          AES-256-GCM encryption
   database/        Postgres connection + migrations
@@ -113,6 +121,7 @@ internal/
   slack/           Slack integration (events, OAuth, API)
   tools/           Agent tool handlers (Slack adapter)
   web/             Web fetcher, landing page
+web/app/           Card-stack PWA (React + Vite, embedded via //go:embed)
 ```
 
 ## License

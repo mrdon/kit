@@ -108,14 +108,24 @@ Calendars are scoped to roles like other Kit resources. Use `list_calendars` to 
 
 ## Decisions and briefings (card stack)
 
-Kit can surface agent-driven prompts to you via a swipeable mobile card stack at `/app/` (sign in via Slack). Two kinds:
+Kit surfaces agent-driven prompts in a swipeable mobile card stack at `/app/` (sign in via Slack). Install it to your home screen: iOS Safari → Share → Add to Home Screen; Android Chrome → ⋮ → Install app.
 
-- **Decisions** — a judgment call with 2-4 options and a recommended default. Swipe right to approve the default; tap to see all options. If an option carries an instruction, Kit queues a one-shot agent task that runs it and posts output to your Slack DM.
-- **Briefings** — informational updates. Swipe right to archive; tap to archive / save / dismiss.
+Two kinds of card:
+
+- **Decisions** — a judgment call with 2-4 options and a recommended default.
+  - **Swipe right** → approve the recommended option
+  - **Tap** → open the detail view to pick any option
+  - If the chosen option has a prompt, Kit queues a one-shot agent task that runs it (e.g. posts to a channel, sends a DM, calls a tool).
+- **Briefings** — informational updates, usually recaps or alerts.
+  - **Swipe right (👍)** → useful; archive it
+  - **Swipe left (👎)** → not useful; dismiss it
+  - **Tap** → open the detail view
+
+Both thumbs up and thumbs down are recorded on the card (terminal state + timestamp + user), so the signal is available if you want to tune future briefings toward what's actually useful.
 
 Create from an agent context (Slack, MCP, or a skill):
 
 > "Create a decision to reorder Moonbeam hops with options: send the draft order, edit first, or skip."
 > "Create a briefing about last night's sales — highest Thursday in 6 months."
 
-Via MCP: `create_decision`, `create_briefing`, `update_decision`, `update_briefing`, `list_decisions`, `list_briefings`, `resolve_decision`, `ack_briefing`. Cards are scoped like other Kit resources.
+Via MCP: `create_decision`, `create_briefing`, `update_decision`, `update_briefing`, `list_decisions`, `list_briefings`, `resolve_decision`, `ack_briefing`. Cards are scoped like other Kit resources — role, user, or tenant-wide.
