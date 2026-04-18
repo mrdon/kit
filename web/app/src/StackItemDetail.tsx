@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useTransform,
+  type PanInfo,
+} from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from './api';
@@ -68,8 +75,8 @@ export default function StackItemDetail() {
   const Detail = renderer.Detail;
 
   return (
-    <main className={`detail tier-${item.priority_tier}`}>
-      <Link to="/" className="back">← Back</Link>
+    <SwipeBackShell item={item}>
+      <Link to="/" className="back">← Back · swipe left to close</Link>
       <div className="kind-tag">
         {item.icon ? `${item.icon} ` : ''}
         {item.kind_label}
@@ -92,6 +99,50 @@ export default function StackItemDetail() {
       {Detail && (
         <Detail item={item} extras={extras} onAction={onAction} busy={busy} />
       )}
-    </main>
+    </SwipeBackShell>
+  );
+}
+
+// SwipeBackShell makes the whole detail view drag-dismissable. Swipe
+// right-to-left past a threshold pops back to the stack — the same
+// gesture a native app would use for "pop view controller". Pulling
+// right opens nothing, so we constrain to negative X only.
+function SwipeBackShell({
+  item,
+  children,
+}: {
+  item: StackItem;
+  children: React.ReactNode;
+}) {
+  const navigate = useNavigate();
+  const x = useMotionValue(0);
+  const threshold =
+    typeof window !== 'undefined' ? Math.max(180, window.innerWidth * 0.35) : 180;
+  const opacity = useTransform(x, [-threshold, 0], [0.3, 1]);
+
+  const onDragEnd = (_e: unknown, info: PanInfo) => {
+    if (info.offset.x < -threshold) {
+      // Animate off-screen left, then navigate. Using spring for the
+      // exit keeps the motion in sync with the platform back-swipe feel.
+      animate(x, -window.innerWidth, {
+        duration: 0.2,
+        onComplete: () => navigate('/'),
+      });
+      return;
+    }
+    animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
+  };
+
+  return (
+    <motion.main
+      className={`detail tier-${item.priority_tier}`}
+      drag="x"
+      dragConstraints={{ left: -window.innerWidth, right: 0 }}
+      dragElastic={0.25}
+      style={{ x, opacity }}
+      onDragEnd={onDragEnd}
+    >
+      {children}
+    </motion.main>
   );
 }

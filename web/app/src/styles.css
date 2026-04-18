@@ -184,7 +184,6 @@ main.feed > .card-screen {
   font-size: 16px;
   line-height: 1.55;
   color: var(--card-fg);
-  white-space: pre-wrap;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -296,7 +295,6 @@ main.feed > .card-screen {
 .detail .body {
   line-height: 1.6;
   color: var(--card-fg);
-  white-space: pre-wrap;
   margin-bottom: 24px;
 }
 
@@ -336,6 +334,34 @@ main.feed > .card-screen {
   font-size: 13px;
   color: var(--card-muted);
 }
+
+.todo-face {
+  flex-shrink: 0;
+}
+.todo-face-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--card-muted);
+  margin-bottom: 10px;
+}
+.priority-chip {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--card-border);
+  color: var(--card-fg);
+}
+.priority-chip.priority-urgent { background: var(--tier-critical-accent); color: white; }
+.priority-chip.priority-high   { background: var(--tier-high-accent);     color: white; }
+.priority-chip.priority-medium { background: var(--tier-medium-accent);   color: white; }
+.priority-chip.priority-low    { background: var(--card-border);          color: var(--card-muted); }
+.assignee, .role-scope { font-weight: 500; }
 
 .todo-meta {
   display: flex;

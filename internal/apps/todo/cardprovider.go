@@ -33,9 +33,17 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 	if err != nil {
 		return shared.StackPage{}, err
 	}
+	names, err := loadAssigneeNames(ctx, p.app.svc.pool, caller.TenantID, todos)
+	if err != nil {
+		return shared.StackPage{}, err
+	}
 	items := make([]shared.StackItem, 0, len(todos))
 	for i := range todos {
-		it, err := todoToStackItem(&todos[i])
+		name := ""
+		if todos[i].AssignedTo != nil {
+			name = names[*todos[i].AssignedTo]
+		}
+		it, err := todoToStackItem(&todos[i], name)
 		if err != nil {
 			return shared.StackPage{}, err
 		}
@@ -56,7 +64,15 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 	if err != nil {
 		return nil, err
 	}
-	item, err := todoToStackItem(t)
+	name := ""
+	if t.AssignedTo != nil {
+		names, err := loadAssigneeNames(ctx, p.app.svc.pool, caller.TenantID, []Todo{*t})
+		if err != nil {
+			return nil, err
+		}
+		name = names[*t.AssignedTo]
+	}
+	item, err := todoToStackItem(t, name)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +84,52 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 		Item:   item,
 		Extras: map[string]json.RawMessage{"events": encodedEvents},
 	}, nil
+}
+
+// loadAssigneeNames fetches display names (falling back to slack_user_id)
+// for every distinct assigned_to in todos. A single IN query keeps the
+// cost flat regardless of how many todos come back.
+func loadAssigneeNames(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, todos []Todo) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	seen := map[uuid.UUID]struct{}{}
+	ids := make([]uuid.UUID, 0, len(todos))
+	for _, t := range todos {
+		if t.AssignedTo == nil {
+			continue
+		}
+		if _, ok := seen[*t.AssignedTo]; ok {
+			continue
+		}
+		seen[*t.AssignedTo] = struct{}{}
+		ids = append(ids, *t.AssignedTo)
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT id, display_name
+		FROM users
+		WHERE tenant_id = $1 AND id = ANY($2)`,
+		tenantID, ids,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("loading assignee names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var displayName *string
+		if err := rows.Scan(&id, &displayName); err != nil {
+			return nil, fmt.Errorf("scanning assignee: %w", err)
+		}
+		// Intentionally no fallback to slack_user_id — a cryptic ID is
+		// worse than nothing. Display name is populated by the "Sync user
+		// profiles from Slack" builtin task.
+		if displayName != nil && *displayName != "" {
+			out[id] = *displayName
+		}
+	}
+	return out, rows.Err()
 }
 
 func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, _ json.RawMessage) (*shared.ActionResult, error) {
@@ -156,7 +218,7 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	return out, rows.Err()
 }
 
-func todoToStackItem(t *Todo) (shared.StackItem, error) {
+func todoToStackItem(t *Todo, assigneeName string) (shared.StackItem, error) {
 	it := shared.StackItem{
 		SourceApp:    "todo",
 		Kind:         "todo",
@@ -176,11 +238,12 @@ func todoToStackItem(t *Todo) (shared.StackItem, error) {
 		it.Badges = append(it.Badges, badge)
 	}
 	meta, err := json.Marshal(map[string]any{
-		"due_date":    t.DueDate,
-		"priority":    t.Priority,
-		"status":      t.Status,
-		"assigned_to": t.AssignedTo,
-		"role_scope":  t.RoleScope,
+		"due_date":         t.DueDate,
+		"priority":         t.Priority,
+		"status":           t.Status,
+		"assigned_to":      t.AssignedTo,
+		"assigned_to_name": assigneeName,
+		"role_scope":       t.RoleScope,
 	})
 	if err != nil {
 		return it, fmt.Errorf("encoding todo metadata: %w", err)

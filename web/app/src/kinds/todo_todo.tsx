@@ -8,8 +8,19 @@ function meta(item: StackItem): TodoMetadata | undefined {
 function Face({ item }: { item: StackItem }) {
   const m = meta(item);
   return (
-    <div className="hint">
-      Swipe right to complete{m?.priority ? ` · priority ${m.priority}` : ''}
+    <div className="todo-face">
+      {m && (
+        <div className="todo-face-meta">
+          <span className={`priority-chip priority-${m.priority}`}>
+            {m.priority}
+          </span>
+          {m.assigned_to_name && (
+            <span className="assignee">👤 {m.assigned_to_name}</span>
+          )}
+          {m.role_scope && <span className="role-scope">#{m.role_scope}</span>}
+        </div>
+      )}
+      <div className="hint">Swipe right to complete</div>
     </div>
   );
 }
@@ -34,6 +45,7 @@ function Detail({
           {m.due_date && <div>Due: {formatDate(m.due_date)}</div>}
           <div>Priority: {m.priority}</div>
           <div>Status: {m.status}</div>
+          {m.assigned_to_name && <div>Assigned: {m.assigned_to_name}</div>}
           {m.role_scope && <div>Role: {m.role_scope}</div>}
         </div>
       )}
