@@ -30,12 +30,12 @@ export default function Stack() {
     };
   }, [load]);
 
-  const onCommit = (c: Card) => {
+  const onCommit = (c: Card, direction: 'right' | 'left') => {
     setCards((cs) => (cs ? cs.filter((x) => x.id !== c.id) : cs));
     if (c.kind === 'decision') {
-      setToast('Working on it…');
+      setToast(direction === 'right' ? 'Working on it…' : 'Skipped');
     } else {
-      setToast('Archived');
+      setToast(direction === 'right' ? '👍 Archived' : '👎 Dismissed');
     }
     setTimeout(() => setToast(null), 2000);
   };
@@ -58,13 +58,15 @@ export default function Stack() {
   );
 }
 
-function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card) => void }) {
+function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, direction: 'right' | 'left') => void }) {
   const x = useMotionValue(0);
   const rightOpacity = useTransform(x, [0, 100], [0, 1]);
+  const leftOpacity = useTransform(x, [-100, 0], [1, 0]);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
 
   const tagClass = cardClass(card);
+  const canSwipeLeft = card.kind === 'briefing'; // decisions need an explicit option; no default "no"
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
@@ -76,7 +78,18 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card) => void
         } else {
           await api.ack(card.id, 'archived');
         }
-        onCommit(card);
+        onCommit(card, 'right');
+      } catch (e) {
+        setBusy(false);
+        alert((e as Error).message);
+      }
+      return;
+    }
+    if (canSwipeLeft && info.offset.x < -120) {
+      setBusy(true);
+      try {
+        await api.ack(card.id, 'dismissed');
+        onCommit(card, 'left');
       } catch (e) {
         setBusy(false);
         alert((e as Error).message);
@@ -90,7 +103,7 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card) => void
     <motion.article
       className={`card ${tagClass}`}
       drag="x"
-      dragConstraints={{ left: 0, right: 300 }}
+      dragConstraints={canSwipeLeft ? { left: -300, right: 300 } : { left: 0, right: 300 }}
       dragElastic={0.4}
       style={{ x }}
       onDragEnd={onDragEnd}
@@ -106,11 +119,16 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card) => void
       <div className="hint">
         {card.kind === 'decision'
           ? `Swipe right to ${recommendedLabel(card) ?? 'approve default'} · tap for options`
-          : 'Swipe right to archive · tap to open'}
+          : 'Swipe right 👍 · left 👎 · tap to open'}
       </div>
       <motion.div className="swipe-hint right" style={{ opacity: rightOpacity }}>
-        {card.kind === 'decision' ? '✓ Approve' : '✓ Archive'}
+        {card.kind === 'decision' ? '✓ Approve' : '👍'}
       </motion.div>
+      {canSwipeLeft && (
+        <motion.div className="swipe-hint left" style={{ opacity: leftOpacity }}>
+          👎
+        </motion.div>
+      )}
     </motion.article>
   );
 }
@@ -127,4 +145,3 @@ function recommendedLabel(c: Card): string | null {
   const rec = c.decision.options.find((o) => o.option_id === c.decision?.recommended_option_id);
   return rec?.label ?? null;
 }
-

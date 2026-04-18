@@ -86,9 +86,8 @@ export default function CardDetail() {
 
       {card.kind === 'briefing' && !isTerminal && (
         <div className="acks">
-          <button disabled={busy} onClick={() => onAck('archived')}>Archive</button>
-          <button disabled={busy} onClick={() => onAck('saved')}>Save for later</button>
-          <button disabled={busy} onClick={() => onAck('dismissed')}>Dismiss</button>
+          <button disabled={busy} onClick={() => onAck('archived')}>👍 Useful</button>
+          <button disabled={busy} onClick={() => onAck('dismissed')}>👎 Not useful</button>
         </div>
       )}
 

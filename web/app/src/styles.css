@@ -31,12 +31,16 @@ main.feed {
 main.feed > .card-screen {
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  min-height: 100dvh;
+  /* Lock each section to exactly one viewport. `height` (not min-height)
+     prevents long card bodies from growing the section and introducing a
+     second page of scroll that competes with the parent snap. */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 8px 12px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .card {
@@ -119,6 +123,12 @@ main.feed > .card-screen {
   right: 18px;
   background: rgba(34, 197, 94, 0.2);
   color: #4ade80;
+}
+
+.swipe-hint.left {
+  left: 18px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
 }
 
 .empty {
