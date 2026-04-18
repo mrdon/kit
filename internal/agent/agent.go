@@ -203,7 +203,7 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		}
 	}
 
-	if !sentMessage {
+	if !sentMessage && !session.BotInitiated {
 		_ = slack.PostMessage(ctx, channel, threadTS, "I'm sorry, I wasn't able to process your request. Please try again.")
 	}
 

@@ -40,6 +40,19 @@ jobs:
         with:
           go-version: '1.25'
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/app/package-lock.json
+
+      - name: Build frontend (required by //go:embed)
+        run: |
+          cd web/app
+          npm ci
+          npm run build
+
       - name: Check formatting
         run: |
           if [ -n "$(gofmt -l .)" ]; then

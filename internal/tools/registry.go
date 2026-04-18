@@ -118,20 +118,14 @@ func (r *Registry) Execute(ec *ExecContext, name string, input json.RawMessage) 
 }
 
 // IsTerminal returns true if calling this tool should end the agent loop.
-// Only reply_in_thread is truly terminal: a dm_user or post_to_channel
-// call dispatches a message but the agent may still need to follow up in
-// the originating thread. The caller passes the current channel for
-// compatibility with the previous signature; it is unused now.
+// All three messaging tools are terminal — any single post is the agent's
+// output for that run. A task that needs to fan out to multiple targets
+// can emit parallel tool calls in one turn, or be split into separate
+// decision options.
 func (r *Registry) IsTerminal(name string, _ json.RawMessage, _ string) bool {
 	for _, d := range r.defs {
 		if d.Name == name {
-			if !d.Terminal {
-				return false
-			}
-			// Only reply_in_thread ends the loop — other messaging tools
-			// just dispatch and keep the agent active for multi-step work
-			// (e.g. post to #tmp then DM the author).
-			return name == "reply_in_thread"
+			return d.Terminal
 		}
 	}
 	return false
