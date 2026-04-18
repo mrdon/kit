@@ -245,20 +245,20 @@ main.feed > .card-screen {
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5));
 }
 
-/* Markdown body styling inside cards. Keeps paragraphs tight so long
-   bodies don't blow past the viewport clip. */
+/* Markdown body styling inside cards. Tight vertical rhythm so long
+   bodies don't blow past the viewport clip and section breaks feel
+   like a feed, not a document. */
+.markdown > *:first-child { margin-top: 0; }
+.markdown > *:last-child  { margin-bottom: 0; }
 .markdown p {
-  margin: 0 0 10px;
-}
-.markdown p:last-child {
-  margin-bottom: 0;
+  margin: 0 0 6px;
 }
 .markdown ul, .markdown ol {
-  margin: 4px 0 10px;
+  margin: 2px 0 8px;
   padding-left: 20px;
 }
 .markdown li {
-  margin: 2px 0;
+  margin: 1px 0;
 }
 .markdown strong { color: #f1f5f9; }
 .markdown em { color: #cbd5e1; }
@@ -268,10 +268,14 @@ main.feed > .card-screen {
   border-radius: 4px;
   font-size: 0.9em;
 }
-.markdown h1, .markdown h2, .markdown h3 {
-  color: #f1f5f9;
-  margin: 12px 0 6px;
-  font-size: 1em;
+/* Section headers sit tight to the list/paragraph below them. */
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  color: #f8fafc;
+  margin: 10px 0 2px;
+  font-size: 0.9em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .markdown a { color: #60a5fa; }
 
