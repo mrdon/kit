@@ -301,6 +301,10 @@ main.feed > .card-screen {
   max-width: 640px;
   margin: 0 auto;
   padding: 16px;
+  /* pan-y tells the browser this element scrolls vertically but
+     leaves horizontal gestures to Framer Motion's drag handler —
+     without it mobile browsers swallow the swipe-back gesture. */
+  touch-action: pan-y;
 }
 
 .detail .back {
