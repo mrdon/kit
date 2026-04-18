@@ -43,6 +43,17 @@ func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey string, rdb *redis
 	}
 }
 
+// slackEvent is the event-type-agnostic payload extracted from either a
+// message or an app_mention Slack event.
+type slackEvent struct {
+	SlackUserID string
+	Text        string
+	Channel     string
+	ThreadTS    string
+	TriggerTS   string
+	Files       []kitslack.File
+}
+
 // HandleSlackEvent is called by the Slack handler when a message or app_mention is received.
 func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventType string) {
 	ctx := context.Background()
@@ -62,102 +73,37 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		}
 	}()
 
-	// Resolve tenant
-	tenant, err := models.GetTenantBySlackTeamID(ctx, a.Pool, teamID)
-	if err != nil {
-		slog.Error("looking up tenant", "team_id", teamID, "error", err)
+	tenant, client, ok := a.resolveTenantAndClient(ctx, teamID)
+	if !ok {
 		return
 	}
-	if tenant == nil {
-		slog.Warn("unknown team", "team_id", teamID)
-		return
-	}
-
-	// Decrypt bot token
-	botToken, err := a.Encryptor.Decrypt(tenant.BotToken)
-	if err != nil {
-		slog.Error("decrypting bot token", "tenant_id", tenant.ID, "error", err)
-		return
-	}
-	client := kitslack.NewClient(botToken)
 	dmClient = client
 
-	// Parse the event based on type
-	var slackUserID, text, channel, threadTS, triggerTS string
-	var files []kitslack.File
-	switch eventType {
-	case "message":
-		var msg kitslack.MessageEvent
-		if err := json.Unmarshal(rawEvent, &msg); err != nil {
-			slog.Error("parsing message event", "error", err)
-			return
-		}
-		if !msg.ShouldProcess() {
-			return
-		}
-		// Outside of 1:1 DMs, only respond when Kit started the thread
-		// (scheduled task, onboarding). Human-started threads require an
-		// explicit @mention (routed as app_mention, not here).
-		if msg.ChannelType != "im" {
-			if msg.ThreadTS == "" {
-				return
-			}
-			existing, err := models.FindSessionByThread(ctx, a.Pool, tenant.ID, msg.Channel, msg.ThreadTS)
-			if err != nil {
-				slog.Error("looking up session by thread", "error", err)
-				return
-			}
-			if existing == nil || !existing.BotInitiated {
-				return
-			}
-		}
-		slackUserID = msg.User
-		text = msg.Text
-		channel = msg.Channel
-		threadTS = msg.ThreadTimestamp()
-		triggerTS = msg.Timestamp
-
-		files = msg.Files
-
-	case "app_mention":
-		var mention kitslack.AppMentionEvent
-		if err := json.Unmarshal(rawEvent, &mention); err != nil {
-			slog.Error("parsing app_mention event", "error", err)
-			return
-		}
-		slackUserID = mention.User
-		text = mention.Text
-		channel = mention.Channel
-		threadTS = mention.ThreadTimestamp()
-		triggerTS = mention.Timestamp
-
-		files = mention.Files
-
-	default:
+	evt, ok := a.parseSlackEvent(ctx, tenant.ID, rawEvent, eventType)
+	if !ok {
 		return
 	}
-	dmUserID = slackUserID
+	dmUserID = evt.SlackUserID
 
 	// Get or create user — fetch display name from Slack on first contact
 	displayName := ""
-	if info, err := client.GetUserInfo(ctx, slackUserID); err == nil {
+	if info, err := client.GetUserInfo(ctx, evt.SlackUserID); err == nil {
 		displayName = info.DisplayName
 	}
-	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, slackUserID, displayName, false)
+	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, evt.SlackUserID, displayName, false)
 	if err != nil {
 		slog.Error("resolving user", "error", err)
 		return
 	}
 
-	// Check if setup is incomplete and user is not admin
 	if !tenant.SetupComplete && !user.IsAdmin {
 		slog.Info("setup incomplete, suppressing response", "tenant_id", tenant.ID, "user_id", user.ID)
-		_ = client.PostMessage(ctx, channel, threadTS,
+		_ = client.PostMessage(ctx, evt.Channel, evt.ThreadTS,
 			"I'm still being set up! Please ask your admin to finish setting me up.")
 		return
 	}
 
-	session, err := a.resolveSession(ctx, client, tenant.ID, user.ID, channel, threadTS, triggerTS)
+	session, err := a.resolveSession(ctx, client, tenant.ID, user.ID, evt.Channel, evt.ThreadTS, evt.TriggerTS)
 	if err != nil {
 		slog.Error("resolving session", "error", err)
 		return
@@ -167,42 +113,134 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		"tenant_id", tenant.ID,
 		"user_id", user.ID,
 		"session_id", session.ID,
-		"files", len(files),
+		"files", len(evt.Files),
 	)
 
-	// Process file uploads (admin only)
-	if len(files) > 0 && user.IsAdmin {
-		ing := ingest.NewIngester(a.Pool, a.LLM, client)
-		var createdSkills []string
-		for _, f := range files {
-			names, err := ing.ProcessFile(ctx, tenant.ID, f)
-			if err != nil {
-				slog.Error("file ingestion failed", "filename", f.Name, "error", err)
-				_ = client.PostMessage(ctx, channel, threadTS,
-					fmt.Sprintf("I had trouble processing `%s`: %s", f.Name, err.Error()))
-				continue
-			}
-			createdSkills = append(createdSkills, names...)
-		}
-		if len(createdSkills) > 0 {
-			// Augment the text with info about created skills
-			text += fmt.Sprintf("\n\n[System: The following skills were just created from uploaded files: %s. Acknowledge this to the user.]",
-				strings.Join(createdSkills, ", "))
-		}
+	text := evt.Text
+	if len(evt.Files) > 0 && user.IsAdmin {
+		text = a.ingestFiles(ctx, client, tenant.ID, evt.Channel, evt.ThreadTS, text, evt.Files)
 	}
 
-	// Run the agent loop
 	if err := a.Agent.Run(ctx, agent.RunInput{
 		Slack:    client,
 		Tenant:   tenant,
 		User:     user,
 		Session:  session,
-		Channel:  channel,
-		ThreadTS: threadTS,
+		Channel:  evt.Channel,
+		ThreadTS: evt.ThreadTS,
 		UserText: text,
 	}); err != nil {
 		slog.Error("agent run failed", "error", err, "session_id", session.ID)
 	}
+}
+
+// resolveTenantAndClient looks up the tenant for teamID and returns a Slack
+// client with the decrypted bot token. Returns ok=false on any miss/failure
+// (errors already logged).
+func (a *App) resolveTenantAndClient(ctx context.Context, teamID string) (*models.Tenant, *kitslack.Client, bool) {
+	tenant, err := models.GetTenantBySlackTeamID(ctx, a.Pool, teamID)
+	if err != nil {
+		slog.Error("looking up tenant", "team_id", teamID, "error", err)
+		return nil, nil, false
+	}
+	if tenant == nil {
+		slog.Warn("unknown team", "team_id", teamID)
+		return nil, nil, false
+	}
+	botToken, err := a.Encryptor.Decrypt(tenant.BotToken)
+	if err != nil {
+		slog.Error("decrypting bot token", "tenant_id", tenant.ID, "error", err)
+		return nil, nil, false
+	}
+	return tenant, kitslack.NewClient(botToken), true
+}
+
+// parseSlackEvent normalizes the message/app_mention payload into a slackEvent,
+// also applying the message-vs-mention "should we respond?" gates. Returns
+// ok=false when the event should be ignored.
+func (a *App) parseSlackEvent(ctx context.Context, tenantID uuid.UUID, rawEvent json.RawMessage, eventType string) (*slackEvent, bool) {
+	switch eventType {
+	case "message":
+		return a.parseMessageEvent(ctx, tenantID, rawEvent)
+	case "app_mention":
+		return parseMentionEvent(rawEvent)
+	default:
+		return nil, false
+	}
+}
+
+func (a *App) parseMessageEvent(ctx context.Context, tenantID uuid.UUID, rawEvent json.RawMessage) (*slackEvent, bool) {
+	var msg kitslack.MessageEvent
+	if err := json.Unmarshal(rawEvent, &msg); err != nil {
+		slog.Error("parsing message event", "error", err)
+		return nil, false
+	}
+	if !msg.ShouldProcess() {
+		return nil, false
+	}
+	// Outside of 1:1 DMs, only respond when Kit started the thread
+	// (scheduled task, onboarding). Human-started threads require an
+	// explicit @mention (routed as app_mention, not here).
+	if msg.ChannelType != "im" {
+		if msg.ThreadTS == "" {
+			return nil, false
+		}
+		existing, err := models.FindSessionByThread(ctx, a.Pool, tenantID, msg.Channel, msg.ThreadTS)
+		if err != nil {
+			slog.Error("looking up session by thread", "error", err)
+			return nil, false
+		}
+		if existing == nil || !existing.BotInitiated {
+			return nil, false
+		}
+	}
+	return &slackEvent{
+		SlackUserID: msg.User,
+		Text:        msg.Text,
+		Channel:     msg.Channel,
+		ThreadTS:    msg.ThreadTimestamp(),
+		TriggerTS:   msg.Timestamp,
+		Files:       msg.Files,
+	}, true
+}
+
+func parseMentionEvent(rawEvent json.RawMessage) (*slackEvent, bool) {
+	var mention kitslack.AppMentionEvent
+	if err := json.Unmarshal(rawEvent, &mention); err != nil {
+		slog.Error("parsing app_mention event", "error", err)
+		return nil, false
+	}
+	return &slackEvent{
+		SlackUserID: mention.User,
+		Text:        mention.Text,
+		Channel:     mention.Channel,
+		ThreadTS:    mention.ThreadTimestamp(),
+		TriggerTS:   mention.Timestamp,
+		Files:       mention.Files,
+	}, true
+}
+
+// ingestFiles processes uploaded files through the ingester and returns the
+// user text augmented with a note about any skills created. Failures post a
+// per-file message back to Slack and do not abort the agent run.
+func (a *App) ingestFiles(ctx context.Context, client *kitslack.Client, tenantID uuid.UUID, channel, threadTS, text string, files []kitslack.File) string {
+	ing := ingest.NewIngester(a.Pool, a.LLM, client)
+	var createdSkills []string
+	for _, f := range files {
+		names, err := ing.ProcessFile(ctx, tenantID, f)
+		if err != nil {
+			slog.Error("file ingestion failed", "filename", f.Name, "error", err)
+			_ = client.PostMessage(ctx, channel, threadTS,
+				fmt.Sprintf("I had trouble processing `%s`: %s", f.Name, err.Error()))
+			continue
+		}
+		createdSkills = append(createdSkills, names...)
+	}
+	if len(createdSkills) > 0 {
+		text += fmt.Sprintf("\n\n[System: The following skills were just created from uploaded files: %s. Acknowledge this to the user.]",
+			strings.Join(createdSkills, ", "))
+	}
+	return text
 }
 
 // HandlePostInstall is called after a successful OAuth install to start onboarding.

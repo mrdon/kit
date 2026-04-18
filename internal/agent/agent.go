@@ -83,9 +83,100 @@ type RunInput struct {
 // Run executes the agent loop for a user message.
 func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	start := time.Now()
+	tenant, session := in.Tenant, in.Session
 
 	registry := tools.NewRegistry(in.User.IsAdmin, in.Session.BotInitiated)
+	ec := a.buildExecContext(ctx, in)
 
+	var status *statusTracker
+	if in.Task == nil && !strings.HasPrefix(in.Channel, "web:") {
+		status = newStatusTracker(in.Slack, in.Channel, in.ThreadTS)
+		status.update(ctx, "Thinking...")
+		defer status.cleanup(ctx)
+	}
+
+	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeMessageReceived, map[string]any{
+		"user_id": in.User.ID,
+		"text":    in.UserText,
+		"channel": in.Channel,
+	})
+
+	messages := a.buildInitialMessages(ctx, in)
+	systemPrompt := a.buildSystemPrompt(ctx, in)
+	toolDefs := registry.Definitions()
+
+	sentMessage := false
+	var usage usageTotals
+
+	for i := range maxIterations {
+		iterStart := time.Now()
+		if status != nil {
+			status.update(ctx, "Thinking...")
+		}
+		if ec.OnIteration != nil {
+			ec.OnIteration()
+		}
+
+		resp, err := a.callLLM(ctx, tenant.ID, session.ID, systemPrompt, messages, toolDefs, i, iterStart)
+		if err != nil {
+			return err
+		}
+		usage.add(&resp.Usage)
+
+		if resp.StopReason == "end_turn" && len(resp.ToolUses()) == 0 {
+			if a.handleEndTurn(ctx, ec, in, resp) {
+				sentMessage = true
+			}
+			break
+		}
+
+		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeAssistantTurn, map[string]any{
+			"content": resp.Content,
+		})
+		messages = append(messages, anthropic.Message{Role: "assistant", Content: resp.Content})
+
+		if resp.StopReason == "tool_use" {
+			toolResults, terminal := a.executeTools(ec, registry, resp, status, in.Channel)
+			if terminal {
+				sentMessage = true
+			}
+			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeToolResults, map[string]any{
+				"content": toolResults,
+			})
+			messages = append(messages, anthropic.Message{Role: "user", Content: toolResults})
+			if sentMessage {
+				break
+			}
+		}
+	}
+
+	if !sentMessage && !session.BotInitiated {
+		a.sendFallback(ctx, ec, in)
+	}
+
+	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeSessionComplete, map[string]any{
+		"duration_ms":      time.Since(start).Milliseconds(),
+		"total_input":      usage.in,
+		"total_output":     usage.out,
+		"total_cache_read": usage.cacheRead,
+	})
+
+	return nil
+}
+
+// usageTotals accumulates token counts across iterations of one run.
+type usageTotals struct {
+	in, out, cacheRead, cacheWrite int
+}
+
+func (u *usageTotals) add(x *anthropic.Usage) {
+	u.in += x.InputTokens
+	u.out += x.OutputTokens
+	u.cacheRead += x.CacheReadInputTokens
+	u.cacheWrite += x.CacheCreationInputTokens
+}
+
+func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecContext {
 	ec := &tools.ExecContext{
 		Ctx:         ctx,
 		Pool:        a.pool,
@@ -105,197 +196,130 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		taskID := in.Task.ID
 		ec.TaskID = &taskID
 	}
+	return ec
+}
 
-	// Unpack for readability below. Mirrors the old positional args so
-	// the loop body didn't have to change.
-	tenant, user, session := in.Tenant, in.User, in.Session
-	channel, threadTS, userText := in.Channel, in.ThreadTS, in.UserText
-	slack := in.Slack
-
-	// Post status message immediately so user sees feedback (skip for tasks
-	// and for the web: sentinel channels — those have no Slack destination).
-	var status *statusTracker
-	if in.Task == nil && !strings.HasPrefix(channel, "web:") {
-		status = newStatusTracker(slack, channel, threadTS)
-		status.update(ctx, "Thinking...")
-		defer status.cleanup(ctx)
-	}
-
-	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeMessageReceived, map[string]any{
-		"user_id": user.ID,
-		"text":    userText,
-		"channel": channel,
-	})
-
-	messages := a.rebuildHistory(ctx, tenant, session)
+func (a *Agent) buildInitialMessages(ctx context.Context, in RunInput) []anthropic.Message {
+	messages := a.rebuildHistory(ctx, in.Tenant, in.Session)
 	currentTime := fmt.Sprintf("[Current time: %s UTC]", time.Now().UTC().Format("2006-01-02T15:04"))
-	messages = append(messages, anthropic.Message{
+	return append(messages, anthropic.Message{
 		Role:    "user",
-		Content: []anthropic.Content{{Type: "text", Text: currentTime + "\n" + userText}},
+		Content: []anthropic.Content{{Type: "text", Text: currentTime + "\n" + in.UserText}},
 	})
+}
 
-	systemText := BuildSystemPrompt(ctx, a.pool, tenant, user, in.Task)
+func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.SystemBlock {
+	systemText := BuildSystemPrompt(ctx, a.pool, in.Tenant, in.User, in.Task)
 	if in.SystemSuffix != "" {
 		systemText += "\n\n" + in.SystemSuffix
 	}
-	systemPrompt := []anthropic.SystemBlock{
-		{
-			Type:         "text",
-			Text:         systemText,
-			CacheControl: anthropic.Ephemeral(),
-		},
-	}
-	toolDefs := registry.Definitions()
+	return []anthropic.SystemBlock{{
+		Type:         "text",
+		Text:         systemText,
+		CacheControl: anthropic.Ephemeral(),
+	}}
+}
 
-	sentMessage := false
-	var totalIn, totalOut, totalCacheRead, totalCacheWrite int
-
-	for i := range maxIterations {
-		iterStart := time.Now()
-		if status != nil {
-			status.update(ctx, "Thinking...")
-		}
-		if ec.OnIteration != nil {
-			ec.OnIteration()
-		}
-
-		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeLLMRequest, map[string]any{
-			"model":     modelHaiku,
-			"iteration": i,
-		})
-
-		resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
-			Model:        modelHaiku,
-			MaxTokens:    maxTokens,
-			System:       systemPrompt,
-			Messages:     messages,
-			Tools:        toolDefs,
-			CacheControl: anthropic.Ephemeral(),
-		})
-		if err != nil {
-			slog.Error("llm call failed", "error", err, "iteration", i)
-			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeError, map[string]any{
-				"error":     err.Error(),
-				"iteration": i,
-			})
-			return fmt.Errorf("llm call: %w", err)
-		}
-
-		totalIn += resp.Usage.InputTokens
-		totalOut += resp.Usage.OutputTokens
-		totalCacheRead += resp.Usage.CacheReadInputTokens
-		totalCacheWrite += resp.Usage.CacheCreationInputTokens
-
-		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeLLMResponse, map[string]any{
-			"model":                       resp.Model,
-			"stop_reason":                 resp.StopReason,
-			"input_tokens":                resp.Usage.InputTokens,
-			"output_tokens":               resp.Usage.OutputTokens,
-			"cache_creation_input_tokens": resp.Usage.CacheCreationInputTokens,
-			"cache_read_input_tokens":     resp.Usage.CacheReadInputTokens,
-			"duration_ms":                 time.Since(iterStart).Milliseconds(),
-			"iteration":                   i,
-		})
-
-		if resp.StopReason == "end_turn" && len(resp.ToolUses()) == 0 {
-			text := resp.TextContent()
-			// For bot-initiated runs (scheduled tasks, decision resolves),
-			// the agent is expected to post via post_to_channel / dm_user.
-			// Any stray final text is a terse acknowledgement ("Done.")
-			// and would land in the user's DM as noise. Drop it.
-			if text != "" && !session.BotInitiated {
-				// Log the turn so rebuildHistory replays it on follow-ups.
-				_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeAssistantTurn, map[string]any{
-					"content": resp.Content,
-				})
-				if ec.Responder != nil {
-					// Route through the Responder so web chat sees it.
-					// The Slack path's default SlackResponder calls
-					// PostMessage + binds the thread just like the old
-					// direct call did.
-					if err := ec.Responder.Send(ctx, text); err == nil {
-						sentMessage = true
-					}
-				} else {
-					_ = slack.PostMessage(ctx, channel, threadTS, text)
-					sentMessage = true
-				}
-			}
-			break
-		}
-
-		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeAssistantTurn, map[string]any{
-			"content": resp.Content,
-		})
-		messages = append(messages, anthropic.Message{
-			Role:    "assistant",
-			Content: resp.Content,
-		})
-
-		if resp.StopReason == "tool_use" {
-			var toolResults []anthropic.Content
-
-			for _, toolUse := range resp.ToolUses() {
-				inputJSON, _ := json.Marshal(toolUse.Input)
-				slog.Info("executing tool", "tool", toolUse.Name, "input", string(inputJSON), "session_id", session.ID)
-
-				if status != nil {
-					status.addTool(ctx, toolUse.Name)
-				}
-				if ec.OnToolCall != nil {
-					ec.OnToolCall(toolUse.Name)
-				}
-
-				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
-				if err != nil {
-					slog.Error("tool execution failed", "tool", toolUse.Name, "error", err, "session_id", session.ID)
-					result = "Error: " + err.Error()
-				} else {
-					slog.Info("tool result", "tool", toolUse.Name, "result", result, "session_id", session.ID)
-				}
-
-				toolResults = append(toolResults, anthropic.Content{
-					Type:      "tool_result",
-					ToolUseID: toolUse.ID,
-					Content:   result,
-				})
-
-				if registry.IsTerminal(toolUse.Name, inputJSON, channel) {
-					sentMessage = true
-				}
-			}
-
-			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeToolResults, map[string]any{
-				"content": toolResults,
-			})
-			messages = append(messages, anthropic.Message{
-				Role:    "user",
-				Content: toolResults,
-			})
-
-			if sentMessage {
-				break
-			}
-		}
-	}
-
-	if !sentMessage && !session.BotInitiated {
-		fallback := "I'm sorry, I wasn't able to process your request. Please try again."
-		if ec.Responder != nil {
-			_ = ec.Responder.Send(ctx, fallback)
-		} else {
-			_ = slack.PostMessage(ctx, channel, threadTS, fallback)
-		}
-	}
-
-	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeSessionComplete, map[string]any{
-		"duration_ms":      time.Since(start).Milliseconds(),
-		"total_input":      totalIn,
-		"total_output":     totalOut,
-		"total_cache_read": totalCacheRead,
+func (a *Agent) callLLM(ctx context.Context, tenantID, sessionID uuid.UUID, system []anthropic.SystemBlock, messages []anthropic.Message, toolDefs []anthropic.Tool, iteration int, iterStart time.Time) (*anthropic.Response, error) {
+	_ = models.AppendSessionEvent(ctx, a.pool, tenantID, sessionID, models.EventTypeLLMRequest, map[string]any{
+		"model":     modelHaiku,
+		"iteration": iteration,
 	})
+	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
+		Model:        modelHaiku,
+		MaxTokens:    maxTokens,
+		System:       system,
+		Messages:     messages,
+		Tools:        toolDefs,
+		CacheControl: anthropic.Ephemeral(),
+	})
+	if err != nil {
+		slog.Error("llm call failed", "error", err, "iteration", iteration)
+		_ = models.AppendSessionEvent(ctx, a.pool, tenantID, sessionID, models.EventTypeError, map[string]any{
+			"error":     err.Error(),
+			"iteration": iteration,
+		})
+		return nil, fmt.Errorf("llm call: %w", err)
+	}
+	_ = models.AppendSessionEvent(ctx, a.pool, tenantID, sessionID, models.EventTypeLLMResponse, map[string]any{
+		"model":                       resp.Model,
+		"stop_reason":                 resp.StopReason,
+		"input_tokens":                resp.Usage.InputTokens,
+		"output_tokens":               resp.Usage.OutputTokens,
+		"cache_creation_input_tokens": resp.Usage.CacheCreationInputTokens,
+		"cache_read_input_tokens":     resp.Usage.CacheReadInputTokens,
+		"duration_ms":                 time.Since(iterStart).Milliseconds(),
+		"iteration":                   iteration,
+	})
+	return resp, nil
+}
 
-	return nil
+// handleEndTurn emits any trailing assistant text. Bot-initiated runs
+// (scheduled tasks, decision resolves) post via explicit tools, so any
+// stray final text is a terse "Done." and is dropped. Returns true if a
+// message was sent to the user.
+func (a *Agent) handleEndTurn(ctx context.Context, ec *tools.ExecContext, in RunInput, resp *anthropic.Response) bool {
+	text := resp.TextContent()
+	if text == "" || in.Session.BotInitiated {
+		return false
+	}
+	_ = models.AppendSessionEvent(ctx, a.pool, in.Tenant.ID, in.Session.ID, models.EventTypeAssistantTurn, map[string]any{
+		"content": resp.Content,
+	})
+	if ec.Responder != nil {
+		return ec.Responder.Send(ctx, text) == nil
+	}
+	_ = in.Slack.PostMessage(ctx, in.Channel, in.ThreadTS, text)
+	return true
+}
+
+// executeTools runs each tool_use block in resp.Content, collects tool_result
+// blocks, and reports whether any tool was terminal (i.e. already posted the
+// final message, so the loop should stop).
+func (a *Agent) executeTools(ec *tools.ExecContext, registry *tools.Registry, resp *anthropic.Response, status *statusTracker, channel string) ([]anthropic.Content, bool) {
+	var toolResults []anthropic.Content
+	terminal := false
+	sessionID := ec.Session.ID
+
+	for _, toolUse := range resp.ToolUses() {
+		inputJSON, _ := json.Marshal(toolUse.Input)
+		slog.Info("executing tool", "tool", toolUse.Name, "input", string(inputJSON), "session_id", sessionID)
+
+		if status != nil {
+			status.addTool(ec.Ctx, toolUse.Name)
+		}
+		if ec.OnToolCall != nil {
+			ec.OnToolCall(toolUse.Name)
+		}
+
+		result, err := registry.Execute(ec, toolUse.Name, inputJSON)
+		if err != nil {
+			slog.Error("tool execution failed", "tool", toolUse.Name, "error", err, "session_id", sessionID)
+			result = "Error: " + err.Error()
+		} else {
+			slog.Info("tool result", "tool", toolUse.Name, "result", result, "session_id", sessionID)
+		}
+
+		toolResults = append(toolResults, anthropic.Content{
+			Type:      "tool_result",
+			ToolUseID: toolUse.ID,
+			Content:   result,
+		})
+
+		if registry.IsTerminal(toolUse.Name, inputJSON, channel) {
+			terminal = true
+		}
+	}
+	return toolResults, terminal
+}
+
+func (a *Agent) sendFallback(ctx context.Context, ec *tools.ExecContext, in RunInput) {
+	fallback := "I'm sorry, I wasn't able to process your request. Please try again."
+	if ec.Responder != nil {
+		_ = ec.Responder.Send(ctx, fallback)
+		return
+	}
+	_ = in.Slack.PostMessage(ctx, in.Channel, in.ThreadTS, fallback)
 }
 
 func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, session *models.Session) []anthropic.Message {
