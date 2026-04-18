@@ -73,3 +73,4 @@ web/app/*.tsbuildinfo
 
 # Playwright MCP screenshots
 .playwright-mcp/
+stack-*.png
