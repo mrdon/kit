@@ -76,7 +76,7 @@ export default function StackItemDetail() {
 
   return (
     <SwipeBackShell item={item}>
-      <Link to="/" className="back">← Back · swipe left to close</Link>
+      <Link to="/" className="back">← Back · swipe to close</Link>
       <div className="kind-tag">
         {item.icon ? `${item.icon} ` : ''}
         {item.kind_label}
@@ -103,10 +103,10 @@ export default function StackItemDetail() {
   );
 }
 
-// SwipeBackShell makes the whole detail view drag-dismissable. Swipe
-// right-to-left past a threshold pops back to the stack — the same
-// gesture a native app would use for "pop view controller". Pulling
-// right opens nothing, so we constrain to negative X only.
+// SwipeBackShell makes the whole detail view drag-dismissable. Either
+// direction past the threshold pops back to the stack — the same
+// gesture a native app uses for "pop view controller" but accepting
+// both sides so you can swipe with whichever thumb is free.
 function SwipeBackShell({
   item,
   children,
@@ -118,13 +118,19 @@ function SwipeBackShell({
   const x = useMotionValue(0);
   const threshold =
     typeof window !== 'undefined' ? Math.max(180, window.innerWidth * 0.35) : 180;
-  const opacity = useTransform(x, [-threshold, 0], [0.3, 1]);
+  const opacity = useTransform(x, [-threshold, 0, threshold], [0.3, 1, 0.3]);
 
   const onDragEnd = (_e: unknown, info: PanInfo) => {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 800;
     if (info.offset.x < -threshold) {
-      // Animate off-screen left, then navigate. Using spring for the
-      // exit keeps the motion in sync with the platform back-swipe feel.
-      animate(x, -window.innerWidth, {
+      animate(x, -vw, {
+        duration: 0.2,
+        onComplete: () => navigate('/'),
+      });
+      return;
+    }
+    if (info.offset.x > threshold) {
+      animate(x, vw, {
         duration: 0.2,
         onComplete: () => navigate('/'),
       });
@@ -133,11 +139,12 @@ function SwipeBackShell({
     animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
   };
 
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 800;
   return (
     <motion.main
       className={`detail tier-${item.priority_tier}`}
       drag="x"
-      dragConstraints={{ left: -window.innerWidth, right: 0 }}
+      dragConstraints={{ left: -vw, right: vw }}
       dragElastic={0.25}
       style={{ x, opacity }}
       onDragEnd={onDragEnd}
