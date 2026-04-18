@@ -113,6 +113,15 @@ export function useVoiceRecorder(card: CardRef): UseVoiceRecorder {
     });
     cleanup();
 
+    if (blob.size === 0) {
+      // Very short presses finish before MediaRecorder ever fires
+      // dataavailable, so there's nothing to transcribe. Bail out
+      // with a hint rather than submitting an empty multipart.
+      setError('Press and hold the mic longer');
+      setState('idle');
+      return '';
+    }
+
     try {
       const resp = await api.chatTranscribe(card.sourceApp, card.kind, card.id, blob);
       if (resp.status === 401) {
@@ -120,7 +129,11 @@ export function useVoiceRecorder(card: CardRef): UseVoiceRecorder {
         return '';
       }
       if (!resp.ok) {
-        setError(`${resp.status} ${resp.statusText}`);
+        // The server uses http.Error() for pre-stream rejections, so
+        // the body is a short plain-text reason. Fall back to the
+        // status text if the body is unreadable.
+        const reason = (await resp.text().catch(() => '')) || `${resp.status} ${resp.statusText}`;
+        setError(reason.trim());
         setState('idle');
         return '';
       }

@@ -26,7 +26,52 @@ const maxAudioUploadBytes = transcribe.MaxUploadBytes
 // segments as SSE partial events, ending with a final event (or error).
 // Does not involve the agent — the client reviews the transcript before
 // calling chat/execute.
+//
+// Body parsing, auth, and rate limits all happen BEFORE we open the SSE
+// response, so these failure modes return normal 4xx/5xx responses the
+// browser can log as real errors instead of mid-stream event frames.
 func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	if caller == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if a.transcriber == nil {
+		http.Error(w, "voice transcription is not configured on this server", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUploadBytes)
+	if err := r.ParseMultipartForm(maxAudioUploadBytes); err != nil {
+		slog.Warn("parsing multipart audio",
+			"error", err,
+			"content_type", r.Header.Get("Content-Type"),
+			"content_length", r.ContentLength,
+		)
+		http.Error(w, "audio upload too large or malformed", http.StatusRequestEntityTooLarge)
+		return
+	}
+	file, header, err := r.FormFile("audio")
+	if err != nil {
+		slog.Warn("reading audio form field", "error", err)
+		http.Error(w, "missing audio field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Per-user sliding-window + concurrency caps. Transcription spawns
+	// ffmpeg and whisper-cli subprocesses, each CPU-heavy, so we gate
+	// both on request rate and on simultaneous in-flight handlers.
+	if !a.chatLimiter.AllowTranscribe(caller.UserID) {
+		http.Error(w, "too many voice uploads; please wait a moment and retry", http.StatusTooManyRequests)
+		return
+	}
+	if !a.chatLimiter.Acquire(caller.UserID) {
+		http.Error(w, "too many requests in flight; please wait", http.StatusTooManyRequests)
+		return
+	}
+	defer a.chatLimiter.Release(caller.UserID)
+
 	sw, err := sse.New(w, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -35,43 +80,8 @@ func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) 
 	defer sw.Close()
 	emit := chat.Emitter(sw.Emit)
 
-	caller := auth.CallerFromContext(r.Context())
-	if caller == nil {
-		_ = emit(chat.EventError, map[string]any{"message": "unauthorized"})
-		return
-	}
-
-	// Per-user sliding-window + concurrency caps. Transcription spawns
-	// ffmpeg and whisper-cli subprocesses, each CPU-heavy, so we gate
-	// both on request rate and on simultaneous in-flight handlers.
-	if !a.chatLimiter.AllowTranscribe(caller.UserID) {
-		_ = emit(chat.EventError, map[string]any{"message": "too many voice uploads; please wait a moment and retry"})
-		return
-	}
-	if !a.chatLimiter.Acquire(caller.UserID) {
-		_ = emit(chat.EventError, map[string]any{"message": "too many requests in flight; please wait for the current ones to finish"})
-		return
-	}
-	defer a.chatLimiter.Release(caller.UserID)
-
-	if a.transcriber == nil {
-		_ = emit(chat.EventError, map[string]any{"message": "voice transcription is not configured on this server"})
-		return
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUploadBytes)
-	if err := r.ParseMultipartForm(maxAudioUploadBytes); err != nil {
-		_ = emit(chat.EventError, map[string]any{"message": "audio upload too large or malformed"})
-		return
-	}
-	file, header, err := r.FormFile("audio")
-	if err != nil {
-		_ = emit(chat.EventError, map[string]any{"message": "missing audio field"})
-		return
-	}
-	defer file.Close()
-
 	mime := header.Header.Get("Content-Type")
+	slog.Info("chat transcribe request", "user_id", caller.UserID, "content_type", mime, "size", header.Size)
 	if _, err := chat.Transcribe(r.Context(), a.transcriber, file, mime, emit); err != nil {
 		// chat.Transcribe has already emitted an error event.
 		slog.Warn("chat transcribe failed", "error", err)
@@ -84,7 +94,52 @@ type chatExecuteRequest struct {
 
 // handleChatExecute runs one chat turn against a card and streams the
 // agent's progress as SSE events: status, tool, response, done.
+//
+// The body is parsed BEFORE starting the SSE stream — some proxies and
+// HTTP/1.1 clients don't support reading the request body after the
+// response headers have been sent (bidirectional streaming), and
+// MaxBytesReader's requestTooLarge signal interacts badly with an
+// already-flushed response.
 func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	if caller == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Cap request body + message size. Done before SSE headers so a 413
+	// shows up as a proper HTTP error to the client, not a mid-stream
+	// SSE error event.
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Warn("reading chat execute body", "error", err, "content_length", r.ContentLength)
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	var req chatExecuteRequest
+	if err := json.Unmarshal(body, &req); err != nil || req.Text == "" {
+		http.Error(w, "text required", http.StatusBadRequest)
+		return
+	}
+	const maxTextBytes = 8 * 1024
+	if len(req.Text) > maxTextBytes {
+		http.Error(w, "message too long", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	// Rate limit + concurrency cap, still pre-stream so the client can
+	// retry without parsing an SSE error frame.
+	if !a.chatLimiter.Allow(caller.UserID) {
+		http.Error(w, "too many chat requests; please wait a moment and retry", http.StatusTooManyRequests)
+		return
+	}
+	if !a.chatLimiter.Acquire(caller.UserID) {
+		http.Error(w, "too many requests in flight; please wait", http.StatusTooManyRequests)
+		return
+	}
+	defer a.chatLimiter.Release(caller.UserID)
+
 	sw, err := sse.New(w, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -106,45 +161,6 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 
 	if a.agent == nil || a.enc == nil {
 		_ = emit(chat.EventError, map[string]any{"message": "chat is not configured on this server"})
-		return
-	}
-
-	caller := auth.CallerFromContext(r.Context())
-	if caller == nil {
-		_ = emit(chat.EventError, map[string]any{"message": "unauthorized"})
-		return
-	}
-
-	if !a.chatLimiter.Allow(caller.UserID) {
-		_ = emit(chat.EventError, map[string]any{"message": "too many chat requests; please wait a moment and retry"})
-		return
-	}
-	if !a.chatLimiter.Acquire(caller.UserID) {
-		_ = emit(chat.EventError, map[string]any{"message": "too many requests in flight; please wait for the current ones to finish"})
-		return
-	}
-	defer a.chatLimiter.Release(caller.UserID)
-
-	// Cap body + message size. http.MaxBytesReader returns a clear 413
-	// equivalent error on oversize so the client gets a useful event
-	// rather than a silent truncation.
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		_ = emit(chat.EventError, map[string]any{"message": "request body too large"})
-		return
-	}
-	var req chatExecuteRequest
-	if err := json.Unmarshal(body, &req); err != nil || req.Text == "" {
-		_ = emit(chat.EventError, map[string]any{"message": "text required"})
-		return
-	}
-	// Hard cap on prompt size — Haiku's context will truncate but a
-	// sanity limit here prevents a client from stuffing huge history
-	// into a single call.
-	const maxTextBytes = 8 * 1024
-	if len(req.Text) > maxTextBytes {
-		_ = emit(chat.EventError, map[string]any{"message": "message too long"})
 		return
 	}
 

@@ -65,10 +65,12 @@ export function useChatStream(card: CardRef, onDone?: () => void): UseChatStream
           return;
         }
         if (!resp.ok) {
+          // Pre-stream rejections come back as plain http.Error bodies.
+          const reason = (await resp.text().catch(() => '')) || `${resp.status} ${resp.statusText}`;
           updateTurn(turnKey, {
             inFlight: false,
             status: 'error',
-            errorMessage: `${resp.status} ${resp.statusText}`,
+            errorMessage: reason.trim(),
           });
           return;
         }

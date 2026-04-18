@@ -310,6 +310,11 @@ function SwipeCard({
           onLongPress(item);
         }, LONG_PRESS_MS);
       }}
+      // onTapCancel fires when the pointer moves far enough that a tap
+      // can't complete — e.g. during vertical scroll. Without this the
+      // timer ticks to completion and opens chat on whatever card the
+      // scroll started on.
+      onTapCancel={clearLongPress}
       onDragStart={clearLongPress}
       onDragEnd={async (e, info) => {
         clearLongPress();
