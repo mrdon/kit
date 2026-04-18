@@ -1,6 +1,12 @@
 import type { Card, CardDetailResponse, StackResponse } from './types';
 
 async function j<T>(r: Response): Promise<T> {
+  if (r.status === 401) {
+    // Session missing/expired — bounce to Slack OpenID login.
+    window.location.href = '/app/login';
+    // Throw so awaiting callers don't try to parse a body that won't arrive.
+    throw new Error('redirecting to login');
+  }
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
     try {

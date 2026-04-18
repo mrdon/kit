@@ -84,6 +84,14 @@ main.feed > .card-screen {
   color: #cbd5e1;
   white-space: pre-wrap;
   flex: 1;
+  min-height: 0;
+  /* Clip long content instead of scrolling — inner scroll would fight
+     the parent scroll-snap between cards. Tap opens the detail view for
+     the full body. The bottom gradient hints that there's more. */
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
 }
 
 .card .hint {
@@ -91,6 +99,7 @@ main.feed > .card-screen {
   color: #64748b;
   margin-top: 18px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .swipe-hint {
