@@ -16,6 +16,11 @@ import (
 )
 
 // ExecContext holds everything a tool needs to execute.
+//
+// Responder, OnToolCall, and OnIteration are observability/redirection
+// seams used by the chat SSE path. Slack and scheduled-task callers
+// leave them unset; agent.go treats nil values as no-op so there is one
+// code path through the loop regardless of caller.
 type ExecContext struct {
 	Ctx      context.Context
 	Pool     *pgxpool.Pool
@@ -27,6 +32,19 @@ type ExecContext struct {
 	Channel  string
 	ThreadTS string
 	Svc      *services.Services
+
+	// Responder is where reply_in_thread sends its output. When nil, the
+	// handler constructs a SlackResponder on demand (default behavior).
+	Responder Responder
+
+	// OnToolCall fires just before a tool's handler runs. Used by the
+	// chat path to emit a "tool" SSE event.
+	OnToolCall func(name string)
+
+	// OnIteration fires at the top of each agent-loop iteration, before
+	// the LLM call. Used by the chat path to flip the UI status line
+	// back to "thinking" between tool calls.
+	OnIteration func()
 }
 
 // Caller builds a services.Caller from the current execution context.

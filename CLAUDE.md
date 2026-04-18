@@ -2,6 +2,10 @@
 
 Role-aware knowledge base agent for small businesses, delivered as SaaS via Slack.
 
+## Product Shape
+
+Kit is the **ambient surface** for quick interactions — todos, decisions, briefings, and workflows consumed via Slack, voice, and the swipe web UI. For **deep/long-running work**, users point a harness (Claude Code, Cowork) at Kit's MCP to pull todos, skills, memories, and decisions as context; Kit is not trying to be the workbench. Workflows (tasks + skills) can surface one or more decisions over time, resolved asynchronously in the swipe feed.
+
 ## Quick Commands
 
 ```bash
@@ -60,6 +64,9 @@ make db-reset    # Wipe and restart Postgres
 - `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, routes, and cron jobs.
 - `internal/scheduler/` — Background task runner (cron + builtin tasks like profile sync)
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
+- `internal/sse/` — Server-Sent Events writer (used by card chat today; reusable for future ambient-feed pushes)
+- `internal/transcribe/` — Voice transcription via local whisper.cpp (optional; gated on `WHISPER_BIN`/`WHISPER_MODEL`)
+- `internal/chat/` — Card-scoped chat orchestration for the web UI: long-press a card, type or hold-to-talk; session keyed by `(card, user)` so follow-ups attach
 
 ## Data Model
 
@@ -96,6 +103,22 @@ SQL'
 - **User has no display name?** Run the "Sync user profiles from Slack" builtin task via `run_task`, or the user's name will be fetched on their next Slack message.
 - **Task misbehaving?** After the task posts its first message, its session's `slack_thread_ts` is the real Slack message ts (not a synthetic `task-*` value). Use `list_sessions` to find recent sessions in the task's channel, then `get_session_events` for the full agent trace.
 - **Tenant confusion?** Query `tenants` table to see all workspaces and their `slack_team_id`.
+
+### Voice transcription (optional)
+Card chat's mic button requires a local whisper.cpp install plus ffmpeg on the PATH. Typed chat works without either.
+```bash
+# One-time setup on the host (Dokku example)
+git clone https://github.com/ggerganov/whisper.cpp /opt/whisper.cpp
+make -C /opt/whisper.cpp
+curl -L -o /opt/whisper.cpp/models/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+apt-get install -y ffmpeg
+```
+Then set these env vars on the deploy:
+- `WHISPER_BIN=/opt/whisper.cpp/main` (or `whisper-cli` build)
+- `WHISPER_MODEL=/opt/whisper.cpp/models/ggml-base.en.bin`
+- `FFMPEG_BIN=ffmpeg` (defaults to PATH lookup)
+Unset any of these and the mic button is hidden in the PWA.
 
 ## Agent Loop
 

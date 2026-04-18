@@ -6,10 +6,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/chat"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
+	"github.com/mrdon/kit/internal/transcribe"
 )
 
 // instance is the process-wide singleton — there's exactly one CardsApp
@@ -34,14 +38,32 @@ func Configure(signer *auth.SessionSigner, slack auth.SlackOpenIDConfig, baseURL
 	instance.devMode = devMode
 }
 
+// ConfigureChat wires the dependencies needed by the chat/transcribe and
+// chat/execute SSE endpoints. Optional: if transcriber is nil the voice
+// path returns a clear "not configured" error; if agent is nil both
+// endpoints return 503.
+func ConfigureChat(ag *agent.Agent, enc *crypto.Encryptor, transcriber transcribe.Transcriber) {
+	if instance == nil {
+		return
+	}
+	instance.agent = ag
+	instance.enc = enc
+	instance.transcriber = transcriber
+	instance.chatLimiter = chat.NewExecuteLimiter()
+}
+
 // CardsApp is the decisions/briefings swipe-stack app.
 type CardsApp struct {
-	svc     *CardService
-	pool    *pgxpool.Pool
-	signer  *auth.SessionSigner
-	slack   auth.SlackOpenIDConfig
-	baseURL string
-	devMode bool
+	svc         *CardService
+	pool        *pgxpool.Pool
+	signer      *auth.SessionSigner
+	slack       auth.SlackOpenIDConfig
+	baseURL     string
+	devMode     bool
+	agent       *agent.Agent
+	enc         *crypto.Encryptor
+	transcriber transcribe.Transcriber
+	chatLimiter *chat.ExecuteLimiter
 }
 
 // Init sets up the service after DB is available and registers the

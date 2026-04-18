@@ -77,6 +77,27 @@ func requireJSON(next http.Handler) http.Handler {
 	})
 }
 
+// csrfHeader is the custom header a non-JSON POST must set for us to
+// accept it. Custom headers take a request out of the CORS "simple
+// request" category, so browsers will preflight cross-origin calls and
+// same-origin calls from the PWA carry the header naturally.
+const csrfHeader = "X-Kit-Chat"
+
+// requireCSRFHeader enforces the X-Kit-Chat: 1 header on POSTs that
+// aren't JSON. Used for the voice transcribe endpoint which ships audio
+// as multipart/form-data. GETs pass through.
+func requireCSRFHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			if r.Header.Get(csrfHeader) != "1" {
+				http.Error(w, "missing "+csrfHeader+" header", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // requireCallerHandler wraps a handler so it runs only if the session
 // middleware left a caller in the context.
 func requireCallerHandler(h http.HandlerFunc) http.Handler {

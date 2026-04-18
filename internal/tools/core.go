@@ -3,7 +3,6 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/mrdon/kit/internal/models"
 )
@@ -65,31 +64,14 @@ func replyInThreadHandler(ec *ExecContext, input json.RawMessage) (string, error
 	if inp.Text == "" {
 		return "error: text is required", nil
 	}
-	channel := ec.Channel
-	threadTS := ec.ThreadTS
-
-	// Session's first top-level post in its own channel: capture the real
-	// Slack ts and bind the session to it so later replies route back.
-	if threadTS == "" && ec.Session != nil {
-		ts, err := ec.Slack.PostMessageReturningTS(ec.Ctx, channel, "", inp.Text)
-		if err != nil {
-			return "", err
-		}
-		if ts != "" {
-			if err := models.UpdateSessionThreadTS(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, ts); err != nil {
-				slog.Warn("binding session to slack thread", "session_id", ec.Session.ID, "error", err)
-			} else {
-				ec.Session.SlackThreadTS = ts
-				ec.ThreadTS = ts
-				threadTS = ts
-			}
-		}
-	} else {
-		if err := ec.Slack.PostMessage(ec.Ctx, channel, threadTS, inp.Text); err != nil {
-			return "", err
-		}
+	responder := ec.Responder
+	if responder == nil {
+		responder = NewSlackResponder(ec)
 	}
-	logMessageSent(ec, channel, threadTS, inp.Text, false)
+	if err := responder.Send(ec.Ctx, inp.Text); err != nil {
+		return "", err
+	}
+	logMessageSent(ec, ec.Channel, ec.ThreadTS, inp.Text, false)
 	return "Message sent.", nil
 }
 

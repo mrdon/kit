@@ -182,7 +182,15 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			return nil, fmt.Errorf("creating session: %w", err)
 		}
 
-		runErr := a.Run(ctx, slack, tenant, user, session, task.ChannelID, "", task.Description, tc)
+		runErr := a.Run(ctx, agent.RunInput{
+			Slack:    slack,
+			Tenant:   tenant,
+			User:     user,
+			Session:  session,
+			Channel:  task.ChannelID,
+			UserText: task.Description,
+			Task:     tc,
+		})
 
 		if dryRun {
 			var b strings.Builder

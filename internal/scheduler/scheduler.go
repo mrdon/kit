@@ -140,7 +140,15 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 	}
 
 	var lastError *string
-	if err := s.agent.Run(ctx, slack, tenant, user, session, task.ChannelID, "", task.Description, tc); err != nil {
+	if err := s.agent.Run(ctx, agent.RunInput{
+		Slack:    slack,
+		Tenant:   tenant,
+		User:     user,
+		Session:  session,
+		Channel:  task.ChannelID,
+		UserText: task.Description,
+		Task:     tc,
+	}); err != nil {
 		slog.Error("task agent run failed", "task_id", task.ID, "error", err)
 		errStr := err.Error()
 		lastError = &errStr

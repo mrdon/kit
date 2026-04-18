@@ -42,28 +42,75 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *
 	}
 }
 
+// RunInput is everything the agent loop needs for a single turn.
+// Required fields (Slack through UserText) identify the conversation;
+// optional fields configure one run's observer hooks, system-prompt
+// additions, and task-context metadata. Pointer-to-struct isn't used
+// because every callsite has all the required fields on hand.
+type RunInput struct {
+	// Slack client, tenant/user/session, and the three conversation
+	// coordinates are required for every run.
+	Slack    *kitslack.Client
+	Tenant   *models.Tenant
+	User     *models.User
+	Session  *models.Session
+	Channel  string
+	ThreadTS string
+	UserText string
+
+	// Task, when non-nil, marks this run as a scheduled-task execution
+	// and adds author metadata to the system prompt. Slack-live and chat
+	// runs leave it nil.
+	Task *TaskContext
+
+	// Responder overrides where reply_in_thread sends its output. When
+	// nil the handler defaults to a Slack responder.
+	Responder tools.Responder
+
+	// OnToolCall, OnIteration are no-op if nil. The chat path wires them
+	// to emit SSE status/tool events to the browser.
+	OnToolCall  func(name string)
+	OnIteration func()
+
+	// SystemSuffix is appended to the system prompt for this run only.
+	// Chat uses it to inject the card the user is acting on, so the
+	// prompt-shaped context doesn't accumulate in replayed history when
+	// the user sends follow-up messages on the same card.
+	SystemSuffix string
+}
+
 // Run executes the agent loop for a user message.
-func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.Tenant, user *models.User, session *models.Session, channel, threadTS, userText string, taskCtx *TaskContext) error {
+func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	start := time.Now()
 
-	registry := tools.NewRegistry(user.IsAdmin, session.BotInitiated)
+	registry := tools.NewRegistry(in.User.IsAdmin, in.Session.BotInitiated)
 
 	ec := &tools.ExecContext{
-		Ctx:      ctx,
-		Pool:     a.pool,
-		Slack:    slack,
-		Fetcher:  a.fetcher,
-		Tenant:   tenant,
-		User:     user,
-		Session:  session,
-		Channel:  channel,
-		ThreadTS: threadTS,
-		Svc:      a.svc,
+		Ctx:         ctx,
+		Pool:        a.pool,
+		Slack:       in.Slack,
+		Fetcher:     a.fetcher,
+		Tenant:      in.Tenant,
+		User:        in.User,
+		Session:     in.Session,
+		Channel:     in.Channel,
+		ThreadTS:    in.ThreadTS,
+		Svc:         a.svc,
+		Responder:   in.Responder,
+		OnToolCall:  in.OnToolCall,
+		OnIteration: in.OnIteration,
 	}
 
-	// Post status message immediately so user sees feedback (skip for tasks)
+	// Unpack for readability below. Mirrors the old positional args so
+	// the loop body didn't have to change.
+	tenant, user, session := in.Tenant, in.User, in.Session
+	channel, threadTS, userText := in.Channel, in.ThreadTS, in.UserText
+	slack := in.Slack
+
+	// Post status message immediately so user sees feedback (skip for tasks
+	// and for the web: sentinel channels — those have no Slack destination).
 	var status *statusTracker
-	if taskCtx == nil {
+	if in.Task == nil && !strings.HasPrefix(channel, "web:") {
 		status = newStatusTracker(slack, channel, threadTS)
 		status.update(ctx, "Thinking...")
 		defer status.cleanup(ctx)
@@ -82,10 +129,14 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		Content: []anthropic.Content{{Type: "text", Text: currentTime + "\n" + userText}},
 	})
 
+	systemText := BuildSystemPrompt(ctx, a.pool, tenant, user, in.Task)
+	if in.SystemSuffix != "" {
+		systemText += "\n\n" + in.SystemSuffix
+	}
 	systemPrompt := []anthropic.SystemBlock{
 		{
 			Type:         "text",
-			Text:         BuildSystemPrompt(ctx, a.pool, tenant, user, taskCtx),
+			Text:         systemText,
 			CacheControl: anthropic.Ephemeral(),
 		},
 	}
@@ -98,6 +149,9 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 		iterStart := time.Now()
 		if status != nil {
 			status.update(ctx, "Thinking...")
+		}
+		if ec.OnIteration != nil {
+			ec.OnIteration()
 		}
 
 		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_request", map[string]any{
@@ -169,6 +223,9 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 				if status != nil {
 					status.addTool(ctx, toolUse.Name)
 				}
+				if ec.OnToolCall != nil {
+					ec.OnToolCall(toolUse.Name)
+				}
 
 				result, err := registry.Execute(ec, toolUse.Name, inputJSON)
 				if err != nil {
@@ -204,7 +261,12 @@ func (a *Agent) Run(ctx context.Context, slack *kitslack.Client, tenant *models.
 	}
 
 	if !sentMessage && !session.BotInitiated {
-		_ = slack.PostMessage(ctx, channel, threadTS, "I'm sorry, I wasn't able to process your request. Please try again.")
+		fallback := "I'm sorry, I wasn't able to process your request. Please try again."
+		if ec.Responder != nil {
+			_ = ec.Responder.Send(ctx, fallback)
+		} else {
+			_ = slack.PostMessage(ctx, channel, threadTS, fallback)
+		}
 	}
 
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "session_complete", map[string]any{

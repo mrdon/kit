@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/transcribe"
 	"github.com/mrdon/kit/internal/web"
 )
 
@@ -117,6 +119,17 @@ func main() {
 
 	// Core application
 	app := internal.NewApp(pool, enc, cfg.AnthropicAPIKey, rdb)
+
+	// Optional voice transcription. If whisper env vars aren't set the
+	// chat/transcribe endpoint returns a "not configured" error event;
+	// typed chat still works without it.
+	var transcriber transcribe.Transcriber
+	if t, err := transcribe.New(cfg.WhisperBin, cfg.WhisperModel, cfg.FFmpegBin); err == nil {
+		transcriber = t
+	} else if !errors.Is(err, transcribe.ErrNotConfigured) {
+		slog.Warn("whisper transcription disabled", "error", err)
+	}
+	cards.ConfigureChat(app.Agent, enc, transcriber)
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)

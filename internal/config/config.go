@@ -19,6 +19,9 @@ type Config struct {
 	RedisURL           string
 	SessionSecret      string // HMAC key for PWA session cookies
 	Env                string // "dev", "prod" — controls feature flags like dev-login
+	WhisperBin         string // path to whisper-cli; empty disables voice transcription
+	WhisperModel       string // path to whisper ggml model file
+	FFmpegBin          string // path to ffmpeg; defaults to "ffmpeg" on PATH
 }
 
 func Load() (*Config, error) {
@@ -36,6 +39,9 @@ func Load() (*Config, error) {
 		RedisURL:           os.Getenv("REDIS_URL"),
 		SessionSecret:      os.Getenv("KIT_SESSION_SECRET"),
 		Env:                os.Getenv("KIT_ENV"),
+		WhisperBin:         os.Getenv("WHISPER_BIN"),
+		WhisperModel:       os.Getenv("WHISPER_MODEL"),
+		FFmpegBin:          os.Getenv("FFMPEG_BIN"),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -43,6 +49,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"
+	}
+	if cfg.FFmpegBin == "" {
+		cfg.FFmpegBin = "ffmpeg"
 	}
 
 	return cfg, nil

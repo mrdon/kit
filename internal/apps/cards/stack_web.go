@@ -35,9 +35,16 @@ func registerStackRoutes(mux *http.ServeMux, a *CardsApp) {
 	wrap := func(h http.HandlerFunc) http.Handler {
 		return requireJSON(a.signer.Middleware(a.pool, requireCallerHandler(h)))
 	}
+	// Chat transcribe takes multipart audio, so it uses the custom
+	// header CSRF wrapper instead of requireJSON.
+	wrapCSRF := func(h http.HandlerFunc) http.Handler {
+		return requireCSRFHeader(a.signer.Middleware(a.pool, requireCallerHandler(h)))
+	}
 	mux.Handle("GET /api/v1/stack", wrap(handleStackList))
 	mux.Handle("GET /api/v1/stack/items/{source_app}/{kind}/{id}", wrap(handleStackItemDetail))
 	mux.Handle("POST /api/v1/stack/items/{source_app}/{kind}/{id}/action", wrap(handleStackItemAction))
+	mux.Handle("POST /api/v1/stack/items/{source_app}/{kind}/{id}/chat/transcribe", wrapCSRF(a.handleChatTranscribe))
+	mux.Handle("POST /api/v1/stack/items/{source_app}/{kind}/{id}/chat/execute", wrap(a.handleChatExecute))
 }
 
 // stackResponse is the wire type for GET /api/v1/stack.

@@ -15,6 +15,12 @@ import { api } from './api';
 import type { StackAction, StackItem, StackResponse } from './types';
 import { itemKey } from './types';
 import { rendererFor } from './kinds';
+import CardChatSheet from './chat/CardChatSheet';
+
+// LONG_PRESS_MS is how long a pointer must be held on a card before we
+// open the chat sheet. Chosen so accidental slow taps don't trigger it
+// but an intentional "press and hold" still feels snappy.
+const LONG_PRESS_MS = 600;
 
 type CommitDirection = 'right' | 'left';
 
@@ -24,6 +30,7 @@ export default function Stack() {
   const [err, setErr] = useState<string | null>(null);
   const [burst, setBurst] = useState<{ id: string; emoji: string } | null>(null);
   const [progress, setProgress] = useState(0);
+  const [chatItem, setChatItem] = useState<StackItem | null>(null);
   const feedRef = useRef<HTMLElement | null>(null);
 
   const onScroll = useCallback(() => {
@@ -97,7 +104,12 @@ export default function Stack() {
             layout
             exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
           >
-            <SwipeCard item={it} onCommit={onCommit} />
+            <SwipeCard
+              item={it}
+              onCommit={onCommit}
+              onLongPress={setChatItem}
+              disableLongPress={chatItem !== null}
+            />
           </motion.section>
         ))}
       </AnimatePresence>
@@ -106,6 +118,19 @@ export default function Stack() {
       </AnimatePresence>
       <QueueIndicator count={items.length} progress={progress} />
       <DegradedFooter degraded={degraded} />
+      {chatItem && (
+        <CardChatSheet
+          sourceApp={chatItem.source_app}
+          kind={chatItem.kind}
+          id={chatItem.id}
+          title={chatItem.title}
+          onClose={() => {
+            setChatItem(null);
+            load();
+          }}
+          onTurnDone={load}
+        />
+      )}
     </main>
   );
 }
@@ -169,9 +194,13 @@ function findAction(actions: StackAction[], direction: CommitDirection): StackAc
 function SwipeCard({
   item,
   onCommit,
+  onLongPress,
+  disableLongPress,
 }: {
   item: StackItem;
   onCommit: (item: StackItem, emoji: string, removedIDs: string[]) => void;
+  onLongPress: (item: StackItem) => void;
+  disableLongPress: boolean;
 }) {
   const rightAction = findAction(item.actions, 'right');
   const leftAction = findAction(item.actions, 'left');
@@ -192,6 +221,19 @@ function SwipeCard({
   const [busy, setBusy] = useState(false);
   const [swipingOut, setSwipingOut] = useState<CommitDirection | null>(null);
   const [armed, setArmed] = useState<'right' | 'left' | null>(null);
+  // Long-press timer. Fires LONG_PRESS_MS after pointerdown if the
+  // pointer hasn't moved (dragging clears it) and no other card is
+  // already showing a chat sheet. Setting justOpened suppresses the
+  // click-to-navigate that would otherwise fire on release.
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   useMotionValueEvent(x, 'change', (v) => {
     if (canSwipeRight && v >= threshold) setArmed('right');
@@ -245,7 +287,13 @@ function SwipeCard({
         right: canSwipeRight ? 500 : 0,
       }}
       dragElastic={0.3}
-      style={{ x }}
+      style={{
+        x,
+        // Suppress iOS Safari's long-press context/share menu so our
+        // own long-press gesture isn't hijacked.
+        WebkitTouchCallout: 'none' as const,
+        WebkitUserSelect: 'none' as const,
+      }}
       animate={
         swipingOut === 'right'
           ? { x: 520, opacity: 0, transition: { duration: 0.25 } }
@@ -253,9 +301,31 @@ function SwipeCard({
             ? { x: -520, opacity: 0, transition: { duration: 0.25 } }
             : undefined
       }
-      onDragEnd={onDragEnd}
+      onTapStart={() => {
+        if (disableLongPress || busy) return;
+        longPressFiredRef.current = false;
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressFiredRef.current = true;
+          longPressTimerRef.current = null;
+          onLongPress(item);
+        }, LONG_PRESS_MS);
+      }}
+      onDragStart={clearLongPress}
+      onDragEnd={async (e, info) => {
+        clearLongPress();
+        await onDragEnd(e, info);
+      }}
+      onTap={() => {
+        clearLongPress();
+      }}
       onClick={() => {
         if (busy) return;
+        // If long-press just fired, swallow this click — the user
+        // opened the chat sheet, they did not mean to navigate.
+        if (longPressFiredRef.current) {
+          longPressFiredRef.current = false;
+          return;
+        }
         navigate(`/stack/${item.source_app}/${item.kind}/${item.id}`);
       }}
     >

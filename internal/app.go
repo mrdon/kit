@@ -192,7 +192,15 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	}
 
 	// Run the agent loop
-	if err := a.Agent.Run(ctx, client, tenant, user, session, channel, threadTS, text, nil); err != nil {
+	if err := a.Agent.Run(ctx, agent.RunInput{
+		Slack:    client,
+		Tenant:   tenant,
+		User:     user,
+		Session:  session,
+		Channel:  channel,
+		ThreadTS: threadTS,
+		UserText: text,
+	}); err != nil {
 		slog.Error("agent run failed", "error", err, "session_id", session.ID)
 	}
 }
@@ -229,7 +237,14 @@ func (a *App) HandlePostInstall(ctx context.Context, tenant *models.Tenant, inst
 
 	// Run the agent with an onboarding prompt
 	onboardingPrompt := "I just installed Kit. Let's get it set up."
-	if err := a.Agent.Run(ctx, client, tenant, user, session, dmChannel, "", onboardingPrompt, nil); err != nil {
+	if err := a.Agent.Run(ctx, agent.RunInput{
+		Slack:    client,
+		Tenant:   tenant,
+		User:     user,
+		Session:  session,
+		Channel:  dmChannel,
+		UserText: onboardingPrompt,
+	}); err != nil {
 		slog.Error("onboarding agent run failed", "error", err)
 	}
 }

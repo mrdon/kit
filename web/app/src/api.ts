@@ -34,6 +34,9 @@ const post = (path: string, body?: unknown) =>
 
 const get = (path: string) => fetch(path, { credentials: 'same-origin' });
 
+const cardPath = (sourceApp: string, kind: string, id: string) =>
+  `/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`;
+
 export const api = {
   stack: async (cursor?: string, limit?: number): Promise<StackResponse> => {
     const params = new URLSearchParams();
@@ -63,9 +66,49 @@ export const api = {
     params?: unknown,
   ): Promise<ActionResult> => {
     const r = await post(
-      `/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/action`,
+      `${cardPath(sourceApp, kind, id)}/action`,
       { action_id: actionID, params: params ?? undefined },
     );
     return j<ActionResult>(r);
+  },
+
+  // chatTranscribe uploads audio and returns the fetch Response whose
+  // body is an SSE stream of partial/final/error events. The X-Kit-Chat
+  // header lifts the request out of the CORS "simple request" category
+  // so the server's CSRF check passes for multipart bodies.
+  chatTranscribe: (
+    sourceApp: string,
+    kind: string,
+    id: string,
+    audio: Blob,
+    signal?: AbortSignal,
+  ): Promise<Response> => {
+    const form = new FormData();
+    form.append('audio', audio, 'clip');
+    return fetch(`${cardPath(sourceApp, kind, id)}/chat/transcribe`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Kit-Chat': '1' },
+      body: form,
+      signal,
+    });
+  },
+
+  // chatExecute sends the user's text (typed or edited transcript) and
+  // returns an SSE stream of status/tool/response/done events.
+  chatExecute: (
+    sourceApp: string,
+    kind: string,
+    id: string,
+    text: string,
+    signal?: AbortSignal,
+  ): Promise<Response> => {
+    return fetch(`${cardPath(sourceApp, kind, id)}/chat/execute`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal,
+    });
   },
 };
