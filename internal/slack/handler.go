@@ -73,7 +73,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch inner.Type {
 		case "message":
 			if inner.BotID != "" || inner.SubType != "" {
-				slog.Debug("dropping message event", "bot_id", inner.BotID, "subtype", inner.SubType, "team_id", outer.TeamID)
 				return
 			}
 			go h.onMessage(outer.TeamID, outer.Event, "message")
