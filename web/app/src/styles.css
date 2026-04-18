@@ -57,6 +57,18 @@ main.feed > .card-screen {
   flex: 1;
   min-height: 0;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+/* Armed = finger is past the commit threshold. Card lights up so the
+   release-to-commit moment is unmistakable. */
+.card.armed-right {
+  background: #1f3a2b; /* warmer green wash */
+  box-shadow: 0 12px 40px rgba(34, 197, 94, 0.35), inset 0 0 0 2px rgba(34, 197, 94, 0.6);
+}
+.card.armed-left {
+  background: #3a1f1f; /* warmer red wash */
+  box-shadow: 0 12px 40px rgba(239, 68, 68, 0.35), inset 0 0 0 2px rgba(239, 68, 68, 0.6);
 }
 
 .card.decision.priority-high   { border-left-color: #ef4444; }

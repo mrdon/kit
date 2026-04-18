@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { animate, AnimatePresence, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import { animate, AnimatePresence, motion, useMotionValue, useMotionValueEvent, useTransform, type PanInfo } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from './api';
@@ -101,21 +101,39 @@ function Burst({ kind }: { kind: 'up' | 'down' | 'approve' }) {
 }
 
 function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, direction: CommitDirection) => void }) {
-  const x = useMotionValue(0);
-  const rightOpacity = useTransform(x, [0, 100], [0, 1]);
-  const leftOpacity = useTransform(x, [-100, 0], [1, 0]);
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [swipingOut, setSwipingOut] = useState<CommitDirection | null>(null);
-
   const tagClass = cardClass(card);
   const canSwipeLeft = card.kind === 'briefing';
 
+  const x = useMotionValue(0);
+  // Commit threshold in px — set once per mount. Anything short of this
+  // snaps back. Hint transforms key off it so "armed" state lands exactly
+  // at the release-to-commit point.
+  const threshold = typeof window !== 'undefined' ? Math.max(260, window.innerWidth * 0.7) : 260;
+  const armedStart = threshold - 10;
+
+  // Hint opacity ramps up well before the threshold so the user sees the
+  // emoji early; scale pops at the threshold to signal "release to commit".
+  const rightOpacity = useTransform(x, [0, threshold * 0.4, threshold], [0, 0.6, 1]);
+  const rightScale = useTransform(x, [armedStart, threshold], [1, 1.35]);
+  const leftOpacity = useTransform(x, [-threshold, -threshold * 0.4, 0], [1, 0.6, 0]);
+  const leftScale = useTransform(x, [-threshold, -armedStart], [1.35, 1]);
+
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [swipingOut, setSwipingOut] = useState<CommitDirection | null>(null);
+  const [armed, setArmed] = useState<'right' | 'left' | null>(null);
+
+  // Subscribe to x so we can toggle the "armed" class when past the
+  // commit threshold. The class lights up the card background to make
+  // the release-to-commit moment unambiguous.
+  useMotionValueEvent(x, 'change', (v) => {
+    if (v >= threshold) setArmed('right');
+    else if (canSwipeLeft && v <= -threshold) setArmed('left');
+    else setArmed(null);
+  });
+
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
-    // Commit only when the card has travelled ~90% of the viewport width.
-    // Anything short of that snaps back.
-    const threshold = Math.max(320, window.innerWidth * 0.9);
     const snapBack = () =>
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
     if (info.offset.x > threshold) {
@@ -154,7 +172,7 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
 
   return (
     <motion.article
-      className={`card ${tagClass}`}
+      className={`card ${tagClass}${armed ? ` armed-${armed}` : ''}`}
       drag={busy ? false : 'x'}
       dragConstraints={canSwipeLeft ? { left: -500, right: 500 } : { left: 0, right: 500 }}
       dragElastic={0.3}
@@ -186,11 +204,11 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
           ? `Swipe right to ${recommendedLabel(card) ?? 'approve default'} · tap for options`
           : 'Swipe right 👍 · left 👎 · tap to open'}
       </div>
-      <motion.div className="swipe-hint right" style={{ opacity: rightOpacity }}>
+      <motion.div className="swipe-hint right" style={{ opacity: rightOpacity, scale: rightScale }}>
         {card.kind === 'decision' ? '✓ Approve' : '👍'}
       </motion.div>
       {canSwipeLeft && (
-        <motion.div className="swipe-hint left" style={{ opacity: leftOpacity }}>
+        <motion.div className="swipe-hint left" style={{ opacity: leftOpacity, scale: leftScale }}>
           👎
         </motion.div>
       )}
