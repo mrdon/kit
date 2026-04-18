@@ -67,6 +67,11 @@ func handleCreateDecision(svc *CardService) tools.HandlerFunc {
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
+		var originSessionID *uuid.UUID
+		if ec.TaskID != nil && ec.Session != nil {
+			sid := ec.Session.ID
+			originSessionID = &sid
+		}
 		card, err := svc.CreateDecision(ec.Ctx, ec.Caller(), CardCreateInput{
 			Title:      inp.Title,
 			Body:       inp.Context,
@@ -75,6 +80,8 @@ func handleCreateDecision(svc *CardService) tools.HandlerFunc {
 				Priority:            DecisionPriority(inp.Priority),
 				RecommendedOptionID: inp.RecommendedOptionID,
 				Options:             inp.Options,
+				OriginTaskID:        ec.TaskID,
+				OriginSessionID:     originSessionID,
 			},
 		})
 		if err != nil {

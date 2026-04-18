@@ -120,13 +120,33 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 		return
 	}
 
-	// Each task run gets its own session using the task ID + timestamp as thread_ts
-	threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
-	session, err := models.CreateSession(ctx, s.pool, tenant.ID, task.ChannelID, threadTS, user.ID, true)
-	if err != nil {
-		slog.Error("creating session for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "creating session", slack, user)
-		return
+	// Session selection: resume an existing session when ResolveDecision
+	// flagged this task (resume_session_id set), otherwise mint fresh.
+	// The resume marker is consumed — a subsequent cron tick gets a fresh
+	// session, not the previous workflow's context.
+	var session *models.Session
+	isResume := false
+	if task.ResumeSessionID != nil {
+		existing, err := models.GetSession(ctx, s.pool, tenant.ID, *task.ResumeSessionID)
+		if err == nil && existing != nil {
+			session = existing
+			isResume = true
+		} else if err != nil {
+			slog.Warn("loading resume session for task, falling back to fresh", "task_id", task.ID, "error", err)
+		}
+		if err := models.ClearTaskResumeSession(ctx, s.pool, tenant.ID, task.ID); err != nil {
+			slog.Warn("clearing resume_session_id", "task_id", task.ID, "error", err)
+		}
+	}
+	if session == nil {
+		threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
+		created, err := models.CreateSession(ctx, s.pool, tenant.ID, task.ChannelID, threadTS, user.ID, true)
+		if err != nil {
+			slog.Error("creating session for task", "task_id", task.ID, "error", err)
+			s.recordTaskError(ctx, task, "creating session", slack, user)
+			return
+		}
+		session = created
 	}
 
 	authorName := user.SlackUserID
@@ -134,9 +154,18 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 		authorName = *user.DisplayName
 	}
 	tc := &agent.TaskContext{
+		ID:            task.ID,
 		Description:   task.Description,
 		AuthorSlackID: user.SlackUserID,
 		AuthorName:    authorName,
+	}
+
+	// On resume the full context is in session history (original prompt,
+	// prior tool calls, the decision_resolved event). The fresh user
+	// message only needs to nudge the agent to re-evaluate.
+	userText := task.Description
+	if isResume {
+		userText = "A decision you created has been resolved. Review the updated state and continue the workflow — either create any remaining decisions, produce your final output, or wait if other decisions are still pending."
 	}
 
 	var lastError *string
@@ -146,7 +175,7 @@ func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
 		User:     user,
 		Session:  session,
 		Channel:  task.ChannelID,
-		UserText: task.Description,
+		UserText: userText,
 		Task:     tc,
 	}); err != nil {
 		slog.Error("task agent run failed", "task_id", task.ID, "error", err)

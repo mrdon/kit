@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/anthropic"
@@ -32,6 +33,12 @@ type ExecContext struct {
 	Channel  string
 	ThreadTS string
 	Svc      *services.Services
+
+	// TaskID is set when this run is executing a scheduled task. Tools
+	// that want to link artifacts back to the originating task (e.g.
+	// create_decision stamping origin_task_id) read this. Nil for
+	// user-initiated Slack or chat runs.
+	TaskID *uuid.UUID
 
 	// Responder is where reply_in_thread sends its output. When nil, the
 	// handler constructs a SlackResponder on demand (default behavior).

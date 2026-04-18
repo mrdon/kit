@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/apps"
@@ -14,6 +15,7 @@ import (
 
 // TaskContext provides metadata when the agent is running a scheduled task.
 type TaskContext struct {
+	ID            uuid.UUID
 	Description   string
 	AuthorSlackID string
 	AuthorName    string

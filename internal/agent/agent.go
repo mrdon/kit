@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/anthropic"
@@ -100,6 +101,10 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		OnToolCall:  in.OnToolCall,
 		OnIteration: in.OnIteration,
 	}
+	if in.Task != nil && in.Task.ID != (uuid.UUID{}) {
+		taskID := in.Task.ID
+		ec.TaskID = &taskID
+	}
 
 	// Unpack for readability below. Mirrors the old positional args so
 	// the loop body didn't have to change.
@@ -116,7 +121,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		defer status.cleanup(ctx)
 	}
 
-	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "message_received", map[string]any{
+	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeMessageReceived, map[string]any{
 		"user_id": user.ID,
 		"text":    userText,
 		"channel": channel,
@@ -154,7 +159,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			ec.OnIteration()
 		}
 
-		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_request", map[string]any{
+		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeLLMRequest, map[string]any{
 			"model":     modelHaiku,
 			"iteration": i,
 		})
@@ -169,7 +174,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		})
 		if err != nil {
 			slog.Error("llm call failed", "error", err, "iteration", i)
-			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "error", map[string]any{
+			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeError, map[string]any{
 				"error":     err.Error(),
 				"iteration": i,
 			})
@@ -181,7 +186,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		totalCacheRead += resp.Usage.CacheReadInputTokens
 		totalCacheWrite += resp.Usage.CacheCreationInputTokens
 
-		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "llm_response", map[string]any{
+		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeLLMResponse, map[string]any{
 			"model":                       resp.Model,
 			"stop_reason":                 resp.StopReason,
 			"input_tokens":                resp.Usage.InputTokens,
@@ -200,7 +205,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			// and would land in the user's DM as noise. Drop it.
 			if text != "" && !session.BotInitiated {
 				// Log the turn so rebuildHistory replays it on follow-ups.
-				_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "assistant_turn", map[string]any{
+				_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeAssistantTurn, map[string]any{
 					"content": resp.Content,
 				})
 				if ec.Responder != nil {
@@ -219,7 +224,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			break
 		}
 
-		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "assistant_turn", map[string]any{
+		_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeAssistantTurn, map[string]any{
 			"content": resp.Content,
 		})
 		messages = append(messages, anthropic.Message{
@@ -260,7 +265,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 				}
 			}
 
-			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "tool_results", map[string]any{
+			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeToolResults, map[string]any{
 				"content": toolResults,
 			})
 			messages = append(messages, anthropic.Message{
@@ -283,7 +288,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		}
 	}
 
-	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, "session_complete", map[string]any{
+	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeSessionComplete, map[string]any{
 		"duration_ms":      time.Since(start).Milliseconds(),
 		"total_input":      totalIn,
 		"total_output":     totalOut,
@@ -303,7 +308,7 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 	var messages []anthropic.Message
 	for _, evt := range events {
 		switch evt.EventType {
-		case "message_received":
+		case models.EventTypeMessageReceived:
 			var data struct {
 				Text string `json:"text"`
 			}
@@ -314,7 +319,7 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 				})
 			}
 
-		case "assistant_turn":
+		case models.EventTypeAssistantTurn:
 			var data struct {
 				Content []anthropic.Content `json:"content"`
 			}
@@ -325,7 +330,7 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 				})
 			}
 
-		case "tool_results":
+		case models.EventTypeToolResults:
 			var data struct {
 				Content []anthropic.Content `json:"content"`
 			}
@@ -335,6 +340,28 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 					Content: data.Content,
 				})
 			}
+
+		case models.EventTypeDecisionResolved:
+			var data struct {
+				CardTitle   string `json:"card_title"`
+				OptionLabel string `json:"option_label"`
+				ResolvedBy  string `json:"resolved_by"`
+			}
+			if json.Unmarshal(evt.Data, &data) == nil && data.OptionLabel != "" {
+				text := fmt.Sprintf("Decision %q was resolved with option %q by %s.",
+					data.CardTitle, data.OptionLabel, data.ResolvedBy)
+				messages = append(messages, anthropic.Message{
+					Role:    "user",
+					Content: []anthropic.Content{{Type: "text", Text: text}},
+				})
+			}
+
+		case models.EventTypeMessageSent,
+			models.EventTypeLLMRequest,
+			models.EventTypeLLMResponse,
+			models.EventTypeError,
+			models.EventTypeSessionComplete:
+			// Diagnostic / telemetry events — not part of the conversation.
 		}
 	}
 

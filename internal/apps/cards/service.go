@@ -212,9 +212,36 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 		return nil, err
 	}
 
-	// If the option carries a prompt, queue a one-shot agent task.
 	var taskID *uuid.UUID
-	if opt.Prompt != "" {
+
+	// Resume path: the decision was created by a task's agent. Append a
+	// decision_resolved event to that task's session and requeue the task
+	// with the session marked for resume — the original workflow picks
+	// up the next time the scheduler claims it.
+	resumed := false
+	if locked.Decision != nil && locked.Decision.OriginTaskID != nil && locked.Decision.OriginSessionID != nil {
+		originTaskID := *locked.Decision.OriginTaskID
+		originSessionID := *locked.Decision.OriginSessionID
+		if err := models.AppendSessionEventTx(ctx, tx, c.TenantID, originSessionID, models.EventTypeDecisionResolved, map[string]any{
+			"card_id":      cardID,
+			"card_title":   locked.Title,
+			"option_id":    opt.OptionID,
+			"option_label": opt.Label,
+			"resolved_by":  c.Identity,
+		}); err != nil {
+			return nil, fmt.Errorf("appending decision_resolved event: %w", err)
+		}
+		if err := models.RequeueTaskForResumeTx(ctx, tx, c.TenantID, originTaskID, originSessionID); err != nil {
+			return nil, fmt.Errorf("waking origin task: %w", err)
+		}
+		taskID = &originTaskID
+		resumed = true
+	}
+
+	// Fallback / ad-hoc path: the option carries its own prompt and the
+	// decision isn't part of a resumable workflow — queue a fresh one-shot
+	// agent task.
+	if !resumed && opt.Prompt != "" {
 		dmChannel, err := dm.OpenConversation(ctx, c.Identity)
 		if err != nil {
 			return nil, fmt.Errorf("opening DM channel: %w", err)
@@ -237,7 +264,6 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 	if err := finishResolveDecision(ctx, tx, cardID, c.UserID, opt.OptionID, taskID); err != nil {
 		return nil, err
 	}
-	_ = locked
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("committing: %w", err)
 	}

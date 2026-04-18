@@ -154,12 +154,12 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 	var c Card
 	var priority DecisionPriority
 	var recommendedOptionID, resolvedOptionID *string
-	var resolvedTaskID *uuid.UUID
+	var resolvedTaskID, originTaskID, originSessionID *uuid.UUID
 	err := tx.QueryRow(ctx, `
 		SELECT
 			c.id, c.tenant_id, c.kind, c.title, c.body, c.state,
 			c.created_at, c.updated_at,
-			d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id
+			d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id, d.origin_task_id, d.origin_session_id
 		FROM app_cards c
 		JOIN app_card_decisions d ON d.card_id = c.id
 		WHERE c.tenant_id = $1 AND c.id = $2
@@ -168,7 +168,7 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 	).Scan(
 		&c.ID, &c.TenantID, &c.Kind, &c.Title, &c.Body, &c.State,
 		&c.CreatedAt, &c.UpdatedAt,
-		&priority, &recommendedOptionID, &resolvedOptionID, &resolvedTaskID,
+		&priority, &recommendedOptionID, &resolvedOptionID, &resolvedTaskID, &originTaskID, &originSessionID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, ErrCardNotFound
@@ -179,7 +179,11 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 	if c.State != CardStatePending {
 		return nil, nil, ErrAlreadyTerminal
 	}
-	c.Decision = &DecisionData{Priority: priority}
+	c.Decision = &DecisionData{
+		Priority:        priority,
+		OriginTaskID:    originTaskID,
+		OriginSessionID: originSessionID,
+	}
 	if recommendedOptionID != nil {
 		c.Decision.RecommendedOptionID = *recommendedOptionID
 	}

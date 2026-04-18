@@ -13,7 +13,7 @@ const baseCardQuery = `
 SELECT
 	c.id, c.tenant_id, c.kind, c.title, c.body, c.state,
 	c.terminal_at, c.terminal_by, c.created_at, c.updated_at,
-	d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id,
+	d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id, d.origin_task_id, d.origin_session_id,
 	b.severity
 FROM app_cards c
 LEFT JOIN app_card_decisions d ON d.card_id = c.id
@@ -27,12 +27,12 @@ func scanCardRow(row pgx.Row) (*Card, error) {
 	var c Card
 	var priority *DecisionPriority
 	var recommendedOptionID, resolvedOptionID *string
-	var resolvedTaskID *uuid.UUID
+	var resolvedTaskID, originTaskID, originSessionID *uuid.UUID
 	var severity *BriefingSeverity
 	if err := row.Scan(
 		&c.ID, &c.TenantID, &c.Kind, &c.Title, &c.Body, &c.State,
 		&c.TerminalAt, &c.TerminalBy, &c.CreatedAt, &c.UpdatedAt,
-		&priority, &recommendedOptionID, &resolvedOptionID, &resolvedTaskID,
+		&priority, &recommendedOptionID, &resolvedOptionID, &resolvedTaskID, &originTaskID, &originSessionID,
 		&severity,
 	); err != nil {
 		return nil, err
@@ -50,6 +50,8 @@ func scanCardRow(row pgx.Row) (*Card, error) {
 			d.ResolvedOptionID = *resolvedOptionID
 		}
 		d.ResolvedTaskID = resolvedTaskID
+		d.OriginTaskID = originTaskID
+		d.OriginSessionID = originSessionID
 		c.Decision = d
 	case CardKindBriefing:
 		b := &BriefingData{}

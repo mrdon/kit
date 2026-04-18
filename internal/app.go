@@ -284,11 +284,11 @@ func bootstrapThreadHistory(ctx context.Context, pool *pgxpool.Pool, client *kit
 			continue
 		}
 		if m.BotID != "" {
-			_ = models.AppendSessionEvent(ctx, pool, tenantID, sessionID, "assistant_turn", map[string]any{
+			_ = models.AppendSessionEvent(ctx, pool, tenantID, sessionID, models.EventTypeAssistantTurn, map[string]any{
 				"content": []map[string]any{{"type": "text", "text": m.Text}},
 			})
 		} else {
-			_ = models.AppendSessionEvent(ctx, pool, tenantID, sessionID, "message_received", map[string]any{
+			_ = models.AppendSessionEvent(ctx, pool, tenantID, sessionID, models.EventTypeMessageReceived, map[string]any{
 				"text":    m.Text,
 				"channel": channel,
 			})

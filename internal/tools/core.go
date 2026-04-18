@@ -122,7 +122,7 @@ func dmUserHandler(ec *ExecContext, input json.RawMessage) (string, error) {
 }
 
 func logMessageSent(ec *ExecContext, channel, threadTS, text string, isDM bool) {
-	_ = models.AppendSessionEvent(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, "message_sent", map[string]any{
+	_ = models.AppendSessionEvent(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, models.EventTypeMessageSent, map[string]any{
 		"channel":   channel,
 		"thread_ts": threadTS,
 		"text":      text,

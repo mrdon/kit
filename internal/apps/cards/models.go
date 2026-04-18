@@ -128,7 +128,13 @@ type DecisionData struct {
 	RecommendedOptionID string           `json:"recommended_option_id,omitempty"`
 	ResolvedOptionID    string           `json:"resolved_option_id,omitempty"`
 	ResolvedTaskID      *uuid.UUID       `json:"resolved_task_id,omitempty"`
-	Options             []DecisionOption `json:"options"`
+	// OriginTaskID and OriginSessionID, when both non-nil, wire the
+	// decision back to the task-and-session that created it. Resolving
+	// appends a decision_resolved event to the session and requeues the
+	// task so a single workflow can span multiple decisions over time.
+	OriginTaskID    *uuid.UUID       `json:"origin_task_id,omitempty"`
+	OriginSessionID *uuid.UUID       `json:"origin_session_id,omitempty"`
+	Options         []DecisionOption `json:"options"`
 }
 
 // DecisionOption is a single option a user can pick when resolving a decision.
@@ -166,6 +172,12 @@ type DecisionCreateInput struct {
 	Priority            DecisionPriority
 	RecommendedOptionID string
 	Options             []DecisionOption
+	// OriginTaskID + OriginSessionID, when both non-nil, stamp the
+	// decision so resolution can wake the originating task and append to
+	// the originating session. Set by the agent-side create_decision
+	// handler when running a scheduled task; nil for ad-hoc callers.
+	OriginTaskID    *uuid.UUID
+	OriginSessionID *uuid.UUID
 }
 
 // BriefingCreateInput holds the briefing-specific fields for creation.

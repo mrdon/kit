@@ -47,9 +47,9 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		}
 		d := in.Decision
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_decisions (card_id, priority, recommended_option_id)
-			VALUES ($1, $2, $3)`,
-			cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID),
+			INSERT INTO app_card_decisions (card_id, priority, recommended_option_id, origin_task_id, origin_session_id)
+			VALUES ($1, $2, $3, $4, $5)`,
+			cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginTaskID, d.OriginSessionID,
 		); err != nil {
 			return nil, fmt.Errorf("inserting decision: %w", err)
 		}
@@ -65,6 +65,8 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		card.Decision = &DecisionData{
 			Priority:            d.Priority,
 			RecommendedOptionID: d.RecommendedOptionID,
+			OriginTaskID:        d.OriginTaskID,
+			OriginSessionID:     d.OriginSessionID,
 			Options:             append([]DecisionOption(nil), d.Options...),
 		}
 	case CardKindBriefing:

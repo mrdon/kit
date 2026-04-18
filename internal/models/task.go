@@ -43,7 +43,12 @@ type Task struct {
 	NextRunAt   time.Time
 	LastRunAt   *time.Time
 	LastError   *string
-	CreatedAt   time.Time
+	// ResumeSessionID is set by ResolveDecision to tell the scheduler
+	// "resume into this session on your next run of this task." The
+	// scheduler consumes and clears it at claim time. Nil for tasks not
+	// waiting on a decision.
+	ResumeSessionID *uuid.UUID
+	CreatedAt       time.Time
 }
 
 // NextCronRun computes the next run time for a cron expression in the given timezone.
@@ -99,10 +104,10 @@ func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID,
 	err := tx.QueryRow(ctx, `
 		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
+		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, resume_session_id, created_at
 	`, taskID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun).Scan(
 		&task.ID, &task.TenantID, &task.CreatedBy, &task.Description, &task.CronExpr,
-		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.TaskType, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.CreatedAt,
+		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.TaskType, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.ResumeSessionID, &task.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
@@ -120,13 +125,28 @@ func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID,
 
 // GetTask returns a single task by ID.
 func GetTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) (*Task, error) {
+	return getTaskRow(ctx, pool, tenantID, taskID)
+}
+
+// GetTaskTx is GetTask but runs inside a transaction. Used when task
+// lookup must be atomic with a subsequent update (e.g. requeue during
+// decision resolution).
+func GetTaskTx(ctx context.Context, tx pgx.Tx, tenantID, taskID uuid.UUID) (*Task, error) {
+	return getTaskRow(ctx, tx, tenantID, taskID)
+}
+
+type taskRowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func getTaskRow(ctx context.Context, q taskRowQuerier, tenantID, taskID uuid.UUID) (*Task, error) {
 	t := &Task{}
-	err := pool.QueryRow(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
+	err := q.QueryRow(ctx, `
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, resume_session_id, created_at
 		FROM tasks WHERE tenant_id = $1 AND id = $2
 	`, tenantID, taskID).Scan(
 		&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt,
+		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.ResumeSessionID, &t.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
@@ -143,7 +163,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone,
-			t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.created_at
+			t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.resume_session_id, t.created_at
 		FROM tasks t
 		JOIN task_scopes ts ON ts.task_id = t.id AND ts.tenant_id = t.tenant_id
 		WHERE t.tenant_id = $1
@@ -159,7 +179,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.ResumeSessionID, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -171,7 +191,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
+			channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, resume_session_id, created_at
 		FROM tasks WHERE tenant_id = $1
 		ORDER BY created_at
 	`, tenantID)
@@ -184,7 +204,7 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.ResumeSessionID, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -284,7 +304,7 @@ func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Task, 
 		SET status = $3
 		FROM claimed c
 		WHERE t.id = c.id
-		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.created_at
+		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.resume_session_id, t.created_at
 	`, limit, TaskStatusActive, TaskStatusRunning)
 	if err != nil {
 		return nil, fmt.Errorf("claiming due tasks: %w", err)
@@ -295,7 +315,7 @@ func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Task, 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.ResumeSessionID, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning claimed task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -340,6 +360,36 @@ func UpdateTaskAfterRun(ctx context.Context, pool *pgxpool.Pool, tenantID, taskI
 	`, tenantID, taskID, nextRun, lastError, TaskStatusActive)
 	if err != nil {
 		return fmt.Errorf("updating task after run: %w", err)
+	}
+	return nil
+}
+
+// RequeueTaskForResumeTx flips a task back to 'active' with next_run_at=now
+// and marks the session to resume into on the next scheduler claim. Used
+// by decision-resolution to wake a paused workflow. Runs inside the
+// caller's transaction so the event append, task flip, and resume marker
+// all land atomically.
+func RequeueTaskForResumeTx(ctx context.Context, tx pgx.Tx, tenantID, taskID, resumeSessionID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE tasks SET status = $3, next_run_at = now(), resume_session_id = $4
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, taskID, TaskStatusActive, resumeSessionID)
+	if err != nil {
+		return fmt.Errorf("requeuing task for resume: %w", err)
+	}
+	return nil
+}
+
+// ClearTaskResumeSession clears resume_session_id after the scheduler has
+// consumed it. Called by the scheduler after successful claim so a
+// subsequent cron tick doesn't accidentally resume into the same session.
+func ClearTaskResumeSession(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE tasks SET resume_session_id = NULL
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, taskID)
+	if err != nil {
+		return fmt.Errorf("clearing task resume session: %w", err)
 	}
 	return nil
 }
