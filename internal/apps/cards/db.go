@@ -219,23 +219,27 @@ func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, kind
 }
 
 // listStack returns pending cards for the caller, ordered per the PRD's
-// interleaved priority-vs-severity rule: high decisions first, then medium
-// decisions, then important briefings, then low decisions, then notable
-// briefings, then info briefings.
-func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string, roles []string, isAdmin bool) ([]*Card, error) {
+// interleaved priority-vs-severity rule and filtered by per-user
+// briefing acks. Role-scoped briefings stay visible to role members
+// until each individually acks; the LEFT JOIN + IS NULL filter
+// implements that per-user exclusion.
+func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, slackUserID string, roles []string, isAdmin bool) ([]*Card, error) {
 	var b strings.Builder
 	b.WriteString(baseCardQuery)
-	args := []any{tenantID}
+	// userID is always $2 so the SQL is the same for admin and non-admin.
+	args := []any{tenantID, userID}
+	b.WriteString(` LEFT JOIN app_card_user_acks ua ON ua.card_id = c.id AND ua.user_id = $2`)
 
 	if isAdmin {
-		b.WriteString(` WHERE c.tenant_id = $1 AND c.state = $2`)
+		b.WriteString(` WHERE c.tenant_id = $1 AND c.state = $3 AND ua.card_id IS NULL`)
 		args = append(args, CardStatePending)
 	} else {
-		scopeSQL, scopeArgs := models.ScopeFilter("s", 2, slackUserID, roles)
+		scopeSQL, scopeArgs := models.ScopeFilter("s", 3, slackUserID, roles)
 		b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id WHERE c.tenant_id = $1 AND (`)
 		b.WriteString(scopeSQL)
 		b.WriteString(`) AND c.state = $`)
-		fmt.Fprintf(&b, "%d", 2+len(scopeArgs))
+		fmt.Fprintf(&b, "%d", 3+len(scopeArgs))
+		b.WriteString(` AND ua.card_id IS NULL`)
 		args = append(args, scopeArgs...)
 		args = append(args, CardStatePending)
 	}

@@ -224,25 +224,23 @@ func finishResolveDecision(ctx context.Context, tx pgx.Tx, cardID, resolvedBy uu
 	return nil
 }
 
-// ackBriefing transitions a briefing card to its ack terminal state.
-// Returns ErrAlreadyTerminal if the card is not pending.
+// ackBriefing records a per-user acknowledgment. Role-scoped briefings
+// need to stay visible to other role members after one person dismisses
+// them, so the ack lives in app_card_user_acks rather than flipping the
+// card-level state. Idempotent: re-acking with a different kind updates
+// the existing row. Returns ErrAlreadyTerminal if the card has been
+// globally cancelled by an admin.
 func ackBriefing(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID, ackedBy uuid.UUID, kind BriefingAckKind) (*Card, error) {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("beginning tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
 	var state CardState
 	var cardKind CardKind
-	if err := tx.QueryRow(ctx, `
-		SELECT state, kind FROM app_cards WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+	if err := pool.QueryRow(ctx, `
+		SELECT state, kind FROM app_cards WHERE tenant_id = $1 AND id = $2`,
 		tenantID, cardID,
 	).Scan(&state, &cardKind); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrCardNotFound
 		}
-		return nil, fmt.Errorf("locking briefing: %w", err)
+		return nil, fmt.Errorf("loading briefing: %w", err)
 	}
 	if cardKind != CardKindBriefing {
 		return nil, fmt.Errorf("cannot ack %s card as briefing", cardKind)
@@ -251,16 +249,13 @@ func ackBriefing(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID, acke
 		return nil, ErrAlreadyTerminal
 	}
 
-	if _, err := tx.Exec(ctx, `
-		UPDATE app_cards
-		SET state = $1, terminal_at = now(), terminal_by = $2, updated_at = now()
-		WHERE id = $3`,
-		kind.State(), ackedBy, cardID,
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO app_card_user_acks (tenant_id, card_id, user_id, ack_kind)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (card_id, user_id) DO UPDATE SET ack_kind = EXCLUDED.ack_kind, created_at = now()`,
+		tenantID, cardID, ackedBy, kind,
 	); err != nil {
-		return nil, fmt.Errorf("flipping card state: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing: %w", err)
+		return nil, fmt.Errorf("recording briefing ack: %w", err)
 	}
 	return getCard(ctx, pool, tenantID, cardID)
 }
