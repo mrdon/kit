@@ -35,13 +35,17 @@ export default function Stack() {
   }, [load]);
 
   const onCommit = (c: Card, direction: CommitDirection) => {
-    // Fire the burst first so the user sees the confirmation *on top of*
-    // the still-present card while the exit animation runs.
+    // Let the card animate off-screen first (~250ms), then flash the
+    // burst. If we render the burst while the card is still in flight
+    // it's hidden behind the card. The state removal runs in parallel
+    // with the burst so AnimatePresence can collapse the section.
     const burstKind: 'up' | 'down' | 'approve' =
       c.kind === 'decision' ? 'approve' : direction === 'right' ? 'up' : 'down';
-    setBurst({ id: c.id, kind: burstKind });
-    setCards((cs) => (cs ? cs.filter((x) => x.id !== c.id) : cs));
-    setTimeout(() => setBurst(null), 900);
+    window.setTimeout(() => {
+      setCards((cs) => (cs ? cs.filter((x) => x.id !== c.id) : cs));
+      setBurst({ id: c.id, kind: burstKind });
+      window.setTimeout(() => setBurst(null), 900);
+    }, 260);
   };
 
   if (err) return <div className="empty">Error: {err}</div>;
@@ -148,6 +152,7 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
       drag={busy ? false : 'x'}
       dragConstraints={canSwipeLeft ? { left: -400, right: 400 } : { left: 0, right: 400 }}
       dragElastic={0.4}
+      dragSnapToOrigin={true}
       style={{ x }}
       animate={
         swipingOut === 'right'
