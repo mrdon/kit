@@ -171,6 +171,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			authorName = *user.DisplayName
 		}
 		tc := &agent.TaskContext{
+			ID:            task.ID,
 			Description:   task.Description,
 			AuthorSlackID: user.SlackUserID,
 			AuthorName:    authorName,
