@@ -685,3 +685,33 @@ a { color: var(--link); }
   border-radius: 6px 6px 0 0;
   font-size: 0.85em;
 }
+
+/* Floating "Listening… / Transcribing…" chip above the composer.
+   Pinned to the top of the composer so it's always visible during
+   voice capture regardless of keyboard/viewport. */
+.chat-voice-hint {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  padding: 6px 12px;
+  background: var(--tier-elevated-bg);
+  color: var(--card-fg);
+  border: 1px solid var(--tier-elevated-accent);
+  border-radius: 12px 12px 12px 0;
+  font-size: 0.85em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 -4px 12px var(--shadow-card);
+}
+.chat-voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tier-critical-accent);
+  animation: chat-voice-dot-pulse 1s ease-in-out infinite;
+}
+@keyframes chat-voice-dot-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.2); }
+}

@@ -37,6 +37,15 @@ export default function ChatComposer({ card, busy, onSubmit }: Props) {
     taRef.current?.focus();
   }, []);
 
+  // Auto-grow the textarea to fit its content up to CSS max-height.
+  // Reset to auto first so shrinking works too.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [text]);
+
   // Pipe voice partials into the textarea while recording OR while
   // waiting for the final (transcribing) event. Stopping too early
   // hides partials that arrive after release but before final lands,
@@ -86,6 +95,14 @@ export default function ChatComposer({ card, busy, onSubmit }: Props) {
 
   return (
     <div className="chat-composer">
+      {(recorder.state === 'recording' || recorder.state === 'transcribing') && (
+        <div className="chat-voice-hint" aria-live="polite">
+          <span className="chat-voice-dot" />
+          <span>
+            {recorder.state === 'recording' ? 'Listening…' : 'Transcribing…'}
+          </span>
+        </div>
+      )}
       <textarea
         ref={taRef}
         className="chat-input"
