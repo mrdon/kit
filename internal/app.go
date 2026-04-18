@@ -94,6 +94,23 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		if !msg.ShouldProcess() {
 			return
 		}
+		// Only respond to channel messages if it's a reply in a thread Kit
+		// already has a session for (e.g. a task message or prior @mention).
+		// DMs are always relevant. This prevents Kit from replying to every
+		// message in channels it's joined.
+		if msg.ChannelType != "im" {
+			if msg.ThreadTS == "" {
+				return
+			}
+			existing, err := models.FindSessionByThread(ctx, a.Pool, tenant.ID, msg.Channel, msg.ThreadTS)
+			if err != nil {
+				slog.Error("looking up session by thread", "error", err)
+				return
+			}
+			if existing == nil {
+				return
+			}
+		}
 		slackUserID = msg.User
 		text = msg.Text
 		channel = msg.Channel

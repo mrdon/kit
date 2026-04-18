@@ -2,10 +2,12 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -79,6 +81,28 @@ func ListRecentSessions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()
+}
+
+// FindSessionByThread returns the session for (tenant, channel, thread_ts)
+// or nil if no such session exists. Unlike GetOrCreateSession, it does not
+// create a session on miss.
+func FindSessionByThread(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string) (*Session, error) {
+	session := &Session{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, tenant_id, slack_channel_id, slack_thread_ts, user_id, created_at, updated_at
+		FROM sessions
+		WHERE tenant_id = $1 AND slack_channel_id = $2 AND slack_thread_ts = $3
+	`, tenantID, channelID, threadTS).Scan(
+		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
+		&session.UserID, &session.CreatedAt, &session.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("finding session by thread: %w", err)
+	}
+	return session, nil
 }
 
 // UpdateSessionThreadTS replaces a session's slack_thread_ts. Used after a

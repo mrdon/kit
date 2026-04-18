@@ -20,17 +20,18 @@ type InnerEvent struct {
 
 // MessageEvent represents a message event from Slack.
 type MessageEvent struct {
-	Type      string `json:"type"`
-	SubType   string `json:"subtype"`
-	BotID     string `json:"bot_id"`
-	User      string `json:"user"`
-	Text      string `json:"text"`
-	Timestamp string `json:"ts"`
-	ThreadTS  string `json:"thread_ts"`
-	Channel   string `json:"channel"`
-	ChannelID string `json:"channel_id"`
-	TeamID    string `json:"team_id"`
-	Files     []File `json:"files"`
+	Type        string `json:"type"`
+	SubType     string `json:"subtype"`
+	BotID       string `json:"bot_id"`
+	User        string `json:"user"`
+	Text        string `json:"text"`
+	Timestamp   string `json:"ts"`
+	ThreadTS    string `json:"thread_ts"`
+	Channel     string `json:"channel"`
+	ChannelID   string `json:"channel_id"`
+	ChannelType string `json:"channel_type"` // "channel", "group", "im", "mpim"
+	TeamID      string `json:"team_id"`
+	Files       []File `json:"files"`
 }
 
 // File represents a Slack file attachment.
