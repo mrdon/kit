@@ -257,9 +257,30 @@ main.feed > .card-screen {
 
 .empty a { color: var(--link); }
 
+.queue-indicator {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 6px);
+  left: 15%;
+  right: 15%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--card-border);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 10;
+}
+.queue-indicator-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--card-muted);
+  transition: left 120ms ease, width 120ms ease;
+}
+
 .degraded {
   position: fixed;
-  bottom: calc(env(safe-area-inset-bottom) + 8px);
+  bottom: calc(env(safe-area-inset-bottom) + 22px);
   left: 0;
   right: 0;
   display: flex;

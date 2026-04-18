@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   animate,
@@ -23,6 +23,21 @@ export default function Stack() {
   const [degraded, setDegraded] = useState<StackResponse['degraded']>([]);
   const [err, setErr] = useState<string | null>(null);
   const [burst, setBurst] = useState<{ id: string; emoji: string } | null>(null);
+  const [progress, setProgress] = useState(0);
+  const feedRef = useRef<HTMLElement | null>(null);
+
+  const onScroll = useCallback(() => {
+    const el = feedRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    setProgress(max > 0 ? el.scrollTop / max : 0);
+  }, []);
+
+  // Keep progress in sync when the item list changes (completions shrink
+  // the scroll height; without a recompute the thumb drifts stale).
+  useEffect(() => {
+    onScroll();
+  }, [items, onScroll]);
 
   const load = useCallback(async () => {
     try {
@@ -73,7 +88,7 @@ export default function Stack() {
   }
 
   return (
-    <main className="feed">
+    <main className="feed" ref={feedRef} onScroll={onScroll}>
       <AnimatePresence initial={false}>
         {items.map((it) => (
           <motion.section
@@ -89,8 +104,27 @@ export default function Stack() {
       <AnimatePresence>
         {burst && <Burst key={burst.id} emoji={burst.emoji} />}
       </AnimatePresence>
+      <QueueIndicator count={items.length} progress={progress} />
       <DegradedFooter degraded={degraded} />
     </main>
+  );
+}
+
+// QueueIndicator renders a thin bar fixed to the bottom of the viewport
+// with a thumb sized to 1/count and positioned by scroll progress.
+// Hidden for one-card (or empty) stacks — no value when there's nothing
+// to navigate between.
+function QueueIndicator({ count, progress }: { count: number; progress: number }) {
+  if (count <= 1) return null;
+  const thumbWidth = 100 / count;
+  const thumbLeft = progress * (100 - thumbWidth);
+  return (
+    <div className="queue-indicator" aria-hidden>
+      <div
+        className="queue-indicator-thumb"
+        style={{ width: `${thumbWidth}%`, left: `${thumbLeft}%` }}
+      />
+    </div>
   );
 }
 
