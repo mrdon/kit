@@ -22,6 +22,7 @@ make db-reset    # Wipe and restart Postgres
 
 ## Deploying
 
+- This project does **not** use pull requests — commits land directly on `main`.
 - `git push origin main` — push to GitHub
 - `git push dokku main` — deploy to Dokku (apps.twdata.org)
 - Always push to both origin and dokku when deploying.
