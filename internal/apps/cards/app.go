@@ -44,10 +44,13 @@ type CardsApp struct {
 	devMode bool
 }
 
-// Init sets up the service after DB is available.
+// Init sets up the service after DB is available and registers the
+// CardProvider adapter. The provider wraps this app's own svc so stack
+// fan-out sees decisions and briefings alongside items from other apps.
 func (a *CardsApp) Init(pool *pgxpool.Pool) {
 	a.svc = &CardService{pool: pool}
 	a.pool = pool
+	apps.RegisterCardProvider(&cardsProvider{app: a})
 }
 
 func (a *CardsApp) Name() string { return "cards" }

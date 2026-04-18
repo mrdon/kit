@@ -14,26 +14,19 @@ import (
 
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
-	"github.com/mrdon/kit/internal/services"
 	webapp "github.com/mrdon/kit/web/app"
 )
 
-// registerCardsRoutes wires all PWA endpoints under /api/v1 and the dev
-// login at /app/dev-login (only when devMode is on).
+// registerCardsRoutes wires the PWA endpoints and the dev login. The
+// actual /api/v1/stack* handlers live in stack_web.go — they dispatch
+// across all registered CardProviders rather than being cards-specific.
 func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
 	if a.signer == nil {
 		slog.Warn("cards: session signer not configured, skipping HTTP route registration")
 		return
 	}
 
-	wrap := func(h http.HandlerFunc) http.Handler {
-		return requireJSON(a.signer.Middleware(a.pool, requireCallerHandler(h)))
-	}
-
-	mux.Handle("GET /api/v1/stack", wrap(a.handleStack))
-	mux.Handle("GET /api/v1/cards/{id}", wrap(a.handleGetCard))
-	mux.Handle("POST /api/v1/cards/{id}/resolve", wrap(a.handleResolve))
-	mux.Handle("POST /api/v1/cards/{id}/ack", wrap(a.handleAck))
+	registerStackRoutes(mux, a)
 
 	if a.devMode {
 		mux.HandleFunc("GET /app/dev-login", a.handleDevLogin)
@@ -94,118 +87,6 @@ func requireCallerHandler(h http.HandlerFunc) http.Handler {
 		}
 		h(w, r)
 	})
-}
-
-func (a *CardsApp) handleStack(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	cards, err := a.svc.Stack(r.Context(), caller)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": cards})
-}
-
-func (a *CardsApp) handleGetCard(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, errors.New("invalid card id"))
-		return
-	}
-	card, err := a.svc.Get(r.Context(), caller, id)
-	if err != nil {
-		if errors.Is(err, services.ErrNotFound) {
-			writeErr(w, http.StatusNotFound, err)
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	resp := map[string]any{"card": card}
-	if card.Decision != nil && card.Decision.ResolvedTaskID != nil {
-		if task, err := models.GetTask(r.Context(), a.pool, caller.TenantID, *card.Decision.ResolvedTaskID); err == nil && task != nil {
-			resp["task"] = map[string]any{
-				"id":          task.ID,
-				"status":      task.Status,
-				"description": task.Description,
-				"last_run_at": task.LastRunAt,
-				"last_error":  task.LastError,
-			}
-		}
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (a *CardsApp) handleResolve(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, errors.New("invalid card id"))
-		return
-	}
-	var body struct {
-		OptionID string `json:"option_id"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-
-	slackClient, err := slackClientForCaller(r.Context(), a.svc, caller)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	card, err := a.svc.ResolveDecision(r.Context(), caller, id, body.OptionID, slackClient)
-	if err != nil {
-		writeResolveErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"card": card})
-}
-
-func writeResolveErr(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, ErrAlreadyTerminal):
-		writeErr(w, http.StatusConflict, err)
-	case errors.Is(err, ErrOptionNotFound), errors.Is(err, ErrNoOptionPicked):
-		writeErr(w, http.StatusBadRequest, err)
-	case errors.Is(err, services.ErrForbidden):
-		writeErr(w, http.StatusForbidden, err)
-	case errors.Is(err, services.ErrNotFound):
-		writeErr(w, http.StatusNotFound, err)
-	default:
-		writeErr(w, http.StatusInternalServerError, err)
-	}
-}
-
-func (a *CardsApp) handleAck(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, errors.New("invalid card id"))
-		return
-	}
-	var body struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, errors.New("invalid body"))
-		return
-	}
-	card, err := a.svc.AckBriefing(r.Context(), caller, id, BriefingAckKind(body.Kind))
-	if err != nil {
-		switch {
-		case errors.Is(err, ErrAlreadyTerminal):
-			writeErr(w, http.StatusConflict, err)
-		case errors.Is(err, services.ErrForbidden):
-			writeErr(w, http.StatusForbidden, err)
-		case errors.Is(err, services.ErrNotFound):
-			writeErr(w, http.StatusNotFound, err)
-		default:
-			writeErr(w, http.StatusInternalServerError, err)
-		}
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"card": card})
 }
 
 // handleDevLogin mints a session cookie for a named Slack user. Gated

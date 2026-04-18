@@ -12,6 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/apps/cards/shared"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -56,6 +57,42 @@ type CronJob struct {
 	Name     string
 	Interval time.Duration
 	Run      func(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor) error
+}
+
+// CardProvider is an optional interface an App can implement to contribute
+// items to the PWA stack. The cards host app (internal/apps/cards) fans out
+// across all registered providers at request time.
+type CardProvider interface {
+	// SourceApp is the stable identifier used in URLs and the compound
+	// client key. Usually matches App.Name().
+	SourceApp() string
+
+	// StackItems returns one page of items for the caller. cursor is the
+	// opaque provider-specific cursor from the previous call (empty = first
+	// page). limit is an upper bound; providers may return fewer. Return
+	// an empty NextCursor when the provider is exhausted.
+	StackItems(ctx context.Context, caller *services.Caller, cursor string, limit int) (shared.StackPage, error)
+
+	// GetItem loads a single item with optional kind-specific extras.
+	GetItem(ctx context.Context, caller *services.Caller, kind, id string) (*shared.DetailResponse, error)
+
+	// DoAction executes a named action on an item. Returns an ActionResult
+	// describing how the client should reconcile (patch or remove).
+	DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, params json.RawMessage) (*shared.ActionResult, error)
+}
+
+// cardProviders is registered separately from apps so a provider can be
+// implemented in a sibling type when wiring is awkward.
+var cardProviders []CardProvider
+
+// RegisterCardProvider adds a provider to the stack fan-out.
+func RegisterCardProvider(p CardProvider) {
+	cardProviders = append(cardProviders, p)
+}
+
+// CardProviders returns all registered providers.
+func CardProviders() []CardProvider {
+	return cardProviders
 }
 
 // Global registry — apps self-register via init().

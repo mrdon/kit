@@ -2,27 +2,115 @@
   box-sizing: border-box;
 }
 
+/* Token layer. Card colors and chrome read from CSS custom properties
+   so that a future light-mode pass only needs to redefine the tokens.
+   The tier-* tokens drive accent bar + background tint for every item
+   regardless of kind; the card-* tokens drive the surface itself. */
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
+
+  --tier-critical-accent: #ef4444;
+  --tier-critical-bg:     #2a1717;
+  --tier-high-accent:     #f59e0b;
+  --tier-high-bg:         #2b2316;
+  --tier-elevated-accent: #3b82f6;
+  --tier-elevated-bg:     #17233a;
+  --tier-medium-accent:   #8b5cf6;
+  --tier-medium-bg:       #241c36;
+  --tier-low-accent:      #64748b;
+  --tier-low-bg:          #1e293b;
+  --tier-minimal-accent:  #475569;
+  --tier-minimal-bg:      #1a2232;
+
+  --page-bg:          #0f172a;
+  --card-bg:          #1e293b;
+  --card-fg:          #e2e8f0;
+  --card-heading:     #f1f5f9;
+  --card-muted:       #94a3b8;
+  --card-subtle:      #64748b;
+  --card-border:      #334155;
+  --card-code-bg:     #0f172a;
+  --armed-right-bg:   #1f3a2b;
+  --armed-right-ring: rgba(34, 197, 94, 0.6);
+  --armed-right-shadow: rgba(34, 197, 94, 0.35);
+  --armed-left-bg:    #3a1f1f;
+  --armed-left-ring:  rgba(239, 68, 68, 0.6);
+  --armed-left-shadow: rgba(239, 68, 68, 0.35);
+  --swipe-right-bg:   rgba(34, 197, 94, 0.2);
+  --swipe-right-fg:   #4ade80;
+  --swipe-left-bg:    rgba(239, 68, 68, 0.2);
+  --swipe-left-fg:    #f87171;
+  --link:             #94a3b8;
+  --link-strong:      #60a5fa;
+  --shadow-card:      rgba(0, 0, 0, 0.35);
+
+  --badge-urgent-bg:  rgba(239, 68, 68, 0.2);
+  --badge-urgent-fg:  #fca5a5;
+  --badge-warn-bg:    rgba(245, 158, 11, 0.2);
+  --badge-warn-fg:    #fcd34d;
+  --badge-info-bg:    rgba(59, 130, 246, 0.2);
+  --badge-info-fg:    #93c5fd;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --tier-critical-accent: #dc2626;
+    --tier-critical-bg:     #fef2f2;
+    --tier-high-accent:     #d97706;
+    --tier-high-bg:         #fffbeb;
+    --tier-elevated-accent: #2563eb;
+    --tier-elevated-bg:     #eff6ff;
+    --tier-medium-accent:   #7c3aed;
+    --tier-medium-bg:       #f5f3ff;
+    --tier-low-accent:      #64748b;
+    --tier-low-bg:          #f1f5f9;
+    --tier-minimal-accent:  #94a3b8;
+    --tier-minimal-bg:      #f8fafc;
+
+    --page-bg:          #f8fafc;
+    --card-bg:          #ffffff;
+    --card-fg:          #0f172a;
+    --card-heading:     #0f172a;
+    --card-muted:       #64748b;
+    --card-subtle:      #94a3b8;
+    --card-border:      #e2e8f0;
+    --card-code-bg:     #f1f5f9;
+    --armed-right-bg:   #dcfce7;
+    --armed-right-ring: rgba(22, 163, 74, 0.5);
+    --armed-right-shadow: rgba(22, 163, 74, 0.2);
+    --armed-left-bg:    #fee2e2;
+    --armed-left-ring:  rgba(220, 38, 38, 0.5);
+    --armed-left-shadow: rgba(220, 38, 38, 0.2);
+    --swipe-right-bg:   rgba(34, 197, 94, 0.15);
+    --swipe-right-fg:   #15803d;
+    --swipe-left-bg:    rgba(239, 68, 68, 0.15);
+    --swipe-left-fg:    #b91c1c;
+    --link:             #475569;
+    --link-strong:      #2563eb;
+    --shadow-card:      rgba(15, 23, 42, 0.08);
+
+    --badge-urgent-bg:  rgba(220, 38, 38, 0.12);
+    --badge-urgent-fg:  #b91c1c;
+    --badge-warn-bg:    rgba(217, 119, 6, 0.15);
+    --badge-warn-fg:    #b45309;
+    --badge-info-bg:    rgba(37, 99, 235, 0.12);
+    --badge-info-fg:    #1d4ed8;
+  }
 }
 
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--page-bg);
+  color: var(--card-fg);
   overscroll-behavior: none;
 }
 
-/* Full-viewport scroll-snap feed: each card is one screen, swipe up to go
-   to the next one. Matches the PRD's card-stack ergonomic. */
 main.feed {
   height: 100dvh;
   overflow-y: auto;
   scroll-snap-type: y mandatory;
   scroll-behavior: smooth;
-  /* Keep the whole feed inside the iOS safe area so the header/footer
-     don't hide behind the notch or home indicator. */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
@@ -31,9 +119,6 @@ main.feed {
 main.feed > .card-screen {
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  /* Lock each section to exactly one viewport. `height` (not min-height)
-     prevents long card bodies from growing the section and introducing a
-     second page of scroll that competes with the parent snap. */
   height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -44,10 +129,10 @@ main.feed > .card-screen {
 }
 
 .card {
-  background: #1e293b;
+  background: var(--card-bg);
   border-radius: 20px;
   padding: 28px 24px;
-  border-left: 4px solid #475569;
+  border-left: 4px solid var(--card-border);
   position: relative;
   cursor: grab;
   user-select: none;
@@ -56,34 +141,35 @@ main.feed > .card-screen {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 40px var(--shadow-card);
   transition: background 120ms ease, box-shadow 120ms ease;
 }
 
-/* Armed = finger is past the commit threshold. Card lights up so the
-   release-to-commit moment is unmistakable. */
+/* Tier tokens drive the color for every kind across every app. */
+.card.tier-critical { border-left-color: var(--tier-critical-accent); background: var(--tier-critical-bg); }
+.card.tier-high     { border-left-color: var(--tier-high-accent);     background: var(--tier-high-bg); }
+.card.tier-elevated { border-left-color: var(--tier-elevated-accent); background: var(--tier-elevated-bg); }
+.card.tier-medium   { border-left-color: var(--tier-medium-accent);   background: var(--tier-medium-bg); }
+.card.tier-low      { border-left-color: var(--tier-low-accent);      background: var(--tier-low-bg); }
+.card.tier-minimal  { border-left-color: var(--tier-minimal-accent);  background: var(--tier-minimal-bg); }
+
+/* Armed = finger is past the commit threshold. The wash overrides the
+   tier-specific background while armed. */
 .card.armed-right {
-  background: #1f3a2b; /* warmer green wash */
-  box-shadow: 0 12px 40px rgba(34, 197, 94, 0.35), inset 0 0 0 2px rgba(34, 197, 94, 0.6);
+  background: var(--armed-right-bg);
+  box-shadow: 0 12px 40px var(--armed-right-shadow), inset 0 0 0 2px var(--armed-right-ring);
 }
 .card.armed-left {
-  background: #3a1f1f; /* warmer red wash */
-  box-shadow: 0 12px 40px rgba(239, 68, 68, 0.35), inset 0 0 0 2px rgba(239, 68, 68, 0.6);
+  background: var(--armed-left-bg);
+  box-shadow: 0 12px 40px var(--armed-left-shadow), inset 0 0 0 2px var(--armed-left-ring);
 }
-
-.card.decision.priority-high   { border-left-color: #ef4444; }
-.card.decision.priority-medium { border-left-color: #f59e0b; }
-.card.decision.priority-low    { border-left-color: #64748b; }
-.card.briefing.severity-important { border-left-color: #3b82f6; }
-.card.briefing.severity-notable   { border-left-color: #8b5cf6; }
-.card.briefing.severity-info      { border-left-color: #475569; }
 
 .card .kind-tag {
   display: inline-block;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #94a3b8;
+  color: var(--card-muted);
   margin-bottom: 6px;
 }
 
@@ -91,19 +177,16 @@ main.feed > .card-screen {
   margin: 0 0 16px;
   font-size: 24px;
   line-height: 1.25;
-  color: #f1f5f9;
+  color: var(--card-heading);
 }
 
 .card .body {
   font-size: 16px;
   line-height: 1.55;
-  color: #cbd5e1;
+  color: var(--card-fg);
   white-space: pre-wrap;
   flex: 1;
   min-height: 0;
-  /* Clip long content instead of scrolling — inner scroll would fight
-     the parent scroll-snap between cards. Tap opens the detail view for
-     the full body. The bottom gradient hints that there's more. */
   overflow: hidden;
   position: relative;
   -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
@@ -112,11 +195,29 @@ main.feed > .card-screen {
 
 .card .hint {
   font-size: 13px;
-  color: #64748b;
+  color: var(--card-subtle);
   margin-top: 18px;
   text-align: center;
   flex-shrink: 0;
 }
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+}
+.badge.tone-urgent { background: var(--badge-urgent-bg); color: var(--badge-urgent-fg); }
+.badge.tone-warn   { background: var(--badge-warn-bg);   color: var(--badge-warn-fg); }
+.badge.tone-info   { background: var(--badge-info-bg);   color: var(--badge-info-fg); }
 
 .swipe-hint {
   position: absolute;
@@ -133,14 +234,14 @@ main.feed > .card-screen {
 
 .swipe-hint.right {
   right: 18px;
-  background: rgba(34, 197, 94, 0.2);
-  color: #4ade80;
+  background: var(--swipe-right-bg);
+  color: var(--swipe-right-fg);
 }
 
 .swipe-hint.left {
   left: 18px;
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+  background: var(--swipe-left-bg);
+  color: var(--swipe-left-fg);
 }
 
 .empty {
@@ -149,14 +250,31 @@ main.feed > .card-screen {
   justify-content: center;
   align-items: center;
   text-align: center;
-  color: #64748b;
+  color: var(--card-subtle);
   min-height: 100dvh;
   padding: 48px 16px;
   box-sizing: border-box;
 }
 
-.empty a {
-  color: #94a3b8;
+.empty a { color: var(--link); }
+
+.degraded {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 8px);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.degraded-chip {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--card-border);
+  color: var(--card-muted);
+  opacity: 0.8;
 }
 
 .detail {
@@ -166,18 +284,18 @@ main.feed > .card-screen {
 }
 
 .detail .back {
-  color: #94a3b8;
+  color: var(--card-muted);
   text-decoration: none;
   font-size: 14px;
   display: inline-block;
   margin-bottom: 12px;
 }
 
-.detail h1 { margin-top: 4px; }
+.detail h1 { margin-top: 4px; color: var(--card-heading); }
 
 .detail .body {
   line-height: 1.6;
-  color: #cbd5e1;
+  color: var(--card-fg);
   white-space: pre-wrap;
   margin-bottom: 24px;
 }
@@ -189,9 +307,9 @@ main.feed > .card-screen {
 }
 
 .detail .options button, .detail .acks button {
-  background: #1e293b;
-  border: 1px solid #334155;
-  color: #f1f5f9;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--card-heading);
   padding: 14px 16px;
   font-size: 15px;
   border-radius: 12px;
@@ -200,8 +318,8 @@ main.feed > .card-screen {
 }
 
 .detail .options button.recommended {
-  border-color: #4ade80;
-  background: rgba(34, 197, 94, 0.08);
+  border-color: var(--swipe-right-fg);
+  background: var(--swipe-right-bg);
 }
 
 .detail .options button:disabled, .detail .acks button:disabled {
@@ -216,29 +334,60 @@ main.feed > .card-screen {
 
 .detail .options .prompt {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--card-muted);
+}
+
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 14px;
+  color: var(--card-muted);
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+}
+
+.events {
+  margin-top: 24px;
+}
+.events h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--card-muted);
+  margin-bottom: 8px;
+}
+.events ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.events li {
+  font-size: 13px;
+  color: var(--card-fg);
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border-radius: 8px;
+}
+.events-ts {
+  color: var(--card-subtle);
+  margin-right: 6px;
 }
 
 .task-status {
   margin-top: 20px;
   padding: 12px 14px;
-  background: #1e293b;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: 10px;
   font-size: 13px;
-  color: #94a3b8;
-}
-
-.toast {
-  position: fixed;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #1e293b;
-  border: 1px solid #334155;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  color: var(--card-muted);
 }
 
 .burst {
@@ -257,38 +406,27 @@ main.feed > .card-screen {
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5));
 }
 
-/* Markdown body styling inside cards. Tight vertical rhythm so long
-   bodies don't blow past the viewport clip and section breaks feel
-   like a feed, not a document. */
 .markdown > *:first-child { margin-top: 0; }
 .markdown > *:last-child  { margin-bottom: 0; }
-.markdown p {
-  margin: 0 0 6px;
-}
-.markdown ul, .markdown ol {
-  margin: 2px 0 8px;
-  padding-left: 20px;
-}
-.markdown li {
-  margin: 1px 0;
-}
-.markdown strong { color: #f1f5f9; }
-.markdown em { color: #cbd5e1; }
+.markdown p { margin: 0 0 6px; }
+.markdown ul, .markdown ol { margin: 2px 0 8px; padding-left: 20px; }
+.markdown li { margin: 1px 0; }
+.markdown strong { color: var(--card-heading); }
+.markdown em { color: var(--card-fg); }
 .markdown code {
-  background: #0f172a;
+  background: var(--card-code-bg);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 0.9em;
 }
-/* Section headers sit tight to the list/paragraph below them. */
 .markdown h1, .markdown h2, .markdown h3, .markdown h4 {
-  color: #f8fafc;
+  color: var(--card-heading);
   margin: 10px 0 2px;
   font-size: 0.9em;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.markdown a { color: #60a5fa; }
+.markdown a { color: var(--link-strong); }
 
-a { color: #94a3b8; }
+a { color: var(--link); }

@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Stack from './Stack';
-import CardDetail from './CardDetail';
+import StackItemDetail from './StackItemDetail';
 import './styles.css';
 
 // Service worker is registered lazily so a dev build over HTTP localhost
@@ -18,7 +18,10 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter basename="/app">
       <Routes>
         <Route path="/" element={<Stack />} />
-        <Route path="/cards/:id" element={<CardDetail />} />
+        <Route
+          path="/stack/:source_app/:kind/:id"
+          element={<StackItemDetail />}
+        />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

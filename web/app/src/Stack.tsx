@@ -1,22 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { animate, AnimatePresence, motion, useMotionValue, useMotionValueEvent, useTransform, type PanInfo } from 'framer-motion';
+import {
+  animate,
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useTransform,
+  type PanInfo,
+} from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from './api';
-import type { Card } from './types';
+import type { StackAction, StackItem, StackResponse } from './types';
+import { itemKey } from './types';
+import { rendererFor } from './kinds';
 
 type CommitDirection = 'right' | 'left';
 
 export default function Stack() {
-  const [cards, setCards] = useState<Card[] | null>(null);
+  const [items, setItems] = useState<StackItem[] | null>(null);
+  const [degraded, setDegraded] = useState<StackResponse['degraded']>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [burst, setBurst] = useState<{ id: string; kind: 'up' | 'down' | 'approve' } | null>(null);
+  const [burst, setBurst] = useState<{ id: string; emoji: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const items = await api.stack();
-      setCards(items);
+      const resp = await api.stack();
+      setItems(resp.items ?? []);
+      setDegraded(resp.degraded ?? []);
       setErr(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -34,52 +46,68 @@ export default function Stack() {
     };
   }, [load]);
 
-  const onCommit = (c: Card, direction: CommitDirection) => {
-    // Let the card animate off-screen first (~250ms), then flash the
-    // burst. If we render the burst while the card is still in flight
-    // it's hidden behind the card. The state removal runs in parallel
-    // with the burst so AnimatePresence can collapse the section.
-    const burstKind: 'up' | 'down' | 'approve' =
-      c.kind === 'decision' ? 'approve' : direction === 'right' ? 'up' : 'down';
+  // Server's ActionResult tells us which items to drop. We animate the
+  // card off first, then patch state so AnimatePresence can collapse.
+  const onCommit = (item: StackItem, emoji: string, removedIDs: string[]) => {
+    const key = itemKey(item);
     window.setTimeout(() => {
-      setCards((cs) => (cs ? cs.filter((x) => x.id !== c.id) : cs));
-      setBurst({ id: c.id, kind: burstKind });
+      setItems((cs) =>
+        cs ? cs.filter((x) => !removedIDs.includes(itemKey(x)) && itemKey(x) !== key) : cs,
+      );
+      setBurst({ id: key, emoji });
       window.setTimeout(() => setBurst(null), 900);
     }, 260);
   };
 
   if (err) return <div className="empty">Error: {err}</div>;
-  if (cards === null) return <div className="empty">Loading…</div>;
-  if (cards.length === 0) {
-    return <div className="empty"><div>Nothing needs you right now.</div></div>;
+  if (items === null) return <div className="empty">Loading…</div>;
+  if (items.length === 0) {
+    return (
+      <main className="feed">
+        <div className="empty">
+          <div>Nothing needs you right now.</div>
+        </div>
+        <DegradedFooter degraded={degraded} />
+      </main>
+    );
   }
 
   return (
     <main className="feed">
       <AnimatePresence initial={false}>
-        {cards.map((c) => (
+        {items.map((it) => (
           <motion.section
-            key={c.id}
+            key={itemKey(it)}
             className="card-screen"
             layout
             exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
           >
-            <SwipeCard card={c} onCommit={onCommit} />
+            <SwipeCard item={it} onCommit={onCommit} />
           </motion.section>
         ))}
       </AnimatePresence>
       <AnimatePresence>
-        {burst && <Burst key={burst.id} kind={burst.kind} />}
+        {burst && <Burst key={burst.id} emoji={burst.emoji} />}
       </AnimatePresence>
+      <DegradedFooter degraded={degraded} />
     </main>
   );
 }
 
-function Burst({ kind }: { kind: 'up' | 'down' | 'approve' }) {
-  const emoji = kind === 'up' ? '👍' : kind === 'down' ? '👎' : '✅';
-  // Outer div stays a pure flex centerer; the inner motion.span owns the
-  // animated transform. Putting the scale on the outer element replaces
-  // the flex centering and pushes the emoji off-screen to the right.
+function DegradedFooter({ degraded }: { degraded: StackResponse['degraded'] }) {
+  if (!degraded || degraded.length === 0) return null;
+  return (
+    <div className="degraded">
+      {degraded.map((d) => (
+        <span key={d.source_app} className="degraded-chip">
+          {d.source_app} temporarily unavailable
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Burst({ emoji }: { emoji: string }) {
   return (
     <motion.div
       className="burst"
@@ -100,19 +128,27 @@ function Burst({ kind }: { kind: 'up' | 'down' | 'approve' }) {
   );
 }
 
-function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, direction: CommitDirection) => void }) {
-  const tagClass = cardClass(card);
-  const canSwipeLeft = card.kind === 'briefing';
+function findAction(actions: StackAction[], direction: CommitDirection): StackAction | undefined {
+  return actions.find((a) => a.direction === direction);
+}
+
+function SwipeCard({
+  item,
+  onCommit,
+}: {
+  item: StackItem;
+  onCommit: (item: StackItem, emoji: string, removedIDs: string[]) => void;
+}) {
+  const rightAction = findAction(item.actions, 'right');
+  const leftAction = findAction(item.actions, 'left');
+  const canSwipeLeft = !!leftAction;
+  const canSwipeRight = !!rightAction;
 
   const x = useMotionValue(0);
-  // Commit threshold in px — set once per mount. Anything short of this
-  // snaps back. Hint transforms key off it so "armed" state lands exactly
-  // at the release-to-commit point.
-  const threshold = typeof window !== 'undefined' ? Math.max(260, window.innerWidth * 0.7) : 260;
+  const threshold =
+    typeof window !== 'undefined' ? Math.max(260, window.innerWidth * 0.7) : 260;
   const armedStart = threshold - 10;
 
-  // Hint opacity ramps up well before the threshold so the user sees the
-  // emoji early; scale pops at the threshold to signal "release to commit".
   const rightOpacity = useTransform(x, [0, threshold * 0.4, threshold], [0, 0.6, 1]);
   const rightScale = useTransform(x, [armedStart, threshold], [1, 1.35]);
   const leftOpacity = useTransform(x, [-threshold, -threshold * 0.4, 0], [1, 0.6, 0]);
@@ -123,58 +159,57 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
   const [swipingOut, setSwipingOut] = useState<CommitDirection | null>(null);
   const [armed, setArmed] = useState<'right' | 'left' | null>(null);
 
-  // Subscribe to x so we can toggle the "armed" class when past the
-  // commit threshold. The class lights up the card background to make
-  // the release-to-commit moment unambiguous.
   useMotionValueEvent(x, 'change', (v) => {
-    if (v >= threshold) setArmed('right');
+    if (canSwipeRight && v >= threshold) setArmed('right');
     else if (canSwipeLeft && v <= -threshold) setArmed('left');
     else setArmed(null);
   });
+
+  const runAction = async (direction: CommitDirection, action: StackAction) => {
+    setBusy(true);
+    setSwipingOut(direction);
+    try {
+      const result = await api.doAction(
+        item.source_app,
+        item.kind,
+        item.id,
+        action.id,
+        action.params,
+      );
+      onCommit(item, action.emoji, result.removed_ids ?? [itemKey(item)]);
+    } catch (e) {
+      setBusy(false);
+      setSwipingOut(null);
+      alert((e as Error).message);
+    }
+  };
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
     const snapBack = () =>
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
-    if (info.offset.x > threshold) {
-      setBusy(true);
-      setSwipingOut('right');
-      try {
-        if (card.kind === 'decision') {
-          await api.resolve(card.id);
-        } else {
-          await api.ack(card.id, 'archived');
-        }
-        onCommit(card, 'right');
-      } catch (e) {
-        setBusy(false);
-        setSwipingOut(null);
-        alert((e as Error).message);
-      }
+    if (canSwipeRight && rightAction && info.offset.x > threshold) {
+      await runAction('right', rightAction);
       return;
     }
-    if (canSwipeLeft && info.offset.x < -threshold) {
-      setBusy(true);
-      setSwipingOut('left');
-      try {
-        await api.ack(card.id, 'dismissed');
-        onCommit(card, 'left');
-      } catch (e) {
-        setBusy(false);
-        setSwipingOut(null);
-        alert((e as Error).message);
-      }
+    if (canSwipeLeft && leftAction && info.offset.x < -threshold) {
+      await runAction('left', leftAction);
       return;
     }
-    // Didn't cross the threshold — pull back to origin explicitly.
     snapBack();
   };
 
+  const renderer = rendererFor(item);
+  const Face = renderer.Face;
+
   return (
     <motion.article
-      className={`card ${tagClass}${armed ? ` armed-${armed}` : ''}`}
+      className={`card tier-${item.priority_tier}${armed ? ` armed-${armed}` : ''}`}
       drag={busy ? false : 'x'}
-      dragConstraints={canSwipeLeft ? { left: -500, right: 500 } : { left: 0, right: 500 }}
+      dragConstraints={{
+        left: canSwipeLeft ? -500 : 0,
+        right: canSwipeRight ? 500 : 0,
+      }}
       dragElastic={0.3}
       style={{ x }}
       animate={
@@ -187,44 +222,45 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
       onDragEnd={onDragEnd}
       onClick={() => {
         if (busy) return;
-        navigate(`/cards/${card.id}`);
+        navigate(`/stack/${item.source_app}/${item.kind}/${item.id}`);
       }}
     >
       <div className="kind-tag">
-        {card.kind === 'decision'
-          ? `Decision · ${card.decision?.priority ?? 'medium'}`
-          : `Briefing · ${card.briefing?.severity ?? 'info'}`}
+        {item.icon ? `${item.icon} ` : ''}
+        {item.kind_label}
       </div>
-      <h2>{card.title}</h2>
-      <div className="body markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.body}</ReactMarkdown>
-      </div>
-      <div className="hint">
-        {card.kind === 'decision'
-          ? `Swipe right to ${recommendedLabel(card) ?? 'approve default'} · tap for options`
-          : 'Swipe right 👍 · left 👎 · tap to open'}
-      </div>
-      <motion.div className="swipe-hint right" style={{ opacity: rightOpacity, scale: rightScale }}>
-        {card.kind === 'decision' ? '✓ Approve' : '👍'}
-      </motion.div>
-      {canSwipeLeft && (
-        <motion.div className="swipe-hint left" style={{ opacity: leftOpacity, scale: leftScale }}>
-          👎
+      {item.badges && item.badges.length > 0 && (
+        <div className="badges">
+          {item.badges.map((b, i) => (
+            <span key={i} className={`badge tone-${b.tone}`}>
+              {b.label}
+            </span>
+          ))}
+        </div>
+      )}
+      <h2>{item.title}</h2>
+      {item.body && (
+        <div className="body markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.body}</ReactMarkdown>
+        </div>
+      )}
+      {Face && <Face item={item} />}
+      {canSwipeRight && rightAction && (
+        <motion.div
+          className="swipe-hint right"
+          style={{ opacity: rightOpacity, scale: rightScale }}
+        >
+          {rightAction.emoji} {rightAction.label}
+        </motion.div>
+      )}
+      {canSwipeLeft && leftAction && (
+        <motion.div
+          className="swipe-hint left"
+          style={{ opacity: leftOpacity, scale: leftScale }}
+        >
+          {leftAction.emoji}
         </motion.div>
       )}
     </motion.article>
   );
-}
-
-function cardClass(c: Card): string {
-  if (c.kind === 'decision') {
-    return `decision priority-${c.decision?.priority ?? 'medium'}`;
-  }
-  return `briefing severity-${c.briefing?.severity ?? 'info'}`;
-}
-
-function recommendedLabel(c: Card): string | null {
-  if (c.kind !== 'decision' || !c.decision) return null;
-  const rec = c.decision.options.find((o) => o.option_id === c.decision?.recommended_option_id);
-  return rec?.label ?? null;
 }

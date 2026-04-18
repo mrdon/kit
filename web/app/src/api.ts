@@ -1,4 +1,8 @@
-import type { Card, CardDetailResponse, StackResponse } from './types';
+import type {
+  ActionResult,
+  DetailResponse,
+  StackResponse,
+} from './types';
 
 async function j<T>(r: Response): Promise<T> {
   if (r.status === 401) {
@@ -12,7 +16,9 @@ async function j<T>(r: Response): Promise<T> {
     try {
       const body = await r.json();
       if (body?.error) msg = body.error;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     throw new Error(msg);
   }
   return r.json() as Promise<T>;
@@ -26,27 +32,40 @@ const post = (path: string, body?: unknown) =>
     body: body ? JSON.stringify(body) : '{}',
   });
 
-const get = (path: string) =>
-  fetch(path, { credentials: 'same-origin' });
+const get = (path: string) => fetch(path, { credentials: 'same-origin' });
 
 export const api = {
-  stack: async (): Promise<Card[]> => {
-    const r = await get('/api/v1/stack');
-    const body = await j<StackResponse>(r);
-    return body.items ?? [];
+  stack: async (cursor?: string, limit?: number): Promise<StackResponse> => {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString();
+    const r = await get(`/api/v1/stack${qs ? `?${qs}` : ''}`);
+    return j<StackResponse>(r);
   },
-  card: async (id: string): Promise<CardDetailResponse> => {
-    const r = await get(`/api/v1/cards/${id}`);
-    return j<CardDetailResponse>(r);
+
+  getItem: async <M = unknown>(
+    sourceApp: string,
+    kind: string,
+    id: string,
+  ): Promise<DetailResponse<M>> => {
+    const r = await get(
+      `/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+    );
+    return j<DetailResponse<M>>(r);
   },
-  resolve: async (id: string, optionID?: string): Promise<Card> => {
-    const r = await post(`/api/v1/cards/${id}/resolve`, optionID ? { option_id: optionID } : {});
-    const body = await j<{ card: Card }>(r);
-    return body.card;
-  },
-  ack: async (id: string, kind: 'archived' | 'dismissed' | 'saved'): Promise<Card> => {
-    const r = await post(`/api/v1/cards/${id}/ack`, { kind });
-    const body = await j<{ card: Card }>(r);
-    return body.card;
+
+  doAction: async (
+    sourceApp: string,
+    kind: string,
+    id: string,
+    actionID: string,
+    params?: unknown,
+  ): Promise<ActionResult> => {
+    const r = await post(
+      `/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/action`,
+      { action_id: actionID, params: params ?? undefined },
+    );
+    return j<ActionResult>(r);
   },
 };

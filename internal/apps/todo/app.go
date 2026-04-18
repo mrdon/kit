@@ -20,9 +20,11 @@ type TodoApp struct {
 	svc *TodoService
 }
 
-// Init sets up the service after DB is available.
+// Init sets up the service after DB is available and registers this
+// app's CardProvider so its todos surface in the PWA stack.
 func (a *TodoApp) Init(pool *pgxpool.Pool) {
 	a.svc = &TodoService{pool: pool}
+	apps.RegisterCardProvider(&cardProvider{app: a})
 }
 
 func (a *TodoApp) Name() string { return "todo" }
