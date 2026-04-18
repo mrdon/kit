@@ -208,35 +208,42 @@ func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant
 	}
 	slog.Info("token verified", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "bot_user_id", botUserID)
 
-	users, err := models.ListUsersByTenant(ctx, s.pool, tenant.ID)
+	// Fetch all workspace members in bulk (1-2 API calls vs N per-user calls)
+	slackUsers, err := slack.ListAllUsers(ctx)
 	if err != nil {
-		slog.Error("listing users for sync", "tenant_id", tenant.ID, "error", err)
+		slog.Error("listing slack users", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "error", err)
 		return
 	}
 
-	slog.Info("syncing user profiles", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "user_count", len(users))
+	// Index by Slack user ID for fast lookup
+	slackByID := make(map[string]*kitslack.UserInfo, len(slackUsers))
+	for i := range slackUsers {
+		slackByID[slackUsers[i].SlackUserID] = &slackUsers[i]
+	}
 
-	var synced, failed int
-	for _, user := range users {
-		info, err := slack.GetUserInfo(ctx, user.SlackUserID)
-		if err != nil {
-			slog.Warn("fetching slack profile",
-				"tenant_id", tenant.ID, "tenant_name", tenant.Name,
-				"user_id", user.ID, "slack_user_id", user.SlackUserID, "error", err)
-			failed++
+	dbUsers, err := models.ListUsersByTenant(ctx, s.pool, tenant.ID)
+	if err != nil {
+		slog.Error("listing db users for sync", "tenant_id", tenant.ID, "error", err)
+		return
+	}
+
+	slog.Info("syncing user profiles", "tenant_id", tenant.ID, "tenant_name", tenant.Name,
+		"slack_users", len(slackUsers), "db_users", len(dbUsers))
+
+	var synced, skipped int
+	for _, user := range dbUsers {
+		info, ok := slackByID[user.SlackUserID]
+		if !ok {
+			skipped++
 			continue
 		}
-
 		if err := models.UpdateUserProfile(ctx, s.pool, tenant.ID, user.ID, info.DisplayName, info.Timezone); err != nil {
 			slog.Warn("updating user profile", "user_id", user.ID, "error", err)
-			failed++
 			continue
 		}
 		synced++
-
-		// Rate limit: 50ms between API calls (~20 req/sec, well within Slack's tier 2 limit)
-		time.Sleep(50 * time.Millisecond)
 	}
 
-	slog.Info("profile sync complete", "tenant_id", tenant.ID, "tenant_name", tenant.Name, "synced", synced, "failed", failed)
+	slog.Info("profile sync complete", "tenant_id", tenant.ID, "tenant_name", tenant.Name,
+		"synced", synced, "skipped", skipped)
 }

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -151,22 +150,15 @@ func (c *Client) OpenConversation(ctx context.Context, userID string) (string, e
 
 // UserInfo holds profile fields fetched from Slack.
 type UserInfo struct {
+	SlackUserID string
 	DisplayName string
 	Timezone    string
 }
 
-// GetUserInfo fetches a user's display name and timezone from Slack.
+// GetUserInfo fetches a single user's display name and timezone from Slack.
+// Uses form-encoded POST because users.info doesn't parse JSON bodies.
 func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, error) {
-	params := map[string]string{"user": userID}
-	resp, err := c.apiCall(ctx, "users.info", params)
-	if err != nil {
-		// Fall back to form-encoded in case JSON body isn't parsed
-		slog.Info("users.info json failed, trying form-encoded", "user_id", userID, "error", err)
-		resp, err = c.apiFormCall(ctx, "users.info", params)
-	}
-	if err != nil {
-		return nil, err
-	}
+	resp, err := c.apiFormCall(ctx, "users.info", map[string]string{"user": userID})
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +166,53 @@ func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, err
 	if !ok {
 		return nil, errors.New("unexpected users.info response format")
 	}
+	return parseUserInfo(user), nil
+}
+
+// ListAllUsers fetches all workspace members in bulk via users.list (paginated).
+// Much more efficient than per-user GetUserInfo calls for syncing.
+func (c *Client) ListAllUsers(ctx context.Context) ([]UserInfo, error) {
+	var allUsers []UserInfo
+	cursor := ""
+
+	for {
+		params := map[string]string{"limit": "200"}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		resp, err := c.apiFormCall(ctx, "users.list", params)
+		if err != nil {
+			return nil, err
+		}
+
+		members, _ := resp["members"].([]any)
+		for _, m := range members {
+			member, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			if isBot, _ := member["is_bot"].(bool); isBot {
+				continue
+			}
+			if deleted, _ := member["deleted"].(bool); deleted {
+				continue
+			}
+			allUsers = append(allUsers, *parseUserInfo(member))
+		}
+
+		meta, _ := resp["response_metadata"].(map[string]any)
+		cursor, _ = meta["next_cursor"].(string)
+		if cursor == "" {
+			break
+		}
+	}
+
+	return allUsers, nil
+}
+
+func parseUserInfo(user map[string]any) *UserInfo {
 	info := &UserInfo{}
+	info.SlackUserID, _ = user["id"].(string)
 	info.Timezone, _ = user["tz"].(string)
 	if profile, ok := user["profile"].(map[string]any); ok {
 		info.DisplayName, _ = profile["display_name"].(string)
@@ -182,7 +220,7 @@ func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, err
 			info.DisplayName, _ = profile["real_name"].(string)
 		}
 	}
-	return info, nil
+	return info
 }
 
 // GetFileContent downloads a file from Slack using the bot token for auth.
@@ -364,18 +402,8 @@ func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[s
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	// Debug log for failing API calls
-	if method == "users.info" {
-		slog.Debug("slack api call", "method", method, "request_body", string(body), "response_body", string(respBody))
-	}
-
 	var result map[string]any
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
