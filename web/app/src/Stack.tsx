@@ -113,7 +113,11 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
-    if (info.offset.x > 120) {
+    // Commit only when the card has travelled ~2/3 of the viewport width.
+    // Previously a 120px threshold (≈30% on a phone) felt twitchy and
+    // triggered on barely-a-swipe.
+    const threshold = Math.max(240, window.innerWidth * 0.6);
+    if (info.offset.x > threshold) {
       setBusy(true);
       setSwipingOut('right');
       try {
@@ -130,7 +134,7 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
       }
       return;
     }
-    if (canSwipeLeft && info.offset.x < -120) {
+    if (canSwipeLeft && info.offset.x < -threshold) {
       setBusy(true);
       setSwipingOut('left');
       try {
@@ -143,7 +147,7 @@ function SwipeCard({ card, onCommit }: { card: Card; onCommit: (c: Card, directi
       }
       return;
     }
-    // Snap back via drag's own spring.
+    // Snap back via dragSnapToOrigin.
   };
 
   return (
