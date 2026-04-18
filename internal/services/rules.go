@@ -44,12 +44,12 @@ func (s *RuleService) Create(ctx context.Context, c *Caller, content string, pri
 		return nil, ErrForbidden
 	}
 	if scopeType == "" {
-		scopeType = "tenant"
+		scopeType = string(models.ScopeTypeTenant)
 	}
 	if scopeValue == "" {
-		scopeValue = "*"
+		scopeValue = models.ScopeValueAll
 	}
-	return models.CreateRule(ctx, s.pool, c.TenantID, content, priority, scopeType, scopeValue)
+	return models.CreateRule(ctx, s.pool, c.TenantID, content, priority, models.ScopeType(scopeType), scopeValue)
 }
 
 // Update updates a rule. Admin only.

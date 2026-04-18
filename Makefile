@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean
 
 # Default target
 help: ## Show this help message
@@ -14,10 +14,30 @@ COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-X github.com/mrdon/kit/internal/buildinfo.Version=$(VERSION) -X github.com/mrdon/kit/internal/buildinfo.Commit=$(COMMIT) -X github.com/mrdon/kit/internal/buildinfo.Date=$(DATE)"
 
-build: ## Build the binary
+build: app-build ## Build the binary (includes frontend)
 	@echo "Building $(BINARY_NAME)..."
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
+
+# Frontend PWA lifecycle — all npm invocation goes through these.
+APP_DIR=web/app
+
+app-init: ## Install frontend deps (npm install)
+	@echo "Installing frontend deps..."
+	@cd $(APP_DIR) && npm install
+
+app-dev: ## Run Vite dev server (proxies /api to :$(APP_PORT))
+	@cd $(APP_DIR) && npm run dev
+
+app-build: $(APP_DIR)/node_modules ## Build the frontend to $(APP_DIR)/dist
+	@echo "Building frontend..."
+	@cd $(APP_DIR) && npm run build
+
+$(APP_DIR)/node_modules:
+	@cd $(APP_DIR) && npm install
+
+app-clean: ## Remove frontend build output + node_modules
+	@rm -rf $(APP_DIR)/dist $(APP_DIR)/node_modules
 
 test: up ## Run tests (requires Postgres via `make up`)
 	@echo "Running tests..."

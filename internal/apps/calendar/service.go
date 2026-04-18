@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -63,12 +64,12 @@ func (s *CalendarService) Configure(ctx context.Context, c *services.Caller, opt
 		return nil, err
 	}
 	if len(opts.RoleScopes) == 0 {
-		if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, "tenant", "*"); err != nil {
+		if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, models.ScopeTypeTenant, models.ScopeValueAll); err != nil {
 			return nil, err
 		}
 	} else {
 		for _, role := range opts.RoleScopes {
-			if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, "role", role); err != nil {
+			if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, models.ScopeTypeRole, role); err != nil {
 				return nil, err
 			}
 		}

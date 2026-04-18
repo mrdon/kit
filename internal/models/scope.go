@@ -5,6 +5,21 @@ import (
 	"strings"
 )
 
+// ScopeType identifies the kind of scope row used for access control.
+// The canonical values match the CHECK constraints on the *_scopes tables.
+type ScopeType string
+
+const (
+	ScopeTypeTenant   ScopeType = "tenant"
+	ScopeTypeRole     ScopeType = "role"
+	ScopeTypeUser     ScopeType = "user"
+	ScopeTypePlatform ScopeType = "platform" // synthetic, used only for builtin-skill summaries
+)
+
+// ScopeValueAll is the scope_value used together with ScopeTypeTenant for
+// rows visible to everyone in the tenant.
+const ScopeValueAll = "*"
+
 // ScopeFilter builds a SQL WHERE clause fragment for scope-based access control.
 // It matches rows where the scope is tenant-wide, matches one of the user's roles,
 // or matches the specific user. The prefix is the table alias or empty string for
@@ -23,19 +38,19 @@ func ScopeFilter(prefix string, startParam int, slackUserID string, roleNames []
 	sv := col("scope_value")
 
 	clauses := []string{
-		fmt.Sprintf("(%s = 'tenant' AND %s = '*')", st, sv),
+		fmt.Sprintf("(%s = '%s' AND %s = '%s')", st, ScopeTypeTenant, sv, ScopeValueAll),
 	}
 	var args []any
 	p := startParam
 
 	if len(roleNames) > 0 {
-		clauses = append(clauses, fmt.Sprintf("(%s = 'role' AND %s = ANY($%d))", st, sv, p))
+		clauses = append(clauses, fmt.Sprintf("(%s = '%s' AND %s = ANY($%d))", st, ScopeTypeRole, sv, p))
 		args = append(args, roleNames)
 		p++
 	}
 
 	if slackUserID != "" {
-		clauses = append(clauses, fmt.Sprintf("(%s = 'user' AND %s = $%d)", st, sv, p))
+		clauses = append(clauses, fmt.Sprintf("(%s = '%s' AND %s = $%d)", st, ScopeTypeUser, sv, p))
 		args = append(args, slackUserID)
 	}
 

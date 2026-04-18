@@ -301,10 +301,10 @@ func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, na
 		return nil, fmt.Errorf("creating skill: %w", err)
 	}
 
-	scopeType := "tenant"
-	scopeValue := "*"
-	if scope != "tenant" && scope != "" {
-		scopeType = "role"
+	scopeType := ScopeTypeTenant
+	scopeValue := ScopeValueAll
+	if scope != string(ScopeTypeTenant) && scope != "" {
+		scopeType = ScopeTypeRole
 		scopeValue = scope
 	}
 	_, err = tx.Exec(ctx, `
@@ -438,7 +438,7 @@ func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID 
 
 // SkillScope represents a single scope row for a skill.
 type SkillScope struct {
-	ScopeType  string
+	ScopeType  ScopeType
 	ScopeValue string
 }
 

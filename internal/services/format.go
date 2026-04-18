@@ -28,12 +28,14 @@ func FormatScopes(scopes []models.SkillScope) string {
 	parts := make([]string, len(scopes))
 	for i, sc := range scopes {
 		switch sc.ScopeType {
-		case "platform":
+		case models.ScopeTypePlatform:
 			parts[i] = "built-in"
-		case "tenant":
+		case models.ScopeTypeTenant:
 			parts[i] = "everyone"
+		case models.ScopeTypeRole, models.ScopeTypeUser:
+			parts[i] = string(sc.ScopeType) + ":" + sc.ScopeValue
 		default:
-			parts[i] = sc.ScopeType + ":" + sc.ScopeValue
+			parts[i] = string(sc.ScopeType) + ":" + sc.ScopeValue
 		}
 	}
 	return strings.Join(parts, ", ")

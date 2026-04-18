@@ -69,7 +69,7 @@ func GetRulesForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return rules, rows.Err()
 }
 
-func CreateRule(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, priority int, scopeType, scopeValue string) (*Rule, error) {
+func CreateRule(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, priority int, scopeType ScopeType, scopeValue string) (*Rule, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
@@ -116,7 +116,7 @@ func UpdateRule(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.U
 
 // RuleScope represents a single scope row for a rule.
 type RuleScope struct {
-	ScopeType  string
+	ScopeType  ScopeType
 	ScopeValue string
 }
 

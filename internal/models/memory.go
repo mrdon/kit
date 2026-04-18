@@ -13,14 +13,14 @@ type Memory struct {
 	ID              uuid.UUID
 	TenantID        uuid.UUID
 	Content         string
-	ScopeType       string
+	ScopeType       ScopeType
 	ScopeValue      string
 	SourceSessionID *uuid.UUID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 
-func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content, scopeType, scopeValue string, sessionID uuid.UUID) error {
+func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, scopeType ScopeType, scopeValue string, sessionID uuid.UUID) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO memories (id, tenant_id, content, scope_type, scope_value, source_session_id)
 		VALUES ($1, $2, $3, $4, $5, $6)

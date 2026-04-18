@@ -107,7 +107,7 @@ func (s *SkillService) List(ctx context.Context, c *Caller, search string) ([]mo
 		result = append(result, models.SkillSummary{
 			Name:        b.Name,
 			Description: b.Description,
-			Scopes:      []models.SkillScope{{ScopeType: "platform", ScopeValue: "*"}},
+			Scopes:      []models.SkillScope{{ScopeType: models.ScopeTypePlatform, ScopeValue: models.ScopeValueAll}},
 		})
 	}
 	return append(result, dbSkills...), nil
@@ -119,7 +119,7 @@ func (s *SkillService) Create(ctx context.Context, c *Caller, name, description,
 		return nil, ErrForbidden
 	}
 	if scope == "" {
-		scope = "tenant"
+		scope = string(models.ScopeTypeTenant)
 	}
 	return models.CreateSkill(ctx, s.pool, c.TenantID, name, description, content, source, scope)
 }
@@ -171,13 +171,13 @@ func (s *SkillService) checkAccess(ctx context.Context, c *Caller, skillID uuid.
 		return fmt.Errorf("checking skill access: %w", err)
 	}
 	for _, sc := range scopes {
-		if sc.ScopeType == "tenant" {
+		if sc.ScopeType == models.ScopeTypeTenant {
 			return nil
 		}
-		if sc.ScopeType == "role" && hasRole(c, sc.ScopeValue) {
+		if sc.ScopeType == models.ScopeTypeRole && hasRole(c, sc.ScopeValue) {
 			return nil
 		}
-		if sc.ScopeType == "user" && sc.ScopeValue == c.Identity {
+		if sc.ScopeType == models.ScopeTypeUser && sc.ScopeValue == c.Identity {
 			return nil
 		}
 	}

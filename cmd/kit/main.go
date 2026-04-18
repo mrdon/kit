@@ -16,6 +16,7 @@ import (
 	"github.com/mrdon/kit/internal"
 	"github.com/mrdon/kit/internal/apps"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
+	"github.com/mrdon/kit/internal/apps/cards"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	_ "github.com/mrdon/kit/internal/apps/todo"
 	"github.com/mrdon/kit/internal/auth"
@@ -68,6 +69,24 @@ func main() {
 
 	// Initialize apps (lets them set up services after DB is ready)
 	apps.Init(pool)
+
+	// PWA session signer. Prefer an explicit KIT_SESSION_SECRET; fall back
+	// to deriving from ENCRYPTION_KEY (domain-separated in NewSessionSigner)
+	// so Dokku deploys don't need a second secret.
+	sessionSecret := cfg.SessionSecret
+	if sessionSecret == "" {
+		sessionSecret = cfg.EncryptionKey
+	}
+	if signer, err := auth.NewSessionSigner(sessionSecret); err == nil {
+		cards.Configure(
+			signer,
+			auth.SlackOpenIDConfig{ClientID: cfg.SlackClientID, ClientSecret: cfg.SlackClientSecret},
+			cfg.BaseURL,
+			cfg.Env == "dev",
+		)
+	} else {
+		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
+	}
 
 	// Encryption for bot tokens
 	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)

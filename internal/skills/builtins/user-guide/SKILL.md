@@ -105,3 +105,17 @@ Once configured, just ask:
 > "Anything on the calendar this Saturday?"
 
 Calendars are scoped to roles like other Kit resources. Use `list_calendars` to see what's configured (and the last sync status), and `get_calendar_events` for date or keyword queries. Kit re-fetches each calendar in the background, so changes on the source feed show up automatically.
+
+## Decisions and briefings (card stack)
+
+Kit can surface agent-driven prompts to you via a swipeable mobile card stack at `/app/` (sign in via Slack). Two kinds:
+
+- **Decisions** — a judgment call with 2-4 options and a recommended default. Swipe right to approve the default; tap to see all options. If an option carries an instruction, Kit queues a one-shot agent task that runs it and posts output to your Slack DM.
+- **Briefings** — informational updates. Swipe right to archive; tap to archive / save / dismiss.
+
+Create from an agent context (Slack, MCP, or a skill):
+
+> "Create a decision to reorder Moonbeam hops with options: send the draft order, edit first, or skip."
+> "Create a briefing about last night's sales — highest Thursday in 6 months."
+
+Via MCP: `create_decision`, `create_briefing`, `update_decision`, `update_briefing`, `list_decisions`, `list_briefings`, `resolve_decision`, `ack_briefing`. Cards are scoped like other Kit resources.

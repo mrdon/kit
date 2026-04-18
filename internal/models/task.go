@@ -43,9 +43,29 @@ func NextCronRun(cronExpr, tz string, after time.Time) (time.Time, error) {
 	return sched.Next(after.In(loc)).UTC(), nil
 }
 
-// CreateTask creates a scheduled task with a scope row.
+// CreateTask creates a scheduled task with a scope row in its own transaction.
 // For recurring tasks, provide cronExpr. For one-time tasks, provide runAt and set runOnce=true.
-func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, scopeType, scopeValue string) (*Task, error) {
+func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, scopeType ScopeType, scopeValue string) (*Task, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	task, err := CreateTaskTx(ctx, tx, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, runAt, scopeType, scopeValue)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing: %w", err)
+	}
+	return task, nil
+}
+
+// CreateTaskTx inserts a task and its scope row into the supplied transaction.
+// The caller is responsible for Begin / Commit / Rollback. Use this when task
+// creation must be atomic with other writes (e.g. resolving a decision card).
+func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, scopeType ScopeType, scopeValue string) (*Task, error) {
 	var nextRun time.Time
 	if runOnce && runAt != nil {
 		nextRun = runAt.UTC()
@@ -57,15 +77,9 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 		}
 	}
 
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
 	task := &Task{}
 	taskID := uuid.New()
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, created_at
@@ -83,10 +97,6 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 	`, tenantID, taskID, scopeType, scopeValue)
 	if err != nil {
 		return nil, fmt.Errorf("creating task scope: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing: %w", err)
 	}
 	return task, nil
 }

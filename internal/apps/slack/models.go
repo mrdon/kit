@@ -46,7 +46,7 @@ func deleteChannel(ctx context.Context, pool *pgxpool.Pool, tenantID, channelID 
 	return nil
 }
 
-func addChannelScope(ctx context.Context, pool *pgxpool.Pool, tenantID, channelID uuid.UUID, scopeType, scopeValue string) error {
+func addChannelScope(ctx context.Context, pool *pgxpool.Pool, tenantID, channelID uuid.UUID, scopeType models.ScopeType, scopeValue string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO app_slack_channel_scopes (tenant_id, channel_id, scope_type, scope_value)
 		VALUES ($1, $2, $3, $4)

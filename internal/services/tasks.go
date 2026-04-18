@@ -36,24 +36,24 @@ type TaskService struct {
 // Create creates a scheduled task with scope resolution.
 func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronExpr, timezone, channelID, scope string, runOnce bool, runAt *time.Time) (*models.Task, error) {
 	if scope == "" {
-		scope = "user"
+		scope = string(models.ScopeTypeUser)
 	}
-	scopeType := "user"
+	scopeType := models.ScopeTypeUser
 	scopeValue := c.Identity
 	switch scope {
-	case "user":
+	case string(models.ScopeTypeUser):
 		// defaults above
-	case "tenant":
+	case string(models.ScopeTypeTenant):
 		if !c.IsAdmin {
 			return nil, ErrForbidden
 		}
-		scopeType = "tenant"
-		scopeValue = "*"
+		scopeType = models.ScopeTypeTenant
+		scopeValue = models.ScopeValueAll
 	default:
 		if !c.IsAdmin && !hasRole(c, scope) {
 			return nil, ErrForbidden
 		}
-		scopeType = "role"
+		scopeType = models.ScopeTypeRole
 		scopeValue = scope
 	}
 	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, runOnce, runAt, scopeType, scopeValue)

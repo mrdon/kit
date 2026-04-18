@@ -17,6 +17,8 @@ type Config struct {
 	EncryptionKey      string
 	BaseURL            string
 	RedisURL           string
+	SessionSecret      string // HMAC key for PWA session cookies
+	Env                string // "dev", "prod" — controls feature flags like dev-login
 }
 
 func Load() (*Config, error) {
@@ -32,6 +34,8 @@ func Load() (*Config, error) {
 		EncryptionKey:      os.Getenv("ENCRYPTION_KEY"),
 		BaseURL:            os.Getenv("BASE_URL"),
 		RedisURL:           os.Getenv("REDIS_URL"),
+		SessionSecret:      os.Getenv("KIT_SESSION_SECRET"),
+		Env:                os.Getenv("KIT_ENV"),
 	}
 
 	if cfg.DatabaseURL == "" {

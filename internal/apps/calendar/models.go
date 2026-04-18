@@ -66,7 +66,7 @@ func deleteCalendar(ctx context.Context, pool *pgxpool.Pool, tenantID, calendarI
 	return nil
 }
 
-func addCalendarScope(ctx context.Context, pool *pgxpool.Pool, tenantID, calendarID uuid.UUID, scopeType, scopeValue string) error {
+func addCalendarScope(ctx context.Context, pool *pgxpool.Pool, tenantID, calendarID uuid.UUID, scopeType models.ScopeType, scopeValue string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO app_calendar_scopes (tenant_id, calendar_id, scope_type, scope_value)
 		VALUES ($1, $2, $3, $4)

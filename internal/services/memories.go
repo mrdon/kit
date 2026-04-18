@@ -27,22 +27,22 @@ type MemoryService struct {
 // Save creates a memory with scope resolution.
 func (s *MemoryService) Save(ctx context.Context, c *Caller, content, scope string, sessionID uuid.UUID) error {
 	if scope == "" {
-		scope = "user"
+		scope = string(models.ScopeTypeUser)
 	}
-	scopeType := "user"
+	scopeType := models.ScopeTypeUser
 	scopeValue := c.Identity
 	switch scope {
-	case "user":
+	case string(models.ScopeTypeUser):
 		// defaults above
-	case "tenant":
-		scopeType = "tenant"
-		scopeValue = "*"
+	case string(models.ScopeTypeTenant):
+		scopeType = models.ScopeTypeTenant
+		scopeValue = models.ScopeValueAll
 	default:
 		// role name
 		if !c.IsAdmin && !hasRole(c, scope) {
 			return ErrForbidden
 		}
-		scopeType = "role"
+		scopeType = models.ScopeTypeRole
 		scopeValue = scope
 	}
 	return models.CreateMemory(ctx, s.pool, c.TenantID, content, scopeType, scopeValue, sessionID)
