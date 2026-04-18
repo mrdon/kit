@@ -47,17 +47,17 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		}
 		d := in.Decision
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_decisions (card_id, priority, recommended_option_id, origin_task_id, origin_session_id)
-			VALUES ($1, $2, $3, $4, $5)`,
-			cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginTaskID, d.OriginSessionID,
+			INSERT INTO app_card_decisions (tenant_id, card_id, priority, recommended_option_id, origin_task_id, origin_session_id)
+			VALUES ($1, $2, $3, $4, $5, $6)`,
+			tenantID, cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginTaskID, d.OriginSessionID,
 		); err != nil {
 			return nil, fmt.Errorf("inserting decision: %w", err)
 		}
 		for i, opt := range d.Options {
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO app_card_decision_options (card_id, option_id, sort_order, label, prompt)
-				VALUES ($1, $2, $3, $4, $5)`,
-				cardID, opt.OptionID, i, opt.Label, nilIfEmpty(opt.Prompt),
+				INSERT INTO app_card_decision_options (tenant_id, card_id, option_id, sort_order, label, prompt)
+				VALUES ($1, $2, $3, $4, $5, $6)`,
+				tenantID, cardID, opt.OptionID, i, opt.Label, nilIfEmpty(opt.Prompt),
 			); err != nil {
 				return nil, fmt.Errorf("inserting option %q: %w", opt.OptionID, err)
 			}
@@ -75,9 +75,9 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		}
 		b := in.Briefing
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_briefings (card_id, severity)
-			VALUES ($1, $2)`,
-			cardID, b.Severity,
+			INSERT INTO app_card_briefings (tenant_id, card_id, severity)
+			VALUES ($1, $2, $3)`,
+			tenantID, cardID, b.Severity,
 		); err != nil {
 			return nil, fmt.Errorf("inserting briefing: %w", err)
 		}
@@ -100,7 +100,7 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 // [{tenant, *}] — visible to everyone in the tenant. Existing scope rows
 // are deleted first so this is safe to call on update too.
 func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, roleScopes []string) error {
-	if _, err := tx.Exec(ctx, `DELETE FROM app_card_scopes WHERE card_id = $1`, cardID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM app_card_scopes WHERE tenant_id = $1 AND card_id = $2`, tenantID, cardID); err != nil {
 		return fmt.Errorf("clearing scopes: %w", err)
 	}
 	if len(roleScopes) == 0 {
@@ -136,7 +136,7 @@ func getCard(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID uuid.UUID
 		return nil, fmt.Errorf("loading card: %w", err)
 	}
 	if card.Kind == CardKindDecision {
-		if err := loadDecisionOptions(ctx, pool, []*Card{card}); err != nil {
+		if err := loadDecisionOptions(ctx, pool, tenantID, []*Card{card}); err != nil {
 			return nil, err
 		}
 	}
@@ -213,7 +213,7 @@ func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, kind
 	}
 
 	if kind == CardKindDecision {
-		if err := loadDecisionOptions(ctx, pool, cards); err != nil {
+		if err := loadDecisionOptions(ctx, pool, tenantID, cards); err != nil {
 			return nil, err
 		}
 	}
@@ -281,7 +281,7 @@ func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UU
 		return nil, err
 	}
 
-	if err := loadDecisionOptions(ctx, pool, cards); err != nil {
+	if err := loadDecisionOptions(ctx, pool, tenantID, cards); err != nil {
 		return nil, err
 	}
 	return cards, nil
@@ -289,7 +289,7 @@ func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UU
 
 // loadDecisionOptions fetches option rows in bulk for all decision cards in
 // the slice, then attaches them to each card's Decision.Options.
-func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, cards []*Card) error {
+func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, cards []*Card) error {
 	var ids []uuid.UUID
 	byID := map[uuid.UUID]*Card{}
 	for _, c := range cards {
@@ -308,8 +308,8 @@ func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, cards []*Card)
 	rows, err := pool.Query(ctx, `
 		SELECT card_id, option_id, sort_order, label, prompt
 		FROM app_card_decision_options
-		WHERE card_id = ANY($1)
-		ORDER BY card_id, sort_order`, ids)
+		WHERE tenant_id = $1 AND card_id = ANY($2)
+		ORDER BY card_id, sort_order`, tenantID, ids)
 	if err != nil {
 		return fmt.Errorf("loading decision options: %w", err)
 	}
@@ -335,14 +335,14 @@ func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, cards []*Card)
 
 // getDecisionOption returns a single option for a decision card. Returns
 // nil if the option doesn't exist.
-func getDecisionOption(ctx context.Context, q querier, cardID uuid.UUID, optionID string) (*DecisionOption, error) {
+func getDecisionOption(ctx context.Context, q querier, tenantID, cardID uuid.UUID, optionID string) (*DecisionOption, error) {
 	var opt DecisionOption
 	var prompt *string
 	err := q.QueryRow(ctx, `
 		SELECT option_id, sort_order, label, prompt
 		FROM app_card_decision_options
-		WHERE card_id = $1 AND option_id = $2`,
-		cardID, optionID,
+		WHERE tenant_id = $1 AND card_id = $2 AND option_id = $3`,
+		tenantID, cardID, optionID,
 	).Scan(&opt.OptionID, &opt.SortOrder, &opt.Label, &prompt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil

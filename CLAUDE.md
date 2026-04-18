@@ -40,7 +40,8 @@ make db-reset    # Wipe and restart Postgres
 - **Run `make prepush` before every commit.** This formats, lints, tests, and builds. Do not commit code that fails prepush.
 - No file over 500 lines. Split into focused files when approaching the limit.
 - No function over 60 lines. Extract helpers when complexity grows.
-- All DB queries MUST include `WHERE tenant_id = ?` — no exceptions. This is the tenant isolation boundary.
+- Every tenant-scoped table MUST have a `tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE` column — including child tables (one-to-one extensions, option lists, join tables). The only exceptions are the `tenants` table itself and globally-shared tables like `oauth_clients`. This lets every query filter by tenant_id directly without joining through a parent.
+- All DB queries against tenant-scoped tables MUST include `WHERE tenant_id = ?` — no exceptions. This is the tenant isolation boundary. INSERTs must set tenant_id; UPDATEs and DELETEs must filter on it even when the primary key alone would suffice.
 - All agent output goes through tool calls (`send_slack_message`), never direct text responses.
 - Bot tokens are encrypted at rest (AES-256-GCM). Never log or expose decrypted tokens.
 - Use `fmt.Errorf("doing thing: %w", err)` for error wrapping — always add context.

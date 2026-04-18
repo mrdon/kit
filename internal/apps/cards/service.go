@@ -269,7 +269,7 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 		taskID = &task.ID
 	}
 
-	if err := finishResolveDecision(ctx, tx, cardID, c.UserID, opt.OptionID, taskID); err != nil {
+	if err := finishResolveDecision(ctx, tx, c.TenantID, cardID, c.UserID, opt.OptionID, taskID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {

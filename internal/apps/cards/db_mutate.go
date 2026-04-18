@@ -46,7 +46,7 @@ func updateCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID uuid
 		if kind != CardKindDecision {
 			return nil, fmt.Errorf("cannot apply decision updates to %s card", kind)
 		}
-		if err := updateDecisionTx(ctx, tx, cardID, *u.Decision); err != nil {
+		if err := updateDecisionTx(ctx, tx, tenantID, cardID, *u.Decision); err != nil {
 			return nil, err
 		}
 	}
@@ -57,7 +57,7 @@ func updateCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID uuid
 			return nil, fmt.Errorf("cannot apply briefing updates to %s card", kind)
 		}
 		if u.Briefing.Severity != nil {
-			if _, err := tx.Exec(ctx, `UPDATE app_card_briefings SET severity = $1 WHERE card_id = $2`, *u.Briefing.Severity, cardID); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE app_card_briefings SET severity = $1 WHERE tenant_id = $2 AND card_id = $3`, *u.Briefing.Severity, tenantID, cardID); err != nil {
 				return nil, fmt.Errorf("updating briefing severity: %w", err)
 			}
 		}
@@ -105,10 +105,10 @@ func buildCardSets(u CardUpdates) ([]string, []any) {
 	return sets, args
 }
 
-func updateDecisionTx(ctx context.Context, tx pgx.Tx, cardID uuid.UUID, u DecisionUpdates) error {
+func updateDecisionTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, u DecisionUpdates) error {
 	var sets []string
 	var args []any
-	argN := 1 // $1 = card_id (WHERE)
+	argN := 2 // $1=tenant_id, $2=card_id in WHERE
 	if u.Priority != nil {
 		argN++
 		sets = append(sets, fmt.Sprintf("priority = $%d", argN))
@@ -120,8 +120,8 @@ func updateDecisionTx(ctx context.Context, tx pgx.Tx, cardID uuid.UUID, u Decisi
 		args = append(args, nilIfEmpty(*u.RecommendedOptionID))
 	}
 	if len(sets) > 0 {
-		query := fmt.Sprintf(`UPDATE app_card_decisions SET %s WHERE card_id = $1`, strings.Join(sets, ", "))
-		args = append([]any{cardID}, args...)
+		query := fmt.Sprintf(`UPDATE app_card_decisions SET %s WHERE tenant_id = $1 AND card_id = $2`, strings.Join(sets, ", "))
+		args = append([]any{tenantID, cardID}, args...)
 		if _, err := tx.Exec(ctx, query, args...); err != nil {
 			return fmt.Errorf("updating decision: %w", err)
 		}
@@ -129,14 +129,14 @@ func updateDecisionTx(ctx context.Context, tx pgx.Tx, cardID uuid.UUID, u Decisi
 
 	// Full replacement of options when caller supplied them.
 	if u.Options != nil {
-		if _, err := tx.Exec(ctx, `DELETE FROM app_card_decision_options WHERE card_id = $1`, cardID); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM app_card_decision_options WHERE tenant_id = $1 AND card_id = $2`, tenantID, cardID); err != nil {
 			return fmt.Errorf("clearing options: %w", err)
 		}
 		for i, opt := range *u.Options {
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO app_card_decision_options (card_id, option_id, sort_order, label, prompt)
-				VALUES ($1, $2, $3, $4, $5)`,
-				cardID, opt.OptionID, i, opt.Label, nilIfEmpty(opt.Prompt),
+				INSERT INTO app_card_decision_options (tenant_id, card_id, option_id, sort_order, label, prompt)
+				VALUES ($1, $2, $3, $4, $5, $6)`,
+				tenantID, cardID, opt.OptionID, i, opt.Label, nilIfEmpty(opt.Prompt),
 			); err != nil {
 				return fmt.Errorf("inserting option %q: %w", opt.OptionID, err)
 			}
@@ -161,7 +161,7 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 			c.created_at, c.updated_at,
 			d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id, d.origin_task_id, d.origin_session_id
 		FROM app_cards c
-		JOIN app_card_decisions d ON d.card_id = c.id
+		JOIN app_card_decisions d ON d.card_id = c.id AND d.tenant_id = c.tenant_id
 		WHERE c.tenant_id = $1 AND c.id = $2
 		FOR UPDATE`,
 		tenantID, cardID,
@@ -196,7 +196,7 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 	if pickID == "" {
 		return nil, nil, ErrNoOptionPicked
 	}
-	opt, err := getDecisionOption(ctx, tx, cardID, pickID)
+	opt, err := getDecisionOption(ctx, tx, tenantID, cardID, pickID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -208,20 +208,20 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 
 // finishResolveDecision writes the resolved_option_id, optional task link,
 // and flips state to resolved. Runs inside the caller's tx.
-func finishResolveDecision(ctx context.Context, tx pgx.Tx, cardID, resolvedBy uuid.UUID, optionID string, taskID *uuid.UUID) error {
+func finishResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID, resolvedBy uuid.UUID, optionID string, taskID *uuid.UUID) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE app_card_decisions
 		SET resolved_option_id = $1, resolved_task_id = $2
-		WHERE card_id = $3`,
-		optionID, taskID, cardID,
+		WHERE tenant_id = $3 AND card_id = $4`,
+		optionID, taskID, tenantID, cardID,
 	); err != nil {
 		return fmt.Errorf("writing resolved decision fields: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE app_cards
 		SET state = $1, terminal_at = now(), terminal_by = $2, updated_at = now()
-		WHERE id = $3`,
-		CardStateResolved, resolvedBy, cardID,
+		WHERE tenant_id = $3 AND id = $4`,
+		CardStateResolved, resolvedBy, tenantID, cardID,
 	); err != nil {
 		return fmt.Errorf("flipping card state: %w", err)
 	}
