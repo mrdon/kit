@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -66,15 +67,21 @@ type runScriptResponse struct {
 
 // scriptRunDeps are the process-wide dependencies run_script needs beyond
 // what execContextLike carries. The default wiring in app.go installs
-// them at init (services + engine + sender + slack). Tests inject their
-// own. Stored via a package-global because execContextLike is intended to
-// match the minimal ExecContext shape and we don't want to change
-// Phase 4a's contract.
+// them at init (services + engine + sender + slack factory). Tests inject
+// their own. Stored via a package-global because execContextLike is
+// intended to match the minimal ExecContext shape and we don't want to
+// change Phase 4a's contract.
+//
+// BuildSlack is a factory because the Slack client is per-tenant (a bot
+// token is required at construction). invokeRunScript calls it for the
+// caller's tenant; nil factory or nil result means Slack action builtins
+// (send_slack_message, dm_user, post_to_channel) return their existing
+// "not configured" error.
 type scriptRunDeps struct {
-	Services *services.Services
-	Engine   runtime.Engine
-	Sender   Sender
-	Slack    *kitslack.Client
+	Services   *services.Services
+	Engine     runtime.Engine
+	Sender     Sender
+	BuildSlack func(context.Context, uuid.UUID) (*kitslack.Client, error)
 }
 
 // currentRunDeps is set via SetScriptRunDeps during app Init. Nil is
@@ -162,6 +169,21 @@ func invokeRunScript(
 
 	limits, maxDBCalls := resolveLimits(ctx, pool, caller.TenantID, limitOverrides)
 
+	// Build the per-tenant Slack client. Failure here is non-fatal: the
+	// dispatcher already returns "not configured" when slack is nil, so a
+	// missing or undecryptable bot token just disables Slack actions for
+	// this run rather than aborting it.
+	var slackClient *kitslack.Client
+	if deps.BuildSlack != nil {
+		c, err := deps.BuildSlack(ctx, caller.TenantID)
+		if err != nil {
+			slog.Warn("builder: building tenant slack client",
+				"tenant_id", caller.TenantID, "error", err)
+		} else {
+			slackClient = c
+		}
+	}
+
 	// Insert + commit the script_runs row so audit tools see the in-flight
 	// run immediately. Using a dedicated COMMIT here (not a long-lived tx)
 	// means a mid-run panic still leaves the 'running' row behind for
@@ -189,7 +211,7 @@ func invokeRunScript(
 	}
 
 	caps, counters, err := BuildScriptCapabilities(
-		ctx, pool, deps.Services, deps.Sender, deps.Slack, deps.Engine, params,
+		ctx, pool, deps.Services, deps.Sender, slackClient, deps.Engine, params,
 	)
 	if err != nil {
 		finishRun(ctx, pool, caller.TenantID, runID, RunStatusError, nil,

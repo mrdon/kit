@@ -7,42 +7,44 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/builder/runtime"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/mcpauth"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	kitslack "github.com/mrdon/kit/internal/slack"
 	"github.com/mrdon/kit/internal/tools"
 )
 
 // InstallScriptRunDeps builds the production scriptRunDeps (Monty engine +
-// shared services + Anthropic sender) and wires them into the package-global
-// used by run_script and the scheduled-script task runner. Call from main
-// once apps.Init has run and the pool is live. Returns a close func that
-// tears down the WASM runtime on shutdown.
+// shared services + Anthropic sender + per-tenant Slack factory) and wires
+// them into the package-global used by run_script and the scheduled-script
+// task runner. Call from main once apps.Init has run and the pool is live.
+// Returns a close func that tears down the WASM runtime on shutdown.
 //
-// Slack is intentionally nil for now: kitslack.Client is per-tenant (a bot
-// token is required at construction) and scriptRunDeps holds a single
-// global. Slack-action builtins (send_slack_message, post_to_channel,
-// dm_user) return "slack client not configured" until per-run lookup
-// lands; everything else (db_*, util, llm_*, todo / cards / memory / task
-// actions) works.
-func InstallScriptRunDeps(pool *pgxpool.Pool, svc *services.Services, sender Sender) (func() error, error) {
-	if pool == nil || svc == nil || sender == nil {
-		return nil, errors.New("builder: install deps requires pool + services + sender")
+// The Slack factory looks up the tenant's encrypted bot token on each run
+// and constructs a fresh kitslack.Client. A missing tenant or undecryptable
+// token disables Slack action builtins for that one run (they return their
+// existing "not configured" error) without aborting the run.
+func InstallScriptRunDeps(pool *pgxpool.Pool, svc *services.Services, enc *crypto.Encryptor, sender Sender) (func() error, error) {
+	if pool == nil || svc == nil || enc == nil || sender == nil {
+		return nil, errors.New("builder: install deps requires pool + services + encryptor + sender")
 	}
 	engine, err := runtime.NewMontyEngineOwned()
 	if err != nil {
 		return nil, fmt.Errorf("builder: monty engine: %w", err)
 	}
 	deps := &scriptRunDeps{
-		Services: svc,
-		Engine:   engine,
-		Sender:   sender,
-		Slack:    nil,
+		Services:   svc,
+		Engine:     engine,
+		Sender:     sender,
+		BuildSlack: tenantSlackFactory(pool, enc),
 	}
 	SetScriptRunDeps(deps)
 	WireTaskRunners(pool, deps)
@@ -51,6 +53,27 @@ func InstallScriptRunDeps(pool *pgxpool.Pool, svc *services.Services, sender Sen
 		WireTaskRunners(nil, nil)
 		return engine.Close()
 	}, nil
+}
+
+// tenantSlackFactory returns a closure that builds a per-tenant Slack
+// client. Returns (nil, nil) when the tenant has no bot token rather than
+// surfacing an error — Slack action builtins already handle a nil client
+// with a clear "not configured" message.
+func tenantSlackFactory(pool *pgxpool.Pool, enc *crypto.Encryptor) func(context.Context, uuid.UUID) (*kitslack.Client, error) {
+	return func(ctx context.Context, tenantID uuid.UUID) (*kitslack.Client, error) {
+		tenant, err := models.GetTenantByID(ctx, pool, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("loading tenant: %w", err)
+		}
+		if tenant == nil || tenant.BotToken == "" {
+			return nil, nil
+		}
+		token, err := enc.Decrypt(tenant.BotToken)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting bot token: %w", err)
+		}
+		return kitslack.NewClient(token), nil
+	}
 }
 
 func init() {

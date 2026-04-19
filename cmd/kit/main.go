@@ -104,7 +104,7 @@ func main() {
 
 	// Install the builder script runtime. Without this, every run_script
 	// call (admin or via an exposed tool) errors with "engine not wired".
-	closeBuilder, err := builderapp.InstallScriptRunDeps(pool, svc, builderLLM)
+	closeBuilder, err := builderapp.InstallScriptRunDeps(pool, svc, enc, builderLLM)
 	if err != nil {
 		slog.Error("installing builder script runtime", "error", err)
 		os.Exit(1)

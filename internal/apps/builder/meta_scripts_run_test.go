@@ -239,10 +239,10 @@ func scriptTestDeps(t *testing.T, f *scriptFixture) *scriptRunDeps {
 		t.Fatalf("seed config: %v", err)
 	}
 	return &scriptRunDeps{
-		Services: services.New(f.pool, nil),
-		Engine:   testEngine,
-		Sender:   &stubSender{respText: "stub", model: "haiku", inTokens: 1, outTokens: 1},
-		Slack:    nil,
+		Services:   services.New(f.pool, nil),
+		Engine:     testEngine,
+		Sender:     &stubSender{respText: "stub", model: "haiku", inTokens: 1, outTokens: 1},
+		BuildSlack: nil,
 	}
 }
 
