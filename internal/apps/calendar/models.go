@@ -66,12 +66,16 @@ func deleteCalendar(ctx context.Context, pool *pgxpool.Pool, tenantID, calendarI
 	return nil
 }
 
-func addCalendarScope(ctx context.Context, pool *pgxpool.Pool, tenantID, calendarID uuid.UUID, scopeType models.ScopeType, scopeValue string) error {
-	_, err := pool.Exec(ctx, `
-		INSERT INTO app_calendar_scopes (tenant_id, calendar_id, scope_type, scope_value)
-		VALUES ($1, $2, $3, $4)
+func addCalendarScope(ctx context.Context, pool *pgxpool.Pool, tenantID, calendarID uuid.UUID, roleID, userID *uuid.UUID) error {
+	scopeID, err := models.GetOrCreateScope(ctx, pool, tenantID, roleID, userID)
+	if err != nil {
+		return fmt.Errorf("get-or-create scope: %w", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO app_calendar_scopes (tenant_id, calendar_id, scope_id)
+		VALUES ($1, $2, $3)
 		ON CONFLICT DO NOTHING`,
-		tenantID, calendarID, scopeType, scopeValue,
+		tenantID, calendarID, scopeID,
 	)
 	if err != nil {
 		return fmt.Errorf("adding calendar scope: %w", err)
@@ -107,13 +111,14 @@ func listCalendarsAll(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUI
 	return scanCalendars(rows)
 }
 
-func listCalendarsScoped(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roles []string) ([]Calendar, error) {
-	scopeSQL, scopeArgs := models.ScopeFilter("cs", 2, "", roles)
+func listCalendarsScoped(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID) ([]Calendar, error) {
+	scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 2, userID, roleIDs)
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT `+calendarSelectCols+`
 		FROM app_calendars c
 		JOIN app_calendar_scopes cs ON cs.calendar_id = c.id AND cs.tenant_id = c.tenant_id
+		JOIN scopes sc ON sc.id = cs.scope_id
 		WHERE c.tenant_id = $1
 		AND (`+scopeSQL+`)
 		ORDER BY c.name`,

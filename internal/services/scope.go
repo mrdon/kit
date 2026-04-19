@@ -58,6 +58,22 @@ func (c *Caller) PersonalScopeFilter(prefix string, startParam int) (string, []a
 	return models.PersonalScopeFilterIDs(prefix, startParam, c.UserID, c.RoleIDs)
 }
 
+// ResolveRoleID looks up a role by name within a tenant. Returns ErrNotFound
+// (wrapped) when the role doesn't exist.
+func ResolveRoleID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := pool.QueryRow(ctx,
+		`SELECT id FROM roles WHERE tenant_id = $1 AND name = $2`,
+		tenantID, name).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("role %q: %w", name, ErrNotFound)
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("looking up role %q: %w", name, err)
+	}
+	return id, nil
+}
+
 // resolveScopeTarget translates the agent-tool scope_type/scope_value strings
 // into (roleID, userID) pointers suitable for models.CreateRule and friends.
 // scopeType "tenant" → (nil, nil); "role" → (role.id, nil); "user" →

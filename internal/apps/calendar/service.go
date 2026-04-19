@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -64,12 +63,16 @@ func (s *CalendarService) Configure(ctx context.Context, c *services.Caller, opt
 		return nil, err
 	}
 	if len(opts.RoleScopes) == 0 {
-		if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, models.ScopeTypeTenant, models.ScopeValueAll); err != nil {
+		if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, nil, nil); err != nil {
 			return nil, err
 		}
 	} else {
 		for _, role := range opts.RoleScopes {
-			if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, models.ScopeTypeRole, role); err != nil {
+			roleID, err := services.ResolveRoleID(ctx, s.pool, c.TenantID, role)
+			if err != nil {
+				return nil, err
+			}
+			if err := addCalendarScope(ctx, s.pool, c.TenantID, cal.ID, &roleID, nil); err != nil {
 				return nil, err
 			}
 		}
@@ -116,7 +119,7 @@ func (s *CalendarService) List(ctx context.Context, c *services.Caller) ([]Calen
 	if c.IsAdmin {
 		cals, err = listCalendarsAll(ctx, s.pool, c.TenantID)
 	} else {
-		cals, err = listCalendarsScoped(ctx, s.pool, c.TenantID, c.Roles)
+		cals, err = listCalendarsScoped(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 	}
 	if err != nil {
 		return nil, err
