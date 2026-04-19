@@ -180,7 +180,13 @@ func main() {
 	mux.Handle("GET /{slug}/oauth/authorize", tenantMW(http.HandlerFunc(oauthServer.HandleAuthorize)))
 	mux.Handle("POST /{slug}/oauth/token", tenantMW(http.HandlerFunc(oauthServer.HandleToken)))
 	mux.Handle("POST /{slug}/oauth/register", tenantMW(http.HandlerFunc(regHandler.HandleRegister)))
-	mux.Handle("/{slug}/mcp", tenantMW(auth.AssertBearerMatchesPathTenant(pool, mcpHTTP)))
+	mcpWrapped := tenantMW(auth.AssertBearerMatchesPathTenant(pool, mcpHTTP))
+	// Streamable HTTP uses POST for JSON-RPC, GET for the SSE stream, and
+	// DELETE for session close. Each method is registered explicitly so Go's
+	// ServeMux can resolve specificity vs the cards SPA's "GET /{slug}/".
+	mux.Handle("POST /{slug}/mcp", mcpWrapped)
+	mux.Handle("GET /{slug}/mcp", mcpWrapped)
+	mux.Handle("DELETE /{slug}/mcp", mcpWrapped)
 
 	// Slack's OAuth callback stays global — the tenant slug rides inside
 	// the signed state parameter.
