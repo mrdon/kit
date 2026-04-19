@@ -71,28 +71,34 @@
     <h2>Connect Your AI Tools</h2>
     <p>Use Kit from any MCP-compatible AI client. Create skills, manage rules, and access your team's knowledge without leaving your editor.</p>
 
+    <p>Each Slack workspace has its own MCP endpoint at <code>{{.BaseURL}}/<em>your-slug</em>/mcp</code>. After you install Kit, Kit DMs you your exact URL in Slack. Lost it? Just ask Kit <em>"what's my MCP URL?"</em> in a DM.</p>
+
     <div class="tab-bar">
       <button class="tab active" onclick="showTab('claude-code')">Claude Code</button>
       <button class="tab" onclick="showTab('cursor')">Cursor</button>
     </div>
 
     <div id="claude-code" class="tab-content active">
-      <pre>claude mcp add --transport http kit {{.BaseURL}}/mcp</pre>
+      <pre>claude mcp add --transport http kit {{.BaseURL}}/your-slug/mcp</pre>
     </div>
 
     <div id="cursor" class="tab-content">
-      <pre>// Add to .cursor/mcp.json
+      <pre>// Add to .cursor/mcp.json — one entry per Slack workspace
 {
   "mcpServers": {
-    "kit": {
+    "kit-acme": {
       "type": "streamable-http",
-      "url": "{{.BaseURL}}/mcp"
+      "url": "{{.BaseURL}}/acme/mcp"
+    },
+    "kit-teamb": {
+      "type": "streamable-http",
+      "url": "{{.BaseURL}}/teamb/mcp"
     }
   }
 }</pre>
     </div>
 
-    <p>On first connect, you'll sign in with Slack — same identity, no extra accounts.</p>
+    <p>On first connect, you'll sign in with Slack — same identity, no extra accounts. If you land on the wrong workspace, Kit refuses the token and tells you which one the URL is bound to.</p>
   </div>
 
   <div class="section">

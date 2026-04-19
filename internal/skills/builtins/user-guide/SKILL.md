@@ -56,6 +56,15 @@ Kit uses roles to control who sees what. Create roles, assign users, then scope 
 
 Anything scoped to a role is only visible to members of that role. Anything scoped to "tenant" is visible to everyone. Items with no scopes are invisible (default deny).
 
+## Connecting External Tools via MCP
+
+Each Slack workspace has its own MCP endpoint URL of the form `{base-url}/{workspace-slug}/mcp`. You only need your workspace's slug to configure Claude Code, Cursor, or any other MCP client.
+
+- Right after you install Kit, Kit DMs you the exact URL. If you kept that message, copy-paste it into your client.
+- Lost it? Message Kit in a DM: *"what's my MCP URL?"* and Kit will repeat it.
+
+If you belong to more than one Slack workspace with Kit installed, add one MCP entry per workspace — each URL binds its access token to exactly one workspace, and signing into the wrong one during the OAuth handshake returns a clear error rather than silently issuing a token against the wrong tenant.
+
 ## Searching Your Knowledge Base
 
 **In Slack**, just ask a question — Kit automatically searches relevant skills and memories to answer:

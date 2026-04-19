@@ -68,20 +68,24 @@ make dev              # start with hot reload
 
 ## MCP Setup
 
-Add Kit to any MCP-compatible client:
+Each Slack workspace has its own MCP endpoint at `https://your-domain.com/{workspace-slug}/mcp`. After install, Kit DMs you the exact URL; you can also ask Kit "what's my MCP URL?" in Slack. If you belong to multiple workspaces, add one entry per workspace:
 
 ```json
 {
   "mcpServers": {
-    "kit": {
+    "kit-acme": {
       "type": "streamable-http",
-      "url": "https://your-domain.com/mcp"
+      "url": "https://your-domain.com/acme/mcp"
+    },
+    "kit-teamb": {
+      "type": "streamable-http",
+      "url": "https://your-domain.com/teamb/mcp"
     }
   }
 }
 ```
 
-On first connection, your client will open a browser for Slack sign-in. After that, the token is cached automatically.
+On first connection, your client will open a browser for Slack sign-in. After that, the token is cached automatically. If you sign into the wrong Slack workspace during the handshake, Kit refuses the token — no cross-workspace token confusion.
 
 ## Make Commands
 

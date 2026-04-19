@@ -1,26 +1,15 @@
 package runtime
 
 import (
-	"context"
 	"testing"
-	"time"
 )
 
 // TestMontyHello is a proof-of-dependency smoke test: boot the Monty runner,
 // run a trivial Python snippet that uses a named input, and verify the result.
 func TestMontyHello(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	runner := getRunner(t)
+	ctx, cancel := newCtx(t)
 	defer cancel()
-
-	runner, err := New()
-	if err != nil {
-		t.Fatalf("monty.New: %v", err)
-	}
-	defer func() {
-		if cerr := runner.Close(); cerr != nil {
-			t.Errorf("runner.Close: %v", cerr)
-		}
-	}()
 
 	// Monty's Execute evaluates the code and returns the final expression's
 	// value. Define a function, call it, and leave the call as the trailing

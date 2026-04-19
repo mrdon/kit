@@ -28,10 +28,11 @@ type App struct {
 	Agent     *agent.Agent
 	LLM       *anthropic.Client
 	Fetcher   *web.Fetcher
+	BaseURL   string
 }
 
 // NewApp creates a new App with all dependencies.
-func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey string, rdb *redis.Client) *App {
+func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey, baseURL string, rdb *redis.Client) *App {
 	llm := anthropic.NewClient(apiKey)
 	fetcher := web.NewFetcher(rdb)
 	return &App{
@@ -40,6 +41,7 @@ func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey string, rdb *redis
 		Fetcher:   fetcher,
 		Agent:     agent.NewAgent(pool, llm, fetcher),
 		LLM:       llm,
+		BaseURL:   baseURL,
 	}
 }
 
@@ -273,8 +275,25 @@ func (a *App) HandlePostInstall(ctx context.Context, tenant *models.Tenant, inst
 		return
 	}
 
-	// Run the agent with an onboarding prompt
-	onboardingPrompt := "I just installed Kit. Let's get it set up."
+	// Post the exact MCP URL deterministically (not via the LLM) so the
+	// installer has a copy-paste-safe endpoint. Slack renders the backtick
+	// block as tap-to-copy on mobile.
+	mcpURL := a.BaseURL + "/" + tenant.Slug + "/mcp"
+	welcome := fmt.Sprintf(
+		"Welcome to Kit. Your workspace's MCP endpoint is:\n```%s```\n"+
+			"Add it to Claude Code with `claude mcp add --transport http kit %s`. "+
+			"On first connect you'll sign in with Slack.",
+		mcpURL, mcpURL,
+	)
+	if err := client.PostMessage(ctx, dmChannel, "", welcome); err != nil {
+		slog.Warn("posting onboarding welcome", "error", err)
+	}
+
+	// Then let the agent run the rest of the onboarding conversation.
+	onboardingPrompt := fmt.Sprintf(
+		"I just installed Kit. Let's get it set up. (The MCP URL for my workspace has already been posted: %s — don't repeat it, just continue setup.)",
+		mcpURL,
+	)
 	if err := a.Agent.Run(ctx, agent.RunInput{
 		Slack:    client,
 		Tenant:   tenant,

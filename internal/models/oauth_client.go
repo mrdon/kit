@@ -14,6 +14,7 @@ import (
 // OAuthClient represents a dynamically registered OAuth client (RFC 7591).
 type OAuthClient struct {
 	ID           uuid.UUID
+	TenantID     uuid.UUID
 	ClientID     string
 	ClientSecret string
 	RedirectURIs []string
@@ -21,15 +22,15 @@ type OAuthClient struct {
 	CreatedAt    time.Time
 }
 
-// CreateOAuthClient registers a new OAuth client.
-func CreateOAuthClient(ctx context.Context, pool *pgxpool.Pool, clientID, clientSecret string, redirectURIs []string, clientName string) (*OAuthClient, error) {
+// CreateOAuthClient registers a new OAuth client scoped to a tenant.
+func CreateOAuthClient(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, clientID, clientSecret string, redirectURIs []string, clientName string) (*OAuthClient, error) {
 	c := &OAuthClient{}
 	err := pool.QueryRow(ctx, `
-		INSERT INTO oauth_clients (client_id, client_secret, redirect_uris, client_name)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, client_id, client_secret, redirect_uris, client_name, created_at
-	`, clientID, clientSecret, redirectURIs, nilIfEmpty(clientName)).Scan(
-		&c.ID, &c.ClientID, &c.ClientSecret, &c.RedirectURIs, &c.ClientName, &c.CreatedAt,
+		INSERT INTO oauth_clients (tenant_id, client_id, client_secret, redirect_uris, client_name)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, tenant_id, client_id, client_secret, redirect_uris, client_name, created_at
+	`, tenantID, clientID, clientSecret, redirectURIs, nilIfEmpty(clientName)).Scan(
+		&c.ID, &c.TenantID, &c.ClientID, &c.ClientSecret, &c.RedirectURIs, &c.ClientName, &c.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating oauth client: %w", err)
@@ -37,13 +38,13 @@ func CreateOAuthClient(ctx context.Context, pool *pgxpool.Pool, clientID, client
 	return c, nil
 }
 
-// GetOAuthClient looks up a client by client_id.
-func GetOAuthClient(ctx context.Context, pool *pgxpool.Pool, clientID string) (*OAuthClient, error) {
+// GetOAuthClient looks up a client by (tenant_id, client_id).
+func GetOAuthClient(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, clientID string) (*OAuthClient, error) {
 	c := &OAuthClient{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, client_id, client_secret, redirect_uris, client_name, created_at
-		FROM oauth_clients WHERE client_id = $1
-	`, clientID).Scan(&c.ID, &c.ClientID, &c.ClientSecret, &c.RedirectURIs, &c.ClientName, &c.CreatedAt)
+		SELECT id, tenant_id, client_id, client_secret, redirect_uris, client_name, created_at
+		FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2
+	`, tenantID, clientID).Scan(&c.ID, &c.TenantID, &c.ClientID, &c.ClientSecret, &c.RedirectURIs, &c.ClientName, &c.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
 	}

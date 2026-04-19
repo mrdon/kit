@@ -50,6 +50,9 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.endsWith('/login')) return;
   if (url.pathname.endsWith('/dev-login')) return;
   if (url.pathname.startsWith('/oauth/')) return;
+  // Per-tenant OAuth endpoints (/{slug}/oauth/authorize, /token, /register,
+  // and the /{slug}/.well-known/... discovery doc) must never be cached.
+  if (url.pathname.includes('/oauth/') || url.pathname.includes('/.well-known/')) return;
   // Never cache the manifest or tenant icons — they can change when a
   // workspace re-OAuths (new Slack team icon, updated slug, etc.).
   if (url.pathname.endsWith('/manifest.webmanifest')) return;
