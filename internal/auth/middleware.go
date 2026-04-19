@@ -96,12 +96,59 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
-// AssertBearerMatchesPathTenant 401s when a Bearer token's tenant does not
-// match the path-resolved tenant. Sits in front of mcpHTTP so an MCP
-// client presenting tenant A's token to /{B}/mcp gets a clear auth error
-// rather than leaking capabilities via an anonymous `initialize`. Requests
-// without any token fall through; mcp-go's HTTPContextFunc + tool-level
-// caller gating handle unauthenticated calls.
+// MCPAuthGate enforces Bearer auth on the MCP endpoint and, on failure,
+// returns 401 with a WWW-Authenticate header pointing at the tenant's RFC
+// 9728 Protected Resource Metadata. Claude Code's MCP SDK (and the draft
+// MCP auth spec) uses that header to discover the authorization server.
+//
+// Responses:
+//   - No token → 401 with resource_metadata pointer
+//   - Invalid/expired token → 401 invalid_token
+//   - Valid token, tenant mismatch with /{slug}/mcp path → 401 invalid_token
+//   - Valid token, tenant matches → fall through
+//
+// baseURL is the server's public origin (e.g. "https://kit.example.com")
+// so we can build the resource_metadata absolute URL.
+func MCPAuthGate(pool *pgxpool.Pool, baseURL string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pathTenant := TenantFromContext(r.Context())
+		if pathTenant == nil {
+			http.NotFound(w, r)
+			return
+		}
+		resourceMeta := baseURL + "/.well-known/oauth-protected-resource/" + pathTenant.Slug + "/mcp"
+
+		token := extractBearerToken(r)
+		if token == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+resourceMeta+`"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		caller, err := resolveToken(r.Context(), pool, token)
+		if err != nil {
+			slog.Error("resolving token for mcp", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if caller == nil {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", resource_metadata="`+resourceMeta+`"`)
+			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+		if caller.TenantID != pathTenant.ID {
+			slog.Warn("mcp bearer token tenant mismatch", "token_tenant", caller.TenantID, "path_tenant", pathTenant.ID)
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", resource_metadata="`+resourceMeta+`"`)
+			http.Error(w, "token issued for a different workspace", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(r.Context()))
+	})
+}
+
+// AssertBearerMatchesPathTenant is a narrower legacy check: it only
+// rejects a cross-tenant token, letting anonymous requests fall through.
+// Prefer MCPAuthGate for the MCP endpoint; this is kept for tests and for
+// use on routes where anonymous is allowed.
 func AssertBearerMatchesPathTenant(pool *pgxpool.Pool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pathTenant := TenantFromContext(r.Context())

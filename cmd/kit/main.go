@@ -176,18 +176,27 @@ func main() {
 	// authorization server at /{slug}/. Slack's redirect URI stays global
 	// at /oauth/callback so the Slack app config never has to change.
 	//
-	// OAuth endpoints are wrapped in CORS middleware per the MCP auth spec
-	// — browser-based MCP clients (and Claude Code's SDK) do preflight
-	// OPTIONS on DCR/token endpoints and fail if we don't respond. Each
-	// real method plus OPTIONS is registered explicitly so Go's ServeMux
-	// doesn't return its default plaintext 405 for the preflight.
+	// Discovery metadata (RFC 8414 / RFC 9728) lives at the ROOT under
+	// /.well-known/... with the tenant slug appended as a path segment,
+	// because RFCs 8414 and 9728 define the well-known prefix as always
+	// starting at the origin. Clients including Claude Code's MCP SDK
+	// only probe this form, not /{slug}/.well-known/... .
+	//
+	// OAuth endpoints (authorize/token/register) stay under /{slug}/ since
+	// their URLs are advertised by the metadata documents. They're wrapped
+	// in CORS middleware per the MCP auth spec — browser-based MCP
+	// clients do preflight OPTIONS on DCR/token endpoints and fail if we
+	// don't respond.
 	tenantMW := auth.TenantFromPath(pool)
 	metadataH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleMetadata)))
+	resourceH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleResourceMetadata)))
 	authorizeH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleAuthorize)))
 	tokenH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleToken)))
 	registerH := tenantMW(auth.CORS(http.HandlerFunc(regHandler.HandleRegister)))
-	mux.Handle("GET /{slug}/.well-known/oauth-authorization-server", metadataH)
-	mux.Handle("OPTIONS /{slug}/.well-known/oauth-authorization-server", metadataH)
+	mux.Handle("GET /.well-known/oauth-authorization-server/{slug}", metadataH)
+	mux.Handle("OPTIONS /.well-known/oauth-authorization-server/{slug}", metadataH)
+	mux.Handle("GET /.well-known/oauth-protected-resource/{slug}/mcp", resourceH)
+	mux.Handle("OPTIONS /.well-known/oauth-protected-resource/{slug}/mcp", resourceH)
 	mux.Handle("GET /{slug}/oauth/authorize", authorizeH)
 	mux.Handle("OPTIONS /{slug}/oauth/authorize", authorizeH)
 	mux.Handle("POST /{slug}/oauth/token", tokenH)
@@ -198,7 +207,9 @@ func main() {
 	// Streamable HTTP uses POST for JSON-RPC, GET for the SSE stream, and
 	// DELETE for session close. Each method is registered explicitly so Go's
 	// ServeMux can resolve specificity vs the cards SPA's "GET /{slug}/".
-	mcpWrapped := tenantMW(auth.CORS(auth.AssertBearerMatchesPathTenant(pool, mcpHTTP)))
+	// MCPAuthGate enforces Bearer auth and returns 401 with a
+	// resource_metadata pointer so clients can discover the auth server.
+	mcpWrapped := tenantMW(auth.CORS(auth.MCPAuthGate(pool, cfg.BaseURL, mcpHTTP)))
 	mux.Handle("POST /{slug}/mcp", mcpWrapped)
 	mux.Handle("GET /{slug}/mcp", mcpWrapped)
 	mux.Handle("DELETE /{slug}/mcp", mcpWrapped)

@@ -131,9 +131,9 @@ func TestHandleTokenRejectsCrossTenantClient(t *testing.T) {
 	}
 }
 
-// TestHandleMetadataIssuerMatchesPrefix: RFC 8414 requires the issuer to
-// align with the well-known URL path. We serve at /{slug}/.well-known/... ,
-// so issuer must be baseURL + "/" + slug.
+// TestHandleMetadataIssuerMatchesPrefix: RFC 8414 issuer must be
+// baseURL + "/" + slug so it aligns with the served metadata URL
+// (/.well-known/oauth-authorization-server/{slug}).
 func TestHandleMetadataIssuerMatchesPrefix(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()

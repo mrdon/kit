@@ -72,11 +72,38 @@ func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecre
 	}
 }
 
+// HandleResourceMetadata serves RFC 9728 Protected Resource Metadata for the
+// path-resolved tenant's MCP endpoint. The MCP auth spec uses this document
+// as the entry point for authorization discovery — clients read the
+// `authorization_servers` field to locate the auth server metadata URL.
+//
+// Served at `/.well-known/oauth-protected-resource/{slug}/mcp` (RFC 9728
+// path-insertion form — the well-known prefix sits at the root of the
+// origin with the resource's path appended).
+func (s *OAuthServer) HandleResourceMetadata(w http.ResponseWriter, r *http.Request) {
+	tenant := TenantFromContext(r.Context())
+	if tenant == nil {
+		http.NotFound(w, r)
+		return
+	}
+	prefix := s.baseURL + "/" + tenant.Slug
+	meta := map[string]any{
+		"resource":                 prefix + "/mcp",
+		"authorization_servers":    []string{prefix},
+		"bearer_methods_supported": []string{"header"},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(meta)
+}
+
 // HandleMetadata serves RFC 8414 OAuth Authorization Server Metadata for
-// the path-resolved tenant. The `issuer` field is path-prefix-aligned
-// (baseURL + "/" + slug) because RFC 8414 §3 requires the well-known URL
-// to be `issuer + /.well-known/oauth-authorization-server`, and some MCP
-// clients normalize via issuer.
+// the path-resolved tenant. Per RFC 8414 §3, for an issuer with a path
+// component (e.g. `https://host/{slug}`) the metadata URL is constructed by
+// inserting `/.well-known/oauth-authorization-server/` right after the host
+// and appending the issuer's path — so the actual route is
+// `/.well-known/oauth-authorization-server/{slug}`. The `issuer` field
+// advertised here is still `baseURL + "/" + slug` so clients can verify
+// the issuer matches what they expect.
 func (s *OAuthServer) HandleMetadata(w http.ResponseWriter, r *http.Request) {
 	tenant := TenantFromContext(r.Context())
 	if tenant == nil {
