@@ -7,11 +7,14 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 )
 
-// handleManifest returns the per-workspace PWA manifest. Uniform name
-// ("Kit") across workspaces so the manifest does not leak tenant
-// existence or display name to unauthenticated callers — Android still
-// differentiates installs by the slug-keyed `id` / `start_url` / `scope`
-// trio.
+// handleManifest returns the per-workspace PWA manifest. Each install
+// uses the workspace's Slack name as its label so multiple installed
+// PWAs are distinguishable on the home screen. The tradeoff: the
+// manifest now leaks the tenant display name to anyone who can guess or
+// discover the slug. The slug is already public (it's in the URL) and
+// the icon endpoint serves the Slack team icon, so an adversary who
+// enumerates slugs already learns about as much from the icon as from
+// the name — the incremental leak is small relative to the UX win.
 //
 // Requires TenantFromPath to have resolved the slug earlier in the chain;
 // if it wasn't (misrouted), returns 500.
@@ -22,12 +25,16 @@ func handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := tenant.Slug
+	displayName := tenant.Name
+	if displayName == "" {
+		displayName = slug
+	}
 	w.Header().Set("Content-Type", "application/manifest+json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id":               "/" + slug + "/",
-		"name":             "Kit",
-		"short_name":       "Kit",
+		"name":             displayName,
+		"short_name":       displayName,
 		"start_url":        "/" + slug + "/",
 		"scope":            "/" + slug + "/",
 		"display":          "standalone",
