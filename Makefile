@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean monty-wasm
 
 # Default target
 help: ## Show this help message
@@ -134,6 +134,22 @@ dev: up build ## Start Postgres + hot reload (requires air)
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."
 	@docker build -t $(BINARY_NAME) .
+
+# monty.wasm is committed to the tree so normal builds and CI don't need a
+# Rust toolchain. Rerun this manually when bumping the upstream monty version.
+MONTY_SRC_DIR=third_party/monty-wasm
+MONTY_WASM_DST=internal/apps/builder/runtime/monty.wasm
+
+monty-wasm: ## Rebuild monty.wasm via Docker and commit it
+	@echo "Building monty.wasm..."
+	@docker buildx build \
+		--file $(MONTY_SRC_DIR)/Dockerfile \
+		--output type=local,dest=$(MONTY_SRC_DIR)/out \
+		--target export \
+		$(MONTY_SRC_DIR)
+	@mv $(MONTY_SRC_DIR)/out/monty.wasm $(MONTY_WASM_DST)
+	@rmdir $(MONTY_SRC_DIR)/out
+	@echo "Built: $(MONTY_WASM_DST) ($$(du -h $(MONTY_WASM_DST) | cut -f1))"
 
 # Module management
 deps: ## Download dependencies

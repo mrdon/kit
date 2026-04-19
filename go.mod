@@ -1,6 +1,6 @@
 module github.com/mrdon/kit
 
-go 1.25.0
+go 1.25.1
 
 require (
 	codeberg.org/readeck/go-readability v0.0.0-20251125211941-0f57a445e5f1
@@ -12,6 +12,7 @@ require (
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/tetratelabs/wazero v1.11.0
 	golang.org/x/image v0.39.0
 )
 
@@ -35,5 +36,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 )
