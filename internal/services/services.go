@@ -16,9 +16,9 @@ import (
 type Caller struct {
 	TenantID uuid.UUID
 	UserID   uuid.UUID
-	Identity string      // scope_value for user-scoped items (slack_user_id or MCP identity)
-	Roles    []string    // role names the user holds (legacy: used by ScopeFilter)
-	RoleIDs  []uuid.UUID // role IDs the user holds (used by ScopeFilterIDs / scopes table)
+	Identity string      // slack_user_id (or MCP identity); used for Slack DM ops + audit attribution
+	Roles    []string    // role names the user holds (display + permission checks by name)
+	RoleIDs  []uuid.UUID // role IDs the user holds (used by scope-table joins)
 	IsAdmin  bool
 	// Timezone is the IANA tz of the caller, resolved as user.Timezone with
 	// fallback to tenant.Timezone, then "UTC". Always populated.
