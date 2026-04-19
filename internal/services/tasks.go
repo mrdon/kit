@@ -34,29 +34,31 @@ type TaskService struct {
 }
 
 // Create creates a scheduled task with scope resolution.
+// scope: "user" (default), "tenant" (admin only), or a role name.
 func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronExpr, timezone, channelID, scope string, runOnce bool, runAt *time.Time) (*models.Task, error) {
 	if scope == "" {
 		scope = string(models.ScopeTypeUser)
 	}
-	scopeType := models.ScopeTypeUser
-	scopeValue := c.Identity
+	var roleID, userID *uuid.UUID
 	switch scope {
 	case string(models.ScopeTypeUser):
-		// defaults above
+		userID = &c.UserID
 	case string(models.ScopeTypeTenant):
 		if !c.IsAdmin {
 			return nil, ErrForbidden
 		}
-		scopeType = models.ScopeTypeTenant
-		scopeValue = models.ScopeValueAll
+		// roleID and userID stay nil → tenant-wide
 	default:
 		if !c.IsAdmin && !hasRole(c, scope) {
 			return nil, ErrForbidden
 		}
-		scopeType = models.ScopeTypeRole
-		scopeValue = scope
+		rid, _, err := resolveScopeTarget(ctx, s.pool, c.TenantID, string(models.ScopeTypeRole), scope)
+		if err != nil {
+			return nil, err
+		}
+		roleID = rid
 	}
-	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, runOnce, runAt, scopeType, scopeValue)
+	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, runOnce, runAt, roleID, userID)
 }
 
 // List returns tasks visible to the caller. Admins see all tenant tasks.
@@ -64,13 +66,13 @@ func (s *TaskService) List(ctx context.Context, c *Caller) ([]models.Task, error
 	if c.IsAdmin {
 		return models.ListAllTenantTasks(ctx, s.pool, c.TenantID)
 	}
-	return models.ListTasksForContext(ctx, s.pool, c.TenantID, c.Identity, c.Roles)
+	return models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 }
 
 // Update updates a task's description. Admins can update any; non-admins only their visible tasks.
 func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, description string) error {
 	if !c.IsAdmin {
-		visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.Identity, c.Roles)
+		visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 		if err != nil {
 			return fmt.Errorf("listing visible tasks: %w", err)
 		}
@@ -101,7 +103,7 @@ func (s *TaskService) Delete(ctx context.Context, c *Caller, taskID uuid.UUID) e
 		return models.DeleteTask(ctx, s.pool, c.TenantID, taskID)
 	}
 	// Non-admin: check task is visible via scope filtering
-	visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.Identity, c.Roles)
+	visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 	if err != nil {
 		return fmt.Errorf("listing visible tasks: %w", err)
 	}

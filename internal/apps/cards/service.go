@@ -255,13 +255,13 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 			return nil, fmt.Errorf("opening DM channel: %w", err)
 		}
 		now := time.Now()
-		scopeType, scopeValue := pickTaskScope(c)
+		roleID, userID := pickTaskScope(c)
 		task, err := models.CreateTaskTx(
 			ctx, tx,
 			c.TenantID, c.UserID,
 			opt.Prompt, "", "UTC", dmChannel,
 			true, &now,
-			scopeType, scopeValue,
+			roleID, userID,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("queuing agent task: %w", err)
@@ -285,11 +285,11 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 }
 
 // pickTaskScope chooses the scope row attached to the agent task. A
-// user-scoped task matches the caller's identity — the task is only
+// user-scoped task matches the caller's UserID — the task is only
 // visible/listable to them. Good enough for MVP; could later mirror the
 // card's scope rows.
-func pickTaskScope(c *services.Caller) (models.ScopeType, string) {
-	return models.ScopeTypeUser, c.Identity
+func pickTaskScope(c *services.Caller) (roleID, userID *uuid.UUID) {
+	return nil, &c.UserID
 }
 
 // AckBriefing transitions a briefing card to a terminal state. Caller must

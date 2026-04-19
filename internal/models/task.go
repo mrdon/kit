@@ -67,14 +67,15 @@ func NextCronRun(cronExpr, tz string, after time.Time) (time.Time, error) {
 
 // CreateTask creates a scheduled task with a scope row in its own transaction.
 // For recurring tasks, provide cronExpr. For one-time tasks, provide runAt and set runOnce=true.
-func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, scopeType ScopeType, scopeValue string) (*Task, error) {
+// roleID/userID identify the scope target (both nil = tenant-wide).
+func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, roleID, userID *uuid.UUID) (*Task, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	task, err := CreateTaskTx(ctx, tx, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, runAt, scopeType, scopeValue)
+	task, err := CreateTaskTx(ctx, tx, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, runAt, roleID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 // CreateTaskTx inserts a task and its scope row into the supplied transaction.
 // The caller is responsible for Begin / Commit / Rollback. Use this when task
 // creation must be atomic with other writes (e.g. resolving a decision card).
-func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, scopeType ScopeType, scopeValue string) (*Task, error) {
+func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, roleID, userID *uuid.UUID) (*Task, error) {
 	var nextRun time.Time
 	if runOnce && runAt != nil {
 		nextRun = runAt.UTC()
@@ -113,10 +114,15 @@ func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID,
 		return nil, fmt.Errorf("creating task: %w", err)
 	}
 
+	scopeID, err := getOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get-or-create scope: %w", err)
+	}
+
 	_, err = tx.Exec(ctx, `
-		INSERT INTO task_scopes (tenant_id, task_id, scope_type, scope_value)
-		VALUES ($1, $2, $3, $4)
-	`, tenantID, taskID, scopeType, scopeValue)
+		INSERT INTO task_scopes (tenant_id, task_id, scope_id)
+		VALUES ($1, $2, $3)
+	`, tenantID, taskID, scopeID)
 	if err != nil {
 		return nil, fmt.Errorf("creating task scope: %w", err)
 	}
@@ -158,14 +164,15 @@ func getTaskRow(ctx context.Context, q taskRowQuerier, tenantID, taskID uuid.UUI
 }
 
 // ListTasksForContext returns tasks visible to the user via scope filtering.
-func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string, roleNames []string) ([]Task, error) {
-	scopeSQL, scopeArgs := ScopeFilter("ts", 2, slackUserID, roleNames)
+func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID) ([]Task, error) {
+	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone,
 			t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.resume_session_id, t.created_at
 		FROM tasks t
 		JOIN task_scopes ts ON ts.task_id = t.id AND ts.tenant_id = t.tenant_id
+		JOIN scopes sc ON sc.id = ts.scope_id
 		WHERE t.tenant_id = $1
 		AND (`+scopeSQL+`)
 		ORDER BY t.created_at
