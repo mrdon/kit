@@ -124,8 +124,8 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasPrefix(stateParam, pwaStatePrefix) {
-		s.handlePWACallback(w, r, code)
+	if nonce, ok := strings.CutPrefix(stateParam, pwaStatePrefix); ok {
+		s.handlePWACallback(w, r, code, nonce)
 		return
 	}
 
@@ -183,10 +183,23 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 // handlePWACallback is the session-cookie branch of HandleCallback —
 // exchanges the Slack code, looks up the Kit user, and issues a session
-// cookie via s.signer.
-func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, code string) {
+// cookie scoped to the resolved workspace slug. The caller has already
+// stripped "pwa:" from the state param; what remains is the nonce that
+// must match the __Host-kit_pwa_oauth cookie the browser received at
+// /{slug}/login.
+//
+// The redirect target is derived from the tenant the Slack team_id
+// resolves to, not from any caller-supplied string. If the user signed
+// into a different Slack workspace than the /{slug}/login they started
+// from, they silently land on the correct workspace's URL.
+func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, code, nonce string) {
 	if s.signer == nil {
 		http.Error(w, "session signer not configured", http.StatusInternalServerError)
+		return
+	}
+	if err := VerifyAndClearPWAOAuthNonce(w, r, nonce); err != nil {
+		slog.Warn("pwa oauth nonce mismatch", "err", err)
+		http.Error(w, "invalid oauth state", http.StatusForbidden)
 		return
 	}
 	ident, err := ExchangeSlackCode(r.Context(), SlackOpenIDConfig{ClientID: s.clientID, ClientSecret: s.clientSecret}, code, s.baseURL+"/oauth/callback")
@@ -205,12 +218,18 @@ func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "user not found — message Kit in Slack first to create your account", http.StatusNotFound)
 		return
 	}
-	if err := s.signer.Issue(r.Context(), w, s.pool, tenant.ID, user.ID); err != nil {
+	if !models.IsValidSlug(tenant.Slug) {
+		slog.Error("tenant has invalid slug — refusing redirect", "tenant_id", tenant.ID, "slug", tenant.Slug)
+		http.Error(w, "tenant misconfigured", http.StatusInternalServerError)
+		return
+	}
+	cookiePath := "/" + tenant.Slug + "/"
+	if err := s.signer.Issue(r.Context(), w, s.pool, tenant.ID, user.ID, cookiePath); err != nil {
 		slog.Error("issuing pwa session", "error", err)
 		http.Error(w, "issuing session", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
+	http.Redirect(w, r, cookiePath, http.StatusSeeOther)
 }
 
 // HandleToken exchanges an authorization code for an access token.

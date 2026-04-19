@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { api } from '../api';
 import { readSSE } from '../sse';
+import { BASENAME } from '../workspace';
 import { ChatEvent, ChatStatus, type ChatStatusType } from './events';
 import { parseEventData } from './parse';
 
@@ -61,7 +62,7 @@ export function useChatStream(card: CardRef, onDone?: () => void): UseChatStream
         if (resp.status === 401) {
           // The regular api.j() handles this for JSON calls; do it
           // manually for streams.
-          window.location.href = '/app/login';
+          window.location.href = BASENAME + '/login';
           return;
         }
         if (!resp.ok) {

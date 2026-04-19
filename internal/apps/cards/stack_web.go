@@ -28,23 +28,31 @@ const defaultGlobalLimit = 100
 
 // registerStackRoutes wires the generic, provider-agnostic stack endpoints.
 // The cards app owns the mux because it was already the PWA's host.
+//
+// All routes live under /{slug}/api/v1/... so the workspace-scoped
+// session cookie (Path=/{slug}/) is sent with them. The middleware
+// chain runs TenantFromPath first (rejecting unknown slugs with 404),
+// then the session middleware, then AssertTenantMatch (which 403s if
+// caller.TenantID differs from the path tenant — defense in depth
+// against session-tenant-vs-URL-tenant mismatches).
 func registerStackRoutes(mux *http.ServeMux, a *CardsApp) {
 	if a.signer == nil {
 		return
 	}
+	tenantMW := auth.TenantFromPath(a.pool)
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return requireJSON(a.signer.Middleware(a.pool, requireCallerHandler(h)))
+		return tenantMW(requireJSON(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
 	}
 	// Chat transcribe takes multipart audio, so it uses the custom
 	// header CSRF wrapper instead of requireJSON.
 	wrapCSRF := func(h http.HandlerFunc) http.Handler {
-		return requireCSRFHeader(a.signer.Middleware(a.pool, requireCallerHandler(h)))
+		return tenantMW(requireCSRFHeader(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
 	}
-	mux.Handle("GET /api/v1/stack", wrap(handleStackList))
-	mux.Handle("GET /api/v1/stack/items/{source_app}/{kind}/{id}", wrap(handleStackItemDetail))
-	mux.Handle("POST /api/v1/stack/items/{source_app}/{kind}/{id}/action", wrap(handleStackItemAction))
-	mux.Handle("POST /api/v1/stack/items/{source_app}/{kind}/{id}/chat/transcribe", wrapCSRF(a.handleChatTranscribe))
-	mux.Handle("POST /api/v1/stack/items/{source_app}/{kind}/{id}/chat/execute", wrap(a.handleChatExecute))
+	mux.Handle("GET /{slug}/api/v1/stack", wrap(handleStackList))
+	mux.Handle("GET /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}", wrap(handleStackItemDetail))
+	mux.Handle("POST /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}/action", wrap(handleStackItemAction))
+	mux.Handle("POST /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}/chat/transcribe", wrapCSRF(a.handleChatTranscribe))
+	mux.Handle("POST /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}/chat/execute", wrap(a.handleChatExecute))
 }
 
 // stackResponse is the wire type for GET /api/v1/stack.

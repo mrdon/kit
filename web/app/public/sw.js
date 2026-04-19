@@ -1,18 +1,26 @@
 // Minimal app-shell service worker.
 //
-// Caching strategy:
-//   - Navigation requests (the HTML entry) are network-first with
-//     a cache fallback. Deploys take effect on the next refresh
-//     instead of requiring several to flush stale-while-revalidate.
-//   - Hashed assets (index-*.js, index-*.css, etc.) are cache-first
-//     forever — vite's content-hash filenames mean a new build
-//     produces new URLs, so stale content is impossible.
-//   - API + auth routes are never touched.
+// Each workspace PWA install has its own scope (/{slug}/) and its own
+// cache namespace keyed on that scope — two installs on the same device
+// cannot share cached bytes across workspaces.
 //
-// No offline write queue yet.
+// Caching strategy:
+//   - Workspace HTML (the entry + SPA fallback under /{slug}/...) is
+//     network-first with a cache fallback. Deploys take effect on the
+//     next refresh instead of requiring several to flush.
+//   - The shared hashed bundle at /app/assets/... is cache-first —
+//     Vite's content-hash filenames make the URLs effectively immutable.
+//   - API routes are never touched: they are authenticated and tenant
+//     scoped, and any cached response would leak across users or
+//     workspaces.
 
-const CACHE = 'kit-app-v2';
-const SHELL = ['/app/', '/app/manifest.webmanifest', '/app/icon.svg'];
+// SCOPE is the path prefix this SW registration covers, e.g.
+// "/gravity-brewing/". Derived from registration.scope so the same SW
+// source works for every workspace.
+const SCOPE_URL = new URL(self.registration.scope);
+const SCOPE = SCOPE_URL.pathname; // trailing slash included
+const CACHE = 'kit' + SCOPE + 'v3';
+const SHELL = [SCOPE, SCOPE + 'manifest.webmanifest', SCOPE + 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
@@ -31,26 +39,29 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // Never cache API or login routes.
-  if (
-    url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/app/login') ||
-    url.pathname.startsWith('/app/callback') ||
-    url.pathname.startsWith('/app/dev-login')
-  ) {
-    return;
-  }
-  if (!url.pathname.startsWith('/app/')) return;
+  // Never cache authenticated API routes. After the /{slug}/ migration
+  // these live under /{slug}/api/v1/... — the literal "/api/v1/"
+  // substring match catches them regardless of workspace prefix.
+  if (url.pathname.includes('/api/v1/')) return;
+  // Never cache login / OAuth handoffs.
+  if (url.pathname.endsWith('/login')) return;
+  if (url.pathname.endsWith('/dev-login')) return;
+  if (url.pathname.startsWith('/oauth/')) return;
+
   if (e.request.method !== 'GET') return;
+
+  const inScope = url.pathname.startsWith(SCOPE);
+  const isSharedBundle = url.pathname.startsWith('/app/assets/');
+  if (!inScope && !isSharedBundle) return;
 
   const isNavigation =
     e.request.mode === 'navigate' ||
-    url.pathname === '/app/' ||
-    url.pathname === '/app' ||
+    url.pathname === SCOPE ||
+    url.pathname === SCOPE.replace(/\/$/, '') ||
     url.pathname.endsWith('.html');
 
   if (isNavigation) {
-    // Network-first: always try for a fresh HTML so a new deploy's
+    // Network-first: always try for fresh HTML so a new deploy's
     // assets get discovered on the next refresh. Fall back to cache
     // only if offline.
     e.respondWith(
@@ -62,14 +73,14 @@ self.addEventListener('fetch', (e) => {
           }
           return resp;
         })
-        .catch(() => caches.match(e.request).then((cached) => cached || Response.error())),
+        .catch(() =>
+          caches.match(e.request).then((cached) => cached || Response.error()),
+        ),
     );
     return;
   }
 
-  // Everything else under /app/ (hashed JS/CSS/images) is
-  // cache-first. Hashed filenames make these effectively immutable,
-  // so serving from cache forever is correct and fast.
+  // Hashed bundle + static per-workspace assets: cache-first.
   e.respondWith(
     caches.match(e.request).then((cached) => {
       if (cached) return cached;

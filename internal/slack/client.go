@@ -392,6 +392,26 @@ func (c *Client) AuthTest(ctx context.Context) (teamID, botUserID string, err er
 	return teamID, botUserID, nil
 }
 
+// TeamInfo wraps team.info. Returns (domain, largeIconURL, smallIconURL).
+// Slack's largest icon is image_230; we also return image_132 for the
+// smaller manifest slot. Either URL may be empty if the workspace uses
+// Slack's default gradient avatar.
+func (c *Client) TeamInfo(ctx context.Context) (domain, iconLargeURL, iconSmallURL string, err error) {
+	resp, err := c.apiCall(ctx, "team.info", map[string]string{})
+	if err != nil {
+		return "", "", "", err
+	}
+	team, _ := resp["team"].(map[string]any)
+	domain, _ = team["domain"].(string)
+	if icon, ok := team["icon"].(map[string]any); ok {
+		if isDefault, _ := icon["image_default"].(bool); !isDefault {
+			iconLargeURL, _ = icon["image_230"].(string)
+			iconSmallURL, _ = icon["image_132"].(string)
+		}
+	}
+	return domain, iconLargeURL, iconSmallURL, nil
+}
+
 func (c *Client) apiFormCall(ctx context.Context, method string, params map[string]string) (map[string]any, error) {
 	form := make(url.Values)
 	for k, v := range params {

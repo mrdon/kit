@@ -3,8 +3,8 @@
 package app
 
 import (
+	"bytes"
 	"embed"
-	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -13,64 +13,80 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// Handler serves the embedded PWA with SPA fallback — paths without a file
-// extension that don't exist on disk get index.html so client-side routing
-// works (react-router is configured with basename=/app).
-//
-// If the frontend hasn't been built yet, returns a 503 handler with a hint
-// to run `make app-build`. That keeps `go build` working in fresh clones
-// without requiring node.
-//
-// We don't use http.FileServer because it auto-redirects "*/index.html"
-// to "*/" which breaks client-side route fallback. Directly serving bytes
-// is simpler here.
-func Handler() http.Handler {
-	sub, err := fs.Sub(distFS, "dist")
-	if err != nil {
-		return placeholder()
-	}
-	indexBytes, err := fs.ReadFile(sub, "index.html")
+// basePlaceholder is a literal in web/app/index.html that the server
+// rewrites to the per-workspace prefix at serve time. Vite-emitted tags
+// keep their absolute /app/assets/... paths (shared bundle); the places
+// that need to be workspace-scoped (manifest + icon links) use this token.
+const basePlaceholder = "__KIT_BASE__"
+
+// AssetHandler serves the shared PWA bundle under /app/assets/*. This
+// does NOT cover the HTML entry point or any per-workspace artifacts —
+// those are routed via /{slug}/... in internal/apps/cards/web.go.
+func AssetHandler() http.Handler {
+	sub, err := distSubFS()
 	if err != nil {
 		return placeholder()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Strip "/app" prefix to get the path inside dist/.
-		clean := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/app"), "/")
-		if clean == "" {
-			writeIndex(w, indexBytes)
+		clean := strings.TrimPrefix(r.URL.Path, "/app/")
+		if clean == "" || strings.HasSuffix(clean, "/") {
+			http.NotFound(w, r)
 			return
 		}
-		// Try to open the requested file. If it doesn't exist and the path
-		// doesn't look like an asset (no extension), fall back to index.
 		f, err := sub.Open(clean)
 		if err != nil {
-			if !looksLikeAsset(clean) {
-				writeIndex(w, indexBytes)
-				return
-			}
 			http.NotFound(w, r)
 			return
 		}
 		defer f.Close()
 		stat, err := f.Stat()
 		if err != nil || stat.IsDir() {
-			writeIndex(w, indexBytes)
+			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", contentType(clean))
-		_, _ = io.Copy(w, f)
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		body, err := fs.ReadFile(sub, clean)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(body)
 	})
 }
 
-func writeIndex(w http.ResponseWriter, body []byte) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = w.Write(body)
+// IndexHTML returns the PWA entry-point HTML with the per-workspace slug
+// substituted into manifest + icon links. Same bytes for every request
+// under /{slug}/ except for the slug; the shared JS/CSS bundle lives at
+// /app/assets/ and is referenced absolutely by the Vite build.
+func IndexHTML(slug string) ([]byte, error) {
+	sub, err := distSubFS()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		return nil, err
+	}
+	return bytes.ReplaceAll(raw, []byte(basePlaceholder), []byte("/"+slug)), nil
 }
 
-// contentType picks a Content-Type by file extension. We keep this tiny
-// instead of importing mime because the PWA only produces a handful of
-// asset types.
+// StaticFile returns a raw file from the PWA dist directory. Used for
+// the service worker, the default Kit icon, and any other static asset
+// that needs to be served from a workspace-scoped URL.
+func StaticFile(name string) ([]byte, error) {
+	sub, err := distSubFS()
+	if err != nil {
+		return nil, err
+	}
+	return fs.ReadFile(sub, name)
+}
+
+func distSubFS() (fs.FS, error) {
+	return fs.Sub(distFS, "dist")
+}
+
+// contentType picks a Content-Type by file extension.
 func contentType(name string) string {
 	switch {
 	case strings.HasSuffix(name, ".html"):
@@ -90,14 +106,9 @@ func contentType(name string) string {
 	}
 }
 
-// looksLikeAsset returns true if the path looks like a file (has an
-// extension in the final segment). Used to avoid sending index.html for
-// requests that are clearly for static assets.
-func looksLikeAsset(p string) bool {
-	slash := strings.LastIndex(p, "/")
-	dot := strings.LastIndex(p, ".")
-	return dot > slash
-}
+// ContentTypeFor is the exported form of contentType — used by handlers
+// outside this package that need to echo the right media type.
+func ContentTypeFor(name string) string { return contentType(name) }
 
 func placeholder() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

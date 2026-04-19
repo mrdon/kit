@@ -22,7 +22,8 @@ func TestSkillRoleScoping(t *testing.T) {
 
 	// Isolated tenant per run.
 	teamID := "T_test_scope_" + uuid.NewString()
-	tenant, err := models.UpsertTenant(ctx, pool, teamID, "scope-test", "encrypted-placeholder")
+	slug := models.SanitizeSlug("test-scope-"+uuid.NewString(), teamID)
+	tenant, err := models.UpsertTenant(ctx, pool, teamID, "scope-test", "encrypted-placeholder", slug, nil, nil)
 	if err != nil {
 		t.Fatalf("creating tenant: %v", err)
 	}

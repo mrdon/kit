@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { readSSE } from '../sse';
+import { BASENAME } from '../workspace';
 import { ChatEvent } from './events';
 import { parseEventData } from './parse';
 
@@ -125,7 +126,7 @@ export function useVoiceRecorder(card: CardRef): UseVoiceRecorder {
     try {
       const resp = await api.chatTranscribe(card.sourceApp, card.kind, card.id, blob);
       if (resp.status === 401) {
-        window.location.href = '/app/login';
+        window.location.href = BASENAME + '/login';
         return '';
       }
       if (!resp.ok) {

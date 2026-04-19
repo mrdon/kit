@@ -1,25 +1,22 @@
 package cards
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	webapp "github.com/mrdon/kit/web/app"
 )
 
-// registerCardsRoutes wires the PWA endpoints and the dev login. The
-// actual /api/v1/stack* handlers live in stack_web.go — they dispatch
-// across all registered CardProviders rather than being cards-specific.
+// registerCardsRoutes wires all PWA HTTP routes. Workspace-scoped routes
+// under /{slug}/... require TenantFromPath to resolve the tenant first;
+// authenticated routes add session middleware + AssertTenantMatch on top.
+//
+// The /app/assets/ prefix serves the shared Vite bundle (absolute asset
+// paths baked into the build). Everything else moved under /{slug}/.
 func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
 	if a.signer == nil {
 		slog.Warn("cards: session signer not configured, skipping HTTP route registration")
@@ -28,42 +25,137 @@ func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
 
 	registerStackRoutes(mux, a)
 
+	// Shared bundle — one copy serves every workspace.
+	mux.Handle("GET /app/assets/", webapp.AssetHandler())
+
+	tenantMW := auth.TenantFromPath(a.pool)
+
+	// Per-workspace public endpoints (no session required).
+	mux.Handle("GET /{slug}/", tenantMW(http.HandlerFunc(handleSPA)))
+	mux.Handle("GET /{slug}/manifest.webmanifest", tenantMW(http.HandlerFunc(handleManifest)))
+	mux.Handle("GET /{slug}/icon.svg", tenantMW(http.HandlerFunc(handleIconSVG)))
+	mux.Handle("GET /{slug}/icon-192.png", tenantMW(http.HandlerFunc(handleIconPNG192)))
+	mux.Handle("GET /{slug}/icon-512.png", tenantMW(http.HandlerFunc(handleIconPNG512)))
+	mux.Handle("GET /{slug}/sw.js", tenantMW(http.HandlerFunc(handleServiceWorker)))
+
+	// SPA fallback for client-side routes like /{slug}/stack/{...}.
+	mux.Handle("GET /{slug}/stack/", tenantMW(http.HandlerFunc(handleSPA)))
+
 	if a.devMode {
-		mux.HandleFunc("GET /app/dev-login", a.handleDevLogin)
-		slog.Warn("cards: /app/dev-login is enabled (KIT_ENV=dev)")
+		mux.Handle("GET /{slug}/dev-login", tenantMW(http.HandlerFunc(a.handleDevLogin)))
+		slog.Warn("cards: /{slug}/dev-login is enabled (KIT_ENV=dev)")
 	}
 
-	// Real sign-in via Slack OpenID. Only registered if client creds are set.
-	// The callback reuses the MCP /oauth/callback endpoint — same redirect
-	// URI registered with the Slack app. The OAuthServer dispatches to
-	// PWA-cookie issuance when state starts with "pwa:".
 	if a.slack.ClientID != "" && a.slack.ClientSecret != "" {
-		mux.HandleFunc("GET /app/login", a.handleLogin)
+		mux.Handle("GET /{slug}/login", tenantMW(http.HandlerFunc(a.handleLogin)))
 	} else {
-		slog.Warn("cards: Slack client creds not set — /app/login disabled; use /app/dev-login in dev or bearer tokens")
+		slog.Warn("cards: Slack client creds not set — /{slug}/login disabled; use /{slug}/dev-login in dev or bearer tokens")
 	}
-
-	// Serve the PWA at /app/. SPA fallback is handled inside webapp.Handler.
-	mux.Handle("GET /app/", webapp.Handler())
 }
 
-// handleLogin starts the PWA Slack OpenID flow. The state carries a
-// "pwa:" prefix + high-entropy nonce so the shared /oauth/callback
-// handler can tell it apart from the MCP OAuth flow and issue a session
-// cookie instead of an OAuth code.
+// handleSPA serves the PWA HTML with per-workspace asset substitutions.
+func handleSPA(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	body, err := webapp.IndexHTML(tenant.Slug)
+	if err != nil {
+		http.Error(w, "PWA not built", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(body)
+}
+
+// handleIconSVG serves the shared Kit logo for favicons / apple-touch-icon.
+// Not per-workspace — Android uses the PNG icons from the manifest for
+// the home-screen identity; this is just a browser-tab favicon.
+func handleIconSVG(w http.ResponseWriter, _ *http.Request) {
+	body, err := webapp.StaticFile("icon.svg")
+	if err != nil {
+		http.NotFound(w, nil)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(body)
+}
+
+func handleIconPNG192(w http.ResponseWriter, r *http.Request) { serveTenantIcon(w, r, 192) }
+func handleIconPNG512(w http.ResponseWriter, r *http.Request) { serveTenantIcon(w, r, 512) }
+
+// serveTenantIcon returns the cached Slack team icon for this workspace
+// at the requested manifest size slot. Falls back to the default Kit SVG
+// if no PNG was captured at install (e.g. workspace uses Slack's default
+// gradient avatar).
+func serveTenantIcon(w http.ResponseWriter, r *http.Request, size int) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	var body []byte
+	switch size {
+	case 192:
+		body = tenant.Icon192
+	case 512:
+		body = tenant.Icon512
+	}
+	if len(body) > 0 {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(body)
+		return
+	}
+	// Fallback: SVG logo re-served as the icon. Manifest declares PNG,
+	// but Firefox will attempt to render whatever bytes come back; for
+	// install UX this beats a broken-image icon.
+	svg, err := webapp.StaticFile("icon.svg")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(svg)
+}
+
+// handleServiceWorker returns the shared SW bytes. Scope is implied by
+// the URL path — registering from /{slug}/sw.js limits the SW to the
+// /{slug}/ path (see web/app/public/sw.js for the slug-derivation
+// logic that keys per-scope caches off self.registration.scope).
+func handleServiceWorker(w http.ResponseWriter, r *http.Request) {
+	body, err := webapp.StaticFile("sw.js")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// SW must not be cached aggressively — browsers re-fetch on each
+	// navigation to detect updates.
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(body)
+}
+
+// handleLogin starts the PWA Slack OpenID flow. A short-lived
+// __Host-kit_pwa_oauth cookie binds this browser to the state nonce so
+// the /oauth/callback handler can reject injected codes.
 func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	nonce, _, err := models.GenerateToken()
 	if err != nil {
 		http.Error(w, "nonce error", http.StatusInternalServerError)
 		return
 	}
+	auth.SetPWAOAuthNonce(w, nonce)
 	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce)
 	http.Redirect(w, r, slackURL, http.StatusFound)
 }
 
 // requireJSON rejects cross-origin simple-requests by insisting on
-// application/json for POSTs. GETs pass through. See auth/session.go for
-// the CSRF reasoning.
+// application/json for POSTs. GETs pass through.
 func requireJSON(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
@@ -77,10 +169,6 @@ func requireJSON(next http.Handler) http.Handler {
 	})
 }
 
-// csrfHeader is the custom header a non-JSON POST must set for us to
-// accept it. Custom headers take a request out of the CORS "simple
-// request" category, so browsers will preflight cross-origin calls and
-// same-origin calls from the PWA carry the header naturally.
 const csrfHeader = "X-Kit-Chat"
 
 // requireCSRFHeader enforces the X-Kit-Chat: 1 header on POSTs that
@@ -110,24 +198,20 @@ func requireCallerHandler(h http.HandlerFunc) http.Handler {
 	})
 }
 
-// handleDevLogin mints a session cookie for a named Slack user. Gated
-// behind devMode so it cannot run in production.
+// handleDevLogin mints a session cookie for the path-resolved tenant.
+// The Slack user ID is taken from ?user=; the tenant comes from the
+// path, so the old ?team= param is gone. Gated behind devMode.
 //
-// Usage: /app/dev-login?team=<slack_team_id>&user=<slack_user_id>
+// Usage: /<slug>/dev-login?user=<slack_user_id>
 func (a *CardsApp) handleDevLogin(w http.ResponseWriter, r *http.Request) {
-	teamID := r.URL.Query().Get("team")
-	userID := r.URL.Query().Get("user")
-	if teamID == "" || userID == "" {
-		http.Error(w, "missing ?team=<slack_team_id>&user=<slack_user_id>", http.StatusBadRequest)
-		return
-	}
-	tenant, err := findTenantBySlackTeam(r.Context(), a.pool, teamID)
-	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
-		http.Error(w, "no tenant with that slack team id", http.StatusNotFound)
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	userID := r.URL.Query().Get("user")
+	if userID == "" {
+		http.Error(w, "missing ?user=<slack_user_id>", http.StatusBadRequest)
 		return
 	}
 	user, err := models.GetUserBySlackID(r.Context(), a.pool, tenant.ID, userID)
@@ -139,26 +223,12 @@ func (a *CardsApp) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no user with that slack id — send Kit a message in Slack first", http.StatusNotFound)
 		return
 	}
-	if err := a.signer.Issue(r.Context(), w, a.pool, tenant.ID, user.ID); err != nil {
+	cookiePath := "/" + tenant.Slug + "/"
+	if err := a.signer.Issue(r.Context(), w, a.pool, tenant.ID, user.ID, cookiePath); err != nil {
 		http.Error(w, "issuing session: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/app/", http.StatusSeeOther)
-}
-
-// findTenantBySlackTeam looks up a tenant by its slack_team_id. Kept as a
-// private helper here to avoid adding a one-off to the models package for
-// now. Returns an error from pool.QueryRow; callers treat pgx.ErrNoRows
-// as "not found" via the nil tenant.
-func findTenantBySlackTeam(ctx context.Context, pool *pgxpool.Pool, slackTeamID string) (*models.Tenant, error) {
-	var id uuid.UUID
-	if err := pool.QueryRow(ctx, `SELECT id FROM tenants WHERE slack_team_id = $1`, slackTeamID).Scan(&id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil //nolint:nilnil // not found is fine here
-		}
-		return nil, err
-	}
-	return models.GetTenantByID(ctx, pool, id)
+	http.Redirect(w, r, cookiePath, http.StatusSeeOther)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

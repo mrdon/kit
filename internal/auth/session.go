@@ -46,20 +46,33 @@ type SessionSigner struct {
 
 // NewSessionSigner creates a signer from a raw secret string. Returns
 // ErrSessionMisconfigured if the secret is empty. The input is SHA256'd
-// with a fixed purpose prefix ("kit-session-cookie-v1") so it is safe to
+// with a fixed purpose prefix ("kit-session-cookie-v2") so it is safe to
 // reuse existing high-entropy key material (e.g. ENCRYPTION_KEY) as the
 // source — a compromise of the derived HMAC key doesn't leak the source.
+//
+// The v2 prefix was bumped during the per-workspace PWA URL migration to
+// invalidate outstanding v1 cookies (they were issued at Path=/ and would
+// otherwise still be accepted under the new Path=/{slug}/ regime).
 func NewSessionSigner(secret string) (*SessionSigner, error) {
 	if strings.TrimSpace(secret) == "" {
 		return nil, ErrSessionMisconfigured
 	}
-	h := sha256.Sum256([]byte("kit-session-cookie-v1:" + secret))
+	h := sha256.Sum256([]byte("kit-session-cookie-v2:" + secret))
 	return &SessionSigner{key: h[:]}, nil
 }
 
 // Issue mints a new `api_tokens` row bound to (tenant, user) and writes a
-// signed session cookie pointing to it.
-func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, tenantID, userID uuid.UUID) error {
+// signed session cookie pointing to it. The cookie is scoped to `path`,
+// which callers should set to the workspace slug prefix (e.g.
+// "/gravity-brewing/") so two workspace installs maintain independent
+// sessions in the same browser.
+//
+// A second Set-Cookie with Path=/ and MaxAge=-1 is emitted alongside so
+// any stale root-scope cookie from before the migration is cleared.
+func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, tenantID, userID uuid.UUID, path string) error {
+	if path == "" {
+		path = "/"
+	}
 	raw, hash, err := models.GenerateToken()
 	if err != nil {
 		return fmt.Errorf("generating token: %w", err)
@@ -68,26 +81,41 @@ func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *
 	if err := models.CreateAPIToken(ctx, pool, tenantID, userID, hash, expiresAt); err != nil {
 		return fmt.Errorf("creating api token: %w", err)
 	}
-	cookie := &http.Cookie{
+	if path != "/" {
+		// Defensive clear of any lingering root-scope cookie from before
+		// the Path=/{slug}/ migration.
+		http.SetCookie(w, &http.Cookie{
+			Name:     SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    s.signValue(raw),
-		Path:     "/",
+		Path:     path,
 		Expires:  expiresAt,
 		MaxAge:   int(sessionMaxAge.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, cookie)
+	})
 	return nil
 }
 
-// Clear wipes the session cookie on the client.
-func (s *SessionSigner) Clear(w http.ResponseWriter) {
+// Clear wipes the session cookie on the client at the given path.
+func (s *SessionSigner) Clear(w http.ResponseWriter, path string) {
+	if path == "" {
+		path = "/"
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     path,
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   true,

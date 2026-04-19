@@ -29,6 +29,7 @@ var oauthScopes = []string{
 	"files:read",
 	"users:read",
 	"reactions:write",
+	"team:read",
 }
 
 // OAuthHandler manages the Slack OAuth install flow.
@@ -97,8 +98,26 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		teamName = resp.Team.ID
 	}
 
+	// Call team.info for the workspace domain (used as URL slug) and the
+	// custom workspace icon. Non-fatal: bad/default icons and failures
+	// fall back to the team-id-derived slug and NULL icons.
+	botClient := NewClient(resp.AccessToken)
+	domain, iconLargeURL, iconSmallURL, err := botClient.TeamInfo(ctx)
+	if err != nil {
+		slog.Warn("fetching team.info", "team_id", resp.Team.ID, "error", err)
+	}
+	slug := models.SanitizeSlug(domain, resp.Team.ID)
+	iconLarge, err := fetchSlackIcon(ctx, iconLargeURL)
+	if err != nil {
+		slog.Warn("fetching large team icon", "team_id", resp.Team.ID, "error", err)
+	}
+	iconSmall, err := fetchSlackIcon(ctx, iconSmallURL)
+	if err != nil {
+		slog.Warn("fetching small team icon", "team_id", resp.Team.ID, "error", err)
+	}
+
 	// Upsert tenant
-	tenant, err := models.UpsertTenant(ctx, h.pool, resp.Team.ID, teamName, encryptedToken)
+	tenant, err := models.UpsertTenant(ctx, h.pool, resp.Team.ID, teamName, encryptedToken, slug, iconSmall, iconLarge)
 	if err != nil {
 		slog.Error("upserting tenant", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -117,7 +136,6 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Create admin user (the person who installed) — fetch name from Slack
 	adminName := ""
-	botClient := NewClient(resp.AccessToken)
 	if info, err := botClient.GetUserInfo(ctx, resp.AuthedUser.ID); err == nil {
 		adminName = info.DisplayName
 	}
@@ -139,8 +157,7 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		go h.onInstall(context.Background(), tenant, resp.AuthedUser.ID)
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, `<html><body><h1>Kit installed!</h1><p>Check your Slack DMs to get started.</p></body></html>`)
+	http.Redirect(w, r, "/"+tenant.Slug+"/", http.StatusSeeOther)
 }
 
 type oauthResponse struct {

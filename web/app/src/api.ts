@@ -3,11 +3,12 @@ import type {
   DetailResponse,
   StackResponse,
 } from './types';
+import { BASENAME } from './workspace';
 
 async function j<T>(r: Response): Promise<T> {
   if (r.status === 401) {
     // Session missing/expired — bounce to Slack OpenID login.
-    window.location.href = '/app/login';
+    window.location.href = BASENAME + '/login';
     // Throw so awaiting callers don't try to parse a body that won't arrive.
     throw new Error('redirecting to login');
   }
@@ -35,7 +36,7 @@ const post = (path: string, body?: unknown) =>
 const get = (path: string) => fetch(path, { credentials: 'same-origin' });
 
 const cardPath = (sourceApp: string, kind: string, id: string) =>
-  `/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`;
+  `${BASENAME}/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`;
 
 export const api = {
   stack: async (cursor?: string, limit?: number): Promise<StackResponse> => {
@@ -43,7 +44,7 @@ export const api = {
     if (cursor) params.set('cursor', cursor);
     if (limit) params.set('limit', String(limit));
     const qs = params.toString();
-    const r = await get(`/api/v1/stack${qs ? `?${qs}` : ''}`);
+    const r = await get(`${BASENAME}/api/v1/stack${qs ? `?${qs}` : ''}`);
     return j<StackResponse>(r);
   },
 
@@ -53,7 +54,7 @@ export const api = {
     id: string,
   ): Promise<DetailResponse<M>> => {
     const r = await get(
-      `/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+      `${BASENAME}/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
     );
     return j<DetailResponse<M>>(r);
   },
