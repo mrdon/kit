@@ -28,6 +28,11 @@ const (
 // Kit acts as both Authorization Server and Resource Server.
 // User identity is delegated to Slack via "Sign in with Slack".
 //
+// Endpoints live under /{slug}/ (metadata, authorize, token, register) so
+// each Slack workspace is its own authorization server with its own client
+// registrations. Slack's /oauth/callback is the one route that stays global
+// — the tenant slug rides inside the signed `state` parameter.
+//
 // The same /oauth/callback is reused by the PWA session-cookie flow:
 // when the `state` parameter starts with pwaStatePrefix, HandleCallback
 // issues a session cookie via the attached SessionSigner instead of a
@@ -38,6 +43,7 @@ type OAuthServer struct {
 	baseURL      string // e.g. "https://kit.example.com"
 	clientID     string // Slack app client ID
 	clientSecret string // Slack app client secret
+	stateKey     []byte // HMAC key for signing OAuth state
 	signer       *SessionSigner
 }
 
@@ -47,24 +53,42 @@ type OAuthServer struct {
 const pwaStatePrefix = "pwa:"
 
 // NewOAuthServer creates a new OAuth server. signer may be nil; if set,
-// PWA-prefixed callbacks mint a session cookie via it.
-func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecret string, signer *SessionSigner) *OAuthServer {
+// PWA-prefixed callbacks mint a session cookie via it. stateSecret is used
+// to derive the HMAC key for signing OAuth state; callers should pass the
+// same secret used for NewSessionSigner (e.g. ENCRYPTION_KEY). Panics if
+// stateSecret is empty — an empty key would let attackers forge state.
+func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecret, stateSecret string, signer *SessionSigner) *OAuthServer {
+	key := deriveStateKey(stateSecret)
+	if key == nil {
+		panic("oauth: stateSecret is empty — cannot sign OAuth state")
+	}
 	return &OAuthServer{
 		pool:         pool,
 		baseURL:      baseURL,
 		clientID:     slackClientID,
 		clientSecret: slackClientSecret,
+		stateKey:     key,
 		signer:       signer,
 	}
 }
 
-// HandleMetadata serves RFC 8414 OAuth Authorization Server Metadata.
-func (s *OAuthServer) HandleMetadata(w http.ResponseWriter, _ *http.Request) {
+// HandleMetadata serves RFC 8414 OAuth Authorization Server Metadata for
+// the path-resolved tenant. The `issuer` field is path-prefix-aligned
+// (baseURL + "/" + slug) because RFC 8414 §3 requires the well-known URL
+// to be `issuer + /.well-known/oauth-authorization-server`, and some MCP
+// clients normalize via issuer.
+func (s *OAuthServer) HandleMetadata(w http.ResponseWriter, r *http.Request) {
+	tenant := TenantFromContext(r.Context())
+	if tenant == nil {
+		http.NotFound(w, r)
+		return
+	}
+	prefix := s.baseURL + "/" + tenant.Slug
 	meta := map[string]any{
-		"issuer":                                s.baseURL,
-		"authorization_endpoint":                s.baseURL + "/oauth/authorize",
-		"token_endpoint":                        s.baseURL + "/oauth/token",
-		"registration_endpoint":                 s.baseURL + "/oauth/register",
+		"issuer":                                prefix,
+		"authorization_endpoint":                prefix + "/oauth/authorize",
+		"token_endpoint":                        prefix + "/oauth/token",
+		"registration_endpoint":                 prefix + "/oauth/register",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code"},
 		"code_challenge_methods_supported":      []string{"S256"},
@@ -75,7 +99,14 @@ func (s *OAuthServer) HandleMetadata(w http.ResponseWriter, _ *http.Request) {
 }
 
 // HandleAuthorize starts the OAuth flow. Redirects to Slack's "Sign in with Slack".
+// The client_id is looked up scoped to the path-resolved tenant — a client
+// registered under tenant A cannot be reused under tenant B's authorize URL.
 func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
+	tenant := TenantFromContext(r.Context())
+	if tenant == nil {
+		http.NotFound(w, r)
+		return
+	}
 	clientID := r.URL.Query().Get("client_id")
 	redirectURI := r.URL.Query().Get("redirect_uri")
 	state := r.URL.Query().Get("state")
@@ -86,8 +117,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify client is registered
-	client, err := models.GetOAuthClient(r.Context(), s.pool, clientID)
+	client, err := models.GetOAuthClient(r.Context(), s.pool, tenant.ID, clientID)
 	if err != nil {
 		slog.Error("looking up oauth client", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -98,9 +128,16 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the MCP client's request in a Slack OAuth state param so we can
-	// recover it after Slack redirects back to us.
-	slackState := encodeState(clientID, redirectURI, state, codeChallenge)
+	// Sign the MCP client's request into Slack's state param so we can
+	// recover it after Slack redirects back to us, and so the tenant slug
+	// can't be swapped in-flight.
+	slackState := encodeState(s.stateKey, oauthState{
+		ClientID:      clientID,
+		RedirectURI:   redirectURI,
+		State:         state,
+		CodeChallenge: codeChallenge,
+		TenantSlug:    tenant.Slug,
+	})
 
 	slackURL := fmt.Sprintf(
 		"https://slack.com/openid/connect/authorize?response_type=code&client_id=%s&scope=openid,profile&redirect_uri=%s&state=%s&nonce=%s",
@@ -129,11 +166,26 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode the original MCP client request from state
-	clientID, redirectURI, originalState, codeChallenge, err := decodeState(stateParam)
+	// Decode and verify the original MCP client request from state.
+	st, err := decodeState(s.stateKey, stateParam)
 	if err != nil {
 		slog.Error("decoding state", "error", err)
 		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	if st.TenantSlug == "" {
+		http.Error(w, "invalid state: missing tenant", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Resolve the tenant from the slug in state (this is what the authorize
+	// request was scoped to).
+	tenant, err := models.GetTenantBySlug(ctx, s.pool, st.TenantSlug)
+	if err != nil || tenant == nil {
+		slog.Error("tenant not found for slug", "slug", st.TenantSlug, "error", err)
+		http.Error(w, "organization not found", http.StatusNotFound)
 		return
 	}
 
@@ -145,13 +197,11 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
-
-	// Resolve tenant + user from Slack identity
-	tenant, err := models.GetTenantBySlackTeamID(ctx, s.pool, slackUser.TeamID)
-	if err != nil || tenant == nil {
-		slog.Error("tenant not found for team", "team_id", slackUser.TeamID, "error", err)
-		http.Error(w, "organization not found — install Kit into your Slack workspace first", http.StatusNotFound)
+	// Defense-in-depth: the user must have signed into the workspace this
+	// MCP URL is bound to. Catches users who land on the wrong workspace.
+	if slackUser.TeamID != tenant.SlackTeamID {
+		slog.Warn("slack workspace mismatch", "expected_team", tenant.SlackTeamID, "got_team", slackUser.TeamID, "slug", tenant.Slug)
+		http.Error(w, "you signed into a different Slack workspace than the one this MCP URL is bound to — sign out of Slack and retry", http.StatusForbidden)
 		return
 	}
 
@@ -164,18 +214,18 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Generate a Kit authorization code
 	kitCode := randomString(32)
-	if err := models.CreateOAuthCode(ctx, s.pool, kitCode, clientID, tenant.ID, user.ID, redirectURI, codeChallenge, time.Now().Add(codeLifetime)); err != nil {
+	if err := models.CreateOAuthCode(ctx, s.pool, kitCode, st.ClientID, tenant.ID, user.ID, st.RedirectURI, st.CodeChallenge, time.Now().Add(codeLifetime)); err != nil {
 		slog.Error("creating oauth code", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// Redirect back to the MCP client with our authorization code
-	u, _ := url.Parse(redirectURI)
+	u, _ := url.Parse(st.RedirectURI)
 	q := u.Query()
 	q.Set("code", kitCode)
-	if originalState != "" {
-		q.Set("state", originalState)
+	if st.State != "" {
+		q.Set("state", st.State)
 	}
 	u.RawQuery = q.Encode()
 	http.Redirect(w, r, u.String(), http.StatusFound)
@@ -233,7 +283,14 @@ func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, 
 }
 
 // HandleToken exchanges an authorization code for an access token.
+// Scoped to the path-resolved tenant: a code issued under tenant A cannot
+// be redeemed against /{B}/oauth/token.
 func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
+	tenant := TenantFromContext(r.Context())
+	if tenant == nil {
+		http.NotFound(w, r)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
@@ -247,6 +304,7 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 
 	code := r.FormValue("code")
 	codeVerifier := r.FormValue("code_verifier")
+	clientID := r.FormValue("client_id")
 
 	oauthCode, err := models.ConsumeOAuthCode(r.Context(), s.pool, code)
 	if err != nil {
@@ -257,6 +315,28 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 	if oauthCode == nil {
 		jsonError(w, "invalid_grant", http.StatusBadRequest)
 		return
+	}
+
+	// Cross-tenant replay: code was issued for a different tenant than
+	// the path this request landed on.
+	if oauthCode.TenantID != tenant.ID {
+		slog.Warn("oauth code tenant mismatch", "code_tenant", oauthCode.TenantID, "path_tenant", tenant.ID)
+		jsonError(w, "invalid_grant", http.StatusBadRequest)
+		return
+	}
+
+	// Verify presented client_id (if any) belongs to this tenant.
+	if clientID != "" {
+		client, err := models.GetOAuthClient(r.Context(), s.pool, tenant.ID, clientID)
+		if err != nil {
+			slog.Error("looking up oauth client during token exchange", "error", err)
+			jsonError(w, "server_error", http.StatusInternalServerError)
+			return
+		}
+		if client == nil {
+			jsonError(w, "invalid_client", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Verify PKCE

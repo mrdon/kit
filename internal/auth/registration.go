@@ -21,10 +21,17 @@ func NewRegistrationHandler(pool *pgxpool.Pool) *RegistrationHandler {
 	return &RegistrationHandler{pool: pool}
 }
 
-// HandleRegister processes a client registration request.
+// HandleRegister processes a client registration request. The resulting
+// client is scoped to the path-resolved tenant.
 func (h *RegistrationHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tenant := TenantFromContext(r.Context())
+	if tenant == nil {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -40,7 +47,7 @@ func (h *RegistrationHandler) HandleRegister(w http.ResponseWriter, r *http.Requ
 	clientID := randomString(16)
 	clientSecret := randomString(32)
 
-	client, err := models.CreateOAuthClient(r.Context(), h.pool, clientID, clientSecret, req.RedirectURIs, req.ClientName)
+	client, err := models.CreateOAuthClient(r.Context(), h.pool, tenant.ID, clientID, clientSecret, req.RedirectURIs, req.ClientName)
 	if err != nil {
 		slog.Error("creating oauth client", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

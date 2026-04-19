@@ -68,6 +68,36 @@ func InjectCallerFromRequest(ctx context.Context, pool *pgxpool.Pool, r *http.Re
 	return context.WithValue(ctx, callerKey, caller)
 }
 
+// AssertBearerMatchesPathTenant 401s when a Bearer token's tenant does not
+// match the path-resolved tenant. Sits in front of mcpHTTP so an MCP
+// client presenting tenant A's token to /{B}/mcp gets a clear auth error
+// rather than leaking capabilities via an anonymous `initialize`. Requests
+// without any token fall through; mcp-go's HTTPContextFunc + tool-level
+// caller gating handle unauthenticated calls.
+func AssertBearerMatchesPathTenant(pool *pgxpool.Pool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pathTenant := TenantFromContext(r.Context())
+		token := extractBearerToken(r)
+		if pathTenant == nil || token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		caller, err := resolveToken(r.Context(), pool, token)
+		if err != nil {
+			slog.Error("resolving token for mcp tenant check", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if caller != nil && caller.TenantID != pathTenant.ID {
+			slog.Warn("mcp bearer token tenant mismatch", "token_tenant", caller.TenantID, "path_tenant", pathTenant.ID)
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			http.Error(w, "token issued for a different workspace", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func extractBearerToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") {

@@ -118,7 +118,7 @@ func main() {
 	}
 
 	// Core application
-	app := internal.NewApp(pool, enc, cfg.AnthropicAPIKey, rdb)
+	app := internal.NewApp(pool, enc, cfg.AnthropicAPIKey, cfg.BaseURL, rdb)
 
 	// Optional voice transcription. If whisper env vars aren't set the
 	// chat/transcribe endpoint returns a "not configured" error event;
@@ -156,7 +156,7 @@ func main() {
 			return auth.InjectCallerFromRequest(ctx, pool, r)
 		}),
 	)
-	oauthServer := auth.NewOAuthServer(pool, cfg.BaseURL, cfg.SlackClientID, cfg.SlackClientSecret, sessionSigner)
+	oauthServer := auth.NewOAuthServer(pool, cfg.BaseURL, cfg.SlackClientID, cfg.SlackClientSecret, sessionSecret, sessionSigner)
 	regHandler := auth.NewRegistrationHandler(pool)
 
 	mux := http.NewServeMux()
@@ -172,15 +172,19 @@ func main() {
 	mux.HandleFunc("GET /slack/install", oauthHandler.HandleInstall)
 	mux.HandleFunc("GET /slack/oauth/callback", oauthHandler.HandleCallback)
 
-	// MCP endpoint (streamable HTTP)
-	mux.Handle("/mcp", mcpHTTP)
+	// Per-tenant MCP + OAuth surface. Each Slack workspace is its own
+	// authorization server at /{slug}/. Slack's redirect URI stays global
+	// at /oauth/callback so the Slack app config never has to change.
+	tenantMW := auth.TenantFromPath(pool)
+	mux.Handle("GET /{slug}/.well-known/oauth-authorization-server", tenantMW(http.HandlerFunc(oauthServer.HandleMetadata)))
+	mux.Handle("GET /{slug}/oauth/authorize", tenantMW(http.HandlerFunc(oauthServer.HandleAuthorize)))
+	mux.Handle("POST /{slug}/oauth/token", tenantMW(http.HandlerFunc(oauthServer.HandleToken)))
+	mux.Handle("POST /{slug}/oauth/register", tenantMW(http.HandlerFunc(regHandler.HandleRegister)))
+	mux.Handle("/{slug}/mcp", tenantMW(auth.AssertBearerMatchesPathTenant(pool, mcpHTTP)))
 
-	// OAuth endpoints for MCP authentication
-	mux.HandleFunc("GET /.well-known/oauth-authorization-server", oauthServer.HandleMetadata)
-	mux.HandleFunc("GET /oauth/authorize", oauthServer.HandleAuthorize)
-	mux.HandleFunc("POST /oauth/token", oauthServer.HandleToken)
+	// Slack's OAuth callback stays global — the tenant slug rides inside
+	// the signed state parameter.
 	mux.HandleFunc("GET /oauth/callback", oauthServer.HandleCallback)
-	mux.HandleFunc("POST /oauth/register", regHandler.HandleRegister)
 
 	// App routes
 	apps.RegisterAllRoutes(mux)
