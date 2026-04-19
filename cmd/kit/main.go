@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal"
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
@@ -85,6 +86,35 @@ func main() {
 		}
 	}
 
+	// Encryption for bot tokens (needed by services.New below + later
+	// internal.NewApp). Constructed before the builder runtime so the
+	// shared services bundle is ready when we install script-run deps.
+	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
+	if err != nil {
+		slog.Error("initializing encryptor", "error", err)
+		os.Exit(1)
+	}
+
+	// Shared services bundle, reused by the MCP server below.
+	svc := services.New(pool, enc)
+	// Anthropic client for the builder LLM builtins. internal.NewApp
+	// constructs its own client for the Slack agent; sharing isn't
+	// worthwhile since the client is a stateless HTTP wrapper.
+	builderLLM := anthropic.NewClient(cfg.AnthropicAPIKey)
+
+	// Install the builder script runtime. Without this, every run_script
+	// call (admin or via an exposed tool) errors with "engine not wired".
+	closeBuilder, err := builderapp.InstallScriptRunDeps(pool, svc, builderLLM)
+	if err != nil {
+		slog.Error("installing builder script runtime", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if cerr := closeBuilder(); cerr != nil {
+			slog.Warn("closing builder runtime", "error", cerr)
+		}
+	}()
+
 	// PWA session signer. Prefer an explicit KIT_SESSION_SECRET; fall back
 	// to deriving from ENCRYPTION_KEY (domain-separated in NewSessionSigner)
 	// so Dokku deploys don't need a second secret.
@@ -103,13 +133,6 @@ func main() {
 			cfg.BaseURL,
 			cfg.Env == "dev",
 		)
-	}
-
-	// Encryption for bot tokens
-	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
-	if err != nil {
-		slog.Error("initializing encryptor", "error", err)
-		os.Exit(1)
 	}
 
 	// Redis (optional — web_fetch caching)
@@ -161,8 +184,8 @@ func main() {
 	// OAuth handler
 	oauthHandler := kitslack.NewOAuthHandler(cfg.SlackClientID, cfg.SlackClientSecret, pool, enc, app.HandlePostInstall)
 
-	// MCP server + OAuth
-	svc := services.New(pool, enc)
+	// MCP server + OAuth (svc was constructed earlier for the builder
+	// runtime; reuse it here so both surfaces share one services bundle).
 	mcpHolder := kitmcp.NewServer(pool, svc, app.Agent, enc, sched)
 	mcpHTTP := mcpserver.NewStreamableHTTPServer(mcpHolder.Server,
 		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {

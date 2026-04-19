@@ -3,6 +3,8 @@ package builder
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,10 +12,46 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/apps/builder/runtime"
 	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
+
+// InstallScriptRunDeps builds the production scriptRunDeps (Monty engine +
+// shared services + Anthropic sender) and wires them into the package-global
+// used by run_script and the scheduled-script task runner. Call from main
+// once apps.Init has run and the pool is live. Returns a close func that
+// tears down the WASM runtime on shutdown.
+//
+// Slack is intentionally nil for now: kitslack.Client is per-tenant (a bot
+// token is required at construction) and scriptRunDeps holds a single
+// global. Slack-action builtins (send_slack_message, post_to_channel,
+// dm_user) return "slack client not configured" until per-run lookup
+// lands; everything else (db_*, util, llm_*, todo / cards / memory / task
+// actions) works.
+func InstallScriptRunDeps(pool *pgxpool.Pool, svc *services.Services, sender Sender) (func() error, error) {
+	if pool == nil || svc == nil || sender == nil {
+		return nil, errors.New("builder: install deps requires pool + services + sender")
+	}
+	engine, err := runtime.NewMontyEngineOwned()
+	if err != nil {
+		return nil, fmt.Errorf("builder: monty engine: %w", err)
+	}
+	deps := &scriptRunDeps{
+		Services: svc,
+		Engine:   engine,
+		Sender:   sender,
+		Slack:    nil,
+	}
+	SetScriptRunDeps(deps)
+	WireTaskRunners(pool, deps)
+	return func() error {
+		SetScriptRunDeps(nil)
+		WireTaskRunners(nil, nil)
+		return engine.Close()
+	}, nil
+}
 
 func init() {
 	apps.Register(&App{})
