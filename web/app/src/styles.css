@@ -106,6 +106,27 @@ body {
   overscroll-behavior: none;
 }
 
+/* Workspace-icon watermark. URL is set from workspace.ts on boot. Fixed
+   positioning keeps it steady as the feed scrolls, pointer-events:none
+   so taps fall through to real UI. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: var(--workspace-icon, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 60vmin;
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
 main.feed {
   height: 100dvh;
   overflow-y: auto;

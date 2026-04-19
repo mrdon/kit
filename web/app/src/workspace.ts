@@ -16,3 +16,11 @@ if (!slugPattern.test(seg)) {
 }
 
 export const BASENAME = '/' + seg;
+
+// Expose the workspace's icon URL as a CSS variable so styles.css can
+// paint it as a subtle background watermark. Helps the user see at a
+// glance which workspace they're in when multiple PWA installs exist.
+document.documentElement.style.setProperty(
+  '--workspace-icon',
+  `url(${BASENAME}/icon-512.png)`,
+);
