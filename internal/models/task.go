@@ -114,7 +114,7 @@ func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID,
 		return nil, fmt.Errorf("creating task: %w", err)
 	}
 
-	scopeID, err := getOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
+	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get-or-create scope: %w", err)
 	}

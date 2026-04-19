@@ -326,7 +326,7 @@ func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, na
 		}
 		roleID = &rid
 	}
-	scopeID, err := getOrCreateScopeTx(ctx, tx, tenantID, roleID, nil)
+	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get-or-create scope: %w", err)
 	}

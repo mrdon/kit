@@ -140,9 +140,9 @@ func GetOrCreateScope(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUI
 	return getOrCreateScopeImpl(ctx, pool, tenantID, roleID, userID)
 }
 
-// getOrCreateScopeTx is GetOrCreateScope inside a transaction. Use when the
+// GetOrCreateScopeTx is GetOrCreateScope inside a transaction. Use when the
 // scope row must be created atomically with its referencing entity.
-func getOrCreateScopeTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, roleID, userID *uuid.UUID) (uuid.UUID, error) {
+func GetOrCreateScopeTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, roleID, userID *uuid.UUID) (uuid.UUID, error) {
 	return getOrCreateScopeImpl(ctx, tx, tenantID, roleID, userID)
 }
 

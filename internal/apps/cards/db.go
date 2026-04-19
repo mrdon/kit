@@ -96,30 +96,43 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 	return card, nil
 }
 
-// writeScopesTx replaces the card's scope rows. Empty input defaults to
-// [{tenant, *}] — visible to everyone in the tenant. Existing scope rows
-// are deleted first so this is safe to call on update too.
+// writeScopesTx replaces the card's scope rows. Empty roleScopes defaults to
+// the tenant-wide scope — visible to everyone in the tenant. Existing scope
+// rows are deleted first so this is safe to call on update too.
 func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, roleScopes []string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM app_card_scopes WHERE tenant_id = $1 AND card_id = $2`, tenantID, cardID); err != nil {
 		return fmt.Errorf("clearing scopes: %w", err)
 	}
-	if len(roleScopes) == 0 {
+
+	insertScope := func(roleID *uuid.UUID) error {
+		scopeID, err := models.GetOrCreateScopeTx(ctx, tx, tenantID, roleID, nil)
+		if err != nil {
+			return fmt.Errorf("get-or-create scope: %w", err)
+		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_scopes (tenant_id, card_id, scope_type, scope_value)
-			VALUES ($1, $2, $3, $4)`,
-			tenantID, cardID, models.ScopeTypeTenant, models.ScopeValueAll,
+			INSERT INTO app_card_scopes (tenant_id, card_id, scope_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT DO NOTHING`,
+			tenantID, cardID, scopeID,
 		); err != nil {
-			return fmt.Errorf("inserting tenant scope: %w", err)
+			return fmt.Errorf("inserting card scope: %w", err)
 		}
 		return nil
 	}
+
+	if len(roleScopes) == 0 {
+		return insertScope(nil)
+	}
 	for _, role := range roleScopes {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_scopes (tenant_id, card_id, scope_type, scope_value)
-			VALUES ($1, $2, $3, $4)`,
-			tenantID, cardID, models.ScopeTypeRole, role,
-		); err != nil {
-			return fmt.Errorf("inserting role scope %q: %w", role, err)
+		var roleID uuid.UUID
+		err := tx.QueryRow(ctx,
+			`SELECT id FROM roles WHERE tenant_id = $1 AND name = $2`,
+			tenantID, role).Scan(&roleID)
+		if err != nil {
+			return fmt.Errorf("looking up role %q: %w", role, err)
+		}
+		if err := insertScope(&roleID); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -145,7 +158,7 @@ func getCard(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID uuid.UUID
 
 // listCards is used by list_decisions / list_briefings — simpler than the
 // stack query, filters by kind + optional state + priority/severity.
-func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, kind CardKind, f CardFilters, slackUserID string, roles []string, isAdmin bool) ([]*Card, error) {
+func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, kind CardKind, f CardFilters, roleIDs []uuid.UUID, isAdmin bool) ([]*Card, error) {
 	var b strings.Builder
 	b.WriteString(baseCardQuery)
 	args := []any{tenantID}
@@ -154,8 +167,8 @@ func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, kind
 	if isAdmin {
 		b.WriteString(` WHERE c.tenant_id = $1`)
 	} else {
-		scopeSQL, scopeArgs := models.ScopeFilter("s", 2, slackUserID, roles)
-		b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id WHERE c.tenant_id = $1 AND (`)
+		scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 2, userID, roleIDs)
+		b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id JOIN scopes sc ON sc.id = s.scope_id WHERE c.tenant_id = $1 AND (`)
 		b.WriteString(scopeSQL)
 		b.WriteString(`)`)
 		args = append(args, scopeArgs...)
@@ -225,7 +238,7 @@ func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, kind
 // briefing acks. Role-scoped briefings stay visible to role members
 // until each individually acks; the LEFT JOIN + IS NULL filter
 // implements that per-user exclusion.
-func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, slackUserID string, roles []string, isAdmin bool) ([]*Card, error) {
+func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, isAdmin bool) ([]*Card, error) {
 	var b strings.Builder
 	b.WriteString(baseCardQuery)
 	// userID is always $2 so the SQL is the same for admin and non-admin.
@@ -236,8 +249,8 @@ func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UU
 		b.WriteString(` WHERE c.tenant_id = $1 AND c.state = $3 AND ua.card_id IS NULL`)
 		args = append(args, CardStatePending)
 	} else {
-		scopeSQL, scopeArgs := models.ScopeFilter("s", 3, slackUserID, roles)
-		b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id WHERE c.tenant_id = $1 AND (`)
+		scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 3, userID, roleIDs)
+		b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id JOIN scopes sc ON sc.id = s.scope_id WHERE c.tenant_id = $1 AND (`)
 		b.WriteString(scopeSQL)
 		b.WriteString(`) AND c.state = $`)
 		fmt.Fprintf(&b, "%d", 3+len(scopeArgs))

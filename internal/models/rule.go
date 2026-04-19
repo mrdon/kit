@@ -92,7 +92,7 @@ func CreateRule(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, con
 		return nil, fmt.Errorf("creating rule: %w", err)
 	}
 
-	scopeID, err := getOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
+	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get-or-create scope: %w", err)
 	}

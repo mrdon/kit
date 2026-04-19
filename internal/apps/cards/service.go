@@ -158,7 +158,7 @@ func (s *CardService) ListDecisions(ctx context.Context, c *services.Caller, f C
 	if f.Priority != "" && !f.Priority.Valid() {
 		return nil, fmt.Errorf("invalid priority %q", f.Priority)
 	}
-	return listCards(ctx, s.pool, c.TenantID, CardKindDecision, f, c.Identity, c.Roles, c.IsAdmin)
+	return listCards(ctx, s.pool, c.TenantID, c.UserID, CardKindDecision, f, c.RoleIDs, c.IsAdmin)
 }
 
 // ListBriefings returns briefing cards matching the filter, visible to the caller.
@@ -169,7 +169,7 @@ func (s *CardService) ListBriefings(ctx context.Context, c *services.Caller, f C
 	if f.Severity != "" && !f.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", f.Severity)
 	}
-	return listCards(ctx, s.pool, c.TenantID, CardKindBriefing, f, c.Identity, c.Roles, c.IsAdmin)
+	return listCards(ctx, s.pool, c.TenantID, c.UserID, CardKindBriefing, f, c.RoleIDs, c.IsAdmin)
 }
 
 // Stack returns pending cards visible to the caller, in the PRD's
@@ -177,7 +177,7 @@ func (s *CardService) ListBriefings(ctx context.Context, c *services.Caller, f C
 // already acked are filtered out so role-scoped briefings stay visible
 // to teammates who haven't yet seen them.
 func (s *CardService) Stack(ctx context.Context, c *services.Caller) ([]*Card, error) {
-	return listStack(ctx, s.pool, c.TenantID, c.UserID, c.Identity, c.Roles, c.IsAdmin)
+	return listStack(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, c.IsAdmin)
 }
 
 // DMOpener is the minimal Slack surface required to resolve a decision
@@ -321,10 +321,10 @@ func (s *CardService) AckBriefing(ctx context.Context, c *services.Caller, cardI
 // callerCanSee returns true if the caller's scopes include the card. Used
 // for single-row Get so we don't leak existence.
 func (s *CardService) callerCanSee(ctx context.Context, c *services.Caller, cardID uuid.UUID) (bool, error) {
-	scopeSQL, scopeArgs := models.ScopeFilter("", 3, c.Identity, c.Roles)
+	scopeSQL, scopeArgs := c.ScopeFilterIDs("sc", 3)
 	args := []any{c.TenantID, cardID}
 	args = append(args, scopeArgs...)
-	query := `SELECT 1 FROM app_card_scopes WHERE tenant_id = $1 AND card_id = $2 AND (` + scopeSQL + `) LIMIT 1`
+	query := `SELECT 1 FROM app_card_scopes acs JOIN scopes sc ON sc.id = acs.scope_id WHERE acs.tenant_id = $1 AND acs.card_id = $2 AND (` + scopeSQL + `) LIMIT 1`
 	var one int
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(&one); err != nil {
 		return false, nil //nolint:nilerr // no-rows means no access
