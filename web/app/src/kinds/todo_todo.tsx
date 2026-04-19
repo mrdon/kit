@@ -48,6 +48,7 @@ function Detail({
           {m.due_date && <div>Due: {formatDate(m.due_date)}</div>}
           <div>Priority: {m.priority}</div>
           <div>Status: {m.status}</div>
+          <div>Visibility: {m.visibility === 'public' ? '🌐 Public' : 'Scoped'}</div>
           {m.assigned_to_name && <div>Assigned: {m.assigned_to_name}</div>}
           {m.role_scope && <div>Role: {m.role_scope}</div>}
         </div>

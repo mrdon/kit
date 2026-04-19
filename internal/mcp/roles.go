@@ -95,7 +95,14 @@ func roleMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 	case "delete_role":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			name, _ := req.RequireString("name")
-			if err := svc.Roles.Delete(ctx, caller, name); err != nil {
+			force := false
+			if v, ok := req.GetArguments()["force"].(bool); ok {
+				force = v
+			}
+			if err := svc.Roles.Delete(ctx, caller, name, force); err != nil {
+				if errors.Is(err, services.ErrRoleHasImpact) {
+					return mcp.NewToolResultError(err.Error() + ". Re-run with force=true to confirm."), nil
+				}
 				return nil, err
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("Role '%s' deleted.", name)), nil

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,7 +25,10 @@ var RoleTools = []ToolMeta{
 	{Name: "update_role", Description: "Update a role's description.", Schema: propsReq(map[string]any{
 		"name": field("string", "Role name"), "description": field("string", "New description"),
 	}, "name", "description"), AdminOnly: true},
-	{Name: "delete_role", Description: "Delete a role.", Schema: propsReq(map[string]any{"name": field("string", "Role name")}, "name"), AdminOnly: true},
+	{Name: "delete_role", Description: "Delete a role. Refuses if the role has scope-attached data; pass force=true to confirm. Cascade deletes all role-scoped todos and memories; other entities just lose visibility.", Schema: propsReq(map[string]any{
+		"name":  field("string", "Role name"),
+		"force": map[string]any{"type": "boolean", "description": "Confirm deletion even if the role has scope-attached data."},
+	}, "name"), AdminOnly: true},
 	{Name: "list_role_members", Description: "List all users assigned to a role.", Schema: propsReq(map[string]any{
 		"role_name": field("string", "Role name"),
 	}, "role_name"), AdminOnly: true},
@@ -86,10 +90,41 @@ func (s *RoleService) Update(ctx context.Context, c *Caller, name, description s
 	return models.UpdateRole(ctx, s.pool, c.TenantID, name, description)
 }
 
-// Delete deletes a role. Admin only.
-func (s *RoleService) Delete(ctx context.Context, c *Caller, name string) error {
+// ErrRoleHasImpact is returned by Delete when the role has cascade-affected
+// data and force=false. The wrapped impact is in the error message; callers
+// can call DeletionImpact for the structured count.
+var ErrRoleHasImpact = errors.New("role has scoped data; pass force=true to confirm deletion")
+
+// DeletionImpact returns a preview of what would be cascade-affected by
+// deleting the named role.
+func (s *RoleService) DeletionImpact(ctx context.Context, c *Caller, name string) (models.RoleDeletionImpact, error) {
+	if !c.IsAdmin {
+		return models.RoleDeletionImpact{}, ErrForbidden
+	}
+	return models.CountRoleDeletionImpact(ctx, s.pool, c.TenantID, name)
+}
+
+// Delete deletes a role. Admin only. By default refuses if the role has
+// scope-attached data; pass force=true to confirm. Inline-scope entities
+// (todos, memories) are destroyed; join-table entities lose the role's
+// scope row and become invisible.
+func (s *RoleService) Delete(ctx context.Context, c *Caller, name string, force bool) error {
 	if !c.IsAdmin {
 		return ErrForbidden
+	}
+	if !force {
+		impact, err := models.CountRoleDeletionImpact(ctx, s.pool, c.TenantID, name)
+		if err != nil {
+			return err
+		}
+		if impact.HasImpact() {
+			return fmt.Errorf("%w (todos=%d, memories=%d, skills=%d, rules=%d, tasks=%d, cards=%d, channels=%d, calendars=%d)",
+				ErrRoleHasImpact,
+				impact.TodosDeleted, impact.MemoriesDeleted,
+				impact.SkillsAffected, impact.RulesAffected, impact.TasksAffected,
+				impact.CardsAffected, impact.ChannelsAffected, impact.CalendarsAffected,
+			)
+		}
 	}
 	return models.DeleteRole(ctx, s.pool, c.TenantID, name)
 }

@@ -52,11 +52,11 @@ func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronEx
 		if !c.IsAdmin && !hasRole(c, scope) {
 			return nil, ErrForbidden
 		}
-		rid, _, err := resolveScopeTarget(ctx, s.pool, c.TenantID, string(models.ScopeTypeRole), scope)
+		rid, err := ResolveRoleID(ctx, s.pool, c.TenantID, scope)
 		if err != nil {
 			return nil, err
 		}
-		roleID = rid
+		roleID = &rid
 	}
 	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, runOnce, runAt, roleID, userID)
 }

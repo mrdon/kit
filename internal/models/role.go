@@ -110,6 +110,57 @@ func DeleteRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 	return nil
 }
 
+// RoleDeletionImpact counts the entities that would be cascade-affected if
+// the named role were deleted. Inline-scope entities (todos, memories) are
+// destroyed; join-table entities (skills, rules, tasks, cards, channels,
+// calendars) only lose the role's scope row and become invisible.
+type RoleDeletionImpact struct {
+	TodosDeleted      int
+	MemoriesDeleted   int
+	SkillsAffected    int
+	RulesAffected     int
+	TasksAffected     int
+	CardsAffected     int
+	ChannelsAffected  int
+	CalendarsAffected int
+}
+
+// HasImpact reports whether the role has any role-scoped data attached.
+func (i RoleDeletionImpact) HasImpact() bool {
+	return i.TodosDeleted > 0 || i.MemoriesDeleted > 0 ||
+		i.SkillsAffected > 0 || i.RulesAffected > 0 || i.TasksAffected > 0 ||
+		i.CardsAffected > 0 || i.ChannelsAffected > 0 || i.CalendarsAffected > 0
+}
+
+// CountRoleDeletionImpact returns the cascade preview without modifying state.
+func CountRoleDeletionImpact(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (RoleDeletionImpact, error) {
+	var i RoleDeletionImpact
+	err := pool.QueryRow(ctx, `
+		WITH r AS (
+			SELECT id FROM roles WHERE tenant_id = $1 AND name = $2
+		), s AS (
+			SELECT id FROM scopes WHERE tenant_id = $1 AND role_id IN (SELECT id FROM r)
+		)
+		SELECT
+			(SELECT count(*) FROM app_todos      WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM memories       WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM skill_scopes   WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM rule_scopes    WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM task_scopes    WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM app_card_scopes WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM app_slack_channel_scopes WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM app_calendar_scopes      WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s))
+	`, tenantID, name).Scan(
+		&i.TodosDeleted, &i.MemoriesDeleted,
+		&i.SkillsAffected, &i.RulesAffected, &i.TasksAffected,
+		&i.CardsAffected, &i.ChannelsAffected, &i.CalendarsAffected,
+	)
+	if err != nil {
+		return RoleDeletionImpact{}, fmt.Errorf("counting role deletion impact: %w", err)
+	}
+	return i, nil
+}
+
 // ListRoleMembers returns all users assigned to a role by name.
 func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roleName string) ([]User, error) {
 	rows, err := pool.Query(ctx, `

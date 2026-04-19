@@ -66,7 +66,10 @@ type TodoUpdates struct {
 	ClearDueDate  bool
 }
 
-const todoColumns = `id, tenant_id, title, description, status, priority, blocked_reason, scope_id, visibility, due_date, created_at, updated_at, closed_at`
+// todoColumns is the SELECT list for app_todos, always aliased as t. in the
+// query — the alias is required because list queries JOIN scopes which has
+// its own id/tenant_id columns.
+const todoColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.visibility, t.due_date, t.created_at, t.updated_at, t.closed_at`
 
 func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	var t Todo
@@ -103,7 +106,7 @@ func createTodo(ctx context.Context, pool *pgxpool.Pool, t *Todo) error {
 
 func getTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID) (*Todo, error) {
 	row := pool.QueryRow(ctx,
-		`SELECT `+todoColumns+` FROM app_todos WHERE tenant_id = $1 AND id = $2`,
+		`SELECT `+todoColumns+` FROM app_todos t WHERE t.tenant_id = $1 AND t.id = $2`,
 		tenantID, todoID,
 	)
 	t, err := scanTodo(row)

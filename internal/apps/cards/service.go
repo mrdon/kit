@@ -339,15 +339,11 @@ func (s *CardService) enforceScopeAccess(c *services.Caller, roleScopes []string
 		return nil
 	}
 	for _, role := range roleScopes {
-		if !hasRole(c.Roles, role) {
+		if !slices.Contains(c.Roles, role) {
 			return services.ErrForbidden
 		}
 	}
 	return nil
-}
-
-func hasRole(roles []string, target string) bool {
-	return slices.Contains(roles, target)
 }
 
 // canWrite is the write-access check for update / resolve / ack. Admins and

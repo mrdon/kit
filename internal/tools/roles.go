@@ -145,11 +145,17 @@ func handleUpdateRole(ec *ExecContext, input json.RawMessage) (string, error) {
 }
 
 func handleDeleteRole(ec *ExecContext, input json.RawMessage) (string, error) {
-	var inp struct{ Name string }
+	var inp struct {
+		Name  string `json:"name"`
+		Force bool   `json:"force"`
+	}
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	if err := ec.Svc.Roles.Delete(ec.Ctx, ec.Caller(), inp.Name); err != nil {
+	if err := ec.Svc.Roles.Delete(ec.Ctx, ec.Caller(), inp.Name, inp.Force); err != nil {
+		if errors.Is(err, services.ErrRoleHasImpact) {
+			return err.Error() + ". Re-run with force=true to confirm.", nil
+		}
 		return "", err
 	}
 	return fmt.Sprintf("Role '%s' deleted.", inp.Name), nil
