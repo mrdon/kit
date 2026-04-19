@@ -83,7 +83,7 @@ down: ## Stop Docker Compose services
 	@docker compose down
 
 db: ## Connect to local Postgres
-	@PGPASSWORD=kit psql -U kit -h localhost -p $${PG_PORT:-5488} kit
+	@PGPASSWORD=kit psql -U kit -h localhost -p $${PG_PORT:-5489} kit
 
 db-reset: ## Wipe and restart Postgres (destroys all data)
 	@docker compose down -v

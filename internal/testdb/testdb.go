@@ -33,7 +33,7 @@ func URL() string {
 	if u := os.Getenv("DATABASE_URL"); u != "" {
 		return u
 	}
-	return "postgres://kit:kit@localhost:5488/kit?sslmode=disable"
+	return "postgres://kit:kit@localhost:5489/kit?sslmode=disable"
 }
 
 // Open returns a shared pool against the test database, running migrations
