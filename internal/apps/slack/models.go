@@ -46,12 +46,16 @@ func deleteChannel(ctx context.Context, pool *pgxpool.Pool, tenantID, channelID 
 	return nil
 }
 
-func addChannelScope(ctx context.Context, pool *pgxpool.Pool, tenantID, channelID uuid.UUID, scopeType models.ScopeType, scopeValue string) error {
-	_, err := pool.Exec(ctx, `
-		INSERT INTO app_slack_channel_scopes (tenant_id, channel_id, scope_type, scope_value)
-		VALUES ($1, $2, $3, $4)
+func addChannelScope(ctx context.Context, pool *pgxpool.Pool, tenantID, channelID uuid.UUID, roleID, userID *uuid.UUID) error {
+	scopeID, err := models.GetOrCreateScope(ctx, pool, tenantID, roleID, userID)
+	if err != nil {
+		return fmt.Errorf("get-or-create scope: %w", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO app_slack_channel_scopes (tenant_id, channel_id, scope_id)
+		VALUES ($1, $2, $3)
 		ON CONFLICT DO NOTHING`,
-		tenantID, channelID, scopeType, scopeValue,
+		tenantID, channelID, scopeID,
 	)
 	if err != nil {
 		return fmt.Errorf("adding channel scope: %w", err)
@@ -85,13 +89,14 @@ func listChannelsAll(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	return scanChannels(rows)
 }
 
-func listChannelsScoped(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roles []string) ([]SlackChannel, error) {
-	scopeSQL, scopeArgs := models.ScopeFilter("cs", 2, "", roles)
+func listChannelsScoped(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID) ([]SlackChannel, error) {
+	scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 2, userID, roleIDs)
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT c.id, c.tenant_id, c.slack_channel_id, c.channel_name, c.created_at
 		FROM app_slack_channels c
 		JOIN app_slack_channel_scopes cs ON cs.channel_id = c.id AND cs.tenant_id = c.tenant_id
+		JOIN scopes sc ON sc.id = cs.scope_id
 		WHERE c.tenant_id = $1
 		AND (`+scopeSQL+`)
 		ORDER BY c.channel_name`,

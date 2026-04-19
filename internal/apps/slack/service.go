@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
@@ -62,12 +61,16 @@ func (s *SlackChannelService) Configure(ctx context.Context, c *services.Caller,
 	}
 
 	if len(roleScopes) == 0 {
-		if err := addChannelScope(ctx, s.pool, c.TenantID, ch.ID, models.ScopeTypeTenant, models.ScopeValueAll); err != nil {
+		if err := addChannelScope(ctx, s.pool, c.TenantID, ch.ID, nil, nil); err != nil {
 			return nil, err
 		}
 	} else {
 		for _, role := range roleScopes {
-			if err := addChannelScope(ctx, s.pool, c.TenantID, ch.ID, models.ScopeTypeRole, role); err != nil {
+			roleID, err := services.ResolveRoleID(ctx, s.pool, c.TenantID, role)
+			if err != nil {
+				return nil, err
+			}
+			if err := addChannelScope(ctx, s.pool, c.TenantID, ch.ID, &roleID, nil); err != nil {
 				return nil, err
 			}
 		}
@@ -96,7 +99,7 @@ func (s *SlackChannelService) List(ctx context.Context, c *services.Caller) ([]S
 	if c.IsAdmin {
 		return listChannelsAll(ctx, s.pool, c.TenantID)
 	}
-	return listChannelsScoped(ctx, s.pool, c.TenantID, c.Roles)
+	return listChannelsScoped(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 }
 
 // GetMessagesOpts holds options for GetMessages.
