@@ -66,3 +66,13 @@ func LookupAPIToken(ctx context.Context, pool *pgxpool.Pool, tokenHash string) (
 	}
 	return t, nil
 }
+
+// DeleteAPIToken removes an api_tokens row by its hash. Used by logout
+// so a revoked session can't be reused even if its cookie is replayed.
+// Missing rows are not an error (idempotent).
+func DeleteAPIToken(ctx context.Context, pool *pgxpool.Pool, tokenHash string) error {
+	if _, err := pool.Exec(ctx, `DELETE FROM api_tokens WHERE token_hash = $1`, tokenHash); err != nil {
+		return fmt.Errorf("deleting api token: %w", err)
+	}
+	return nil
+}

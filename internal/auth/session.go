@@ -107,6 +107,23 @@ func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *
 	return nil
 }
 
+// Revoke deletes the api_tokens row backing the request's session
+// cookie (if any) AND clears the cookie at the given path plus the
+// defensive Path=/ sweep. Safe to call even if there is no session —
+// no-ops on missing cookie.
+func (s *SessionSigner) Revoke(ctx context.Context, w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, path string) {
+	if raw, ok := s.extractToken(r); ok {
+		hash := models.HashToken(raw)
+		if err := models.DeleteAPIToken(ctx, pool, hash); err != nil {
+			slog.Warn("deleting api token during revoke", "error", err)
+		}
+	}
+	s.Clear(w, path)
+	if path != "/" {
+		s.Clear(w, "/")
+	}
+}
+
 // Clear wipes the session cookie on the client at the given path.
 func (s *SessionSigner) Clear(w http.ResponseWriter, path string) {
 	if path == "" {

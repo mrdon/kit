@@ -51,6 +51,8 @@ func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
 	} else {
 		slog.Warn("cards: Slack client creds not set — /{slug}/login disabled; use /{slug}/dev-login in dev or bearer tokens")
 	}
+
+	mux.Handle("GET /{slug}/logout", tenantMW(http.HandlerFunc(a.handleLogout)))
 }
 
 // handleSPA serves the PWA HTML with per-workspace asset substitutions.
@@ -138,6 +140,20 @@ func handleServiceWorker(w http.ResponseWriter, r *http.Request) {
 	// navigation to detect updates.
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(body)
+}
+
+// handleLogout revokes the request's session and bounces to the
+// workspace login page. Safe to hit without an active session — the
+// revoke is idempotent.
+func (a *CardsApp) handleLogout(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	cookiePath := "/" + tenant.Slug + "/"
+	a.signer.Revoke(r.Context(), w, r, a.pool, cookiePath)
+	http.Redirect(w, r, cookiePath+"login", http.StatusSeeOther)
 }
 
 // handleLogin starts the PWA Slack OpenID flow. A short-lived
