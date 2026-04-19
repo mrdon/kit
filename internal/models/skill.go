@@ -140,13 +140,14 @@ func ListSkills(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]
 	return skills, rows.Err()
 }
 
-func GetSkillCatalog(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string) ([]Skill, error) {
-	scopeSQL, scopeArgs := ScopeFilter("ss", 2, "", userRoles)
+func GetSkillCatalog(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID) ([]Skill, error) {
+	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT s.id, s.name, s.description
 		FROM skills s
 		JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id
+		JOIN scopes sc ON sc.id = ss.scope_id
 		WHERE s.tenant_id = $1
 		AND (`+scopeSQL+`)
 		ORDER BY s.name
@@ -178,7 +179,7 @@ type SkillSummary struct {
 // ListSkillsFiltered returns skills visible to the caller with optional search.
 // If admin is true, all skills in the tenant are returned.
 // Otherwise, only skills matching the caller's roles/identity are returned.
-func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, admin bool, identity string, roles []string, search string) ([]SkillSummary, error) {
+func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, admin bool, userID uuid.UUID, roleIDs []uuid.UUID, search string) ([]SkillSummary, error) {
 	var args []any
 	args = append(args, tenantID) // $1
 
@@ -186,7 +187,7 @@ func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	where.WriteString("WHERE s.tenant_id = $1")
 
 	if !admin {
-		scopeSQL, scopeArgs := ScopeFilter("ss", len(args)+1, identity, roles)
+		scopeSQL, scopeArgs := ScopeFilterIDs("sc", len(args)+1, userID, roleIDs)
 		args = append(args, scopeArgs...)
 		where.WriteString("\n\t\t\tAND (" + scopeSQL + ")")
 	}
@@ -198,7 +199,8 @@ func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 
 	join := ""
 	if !admin {
-		join = "JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id"
+		join = `JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id
+		JOIN scopes sc ON sc.id = ss.scope_id`
 	}
 
 	q := fmt.Sprintf(`
@@ -246,11 +248,23 @@ func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 }
 
 // getSkillScopesBatch returns scopes for multiple skills in one query.
+// Joins the canonical scopes table back to roles/users to recover the
+// human-readable scope_value (role name or slack_user_id) for display.
 func getSkillScopesBatch(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID][]SkillScope, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT skill_id, scope_type, scope_value
-		FROM skill_scopes
-		WHERE tenant_id = $1 AND skill_id = ANY($2)
+		SELECT
+			ss.skill_id,
+			CASE
+				WHEN sc.role_id IS NULL AND sc.user_id IS NULL THEN 'tenant'
+				WHEN sc.role_id IS NOT NULL THEN 'role'
+				ELSE 'user'
+			END AS scope_type,
+			COALESCE(r.name, u.slack_user_id, '*') AS scope_value
+		FROM skill_scopes ss
+		JOIN scopes sc ON sc.id = ss.scope_id
+		LEFT JOIN roles r ON r.id = sc.role_id
+		LEFT JOIN users u ON u.id = sc.user_id
+		WHERE ss.tenant_id = $1 AND ss.skill_id = ANY($2)
 	`, tenantID, skillIDs)
 	if err != nil {
 		return nil, fmt.Errorf("batch loading skill scopes: %w", err)
@@ -301,17 +315,26 @@ func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, na
 		return nil, fmt.Errorf("creating skill: %w", err)
 	}
 
-	scopeType := ScopeTypeTenant
-	scopeValue := ScopeValueAll
+	var roleID *uuid.UUID
 	if scope != string(ScopeTypeTenant) && scope != "" {
-		scopeType = ScopeTypeRole
-		scopeValue = scope
+		var rid uuid.UUID
+		err := tx.QueryRow(ctx,
+			`SELECT id FROM roles WHERE tenant_id = $1 AND name = $2`,
+			tenantID, scope).Scan(&rid)
+		if err != nil {
+			return nil, fmt.Errorf("looking up role %q for skill scope: %w", scope, err)
+		}
+		roleID = &rid
+	}
+	scopeID, err := getOrCreateScopeTx(ctx, tx, tenantID, roleID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get-or-create scope: %w", err)
 	}
 	_, err = tx.Exec(ctx, `
-		INSERT INTO skill_scopes (tenant_id, skill_id, scope_type, scope_value)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO skill_scopes (tenant_id, skill_id, scope_id)
+		VALUES ($1, $2, $3)
 		ON CONFLICT DO NOTHING
-	`, tenantID, skill.ID, scopeType, scopeValue)
+	`, tenantID, skill.ID, scopeID)
 	if err != nil {
 		return nil, fmt.Errorf("creating skill scope: %w", err)
 	}
@@ -442,11 +465,48 @@ type SkillScope struct {
 	ScopeValue string
 }
 
+// GetSkillScopeRefs returns the scopes table rows referenced by a skill,
+// for use with services.Caller.CanSee. Unlike GetSkillScopes (which returns
+// human-readable display values), this returns the underlying scope row IDs
+// and role/user FKs.
+func GetSkillScopeRefs(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID) ([]ScopeRow, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT sc.id, sc.role_id, sc.user_id
+		FROM skill_scopes ss
+		JOIN scopes sc ON sc.id = ss.scope_id
+		WHERE ss.tenant_id = $1 AND ss.skill_id = $2
+	`, tenantID, skillID)
+	if err != nil {
+		return nil, fmt.Errorf("getting skill scope refs: %w", err)
+	}
+	defer rows.Close()
+
+	var refs []ScopeRow
+	for rows.Next() {
+		var r ScopeRow
+		if err := rows.Scan(&r.ID, &r.RoleID, &r.UserID); err != nil {
+			return nil, err
+		}
+		refs = append(refs, r)
+	}
+	return refs, rows.Err()
+}
+
 // GetSkillScopes returns the scope rows for a skill.
 func GetSkillScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID) ([]SkillScope, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT scope_type, scope_value
-		FROM skill_scopes WHERE tenant_id = $1 AND skill_id = $2
+		SELECT
+			CASE
+				WHEN sc.role_id IS NULL AND sc.user_id IS NULL THEN 'tenant'
+				WHEN sc.role_id IS NOT NULL THEN 'role'
+				ELSE 'user'
+			END AS scope_type,
+			COALESCE(r.name, u.slack_user_id, '*') AS scope_value
+		FROM skill_scopes ss
+		JOIN scopes sc ON sc.id = ss.scope_id
+		LEFT JOIN roles r ON r.id = sc.role_id
+		LEFT JOIN users u ON u.id = sc.user_id
+		WHERE ss.tenant_id = $1 AND ss.skill_id = $2
 	`, tenantID, skillID)
 	if err != nil {
 		return nil, fmt.Errorf("getting skill scopes: %w", err)
@@ -465,8 +525,8 @@ func GetSkillScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID u
 }
 
 // SearchSkills performs FTS on skills visible to the user's roles.
-func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string, query string) ([]Skill, error) {
-	scopeSQL, scopeArgs := ScopeFilter("ss", 2, "", userRoles)
+func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, query string) ([]Skill, error) {
+	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	ftsParam := 2 + len(scopeArgs)
 	args := append([]any{tenantID}, scopeArgs...)
 	args = append(args, query)
@@ -474,6 +534,7 @@ func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, u
 		SELECT DISTINCT s.id, s.name, s.description
 		FROM skills s
 		JOIN skill_scopes ss ON ss.skill_id = s.id AND ss.tenant_id = s.tenant_id
+		JOIN scopes sc ON sc.id = ss.scope_id
 		WHERE s.tenant_id = $1
 		AND (%s)
 		AND (

@@ -40,7 +40,7 @@ func BuildKnowledgeContext(ctx context.Context, pool *pgxpool.Pool, c *Caller, t
 	}
 
 	// Skill catalog (scope-filtered + built-ins)
-	dbSkills, _ := models.GetSkillCatalog(ctx, pool, c.TenantID, c.Roles)
+	dbSkills, _ := models.GetSkillCatalog(ctx, pool, c.TenantID, c.UserID, c.RoleIDs)
 	builtinSkills := skills.Builtins()
 	if len(dbSkills) > 0 || len(builtinSkills) > 0 {
 		parts = append(parts, buildSkillCatalog(dbSkills, builtinSkills))

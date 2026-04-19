@@ -41,7 +41,7 @@ type SkillService struct {
 
 // Search searches skills visible to the caller.
 func (s *SkillService) Search(ctx context.Context, c *Caller, query string) ([]models.Skill, error) {
-	return models.SearchSkills(ctx, s.pool, c.TenantID, c.Roles, query)
+	return models.SearchSkills(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query)
 }
 
 // Load returns a skill by ID with authorization check.
@@ -55,7 +55,7 @@ func (s *SkillService) Load(ctx context.Context, c *Caller, skillID uuid.UUID) (
 		return nil, nil, ErrNotFound
 	}
 	if !c.IsAdmin {
-		if err := s.checkAccess(ctx, c, skillID); err != nil {
+		if err := s.checkSkillAccess(ctx, c, skillID); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -86,7 +86,7 @@ func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID
 		return nil, ErrNotFound
 	}
 	if !c.IsAdmin {
-		if err := s.checkAccess(ctx, c, ref.SkillID); err != nil {
+		if err := s.checkSkillAccess(ctx, c, ref.SkillID); err != nil {
 			return nil, err
 		}
 	}
@@ -97,7 +97,7 @@ func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID
 // Admins see all skills; non-admins see only scope-matched skills.
 // Built-in skills are included at the top of the list.
 func (s *SkillService) List(ctx context.Context, c *Caller, search string) ([]models.SkillSummary, error) {
-	dbSkills, err := models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.Identity, c.Roles, search)
+	dbSkills, err := models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.UserID, c.RoleIDs, search)
 	if err != nil {
 		return nil, err
 	}
@@ -164,22 +164,14 @@ func (s *SkillService) DeleteFile(ctx context.Context, c *Caller, fileID uuid.UU
 	return models.DeleteSkillFile(ctx, s.pool, c.TenantID, fileID)
 }
 
-// checkAccess verifies the caller can access a skill based on its scopes.
-func (s *SkillService) checkAccess(ctx context.Context, c *Caller, skillID uuid.UUID) error {
-	scopes, err := models.GetSkillScopes(ctx, s.pool, c.TenantID, skillID)
+// checkSkillAccess verifies the caller can see a skill via Caller.CanSee.
+func (s *SkillService) checkSkillAccess(ctx context.Context, c *Caller, skillID uuid.UUID) error {
+	scopes, err := models.GetSkillScopeRefs(ctx, s.pool, c.TenantID, skillID)
 	if err != nil {
 		return fmt.Errorf("checking skill access: %w", err)
 	}
-	for _, sc := range scopes {
-		if sc.ScopeType == models.ScopeTypeTenant {
-			return nil
-		}
-		if sc.ScopeType == models.ScopeTypeRole && hasRole(c, sc.ScopeValue) {
-			return nil
-		}
-		if sc.ScopeType == models.ScopeTypeUser && sc.ScopeValue == c.Identity {
-			return nil
-		}
+	if !c.CanSee(scopes) {
+		return ErrForbidden
 	}
-	return ErrForbidden
+	return nil
 }
