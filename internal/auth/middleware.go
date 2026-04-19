@@ -208,12 +208,14 @@ func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*servi
 	}
 
 	roles, _ := models.GetUserRoleNames(ctx, pool, apiToken.TenantID, apiToken.UserID, tenant.DefaultRoleID)
+	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, apiToken.TenantID, apiToken.UserID, tenant.DefaultRoleID)
 
 	return &services.Caller{
 		TenantID: apiToken.TenantID,
 		UserID:   apiToken.UserID,
 		Identity: user.SlackUserID,
 		Roles:    roles,
+		RoleIDs:  roleIDs,
 		IsAdmin:  user.IsAdmin,
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}, nil

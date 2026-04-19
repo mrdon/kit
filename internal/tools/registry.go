@@ -57,11 +57,13 @@ type ExecContext struct {
 // Caller builds a services.Caller from the current execution context.
 func (ec *ExecContext) Caller() *services.Caller {
 	roles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
+	roleIDs, _ := models.GetUserRoleIDs(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
 	return &services.Caller{
 		TenantID: ec.Tenant.ID,
 		UserID:   ec.User.ID,
 		Identity: ec.User.SlackUserID,
 		Roles:    roles,
+		RoleIDs:  roleIDs,
 		IsAdmin:  ec.User.IsAdmin,
 		Timezone: services.ResolveTimezone(ec.User.Timezone, ec.Tenant.Timezone),
 	}

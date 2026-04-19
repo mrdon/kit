@@ -136,6 +136,47 @@ func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	return users, rows.Err()
 }
 
+// GetUserRoleIDs returns the role IDs for a user.
+// If the user has no assigned roles and the tenant has a default role,
+// the user is auto-assigned to it and that role ID is returned.
+func GetUserRoleIDs(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, defaultRoleID *uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT role_id FROM user_roles
+		WHERE tenant_id = $1 AND user_id = $2
+		ORDER BY role_id
+	`, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user role ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(ids) == 0 && defaultRoleID != nil {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO user_roles (tenant_id, user_id, role_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT DO NOTHING
+		`, tenantID, userID, *defaultRoleID)
+		if err != nil {
+			return nil, fmt.Errorf("auto-assigning default role: %w", err)
+		}
+		ids = append(ids, *defaultRoleID)
+	}
+
+	return ids, nil
+}
+
 // GetUserRoleNames returns the role names for a user.
 // If the user has no assigned roles and the tenant has a default role,
 // the user is auto-assigned to it and that role name is returned.

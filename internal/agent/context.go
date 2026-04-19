@@ -76,11 +76,13 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 
 	// Shared knowledge context (rules, skills, memories)
 	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
 	caller := &services.Caller{
 		TenantID: tenant.ID,
 		UserID:   user.ID,
 		Identity: user.SlackUserID,
 		Roles:    roleNames,
+		RoleIDs:  roleIDs,
 		IsAdmin:  user.IsAdmin,
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}
