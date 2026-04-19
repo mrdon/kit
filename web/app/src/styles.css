@@ -107,10 +107,10 @@ body {
 }
 
 /* Workspace-icon watermark. URL is set from workspace.ts on boot.
-   Pinned to the bottom-right corner so it never sits directly behind
-   reading content; desaturated and at low opacity so a colorful Slack
-   icon doesn't clash with nearby text. Fixed positioning keeps it
-   steady as the feed scrolls; pointer-events:none so taps fall through. */
+   Overlaid above content so feed-card backgrounds don't hide it; tucked
+   into the bottom-right corner out of the reading path, desaturated +
+   low-opacity so it doesn't clash with nearby text. pointer-events:none
+   so taps fall through to whatever is under the corner. */
 body::before {
   content: "";
   position: fixed;
@@ -122,15 +122,10 @@ body::before {
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  opacity: 0.07;
+  opacity: 0.08;
   filter: grayscale(1);
   pointer-events: none;
-  z-index: 0;
-}
-
-#root {
-  position: relative;
-  z-index: 1;
+  z-index: 9999;
 }
 
 main.feed {
