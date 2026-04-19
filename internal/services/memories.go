@@ -25,32 +25,33 @@ type MemoryService struct {
 }
 
 // Save creates a memory with scope resolution.
+// scope: "user" (default), "tenant", or a role name.
 func (s *MemoryService) Save(ctx context.Context, c *Caller, content, scope string, sessionID uuid.UUID) error {
 	if scope == "" {
 		scope = string(models.ScopeTypeUser)
 	}
-	scopeType := models.ScopeTypeUser
-	scopeValue := c.Identity
+	var roleID, userID *uuid.UUID
 	switch scope {
 	case string(models.ScopeTypeUser):
-		// defaults above
+		userID = &c.UserID
 	case string(models.ScopeTypeTenant):
-		scopeType = models.ScopeTypeTenant
-		scopeValue = models.ScopeValueAll
+		// both nil → tenant-wide
 	default:
-		// role name
 		if !c.IsAdmin && !hasRole(c, scope) {
 			return ErrForbidden
 		}
-		scopeType = models.ScopeTypeRole
-		scopeValue = scope
+		rid, err := ResolveRoleID(ctx, s.pool, c.TenantID, scope)
+		if err != nil {
+			return err
+		}
+		roleID = &rid
 	}
-	return models.CreateMemory(ctx, s.pool, c.TenantID, content, scopeType, scopeValue, sessionID)
+	return models.CreateMemory(ctx, s.pool, c.TenantID, content, roleID, userID, sessionID)
 }
 
 // Search searches memories visible to the caller.
 func (s *MemoryService) Search(ctx context.Context, c *Caller, query string) ([]models.Memory, error) {
-	return models.SearchMemories(ctx, s.pool, c.TenantID, c.Identity, c.Roles, query)
+	return models.SearchMemories(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query)
 }
 
 // Forget deletes a memory. Admins can delete any; non-admins only their own.

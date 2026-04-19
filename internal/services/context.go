@@ -47,7 +47,7 @@ func BuildKnowledgeContext(ctx context.Context, pool *pgxpool.Pool, c *Caller, t
 	}
 
 	// Recent memories (scope-filtered)
-	memories, _ := models.GetRecentMemories(ctx, pool, c.TenantID, c.Identity, c.Roles, 5)
+	memories, _ := models.GetRecentMemories(ctx, pool, c.TenantID, c.UserID, c.RoleIDs, 5)
 	if len(memories) > 0 {
 		parts = append(parts, "\n## Remembered Facts")
 		for _, m := range memories {
