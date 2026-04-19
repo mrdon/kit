@@ -1,6 +1,27 @@
 -- +goose Up
 -- +goose StatementBegin
 
+-- Drop orphan scope rows whose role/user name doesn't resolve to anything
+-- in roles/users. Such rows were already invisible to non-admins (default-
+-- deny), so deleting them is observably a no-op.
+DO $$
+DECLARE
+    n INT;
+BEGIN
+    WITH deleted AS (
+        DELETE FROM app_card_scopes cs
+        WHERE (cs.scope_type = 'role'
+               AND NOT EXISTS (SELECT 1 FROM roles r WHERE r.tenant_id = cs.tenant_id AND r.name = cs.scope_value))
+           OR (cs.scope_type = 'user'
+               AND NOT EXISTS (SELECT 1 FROM users u WHERE u.tenant_id = cs.tenant_id AND u.slack_user_id = cs.scope_value))
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO n FROM deleted;
+    IF n > 0 THEN
+        RAISE NOTICE 'app_card_scopes: deleted % orphan scope rows (referenced non-existent role/user)', n;
+    END IF;
+END $$;
+
 INSERT INTO scopes (tenant_id, role_id, user_id)
 SELECT DISTINCT
     cs.tenant_id,
