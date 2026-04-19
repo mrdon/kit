@@ -31,7 +31,7 @@ func BuildKnowledgeContext(ctx context.Context, pool *pgxpool.Pool, c *Caller, t
 	}
 
 	// Rules (scope-filtered)
-	rules, _ := models.GetRulesForContext(ctx, pool, c.TenantID, c.Roles)
+	rules, _ := models.GetRulesForContext(ctx, pool, c.TenantID, c.UserID, c.RoleIDs)
 	if len(rules) > 0 {
 		parts = append(parts, "\n## Rules")
 		for _, r := range rules {

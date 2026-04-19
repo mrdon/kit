@@ -1,7 +1,14 @@
 package services
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"slices"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
 )
@@ -49,4 +56,41 @@ func (c *Caller) ScopeFilterIDs(prefix string, startParam int) (string, []any) {
 // sees entities they're personally responsible for (assignee or role member).
 func (c *Caller) PersonalScopeFilter(prefix string, startParam int) (string, []any) {
 	return models.PersonalScopeFilterIDs(prefix, startParam, c.UserID, c.RoleIDs)
+}
+
+// resolveScopeTarget translates the agent-tool scope_type/scope_value strings
+// into (roleID, userID) pointers suitable for models.CreateRule and friends.
+// scopeType "tenant" → (nil, nil); "role" → (role.id, nil); "user" →
+// (nil, user.id). Returns an error if the named role/user doesn't exist.
+func resolveScopeTarget(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, scopeType, scopeValue string) (*uuid.UUID, *uuid.UUID, error) {
+	switch scopeType {
+	case string(models.ScopeTypeTenant), "":
+		return nil, nil, nil
+	case string(models.ScopeTypeRole):
+		var id uuid.UUID
+		err := pool.QueryRow(ctx,
+			`SELECT id FROM roles WHERE tenant_id = $1 AND name = $2`,
+			tenantID, scopeValue).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, fmt.Errorf("role %q not found", scopeValue)
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("looking up role %q: %w", scopeValue, err)
+		}
+		return &id, nil, nil
+	case string(models.ScopeTypeUser):
+		var id uuid.UUID
+		err := pool.QueryRow(ctx,
+			`SELECT id FROM users WHERE tenant_id = $1 AND slack_user_id = $2`,
+			tenantID, scopeValue).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, fmt.Errorf("user %q not found", scopeValue)
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("looking up user %q: %w", scopeValue, err)
+		}
+		return nil, &id, nil
+	default:
+		return nil, nil, fmt.Errorf("unknown scope type %q", scopeType)
+	}
 }

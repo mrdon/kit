@@ -39,6 +39,8 @@ func (s *RuleService) List(ctx context.Context, c *Caller) ([]models.Rule, error
 }
 
 // Create creates a rule. Admin only.
+// scopeType: "tenant" (default), "role", or "user".
+// scopeValue: ignored for tenant; role name for role; slack user id for user.
 func (s *RuleService) Create(ctx context.Context, c *Caller, content string, priority int, scopeType, scopeValue string) (*models.Rule, error) {
 	if !c.IsAdmin {
 		return nil, ErrForbidden
@@ -46,10 +48,11 @@ func (s *RuleService) Create(ctx context.Context, c *Caller, content string, pri
 	if scopeType == "" {
 		scopeType = string(models.ScopeTypeTenant)
 	}
-	if scopeValue == "" {
-		scopeValue = models.ScopeValueAll
+	roleID, userID, err := resolveScopeTarget(ctx, s.pool, c.TenantID, scopeType, scopeValue)
+	if err != nil {
+		return nil, err
 	}
-	return models.CreateRule(ctx, s.pool, c.TenantID, content, priority, models.ScopeType(scopeType), scopeValue)
+	return models.CreateRule(ctx, s.pool, c.TenantID, content, priority, roleID, userID)
 }
 
 // Update updates a rule. Admin only.

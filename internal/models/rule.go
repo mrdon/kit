@@ -42,13 +42,14 @@ func ListRules(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]R
 }
 
 // GetRulesForContext returns rules matching the user's roles, ordered by priority.
-func GetRulesForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userRoles []string) ([]Rule, error) {
-	scopeSQL, scopeArgs := ScopeFilter("rs", 2, "", userRoles)
+func GetRulesForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID) ([]Rule, error) {
+	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT r.id, r.tenant_id, r.content, r.priority, r.created_at, r.updated_at
 		FROM rules r
 		JOIN rule_scopes rs ON rs.rule_id = r.id AND rs.tenant_id = r.tenant_id
+		JOIN scopes sc ON sc.id = rs.scope_id
 		WHERE r.tenant_id = $1
 		AND (`+scopeSQL+`)
 		ORDER BY r.priority DESC, r.created_at
@@ -69,7 +70,9 @@ func GetRulesForContext(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return rules, rows.Err()
 }
 
-func CreateRule(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, priority int, scopeType ScopeType, scopeValue string) (*Rule, error) {
+// CreateRule creates a rule with a single scope row. Pass roleID for a role
+// scope, userID for a user scope, or both nil for tenant-wide.
+func CreateRule(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, priority int, roleID, userID *uuid.UUID) (*Rule, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
@@ -89,10 +92,15 @@ func CreateRule(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, con
 		return nil, fmt.Errorf("creating rule: %w", err)
 	}
 
+	scopeID, err := getOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get-or-create scope: %w", err)
+	}
+
 	_, err = tx.Exec(ctx, `
-		INSERT INTO rule_scopes (tenant_id, rule_id, scope_type, scope_value)
-		VALUES ($1, $2, $3, $4)
-	`, tenantID, ruleID, scopeType, scopeValue)
+		INSERT INTO rule_scopes (tenant_id, rule_id, scope_id)
+		VALUES ($1, $2, $3)
+	`, tenantID, ruleID, scopeID)
 	if err != nil {
 		return nil, fmt.Errorf("creating rule scope: %w", err)
 	}
@@ -112,34 +120,6 @@ func UpdateRule(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.U
 		return fmt.Errorf("updating rule: %w", err)
 	}
 	return nil
-}
-
-// RuleScope represents a single scope row for a rule.
-type RuleScope struct {
-	ScopeType  ScopeType
-	ScopeValue string
-}
-
-// GetRuleScopes returns the scope rows for a rule.
-func GetRuleScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, ruleID uuid.UUID) ([]RuleScope, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT scope_type, scope_value
-		FROM rule_scopes WHERE tenant_id = $1 AND rule_id = $2
-	`, tenantID, ruleID)
-	if err != nil {
-		return nil, fmt.Errorf("getting rule scopes: %w", err)
-	}
-	defer rows.Close()
-
-	var scopes []RuleScope
-	for rows.Next() {
-		var s RuleScope
-		if err := rows.Scan(&s.ScopeType, &s.ScopeValue); err != nil {
-			return nil, err
-		}
-		scopes = append(scopes, s)
-	}
-	return scopes, rows.Err()
 }
 
 // GetRule returns a single rule by ID.
