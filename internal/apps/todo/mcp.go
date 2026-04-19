@@ -88,6 +88,9 @@ func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
 			}
+			if errors.Is(err, ErrInvalidRole) {
+				return mcp.NewToolResultError(fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", roleScope)), nil
+			}
 			return nil, err
 		}
 
@@ -194,7 +197,12 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			u.AssignedTo = id
 		}
 		if v := req.GetString("role_scope", ""); v != "" {
-			u.RoleScope = &v
+			if strings.EqualFold(v, ClearRoleScope) {
+				empty := ""
+				u.RoleScope = &empty
+			} else {
+				u.RoleScope = &v
+			}
 		}
 		if v := req.GetString("due_date", ""); v != "" {
 			d, err := time.Parse("2006-01-02", v)
@@ -214,6 +222,9 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			}
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
+			}
+			if errors.Is(err, ErrInvalidRole) {
+				return mcp.NewToolResultError(fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", req.GetString("role_scope", ""))), nil
 			}
 			return nil, err
 		}

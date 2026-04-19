@@ -21,6 +21,14 @@ type TodoService struct {
 	pool *pgxpool.Pool
 }
 
+// ErrInvalidRole is returned when a todo is created/updated with a role_scope
+// that does not exist in the tenant's roles table.
+var ErrInvalidRole = errors.New("role does not exist")
+
+// ClearRoleScope is the sentinel string callers pass to update_todo to clear
+// the role_scope field back to empty (un-scoped).
+const ClearRoleScope = "none"
+
 // ResolveAssignee turns a flexible user reference (UUID, Slack user ID, or
 // display-name fragment) into a kit user UUID. Returns a user-facing message
 // in the second return when the reference can't be resolved unambiguously;
@@ -49,6 +57,16 @@ func (s *TodoService) Create(ctx context.Context, c *services.Caller, t *Todo) e
 		// Non-admins can only scope to their own roles
 		if t.RoleScope != "" && !slices.Contains(c.Roles, t.RoleScope) {
 			return services.ErrForbidden
+		}
+	}
+
+	if t.RoleScope != "" {
+		exists, err := models.RoleExists(ctx, s.pool, c.TenantID, t.RoleScope)
+		if err != nil {
+			return fmt.Errorf("validating role: %w", err)
+		}
+		if !exists {
+			return fmt.Errorf("%q: %w", t.RoleScope, ErrInvalidRole)
 		}
 	}
 
@@ -113,6 +131,16 @@ func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uui
 	if !c.IsAdmin {
 		if err := validateNonAdminUpdate(c, u); err != nil {
 			return nil, err
+		}
+	}
+
+	if u.RoleScope != nil && *u.RoleScope != "" {
+		exists, err := models.RoleExists(ctx, s.pool, c.TenantID, *u.RoleScope)
+		if err != nil {
+			return nil, fmt.Errorf("validating role: %w", err)
+		}
+		if !exists {
+			return nil, fmt.Errorf("%q: %w", *u.RoleScope, ErrInvalidRole)
 		}
 	}
 

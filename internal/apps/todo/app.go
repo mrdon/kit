@@ -1,6 +1,7 @@
 package todo
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -100,7 +101,7 @@ var todoTools = []services.ToolMeta{
 			"priority":       services.Field("string", "New priority: low, medium, high, urgent"),
 			"blocked_reason": services.Field("string", "Reason for blocking (required when status=blocked)"),
 			"assigned_to":    services.Field("string", "User UUID to assign to"),
-			"role_scope":     services.Field("string", "Role name this todo belongs to"),
+			"role_scope":     services.Field("string", fmt.Sprintf("Role name this todo belongs to. Pass %q to clear the role scope.", ClearRoleScope)),
 			"due_date":       services.Field("string", "Due date in YYYY-MM-DD format"),
 			"private":        map[string]any{"type": "boolean", "description": "If true, only creator and assignee can see this todo"},
 		}, "todo_id"),

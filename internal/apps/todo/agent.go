@@ -93,6 +93,9 @@ func handleCreateTodo(svc *TodoService) tools.HandlerFunc {
 			if errors.Is(err, services.ErrForbidden) {
 				return "You don't have permission to create a todo with those settings.", nil
 			}
+			if errors.Is(err, ErrInvalidRole) {
+				return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", inp.RoleScope), nil
+			}
 			return "", fmt.Errorf("creating todo: %w", err)
 		}
 
@@ -226,7 +229,12 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 			u.AssignedTo = id
 		}
 		if inp.RoleScope != "" {
-			u.RoleScope = &inp.RoleScope
+			if strings.EqualFold(inp.RoleScope, ClearRoleScope) {
+				empty := ""
+				u.RoleScope = &empty
+			} else {
+				u.RoleScope = &inp.RoleScope
+			}
 		}
 		if inp.DueDate != "" {
 			d, err := time.Parse("2006-01-02", inp.DueDate)
@@ -247,6 +255,9 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 			}
 			if errors.Is(err, services.ErrForbidden) {
 				return "You don't have permission to update this todo.", nil
+			}
+			if errors.Is(err, ErrInvalidRole) {
+				return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", inp.RoleScope), nil
 			}
 			return "", fmt.Errorf("updating todo: %w", err)
 		}

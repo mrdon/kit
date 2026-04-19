@@ -257,7 +257,7 @@ func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.U
 	if u.RoleScope != nil {
 		argN++
 		sets = append(sets, fmt.Sprintf("role_scope = $%d", argN))
-		args = append(args, *u.RoleScope)
+		args = append(args, nilIfEmpty(*u.RoleScope))
 	}
 	if u.DueDate != nil {
 		argN++
