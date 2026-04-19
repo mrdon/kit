@@ -34,8 +34,14 @@ func handleManifest(w http.ResponseWriter, r *http.Request) {
 		"background_color": "#0f172a",
 		"theme_color":      "#1f2937",
 		"icons": []map[string]any{
-			{"src": "/" + slug + "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
-			{"src": "/" + slug + "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+			// Slack's largest team icon is image_230 — actual PNG
+			// dimensions fall short of the 192/512 that Android prefers,
+			// so we declare "any" to let the browser use whichever bytes
+			// are returned at whichever size it needs. Dropping
+			// "maskable" because Slack icons have no safe-zone padding
+			// and Android would crop them oddly.
+			{"src": "/" + slug + "/icon-192.png", "sizes": "any", "type": "image/png", "purpose": "any"},
+			{"src": "/" + slug + "/icon-512.png", "sizes": "any", "type": "image/png", "purpose": "any"},
 		},
 	})
 }
