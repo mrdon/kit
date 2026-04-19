@@ -19,8 +19,11 @@
 // source works for every workspace.
 const SCOPE_URL = new URL(self.registration.scope);
 const SCOPE = SCOPE_URL.pathname; // trailing slash included
-const CACHE = 'kit' + SCOPE + 'v3';
-const SHELL = [SCOPE, SCOPE + 'manifest.webmanifest', SCOPE + 'icon.svg'];
+const CACHE = 'kit' + SCOPE + 'v4';
+// Shell is intentionally minimal — manifest and icons are fetched
+// straight from the network so install-time icon changes aren't
+// masked by a stale cached shell.
+const SHELL = [SCOPE];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
@@ -47,6 +50,12 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.endsWith('/login')) return;
   if (url.pathname.endsWith('/dev-login')) return;
   if (url.pathname.startsWith('/oauth/')) return;
+  // Never cache the manifest or tenant icons — they can change when a
+  // workspace re-OAuths (new Slack team icon, updated slug, etc.).
+  if (url.pathname.endsWith('/manifest.webmanifest')) return;
+  if (url.pathname.endsWith('/icon-192.png')) return;
+  if (url.pathname.endsWith('/icon-512.png')) return;
+  if (url.pathname.endsWith('/icon.svg')) return;
 
   if (e.request.method !== 'GET') return;
 
