@@ -1,15 +1,20 @@
 package slack
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/image/draw"
 )
 
 // maxIconBytes caps icon downloads. Slack icons are well under this; the
@@ -102,4 +107,29 @@ func validateIconHost(u *url.URL) error {
 func isPNG(b []byte) bool {
 	const pngMagic = "\x89PNG\r\n\x1a\n"
 	return len(b) >= len(pngMagic) && string(b[:len(pngMagic)]) == pngMagic
+}
+
+// ResizePNGSquare decodes `src` as a PNG and re-encodes it as a square
+// PNG of `size`x`size` pixels using high-quality CatmullRom filtering.
+// Returns (nil, nil) if src is empty — callers can treat NULL icon as
+// "no bytes stored" and skip without erroring.
+//
+// Slack's `team.info` caps at 230x230, so PWA manifests that declare
+// 192x192 or 512x512 would otherwise be rejected by Firefox as too
+// small for home-screen install.
+func ResizePNGSquare(src []byte, size int) ([]byte, error) {
+	if len(src) == 0 {
+		return nil, nil
+	}
+	img, err := png.Decode(bytes.NewReader(src))
+	if err != nil {
+		return nil, fmt.Errorf("decoding source png: %w", err)
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	draw.CatmullRom.Scale(dst, dst.Rect, img, img.Bounds(), draw.Over, nil)
+	var out bytes.Buffer
+	if err := png.Encode(&out, dst); err != nil {
+		return nil, fmt.Errorf("encoding resized png: %w", err)
+	}
+	return out.Bytes(), nil
 }

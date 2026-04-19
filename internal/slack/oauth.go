@@ -107,17 +107,30 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("fetching team.info", "team_id", resp.Team.ID, "error", err)
 	}
 	slug := models.SanitizeSlug(domain, resp.Team.ID)
-	iconLarge, err := fetchSlackIcon(ctx, iconLargeURL)
+	// Prefer the larger source (image_230) for both manifest slots —
+	// upscaling 230 → 192/512 looks better than upscaling 132. Fall
+	// back to the small source if only that's available.
+	iconSource, err := fetchSlackIcon(ctx, iconLargeURL)
 	if err != nil {
 		slog.Warn("fetching large team icon", "team_id", resp.Team.ID, "error", err)
 	}
-	iconSmall, err := fetchSlackIcon(ctx, iconSmallURL)
+	if len(iconSource) == 0 {
+		iconSource, err = fetchSlackIcon(ctx, iconSmallURL)
+		if err != nil {
+			slog.Warn("fetching small team icon", "team_id", resp.Team.ID, "error", err)
+		}
+	}
+	icon192, err := ResizePNGSquare(iconSource, 192)
 	if err != nil {
-		slog.Warn("fetching small team icon", "team_id", resp.Team.ID, "error", err)
+		slog.Warn("resizing icon to 192", "team_id", resp.Team.ID, "error", err)
+	}
+	icon512, err := ResizePNGSquare(iconSource, 512)
+	if err != nil {
+		slog.Warn("resizing icon to 512", "team_id", resp.Team.ID, "error", err)
 	}
 
 	// Upsert tenant
-	tenant, err := models.UpsertTenant(ctx, h.pool, resp.Team.ID, teamName, encryptedToken, slug, iconSmall, iconLarge)
+	tenant, err := models.UpsertTenant(ctx, h.pool, resp.Team.ID, teamName, encryptedToken, slug, icon192, icon512)
 	if err != nil {
 		slog.Error("upserting tenant", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
