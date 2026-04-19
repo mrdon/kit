@@ -19,6 +19,11 @@ var distFS embed.FS
 // that need to be workspace-scoped (manifest + icon links) use this token.
 const basePlaceholder = "__KIT_BASE__"
 
+// titlePlaceholder is rewritten to the workspace display name so the
+// <title> matches the home-screen label Firefox Android generates when
+// it falls back to a letter icon.
+const titlePlaceholder = "__KIT_TITLE__"
+
 // AssetHandler serves the shared PWA bundle under /app/assets/*. This
 // does NOT cover the HTML entry point or any per-workspace artifacts —
 // those are routed via /{slug}/... in internal/apps/cards/web.go.
@@ -56,10 +61,10 @@ func AssetHandler() http.Handler {
 }
 
 // IndexHTML returns the PWA entry-point HTML with the per-workspace slug
-// substituted into manifest + icon links. Same bytes for every request
-// under /{slug}/ except for the slug; the shared JS/CSS bundle lives at
+// and title substituted in. Same bytes for every request under /{slug}/
+// except for those tokens; the shared JS/CSS bundle lives at
 // /app/assets/ and is referenced absolutely by the Vite build.
-func IndexHTML(slug string) ([]byte, error) {
+func IndexHTML(slug, title string) ([]byte, error) {
 	sub, err := distSubFS()
 	if err != nil {
 		return nil, err
@@ -68,7 +73,17 @@ func IndexHTML(slug string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return bytes.ReplaceAll(raw, []byte(basePlaceholder), []byte("/"+slug)), nil
+	out := bytes.ReplaceAll(raw, []byte(basePlaceholder), []byte("/"+slug))
+	out = bytes.ReplaceAll(out, []byte(titlePlaceholder), []byte(htmlEscape(title)))
+	return out, nil
+}
+
+// htmlEscape escapes the minimal set needed for a plain <title> body.
+// Slack workspace names can contain "&" or "<" in theory; we don't want
+// those to break parsing or enable injection.
+func htmlEscape(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	return r.Replace(s)
 }
 
 // StaticFile returns a raw file from the PWA dist directory. Used for

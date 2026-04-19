@@ -62,7 +62,11 @@ func handleSPA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	body, err := webapp.IndexHTML(tenant.Slug)
+	title := tenant.Name
+	if title == "" {
+		title = tenant.Slug
+	}
+	body, err := webapp.IndexHTML(tenant.Slug, title)
 	if err != nil {
 		http.Error(w, "PWA not built", http.StatusServiceUnavailable)
 		return
