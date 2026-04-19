@@ -175,18 +175,34 @@ func main() {
 	// Per-tenant MCP + OAuth surface. Each Slack workspace is its own
 	// authorization server at /{slug}/. Slack's redirect URI stays global
 	// at /oauth/callback so the Slack app config never has to change.
+	//
+	// OAuth endpoints are wrapped in CORS middleware per the MCP auth spec
+	// — browser-based MCP clients (and Claude Code's SDK) do preflight
+	// OPTIONS on DCR/token endpoints and fail if we don't respond. Each
+	// real method plus OPTIONS is registered explicitly so Go's ServeMux
+	// doesn't return its default plaintext 405 for the preflight.
 	tenantMW := auth.TenantFromPath(pool)
-	mux.Handle("GET /{slug}/.well-known/oauth-authorization-server", tenantMW(http.HandlerFunc(oauthServer.HandleMetadata)))
-	mux.Handle("GET /{slug}/oauth/authorize", tenantMW(http.HandlerFunc(oauthServer.HandleAuthorize)))
-	mux.Handle("POST /{slug}/oauth/token", tenantMW(http.HandlerFunc(oauthServer.HandleToken)))
-	mux.Handle("POST /{slug}/oauth/register", tenantMW(http.HandlerFunc(regHandler.HandleRegister)))
-	mcpWrapped := tenantMW(auth.AssertBearerMatchesPathTenant(pool, mcpHTTP))
+	metadataH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleMetadata)))
+	authorizeH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleAuthorize)))
+	tokenH := tenantMW(auth.CORS(http.HandlerFunc(oauthServer.HandleToken)))
+	registerH := tenantMW(auth.CORS(http.HandlerFunc(regHandler.HandleRegister)))
+	mux.Handle("GET /{slug}/.well-known/oauth-authorization-server", metadataH)
+	mux.Handle("OPTIONS /{slug}/.well-known/oauth-authorization-server", metadataH)
+	mux.Handle("GET /{slug}/oauth/authorize", authorizeH)
+	mux.Handle("OPTIONS /{slug}/oauth/authorize", authorizeH)
+	mux.Handle("POST /{slug}/oauth/token", tokenH)
+	mux.Handle("OPTIONS /{slug}/oauth/token", tokenH)
+	mux.Handle("POST /{slug}/oauth/register", registerH)
+	mux.Handle("OPTIONS /{slug}/oauth/register", registerH)
+
 	// Streamable HTTP uses POST for JSON-RPC, GET for the SSE stream, and
 	// DELETE for session close. Each method is registered explicitly so Go's
 	// ServeMux can resolve specificity vs the cards SPA's "GET /{slug}/".
+	mcpWrapped := tenantMW(auth.CORS(auth.AssertBearerMatchesPathTenant(pool, mcpHTTP)))
 	mux.Handle("POST /{slug}/mcp", mcpWrapped)
 	mux.Handle("GET /{slug}/mcp", mcpWrapped)
 	mux.Handle("DELETE /{slug}/mcp", mcpWrapped)
+	mux.Handle("OPTIONS /{slug}/mcp", mcpWrapped)
 
 	// Slack's OAuth callback stays global — the tenant slug rides inside
 	// the signed state parameter.

@@ -68,6 +68,34 @@ func InjectCallerFromRequest(ctx context.Context, pool *pgxpool.Pool, r *http.Re
 	return context.WithValue(ctx, callerKey, caller)
 }
 
+// CORS wraps a handler with permissive CORS headers appropriate for OAuth 2.1
+// Dynamic Client Registration, token, and metadata endpoints. MCP's auth spec
+// says authorization servers SHOULD support CORS so browser-based clients can
+// reach them; Claude Code's SDK does a preflight on the token endpoint and
+// aborts with a plaintext-405 parse error if the server doesn't handle it.
+//
+// Origin is reflected (not "*") so credentialed requests from MCP clients that
+// opt into credentials still work; we don't actually read cookies on these
+// endpoints, but reflecting is strictly more compatible.
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, MCP-Protocol-Version")
+		w.Header().Set("Access-Control-Max-Age", "600")
+		w.Header().Add("Vary", "Origin")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // AssertBearerMatchesPathTenant 401s when a Bearer token's tenant does not
 // match the path-resolved tenant. Sits in front of mcpHTTP so an MCP
 // client presenting tenant A's token to /{B}/mcp gets a clear auth error
