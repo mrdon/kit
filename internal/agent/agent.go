@@ -222,19 +222,11 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.
 
 // buildToolDefs assembles the per-request tool list: registry tools
 // (with DeferLoading set per the always-loaded set) followed by the
-// server-side tool_search_tool. cache_control goes on the last
-// non-deferred tool — the API rejects cache_control on a deferred tool,
-// and the server tool entry doesn't trigger a cache write — so we cache
-// the always-loaded prefix and let deferred tool schemas + the server
-// tool sit outside it.
+// server-side tool_search_tool. We let the system block's existing
+// cache_control mark the cache boundary; a tool-block cache_control
+// here didn't seem to trigger writes in initial testing.
 func buildToolDefs(registry *tools.Registry) []anthropic.Tool {
 	defs := registry.Definitions()
-	for i := len(defs) - 1; i >= 0; i-- {
-		if !defs[i].DeferLoading {
-			defs[i].CacheControl = anthropic.Ephemeral()
-			break
-		}
-	}
 	defs = append(defs, anthropic.ToolSearchRegex())
 	return defs
 }
