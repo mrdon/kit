@@ -13,6 +13,7 @@ type BuiltinSkill struct {
 	Name        string
 	Description string
 	Content     string // full markdown body (after frontmatter)
+	AdminOnly   bool   // if true, only admin callers see this skill in catalog/list
 }
 
 // builtinCache is populated once at init time.
@@ -52,6 +53,33 @@ func MatchBuiltins(search string) []BuiltinSkill {
 		}
 	}
 	return matches
+}
+
+// VisibleBuiltins returns built-in skills the caller can see. Admin-only
+// skills are filtered out for non-admin callers. Used by the agent skill
+// catalog and the skill listing service.
+func VisibleBuiltins(isAdmin bool) []BuiltinSkill {
+	out := make([]BuiltinSkill, 0, len(builtinCache))
+	for _, s := range builtinCache {
+		if s.AdminOnly && !isAdmin {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// VisibleMatchBuiltins is MatchBuiltins filtered by caller admin status.
+func VisibleMatchBuiltins(search string, isAdmin bool) []BuiltinSkill {
+	matches := MatchBuiltins(search)
+	out := make([]BuiltinSkill, 0, len(matches))
+	for _, s := range matches {
+		if s.AdminOnly && !isAdmin {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // discover scans an embedded FS for directories containing SKILL.md.
@@ -109,6 +137,8 @@ func parseSkillMD(raw string) (BuiltinSkill, error) {
 			s.Name = val
 		case "description":
 			s.Description = val
+		case "admin_only":
+			s.AdminOnly = val == "true"
 		}
 	}
 	s.Content = body

@@ -10,26 +10,6 @@ import (
 	"time"
 )
 
-// sharedRunner is built once and reused across subtests to avoid paying the
-// ~multi-second WASM cold-start per case. A Runner is safe to reuse across
-// Execute calls — each call gets its own isolated module instance.
-var (
-	sharedRunner     *Runner
-	sharedRunnerOnce sync.Once
-	sharedRunnerErr  error
-)
-
-func getRunner(t *testing.T) *Runner {
-	t.Helper()
-	sharedRunnerOnce.Do(func() {
-		sharedRunner, sharedRunnerErr = New()
-	})
-	if sharedRunnerErr != nil {
-		t.Fatalf("monty.New: %v", sharedRunnerErr)
-	}
-	return sharedRunner
-}
-
 func newCtx(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(context.Background(), 30*time.Second)
@@ -38,7 +18,7 @@ func newCtx(t *testing.T) (context.Context, context.CancelFunc) {
 // TestHostCallScalarRoundTrip: a host function takes a string, returns a dict.
 // Confirms Python sees the dict and fields are intact.
 func TestHostCallScalarRoundTrip(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -75,7 +55,7 @@ u = find_user("jane")
 // TestHostCallKwargs verifies that Python-side keyword args are delivered to
 // the Go callback via Args keyed by param name — same shape as positional.
 func TestHostCallKwargs(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -112,7 +92,7 @@ func TestHostCallKwargs(t *testing.T) {
 // TestHostCallNestedData: return a list of dicts, verify Python can index and
 // read fields, and Go gets it back too.
 func TestHostCallNestedData(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -152,7 +132,7 @@ todos = find_todos()
 // bubbles up as a Go error. In the current monty-go, Python cannot catch it
 // via try/except — the interpreter is unwound and Execute returns.
 func TestHostCallErrorPropagates(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -186,7 +166,7 @@ except Exception:
 // allowlist, the script gets a NameError — surfacing in Go as *MontyError.
 // (Compile succeeds; the failure is at runtime.)
 func TestHostCallUnknownFunction(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -212,7 +192,7 @@ func TestHostCallUnknownFunction(t *testing.T) {
 // TestHostCallMultipleFunctions: register two functions in one Execute, call
 // both, verify each fires with correct args.
 func TestHostCallMultipleFunctions(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -254,7 +234,7 @@ func TestHostCallMultipleFunctions(t *testing.T) {
 // create_todo. This is the real pattern skills will follow — one tool's
 // output feeds the next.
 func TestHostCallChained(t *testing.T) {
-	runner := getRunner(t)
+	runner := testRunner
 	ctx, cancel := newCtx(t)
 	defer cancel()
 

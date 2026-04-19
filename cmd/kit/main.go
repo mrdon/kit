@@ -16,6 +16,7 @@ import (
 
 	"github.com/mrdon/kit/internal"
 	"github.com/mrdon/kit/internal/apps"
+	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
 	_ "github.com/mrdon/kit/internal/apps/slack"
@@ -30,6 +31,7 @@ import (
 	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/tools"
 	"github.com/mrdon/kit/internal/transcribe"
 	"github.com/mrdon/kit/internal/web"
 )
@@ -71,6 +73,17 @@ func main() {
 
 	// Initialize apps (lets them set up services after DB is ready)
 	apps.Init(pool)
+
+	// Wire the exposed-tool registry source. The builder app owns the
+	// exposed_tools table; tools.Registry asks it per session for the
+	// caller-visible set. Done after apps.Init so the builder app's pool
+	// is populated. Stays nil-safe in tests via tools.SetExposedToolRunner(nil).
+	for _, a := range apps.All() {
+		if b, ok := a.(*builderapp.App); ok {
+			tools.SetExposedToolRunner(b.ExposedToolRunner())
+			break
+		}
+	}
 
 	// PWA session signer. Prefer an explicit KIT_SESSION_SECRET; fall back
 	// to deriving from ENCRYPTION_KEY (domain-separated in NewSessionSigner)

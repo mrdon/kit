@@ -20,7 +20,18 @@ type Memory struct {
 
 // CreateMemory inserts a memory pointing at the canonical scope row for
 // (tenantID, roleID|userID|nil). Both roleID and userID nil = tenant-wide.
+// The session FK is nullable — callers outside the live-chat path (MCP
+// server, builder scripts) have no enclosing session and pass uuid.Nil,
+// which we translate to NULL here rather than letting the zero UUID hit
+// the FK constraint.
 func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, roleID, userID *uuid.UUID, sessionID uuid.UUID) error {
+	var sessionArg any
+	if sessionID == uuid.Nil {
+		sessionArg = nil
+	} else {
+		sessionArg = sessionID
+	}
+
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning tx: %w", err)
@@ -35,7 +46,7 @@ func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, c
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO memories (id, tenant_id, content, scope_id, source_session_id)
 		VALUES ($1, $2, $3, $4, $5)
-	`, uuid.New(), tenantID, content, scopeID, sessionID); err != nil {
+	`, uuid.New(), tenantID, content, scopeID, sessionArg); err != nil {
 		return fmt.Errorf("creating memory: %w", err)
 	}
 	return tx.Commit(ctx)

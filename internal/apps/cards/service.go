@@ -32,6 +32,13 @@ type CardService struct {
 	kicker TaskKicker        // set by CardsApp.ConfigureKicker; optional
 }
 
+// NewService returns a CardService bound to pool. Exported so Phase 3
+// builder bridges (and other external wiring) can construct a service
+// without going through the app init path.
+func NewService(pool *pgxpool.Pool) *CardService {
+	return &CardService{pool: pool}
+}
+
 // CreateDecision creates a new decision card. Non-admin callers may only
 // scope the card to roles they hold.
 func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) (*Card, error) {

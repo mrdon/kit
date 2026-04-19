@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,13 +74,22 @@ func (ec *ExecContext) Caller() *services.Caller {
 type HandlerFunc func(ec *ExecContext, input json.RawMessage) (string, error)
 
 // Def defines a single tool.
+//
+// VisibleToRoles gates catalog visibility independent of AdminOnly:
+//   - empty slice → visible to every caller (subject to AdminOnly)
+//   - non-empty  → only callers who hold at least one listed role see it
+//
+// Builder-exposed tools use VisibleToRoles to scope tenant-specific scripts
+// to the roles their author chose (e.g. a "lookup" tool visible only to
+// "bartender"). Static Kit tools leave it empty.
 type Def struct {
-	Name        string
-	Description string
-	Schema      map[string]any
-	Handler     HandlerFunc
-	AdminOnly   bool
-	Terminal    bool // if true, calling this tool ends the agent loop
+	Name           string
+	Description    string
+	Schema         map[string]any
+	Handler        HandlerFunc
+	AdminOnly      bool
+	VisibleToRoles []string
+	Terminal       bool // if true, calling this tool ends the agent loop
 }
 
 // Registry holds all registered tools.
@@ -88,13 +98,68 @@ type Registry struct {
 	handlers map[string]HandlerFunc
 }
 
+// ExposedToolDef describes one tenant-published script function surfaced
+// through the generic tool registry. Registry construction asks the
+// registered ExposedToolRunner to enumerate these per caller, then wraps
+// each with a Def whose handler invokes the backing script.
+type ExposedToolDef struct {
+	ToolName       string
+	Description    string
+	ArgsSchema     map[string]any
+	VisibleToRoles []string
+	// Invoke is a closure that runs the exposed tool with the supplied
+	// keyword args. Implementations are responsible for enforcing stale
+	// flags, role checks at invocation time, and child audit rows. The
+	// registry treats the returned string as the tool result.
+	Invoke func(ctx context.Context, ec *ExecContext, args map[string]any) (string, error)
+}
+
+// ExposedToolRunner is implemented by the builder app (or any future
+// source of dynamic tools). The registry calls List at construction time
+// to enumerate the caller's tenant-published tools. A nil runner makes
+// dynamic registration a no-op — static Kit tools still register
+// normally, so a mis-wired startup doesn't break the agent.
+//
+// Split out into its own interface to dodge the import cycle: the
+// builder package imports tools (to register Defs); if tools imported
+// builder to call RunScript directly we'd have a cycle. The interface
+// hop means the builder registers an implementation during app Init and
+// the tools package only depends on the narrow contract declared here.
+type ExposedToolRunner interface {
+	// List returns the exposed tools for the given caller's tenant.
+	// Implementations should filter out stale rows so the registry can
+	// trust what it receives (registry applies the role-visibility check
+	// centrally via Def.VisibleToRoles).
+	List(ctx context.Context, caller *services.Caller) ([]ExposedToolDef, error)
+}
+
+// currentExposedToolRunner is wired once at startup from cmd/kit/main.go
+// (after apps Init). A nil value is allowed — dynamic registration simply
+// short-circuits and the static tool set is returned.
+var currentExposedToolRunner ExposedToolRunner
+
+// SetExposedToolRunner wires the tenant-exposed tool source used by
+// NewRegistry. Call once during startup, after apps have initialized.
+// Passing nil disables dynamic registration (tests reset via t.Cleanup).
+func SetExposedToolRunner(r ExposedToolRunner) {
+	currentExposedToolRunner = r
+}
+
 // NewRegistry creates a registry and runs all register functions for the
-// given user. botInitiated toggles which messaging tools are registered:
+// given caller. botInitiated toggles which messaging tools are registered:
 // live Slack conversations get reply_in_thread; bot-initiated runs
 // (scheduled tasks, decision resolves) do not — the agent must pick a
 // named channel or user explicitly.
-func NewRegistry(isAdmin, botInitiated bool) *Registry {
+//
+// The caller determines two things: admin gating for admin-only static
+// tools (preserved from the pre-4d signature via caller.IsAdmin) and the
+// pool+tenant used to fetch tenant-specific dynamic tools. Passing a nil
+// caller is allowed in tests that don't exercise dynamic tools; admin
+// tools are simply skipped in that case.
+func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool) *Registry {
 	r := &Registry{handlers: make(map[string]HandlerFunc)}
+
+	isAdmin := caller != nil && caller.IsAdmin
 
 	// Each tool group registers itself here.
 	// To add a new tool: create a file, add a Register call below.
@@ -113,7 +178,44 @@ func NewRegistry(isAdmin, botInitiated bool) *Registry {
 		a.RegisterAgentTools(r, isAdmin)
 	}
 
+	// Dynamic per-tenant exposed tools. Skipped silently if no runner is
+	// wired (tests, or a startup ordering slip). Failures to enumerate are
+	// logged but non-fatal — the agent still works with the static set.
+	if currentExposedToolRunner != nil && caller != nil {
+		defs, err := currentExposedToolRunner.List(ctx, caller)
+		if err != nil {
+			slog.Warn("listing exposed tools", "tenant_id", caller.TenantID, "error", err)
+		} else {
+			for _, d := range defs {
+				r.Register(buildExposedDef(d))
+			}
+		}
+	}
+
 	return r
+}
+
+// buildExposedDef wraps an ExposedToolDef into a tools.Def whose handler
+// unmarshals the raw input, forwards to the runner-supplied Invoke, and
+// returns the string result. The closure captures d by value so repeated
+// registry builds don't share a mutable reference.
+func buildExposedDef(d ExposedToolDef) Def {
+	captured := d
+	return Def{
+		Name:           captured.ToolName,
+		Description:    captured.Description,
+		Schema:         captured.ArgsSchema,
+		VisibleToRoles: captured.VisibleToRoles,
+		Handler: func(ec *ExecContext, input json.RawMessage) (string, error) {
+			args := map[string]any{}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &args); err != nil {
+					return "", fmt.Errorf("exposed tool %s: invalid arguments: %w", captured.ToolName, err)
+				}
+			}
+			return captured.Invoke(ec.Ctx, ec, args)
+		},
+	}
 }
 
 // Register adds a tool to the registry.
@@ -155,6 +257,65 @@ func (r *Registry) Definitions() []anthropic.Tool {
 		})
 	}
 	return tools
+}
+
+// DefinitionsFor returns Definitions() filtered for the given caller:
+// AdminOnly tools are omitted unless caller.IsAdmin, and VisibleToRoles
+// tools are omitted unless caller holds at least one listed role.
+// Handlers set via Execute remain callable by name — the filter governs
+// catalog/discovery surfaces only. A nil caller is treated as a
+// non-admin with no roles (maximally restrictive).
+func (r *Registry) DefinitionsFor(caller *services.Caller) []anthropic.Tool {
+	var out []anthropic.Tool
+	for _, d := range r.defs {
+		if !IsDefVisible(d, caller) {
+			continue
+		}
+		out = append(out, anthropic.Tool{
+			Name:         d.Name,
+			Description:  d.Description,
+			InputSchema:  d.Schema,
+			DeferLoading: !alwaysLoaded[d.Name],
+		})
+	}
+	return out
+}
+
+// IsDefVisible centralises the visibility rule so registry, MCP, and
+// tests share one predicate. See DefinitionsFor for semantics.
+func IsDefVisible(d Def, caller *services.Caller) bool {
+	if d.AdminOnly {
+		if caller == nil || !caller.IsAdmin {
+			return false
+		}
+	}
+	if len(d.VisibleToRoles) > 0 {
+		if caller == nil {
+			return false
+		}
+		if !anyIntersect(caller.Roles, d.VisibleToRoles) {
+			return false
+		}
+	}
+	return true
+}
+
+// anyIntersect reports whether slices a and b share at least one element.
+// Case-sensitive to match role-name comparisons elsewhere in Kit.
+func anyIntersect(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return false
+	}
+	set := make(map[string]struct{}, len(a))
+	for _, x := range a {
+		set[x] = struct{}{}
+	}
+	for _, y := range b {
+		if _, ok := set[y]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Execute runs a tool by name.

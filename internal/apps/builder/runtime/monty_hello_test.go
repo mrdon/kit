@@ -7,7 +7,6 @@ import (
 // TestMontyHello is a proof-of-dependency smoke test: boot the Monty runner,
 // run a trivial Python snippet that uses a named input, and verify the result.
 func TestMontyHello(t *testing.T) {
-	runner := getRunner(t)
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
@@ -20,7 +19,7 @@ def greet(name):
 
 greet(input_name)
 `
-	result, err := runner.Execute(ctx, code, map[string]any{"input_name": "kit"})
+	result, err := testRunner.Execute(ctx, code, map[string]any{"input_name": "kit"})
 	if err != nil {
 		t.Fatalf("runner.Execute: %v", err)
 	}

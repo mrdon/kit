@@ -66,7 +66,7 @@ func mcpLoadSkill(svc *services.Services) mcpserver.ToolHandlerFunc {
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
 			// Not a UUID — try as a built-in skill name.
-			skill, berr := svc.Skills.LoadByName(idStr)
+			skill, berr := svc.Skills.LoadByName(caller, idStr)
 			if errors.Is(berr, services.ErrNotFound) {
 				return mcp.NewToolResultError("Skill not found."), nil
 			}

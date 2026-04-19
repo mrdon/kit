@@ -50,11 +50,18 @@ func ResolveTimezone(userTZ, tenantTZ string) string {
 }
 
 // ToolMeta defines a tool's metadata, shared between agent and MCP adapters.
+//
+// VisibleToRoles gates which roles can see the tool in their catalog. An empty
+// slice means "visible to everyone" (subject to AdminOnly). A populated list
+// restricts visibility to callers who hold at least one of the listed roles;
+// this is the surface used by builder-exposed tools so a script published for
+// bartenders doesn't leak into the manager tool catalog.
 type ToolMeta struct {
-	Name        string
-	Description string
-	Schema      map[string]any // JSON Schema for input
-	AdminOnly   bool
+	Name           string
+	Description    string
+	Schema         map[string]any // JSON Schema for input
+	AdminOnly      bool
+	VisibleToRoles []string
 }
 
 // Common service errors.

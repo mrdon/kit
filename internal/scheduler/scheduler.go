@@ -2,11 +2,11 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/agent"
@@ -29,7 +29,14 @@ type Scheduler struct {
 func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 	// Buffered so Kick never blocks; if a kick is already pending, extra
 	// kicks coalesce into that one run.
-	return &Scheduler{pool: pool, enc: enc, agent: a, kickCh: make(chan struct{}, 1)}
+	s := &Scheduler{pool: pool, enc: enc, agent: a, kickCh: make(chan struct{}, 1)}
+	// Register the baseline runners for agent + builtin task_types. Each
+	// wraps Scheduler methods, so s must exist before registration.
+	// Idempotent: repeat constructions in tests replace the runner
+	// pointers but preserve the map keys.
+	RegisterTaskRunner(&agentRunner{s: s})
+	RegisterTaskRunner(&builtinRunner{s: s})
+	return s
 }
 
 // Kick wakes the task loop immediately instead of waiting for the next
@@ -85,6 +92,26 @@ func (s *Scheduler) runTaskLoop(ctx context.Context) {
 	}
 }
 
+// ProcessDueTasksForTest drives one iteration of processDueTasks from
+// outside the package. Production uses the ticker loop; tests need a
+// deterministic single-shot tick.
+//
+// Not part of the package's external API — do not call from non-test
+// code.
+func (s *Scheduler) ProcessDueTasksForTest(ctx context.Context) {
+	s.processDueTasks(ctx)
+}
+
+// ProcessDueTasksForTenantForTest is a tenant-scoped single-tick variant
+// so fixtures running in parallel against the shared Postgres don't claim
+// each other's rows.
+//
+// Not part of the package's external API — do not call from non-test
+// code.
+func (s *Scheduler) ProcessDueTasksForTenantForTest(ctx context.Context, tenantID uuid.UUID) {
+	s.processDueTasksForTenant(ctx, tenantID)
+}
+
 func (s *Scheduler) processDueTasks(ctx context.Context) {
 	// ClaimDueTasks atomically flips status to 'running' under SKIP LOCKED,
 	// so concurrent schedulers (e.g. during a rolling deploy) never run the
@@ -94,167 +121,38 @@ func (s *Scheduler) processDueTasks(ctx context.Context) {
 		slog.Error("claiming due tasks", "error", err)
 		return
 	}
+	s.fanOutClaimed(ctx, tasks)
+}
+
+// processDueTasksForTenant is the tenant-scoped claim variant used by
+// tests. Production code always calls processDueTasks.
+func (s *Scheduler) processDueTasksForTenant(ctx context.Context, tenantID uuid.UUID) {
+	tasks, err := models.ClaimDueTasksForTenant(ctx, s.pool, tenantID, maxConcurrentTasks*2)
+	if err != nil {
+		slog.Error("claiming due tasks for tenant", "error", err)
+		return
+	}
+	s.fanOutClaimed(ctx, tasks)
+}
+
+// fanOutClaimed dispatches each claimed task through the runner registry,
+// bounded by maxConcurrentTasks.
+func (s *Scheduler) fanOutClaimed(ctx context.Context, tasks []models.Task) {
 	if len(tasks) == 0 {
 		return
 	}
-
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxConcurrentTasks)
-
-	for _, task := range tasks {
+	for i := range tasks {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func() {
+		go func(t models.Task) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			s.executeTask(ctx, task)
-		}()
+			s.dispatchTask(ctx, &t)
+		}(tasks[i])
 	}
-
 	wg.Wait()
-}
-
-func (s *Scheduler) executeTask(ctx context.Context, task models.Task) {
-	slog.Info("executing scheduled task", "task_id", task.ID, "task_type", task.TaskType, "description", task.Description)
-
-	// Route builtin tasks to native handlers
-	if task.TaskType == models.TaskTypeBuiltin {
-		s.ExecuteBuiltinTask(ctx, task)
-		return
-	}
-
-	tenant, err := models.GetTenantByID(ctx, s.pool, task.TenantID)
-	if err != nil || tenant == nil {
-		slog.Error("looking up tenant for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "looking up tenant", nil, nil)
-		return
-	}
-
-	botToken, err := s.enc.Decrypt(tenant.BotToken)
-	if err != nil {
-		slog.Error("decrypting bot token for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "decrypting bot token", nil, nil)
-		return
-	}
-	slack := kitslack.NewClient(botToken)
-
-	user, err := models.GetUserByID(ctx, s.pool, tenant.ID, task.CreatedBy)
-	if err != nil || user == nil {
-		slog.Error("looking up user for task", "task_id", task.ID, "error", err)
-		s.recordTaskError(ctx, task, "looking up user", slack, nil)
-		return
-	}
-
-	// Session selection: resume an existing session when ResolveDecision
-	// flagged this task (resume_session_id set), otherwise mint fresh.
-	// The resume marker is consumed — a subsequent cron tick gets a fresh
-	// session, not the previous workflow's context.
-	var session *models.Session
-	isResume := false
-	if task.ResumeSessionID != nil {
-		existing, err := models.GetSession(ctx, s.pool, tenant.ID, *task.ResumeSessionID)
-		if err == nil && existing != nil {
-			session = existing
-			isResume = true
-		} else if err != nil {
-			slog.Warn("loading resume session for task, falling back to fresh", "task_id", task.ID, "error", err)
-		}
-		if err := models.ClearTaskResumeSession(ctx, s.pool, tenant.ID, task.ID); err != nil {
-			slog.Warn("clearing resume_session_id", "task_id", task.ID, "error", err)
-		}
-	}
-	if session == nil {
-		threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
-		created, err := models.CreateSession(ctx, s.pool, tenant.ID, task.ChannelID, threadTS, user.ID, true)
-		if err != nil {
-			slog.Error("creating session for task", "task_id", task.ID, "error", err)
-			s.recordTaskError(ctx, task, "creating session", slack, user)
-			return
-		}
-		session = created
-	}
-
-	authorName := user.SlackUserID
-	if user.DisplayName != nil && *user.DisplayName != "" {
-		authorName = *user.DisplayName
-	}
-	tc := &agent.TaskContext{
-		ID:            task.ID,
-		Description:   task.Description,
-		AuthorSlackID: user.SlackUserID,
-		AuthorName:    authorName,
-	}
-
-	// On resume the full context is in session history (original prompt,
-	// prior tool calls, the decision_resolved event). The fresh user
-	// message only needs to nudge the agent to re-evaluate.
-	userText := task.Description
-	if isResume {
-		userText = "A decision you created has been resolved. Review the updated state and continue the workflow — either create any remaining decisions, produce your final output, or wait if other decisions are still pending."
-	}
-
-	var lastError *string
-	if err := s.agent.Run(ctx, agent.RunInput{
-		Slack:    slack,
-		Tenant:   tenant,
-		User:     user,
-		Session:  session,
-		Channel:  task.ChannelID,
-		UserText: userText,
-		Task:     tc,
-	}); err != nil {
-		slog.Error("task agent run failed", "task_id", task.ID, "error", err)
-		errStr := err.Error()
-		lastError = &errStr
-		dmCh, dmErr := slack.OpenConversation(ctx, user.SlackUserID)
-		if dmErr == nil {
-			_ = slack.PostMessage(ctx, dmCh, "",
-				fmt.Sprintf("⚠️ Scheduled task failed: _%s_\nError: %s", task.Description, errStr))
-		}
-	}
-
-	if task.RunOnce {
-		if err := models.CompleteTask(ctx, s.pool, task.TenantID, task.ID, lastError); err != nil {
-			slog.Error("completing one-time task", "task_id", task.ID, "error", err)
-		}
-		slog.Info("one-time task completed", "task_id", task.ID)
-		return
-	}
-
-	nextRun, err := models.NextCronRun(task.CronExpr, task.Timezone, time.Now())
-	if err != nil {
-		slog.Error("computing next run", "task_id", task.ID, "error", err)
-		return
-	}
-
-	if err := models.UpdateTaskAfterRun(ctx, s.pool, task.TenantID, task.ID, nextRun, lastError); err != nil {
-		slog.Error("updating task after run", "task_id", task.ID, "error", err)
-	}
-
-	slog.Info("task completed", "task_id", task.ID, "next_run", nextRun)
-}
-
-func (s *Scheduler) recordTaskError(ctx context.Context, task models.Task, msg string, slack *kitslack.Client, user *models.User) {
-	if slack != nil {
-		errText := fmt.Sprintf("⚠️ Scheduled task failed: _%s_\nError: %s", task.Description, msg)
-		if user != nil {
-			if dmCh, err := slack.OpenConversation(ctx, user.SlackUserID); err == nil {
-				_ = slack.PostMessage(ctx, dmCh, "", errText)
-			}
-		} else {
-			_ = slack.PostMessage(ctx, task.ChannelID, "", errText)
-		}
-	}
-	if task.RunOnce {
-		_ = models.CompleteTask(ctx, s.pool, task.TenantID, task.ID, &msg)
-		return
-	}
-	nextRun, err := models.NextCronRun(task.CronExpr, task.Timezone, time.Now())
-	if err != nil {
-		slog.Error("computing next run for error recording", "task_id", task.ID, "error", err)
-		return
-	}
-	_ = models.UpdateTaskAfterRun(ctx, s.pool, task.TenantID, task.ID, nextRun, &msg)
 }
 
 func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant) {

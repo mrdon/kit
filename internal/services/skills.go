@@ -63,10 +63,17 @@ func (s *SkillService) Load(ctx context.Context, c *Caller, skillID uuid.UUID) (
 	return skill, files, nil
 }
 
-// LoadByName returns a built-in skill by name.
-func (s *SkillService) LoadByName(name string) (*models.Skill, error) {
+// LoadByName returns a built-in skill by name. Admin-only builtins are
+// hidden from non-admin callers (returned as ErrNotFound so the LLM doesn't
+// leak the existence of an admin-only skill via a "forbidden" error path).
+// c may be nil for legacy call sites that pre-date role gating; in that
+// case admin-only skills remain loadable (no caller to check against).
+func (s *SkillService) LoadByName(c *Caller, name string) (*models.Skill, error) {
 	b := skills.GetBuiltin(name)
 	if b == nil {
+		return nil, ErrNotFound
+	}
+	if b.AdminOnly && c != nil && !c.IsAdmin {
 		return nil, ErrNotFound
 	}
 	return &models.Skill{
@@ -101,7 +108,7 @@ func (s *SkillService) List(ctx context.Context, c *Caller, search string) ([]mo
 	if err != nil {
 		return nil, err
 	}
-	builtins := skills.MatchBuiltins(search)
+	builtins := skills.VisibleMatchBuiltins(search, c.IsAdmin)
 	result := make([]models.SkillSummary, 0, len(builtins)+len(dbSkills))
 	for _, b := range builtins {
 		result = append(result, models.SkillSummary{

@@ -30,6 +30,13 @@ var ErrInvalidRole = errors.New("role does not exist")
 // backwards-compat.
 const ClearRoleScope = "none"
 
+// NewService returns a TodoService bound to pool. Exported so builder-app
+// bridges (and other external wiring) can construct a service without going
+// through the app init path.
+func NewService(pool *pgxpool.Pool) *TodoService {
+	return &TodoService{pool: pool}
+}
+
 // CreateInput is the high-level shape callers (agent, MCP) supply for a new
 // todo. Exactly one of AssignedTo / RoleName may be set; both omitted means
 // "scope to caller". Visibility defaults to "scoped".

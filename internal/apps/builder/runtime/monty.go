@@ -13,6 +13,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tetratelabs/wazero"
@@ -150,12 +153,43 @@ func WithPrintFunc(fn func(string)) ExecuteOption {
 	return func(c *executeConfig) { c.printFunc = fn }
 }
 
+// wasmCacheDir is where wazero's file-backed compilation cache lives. Using
+// os.TempDir keeps it out of the repo, per-host, and transparently cleaned
+// up by OS tmp-reaper policies. The contents are a pure speedup — safe to
+// delete at any time; wazero will rebuild them on the next New() call.
+func wasmCacheDir() string {
+	return filepath.Join(os.TempDir(), "kit-monty-wasm-cache")
+}
+
 // New creates a new Monty WASM runner.
 // The WASM module is compiled once and reused across Execute calls.
+//
+// wazero's compilation cache is attached in file-backed mode; on second and
+// subsequent process starts, the Monty WASM binary is loaded from the cache
+// directory (os.TempDir()/kit-monty-wasm-cache) instead of recompiled. The
+// cache is a pure speedup — deleting the directory at any time is safe and
+// simply causes the next boot to recompile and repopulate.
 func New() (*Runner, error) {
 	ctx := context.Background()
+
 	config := wazero.NewRuntimeConfig().
 		WithCloseOnContextDone(true)
+
+	// Best-effort: enable the file-backed compile cache. If the cache dir
+	// can't be created or opened (disk full, permission denied, read-only
+	// tmp), fall back to an uncached runtime rather than failing outright —
+	// the cache is a speedup, not a correctness requirement.
+	cacheDir := wasmCacheDir()
+	if err := os.MkdirAll(cacheDir, 0o755); err == nil {
+		if cache, cerr := wazero.NewCompilationCacheWithDir(cacheDir); cerr == nil {
+			config = config.WithCompilationCache(cache)
+		} else {
+			slog.Warn("monty: compile cache unavailable, continuing without it", "dir", cacheDir, "err", cerr)
+		}
+	} else {
+		slog.Warn("monty: compile cache dir unusable, continuing without it", "dir", cacheDir, "err", err)
+	}
+
 	r := wazero.NewRuntimeWithConfig(ctx, config)
 
 	// Instantiate WASI (provides clock, random, fd_write for the WASM module).

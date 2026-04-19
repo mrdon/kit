@@ -85,8 +85,9 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	start := time.Now()
 	tenant, session := in.Tenant, in.Session
 
-	registry := tools.NewRegistry(in.User.IsAdmin, in.Session.BotInitiated)
 	ec := a.buildExecContext(ctx, in)
+	caller := ec.Caller()
+	registry := tools.NewRegistry(ctx, caller, in.Session.BotInitiated)
 
 	var status *statusTracker
 	if in.Task == nil && !strings.HasPrefix(in.Channel, "web:") {
@@ -103,7 +104,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 
 	messages := a.buildInitialMessages(ctx, in)
 	systemPrompt := a.buildSystemPrompt(ctx, in)
-	toolDefs := buildToolDefs(registry)
+	toolDefs := buildToolDefs(registry, caller)
 
 	sentMessage := false
 	var usage usageTotals
@@ -225,8 +226,8 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.
 // server-side tool_search_tool. We let the system block's existing
 // cache_control mark the cache boundary; a tool-block cache_control
 // here didn't seem to trigger writes in initial testing.
-func buildToolDefs(registry *tools.Registry) []anthropic.Tool {
-	defs := registry.Definitions()
+func buildToolDefs(registry *tools.Registry, caller *services.Caller) []anthropic.Tool {
+	defs := registry.DefinitionsFor(caller)
 	defs = append(defs, anthropic.ToolSearchRegex())
 	return defs
 }

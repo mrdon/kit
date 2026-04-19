@@ -64,6 +64,8 @@ make db-reset    # Wipe and restart Postgres
 - `internal/ingest/` — File upload processing (PDF via pdftotext, DOCX, markdown, ZIP)
 - `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, task, session, session_event, scope)
 - `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, routes, and cron jobs.
+- `internal/apps/builder/` — Scriptable app substrate. Admins use admin-only meta-tools (via MCP) to create "builder apps" — named bundles of scripts, schedules, and exposed tools. Scripts run as sandboxed Python via Monty (vendored WASM at `internal/apps/builder/runtime/monty.wasm`, Rust source under `third_party/monty-wasm/`, rebuilt via `make monty-wasm`). Data lives in `app_items` (MongoDB-shaped jsonb, tenant + builder_app scoped, with a temporal `app_items_history` trigger for rollback).
+- `third_party/monty-wasm/` — Forked Rust shim for pydantic's Monty interpreter. Regenerate `monty.wasm` via `make monty-wasm` when bumping the Monty version pinned in `crates/monty-wasm/Cargo.toml` (Docker-isolated Rust toolchain — host doesn't need Rust).
 - `internal/scheduler/` — Background task runner (cron + builtin tasks like profile sync)
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 - `internal/sse/` — Server-Sent Events writer (used by card chat today; reusable for future ambient-feed pushes)
