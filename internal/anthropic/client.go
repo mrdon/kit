@@ -39,6 +39,12 @@ type Message struct {
 }
 
 // Content represents a content block within a message.
+//
+// The inner Content field is `any` because different block types put
+// different shapes there: tool_result uses a string (tool output),
+// tool_search_tool_result uses an array (the tool_reference blocks the
+// search returned). Using `any` lets responses round-trip through
+// session_events JSON storage without losing data.
 type Content struct {
 	Type  string `json:"type"`
 	Text  string `json:"text,omitempty"`
@@ -46,9 +52,9 @@ type Content struct {
 	Name  string `json:"name,omitempty"`
 	Input any    `json:"input,omitempty"`
 
-	// For tool_result blocks
+	// For tool_result and tool_search_tool_result blocks
 	ToolUseID string `json:"tool_use_id,omitempty"`
-	Content   string `json:"content,omitempty"`
+	Content   any    `json:"content,omitempty"`
 
 	// For prompt caching
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
@@ -62,10 +68,36 @@ type SystemBlock struct {
 }
 
 // Tool describes a tool the model can call.
+//
+// Custom tools leave Type empty and supply Name + Description + InputSchema.
+// Server tools (e.g. tool_search_tool_regex_20251119) set Type to the
+// server-tool identifier, supply Name, and omit Description/InputSchema.
+//
+// DeferLoading: if true, the tool's schema is not sent in the request
+// prefix; the model must discover it via the tool_search_tool. At least
+// one tool in the request must be non-deferred or the API returns 400.
+//
+// CacheControl: when set on a tool entry, Anthropic caches the prefix up
+// to and including that entry. We typically mark the last non-deferred
+// tool to cache the always-loaded tool block.
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	InputSchema any    `json:"input_schema"`
+	Type         string        `json:"type,omitempty"`
+	Name         string        `json:"name"`
+	Description  string        `json:"description,omitempty"`
+	InputSchema  any           `json:"input_schema,omitempty"`
+	DeferLoading bool          `json:"defer_loading,omitempty"`
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// ToolSearchRegex returns the server-side regex tool-search tool. The
+// model invokes this to discover tools that were sent with
+// DeferLoading=true; the API expands matching tools inline as
+// tool_reference blocks. Supported on Haiku 4.5+, no beta header.
+func ToolSearchRegex() Tool {
+	return Tool{
+		Type: "tool_search_tool_regex_20251119",
+		Name: "tool_search_tool_regex",
+	}
 }
 
 // Request is the Messages API request body.

@@ -120,14 +120,36 @@ func (r *Registry) Register(d Def) {
 	r.handlers[d.Name] = d.Handler
 }
 
-// Definitions returns tool definitions for the Claude API.
+// alwaysLoaded is the set of tool names that are sent in the request
+// prefix on every iteration. Everything else is marked DeferLoading=true
+// so the model must discover it via tool_search_tool.
+//
+// The set is intentionally tight (~5 tools): the three terminal
+// messaging tools so the model can always end a turn; search_skills as
+// the existing capability-discovery surface; find_user because almost
+// every Slack interaction needs to resolve a mention. Add a name here
+// only if the model needs it from the very first turn without a
+// search round-trip.
+var alwaysLoaded = map[string]bool{
+	"reply_in_thread": true,
+	"post_to_channel": true,
+	"dm_user":         true,
+	"search_skills":   true,
+	"find_user":       true,
+}
+
+// Definitions returns tool definitions for the Claude API. Tools not in
+// alwaysLoaded are marked DeferLoading=true; their schemas stay out of
+// the prefix and only enter context when the model invokes
+// tool_search_tool to find them.
 func (r *Registry) Definitions() []anthropic.Tool {
 	var tools []anthropic.Tool
 	for _, d := range r.defs {
 		tools = append(tools, anthropic.Tool{
-			Name:        d.Name,
-			Description: d.Description,
-			InputSchema: d.Schema,
+			Name:         d.Name,
+			Description:  d.Description,
+			InputSchema:  d.Schema,
+			DeferLoading: !alwaysLoaded[d.Name],
 		})
 	}
 	return tools

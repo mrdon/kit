@@ -103,7 +103,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 
 	messages := a.buildInitialMessages(ctx, in)
 	systemPrompt := a.buildSystemPrompt(ctx, in)
-	toolDefs := registry.Definitions()
+	toolDefs := buildToolDefs(registry)
 
 	sentMessage := false
 	var usage usageTotals
@@ -220,10 +220,38 @@ func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.
 	}}
 }
 
+// buildToolDefs assembles the per-request tool list: registry tools
+// (with DeferLoading set per the always-loaded set), the server-side
+// tool_search_tool, and a cache_control marker on the last entry so the
+// whole tools block is cached. With most tools deferred the cached block
+// is small (~5 tools), keeping cache write costs down.
+func buildToolDefs(registry *tools.Registry) []anthropic.Tool {
+	defs := registry.Definitions()
+	defs = append(defs, anthropic.ToolSearchRegex())
+	if len(defs) > 0 {
+		defs[len(defs)-1].CacheControl = anthropic.Ephemeral()
+	}
+	return defs
+}
+
+func countLoadedDeferred(defs []anthropic.Tool) (loaded, deferred int) {
+	for _, t := range defs {
+		if t.DeferLoading {
+			deferred++
+		} else {
+			loaded++
+		}
+	}
+	return
+}
+
 func (a *Agent) callLLM(ctx context.Context, tenantID, sessionID uuid.UUID, system []anthropic.SystemBlock, messages []anthropic.Message, toolDefs []anthropic.Tool, iteration int, iterStart time.Time) (*anthropic.Response, error) {
+	loaded, deferred := countLoadedDeferred(toolDefs)
 	_ = models.AppendSessionEvent(ctx, a.pool, tenantID, sessionID, models.EventTypeLLMRequest, map[string]any{
-		"model":     modelHaiku,
-		"iteration": iteration,
+		"model":               modelHaiku,
+		"iteration":           iteration,
+		"tool_count_loaded":   loaded,
+		"tool_count_deferred": deferred,
 	})
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
 		Model:        modelHaiku,
@@ -396,12 +424,23 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 // cause the API to reject the request. An assistant message with tool_use
 // blocks must be immediately followed by a user message with matching
 // tool_result blocks.
+//
+// It also strips server-side blocks (server_tool_use,
+// tool_search_tool_result) from assistant messages: those were live
+// expansions emitted by the API during the original turn, but on replay
+// the client doesn't need to (and shouldn't try to) reassert them — the
+// API has the deferred tool registrations directly in the request.
 func sanitizeHistory(messages []anthropic.Message) []anthropic.Message {
+	for i := range messages {
+		if messages[i].Role == "assistant" {
+			messages[i].Content = stripServerBlocks(messages[i].Content)
+		}
+	}
+
 	var clean []anthropic.Message
 	for i := 0; i < len(messages); i++ {
 		msg := messages[i]
 
-		// Check if this assistant message has tool_use blocks
 		if msg.Role == "assistant" {
 			hasToolUse := false
 			for _, c := range msg.Content {
@@ -411,13 +450,11 @@ func sanitizeHistory(messages []anthropic.Message) []anthropic.Message {
 				}
 			}
 			if hasToolUse {
-				// Next message must be user with tool_result blocks
 				if i+1 < len(messages) && hasToolResults(messages[i+1]) {
 					clean = append(clean, msg, messages[i+1])
-					i++ // skip the tool_results message, already added
+					i++
 					continue
 				}
-				// Orphaned tool_use — skip it
 				slog.Warn("dropping orphaned tool_use from history", "index", i)
 				continue
 			}
@@ -426,6 +463,18 @@ func sanitizeHistory(messages []anthropic.Message) []anthropic.Message {
 		clean = append(clean, msg)
 	}
 	return clean
+}
+
+func stripServerBlocks(blocks []anthropic.Content) []anthropic.Content {
+	var out []anthropic.Content
+	for _, c := range blocks {
+		switch c.Type {
+		case "server_tool_use", "tool_search_tool_result":
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func hasToolResults(msg anthropic.Message) bool {
@@ -470,6 +519,10 @@ func (s *statusTracker) update(ctx context.Context, status string) {
 }
 
 func (s *statusTracker) addTool(ctx context.Context, name string) {
+	// Server-side tool search is internal routing, not user-visible work.
+	if strings.HasPrefix(name, "tool_search_tool") {
+		return
+	}
 	s.tools = append(s.tools, name)
 	s.update(ctx, "")
 }
