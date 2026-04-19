@@ -18,6 +18,9 @@ function Face({ item }: { item: StackItem }) {
             <span className="assignee">👤 {m.assigned_to_name}</span>
           )}
           {m.role_scope && <span className="role-scope">#{m.role_scope}</span>}
+          {m.visibility === 'public' && (
+            <span className="visibility-public">🌐 public</span>
+          )}
         </div>
       )}
       <div className="hint">Swipe right to complete</div>

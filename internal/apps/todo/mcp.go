@@ -50,22 +50,15 @@ func todoMCPHandler(name string, svc *TodoService) mcpserver.ToolHandlerFunc {
 func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		title, _ := req.RequireString("title")
-		desc := req.GetString("description", "")
-		priority := req.GetString("priority", "")
 		assignedToStr := req.GetString("assigned_to", "")
-		roleScope := req.GetString("role_scope", "")
 		dueDateStr := req.GetString("due_date", "")
 
-		t := &Todo{
+		in := CreateInput{
 			Title:       title,
-			Description: desc,
-			Priority:    priority,
-			RoleScope:   roleScope,
-		}
-
-		args := req.GetArguments()
-		if p, ok := args["private"].(bool); ok {
-			t.Private = p
+			Description: req.GetString("description", ""),
+			Priority:    req.GetString("priority", ""),
+			RoleName:    req.GetString("role_scope", ""),
+			Visibility:  req.GetString("visibility", ""),
 		}
 
 		if assignedToStr != "" {
@@ -73,7 +66,7 @@ func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			if msg != "" {
 				return mcp.NewToolResultError(msg), nil
 			}
-			t.AssignedTo = id
+			in.AssignedTo = id
 		}
 
 		if dueDateStr != "" {
@@ -81,15 +74,16 @@ func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			if err != nil {
 				return mcp.NewToolResultError("Invalid due_date format. Use YYYY-MM-DD."), nil
 			}
-			t.DueDate = &d
+			in.DueDate = &d
 		}
 
-		if err := svc.Create(ctx, caller, t); err != nil {
+		t, err := svc.Create(ctx, caller, in)
+		if err != nil {
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
 			}
 			if errors.Is(err, ErrInvalidRole) {
-				return mcp.NewToolResultError(fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", roleScope)), nil
+				return mcp.NewToolResultError(fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", in.RoleName)), nil
 			}
 			return nil, err
 		}
@@ -103,10 +97,10 @@ func mcpListTodos(svc *TodoService) mcpserver.ToolHandlerFunc {
 		args := req.GetArguments()
 
 		f := TodoFilters{
-			Status:    req.GetString("status", ""),
-			Priority:  req.GetString("priority", ""),
-			RoleScope: req.GetString("role_scope", ""),
-			Search:    req.GetString("search", ""),
+			Status:   req.GetString("status", ""),
+			Priority: req.GetString("priority", ""),
+			RoleName: req.GetString("role_scope", ""),
+			Search:   req.GetString("search", ""),
 		}
 
 		if b, ok := args["assigned_to_me"].(bool); ok {
@@ -172,7 +166,7 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 		}
 
 		args := req.GetArguments()
-		u := TodoUpdates{}
+		u := UpdateInput{}
 
 		if v := req.GetString("title", ""); v != "" {
 			u.Title = &v
@@ -194,15 +188,11 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			if msg != "" {
 				return mcp.NewToolResultError(msg), nil
 			}
-			u.AssignedTo = id
+			u.NewAssignee = id
 		}
-		if v := req.GetString("role_scope", ""); v != "" {
-			if strings.EqualFold(v, ClearRoleScope) {
-				empty := ""
-				u.RoleScope = &empty
-			} else {
-				u.RoleScope = &v
-			}
+		if _, present := args["role_scope"]; present {
+			v := req.GetString("role_scope", "")
+			u.NewRoleName = &v
 		}
 		if v := req.GetString("due_date", ""); v != "" {
 			d, err := time.Parse("2006-01-02", v)
@@ -211,8 +201,8 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			}
 			u.DueDate = &d
 		}
-		if b, ok := args["private"].(bool); ok {
-			u.Private = &b
+		if v := req.GetString("visibility", ""); v != "" {
+			u.Visibility = &v
 		}
 
 		t, err := svc.Update(ctx, caller, todoID, u)

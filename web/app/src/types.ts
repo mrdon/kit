@@ -79,6 +79,7 @@ export type TodoMetadata = {
   due_date?: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   status: 'open' | 'in_progress' | 'blocked' | 'done';
+  visibility: 'scoped' | 'public';
   assigned_to?: string;
   assigned_to_name?: string;
   role_scope?: string;

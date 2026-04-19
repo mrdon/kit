@@ -59,15 +59,15 @@ func (a *TodoApp) CronJobs() []apps.CronJob {
 var todoTools = []services.ToolMeta{
 	{
 		Name:        "create_todo",
-		Description: "Create a new todo/ticket. Use role_scope to categorize by team. Set private=true to hide from others.",
+		Description: "Create a new todo/ticket. Defaults to scoped to you. Pass assigned_to to delegate, role_scope to scope to a team, or visibility=public to broadcast tenant-wide.",
 		Schema: services.PropsReq(map[string]any{
 			"title":       services.Field("string", "Short title for the todo"),
 			"description": services.Field("string", "Detailed description"),
 			"priority":    services.Field("string", "Priority: low, medium, high, urgent"),
-			"assigned_to": services.Field("string", "User to assign to. Accepts a kit UUID, Slack user ID (e.g. U09AN7KJU3G), or a unique display-name fragment (e.g. 'matt'). Use find_user first if you're not sure who matches."),
-			"role_scope":  services.Field("string", "Role name this todo belongs to (e.g. bartender)"),
+			"assigned_to": services.Field("string", "User to assign/scope to. Accepts a kit UUID, Slack user ID (e.g. U09AN7KJU3G), or a unique display-name fragment. Use find_user first if you're not sure who matches. Mutually exclusive with role_scope."),
+			"role_scope":  services.Field("string", "Role name this todo belongs to (e.g. bartender). Mutually exclusive with assigned_to."),
 			"due_date":    services.Field("string", "Due date in YYYY-MM-DD format"),
-			"private":     map[string]any{"type": "boolean", "description": "If true, only creator and assignee can see this todo"},
+			"visibility":  services.Field("string", "'scoped' (default — only assignee/role members see it) or 'public' (visible to everyone in the tenant)."),
 		}, "title"),
 	},
 	{
@@ -100,10 +100,10 @@ var todoTools = []services.ToolMeta{
 			"status":         services.Field("string", "New status: open, in_progress, blocked, done"),
 			"priority":       services.Field("string", "New priority: low, medium, high, urgent"),
 			"blocked_reason": services.Field("string", "Reason for blocking (required when status=blocked)"),
-			"assigned_to":    services.Field("string", "User UUID to assign to"),
-			"role_scope":     services.Field("string", fmt.Sprintf("Role name this todo belongs to. Pass %q to clear the role scope.", ClearRoleScope)),
+			"assigned_to":    services.Field("string", "User to re-scope to. Mutually exclusive with role_scope."),
+			"role_scope":     services.Field("string", fmt.Sprintf("Role name to re-scope to. Pass %q to fall back to the caller's user-scope.", ClearRoleScope)),
 			"due_date":       services.Field("string", "Due date in YYYY-MM-DD format"),
-			"private":        map[string]any{"type": "boolean", "description": "If true, only creator and assignee can see this todo"},
+			"visibility":     services.Field("string", "'scoped' or 'public'."),
 		}, "todo_id"),
 	},
 	{

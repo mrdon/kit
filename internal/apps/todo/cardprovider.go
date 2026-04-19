@@ -16,13 +16,23 @@ import (
 )
 
 // cardProvider surfaces todos as stack items. Scope is explicit — only
-// todos the user owns, is assigned, or holds the role_scope for — so the
-// stack doesn't flood with every tenant-visible todo.
+// todos the user is the assignee of, or holds the role_scope for. Tenant-
+// wide rows are excluded so the stack doesn't flood with public todos
+// belonging to unrelated parts of the org.
 type cardProvider struct {
 	app *TodoApp
 }
 
 func (p *cardProvider) SourceApp() string { return "todo" }
+
+// stackTodo bundles a Todo with the human-readable scope info needed to
+// render the swipe stack metadata (assignee name, role name).
+type stackTodo struct {
+	Todo
+	AssigneeID    *uuid.UUID
+	AssigneeName  string
+	RoleScopeName string
+}
 
 func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, cursor string, limit int) (shared.StackPage, error) {
 	_ = cursor
@@ -33,17 +43,9 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 	if err != nil {
 		return shared.StackPage{}, err
 	}
-	names, err := loadAssigneeNames(ctx, p.app.svc.pool, caller.TenantID, todos)
-	if err != nil {
-		return shared.StackPage{}, err
-	}
 	items := make([]shared.StackItem, 0, len(todos))
 	for i := range todos {
-		name := ""
-		if todos[i].AssignedTo != nil {
-			name = names[*todos[i].AssignedTo]
-		}
-		it, err := todoToStackItem(&todos[i], name)
+		it, err := todoToStackItem(&todos[i])
 		if err != nil {
 			return shared.StackPage{}, err
 		}
@@ -64,15 +66,11 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 	if err != nil {
 		return nil, err
 	}
-	name := ""
-	if t.AssignedTo != nil {
-		names, err := loadAssigneeNames(ctx, p.app.svc.pool, caller.TenantID, []Todo{*t})
-		if err != nil {
-			return nil, err
-		}
-		name = names[*t.AssignedTo]
+	enriched, err := enrichOne(ctx, p.app.svc.pool, caller.TenantID, t)
+	if err != nil {
+		return nil, err
 	}
-	item, err := todoToStackItem(t, name)
+	item, err := todoToStackItem(enriched)
 	if err != nil {
 		return nil, err
 	}
@@ -86,50 +84,31 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 	}, nil
 }
 
-// loadAssigneeNames fetches display names (falling back to slack_user_id)
-// for every distinct assigned_to in todos. A single IN query keeps the
-// cost flat regardless of how many todos come back.
-func loadAssigneeNames(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, todos []Todo) (map[uuid.UUID]string, error) {
-	out := map[uuid.UUID]string{}
-	seen := map[uuid.UUID]struct{}{}
-	ids := make([]uuid.UUID, 0, len(todos))
-	for _, t := range todos {
-		if t.AssignedTo == nil {
-			continue
-		}
-		if _, ok := seen[*t.AssignedTo]; ok {
-			continue
-		}
-		seen[*t.AssignedTo] = struct{}{}
-		ids = append(ids, *t.AssignedTo)
-	}
-	if len(ids) == 0 {
-		return out, nil
-	}
-	rows, err := pool.Query(ctx, `
-		SELECT id, display_name
-		FROM users
-		WHERE tenant_id = $1 AND id = ANY($2)`,
-		tenantID, ids,
-	)
+// enrichOne joins a single todo with scope/role/user info to populate the
+// human-readable metadata fields. Used by GetItem (single-row path).
+func enrichOne(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, t *Todo) (*stackTodo, error) {
+	st := &stackTodo{Todo: *t}
+	var assigneeID *uuid.UUID
+	var assigneeName, roleName *string
+	err := pool.QueryRow(ctx, `
+		SELECT s.user_id, u.display_name, r.name
+		FROM scopes s
+		LEFT JOIN users u ON u.id = s.user_id
+		LEFT JOIN roles r ON r.id = s.role_id
+		WHERE s.id = $1 AND s.tenant_id = $2`,
+		t.ScopeID, tenantID,
+	).Scan(&assigneeID, &assigneeName, &roleName)
 	if err != nil {
-		return nil, fmt.Errorf("loading assignee names: %w", err)
+		return nil, fmt.Errorf("loading scope info: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var id uuid.UUID
-		var displayName *string
-		if err := rows.Scan(&id, &displayName); err != nil {
-			return nil, fmt.Errorf("scanning assignee: %w", err)
-		}
-		// Intentionally no fallback to slack_user_id — a cryptic ID is
-		// worse than nothing. Display name is populated by the "Sync user
-		// profiles from Slack" builtin task.
-		if displayName != nil && *displayName != "" {
-			out[id] = *displayName
-		}
+	st.AssigneeID = assigneeID
+	if assigneeName != nil {
+		st.AssigneeName = *assigneeName
 	}
-	return out, rows.Err()
+	if roleName != nil {
+		st.RoleScopeName = *roleName
+	}
+	return st, nil
 }
 
 func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, _ json.RawMessage) (*shared.ActionResult, error) {
@@ -156,49 +135,46 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 	return nil, fmt.Errorf("unknown todo action %q", actionID)
 }
 
-// listStackTodos is the provider's dedicated query. Unlike TodoService.List,
-// it explicitly restricts to the caller's personal surface (assignee,
-// creator, role_scope member), so the stack doesn't include public todos
-// belonging to unrelated parts of the org.
-func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int) ([]Todo, error) {
+// listStackTodos restricts to the caller's personal surface (scopes that
+// belong to them, by user or role membership) — tenant-wide public todos are
+// excluded so the stack stays personal. JOINs roles/users for display fields.
+func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int) ([]stackTodo, error) {
 	var b strings.Builder
 	args := []any{c.TenantID}
 
-	b.WriteString(`SELECT ` + todoColumns + ` FROM app_todos
-		WHERE tenant_id = $1
-		  AND status != 'done'`)
+	b.WriteString(`SELECT t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason,
+		t.scope_id, t.visibility, t.due_date, t.created_at, t.updated_at, t.closed_at,
+		s.user_id, u.display_name, r.name
+		FROM app_todos t
+		JOIN scopes s ON s.id = t.scope_id
+		LEFT JOIN users u ON u.id = s.user_id
+		LEFT JOIN roles r ON r.id = s.role_id
+		WHERE t.tenant_id = $1 AND t.status != 'done'`)
 
 	if !c.IsAdmin {
-		// Caller's personal surface only. Admins see every non-done todo
-		// (same rule as the agent tool), which avoids empty stacks for
-		// admins with few direct assignments.
-		args = append(args, c.UserID)
-		if len(c.Roles) > 0 {
-			args = append(args, c.Roles)
-			b.WriteString(` AND (assigned_to = $2 OR created_by = $2 OR role_scope = ANY($3))`)
-		} else {
-			b.WriteString(` AND (assigned_to = $2 OR created_by = $2)`)
-		}
+		// Personal surface: caller is the assignee or holds the role.
+		// Tenant-wide (s.user_id IS NULL AND s.role_id IS NULL) is excluded.
+		scopeFrag, scopeArgs := c.PersonalScopeFilter("s", 2)
+		args = append(args, scopeArgs...)
+		b.WriteString(` AND `)
+		b.WriteString(scopeFrag)
 	}
 
-	// Tier ordering is computed client-side in todoToStackItem, but order
-	// by the natural todo priority so the StackItems slice lands in a
-	// reasonable order before the host merges it with other providers.
 	b.WriteString(`
 		ORDER BY
 			CASE
-				WHEN due_date < CURRENT_DATE THEN 0
-				WHEN due_date <= CURRENT_DATE + INTERVAL '3 days' THEN 1
+				WHEN t.due_date < CURRENT_DATE THEN 0
+				WHEN t.due_date <= CURRENT_DATE + INTERVAL '3 days' THEN 1
 				ELSE 2
 			END,
-			CASE priority
+			CASE t.priority
 				WHEN 'urgent' THEN 0
 				WHEN 'high'   THEN 1
 				WHEN 'medium' THEN 2
 				WHEN 'low'    THEN 3
 			END,
-			due_date ASC NULLS LAST,
-			created_at DESC
+			t.due_date ASC NULLS LAST,
+			t.created_at DESC
 		LIMIT `)
 	fmt.Fprintf(&b, "%d", limit)
 
@@ -207,18 +183,40 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		return nil, fmt.Errorf("listing stack todos: %w", err)
 	}
 	defer rows.Close()
-	var out []Todo
+
+	var out []stackTodo
 	for rows.Next() {
-		t, err := scanTodo(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scanning todo: %w", err)
+		var st stackTodo
+		var description, blockedReason, assigneeName, roleName *string
+		var dueDate *time.Time
+		if err := rows.Scan(
+			&st.ID, &st.TenantID, &st.Title, &description,
+			&st.Status, &st.Priority, &blockedReason,
+			&st.ScopeID, &st.Visibility, &dueDate,
+			&st.CreatedAt, &st.UpdatedAt, &st.ClosedAt,
+			&st.AssigneeID, &assigneeName, &roleName,
+		); err != nil {
+			return nil, fmt.Errorf("scanning stack todo: %w", err)
 		}
-		out = append(out, *t)
+		if description != nil {
+			st.Description = *description
+		}
+		if blockedReason != nil {
+			st.BlockedReason = *blockedReason
+		}
+		st.DueDate = dueDate
+		if assigneeName != nil {
+			st.AssigneeName = *assigneeName
+		}
+		if roleName != nil {
+			st.RoleScopeName = *roleName
+		}
+		out = append(out, st)
 	}
 	return out, rows.Err()
 }
 
-func todoToStackItem(t *Todo, assigneeName string) (shared.StackItem, error) {
+func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 	it := shared.StackItem{
 		SourceApp:    "todo",
 		Kind:         "todo",
@@ -228,7 +226,7 @@ func todoToStackItem(t *Todo, assigneeName string) (shared.StackItem, error) {
 		Title:        t.Title,
 		Body:         t.Description,
 		KindWeight:   2,
-		PriorityTier: todoTier(t),
+		PriorityTier: todoTier(&t.Todo),
 		CreatedAt:    t.CreatedAt,
 		Actions: []shared.StackAction{
 			{ID: "complete", Direction: "right", Label: "Complete", Emoji: "✅"},
@@ -241,9 +239,10 @@ func todoToStackItem(t *Todo, assigneeName string) (shared.StackItem, error) {
 		"due_date":         t.DueDate,
 		"priority":         t.Priority,
 		"status":           t.Status,
-		"assigned_to":      t.AssignedTo,
-		"assigned_to_name": assigneeName,
-		"role_scope":       t.RoleScope,
+		"visibility":       t.Visibility,
+		"assigned_to":      t.AssigneeID,
+		"assigned_to_name": t.AssigneeName,
+		"role_scope":       t.RoleScopeName,
 	})
 	if err != nil {
 		return it, fmt.Errorf("encoding todo metadata: %w", err)

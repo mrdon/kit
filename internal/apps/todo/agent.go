@@ -58,18 +58,18 @@ func handleCreateTodo(svc *TodoService) tools.HandlerFunc {
 			AssignedTo  string `json:"assigned_to"`
 			RoleScope   string `json:"role_scope"`
 			DueDate     string `json:"due_date"`
-			Private     bool   `json:"private"`
+			Visibility  string `json:"visibility"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
 
-		t := &Todo{
+		in := CreateInput{
 			Title:       inp.Title,
 			Description: inp.Description,
 			Priority:    inp.Priority,
-			RoleScope:   inp.RoleScope,
-			Private:     inp.Private,
+			RoleName:    inp.RoleScope,
+			Visibility:  inp.Visibility,
 		}
 
 		if inp.AssignedTo != "" {
@@ -77,7 +77,7 @@ func handleCreateTodo(svc *TodoService) tools.HandlerFunc {
 			if msg != "" {
 				return msg, nil
 			}
-			t.AssignedTo = id
+			in.AssignedTo = id
 		}
 
 		if inp.DueDate != "" {
@@ -85,11 +85,12 @@ func handleCreateTodo(svc *TodoService) tools.HandlerFunc {
 			if err != nil {
 				return "Invalid due_date format. Use YYYY-MM-DD.", nil
 			}
-			t.DueDate = &d
+			in.DueDate = &d
 		}
 
 		caller := ec.Caller()
-		if err := svc.Create(ec.Ctx, caller, t); err != nil {
+		t, err := svc.Create(ec.Ctx, caller, in)
+		if err != nil {
 			if errors.Is(err, services.ErrForbidden) {
 				return "You don't have permission to create a todo with those settings.", nil
 			}
@@ -122,7 +123,7 @@ func handleListTodos(svc *TodoService) tools.HandlerFunc {
 			Status:       inp.Status,
 			Priority:     inp.Priority,
 			AssignedToMe: inp.AssignedToMe,
-			RoleScope:    inp.RoleScope,
+			RoleName:     inp.RoleScope,
 			Search:       inp.Search,
 			Overdue:      inp.Overdue,
 		}
@@ -185,16 +186,16 @@ func handleGetTodo(svc *TodoService) tools.HandlerFunc {
 func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			TodoID        string `json:"todo_id"`
-			Title         string `json:"title"`
-			Description   string `json:"description"`
-			Status        string `json:"status"`
-			Priority      string `json:"priority"`
-			BlockedReason string `json:"blocked_reason"`
-			AssignedTo    string `json:"assigned_to"`
-			RoleScope     string `json:"role_scope"`
-			DueDate       string `json:"due_date"`
-			Private       *bool  `json:"private"`
+			TodoID        string  `json:"todo_id"`
+			Title         string  `json:"title"`
+			Description   string  `json:"description"`
+			Status        string  `json:"status"`
+			Priority      string  `json:"priority"`
+			BlockedReason string  `json:"blocked_reason"`
+			AssignedTo    string  `json:"assigned_to"`
+			RoleScope     *string `json:"role_scope"`
+			DueDate       string  `json:"due_date"`
+			Visibility    string  `json:"visibility"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
@@ -205,7 +206,7 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 			return "Invalid todo_id UUID.", nil
 		}
 
-		u := TodoUpdates{}
+		u := UpdateInput{}
 		if inp.Title != "" {
 			u.Title = &inp.Title
 		}
@@ -226,15 +227,11 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 			if msg != "" {
 				return msg, nil
 			}
-			u.AssignedTo = id
+			u.NewAssignee = id
 		}
-		if inp.RoleScope != "" {
-			if strings.EqualFold(inp.RoleScope, ClearRoleScope) {
-				empty := ""
-				u.RoleScope = &empty
-			} else {
-				u.RoleScope = &inp.RoleScope
-			}
+		if inp.RoleScope != nil {
+			val := *inp.RoleScope
+			u.NewRoleName = &val
 		}
 		if inp.DueDate != "" {
 			d, err := time.Parse("2006-01-02", inp.DueDate)
@@ -243,8 +240,8 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 			}
 			u.DueDate = &d
 		}
-		if inp.Private != nil {
-			u.Private = inp.Private
+		if inp.Visibility != "" {
+			u.Visibility = &inp.Visibility
 		}
 
 		caller := ec.Caller()
@@ -257,7 +254,11 @@ func handleUpdateTodo(svc *TodoService) tools.HandlerFunc {
 				return "You don't have permission to update this todo.", nil
 			}
 			if errors.Is(err, ErrInvalidRole) {
-				return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", inp.RoleScope), nil
+				name := ""
+				if inp.RoleScope != nil {
+					name = *inp.RoleScope
+				}
+				return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", name), nil
 			}
 			return "", fmt.Errorf("updating todo: %w", err)
 		}

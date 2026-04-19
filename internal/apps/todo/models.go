@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mrdon/kit/internal/models"
 )
 
 // Todo represents a todo item.
@@ -19,11 +21,9 @@ type Todo struct {
 	Status        string     `json:"status"`
 	Priority      string     `json:"priority"`
 	BlockedReason string     `json:"blocked_reason,omitempty"`
-	Private       bool       `json:"private"`
-	AssignedTo    *uuid.UUID `json:"assigned_to,omitempty"`
-	RoleScope     string     `json:"role_scope,omitempty"`
+	ScopeID       uuid.UUID  `json:"scope_id"`
+	Visibility    string     `json:"visibility"` // "scoped" or "public"
 	DueDate       *time.Time `json:"due_date,omitempty"`
-	CreatedBy     uuid.UUID  `json:"created_by"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ClosedAt      *time.Time `json:"closed_at,omitempty"`
@@ -46,8 +46,8 @@ type TodoEvent struct {
 type TodoFilters struct {
 	Status       string
 	Priority     string
-	AssignedToMe bool
-	RoleScope    string
+	AssignedToMe bool   // alias for "scoped to caller's user-scope"
+	RoleName     string // human-friendly role name; resolved to role_id at query time
 	Search       string
 	Overdue      bool
 	ClosedSince  *time.Time
@@ -60,22 +60,23 @@ type TodoUpdates struct {
 	Status        *string
 	Priority      *string
 	BlockedReason *string
-	Private       *bool
-	AssignedTo    *uuid.UUID
-	RoleScope     *string
+	ScopeID       *uuid.UUID
+	Visibility    *string
 	DueDate       *time.Time
 	ClearDueDate  bool
 }
 
+const todoColumns = `id, tenant_id, title, description, status, priority, blocked_reason, scope_id, visibility, due_date, created_at, updated_at, closed_at`
+
 func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	var t Todo
-	var description, blockedReason, roleScope *string
+	var description, blockedReason *string
 	var dueDate *time.Time
 	err := row.Scan(
 		&t.ID, &t.TenantID, &t.Title, &description,
-		&t.Status, &t.Priority, &blockedReason, &t.Private,
-		&t.AssignedTo, &roleScope, &dueDate,
-		&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
+		&t.Status, &t.Priority, &blockedReason,
+		&t.ScopeID, &t.Visibility, &dueDate,
+		&t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -86,22 +87,17 @@ func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	if blockedReason != nil {
 		t.BlockedReason = *blockedReason
 	}
-	if roleScope != nil {
-		t.RoleScope = *roleScope
-	}
 	t.DueDate = dueDate
 	return &t, nil
 }
 
-const todoColumns = `id, tenant_id, title, description, status, priority, blocked_reason, private, assigned_to, role_scope, due_date, created_by, created_at, updated_at, closed_at`
-
 func createTodo(ctx context.Context, pool *pgxpool.Pool, t *Todo) error {
 	return pool.QueryRow(ctx, `
-		INSERT INTO app_todos (tenant_id, title, description, status, priority, private, assigned_to, role_scope, due_date, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO app_todos (tenant_id, title, description, status, priority, scope_id, visibility, due_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at`,
 		t.TenantID, t.Title, nilIfEmpty(t.Description), t.Status, t.Priority,
-		t.Private, t.AssignedTo, nilIfEmpty(t.RoleScope), t.DueDate, t.CreatedBy,
+		t.ScopeID, t.Visibility, t.DueDate,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
@@ -117,72 +113,86 @@ func getTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID
 	return t, nil
 }
 
-func listTodosAll(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f TodoFilters) ([]Todo, error) {
-	query, args := buildListQuery(tenantID, nil, nil, f)
+// listTodos returns todos visible to the caller. When userID is nil, no
+// visibility filter is applied (admin path). Otherwise: visibility='public' OR
+// the caller's scope_id matches.
+func listTodos(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f TodoFilters) ([]Todo, error) {
+	query, args := buildListQuery(tenantID, userID, roleIDs, f)
 	return queryTodos(ctx, pool, query, args)
 }
 
-func listTodosScoped(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roles []string, f TodoFilters) ([]Todo, error) {
-	query, args := buildListQuery(tenantID, &userID, roles, f)
-	return queryTodos(ctx, pool, query, args)
-}
-
-func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roles []string, f TodoFilters) (string, []any) {
+func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f TodoFilters) (string, []any) {
 	var b strings.Builder
 	args := []any{tenantID}
 	argN := 1
 
-	b.WriteString(`SELECT ` + todoColumns + ` FROM app_todos WHERE tenant_id = $1`)
+	b.WriteString(`SELECT ` + todoColumns + ` FROM app_todos t`)
 
-	// Visibility filter for non-admins
+	// We only need to JOIN scopes when we have to filter by it. For admin
+	// (no userID) we still might need the join if the caller filters by role.
+	needScopeJoin := userID != nil || f.AssignedToMe || f.RoleName != ""
+	if needScopeJoin {
+		b.WriteString(` JOIN scopes sc ON sc.id = t.scope_id`)
+	}
+	b.WriteString(` WHERE t.tenant_id = $1`)
+
 	if userID != nil {
+		// Public todos are visible to everyone in the tenant; otherwise the
+		// caller's scope must match.
 		argN++
-		// Non-private: visible to all. Private: only creator/assignee.
-		b.WriteString(fmt.Sprintf(` AND (private = false OR created_by = $%d OR assigned_to = $%d)`, argN, argN))
+		userParam := argN
 		args = append(args, *userID)
+		b.WriteString(fmt.Sprintf(` AND (t.visibility = 'public' OR sc.user_id = $%d`, userParam))
+		if len(roleIDs) > 0 {
+			argN++
+			b.WriteString(fmt.Sprintf(` OR sc.role_id = ANY($%d)`, argN))
+			args = append(args, roleIDs)
+		}
+		b.WriteString(`)`)
 	}
 
 	if f.Status != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND status = $%d`, argN))
+		b.WriteString(fmt.Sprintf(` AND t.status = $%d`, argN))
 		args = append(args, f.Status)
 	}
 
 	if f.Priority != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND priority = $%d`, argN))
+		b.WriteString(fmt.Sprintf(` AND t.priority = $%d`, argN))
 		args = append(args, f.Priority)
 	}
 
 	if f.AssignedToMe && userID != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND assigned_to = $%d`, argN))
+		b.WriteString(fmt.Sprintf(` AND sc.user_id = $%d`, argN))
 		args = append(args, *userID)
 	}
 
-	if f.RoleScope != "" {
+	if f.RoleName != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND role_scope = $%d`, argN))
-		args = append(args, f.RoleScope)
+		b.WriteString(fmt.Sprintf(
+			` AND sc.role_id = (SELECT id FROM roles WHERE tenant_id = $1 AND name = $%d)`, argN))
+		args = append(args, f.RoleName)
 	}
 
 	if f.Search != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, '')) @@ plainto_tsquery('english', $%d)`, argN))
+		b.WriteString(fmt.Sprintf(` AND to_tsvector('english', coalesce(t.title, '') || ' ' || coalesce(t.description, '')) @@ plainto_tsquery('english', $%d)`, argN))
 		args = append(args, f.Search)
 	}
 
 	if f.Overdue {
-		b.WriteString(` AND due_date < CURRENT_DATE AND status != 'done'`)
+		b.WriteString(` AND t.due_date < CURRENT_DATE AND t.status != 'done'`)
 	}
 
 	if f.ClosedSince != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND closed_at >= $%d`, argN))
+		b.WriteString(fmt.Sprintf(` AND t.closed_at >= $%d`, argN))
 		args = append(args, *f.ClosedSince)
 	}
 
-	b.WriteString(` ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, due_date ASC NULLS LAST, created_at DESC`)
+	b.WriteString(` ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, t.due_date ASC NULLS LAST, t.created_at DESC`)
 	b.WriteString(` LIMIT 50`)
 
 	return b.String(), args
@@ -244,20 +254,15 @@ func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.U
 	} else if u.Status != nil && *u.Status != "blocked" {
 		sets = append(sets, "blocked_reason = NULL")
 	}
-	if u.Private != nil {
+	if u.ScopeID != nil {
 		argN++
-		sets = append(sets, fmt.Sprintf("private = $%d", argN))
-		args = append(args, *u.Private)
+		sets = append(sets, fmt.Sprintf("scope_id = $%d", argN))
+		args = append(args, *u.ScopeID)
 	}
-	if u.AssignedTo != nil {
+	if u.Visibility != nil {
 		argN++
-		sets = append(sets, fmt.Sprintf("assigned_to = $%d", argN))
-		args = append(args, *u.AssignedTo)
-	}
-	if u.RoleScope != nil {
-		argN++
-		sets = append(sets, fmt.Sprintf("role_scope = $%d", argN))
-		args = append(args, nilIfEmpty(*u.RoleScope))
+		sets = append(sets, fmt.Sprintf("visibility = $%d", argN))
+		args = append(args, *u.Visibility)
 	}
 	if u.DueDate != nil {
 		argN++
@@ -327,6 +332,20 @@ func getRecentEvents(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID u
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// getScopeRow returns the scope row for a single scope_id, used for
+// in-memory access checks via services.Caller.CanSee.
+func getScopeRow(ctx context.Context, pool *pgxpool.Pool, tenantID, scopeID uuid.UUID) (models.ScopeRow, error) {
+	var r models.ScopeRow
+	err := pool.QueryRow(ctx, `
+		SELECT id, role_id, user_id FROM scopes WHERE tenant_id = $1 AND id = $2`,
+		tenantID, scopeID,
+	).Scan(&r.ID, &r.RoleID, &r.UserID)
+	if err != nil {
+		return models.ScopeRow{}, fmt.Errorf("loading scope %s: %w", scopeID, err)
+	}
+	return r, nil
 }
 
 func nilIfEmpty(s string) *string {
