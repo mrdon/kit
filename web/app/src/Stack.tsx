@@ -299,6 +299,12 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
   const [busy, setBusy] = useState(false);
   const [swipingOut, setSwipingOut] = useState<CommitDirection | null>(null);
   const [armed, setArmed] = useState<'right' | 'left' | null>(null);
+  // Synchronous guard against double-dispatch. setBusy is async so two
+  // tightly-spaced inputs (finger release + keyboard keydown, or two
+  // fast swipes) could both see busy=false and fire runAction twice,
+  // landing the second resolve on an already-resolving card and
+  // surfacing "card is not pending".
+  const runningRef = useRef(false);
   // Long-press timer. Fires LONG_PRESS_MS after pointerdown if the
   // pointer hasn't moved (dragging clears it) and no other card is
   // already showing a chat sheet. Setting justOpened suppresses the
@@ -320,6 +326,8 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
   });
 
   const runAction = async (direction: CommitDirection, action: StackAction) => {
+    if (runningRef.current) return;
+    runningRef.current = true;
     setBusy(true);
     setSwipingOut(direction);
     // Burst fires immediately so it lands with the exit animation
@@ -336,6 +344,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       );
       onCommit(item, action.emoji, result.removed_ids ?? [itemKey(item)]);
     } catch (e) {
+      runningRef.current = false;
       setBusy(false);
       setSwipingOut(null);
       alert((e as Error).message);
@@ -354,7 +363,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
     ref,
     () => ({
       startSwipe: (direction) => {
-        if (busy) return;
+        if (runningRef.current) return;
         const action = direction === 'right' ? rightAction : leftAction;
         if (!action) return;
         if (pushAnimRef.current) pushAnimRef.current.stop();
@@ -372,11 +381,11 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
         if (!pushAnimRef.current) return;
         pushAnimRef.current.stop();
         pushAnimRef.current = null;
-        if (busy) return;
+        if (runningRef.current) return;
         animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
       },
     }),
-    [busy, rightAction, leftAction, threshold, x],
+    [rightAction, leftAction, threshold, x],
   );
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
