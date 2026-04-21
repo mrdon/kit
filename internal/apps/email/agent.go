@@ -22,9 +22,47 @@ func registerEmailAgentTools(r *tools.Registry, a *App) {
 		}
 		if meta.Name == "send_email" {
 			def.DefaultPolicy = tools.PolicyGate
+			def.GateCardPreview = sendEmailGatePreview
 		}
 		r.Register(def)
 	}
+}
+
+// sendEmailGatePreview turns a send_email tool call into the human
+// framing on the approval card. The detailed email contents are
+// rendered by SendEmailPreview on the card option itself, so the card
+// title + body focus on the "who/why" and the option labels swap
+// "Approve/Skip" for the verbs the user expects.
+func sendEmailGatePreview(input json.RawMessage) tools.GateCardPreview {
+	preview := tools.GateCardPreview{
+		Title:        "Send email?",
+		Body:         "Kit drafted this email. Review it below and send, or cancel to revise.",
+		ApproveLabel: "Send",
+		SkipLabel:    "Don't send",
+	}
+	var args SendArgs
+	if err := json.Unmarshal(input, &args); err != nil {
+		return preview
+	}
+	switch {
+	case args.Subject != "":
+		preview.Title = "Send email: " + truncate(args.Subject, 70)
+	case len(args.To) == 1:
+		preview.Title = "Send email to " + args.To[0] + "?"
+	case len(args.To) > 1:
+		preview.Title = fmt.Sprintf("Send email to %s and %d others?", args.To[0], len(args.To)-1)
+	}
+	return preview
+}
+
+// truncate returns s shortened to n runes with an ellipsis. Used to
+// keep the gate card title at a glanceable length.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func emailAgentHandler(name string, a *App) tools.HandlerFunc {

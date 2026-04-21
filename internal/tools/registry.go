@@ -126,6 +126,14 @@ type Def struct {
 	// call into an approval decision card (PolicyGate). See
 	// .claude/skills/gated-tools-guide.md for when to use Gate.
 	DefaultPolicy Policy
+
+	// GateCardPreview returns the user-facing framing for this tool's
+	// approval card — title, optional body, custom option labels.
+	// Only meaningful when DefaultPolicy is PolicyGate. A nil func
+	// falls back to generic "Approve <tool>?" wording. Fields left
+	// empty on the returned struct also fall back individually, so a
+	// tool can override just the title without touching labels.
+	GateCardPreview func(args json.RawMessage) GateCardPreview
 }
 
 // Registry holds all registered tools.
@@ -181,6 +189,23 @@ func SetExposedToolRunner(r ExposedToolRunner) {
 	currentExposedToolRunner = r
 }
 
+// GateCardPreview is the human-readable framing a gated tool provides
+// for its approval card. Empty fields fall back to the generic
+// "Approve <tool>?" wording so tools without a Preview func still work.
+type GateCardPreview struct {
+	// Title is the card headline the user sees. Short and concrete —
+	// e.g. "Send email to bob@example.com?" — not the tool name.
+	Title string
+	// Body is optional supporting context in markdown. The option's own
+	// preview component (e.g. SendEmailPreview on the web) renders the
+	// full argument payload inline, so Body is usually short or empty.
+	Body string
+	// ApproveLabel overrides the "Approve" button label. E.g. "Send".
+	ApproveLabel string
+	// SkipLabel overrides the "Skip" button label. E.g. "Don't send".
+	SkipLabel string
+}
+
 // GateCreator builds the decision card that wraps a PolicyGate tool
 // call intercepted by Registry.Execute. Implemented by CardService so
 // the tools package doesn't need to import cards (cycle risk). Returns
@@ -188,7 +213,7 @@ func SetExposedToolRunner(r ExposedToolRunner) {
 // user-facing URL the agent can share so the user can find the card
 // to approve (empty string if no baseURL is configured).
 type GateCreator interface {
-	CreateGateCard(ctx context.Context, ec *ExecContext, toolName string, toolArguments json.RawMessage) (uuid.UUID, string, error)
+	CreateGateCard(ctx context.Context, ec *ExecContext, toolName string, toolArguments json.RawMessage, preview GateCardPreview) (uuid.UUID, string, error)
 }
 
 // currentGateCreator is the process-wide gate-card sink, wired once at
@@ -486,7 +511,11 @@ func (r *Registry) createGateCard(ec *ExecContext, def Def, input json.RawMessag
 	if currentGateCreator == nil {
 		return "", fmt.Errorf("gating is not configured for this process; tool %q cannot run", def.Name)
 	}
-	cardID, cardURL, err := currentGateCreator.CreateGateCard(ec.Ctx, ec, def.Name, input)
+	preview := GateCardPreview{}
+	if def.GateCardPreview != nil {
+		preview = def.GateCardPreview(input)
+	}
+	cardID, cardURL, err := currentGateCreator.CreateGateCard(ec.Ctx, ec, def.Name, input, preview)
 	if err != nil {
 		return "", fmt.Errorf("creating approval card for %q: %w", def.Name, err)
 	}

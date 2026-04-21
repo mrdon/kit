@@ -230,6 +230,7 @@ func (s *CardService) Update(ctx context.Context, c *services.Caller, cardID uui
 func (s *CardService) CreateGateCard(
 	ctx context.Context, ec *tools.ExecContext,
 	toolName string, toolArguments json.RawMessage,
+	preview tools.GateCardPreview,
 ) (uuid.UUID, string, error) {
 	if ec == nil || ec.Tenant == nil || ec.User == nil {
 		return uuid.Nil, "", errors.New("gate creation requires tenant + user on ec")
@@ -241,11 +242,22 @@ func (s *CardService) CreateGateCard(
 		originSessionID = &sid
 	}
 
-	title := fmt.Sprintf("Approve %s?", toolName)
-	body := fmt.Sprintf(
-		"Kit wants to run `%s`. Review the proposed arguments below and approve or skip.",
-		toolName,
-	)
+	title := preview.Title
+	if title == "" {
+		title = "Kit needs your approval"
+	}
+	body := preview.Body
+	if body == "" {
+		body = "Kit drafted the action shown below. Review it and approve to continue, or skip to cancel."
+	}
+	approveLabel := preview.ApproveLabel
+	if approveLabel == "" {
+		approveLabel = "Approve"
+	}
+	skipLabel := preview.SkipLabel
+	if skipLabel == "" {
+		skipLabel = "Skip"
+	}
 
 	in := CardCreateInput{
 		Kind:  CardKindDecision,
@@ -261,14 +273,14 @@ func (s *CardService) CreateGateCard(
 				{
 					OptionID:      "approve",
 					SortOrder:     0,
-					Label:         "Approve",
+					Label:         approveLabel,
 					ToolName:      toolName,
 					ToolArguments: toolArguments,
 				},
 				{
 					OptionID:  "skip",
 					SortOrder: 1,
-					Label:     "Skip",
+					Label:     skipLabel,
 				},
 			},
 		},
