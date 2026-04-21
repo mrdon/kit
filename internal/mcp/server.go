@@ -93,23 +93,51 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 		{services.SessionTools, sessionMCPHandler},
 	}
 
-	var tools []mcpserver.ServerTool
+	var out []mcpserver.ServerTool
 	for _, group := range allMetas {
 		for _, meta := range group.metas {
-			schemaJSON, _ := json.Marshal(meta.Schema)
+			schema := services.InjectRequireApprovalSchema(meta.Schema)
+			schemaJSON, _ := json.Marshal(schema)
 			tool := mcp.NewToolWithRawSchema(meta.Name, meta.Description, schemaJSON)
-			tools = append(tools, mcpserver.ServerTool{
+			inner := group.handler(meta.Name, pool, svc)
+			out = append(out, mcpserver.ServerTool{
 				Tool:    tool,
-				Handler: group.handler(meta.Name, pool, svc),
+				Handler: gatedMCP(meta.Name, inner),
 			})
 		}
 	}
-	tools = append(tools, apps.BuildMCPTools(pool, svc)...)
+	// App-contributed tools already have their own schemas; inject + wrap
+	// them too so require_approval works consistently across surfaces.
+	for _, t := range apps.BuildMCPTools(pool, svc) {
+		out = append(out, wrapAppTool(t))
+	}
 
 	// run_task needs agent + enc + scheduler, registered separately from the standard loop
-	tools = append(tools, buildRunTaskTool(pool, svc, a, enc, sched))
+	out = append(out, wrapAppTool(buildRunTaskTool(pool, svc, a, enc, sched)))
 
-	return tools
+	return out
+}
+
+// wrapAppTool re-marshals the tool's already-registered schema with the
+// require_approval field injected, and wraps its handler with the gate
+// middleware. App-supplied tools arrive with a raw-JSON schema, so we
+// decode → inject → re-encode.
+func wrapAppTool(t mcpserver.ServerTool) mcpserver.ServerTool {
+	// Re-build the schema via mcp-go's tool if possible. The raw schema
+	// lives on t.Tool — its underlying field is unexported, but we
+	// roundtrip via its JSON form.
+	schemaJSON, err := json.Marshal(t.Tool.InputSchema)
+	if err == nil {
+		var schema map[string]any
+		if err := json.Unmarshal(schemaJSON, &schema); err == nil {
+			schema = services.InjectRequireApprovalSchema(schema)
+			if updated, err := json.Marshal(schema); err == nil {
+				t.Tool = mcp.NewToolWithRawSchema(t.Tool.Name, t.Tool.Description, updated)
+			}
+		}
+	}
+	t.Handler = gatedMCP(t.Tool.Name, t.Handler)
+	return t
 }
 
 // collectToolVisibility walks every core service ToolMeta group plus each

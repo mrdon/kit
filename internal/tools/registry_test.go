@@ -300,7 +300,7 @@ func TestReadRequireApproval(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			flag, cleaned := readRequireApproval(json.RawMessage(c.in))
+			flag, cleaned := services.ReadRequireApproval(json.RawMessage(c.in))
 			if flag != c.flag {
 				t.Errorf("flag = %v, want %v", flag, c.flag)
 			}

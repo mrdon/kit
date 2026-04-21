@@ -200,6 +200,7 @@ func main() {
 		return staticPolicies[name]
 	})
 	tools.SetGateCreator(cards.ServiceForGating())
+	kitmcp.SetGateCreator(cards.ServiceForGating())
 	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher))
 
 	// Stuck-resolving sweep: every scheduler tick (60s) any card stuck

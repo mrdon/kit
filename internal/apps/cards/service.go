@@ -300,6 +300,42 @@ func (s *CardService) CreateGateCard(
 	return card.ID, cardURL, nil
 }
 
+// CreateGateCardForCaller is the caller-centric entry point used by
+// surfaces that don't have a full tools.ExecContext (notably MCP).
+// Fetches the tenant and user models from the caller IDs, builds a
+// minimal ExecContext, and delegates to CreateGateCard so the card
+// shape stays identical across both paths.
+func (s *CardService) CreateGateCardForCaller(
+	ctx context.Context, c *services.Caller,
+	toolName string, toolArguments json.RawMessage,
+	preview tools.GateCardPreview,
+) (uuid.UUID, string, error) {
+	if c == nil {
+		return uuid.Nil, "", errors.New("gate creation requires a caller")
+	}
+	tenant, err := models.GetTenantByID(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return uuid.Nil, "", fmt.Errorf("loading tenant: %w", err)
+	}
+	if tenant == nil {
+		return uuid.Nil, "", errors.New("tenant not found")
+	}
+	user, err := models.GetUserByID(ctx, s.pool, c.TenantID, c.UserID)
+	if err != nil {
+		return uuid.Nil, "", fmt.Errorf("loading user: %w", err)
+	}
+	if user == nil {
+		return uuid.Nil, "", errors.New("user not found")
+	}
+	ec := &tools.ExecContext{
+		Ctx:    ctx,
+		Pool:   s.pool,
+		Tenant: tenant,
+		User:   user,
+	}
+	return s.CreateGateCard(ctx, ec, toolName, toolArguments, preview)
+}
+
 // ReviseDecisionOption mutates tool_arguments and/or prompt on a single
 // option of a pending decision card. Preserves tool_name (immutable
 // after creation), label, sort_order, and option_id at the service

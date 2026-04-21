@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"maps"
 	"strings"
 
 	"github.com/google/uuid"
@@ -318,91 +317,15 @@ func buildExposedDef(d ExposedToolDef) Def {
 // any call at its own discretion (see ExecuteWithResult).
 func (r *Registry) Register(d Def) {
 	if !d.DenyCallerGate {
-		d.Schema = injectRequireApprovalSchema(d.Schema)
+		d.Schema = services.InjectRequireApprovalSchema(d.Schema)
 	}
 	r.defs = append(r.defs, d)
 	r.handlers[d.Name] = d.Handler
 }
 
-// requireApprovalField is the schema description the agent sees for the
-// auto-injected flag. Kept terse so it doesn't dominate tool descriptions;
-// the system prompt explains when to reach for it.
-const requireApprovalField = "require_approval"
-
-// injectRequireApprovalSchema returns a shallow-cloned schema with the
-// `require_approval` boolean added to its properties map. Clones so we
-// don't mutate a schema shared between registries (tests, dynamic builds).
-// Non-object schemas (rare; most tools have object inputs) are returned
-// unchanged — the flag only makes sense on object-typed inputs.
-func injectRequireApprovalSchema(schema map[string]any) map[string]any {
-	if schema == nil {
-		return map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				requireApprovalField: requireApprovalProperty(),
-			},
-		}
-	}
-	if t, _ := schema["type"].(string); t != "" && t != "object" {
-		return schema
-	}
-	out := make(map[string]any, len(schema)+1)
-	maps.Copy(out, schema)
-	props, _ := out["properties"].(map[string]any)
-	if props == nil {
-		props = map[string]any{}
-	} else {
-		cloned := make(map[string]any, len(props)+1)
-		maps.Copy(cloned, props)
-		props = cloned
-	}
-	if _, exists := props[requireApprovalField]; !exists {
-		props[requireApprovalField] = requireApprovalProperty()
-	}
-	out["properties"] = props
-	if _, ok := out["type"]; !ok {
-		out["type"] = "object"
-	}
-	return out
-}
-
-func requireApprovalProperty() map[string]any {
-	return map[string]any{
-		"type":        "boolean",
-		"description": "Set to true to surface this call as an approval card before it runs. Use when the user asked to verify first, or when the intent or recipient is ambiguous. Omit otherwise.",
-	}
-}
-
-// readRequireApproval extracts the boolean require_approval flag from a
-// tool input payload (if present) and returns the raw JSON with the field
-// stripped so the handler never sees it. Defensive: invalid or non-bool
-// values fall back to false.
-func readRequireApproval(input json.RawMessage) (bool, json.RawMessage) {
-	if len(input) == 0 {
-		return false, input
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(input, &raw); err != nil {
-		return false, input
-	}
-	v, ok := raw[requireApprovalField]
-	if !ok {
-		return false, input
-	}
-	delete(raw, requireApprovalField)
-	var flag bool
-	if err := json.Unmarshal(v, &flag); err != nil {
-		flag = false
-	}
-	cleaned, err := json.Marshal(raw)
-	if err != nil {
-		// Shouldn't happen (we just unmarshaled it), but fall back
-		// gracefully: keep the flag but leave input untouched rather
-		// than corrupt the payload.
-		return flag, input
-	}
-	return flag, cleaned
-}
+// requireApprovalField aliases services.RequireApprovalField so in-file
+// references stay short without duplicating the constant value.
+const requireApprovalField = services.RequireApprovalField
 
 // Policies returns a snapshot of tool-name -> DefaultPolicy for every
 // Def in this registry. Used at startup by cmd/kit to build a static
@@ -572,7 +495,7 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 	// the tool hasn't opted out via DenyCallerGate.
 	callerRequested := false
 	if !def.DenyCallerGate {
-		callerRequested, input = readRequireApproval(input)
+		callerRequested, input = services.ReadRequireApproval(input)
 	}
 
 	shouldGate := def.DefaultPolicy == PolicyGate || callerRequested
