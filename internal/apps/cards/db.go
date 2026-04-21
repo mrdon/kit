@@ -2,6 +2,7 @@ package cards
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -47,17 +48,17 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		}
 		d := in.Decision
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_decisions (tenant_id, card_id, priority, recommended_option_id, origin_task_id, origin_session_id)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			tenantID, cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginTaskID, d.OriginSessionID,
+			INSERT INTO app_card_decisions (tenant_id, card_id, priority, recommended_option_id, origin_task_id, origin_session_id, is_gate_artifact)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			tenantID, cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginTaskID, d.OriginSessionID, d.IsGateArtifact,
 		); err != nil {
 			return nil, fmt.Errorf("inserting decision: %w", err)
 		}
 		for i, opt := range d.Options {
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO app_card_decision_options (tenant_id, card_id, option_id, sort_order, label, prompt)
-				VALUES ($1, $2, $3, $4, $5, $6)`,
-				tenantID, cardID, opt.OptionID, i, opt.Label, nilIfEmpty(opt.Prompt),
+				INSERT INTO app_card_decision_options (tenant_id, card_id, option_id, sort_order, label, prompt, tool_name, tool_arguments)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				tenantID, cardID, opt.OptionID, i, opt.Label, nilIfEmpty(opt.Prompt), nilIfEmpty(opt.ToolName), nilIfEmptyBytes(opt.ToolArguments),
 			); err != nil {
 				return nil, fmt.Errorf("inserting option %q: %w", opt.OptionID, err)
 			}
@@ -67,6 +68,7 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 			RecommendedOptionID: d.RecommendedOptionID,
 			OriginTaskID:        d.OriginTaskID,
 			OriginSessionID:     d.OriginSessionID,
+			IsGateArtifact:      d.IsGateArtifact,
 			Options:             append([]DecisionOption(nil), d.Options...),
 		}
 	case CardKindBriefing:
@@ -319,7 +321,7 @@ func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 		return nil
 	}
 	rows, err := pool.Query(ctx, `
-		SELECT card_id, option_id, sort_order, label, prompt
+		SELECT card_id, option_id, sort_order, label, prompt, tool_name, tool_arguments
 		FROM app_card_decision_options
 		WHERE tenant_id = $1 AND card_id = ANY($2)
 		ORDER BY card_id, sort_order`, tenantID, ids)
@@ -330,12 +332,19 @@ func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	for rows.Next() {
 		var cardID uuid.UUID
 		var opt DecisionOption
-		var prompt *string
-		if err := rows.Scan(&cardID, &opt.OptionID, &opt.SortOrder, &opt.Label, &prompt); err != nil {
+		var prompt, toolName *string
+		var toolArgs []byte
+		if err := rows.Scan(&cardID, &opt.OptionID, &opt.SortOrder, &opt.Label, &prompt, &toolName, &toolArgs); err != nil {
 			return fmt.Errorf("scanning option: %w", err)
 		}
 		if prompt != nil {
 			opt.Prompt = *prompt
+		}
+		if toolName != nil {
+			opt.ToolName = *toolName
+		}
+		if len(toolArgs) > 0 {
+			opt.ToolArguments = append(json.RawMessage(nil), toolArgs...)
 		}
 		c := byID[cardID]
 		if c == nil {
@@ -350,13 +359,14 @@ func loadDecisionOptions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 // nil if the option doesn't exist.
 func getDecisionOption(ctx context.Context, q querier, tenantID, cardID uuid.UUID, optionID string) (*DecisionOption, error) {
 	var opt DecisionOption
-	var prompt *string
+	var prompt, toolName *string
+	var toolArgs []byte
 	err := q.QueryRow(ctx, `
-		SELECT option_id, sort_order, label, prompt
+		SELECT option_id, sort_order, label, prompt, tool_name, tool_arguments
 		FROM app_card_decision_options
 		WHERE tenant_id = $1 AND card_id = $2 AND option_id = $3`,
 		tenantID, cardID, optionID,
-	).Scan(&opt.OptionID, &opt.SortOrder, &opt.Label, &prompt)
+	).Scan(&opt.OptionID, &opt.SortOrder, &opt.Label, &prompt, &toolName, &toolArgs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil
 	}
@@ -365,6 +375,12 @@ func getDecisionOption(ctx context.Context, q querier, tenantID, cardID uuid.UUI
 	}
 	if prompt != nil {
 		opt.Prompt = *prompt
+	}
+	if toolName != nil {
+		opt.ToolName = *toolName
+	}
+	if len(toolArgs) > 0 {
+		opt.ToolArguments = append(json.RawMessage(nil), toolArgs...)
 	}
 	return &opt, nil
 }

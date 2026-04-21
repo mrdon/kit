@@ -20,6 +20,7 @@ import (
 	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
+	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	_ "github.com/mrdon/kit/internal/apps/todo"
 	"github.com/mrdon/kit/internal/auth"
@@ -122,6 +123,11 @@ func main() {
 	if sessionSecret == "" {
 		sessionSecret = cfg.EncryptionKey
 	}
+
+	// Wire the integrations app's HTTP-level deps (encryptor, base URL,
+	// signing secret). Done after sessionSecret resolves so we reuse the
+	// same fallback chain.
+	integrations.Configure(enc, cfg.BaseURL, sessionSecret)
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
@@ -169,6 +175,35 @@ func main() {
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)
+
+	// Gated-tool wiring (§11 of decision-cards-as-gated-tool-calls plan).
+	//
+	// 1. PolicyLookup: given a tool name, return its DefaultPolicy.
+	//    CreateDecision uses this to stamp is_gate_artifact; ResolveDecision
+	//    re-checks it at approval time to refuse tamper.
+	// 2. GateCreator: CardService is the sink for auto-gated tool calls
+	//    intercepted by Registry.Execute.
+	// 3. ToolExecutor: called from ResolveDecision after a user approves
+	//    a gated option; builds a per-caller registry and dispatches the
+	//    tool with approval.WithToken(ctx, ...) so Registry.Execute lets
+	//    the handler run.
+	//
+	// A registry built for a throwaway caller is used for the policy
+	// lookup — the Def.DefaultPolicy field is the same regardless of who
+	// invokes the tool, so we only need to build one at startup to snapshot
+	// policies. Dynamic (builder-exposed) tools don't set DefaultPolicy,
+	// so they're always PolicyAllow and safe to miss here.
+	staticPolicies := snapshotToolPolicies(ctx)
+	cards.ConfigurePolicyLookup(func(name string) tools.Policy {
+		return staticPolicies[name]
+	})
+	tools.SetGateCreator(cards.ServiceForGating())
+	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher))
+
+	// Stuck-resolving sweep: every scheduler tick (60s) any card stuck
+	// in 'resolving' past its deadline gets flipped back to 'pending'.
+	scheduler.RegisterPeriodicSweep(cards.PeriodicSweep())
+
 	sched.Start(ctx)
 	// Let ResolveDecision wake the scheduler immediately on resume so
 	// workflows advance within a second of the user tapping, not up to

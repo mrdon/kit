@@ -78,6 +78,22 @@ type RunInput struct {
 	// prompt-shaped context doesn't accumulate in replayed history when
 	// the user sends follow-up messages on the same card.
 	SystemSuffix string
+
+	// HistoryWindow, when > 0, caps replayed message_received +
+	// assistant_turn pairs from session history at the last N, and
+	// drops tool_results blocks entirely from replay. Used by the
+	// card-chat path (HistoryWindow=6) to keep per-card conversations
+	// bounded; Slack and task runs leave it 0 (full replay, today's
+	// behavior).
+	HistoryWindow int
+
+	// DropGatedTools, when true, removes PolicyGate tools from the
+	// registry before this run. Used by the card-chat revision path as
+	// defense-in-depth against prompt injection in card content that
+	// might try to coerce the LLM into calling a gated tool directly.
+	// The registry-level gate would still catch such calls, but a
+	// HALTED result mid-chat is confusing UX.
+	DropGatedTools bool
 }
 
 // Run executes the agent loop for a user message.
@@ -88,6 +104,9 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	ec := a.buildExecContext(ctx, in)
 	caller := ec.Caller()
 	registry := tools.NewRegistry(ctx, caller, in.Session.BotInitiated)
+	if in.DropGatedTools {
+		registry.DropGatedTools()
+	}
 
 	var status *statusTracker
 	if in.Task == nil && !strings.HasPrefix(in.Channel, "web:") {
@@ -201,7 +220,10 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 }
 
 func (a *Agent) buildInitialMessages(ctx context.Context, in RunInput) []anthropic.Message {
-	messages := a.rebuildHistory(ctx, in.Tenant, in.Session)
+	messages := a.rebuildHistory(ctx, in.Tenant, in.Session, historyOptions{
+		windowPairs:     in.HistoryWindow,
+		dropToolResults: in.HistoryWindow > 0,
+	})
 	currentTime := fmt.Sprintf("[Current time: %s UTC]", time.Now().UTC().Format("2006-01-02T15:04"))
 	return append(messages, anthropic.Message{
 		Role:    "user",
@@ -302,13 +324,35 @@ func (a *Agent) handleEndTurn(ctx context.Context, ec *tools.ExecContext, in Run
 // executeTools runs each tool_use block in resp.Content, collects tool_result
 // blocks, and reports whether any tool was terminal (i.e. already posted the
 // final message, so the loop should stop).
+//
+// If any tool returns Halted=true (the PolicyGate path minted a decision
+// card instead of running the handler), we short-circuit the remaining
+// tool_use blocks with synthetic "skipped" tool_results. The Anthropic
+// API contract requires every tool_use in an assistant turn to be paired
+// with a tool_result in the next user turn, so we must emit *something*
+// for each remaining ID, but we don't want to run more tools under the
+// agent's now-false belief that the halted tool succeeded.
 func (a *Agent) executeTools(ec *tools.ExecContext, registry *tools.Registry, resp *anthropic.Response, status *statusTracker, channel string) ([]anthropic.Content, bool) {
 	var toolResults []anthropic.Content
 	terminal := false
+	halted := false
 	sessionID := ec.Session.ID
 
 	for _, toolUse := range resp.ToolUses() {
 		inputJSON, _ := json.Marshal(toolUse.Input)
+
+		if halted {
+			// Prior tool in this turn halted the run. Emit a synthetic
+			// tool_result so the API accepts the message pairing, but
+			// don't invoke the tool.
+			toolResults = append(toolResults, anthropic.Content{
+				Type:      "tool_result",
+				ToolUseID: toolUse.ID,
+				Content:   "skipped — prior tool halted this turn",
+			})
+			continue
+		}
+
 		slog.Info("executing tool", "tool", toolUse.Name, "input", string(inputJSON), "session_id", sessionID)
 
 		if status != nil {
@@ -318,12 +362,13 @@ func (a *Agent) executeTools(ec *tools.ExecContext, registry *tools.Registry, re
 			ec.OnToolCall(toolUse.Name)
 		}
 
-		result, err := registry.Execute(ec, toolUse.Name, inputJSON)
+		res, err := registry.ExecuteWithResult(ec, toolUse.Name, inputJSON)
+		result := res.Output
 		if err != nil {
 			slog.Error("tool execution failed", "tool", toolUse.Name, "error", err, "session_id", sessionID)
 			result = "Error: " + err.Error()
 		} else {
-			slog.Info("tool result", "tool", toolUse.Name, "result", result, "session_id", sessionID)
+			slog.Info("tool result", "tool", toolUse.Name, "result", result, "halted", res.Halted, "session_id", sessionID)
 		}
 
 		toolResults = append(toolResults, anthropic.Content{
@@ -331,6 +376,16 @@ func (a *Agent) executeTools(ec *tools.ExecContext, registry *tools.Registry, re
 			ToolUseID: toolUse.ID,
 			Content:   result,
 		})
+
+		if res.Halted {
+			// The gate fired. Future tools in this same turn get
+			// skipped, and we mark the turn terminal so the outer loop
+			// stops — the agent shouldn't get another chance to act
+			// after being told HALTED.
+			halted = true
+			terminal = true
+			continue
+		}
 
 		if registry.IsTerminal(toolUse.Name, inputJSON, channel) {
 			terminal = true
@@ -348,7 +403,21 @@ func (a *Agent) sendFallback(ctx context.Context, ec *tools.ExecContext, in RunI
 	_ = in.Slack.PostMessage(ctx, in.Channel, in.ThreadTS, fallback)
 }
 
-func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, session *models.Session) []anthropic.Message {
+// historyOptions tunes replay behavior per caller. The defaults (zero
+// values) preserve today's full-replay behavior for Slack and task
+// callers; the card-chat path sets both to bound memory growth.
+type historyOptions struct {
+	// windowPairs > 0 caps replayed user/assistant message pairs at the
+	// last N (decision_resolved events count as user messages). 0 =
+	// unbounded (today's behavior).
+	windowPairs int
+	// dropToolResults suppresses tool_results replay entirely. Set
+	// together with windowPairs for chat paths — tool-result blocks can
+	// carry multi-KB echoed args that dominate context on revise loops.
+	dropToolResults bool
+}
+
+func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, session *models.Session, opts historyOptions) []anthropic.Message {
 	events, err := models.GetSessionEvents(ctx, a.pool, tenant.ID, session.ID)
 	if err != nil {
 		slog.Error("loading session history", "error", err)
@@ -381,6 +450,12 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 			}
 
 		case models.EventTypeToolResults:
+			// Chat-path callers drop these from replay; they can carry
+			// multi-KB of echoed tool arguments that blow up context on
+			// iterated revise loops.
+			if opts.dropToolResults {
+				continue
+			}
 			var data struct {
 				Content []anthropic.Content `json:"content"`
 			}
@@ -393,13 +468,34 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 
 		case models.EventTypeDecisionResolved:
 			var data struct {
-				CardTitle   string `json:"card_title"`
-				OptionLabel string `json:"option_label"`
-				ResolvedBy  string `json:"resolved_by"`
+				CardTitle     string          `json:"card_title"`
+				OptionLabel   string          `json:"option_label"`
+				ResolvedBy    string          `json:"resolved_by"`
+				ToolName      string          `json:"tool_name,omitempty"`
+				ToolArguments json.RawMessage `json:"tool_arguments,omitempty"`
+				ToolResult    string          `json:"tool_result,omitempty"`
+				CardID        string          `json:"card_id,omitempty"`
 			}
 			if json.Unmarshal(evt.Data, &data) == nil && data.OptionLabel != "" {
-				text := fmt.Sprintf("Decision %q was resolved with option %q by %s.",
-					data.CardTitle, data.OptionLabel, data.ResolvedBy)
+				var text string
+				switch {
+				case data.ToolName != "" && data.ToolResult != "":
+					text = fmt.Sprintf(
+						"Decision %q was resolved with option %q by %s. "+
+							"Tool `%s` executed successfully and returned:\n%s\n\n"+
+							"(Call get_decision_tool_result with card_id=%s for the full output if needed.)",
+						data.CardTitle, data.OptionLabel, data.ResolvedBy,
+						data.ToolName, data.ToolResult, data.CardID,
+					)
+				case data.ToolName != "":
+					text = fmt.Sprintf(
+						"Decision %q was resolved with option %q by %s. Tool `%s` executed (no output returned).",
+						data.CardTitle, data.OptionLabel, data.ResolvedBy, data.ToolName,
+					)
+				default:
+					text = fmt.Sprintf("Decision %q was resolved with option %q by %s.",
+						data.CardTitle, data.OptionLabel, data.ResolvedBy)
+				}
 				messages = append(messages, anthropic.Message{
 					Role:    "user",
 					Content: []anthropic.Content{{Type: "text", Text: text}},
@@ -415,7 +511,42 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 		}
 	}
 
+	if opts.windowPairs > 0 {
+		messages = tailUserAssistantWindow(messages, opts.windowPairs)
+	}
+
 	return sanitizeHistory(messages)
+}
+
+// tailUserAssistantWindow keeps only the last N user/assistant pairs
+// of messages. Counting is approximate — we walk backward from the
+// end, counting user-role messages as pair starts; once we've passed N
+// user messages we cut everything before that point. Tool_results
+// already skipped at the switch level; this just bounds the
+// conversation-shaped messages.
+func tailUserAssistantWindow(messages []anthropic.Message, n int) []anthropic.Message {
+	if n <= 0 || len(messages) == 0 {
+		return messages
+	}
+	// Walk backward: count user-role messages; stop when we've seen n+1
+	// (so we keep exactly n pairs worth of context before the current
+	// message). The caller appends the *current* user message after
+	// this function returns, so we want n prior pairs.
+	userSeen := 0
+	cut := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			userSeen++
+			if userSeen > n {
+				cut = i + 1
+				break
+			}
+		}
+	}
+	if cut == 0 {
+		return messages
+	}
+	return messages[cut:]
 }
 
 // sanitizeHistory removes orphaned tool_use/tool_result pairs that would

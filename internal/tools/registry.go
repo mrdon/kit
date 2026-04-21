@@ -14,8 +14,38 @@ import (
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/tools/approval"
 	"github.com/mrdon/kit/internal/web"
 )
+
+// Policy governs whether a tool's handler runs directly or requires
+// human approval via a decision card. Embedded on Def so the check can
+// happen inside Registry.Execute itself — the single enforcement point.
+type Policy string
+
+const (
+	// PolicyAllow is the default: the tool's handler runs whenever
+	// Registry.Execute is called. Fine for reads, user-initiated
+	// writes, and anything the caller can easily undo.
+	PolicyAllow Policy = ""
+
+	// PolicyGate means a call to this tool without an approval token in
+	// ctx causes Registry.Execute to mint a decision card and return
+	// HALTED instead of invoking the handler. The user approves the
+	// card via the swipe UI; CardService.ResolveDecision then re-enters
+	// Registry.Execute with approval.WithToken(ctx, ...) set, and the
+	// handler runs with the same args. Use for side-effectful
+	// operations that cross a trust boundary: sending email, posting
+	// to external systems, destructive edits.
+	PolicyGate Policy = "gate"
+)
+
+// HaltedPrefix marks the string returned to the agent when a tool call
+// was intercepted by the gate instead of executing. The agent loop
+// detects this so it can short-circuit remaining tool_use blocks in the
+// same turn and so the system prompt's HALTED rule can instruct the LLM
+// not to claim the action happened.
+const HaltedPrefix = "HALTED: "
 
 // ExecContext holds everything a tool needs to execute.
 //
@@ -90,6 +120,12 @@ type Def struct {
 	AdminOnly      bool
 	VisibleToRoles []string
 	Terminal       bool // if true, calling this tool ends the agent loop
+
+	// DefaultPolicy controls whether Registry.Execute dispatches the
+	// handler directly (PolicyAllow, the default) or intercepts the
+	// call into an approval decision card (PolicyGate). See the
+	// gated-tools-guide skill for when to use Gate.
+	DefaultPolicy Policy
 }
 
 // Registry holds all registered tools.
@@ -143,6 +179,27 @@ var currentExposedToolRunner ExposedToolRunner
 // Passing nil disables dynamic registration (tests reset via t.Cleanup).
 func SetExposedToolRunner(r ExposedToolRunner) {
 	currentExposedToolRunner = r
+}
+
+// GateCreator builds the decision card that wraps a PolicyGate tool
+// call intercepted by Registry.Execute. Implemented by CardService so
+// the tools package doesn't need to import cards (cycle risk). Returns
+// the created card id for the audit trail / HALTED message.
+type GateCreator interface {
+	CreateGateCard(ctx context.Context, ec *ExecContext, toolName string, toolArguments json.RawMessage) (uuid.UUID, error)
+}
+
+// currentGateCreator is the process-wide gate-card sink, wired once at
+// startup from cmd/kit/main.go after the cards app initializes. When
+// nil (tests, misconfigured startup), a PolicyGate tool call returns a
+// user-safe error rather than silently executing or panicking.
+var currentGateCreator GateCreator
+
+// SetGateCreator wires the gate-card creator used by Registry.Execute
+// when a PolicyGate tool is invoked without an approval token. Pass nil
+// to disable gating (e.g. test cleanup).
+func SetGateCreator(c GateCreator) {
+	currentGateCreator = c
 }
 
 // NewRegistry creates a registry and runs all register functions for the
@@ -224,6 +281,37 @@ func (r *Registry) Register(d Def) {
 	r.handlers[d.Name] = d.Handler
 }
 
+// Policies returns a snapshot of tool-name -> DefaultPolicy for every
+// Def in this registry. Used at startup by cmd/kit to build a static
+// policy lookup table. The zero-value Policy is PolicyAllow, matching
+// unregistered / dynamic tools, so missing keys are safe.
+func (r *Registry) Policies() map[string]Policy {
+	out := make(map[string]Policy, len(r.defs))
+	for _, d := range r.defs {
+		out[d.Name] = d.DefaultPolicy
+	}
+	return out
+}
+
+// DropGatedTools removes every Def whose DefaultPolicy is PolicyGate
+// from this registry. Used by the chat-revision path (§6 of the plan)
+// to build a reduced registry: prompt injection in card content
+// shouldn't be able to coerce the chat LLM into calling a gated tool
+// directly. The registry-level gate catches such calls anyway, but a
+// HALTED result mid-chat is confusing UX — defense-in-depth drops the
+// tools before they can even be called.
+func (r *Registry) DropGatedTools() {
+	kept := r.defs[:0]
+	for _, d := range r.defs {
+		if d.DefaultPolicy == PolicyGate {
+			delete(r.handlers, d.Name)
+			continue
+		}
+		kept = append(kept, d)
+	}
+	r.defs = kept
+}
+
 // alwaysLoaded is the set of tool names that are sent in the request
 // prefix on every iteration. Everything else is marked DeferLoading=true
 // so the model must discover it via tool_search_tool.
@@ -235,11 +323,13 @@ func (r *Registry) Register(d Def) {
 // only if the model needs it from the very first turn without a
 // search round-trip.
 var alwaysLoaded = map[string]bool{
-	"reply_in_thread": true,
-	"post_to_channel": true,
-	"dm_user":         true,
-	"search_skills":   true,
-	"find_user":       true,
+	"reply_in_thread":          true,
+	"post_to_channel":          true,
+	"dm_user":                  true,
+	"search_skills":            true,
+	"find_user":                true,
+	"revise_decision_option":   true, // chat-revision path uses this on turn 1
+	"get_decision_tool_result": true,
 }
 
 // Definitions returns tool definitions for the Claude API. Tools not in
@@ -318,13 +408,90 @@ func anyIntersect(a, b []string) bool {
 	return false
 }
 
-// Execute runs a tool by name.
+// ExecResult carries a tool-execution outcome along with a Halted flag
+// the agent loop uses to short-circuit remaining tool_use blocks in the
+// same turn when a gate fired.
+type ExecResult struct {
+	Output string
+	// Halted is true when the call was intercepted by the PolicyGate
+	// path and a decision card was created instead of running the
+	// handler. The agent must not treat the action as performed.
+	Halted bool
+}
+
+// Execute runs a tool by name, or intercepts via the PolicyGate path.
+// Convenience shim for callers that don't need the Halted signal; see
+// ExecuteWithResult for the full outcome.
 func (r *Registry) Execute(ec *ExecContext, name string, input json.RawMessage) (string, error) {
-	fn, ok := r.handlers[name]
+	res, err := r.ExecuteWithResult(ec, name, input)
+	return res.Output, err
+}
+
+// ExecuteWithResult runs a tool by name with policy enforcement. This
+// is the single enforcement point for PolicyGate tools: any tool call
+// that reaches this function goes through the policy check, so any
+// caller that invokes tools through the registry is automatically
+// gated. See the gated-tools-guide skill for the full contract.
+//
+// If the tool's DefaultPolicy is PolicyGate and ctx does not carry an
+// approval token (minted by CardService.ResolveDecision), a decision
+// card is created via the injected GateCreator and the returned
+// ExecResult has Halted=true + a "HALTED: ..." Output. The agent loop
+// short-circuits further tool calls on a halted turn.
+func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.RawMessage) (ExecResult, error) {
+	def, ok := r.defByName(name)
 	if !ok {
-		return "", fmt.Errorf("unknown tool: %s", name)
+		return ExecResult{}, fmt.Errorf("unknown tool: %s", name)
 	}
-	return fn(ec, input)
+
+	if def.DefaultPolicy == PolicyGate {
+		_, _, approved := approval.FromCtx(ec.Ctx)
+		if !approved {
+			out, err := r.createGateCard(ec, def, input)
+			if err != nil {
+				return ExecResult{}, err
+			}
+			return ExecResult{Output: out, Halted: true}, nil
+		}
+		// Approval present — fall through to the normal handler. The
+		// handler is expected to honour the idempotency contract: dedupe
+		// by approval.Token.ResolveToken() so a sweep-driven retry of a
+		// wedged card doesn't double-execute.
+	}
+
+	out, err := def.Handler(ec, input)
+	return ExecResult{Output: out}, err
+}
+
+// defByName looks up a tool's Def. Returns (Def{}, false) if missing.
+// Registered separately from the handlers map so we can read schema
+// + policy without another allocation.
+func (r *Registry) defByName(name string) (Def, bool) {
+	for i := range r.defs {
+		if r.defs[i].Name == name {
+			return r.defs[i], true
+		}
+	}
+	return Def{}, false
+}
+
+// createGateCard asks the registered GateCreator to mint a decision
+// card for the intercepted tool call and returns the user-facing HALTED
+// message for the agent. The wording is non-ambiguous on purpose: the
+// agent's system prompt has a matching rule about the HALTED token so
+// it won't tell the user the action happened.
+func (r *Registry) createGateCard(ec *ExecContext, def Def, input json.RawMessage) (string, error) {
+	if currentGateCreator == nil {
+		return "", fmt.Errorf("gating is not configured for this process; tool %q cannot run", def.Name)
+	}
+	cardID, err := currentGateCreator.CreateGateCard(ec.Ctx, ec, def.Name, input)
+	if err != nil {
+		return "", fmt.Errorf("creating approval card for %q: %w", def.Name, err)
+	}
+	return fmt.Sprintf(
+		"%s%s requires human approval. Decision card %s was created. Do NOT tell the user the action happened; say it's queued for their review.",
+		HaltedPrefix, def.Name, cardID,
+	), nil
 }
 
 // IsTerminal returns true if calling this tool should end the agent loop.

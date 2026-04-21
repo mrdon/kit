@@ -60,7 +60,18 @@ export type DecisionOption = {
   option_id: string;
   sort_order: number;
   label: string;
+  // Post-execution follow-up: markdown instructions fed to a one-shot
+  // agent AFTER tool_name (if any) executes. Empty = no follow-up.
   prompt?: string;
+  // Name of a registered Kit tool to execute when this option is
+  // approved. Paired with tool_arguments. Absent for Skip options and
+  // any option whose action is captured only by prompt.
+  tool_name?: string;
+  // JSON arguments passed to the tool handler on approval. Shape
+  // matches the tool's registered schema; the PWA renders a preview
+  // for known tool_names (send_email, create_todo, …) or falls back
+  // to a JSON view.
+  tool_arguments?: unknown;
 };
 
 export type DecisionMetadata = {
@@ -68,6 +79,15 @@ export type DecisionMetadata = {
   recommended_option_id?: string;
   resolved_option_id?: string;
   resolved_task_id?: string;
+  // True when this card was minted as an approval gate for a
+  // PolicyGate tool. The Detail view surfaces stronger framing for
+  // gate artifacts (explicit "Kit wants to ..." language) so users
+  // understand they're approving a privileged action.
+  is_gate_artifact?: boolean;
+  // The tool's full output captured on successful resolve. Only set
+  // for resolved cards; present so follow-up UI (e.g. "view what Kit
+  // did") can reference it without a round trip.
+  resolved_tool_result?: string;
   options: DecisionOption[];
 };
 

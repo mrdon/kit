@@ -49,6 +49,7 @@ make db-reset    # Wipe and restart Postgres
 - Parameterized queries only — never interpolate user input into SQL strings.
 - Default deny for scoping: skills, rules, and memories with no scope rows are invisible.
 - LLM agent tools (`internal/tools/`) and MCP tools (`internal/mcp/`) share tool metadata via `internal/services/`. Changes to one should be considered for the other.
+- **Gated tools** (`DefaultPolicy: tools.PolicyGate`) must have the tool handler as the **only** entry point to the underlying dangerous operation. Either make the operation package-private, or guard it on a ctx marker set only by the registry path. No direct callers from `internal/apps/builder/action_builtins.go`, no MCP handlers that bypass `tools.Registry.Execute`. See the `gated-tools-guide` builtin skill.
 - Format: `gofmt -s`. Lint: `golangci-lint` (see .golangci.yml). Tests: `go test -race -cover ./...`
 - When adding user-facing features, update the relevant docs: user guide (`internal/skills/builtins/user-guide/SKILL.md`), landing page (`internal/web/templates/landing.html`). Keep additions proportional to the feature's importance.
 

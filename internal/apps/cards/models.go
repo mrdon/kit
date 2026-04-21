@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,11 +17,14 @@ const (
 )
 
 // CardState is the state of a card. Pending cards appear in the stack;
-// terminal states remove them.
+// terminal states remove them. Resolving is a transient state held by
+// decision cards while a gated tool is mid-execution — see
+// CardService.ResolveDecision.
 type CardState string
 
 const (
 	CardStatePending   CardState = "pending"
+	CardStateResolving CardState = "resolving" // decision: gated tool is executing
 	CardStateResolved  CardState = "resolved"  // decision: a human picked an option
 	CardStateArchived  CardState = "archived"  // briefing: seen, useful
 	CardStateDismissed CardState = "dismissed" // briefing: seen, not useful
@@ -66,8 +70,9 @@ func (k CardKind) Valid() bool {
 
 func (s CardState) Valid() bool {
 	switch s {
-	case CardStatePending, CardStateResolved, CardStateArchived,
-		CardStateDismissed, CardStateSaved, CardStateCancelled:
+	case CardStatePending, CardStateResolving, CardStateResolved,
+		CardStateArchived, CardStateDismissed, CardStateSaved,
+		CardStateCancelled:
 		return true
 	}
 	return false
@@ -135,6 +140,37 @@ type DecisionData struct {
 	OriginTaskID    *uuid.UUID       `json:"origin_task_id,omitempty"`
 	OriginSessionID *uuid.UUID       `json:"origin_session_id,omitempty"`
 	Options         []DecisionOption `json:"options"`
+
+	// IsGateArtifact is true when this card was minted specifically as the
+	// approval gate for a PolicyGate tool call (either auto-wrapped by
+	// Registry.Execute or author-gated via create_decision with a
+	// PolicyGate tool_name). ResolveDecision re-checks this before
+	// executing: without it, a post-creation tamper could route a
+	// PolicyAllow option's tool_name into a PolicyGate tool and run
+	// through an unprotected card.
+	IsGateArtifact bool `json:"is_gate_artifact,omitempty"`
+
+	// ResolvedToolResult is the full output from the gated tool's handler,
+	// captured on successful resolve. Resume-path events truncate a copy to
+	// 2KB; callers needing the full value use get_decision_tool_result.
+	ResolvedToolResult string `json:"resolved_tool_result,omitempty"`
+
+	// ResolvedAt records when the tool finished executing. Distinct from
+	// the parent card's terminal_at which tracks state-transition time.
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+
+	// ResolvingDeadline is set when state flips to 'resolving' (now+5min).
+	// The scheduler sweep flips past-deadline cards back to 'pending'.
+	ResolvingDeadline *time.Time `json:"resolving_deadline,omitempty"`
+
+	// ResolveToken is the idempotency key passed to the tool handler via
+	// approval.Token. If the sweep requeues a wedged card, the handler
+	// uses this to avoid double-executing a side-effectful operation.
+	ResolveToken *uuid.UUID `json:"resolve_token,omitempty"`
+
+	// LastError holds the most recent resolve-path failure message, if
+	// any. Cleared on successful resolve.
+	LastError string `json:"last_error,omitempty"`
 }
 
 // DecisionOption is a single option a user can pick when resolving a decision.
@@ -142,10 +178,20 @@ type DecisionOption struct {
 	OptionID  string `json:"option_id"`
 	SortOrder int    `json:"sort_order"`
 	Label     string `json:"label"`
-	// Prompt is the markdown description fed to the agent when this option is
-	// chosen. Empty means noop — resolving records the choice but doesn't
-	// trigger an agent task.
+	// Prompt is the markdown instruction fed to the agent AFTER the
+	// option's ToolName (if any) has executed. Use it for chained
+	// follow-up work — e.g. "after sending, mark todo {id} complete."
+	// Empty means no follow-up. If ToolName is also empty, the option is
+	// a noop (Skip).
 	Prompt string `json:"prompt,omitempty"`
+	// ToolName names a registered tool that the resolve path invokes via
+	// tools.Registry.Execute when this option is chosen. Empty means no
+	// tool call — rely on Prompt alone (or noop).
+	ToolName string `json:"tool_name,omitempty"`
+	// ToolArguments is the JSON arg blob passed to the ToolName handler.
+	// Validated structurally at create/revise time; the tool's own
+	// handler enforces semantic schema.
+	ToolArguments json.RawMessage `json:"tool_arguments,omitempty"`
 }
 
 // BriefingData holds briefing-specific fields.
@@ -178,6 +224,12 @@ type DecisionCreateInput struct {
 	// handler when running a scheduled task; nil for ad-hoc callers.
 	OriginTaskID    *uuid.UUID
 	OriginSessionID *uuid.UUID
+	// IsGateArtifact is set by the service layer (CardService.CreateDecision)
+	// when any option's ToolName resolves to a PolicyGate tool, OR when
+	// the registry's gate interceptor mints the card. ResolveDecision
+	// refuses to execute a PolicyGate option unless this flag is true.
+	// Callers normally leave this false; the service layer decides.
+	IsGateArtifact bool
 }
 
 // BriefingCreateInput holds the briefing-specific fields for creation.

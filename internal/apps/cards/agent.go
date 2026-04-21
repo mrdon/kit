@@ -29,22 +29,26 @@ func registerCardsAgentTools(r *tools.Registry, isAdmin bool, svc *CardService) 
 
 func cardsAgentHandler(name string, svc *CardService) tools.HandlerFunc {
 	switch name {
-	case "create_decision":
+	case ToolCreateDecision:
 		return handleCreateDecision(svc)
-	case "create_briefing":
+	case ToolCreateBriefing:
 		return handleCreateBriefing(svc)
-	case "update_decision":
+	case ToolUpdateDecision:
 		return handleUpdateDecision(svc)
-	case "update_briefing":
+	case ToolUpdateBriefing:
 		return handleUpdateBriefing(svc)
-	case "list_decisions":
+	case ToolListDecisions:
 		return handleListDecisions(svc)
-	case "list_briefings":
+	case ToolListBriefings:
 		return handleListBriefings(svc)
-	case "ack_briefing":
+	case ToolAckBriefing:
 		return handleAckBriefing(svc)
-	case "resolve_decision":
+	case ToolResolveDecision:
 		return handleResolveDecision(svc)
+	case ToolReviseDecisionOption:
+		return handleReviseDecisionOption(svc)
+	case ToolGetDecisionToolResult:
+		return handleGetDecisionToolResult(svc)
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown cards tool: %s", name)
@@ -289,6 +293,90 @@ func handleResolveDecision(svc *CardService) tools.HandlerFunc {
 			msg += fmt.Sprintf(" Kit queued task %s to act on it.", *card.Decision.ResolvedTaskID)
 		}
 		return msg, nil
+	}
+}
+
+type reviseDecisionOptionInput struct {
+	CardID        string          `json:"card_id"`
+	OptionID      string          `json:"option_id"`
+	ToolArguments json.RawMessage `json:"tool_arguments,omitempty"`
+	Prompt        *string         `json:"prompt,omitempty"`
+}
+
+// handleReviseDecisionOption handles the narrow revise tool. Only
+// tool_arguments and prompt can change; tool_name / label / option_id /
+// sort_order are immutable post-creation. The service layer enforces
+// this (the schema just omits the fields as defense-in-depth).
+func handleReviseDecisionOption(svc *CardService) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
+		var inp reviseDecisionOptionInput
+		if err := json.Unmarshal(input, &inp); err != nil {
+			return "", fmt.Errorf("parsing input: %w", err)
+		}
+		cardID, err := uuid.Parse(inp.CardID)
+		if err != nil {
+			return "Invalid card_id.", nil
+		}
+		if inp.OptionID == "" {
+			return "option_id is required.", nil
+		}
+		var newArgs *json.RawMessage
+		if len(inp.ToolArguments) > 0 && !isJSONNull(inp.ToolArguments) {
+			newArgs = &inp.ToolArguments
+		}
+		opt, err := svc.ReviseDecisionOption(ec.Ctx, ec.Caller(), cardID, inp.OptionID, newArgs, inp.Prompt)
+		if err != nil {
+			if errors.Is(err, ErrAlreadyTerminal) {
+				return "That card is no longer pending and can't be revised.", nil
+			}
+			if errors.Is(err, ErrOptionNotFound) {
+				return "That option does not exist on this card.", nil
+			}
+			return handleServiceErr(err, "revising decision option")
+		}
+		return fmt.Sprintf("Revised option %q on decision [%s].", opt.OptionID, cardID), nil
+	}
+}
+
+// isJSONNull reports whether the raw message is literal JSON null.
+// Used to treat an explicit null as "don't change" rather than
+// clearing to an empty-args value.
+func isJSONNull(raw json.RawMessage) bool {
+	for _, b := range raw {
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			continue
+		}
+		return b == 'n'
+	}
+	return false
+}
+
+// handleGetDecisionToolResult returns the full tool output for a
+// resolved decision card. Used by the resumed authoring agent when the
+// replay-truncated 2KB version is insufficient.
+func handleGetDecisionToolResult(svc *CardService) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
+		var inp struct {
+			CardID string `json:"card_id"`
+		}
+		if err := json.Unmarshal(input, &inp); err != nil {
+			return "", fmt.Errorf("parsing input: %w", err)
+		}
+		cardID, err := uuid.Parse(inp.CardID)
+		if err != nil {
+			return "Invalid card_id.", nil
+		}
+		card, err := svc.Get(ec.Ctx, ec.Caller(), cardID)
+		if err != nil {
+			return handleServiceErr(err, "loading decision")
+		}
+		if card.Kind != CardKindDecision || card.Decision == nil {
+			return "Card is not a decision.", nil
+		}
+		if card.Decision.ResolvedToolResult == "" {
+			return "No tool result recorded on this card.", nil
+		}
+		return card.Decision.ResolvedToolResult, nil
 	}
 }
 

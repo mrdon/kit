@@ -17,6 +17,25 @@ import (
 
 const maxConcurrentTasks = 5
 
+// PeriodicSweep is a background job invoked on every poll tick.
+// Intended for housekeeping like the stuck-resolving card recovery in
+// the cards app; decoupled via a function pointer so the scheduler
+// package doesn't need to import cards. Callers register via
+// RegisterPeriodicSweep.
+type PeriodicSweep func(ctx context.Context) error
+
+var periodicSweeps []PeriodicSweep
+var periodicSweepsMu sync.Mutex
+
+// RegisterPeriodicSweep adds a job to run on every scheduler poll
+// tick. Safe to call at startup (wiring) only; not safe under
+// concurrent Start() calls.
+func RegisterPeriodicSweep(s PeriodicSweep) {
+	periodicSweepsMu.Lock()
+	defer periodicSweepsMu.Unlock()
+	periodicSweeps = append(periodicSweeps, s)
+}
+
 // Scheduler runs due tasks and syncs user profiles on a schedule.
 type Scheduler struct {
 	pool   *pgxpool.Pool
@@ -72,6 +91,7 @@ func (s *Scheduler) runTaskLoop(ctx context.Context) {
 
 	process := func() {
 		s.processDueTasks(ctx)
+		s.runPeriodicSweeps(ctx)
 		// Reset so a kick both runs now AND pushes the next natural
 		// tick a full interval out, guaranteeing ≥ pollInterval between
 		// runs (no redundant back-to-back scans).
@@ -88,6 +108,20 @@ func (s *Scheduler) runTaskLoop(ctx context.Context) {
 			process()
 		case <-s.kickCh:
 			process()
+		}
+	}
+}
+
+// runPeriodicSweeps invokes every registered periodic sweep, logging
+// errors and continuing. Isolated from processDueTasks so a sweep
+// failure can't poison task execution. Called once per tick.
+func (s *Scheduler) runPeriodicSweeps(ctx context.Context) {
+	periodicSweepsMu.Lock()
+	sweeps := append([]PeriodicSweep(nil), periodicSweeps...)
+	periodicSweepsMu.Unlock()
+	for _, sweep := range sweeps {
+		if err := sweep(ctx); err != nil {
+			slog.Warn("periodic sweep failed", "error", err)
 		}
 	}
 }

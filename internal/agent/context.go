@@ -54,6 +54,15 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 - Lists: use bullet character • or dash - (no markdown-style headers)
 - DO NOT use ## headers or **double asterisks** — Slack renders them literally`)
 
+	// Gated-tool HALTED rule. Applies to any run: Slack, task, chat.
+	// Registry-level gating re-writes dangerous tool calls into a
+	// decision card and returns a HALTED-prefixed tool_result. The
+	// agent must not claim the action happened.
+	parts = append(parts, `Gated tool calls:
+- If a tool result begins with the literal prefix "HALTED:", the tool did NOT execute. Kit created a decision card for the user to review first.
+- Never tell the user the action happened or was sent. Say something like "I've queued that for your approval — take a look when you're ready" and stop.
+- Do NOT retry the same tool in the same turn. Kit short-circuits remaining tool calls in that turn automatically; let the user approve via the card first.`)
+
 	// User display info (Slack-specific)
 	displayName := user.SlackUserID
 	if user.DisplayName != nil {
