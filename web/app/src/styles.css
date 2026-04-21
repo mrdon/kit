@@ -354,6 +354,11 @@ main.feed > .card-screen {
 }
 .detail .back:active { opacity: 0.7; }
 
+/* For gate cards the tool preview replaces the normal body — older
+   cards in the DB still have a leftover preview.Body that'd eat
+   space above the preview, so just hide it. */
+.card:has(.gate-face) .body { display: none; }
+
 /* Gate-artifact decision face: the tool preview is the body of the
    card, so stretch it to fill the card's available space and keep
    the hint pinned below. flex-children need min-height: 0 so the
