@@ -81,6 +81,58 @@ export default function Stack() {
     }, 260);
   };
 
+  // Keyboard shortcuts for desktop testing. Act on items[0] — the top
+  // card — so mashing keys walks through the stack one at a time as
+  // each resolved card gets removed and the next slides up.
+  //   ArrowRight → commit the right swipe action
+  //   ArrowLeft  → commit the left swipe action
+  //   Enter      → open the detail view
+  const navigate = useNavigate();
+  const keyBusyRef = useRef(false);
+  useEffect(() => {
+    if (!items || items.length === 0 || chatItem) return;
+    const onKey = async (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+        return;
+      }
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Enter') return;
+      if (keyBusyRef.current) return;
+      const active = items[0];
+      if (!active) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        navigate(`/stack/${active.source_app}/${active.kind}/${active.id}`);
+        return;
+      }
+      const dir: CommitDirection = e.key === 'ArrowRight' ? 'right' : 'left';
+      const action = findAction(active.actions, dir);
+      if (!action) return;
+      e.preventDefault();
+      keyBusyRef.current = true;
+      try {
+        const result = await api.doAction(
+          active.source_app,
+          active.kind,
+          active.id,
+          action.id,
+          action.params,
+        );
+        onCommit(active, action.emoji, result.removed_ids ?? [itemKey(active)]);
+      } catch (err) {
+        alert((err as Error).message);
+      } finally {
+        // Let the commit animation finish before accepting the next
+        // key, otherwise we'd dispatch against a stale items[0].
+        window.setTimeout(() => {
+          keyBusyRef.current = false;
+        }, 320);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [items, chatItem, navigate]);
+
   if (err) return <div className="empty">Error: {err}</div>;
   if (items === null) return <div className="empty">Loading…</div>;
   if (items.length === 0) {
@@ -322,11 +374,10 @@ function SwipeCard({
       }}
       onTap={() => {
         clearLongPress();
-      }}
-      onClick={() => {
         if (busy) return;
-        // If long-press just fired, swallow this click — the user
-        // opened the chat sheet, they did not mean to navigate.
+        // onTap only fires when the pointer stays put — a vertical
+        // scroll or any drag cancels it, so scrolling the feed no
+        // longer wrong-navigates into the detail page.
         if (longPressFiredRef.current) {
           longPressFiredRef.current = false;
           return;

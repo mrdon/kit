@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 import { api } from './api';
 import type { DetailResponse, StackItem, TaskStatus } from './types';
 import { rendererFor } from './kinds';
+import ErrorBoundary from './ErrorBoundary';
 
 export default function StackItemDetail() {
   const params = useParams<{ source_app: string; kind: string; id: string }>();
@@ -50,6 +51,17 @@ export default function StackItemDetail() {
     return () => clearInterval(t);
   }, [extras, load]);
 
+  // ESC pops back to the stack — hard-keyboard and desktop testing
+  // escape route when a render error or stuck gesture leaves the page
+  // feeling trapped.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') navigate('/');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   const onAction = async (actionID: string, actionParams?: unknown) => {
     if (busy || !item) return;
     setBusy(true);
@@ -76,7 +88,9 @@ export default function StackItemDetail() {
 
   return (
     <SwipeBackShell item={item}>
-      <Link to="/" className="back">← Back · swipe to close</Link>
+      <Link to="/" className="back" aria-label="Back to stack">
+        ← Back
+      </Link>
       <div className="kind-tag">
         {item.icon ? `${item.icon} ` : ''}
         {item.kind_label}
@@ -97,7 +111,9 @@ export default function StackItemDetail() {
         </div>
       )}
       {Detail && (
-        <Detail item={item} extras={extras} onAction={onAction} busy={busy} />
+        <ErrorBoundary>
+          <Detail item={item} extras={extras} onAction={onAction} busy={busy} />
+        </ErrorBoundary>
       )}
     </SwipeBackShell>
   );
