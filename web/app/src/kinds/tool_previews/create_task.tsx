@@ -38,7 +38,7 @@ export function CreateTaskPreview({ args }: ToolPreviewProps) {
 
 function formatSchedule(a: CreateTaskArgs): React.ReactNode {
   if (a.run_at) {
-    return `Once at ${a.run_at}`;
+    return `Once at ${formatDate(a.run_at)}`;
   }
   if (a.cron_expr) {
     return (
@@ -48,4 +48,22 @@ function formatSchedule(a: CreateTaskArgs): React.ReactNode {
     );
   }
   return <em>(not set)</em>;
+}
+
+// formatDate renders an ISO datetime in the user's local formatting.
+// Kit stores run_at as a naïve ISO string ("2027-01-01T09:00:00"),
+// which Date treats as local time — no timezone conversion surprises.
+// Falls back to the raw string if parsing fails so an unexpected
+// shape never blanks the card.
+function formatDate(raw: string): string {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
