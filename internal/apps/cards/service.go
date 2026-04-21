@@ -290,13 +290,12 @@ func (s *CardService) CreateGateCard(
 	if err != nil {
 		return uuid.Nil, "", fmt.Errorf("creating gate card: %w", err)
 	}
-	// Link to the feed root, not the detail page — the pending gate
-	// card surfaces at the top of the stack and the whole stack view
-	// carries the face/preview. Dropping users on the detail page
-	// forced an extra tap for no added info.
+	// Link to the feed root with a hash anchor so the PWA can scroll
+	// this specific card into view. The format matches itemKey on the
+	// client (source_app:kind:id) so the frontend can match directly.
 	cardURL := ""
 	if s.baseURL != "" && ec.Tenant.Slug != "" {
-		cardURL = fmt.Sprintf("%s/%s/", s.baseURL, ec.Tenant.Slug)
+		cardURL = fmt.Sprintf("%s/%s/#cards:decision:%s", s.baseURL, ec.Tenant.Slug, card.ID)
 	}
 	return card.ID, cardURL, nil
 }

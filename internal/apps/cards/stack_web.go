@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,11 +117,55 @@ func handleStackList(w http.ResponseWriter, r *http.Request) {
 		all = all[:limit]
 	}
 
+	// focus=source_app:kind:id deep-links a caller to a specific card
+	// (e.g. Slack link into a pending gate decision). The handler
+	// surfaces that card at the top of the page — moving it from
+	// further down the stack if already present, or pulling it via
+	// GetItem if it'd be on a later paginated page. Keeps the rest of
+	// the normal sort order intact behind the focused row.
+	if focusKey := strings.TrimSpace(r.URL.Query().Get("focus")); focusKey != "" {
+		all = applyStackFocus(r.Context(), caller, all, focusKey)
+	}
+
 	resp := stackResponse{Items: all, Degraded: degraded}
 	if len(nextCursors) > 0 {
 		resp.NextCursors = nextCursors
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// applyStackFocus hoists the item matching focusKey to the front of
+// items. If the item isn't already in the slice (e.g. it would fall on
+// a later paginated page) we fetch it via the source's GetItem and
+// prepend. Silent no-op on parse failure or a missing/forbidden item —
+// the page still renders in normal order.
+func applyStackFocus(ctx context.Context, caller *services.Caller, items []shared.StackItem, focusKey string) []shared.StackItem {
+	parts := strings.SplitN(focusKey, ":", 3)
+	if len(parts) != 3 {
+		return items
+	}
+	sourceApp, kind, id := parts[0], parts[1], parts[2]
+	for i, it := range items {
+		if it.SourceApp == sourceApp && it.Kind == kind && it.ID == id {
+			if i == 0 {
+				return items
+			}
+			out := make([]shared.StackItem, 0, len(items))
+			out = append(out, it)
+			out = append(out, items[:i]...)
+			out = append(out, items[i+1:]...)
+			return out
+		}
+	}
+	p := providerByName(sourceApp)
+	if p == nil {
+		return items
+	}
+	detail, err := p.GetItem(ctx, caller, kind, id)
+	if err != nil || detail == nil {
+		return items
+	}
+	return append([]shared.StackItem{detail.Item}, items...)
 }
 
 // sortStackItems applies the canonical sort: tier rank, kind weight,

@@ -48,7 +48,12 @@ export default function Stack() {
 
   const load = useCallback(async () => {
     try {
-      const resp = await api.stack();
+      // location.hash (set by Slack deep-links) asks the backend to
+      // hoist that itemKey to the top of the page, so we render the
+      // target card at index 0 without pulling hundreds of rows and
+      // then scrolling client-side.
+      const focus = window.location.hash.replace(/^#/, '') || undefined;
+      const resp = await api.stack({ focus });
       setItems(resp.items ?? []);
       setDegraded(resp.degraded ?? []);
       setErr(null);
@@ -67,6 +72,7 @@ export default function Stack() {
       document.removeEventListener('visibilitychange', onFocus);
     };
   }, [load]);
+
 
   // showBurst pops the big checkmark overlay. Called the moment the
   // commit decision is made (start of runAction) so the feedback lands

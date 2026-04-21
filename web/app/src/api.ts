@@ -39,10 +39,13 @@ const cardPath = (sourceApp: string, kind: string, id: string) =>
   `${BASENAME}/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`;
 
 export const api = {
-  stack: async (cursor?: string, limit?: number): Promise<StackResponse> => {
+  stack: async (
+    opts?: { cursor?: string; limit?: number; focus?: string },
+  ): Promise<StackResponse> => {
     const params = new URLSearchParams();
-    if (cursor) params.set('cursor', cursor);
-    if (limit) params.set('limit', String(limit));
+    if (opts?.cursor) params.set('cursor', opts.cursor);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.focus) params.set('focus', opts.focus);
     const qs = params.toString();
     const r = await get(`${BASENAME}/api/v1/stack${qs ? `?${qs}` : ''}`);
     return j<StackResponse>(r);
