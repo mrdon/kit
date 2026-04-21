@@ -1,6 +1,8 @@
 package email
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -80,11 +82,39 @@ type Message struct {
 
 // SendArgs is the input shape of the send_email tool.
 type SendArgs struct {
-	To         []string `json:"to"`
-	Cc         []string `json:"cc,omitempty"`
-	Bcc        []string `json:"bcc,omitempty"`
-	Subject    string   `json:"subject"`
-	Body       string   `json:"body"`
-	InReplyTo  string   `json:"in_reply_to,omitempty"`
-	References []string `json:"references,omitempty"`
+	To         stringList `json:"to"`
+	Cc         stringList `json:"cc,omitempty"`
+	Bcc        stringList `json:"bcc,omitempty"`
+	Subject    string     `json:"subject"`
+	Body       string     `json:"body"`
+	InReplyTo  string     `json:"in_reply_to,omitempty"`
+	References stringList `json:"references,omitempty"`
+}
+
+// stringList accepts either a JSON array of strings or a single bare string.
+// The send_email schema declares these fields as arrays, but models
+// occasionally emit a single recipient as a plain string; coercing here
+// avoids failing an already-approved send on a trivial shape mismatch.
+type stringList []string
+
+func (s *stringList) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*s = nil
+		return nil
+	}
+	if trimmed[0] == '[' {
+		var arr []string
+		if err := json.Unmarshal(data, &arr); err != nil {
+			return err
+		}
+		*s = arr
+		return nil
+	}
+	var one string
+	if err := json.Unmarshal(data, &one); err != nil {
+		return err
+	}
+	*s = []string{one}
+	return nil
 }
