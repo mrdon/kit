@@ -275,8 +275,11 @@ func handleResolveDecision(svc *CardService) tools.HandlerFunc {
 		if ec.Slack == nil {
 			return "Slack client unavailable — cannot resolve from this context.", nil
 		}
-		card, err := svc.ResolveDecision(ec.Ctx, ec.Caller(), cardID, inp.OptionID, ec.Slack)
+		card, err := svc.ResolveDecisionFromAgent(ec.Ctx, ec.Caller(), cardID, inp.OptionID, ec.Slack)
 		if err != nil {
+			if errors.Is(err, ErrGatedResolveFromAgent) {
+				return "That decision is gated — the user has to approve it on the card. Tell them it's queued for their review; don't retry.", nil
+			}
 			if errors.Is(err, ErrAlreadyTerminal) {
 				return "That decision has already been resolved.", nil
 			}

@@ -528,4 +528,9 @@ var (
 	ErrAlreadyTerminal = errors.New("card is not pending")
 	ErrNoOptionPicked  = errors.New("no option_id supplied and no recommended option")
 	ErrOptionNotFound  = errors.New("option not found on this decision")
+	// ErrGatedResolveFromAgent is returned by ResolveDecisionFromAgent when
+	// the picked option's tool is PolicyGate. Gated resolves require a
+	// human in the loop (swipe UI, MCP admin, interactive Slack block) —
+	// the agent's resolve_decision tool must not double as an approval.
+	ErrGatedResolveFromAgent = errors.New("gated tool resolves must be approved by the user, not the agent")
 )

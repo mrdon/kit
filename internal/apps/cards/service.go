@@ -527,6 +527,47 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 	return s.Get(ctx, c, cardID)
 }
 
+// ResolveDecisionFromAgent is the agent-path wrapper around ResolveDecision.
+// It refuses to resolve any option whose tool_name is a PolicyGate tool, so
+// an agent cannot use resolve_decision to approve its own send_email (or
+// similar) card and bypass the registry gate. Non-gated resolves fall
+// through to ResolveDecision unchanged — the agent is still allowed to
+// resolve plain prompt-only or allow-policy-tool options.
+//
+// Gated tool_name is write-once at creation (ReviseDecisionOption refuses
+// to touch it), so a TOCTOU between this check and the eventual resolve
+// is not reachable through the service layer.
+func (s *CardService) ResolveDecisionFromAgent(ctx context.Context, c *services.Caller, cardID uuid.UUID, optionID string, dm DMOpener) (*Card, error) {
+	card, err := s.Get(ctx, c, cardID)
+	if err != nil {
+		return nil, err
+	}
+	if card.Kind != CardKindDecision || card.Decision == nil {
+		return nil, fmt.Errorf("card %s is not a decision", cardID)
+	}
+	pick := optionID
+	if pick == "" {
+		pick = card.Decision.RecommendedOptionID
+	}
+	if pick == "" {
+		return nil, ErrNoOptionPicked
+	}
+	var opt *DecisionOption
+	for i := range card.Decision.Options {
+		if card.Decision.Options[i].OptionID == pick {
+			opt = &card.Decision.Options[i]
+			break
+		}
+	}
+	if opt == nil {
+		return nil, ErrOptionNotFound
+	}
+	if opt.ToolName != "" && s.policyOf(opt.ToolName) == tools.PolicyGate {
+		return nil, ErrGatedResolveFromAgent
+	}
+	return s.ResolveDecision(ctx, c, cardID, optionID, dm)
+}
+
 // runResolveTool executes the gated tool for Branch A/B (after the
 // first tx has flipped the card to 'resolving'). On success, writes a
 // second tx that either just completes the resolve (A) or queues the

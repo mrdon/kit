@@ -123,8 +123,8 @@ type Def struct {
 
 	// DefaultPolicy controls whether Registry.Execute dispatches the
 	// handler directly (PolicyAllow, the default) or intercepts the
-	// call into an approval decision card (PolicyGate). See the
-	// gated-tools-guide skill for when to use Gate.
+	// call into an approval decision card (PolicyGate). See
+	// .claude/skills/gated-tools-guide.md for when to use Gate.
 	DefaultPolicy Policy
 }
 
@@ -433,7 +433,7 @@ func (r *Registry) Execute(ec *ExecContext, name string, input json.RawMessage) 
 // is the single enforcement point for PolicyGate tools: any tool call
 // that reaches this function goes through the policy check, so any
 // caller that invokes tools through the registry is automatically
-// gated. See the gated-tools-guide skill for the full contract.
+// gated. See .claude/skills/gated-tools-guide.md for the full contract.
 //
 // If the tool's DefaultPolicy is PolicyGate and ctx does not carry an
 // approval token (minted by CardService.ResolveDecision), a decision

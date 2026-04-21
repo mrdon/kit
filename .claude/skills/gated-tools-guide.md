@@ -1,6 +1,6 @@
 ---
 name: gated-tools-guide
-description: "How to add a gated tool to Kit (like send_email, future edit_doc) and how the decision-card approval mechanism works end-to-end. Covers DefaultPolicy, the approval.Token ceremony, handler idempotency via resolve_token, shadow-path discipline, client preview components, and testing. Use when adding any new tool with side effects a human should review before executing, or when asking an agent to propose such actions via decision cards."
+description: "How to add a gated tool to Kit (like send_email, future edit_doc) and how the decision-card approval mechanism works end-to-end. Covers DefaultPolicy, the approval.Token ceremony, handler idempotency via resolve_token, shadow-path discipline, client preview components, and testing. Use when adding or modifying any tool whose side effects need human approval before execution."
 ---
 
 # Gated tools in Kit

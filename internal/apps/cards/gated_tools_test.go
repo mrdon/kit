@@ -12,6 +12,7 @@ package cards_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -401,6 +402,79 @@ func TestSweepRecoversStuckResolving(t *testing.T) {
 	}
 	if recovered.Decision.ResolveToken != nil {
 		t.Fatalf("resolve_token should be cleared after sweep")
+	}
+}
+
+// TestAgentCannotResolveGatedCard: the agent's resolve_decision tool
+// must not be a back-door around the gate. Create a legitimate gated
+// card, then try to resolve it via the agent path and expect
+// ErrGatedResolveFromAgent. Also confirm the regular ResolveDecision
+// path (used by the swipe UI / MCP) still works.
+func TestAgentCannotResolveGatedCard(t *testing.T) {
+	f := newFixture(t)
+
+	reg := tools.NewRegistry(f.ctx, f.caller, false)
+	reg.Register(testgated.NewDef(f.dedupe))
+	tenant, _ := models.GetTenantByID(f.ctx, f.pool, f.tenantID)
+	user, _ := models.GetUserByID(f.ctx, f.pool, f.tenantID, f.userID)
+	ec := &tools.ExecContext{Ctx: f.ctx, Pool: f.pool, Tenant: tenant, User: user}
+
+	gateRes, err := reg.ExecuteWithResult(ec, testgated.ToolName, makeArgs(t, map[string]any{"text": "gated"}))
+	if err != nil {
+		t.Fatalf("gate execute: %v", err)
+	}
+	cardID := parseCardIDFromHalted(t, gateRes.Output)
+
+	// Agent path must refuse.
+	if _, err := f.svc.ResolveDecisionFromAgent(f.ctx, f.caller, cardID, "approve", &stubDM{}); !errors.Is(err, cards.ErrGatedResolveFromAgent) {
+		t.Fatalf("expected ErrGatedResolveFromAgent, got %v", err)
+	}
+	// Handler must NOT have run.
+	if f.dedupe.Replayed(uuid.Nil) {
+		t.Fatalf("gated tool handler ran via agent resolve path")
+	}
+	// Empty option_id defaults to the recommended option; same refusal.
+	if _, err := f.svc.ResolveDecisionFromAgent(f.ctx, f.caller, cardID, "", &stubDM{}); !errors.Is(err, cards.ErrGatedResolveFromAgent) {
+		t.Fatalf("expected ErrGatedResolveFromAgent with default option, got %v", err)
+	}
+
+	// The human path (used by the swipe UI and MCP) still resolves it.
+	if _, err := f.svc.ResolveDecision(f.ctx, f.caller, cardID, "approve", &stubDM{}); err != nil {
+		t.Fatalf("human resolve should still succeed: %v", err)
+	}
+	resolved, _ := f.svc.Get(f.ctx, f.caller, cardID)
+	if resolved.State != cards.CardStateResolved {
+		t.Fatalf("expected state=resolved after human approve, got %s", resolved.State)
+	}
+}
+
+// TestAgentCanResolveNonGatedCard: the agent is allowed to resolve
+// plain (non-gated) cards. Creates a prompt-only option and confirms
+// ResolveDecisionFromAgent lets it through.
+func TestAgentCanResolveNonGatedCard(t *testing.T) {
+	f := newFixture(t)
+
+	card, err := f.svc.CreateDecision(f.ctx, f.caller, cards.CardCreateInput{
+		Kind:  cards.CardKindDecision,
+		Title: "non-gated",
+		Decision: &cards.DecisionCreateInput{
+			Priority:            cards.DecisionPriorityMedium,
+			RecommendedOptionID: "ok",
+			Options: []cards.DecisionOption{
+				{OptionID: "ok", SortOrder: 0, Label: "OK"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := f.svc.ResolveDecisionFromAgent(f.ctx, f.caller, card.ID, "ok", &stubDM{}); err != nil {
+		t.Fatalf("non-gated agent resolve should succeed: %v", err)
+	}
+	resolved, _ := f.svc.Get(f.ctx, f.caller, card.ID)
+	if resolved.State != cards.CardStateResolved {
+		t.Fatalf("expected resolved, got %s", resolved.State)
 	}
 }
 
