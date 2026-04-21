@@ -357,8 +357,68 @@ main.feed > .card-screen {
 /* Gate-artifact decision face: render the tool preview inline on the
    card itself so the user doesn't have to tap in to read the email. */
 .gate-face { margin-top: 8px; }
-.gate-face .tool-preview { font-size: 14px; }
-.gate-face .hint { margin-top: 10px; }
+.gate-face .hint { margin-top: 12px; }
+
+/* Tool preview (rendered on both the card face and the decision
+   detail view). Shared styles so a gated send_email reads the same
+   in both places — monospaced headers, muted labels, and a compact
+   body container that word-wraps. */
+.tool-preview {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--card-fg);
+}
+.tool-preview__headers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 10px;
+}
+.tool-preview__headers dt {
+  font-weight: 600;
+  color: var(--card-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+.tool-preview__headers dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tool-preview__muted { color: var(--card-muted); font-size: 12px; }
+.tool-preview__body {
+  border-top: 1px solid var(--card-border);
+  padding-top: 10px;
+  line-height: 1.5;
+}
+.tool-preview__body p { margin: 0 0 8px; }
+.tool-preview__body p:last-child { margin-bottom: 0; }
+.tool-preview__expand {
+  background: none;
+  border: none;
+  color: var(--card-muted);
+  font: inherit;
+  padding: 6px 0 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.tool-preview--json summary {
+  color: var(--card-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tool-preview--json pre {
+  font-size: 12px;
+  overflow-x: auto;
+  margin: 8px 0 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+}
 
 .error-fallback {
   background: #fef2f2;

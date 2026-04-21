@@ -213,6 +213,7 @@ func cardToStackItem(c *Card) (shared.StackItem, error) {
 			"recommended_option_id": c.Decision.RecommendedOptionID,
 			"resolved_option_id":    c.Decision.ResolvedOptionID,
 			"resolved_task_id":      c.Decision.ResolvedTaskID,
+			"is_gate_artifact":      c.Decision.IsGateArtifact,
 			"options":               c.Decision.Options,
 		})
 		if err != nil {
