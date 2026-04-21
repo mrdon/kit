@@ -37,16 +37,33 @@ The authoring session (if any) gets a `decision_resolved` event with a truncated
 ## When to gate
 
 Gate (set `DefaultPolicy: tools.PolicyGate`):
-- Operations with irreversible side effects visible to third parties: `send_email`, `post_to_channel` in untrusted channels, `schedule_calendar_event` on external calendars.
-- Operations that modify external systems: `edit_doc`, `edit_spreadsheet`, `move_file`.
-- Any operation with meaningful cost or reputational risk.
+- Operations with irreversible side effects visible to third parties where the user should ALWAYS review — regardless of agent judgment: `send_email`.
+- Operations that modify external systems and can't be reasoned about per-call: `edit_doc`, `edit_spreadsheet`, `move_file`.
+- Any operation with meaningful cost or reputational risk where "the agent got it right this time" isn't a safe default.
 
 Do NOT gate (keep `PolicyAllow`):
 - Reads (`find_user`, `list_todos`, `get_decision_tool_result`).
-- Internal-only writes the user can trivially undo (`create_todo`, `update_memory`). Voice-style flows like "create me 3 todos" need these to run directly.
+- Internal-only writes the user can trivially undo (`create_todo`, `update_memory`).
 - Idempotent state-syncing operations.
+- Actions where per-call agent judgment IS appropriate — Slack sends, todo creation on command, task scheduling. The agent can still escalate individual calls via `require_approval` (see next section).
 
-When in doubt, leave it `PolicyAllow` and rely on the confidence dial (agents can voluntarily gate via `create_decision(tool_name, tool_arguments, ...)` when uncertain).
+When in doubt, leave it `PolicyAllow`. The agent can voluntarily gate any call via the universal `require_approval` input param below — that's the common path for "this time I want the user to verify."
+
+## Caller-gated tools: the universal `require_approval` input param
+
+Every registered tool's input schema gets an optional `require_approval: boolean` field auto-injected by `Registry.Register`. When the agent passes `require_approval: true`, `Registry.ExecuteWithResult` treats the call exactly like a PolicyGate call without an approval token: mints a decision card, returns HALTED, and on user approval re-runs the handler with the token on ctx.
+
+This is the main channel for "agent decides per-call" gating. Use it instead of `create_decision` when you just want a yes/no checkpoint on a specific call — the payload stays in its natural schema (no wrapping in `tool_name` + `tool_arguments`).
+
+**To opt a tool out** (for cases where the flag is nonsensical), set `DenyCallerGate: true` on the Def. The registry then:
+- skips injecting `require_approval` into the schema (model doesn't see the knob)
+- ignores it if somehow passed at execute time
+
+Today only `reply_in_thread` opts out — it's the live in-session reply; gating breaks the conversational loop. A new tool should only opt out when gating literally cannot work (e.g. session-bound replies where there's no meaningful "approve" shape).
+
+Handlers for PolicyAllow tools that might be caller-gated must still handle the approval-token path when present: dedupe by `approval.Token.ResolveToken()` against a side-effect table so a stuck-resolving sweep retry doesn't double-execute. When no token is on ctx (direct call, not approved), the handler can skip the dedupe lookup — there's no retry machinery for un-gated calls.
+
+`PolicyGate` is still the right choice for tools where the user should review EVERY call regardless of agent judgment. `require_approval` is the common path for "the agent should decide."
 
 ## Registering a gated tool
 

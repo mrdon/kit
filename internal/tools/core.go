@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/tools/approval"
 )
 
 // registerCoreTools wires the three messaging tools plus any other
@@ -27,7 +29,11 @@ func registerCoreTools(r *Registry, botInitiated bool) {
 				"text": field("string", "The message text (Slack mrkdwn)"),
 			}, "text"),
 			Terminal: true,
-			Handler:  replyInThreadHandler,
+			// Live in-session reply: the channel is session-bound, gating
+			// breaks the conversational loop. The agent has other tools for
+			// deliberate outbound sends.
+			DenyCallerGate: true,
+			Handler:        replyInThreadHandler,
 		})
 	}
 
@@ -38,8 +44,9 @@ func registerCoreTools(r *Registry, botInitiated bool) {
 			"channel": field("string", "Slack channel name or id (e.g. 'tmp' or 'C09ABC')"),
 			"text":    field("string", "The message text (Slack mrkdwn)"),
 		}, "channel", "text"),
-		Terminal: true,
-		Handler:  postToChannelHandler,
+		Terminal:        true,
+		GateCardPreview: postToChannelGatePreview,
+		Handler:         postToChannelHandler,
 	})
 
 	r.Register(Def{
@@ -49,9 +56,58 @@ func registerCoreTools(r *Registry, botInitiated bool) {
 			"user_id": field("string", "Slack user id (starts with 'U')"),
 			"text":    field("string", "The message text (Slack mrkdwn)"),
 		}, "user_id", "text"),
-		Terminal: true,
-		Handler:  dmUserHandler,
+		Terminal:        true,
+		GateCardPreview: dmUserGatePreview,
+		Handler:         dmUserHandler,
 	})
+}
+
+func postToChannelGatePreview(input json.RawMessage) GateCardPreview {
+	var args struct {
+		Channel string `json:"channel"`
+	}
+	_ = json.Unmarshal(input, &args)
+	title := "Post to Slack channel?"
+	if args.Channel != "" {
+		title = "Post to " + displayChannel(args.Channel) + "?"
+	}
+	return GateCardPreview{
+		Title:        title,
+		ApproveLabel: "Post",
+		SkipLabel:    "Don't post",
+	}
+}
+
+func dmUserGatePreview(input json.RawMessage) GateCardPreview {
+	var args struct {
+		UserID string `json:"user_id"`
+	}
+	_ = json.Unmarshal(input, &args)
+	title := "Send DM?"
+	if args.UserID != "" {
+		title = "Send DM to <@" + args.UserID + ">?"
+	}
+	return GateCardPreview{
+		Title:        title,
+		ApproveLabel: "Send DM",
+		SkipLabel:    "Don't send",
+	}
+}
+
+// displayChannel prefixes a bare channel name with '#'. Leaves Slack
+// channel ids (start with C/G/D) alone since the PWA can render those
+// as-is and the agent can pass either shape.
+func displayChannel(c string) string {
+	if c == "" {
+		return c
+	}
+	if c[0] == '#' {
+		return c
+	}
+	if c[0] == 'C' || c[0] == 'G' || c[0] == 'D' {
+		return c
+	}
+	return "#" + c
 }
 
 func replyInThreadHandler(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -89,6 +145,23 @@ func postToChannelHandler(ec *ExecContext, input json.RawMessage) (string, error
 	if inp.Text == "" {
 		return "error: text is required", nil
 	}
+	// If the call reached us via the approval path, dedupe on the
+	// resolve token so a stuck-resolving sweep retry doesn't double-post.
+	// Direct (un-approved) calls just post — there's no retry machinery
+	// to defend against and idempotency costs a round-trip we don't need.
+	if _, resolveTok, ok := approval.FromCtx(ec.Ctx); ok && resolveTok != [16]byte{} {
+		caller := ec.Caller()
+		_, err := slackSendOnce(ec.Ctx, ec.Pool, resolveTok, caller.TenantID, caller.UserID,
+			"post_to_channel", inp.Channel,
+			func(ctx context.Context) (string, error) {
+				return ec.Slack.PostMessageReturningTS(ctx, inp.Channel, "", inp.Text)
+			})
+		if err != nil {
+			return "", err
+		}
+		logMessageSent(ec, inp.Channel, "", inp.Text, false)
+		return fmt.Sprintf("Message posted to %s.", inp.Channel), nil
+	}
 	if err := ec.Slack.PostMessage(ec.Ctx, inp.Channel, "", inp.Text); err != nil {
 		return "", err
 	}
@@ -113,6 +186,19 @@ func dmUserHandler(ec *ExecContext, input json.RawMessage) (string, error) {
 	dm, err := ec.Slack.OpenConversation(ec.Ctx, inp.UserID)
 	if err != nil {
 		return "", fmt.Errorf("opening DM: %w", err)
+	}
+	if _, resolveTok, ok := approval.FromCtx(ec.Ctx); ok && resolveTok != [16]byte{} {
+		caller := ec.Caller()
+		_, err := slackSendOnce(ec.Ctx, ec.Pool, resolveTok, caller.TenantID, caller.UserID,
+			"dm_user", dm,
+			func(ctx context.Context) (string, error) {
+				return ec.Slack.PostMessageReturningTS(ctx, dm, "", inp.Text)
+			})
+		if err != nil {
+			return "", err
+		}
+		logMessageSent(ec, dm, "", inp.Text, true)
+		return "DM sent.", nil
 	}
 	if err := ec.Slack.PostMessage(ec.Ctx, dm, "", inp.Text); err != nil {
 		return "", err

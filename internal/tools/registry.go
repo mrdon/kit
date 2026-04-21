@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -127,12 +129,20 @@ type Def struct {
 	// .claude/skills/gated-tools-guide.md for when to use Gate.
 	DefaultPolicy Policy
 
+	// DenyCallerGate opts this tool out of the universal
+	// `require_approval` input parameter that the registry injects into
+	// every tool's schema and honours at execute time. Use for tools
+	// where gating is nonsensical (e.g. reply_in_thread — the live
+	// conversational reply, whose channel is bound to the session).
+	// PolicyGate tools are gated unconditionally regardless of this flag.
+	DenyCallerGate bool
+
 	// GateCardPreview returns the user-facing framing for this tool's
 	// approval card — title, optional body, custom option labels.
-	// Only meaningful when DefaultPolicy is PolicyGate. A nil func
-	// falls back to generic "Approve <tool>?" wording. Fields left
-	// empty on the returned struct also fall back individually, so a
-	// tool can override just the title without touching labels.
+	// Applies both to PolicyGate tools and to caller-gated PolicyAllow
+	// tools (when the agent sets require_approval). A nil func falls
+	// back to a synthesized default based on the tool name. Fields
+	// left empty on the returned struct also fall back individually.
 	GateCardPreview func(args json.RawMessage) GateCardPreview
 }
 
@@ -302,10 +312,96 @@ func buildExposedDef(d ExposedToolDef) Def {
 	}
 }
 
-// Register adds a tool to the registry.
+// Register adds a tool to the registry. Unless the Def opts out via
+// DenyCallerGate, the optional `require_approval` boolean is appended to
+// the tool's input schema so the agent can request human approval for
+// any call at its own discretion (see ExecuteWithResult).
 func (r *Registry) Register(d Def) {
+	if !d.DenyCallerGate {
+		d.Schema = injectRequireApprovalSchema(d.Schema)
+	}
 	r.defs = append(r.defs, d)
 	r.handlers[d.Name] = d.Handler
+}
+
+// requireApprovalField is the schema description the agent sees for the
+// auto-injected flag. Kept terse so it doesn't dominate tool descriptions;
+// the system prompt explains when to reach for it.
+const requireApprovalField = "require_approval"
+
+// injectRequireApprovalSchema returns a shallow-cloned schema with the
+// `require_approval` boolean added to its properties map. Clones so we
+// don't mutate a schema shared between registries (tests, dynamic builds).
+// Non-object schemas (rare; most tools have object inputs) are returned
+// unchanged — the flag only makes sense on object-typed inputs.
+func injectRequireApprovalSchema(schema map[string]any) map[string]any {
+	if schema == nil {
+		return map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				requireApprovalField: requireApprovalProperty(),
+			},
+		}
+	}
+	if t, _ := schema["type"].(string); t != "" && t != "object" {
+		return schema
+	}
+	out := make(map[string]any, len(schema)+1)
+	maps.Copy(out, schema)
+	props, _ := out["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+	} else {
+		cloned := make(map[string]any, len(props)+1)
+		maps.Copy(cloned, props)
+		props = cloned
+	}
+	if _, exists := props[requireApprovalField]; !exists {
+		props[requireApprovalField] = requireApprovalProperty()
+	}
+	out["properties"] = props
+	if _, ok := out["type"]; !ok {
+		out["type"] = "object"
+	}
+	return out
+}
+
+func requireApprovalProperty() map[string]any {
+	return map[string]any{
+		"type":        "boolean",
+		"description": "Set to true to surface this call as an approval card before it runs. Use when the user asked to verify first, or when the intent or recipient is ambiguous. Omit otherwise.",
+	}
+}
+
+// readRequireApproval extracts the boolean require_approval flag from a
+// tool input payload (if present) and returns the raw JSON with the field
+// stripped so the handler never sees it. Defensive: invalid or non-bool
+// values fall back to false.
+func readRequireApproval(input json.RawMessage) (bool, json.RawMessage) {
+	if len(input) == 0 {
+		return false, input
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(input, &raw); err != nil {
+		return false, input
+	}
+	v, ok := raw[requireApprovalField]
+	if !ok {
+		return false, input
+	}
+	delete(raw, requireApprovalField)
+	var flag bool
+	if err := json.Unmarshal(v, &flag); err != nil {
+		flag = false
+	}
+	cleaned, err := json.Marshal(raw)
+	if err != nil {
+		// Shouldn't happen (we just unmarshaled it), but fall back
+		// gracefully: keep the flag but leave input untouched rather
+		// than corrupt the payload.
+		return flag, input
+	}
+	return flag, cleaned
 }
 
 // Policies returns a snapshot of tool-name -> DefaultPolicy for every
@@ -471,7 +567,16 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 		return ExecResult{}, fmt.Errorf("unknown tool: %s", name)
 	}
 
-	if def.DefaultPolicy == PolicyGate {
+	// Extract the caller-set require_approval flag (if any) and strip
+	// it from the payload so handlers never see it. Honoured only when
+	// the tool hasn't opted out via DenyCallerGate.
+	callerRequested := false
+	if !def.DenyCallerGate {
+		callerRequested, input = readRequireApproval(input)
+	}
+
+	shouldGate := def.DefaultPolicy == PolicyGate || callerRequested
+	if shouldGate {
 		_, _, approved := approval.FromCtx(ec.Ctx)
 		if !approved {
 			out, err := r.createGateCard(ec, def, input)
@@ -511,9 +616,21 @@ func (r *Registry) createGateCard(ec *ExecContext, def Def, input json.RawMessag
 	if currentGateCreator == nil {
 		return "", fmt.Errorf("gating is not configured for this process; tool %q cannot run", def.Name)
 	}
-	preview := GateCardPreview{}
+	preview := defaultGateCardPreview(def.Name)
 	if def.GateCardPreview != nil {
-		preview = def.GateCardPreview(input)
+		custom := def.GateCardPreview(input)
+		if custom.Title != "" {
+			preview.Title = custom.Title
+		}
+		if custom.Body != "" {
+			preview.Body = custom.Body
+		}
+		if custom.ApproveLabel != "" {
+			preview.ApproveLabel = custom.ApproveLabel
+		}
+		if custom.SkipLabel != "" {
+			preview.SkipLabel = custom.SkipLabel
+		}
 	}
 	cardID, cardURL, err := currentGateCreator.CreateGateCard(ec.Ctx, ec, def.Name, input, preview)
 	if err != nil {
@@ -527,6 +644,25 @@ func (r *Registry) createGateCard(ec *ExecContext, def Def, input json.RawMessag
 		"%s%s requires human approval. Decision card %s was created.%s Do NOT tell the user the action happened; say it's queued for their review and share the approval URL if one is provided.",
 		HaltedPrefix, def.Name, cardID, urlClause,
 	), nil
+}
+
+// defaultGateCardPreview synthesizes a best-effort card framing for a
+// tool that didn't supply its own. Title is a human-ish spin on the tool
+// name ("post_to_channel" → "Run post to channel?") so the card is at
+// least identifiable without custom wiring.
+func defaultGateCardPreview(toolName string) GateCardPreview {
+	human := toolName
+	if human == "" {
+		human = "this action"
+	} else {
+		human = strings.ReplaceAll(human, "_", " ")
+	}
+	return GateCardPreview{
+		Title:        "Run " + human + "?",
+		Body:         "Kit drafted the action shown below. Review it and approve to continue, or skip to cancel.",
+		ApproveLabel: "Approve",
+		SkipLabel:    "Skip",
+	}
 }
 
 // IsTerminal returns true if calling this tool should end the agent loop.

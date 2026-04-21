@@ -64,6 +64,16 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 - If the HALTED result includes an "Approve it here: <url>" clause, share that URL with the user so they can jump straight to the card.
 - Do NOT retry the same tool. Kit short-circuits remaining tool calls in that turn automatically; let the user approve via the card first.`)
 
+	// Caller-requested approval. Every tool accepts an optional
+	// `require_approval: true` flag. Setting it surfaces that specific
+	// call as an approval card before running, just like a PolicyGate
+	// tool. The agent decides per-call based on the user's intent.
+	parts = append(parts, `Requesting approval for a call:
+- Any tool call supports an optional "require_approval": true parameter. Set it to route that call through an approval card before it runs.
+- Set require_approval=true when the user asked to verify first ("check with me", "ask before you send", "verify", "run it by me"), when the intent or recipient is ambiguous, or when you want a safety checkpoint before an outbound action.
+- Omit it (or set false) when the user clearly authorised the action in this turn or pre-authorised it in a scheduled task.
+- When posting a Slack message on behalf of someone other than yourself, prefix the message with attribution like "<@U…> asked me to share…" so recipients see who requested it.`)
+
 	// User display info (Slack-specific)
 	displayName := user.SlackUserID
 	if user.DisplayName != nil {

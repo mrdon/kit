@@ -17,14 +17,46 @@ func registerTaskTools(r *Registry, isAdmin bool) {
 		if meta.AdminOnly && !isAdmin {
 			continue
 		}
-		r.Register(Def{
+		def := Def{
 			Name:        meta.Name,
 			Description: meta.Description,
 			Schema:      meta.Schema,
 			AdminOnly:   meta.AdminOnly,
 			Handler:     taskHandler(meta.Name),
-		})
+		}
+		if meta.Name == "create_task" {
+			def.GateCardPreview = createTaskGatePreview
+		}
+		r.Register(def)
 	}
+}
+
+// createTaskGatePreview customises the approval card when the agent sets
+// require_approval on create_task. The description + schedule are what
+// the user mostly wants to review; the card body preview component
+// renders the full arguments.
+func createTaskGatePreview(input json.RawMessage) GateCardPreview {
+	var args struct {
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(input, &args)
+	title := "Schedule task?"
+	if args.Description != "" {
+		title = "Schedule: " + truncateRunes(args.Description, 70)
+	}
+	return GateCardPreview{
+		Title:        title,
+		ApproveLabel: "Create task",
+		SkipLabel:    "Don't create",
+	}
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func taskHandler(name string) HandlerFunc {
