@@ -168,7 +168,7 @@ func dispatchCreateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 		runAt = &now
 	}
 
-	task, err := deps.svc.Tasks.Create(ctx, c, description, cron, tz, channel, "", runOnce, runAt)
+	task, err := deps.svc.Tasks.Create(ctx, c, description, cron, tz, channel, "", "", runOnce, runAt)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}

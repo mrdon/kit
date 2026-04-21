@@ -35,7 +35,9 @@ type TaskService struct {
 
 // Create creates a scheduled task with scope resolution.
 // scope: "user" (default), "tenant" (admin only), or a role name.
-func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronExpr, timezone, channelID, scope string, runOnce bool, runAt *time.Time) (*models.Task, error) {
+// model is the tier name ("haiku" | "sonnet") picked by the classifier in
+// the tool layer; empty defaults to Haiku at the DB level.
+func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronExpr, timezone, channelID, scope, model string, runOnce bool, runAt *time.Time) (*models.Task, error) {
 	if scope == "" {
 		scope = string(models.ScopeTypeUser)
 	}
@@ -58,7 +60,7 @@ func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronEx
 		}
 		roleID = &rid
 	}
-	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, runOnce, runAt, roleID, userID)
+	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, model, runOnce, runAt, roleID, userID)
 }
 
 // List returns tasks visible to the caller. Admins see all tenant tasks.

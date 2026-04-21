@@ -555,7 +555,7 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 		task, err := models.CreateTaskTx(
 			ctx, tx,
 			c.TenantID, c.UserID,
-			opt.Prompt, "", "UTC", dmChannel,
+			opt.Prompt, "", "UTC", dmChannel, "",
 			true, &now,
 			roleID, userID,
 		)
@@ -705,7 +705,7 @@ func (s *CardService) runResolveTool(
 		task, err := models.CreateTaskTx(
 			ctx, tx,
 			c.TenantID, c.UserID,
-			description, "", "UTC", dmChannel,
+			description, "", "UTC", dmChannel, "",
 			true, &now,
 			roleID, userID,
 		)

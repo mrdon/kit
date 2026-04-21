@@ -35,7 +35,11 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 				return mcp.NewToolResultError("cron_expr is required for MCP task creation."), nil
 			}
 
-			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, caller.Timezone, channelID, scope, false, nil)
+			// MCP callers (Claude Code, external orchestrators) aren't
+			// classified — they don't have a live LLM handle here and the
+			// caller usually knows its own model needs better than a
+			// one-shot Haiku triage would. Empty string → Haiku default.
+			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, caller.Timezone, channelID, scope, "", false, nil)
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
 			}
@@ -191,6 +195,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			Channel:  task.ChannelID,
 			UserText: task.Description,
 			Task:     tc,
+			Model:    task.Model,
 		})
 
 		if dryRun {

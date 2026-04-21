@@ -66,6 +66,14 @@ type ExecContext struct {
 	ThreadTS string
 	Svc      *services.Services
 
+	// LLM is the shared Anthropic client. Populated by agent.buildExecContext
+	// and the gated-tool resolve executor; tool tests leave it nil. Handlers
+	// that need a one-off Claude call (e.g. create_task's Haiku triage over
+	// task.description) read it. A nil value means "this ExecContext was
+	// built by a test / path that doesn't supply an LLM" — handlers should
+	// fall back to a safe default rather than panicking.
+	LLM *anthropic.Client
+
 	// TaskID is set when this run is executing a scheduled task. Tools
 	// that want to link artifacts back to the originating task (e.g.
 	// create_decision stamping origin_task_id) read this. Nil for

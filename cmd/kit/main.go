@@ -201,7 +201,7 @@ func main() {
 	})
 	tools.SetGateCreator(cards.ServiceForGating())
 	kitmcp.SetGateCreator(cards.ServiceForGating())
-	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher))
+	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher, builderLLM))
 
 	// Stuck-resolving sweep: every scheduler tick (60s) any card stuck
 	// in 'resolving' past its deadline gets flipped back to 'pending'.

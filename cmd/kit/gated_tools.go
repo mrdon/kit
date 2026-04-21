@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
@@ -52,7 +53,7 @@ func snapshotToolPolicies(ctx context.Context) map[string]tools.Policy {
 // per-session state (they're approved one-shots). If a future gated
 // tool needs a session for logging, introduce a synthetic resolve
 // session at that point.
-func buildResolveToolExecutor(pool *pgxpool.Pool, svc *services.Services, enc *crypto.Encryptor, fetcher *web.Fetcher) func(
+func buildResolveToolExecutor(pool *pgxpool.Pool, svc *services.Services, enc *crypto.Encryptor, fetcher *web.Fetcher, llm *anthropic.Client) func(
 	ctx context.Context, caller *services.Caller,
 	cardID, resolveToken uuid.UUID,
 	toolName string, toolArguments json.RawMessage,
@@ -90,6 +91,7 @@ func buildResolveToolExecutor(pool *pgxpool.Pool, svc *services.Services, enc *c
 			Tenant:  tenant,
 			User:    user,
 			Svc:     svc,
+			LLM:     llm,
 			// Session intentionally nil — see comment above.
 		}
 		res, err := reg.ExecuteWithResult(ec, toolName, toolArguments)

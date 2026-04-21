@@ -119,7 +119,8 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage) (string, error) {
 		runAt = &t
 	}
 
-	task, err := ec.Svc.Tasks.Create(ec.Ctx, ec.Caller(), inp.Description, inp.CronExpr, tz, inp.ChannelID, inp.Scope, runOnce, runAt)
+	model := ClassifyTaskModel(ec.Ctx, ec.LLM, inp.Description)
+	task, err := ec.Svc.Tasks.Create(ec.Ctx, ec.Caller(), inp.Description, inp.CronExpr, tz, inp.ChannelID, inp.Scope, model, runOnce, runAt)
 	if errors.Is(err, services.ErrForbidden) {
 		return "Only admins can create tenant-scoped tasks.", nil
 	}
@@ -131,8 +132,8 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage) (string, error) {
 	if runOnce {
 		label = "Runs at"
 	}
-	return fmt.Sprintf("Task created (ID: %s). %s: %s (%s)",
-		task.ID, label, task.NextRunAt.Format("Mon Jan 2 3:04 PM"), tz), nil
+	return fmt.Sprintf("Task created (ID: %s, model: %s). %s: %s (%s)",
+		task.ID, task.Model, label, task.NextRunAt.Format("Mon Jan 2 3:04 PM"), tz), nil
 }
 
 func resolveTimezone(ec *ExecContext) string {

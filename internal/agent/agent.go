@@ -21,7 +21,6 @@ import (
 
 const (
 	maxIterations = 10
-	modelHaiku    = "claude-haiku-4-5-20251001"
 	maxTokens     = 4096
 )
 
@@ -94,6 +93,12 @@ type RunInput struct {
 	// The registry-level gate would still catch such calls, but a
 	// HALTED result mid-chat is confusing UX.
 	DropGatedTools bool
+
+	// Model is the tier name ("haiku" or "sonnet") to run this turn
+	// under. Empty → Haiku (matches pre-change behaviour for interactive
+	// callers). The scheduler sets this from task.Model so each
+	// scheduled run honours the classifier's decision.
+	Model string
 }
 
 // Run executes the agent loop for a user message.
@@ -124,6 +129,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	messages := a.buildInitialMessages(ctx, in)
 	systemPrompt := a.buildSystemPrompt(ctx, in)
 	toolDefs := buildToolDefs(registry, caller)
+	modelID := models.ModelIDFor(in.Model)
 
 	sentMessage := false
 	var usage usageTotals
@@ -137,7 +143,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			ec.OnIteration()
 		}
 
-		resp, err := a.callLLM(ctx, tenant.ID, session.ID, systemPrompt, messages, toolDefs, i, iterStart)
+		resp, err := a.callLLM(ctx, tenant.ID, session.ID, modelID, systemPrompt, messages, toolDefs, i, iterStart)
 		if err != nil {
 			return err
 		}
@@ -208,6 +214,7 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 		Channel:     in.Channel,
 		ThreadTS:    in.ThreadTS,
 		Svc:         a.svc,
+		LLM:         a.llm,
 		Responder:   in.Responder,
 		OnToolCall:  in.OnToolCall,
 		OnIteration: in.OnIteration,
@@ -265,16 +272,16 @@ func countLoadedDeferred(defs []anthropic.Tool) (loaded, deferred int) {
 	return
 }
 
-func (a *Agent) callLLM(ctx context.Context, tenantID, sessionID uuid.UUID, system []anthropic.SystemBlock, messages []anthropic.Message, toolDefs []anthropic.Tool, iteration int, iterStart time.Time) (*anthropic.Response, error) {
+func (a *Agent) callLLM(ctx context.Context, tenantID, sessionID uuid.UUID, modelID string, system []anthropic.SystemBlock, messages []anthropic.Message, toolDefs []anthropic.Tool, iteration int, iterStart time.Time) (*anthropic.Response, error) {
 	loaded, deferred := countLoadedDeferred(toolDefs)
 	_ = models.AppendSessionEvent(ctx, a.pool, tenantID, sessionID, models.EventTypeLLMRequest, map[string]any{
-		"model":               modelHaiku,
+		"model":               modelID,
 		"iteration":           iteration,
 		"tool_count_loaded":   loaded,
 		"tool_count_deferred": deferred,
 	})
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
-		Model:        modelHaiku,
+		Model:        modelID,
 		MaxTokens:    maxTokens,
 		System:       system,
 		Messages:     messages,

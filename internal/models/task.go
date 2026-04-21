@@ -31,6 +31,28 @@ const (
 	TaskTypeBuilderScript TaskType = "builder_script" // scheduled builder script; config carries {script_id, fn_name}
 )
 
+// Tier names persisted in tasks.model. Picked at create_task time by a
+// Haiku classifier pass and threaded into agent.RunInput.Model so the
+// scheduler honours the per-task choice. Kept as short tier names (not
+// full Anthropic model IDs) so a future pricing/ID shift only updates
+// ModelIDFor, not every row.
+const (
+	TaskModelHaiku  = "haiku"
+	TaskModelSonnet = "sonnet"
+)
+
+// ModelIDFor maps a tier name to the Anthropic Messages API model ID.
+// Empty / unknown values fall back to the Haiku ID so callers that don't
+// set Model on RunInput keep today's behaviour.
+func ModelIDFor(tier string) string {
+	switch tier {
+	case TaskModelSonnet:
+		return "claude-sonnet-4-5-20241022"
+	default:
+		return "claude-haiku-4-5-20251001"
+	}
+}
+
 type Task struct {
 	ID          uuid.UUID
 	TenantID    uuid.UUID
@@ -54,7 +76,11 @@ type Task struct {
 	// scheduler consumes and clears it at claim time. Nil for tasks not
 	// waiting on a decision.
 	ResumeSessionID *uuid.UUID
-	CreatedAt       time.Time
+	// Model is the tier name ("haiku" or "sonnet") the scheduler should
+	// run this task under. Picked once by a Haiku classifier at create
+	// time; builtin / builder_script rows just carry the default.
+	Model     string
+	CreatedAt time.Time
 }
 
 // NextCronRun computes the next run time for a cron expression in the given timezone.
@@ -74,14 +100,16 @@ func NextCronRun(cronExpr, tz string, after time.Time) (time.Time, error) {
 // CreateTask creates a scheduled task with a scope row in its own transaction.
 // For recurring tasks, provide cronExpr. For one-time tasks, provide runAt and set runOnce=true.
 // roleID/userID identify the scope target (both nil = tenant-wide).
-func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, roleID, userID *uuid.UUID) (*Task, error) {
+// model is the tier name ("haiku" | "sonnet") chosen by the classifier; empty
+// defaults to Haiku at the DB level.
+func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID, model string, runOnce bool, runAt *time.Time, roleID, userID *uuid.UUID) (*Task, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	task, err := CreateTaskTx(ctx, tx, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, runAt, roleID, userID)
+	task, err := CreateTaskTx(ctx, tx, tenantID, createdBy, description, cronExpr, tz, channelID, model, runOnce, runAt, roleID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +122,7 @@ func CreateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uui
 // CreateTaskTx inserts a task and its scope row into the supplied transaction.
 // The caller is responsible for Begin / Commit / Rollback. Use this when task
 // creation must be atomic with other writes (e.g. resolving a decision card).
-func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID string, runOnce bool, runAt *time.Time, roleID, userID *uuid.UUID) (*Task, error) {
+func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID, description, cronExpr, tz, channelID, model string, runOnce bool, runAt *time.Time, roleID, userID *uuid.UUID) (*Task, error) {
 	var nextRun time.Time
 	if runOnce && runAt != nil {
 		nextRun = runAt.UTC()
@@ -106,15 +134,19 @@ func CreateTaskTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID,
 		}
 	}
 
+	if model == "" {
+		model = TaskModelHaiku
+	}
+
 	task := &Task{}
 	taskID := uuid.New()
 	err := tx.QueryRow(ctx, `
-		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, created_at
-	`, taskID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun).Scan(
+		INSERT INTO tasks (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at, model)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, created_at
+	`, taskID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun, model).Scan(
 		&task.ID, &task.TenantID, &task.CreatedBy, &task.Description, &task.CronExpr,
-		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.TaskType, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.Config, &task.ResumeSessionID, &task.CreatedAt,
+		&task.Timezone, &task.ChannelID, &task.RunOnce, &task.TaskType, &task.Status, &task.NextRunAt, &task.LastRunAt, &task.LastError, &task.Config, &task.ResumeSessionID, &task.Model, &task.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
@@ -154,11 +186,11 @@ type taskRowQuerier interface {
 func getTaskRow(ctx context.Context, q taskRowQuerier, tenantID, taskID uuid.UUID) (*Task, error) {
 	t := &Task{}
 	err := q.QueryRow(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, created_at
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, created_at
 		FROM tasks WHERE tenant_id = $1 AND id = $2
 	`, tenantID, taskID).Scan(
 		&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.CreatedAt,
+		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
@@ -175,7 +207,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, user
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
 		SELECT DISTINCT t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone,
-			t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.created_at
+			t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.model, t.created_at
 		FROM tasks t
 		JOIN task_scopes ts ON ts.task_id = t.id AND ts.tenant_id = t.tenant_id
 		JOIN scopes sc ON sc.id = ts.scope_id
@@ -192,7 +224,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, user
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -204,7 +236,7 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, user
 func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Task, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, created_at
+			channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, created_at
 		FROM tasks WHERE tenant_id = $1
 		ORDER BY created_at
 	`, tenantID)
@@ -217,7 +249,7 @@ func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -399,7 +431,7 @@ func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Task, 
 		SET status = $3
 		FROM claimed c
 		WHERE t.id = c.id
-		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.created_at
+		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.model, t.created_at
 	`, limit, TaskStatusActive, TaskStatusRunning)
 	if err != nil {
 		return nil, fmt.Errorf("claiming due tasks: %w", err)
@@ -410,7 +442,7 @@ func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Task, 
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning claimed task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -434,7 +466,7 @@ func ClaimDueTasksForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uu
 		SET status = $4
 		FROM claimed c
 		WHERE t.id = c.id AND t.tenant_id = $1
-		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.created_at
+		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.task_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.model, t.created_at
 	`, tenantID, limit, TaskStatusActive, TaskStatusRunning)
 	if err != nil {
 		return nil, fmt.Errorf("claiming due tasks for tenant: %w", err)
@@ -445,7 +477,7 @@ func ClaimDueTasksForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uu
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.CreatedAt); err != nil {
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning claimed task: %w", err)
 		}
 		tasks = append(tasks, t)

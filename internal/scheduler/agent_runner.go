@@ -114,6 +114,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, task models.Task) {
 		Channel:  task.ChannelID,
 		UserText: userText,
 		Task:     tc,
+		Model:    task.Model,
 	}); err != nil {
 		slog.Error("task agent run failed", "task_id", task.ID, "error", err)
 		errStr := err.Error()
