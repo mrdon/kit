@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   animate,
@@ -81,23 +81,23 @@ export default function Stack() {
     }, 260);
   };
 
-  // Keyboard shortcuts for desktop testing. Act on items[0] — the top
-  // card — so mashing keys walks through the stack one at a time as
-  // each resolved card gets removed and the next slides up.
+  // Keyboard shortcuts for desktop testing. Drive the top card through
+  // the same runAction path used by a real swipe — imperative handle on
+  // the card triggers the exit animation + burst + commit so the
+  // keyboard and the finger look identical.
   //   ArrowRight → commit the right swipe action
   //   ArrowLeft  → commit the left swipe action
   //   Enter      → open the detail view
   const navigate = useNavigate();
-  const keyBusyRef = useRef(false);
+  const topCardRef = useRef<SwipeCardHandle | null>(null);
   useEffect(() => {
     if (!items || items.length === 0 || chatItem) return;
-    const onKey = async (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
         return;
       }
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Enter') return;
-      if (keyBusyRef.current) return;
       const active = items[0];
       if (!active) return;
       if (e.key === 'Enter') {
@@ -106,28 +106,8 @@ export default function Stack() {
         return;
       }
       const dir: CommitDirection = e.key === 'ArrowRight' ? 'right' : 'left';
-      const action = findAction(active.actions, dir);
-      if (!action) return;
       e.preventDefault();
-      keyBusyRef.current = true;
-      try {
-        const result = await api.doAction(
-          active.source_app,
-          active.kind,
-          active.id,
-          action.id,
-          action.params,
-        );
-        onCommit(active, action.emoji, result.removed_ids ?? [itemKey(active)]);
-      } catch (err) {
-        alert((err as Error).message);
-      } finally {
-        // Let the commit animation finish before accepting the next
-        // key, otherwise we'd dispatch against a stale items[0].
-        window.setTimeout(() => {
-          keyBusyRef.current = false;
-        }, 320);
-      }
+      topCardRef.current?.swipe(dir);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -149,7 +129,7 @@ export default function Stack() {
   return (
     <main className="feed" ref={feedRef} onScroll={onScroll}>
       <AnimatePresence initial={false} mode="popLayout">
-        {items.map((it) => (
+        {items.map((it, idx) => (
           <motion.section
             key={itemKey(it)}
             className="card-screen"
@@ -157,6 +137,7 @@ export default function Stack() {
             exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
           >
             <SwipeCard
+              ref={idx === 0 ? topCardRef : null}
               item={it}
               onCommit={onCommit}
               onLongPress={setChatItem}
@@ -243,17 +224,21 @@ function findAction(actions: StackAction[], direction: CommitDirection): StackAc
   return actions.find((a) => a.direction === direction);
 }
 
-function SwipeCard({
-  item,
-  onCommit,
-  onLongPress,
-  disableLongPress,
-}: {
+type SwipeCardHandle = {
+  swipe: (direction: CommitDirection) => void;
+};
+
+type SwipeCardProps = {
   item: StackItem;
   onCommit: (item: StackItem, emoji: string, removedIDs: string[]) => void;
   onLongPress: (item: StackItem) => void;
   disableLongPress: boolean;
-}) {
+};
+
+const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard(
+  { item, onCommit, onLongPress, disableLongPress }: SwipeCardProps,
+  ref,
+) {
   const rightAction = findAction(item.actions, 'right');
   const leftAction = findAction(item.actions, 'left');
   const canSwipeLeft = !!leftAction;
@@ -311,6 +296,22 @@ function SwipeCard({
       alert((e as Error).message);
     }
   };
+
+  // Imperative handle so Stack's keyboard shortcuts can trigger the
+  // same runAction path a physical swipe uses — animation, commit,
+  // and burst fire identically regardless of input source.
+  useImperativeHandle(
+    ref,
+    () => ({
+      swipe: (direction) => {
+        if (busy) return;
+        const action = direction === 'right' ? rightAction : leftAction;
+        if (!action) return;
+        runAction(direction, action);
+      },
+    }),
+    [busy, rightAction, leftAction, item],
+  );
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
     if (busy) return;
@@ -423,4 +424,4 @@ function SwipeCard({
       )}
     </motion.article>
   );
-}
+});
