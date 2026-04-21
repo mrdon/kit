@@ -38,6 +38,9 @@ func Configure(signer *auth.SessionSigner, slack auth.SlackOpenIDConfig, baseURL
 	instance.slack = slack
 	instance.baseURL = baseURL
 	instance.devMode = devMode
+	if instance.svc != nil {
+		instance.svc.baseURL = baseURL
+	}
 }
 
 // ConfigureChat wires the dependencies needed by the chat/transcribe and

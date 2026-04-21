@@ -378,12 +378,13 @@ func (a *Agent) executeTools(ec *tools.ExecContext, registry *tools.Registry, re
 		})
 
 		if res.Halted {
-			// The gate fired. Future tools in this same turn get
-			// skipped, and we mark the turn terminal so the outer loop
-			// stops — the agent shouldn't get another chance to act
-			// after being told HALTED.
+			// The gate fired. Remaining tools in this same tool_use
+			// batch get synthetic "skipped" results (via the halted
+			// flag above). We deliberately do NOT mark the turn
+			// terminal: the LLM needs one more iteration to tell the
+			// user their action was queued for approval, per the
+			// HALTED rule in the system prompt.
 			halted = true
-			terminal = true
 			continue
 		}
 

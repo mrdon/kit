@@ -184,9 +184,11 @@ func SetExposedToolRunner(r ExposedToolRunner) {
 // GateCreator builds the decision card that wraps a PolicyGate tool
 // call intercepted by Registry.Execute. Implemented by CardService so
 // the tools package doesn't need to import cards (cycle risk). Returns
-// the created card id for the audit trail / HALTED message.
+// the created card id for the audit trail / HALTED message, plus a
+// user-facing URL the agent can share so the user can find the card
+// to approve (empty string if no baseURL is configured).
 type GateCreator interface {
-	CreateGateCard(ctx context.Context, ec *ExecContext, toolName string, toolArguments json.RawMessage) (uuid.UUID, error)
+	CreateGateCard(ctx context.Context, ec *ExecContext, toolName string, toolArguments json.RawMessage) (uuid.UUID, string, error)
 }
 
 // currentGateCreator is the process-wide gate-card sink, wired once at
@@ -484,13 +486,17 @@ func (r *Registry) createGateCard(ec *ExecContext, def Def, input json.RawMessag
 	if currentGateCreator == nil {
 		return "", fmt.Errorf("gating is not configured for this process; tool %q cannot run", def.Name)
 	}
-	cardID, err := currentGateCreator.CreateGateCard(ec.Ctx, ec, def.Name, input)
+	cardID, cardURL, err := currentGateCreator.CreateGateCard(ec.Ctx, ec, def.Name, input)
 	if err != nil {
 		return "", fmt.Errorf("creating approval card for %q: %w", def.Name, err)
 	}
+	urlClause := ""
+	if cardURL != "" {
+		urlClause = fmt.Sprintf(" Approve it here: %s.", cardURL)
+	}
 	return fmt.Sprintf(
-		"%s%s requires human approval. Decision card %s was created. Do NOT tell the user the action happened; say it's queued for their review.",
-		HaltedPrefix, def.Name, cardID,
+		"%s%s requires human approval. Decision card %s was created.%s Do NOT tell the user the action happened; say it's queued for their review and share the approval URL if one is provided.",
+		HaltedPrefix, def.Name, cardID, urlClause,
 	), nil
 }
 

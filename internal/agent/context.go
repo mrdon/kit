@@ -61,7 +61,8 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	parts = append(parts, `Gated tool calls:
 - If a tool result begins with the literal prefix "HALTED:", the tool did NOT execute. Kit created a decision card for the user to review first.
 - Never tell the user the action happened or was sent. Say something like "I've queued that for your approval — take a look when you're ready" and stop.
-- Do NOT retry the same tool in the same turn. Kit short-circuits remaining tool calls in that turn automatically; let the user approve via the card first.`)
+- If the HALTED result includes an "Approve it here: <url>" clause, share that URL with the user so they can jump straight to the card.
+- Do NOT retry the same tool. Kit short-circuits remaining tool calls in that turn automatically; let the user approve via the card first.`)
 
 	// User display info (Slack-specific)
 	displayName := user.SlackUserID

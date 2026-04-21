@@ -56,6 +56,7 @@ type CardService struct {
 	kicker       TaskKicker        // set by CardsApp.ConfigureKicker; optional
 	policyLookup PolicyLookup      // set by CardsApp.ConfigurePolicyLookup; nil = all-allow
 	toolExec     ToolExecutor      // set by CardsApp.ConfigureToolExecutor; required for resolve-with-tool
+	baseURL      string            // set by CardsApp.Configure; used to build HALTED card URLs
 }
 
 // NewService returns a CardService bound to pool. Exported so Phase 3
@@ -229,9 +230,9 @@ func (s *CardService) Update(ctx context.Context, c *services.Caller, cardID uui
 func (s *CardService) CreateGateCard(
 	ctx context.Context, ec *tools.ExecContext,
 	toolName string, toolArguments json.RawMessage,
-) (uuid.UUID, error) {
+) (uuid.UUID, string, error) {
 	if ec == nil || ec.Tenant == nil || ec.User == nil {
-		return uuid.Nil, errors.New("gate creation requires tenant + user on ec")
+		return uuid.Nil, "", errors.New("gate creation requires tenant + user on ec")
 	}
 	caller := ec.Caller()
 	var originSessionID *uuid.UUID
@@ -275,9 +276,13 @@ func (s *CardService) CreateGateCard(
 
 	card, err := s.CreateDecision(ctx, caller, in)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("creating gate card: %w", err)
+		return uuid.Nil, "", fmt.Errorf("creating gate card: %w", err)
 	}
-	return card.ID, nil
+	cardURL := ""
+	if s.baseURL != "" && ec.Tenant.Slug != "" {
+		cardURL = fmt.Sprintf("%s/%s/stack/cards/decision/%s", s.baseURL, ec.Tenant.Slug, card.ID)
+	}
+	return card.ID, cardURL, nil
 }
 
 // ReviseDecisionOption mutates tool_arguments and/or prompt on a single
