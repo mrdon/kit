@@ -3,20 +3,29 @@ import ReactMarkdown from 'react-markdown';
 import type { ToolPreviewProps } from './index';
 
 type SendEmailArgs = {
-  to?: string[];
-  cc?: string[];
-  bcc?: string[];
+  to?: string | string[];
+  cc?: string | string[];
+  bcc?: string | string[];
   subject?: string;
   body?: string;
   in_reply_to?: string;
-  references?: string[];
+  references?: string | string[];
 };
+
+// toList tolerates tool_arguments whose recipient fields are either a
+// JSON array (normal case) or a bare string (what Kit's permissive
+// backend unmarshaler accepts for single recipients). Returning an
+// array lets downstream .join() / .length calls work uniformly.
+function toList(v: string | string[] | undefined): string[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
 
 export function SendEmailPreview({ args }: ToolPreviewProps) {
   const a = (args ?? {}) as SendEmailArgs;
-  const to = a.to ?? [];
-  const cc = a.cc ?? [];
-  const bcc = a.bcc ?? [];
+  const to = toList(a.to);
+  const cc = toList(a.cc);
+  const bcc = toList(a.bcc);
   const body = a.body ?? '';
   const isLong = body.split('\n').length > 25 || body.length > 1200;
   const [expanded, setExpanded] = useState(false);

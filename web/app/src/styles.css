@@ -327,6 +327,13 @@ main.feed > .card-screen {
      leaves horizontal gestures to Framer Motion's drag handler —
      without it mobile browsers swallow the swipe-back gesture. */
   touch-action: pan-y;
+  /* Framer Motion's drag sets user-select: none on draggable elements
+     to keep text selection from competing with the gesture. That's
+     great on the stack's cards but wrong on the detail page, where
+     we want the user to be able to select error messages / emails to
+     copy. Re-enable selection for the content. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .detail .back {
