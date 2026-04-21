@@ -354,10 +354,33 @@ main.feed > .card-screen {
 }
 .detail .back:active { opacity: 0.7; }
 
-/* Gate-artifact decision face: render the tool preview inline on the
-   card itself so the user doesn't have to tap in to read the email. */
-.gate-face { margin-top: 8px; }
-.gate-face .hint { margin-top: 12px; }
+/* Gate-artifact decision face: the tool preview is the body of the
+   card, so stretch it to fill the card's available space and keep
+   the hint pinned below. flex-children need min-height: 0 so the
+   preview can shrink and mask its own overflow instead of pushing
+   the hint off the bottom. */
+.gate-face {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+.gate-face .tool-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
+}
+.gate-face .hint {
+  flex-shrink: 0;
+  margin-top: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--card-subtle);
+}
 
 /* Tool preview (rendered on both the card face and the decision
    detail view). Shared styles so a gated send_email reads the same
