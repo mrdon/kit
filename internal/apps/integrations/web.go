@@ -28,6 +28,10 @@ type formField struct {
 	InputType string
 	Required  bool
 	Help      string
+	Default   string
+	// Textarea is true when the field renders as a <textarea> instead of
+	// an <input>. Derived from FieldSpec.InputType == "textarea".
+	Textarea bool
 }
 
 // formModel is the data passed to the template.
@@ -72,7 +76,8 @@ func (a *App) handleSetupGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	primary, advanced := splitFormFields(spec)
+	defCtx := a.buildDefaultContext(r.Context(), tenant, p)
+	primary, advanced := splitFormFields(spec, defCtx)
 	model := formModel{
 		Title:          "Configure " + spec.DisplayName,
 		DisplayName:    spec.DisplayName,
@@ -113,7 +118,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	formAction := fmt.Sprintf("/%s/integrations/setup", tenant.Slug)
 
 	if p.Status != models.PendingStatusPending {
-		primary, advanced := splitFormFields(spec)
+		primary, advanced := splitFormFields(spec, DefaultContext{})
 		renderForm(w, formModel{
 			Title:          "Configure " + spec.DisplayName,
 			DisplayName:    spec.DisplayName,
@@ -172,7 +177,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if validationError != "" {
-		primary, advanced := splitFormFields(spec)
+		primary, advanced := splitFormFields(spec, DefaultContext{})
 		renderForm(w, formModel{
 			Title:          "Configure " + spec.DisplayName,
 			DisplayName:    spec.DisplayName,
@@ -231,6 +236,46 @@ func (a *App) encryptSecret(plain string) (string, error) {
 	return enc, nil
 }
 
+// buildDefaultContext assembles the user + tenant bits that a FieldSpec's
+// DefaultBuilder might want. The target user is the row owner for
+// user-scoped integrations; for tenant-scoped setups (no TargetUserID)
+// only the tenant fields get populated.
+func (a *App) buildDefaultContext(ctx context.Context, tenant *models.Tenant, p *models.PendingIntegration) DefaultContext {
+	dc := DefaultContext{}
+	if tenant != nil {
+		dc.TenantID = tenant.ID
+		dc.TenantName = tenant.Name
+	}
+	if a.pool == nil || p == nil || p.TargetUserID == nil {
+		return dc
+	}
+	user, err := models.GetUserByID(ctx, a.pool, p.TenantID, *p.TargetUserID)
+	if err != nil || user == nil {
+		return dc
+	}
+	dc.UserID = user.ID
+	if user.DisplayName != nil {
+		dc.UserDisplayName = *user.DisplayName
+		dc.UserFirstName = firstWord(*user.DisplayName)
+	}
+	if dc.UserFirstName == "" {
+		dc.UserFirstName = user.SlackUserID
+	}
+	return dc
+}
+
+// firstWord returns the first whitespace-delimited token of s, which is
+// a good-enough approximation of a first name for signature defaults.
+// Users who dislike the result edit the signature field.
+func firstWord(s string) string {
+	for i, r := range s {
+		if r == ' ' || r == '\t' {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 // verifyAndLoad checks the HMAC, TTL, tenant binding, and pending-row
 // existence in one place. Returns the pending row + TypeSpec on success.
 func (a *App) verifyAndLoad(ctx context.Context, tenantID uuid.UUID, token string) (*models.PendingIntegration, TypeSpec, error) {
@@ -283,8 +328,11 @@ func isServerErr(err error) bool {
 }
 
 // splitFormFields returns (primary, advanced) slices built from a spec's
-// Fields, preserving declaration order within each group.
-func splitFormFields(spec TypeSpec) (primary, advanced []formField) {
+// Fields, preserving declaration order within each group. Defaults are
+// resolved via FieldSpec.DefaultBuilder or .Default — secret fields never
+// get a default (we don't want to echo a stored token back into the
+// form, and on a fresh setup there's nothing sensible to prefill).
+func splitFormFields(spec TypeSpec, defCtx DefaultContext) (primary, advanced []formField) {
 	primary = make([]formField, 0, len(spec.Fields))
 	for _, f := range spec.Fields {
 		t := f.InputType
@@ -299,12 +347,22 @@ func splitFormFields(spec TypeSpec) (primary, advanced []formField) {
 		if label == "" {
 			label = f.Name
 		}
+		def := ""
+		if !f.IsSecret() {
+			if f.DefaultBuilder != nil {
+				def = f.DefaultBuilder(defCtx)
+			} else {
+				def = f.Default
+			}
+		}
 		ff := formField{
 			Name:      f.Name,
 			Label:     label,
 			InputType: t,
 			Required:  f.Required,
 			Help:      f.Help,
+			Default:   def,
+			Textarea:  t == "textarea",
 		}
 		if f.Advanced {
 			advanced = append(advanced, ff)

@@ -8,7 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/google/uuid"
 )
+
+// DefaultContext carries the bits a DefaultBuilder needs to compute a
+// per-setup default value. Fields may be empty (e.g. user is nil for
+// tenant-scoped integrations, display name may be unset).
+type DefaultContext struct {
+	TenantID          uuid.UUID
+	TenantName        string
+	UserID            uuid.UUID
+	UserDisplayName   string
+	UserFirstName     string
+	UserEmailFallback string
+}
 
 // Scope tells the app who owns a configured integration.
 type Scope string
@@ -34,11 +48,18 @@ const (
 type FieldSpec struct {
 	Name      string // form key; also key in config JSONB when Target == TargetConfig
 	Label     string // shown on the form
-	InputType string // "text" | "password" | "url"
+	InputType string // "text" | "password" | "url" | "textarea"
 	Target    string // TargetConfig (default when empty) | TargetUsername | TargetPrimary/SecondaryToken
 	Required  bool
 	Help      string // optional hint text shown under the input
 	Advanced  bool   // if true, rendered inside a collapsed "Advanced" section on the form
+	// Default is a static prefill for the form input. Ignored if
+	// DefaultBuilder is set.
+	Default string
+	// DefaultBuilder returns a per-setup prefill computed from the user
+	// and tenant context. Use this when the default depends on caller
+	// identity (e.g. a signature containing the user's first name).
+	DefaultBuilder func(DefaultContext) string
 }
 
 // TypeSpec declares a registrable (provider, auth_type) pair.

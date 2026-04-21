@@ -54,14 +54,30 @@ func renderText(md string) string {
 	return md
 }
 
+// appendSignature returns body with the account signature appended after
+// a blank line. Empty signature → body unchanged. The agent never sees
+// or controls the signature; it's the user's configured disclosure +
+// personal sign-off, stored on the integration row.
+func appendSignature(body, signature string) string {
+	sig := strings.TrimSpace(signature)
+	if sig == "" {
+		return body
+	}
+	trimmed := strings.TrimRight(body, "\n")
+	if trimmed == "" {
+		return sig
+	}
+	return trimmed + "\n\n" + sig
+}
+
 // smtpSend dials the account's SMTP host, authenticates, and delivers a
 // multipart/alternative message (plain text + sanitized HTML, both from
 // the same markdown body). Returns the Message-ID header assigned to the
 // outgoing mail.
 //
-// UNEXPORTED: service.sendOnce is the only legitimate caller. See the
-// gated-tools-guide skill on shadow-path discipline — send_email is a
-// PolicyGate tool and must have exactly one entry point.
+// UNEXPORTED: service.sendOnce is the only legitimate caller. See
+// .claude/skills/gated-tools-guide.md on shadow-path discipline —
+// send_email is a PolicyGate tool and must have exactly one entry point.
 func smtpSend(ctx context.Context, acct *Account, args SendArgs) (string, error) {
 	msg := mail.NewMsg()
 
@@ -103,8 +119,9 @@ func smtpSend(ctx context.Context, acct *Account, args SendArgs) (string, error)
 	}
 
 	msg.SetMessageID()
-	msg.SetBodyString(mail.TypeTextPlain, renderText(args.Body))
-	if html := renderHTML(args.Body); html != "" {
+	body := appendSignature(args.Body, acct.Signature)
+	msg.SetBodyString(mail.TypeTextPlain, renderText(body))
+	if html := renderHTML(body); html != "" {
 		msg.AddAlternativeString(mail.TypeTextHTML, html)
 	}
 

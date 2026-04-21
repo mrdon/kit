@@ -100,7 +100,7 @@ func (a *App) callerHasAccount(ctx context.Context, caller *services.Caller) boo
 }
 
 // RegisterMCPTools deliberately returns nil. send_email is PolicyGate and
-// per the gated-tools-guide skill must not be reachable except via
+// per .claude/skills/gated-tools-guide.md must not be reachable except via
 // tools.Registry.Execute. The reads have no MCP-side use case.
 func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
 	return nil
@@ -124,10 +124,18 @@ func typeSpec() integrations.TypeSpec {
 			{Name: "email_address", Label: "Email address", InputType: "text", Target: integrations.TargetUsername, Required: true},
 			{Name: "password", Label: "Password / app password", InputType: "password", Target: integrations.TargetPrimaryToken, Required: true, Help: "For Gmail this must be an app password — 16 characters, no spaces."},
 			{Name: "imap_host", Label: "IMAP host", InputType: "text", Required: true, Help: "e.g. imap.gmail.com"},
-			{Name: "imap_port", Label: "IMAP port", InputType: "text", Required: false, Help: "Defaults to 993 (TLS)."},
+			{Name: "imap_port", Label: "IMAP port", InputType: "text", Required: false, Help: "993 for TLS (Gmail), 143 for STARTTLS.", Default: "993"},
 			{Name: "smtp_host", Label: "SMTP host", InputType: "text", Required: true, Help: "e.g. smtp.gmail.com"},
-			{Name: "smtp_port", Label: "SMTP port", InputType: "text", Required: false, Help: "Defaults to 587 (STARTTLS)."},
-			{Name: "from_name", Label: "From display name", InputType: "text", Required: false},
+			{Name: "smtp_port", Label: "SMTP port", InputType: "text", Required: false, Help: "587 for STARTTLS (Gmail), 465 for implicit TLS.", Default: "587"},
+			{
+				Name: "from_name", Label: "From display name", InputType: "text", Required: false,
+				DefaultBuilder: func(dc integrations.DefaultContext) string { return dc.UserDisplayName },
+			},
+			{
+				Name: "signature", Label: "Signature", InputType: "textarea", Required: false,
+				Help:           "Appended to every outgoing email. Edit or clear as you prefer.",
+				DefaultBuilder: defaultSignature,
+			},
 			// Advanced: port heuristic covers real providers (993/465 → TLS,
 			// everything else → STARTTLS). Override only for non-standard
 			// setups — self-hosted / test servers without STARTTLS.
@@ -135,6 +143,17 @@ func typeSpec() integrations.TypeSpec {
 			{Name: "smtp_security", Label: "SMTP security", InputType: "text", Required: false, Help: "Leave blank for auto. Values: tls, starttls, none.", Advanced: true},
 		},
 	}
+}
+
+// defaultSignature builds the prefill for the signature textarea. Uses
+// the user's first name when we have it so the AI-disclosure line reads
+// naturally; falls back to a generic phrasing otherwise.
+func defaultSignature(dc integrations.DefaultContext) string {
+	name := dc.UserFirstName
+	if name == "" {
+		name = "the sender"
+	}
+	return "---\nDrafted with Kit AI and sent with " + name + "'s approval."
 }
 
 var emailTools = []services.ToolMeta{

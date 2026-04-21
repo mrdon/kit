@@ -49,6 +49,7 @@ func LoadAccount(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor,
 		IMAPHost:     strFromConfig(integ.Config, "imap_host"),
 		SMTPHost:     strFromConfig(integ.Config, "smtp_host"),
 		FromName:     strFromConfig(integ.Config, "from_name"),
+		Signature:    strFromConfig(integ.Config, "signature"),
 	}
 	acct.IMAPPort = portFromConfig(integ.Config, "imap_port", DefaultIMAPPort)
 	acct.SMTPPort = portFromConfig(integ.Config, "smtp_port", DefaultSMTPPort)

@@ -52,6 +52,11 @@ type Account struct {
 	Username     string
 	Password     string
 	FromName     string
+	// Signature is appended verbatim to every outgoing message body after
+	// a blank line. Empty string means "no signature" — the setup form
+	// defaults this to an AI-disclosure line with the user's first name,
+	// and the user can edit or clear it.
+	Signature string
 }
 
 // Summary is one row in a list/search result. Snippet is a short excerpt

@@ -14,8 +14,9 @@
   .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 32px; }
   .field { margin-bottom: 20px; }
   label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
-  input[type="text"], input[type="password"], input[type="url"] { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; font-family: inherit; }
-  input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+  input[type="text"], input[type="password"], input[type="url"], textarea { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; font-family: inherit; }
+  textarea { resize: vertical; min-height: 80px; line-height: 1.4; }
+  input:focus, textarea:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
   .help { font-size: 0.85rem; color: #6b7280; margin-top: 4px; }
   .required { color: #dc2626; margin-left: 3px; }
   details.advanced { margin: 8px 0 20px; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
@@ -52,7 +53,11 @@
         {{range .Fields}}
         <div class="field">
           <label for="f-{{.Name}}">{{.Label}}{{if .Required}}<span class="required">*</span>{{end}}</label>
-          <input type="{{.InputType}}" id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off">
+          {{if .Textarea}}
+          <textarea id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off" rows="4">{{.Default}}</textarea>
+          {{else}}
+          <input type="{{.InputType}}" id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off"{{if .Default}} value="{{.Default}}"{{end}}>
+          {{end}}
           {{if .Help}}<div class="help">{{.Help}}</div>{{end}}
         </div>
         {{end}}
@@ -62,7 +67,11 @@
           {{range .AdvancedFields}}
           <div class="field">
             <label for="f-{{.Name}}">{{.Label}}{{if .Required}}<span class="required">*</span>{{end}}</label>
-            <input type="{{.InputType}}" id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off">
+            {{if .Textarea}}
+            <textarea id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off" rows="4">{{.Default}}</textarea>
+            {{else}}
+            <input type="{{.InputType}}" id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off"{{if .Default}} value="{{.Default}}"{{end}}>
+            {{end}}
             {{if .Help}}<div class="help">{{.Help}}</div>{{end}}
           </div>
           {{end}}
