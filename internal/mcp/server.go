@@ -120,16 +120,25 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 
 // wrapAppTool re-marshals the tool's already-registered schema with the
 // require_approval field injected, and wraps its handler with the gate
-// middleware. App-supplied tools arrive with a raw-JSON schema, so we
-// decode → inject → re-encode.
+// middleware. App-supplied tools arrive with a raw-JSON schema (set on
+// RawInputSchema by mcp.NewToolWithRawSchema) rather than the typed
+// InputSchema struct, so we read RawInputSchema first and fall back to
+// marshaling InputSchema for tools built with mcp.NewTool.
 func wrapAppTool(t mcpserver.ServerTool) mcpserver.ServerTool {
-	// Re-build the schema via mcp-go's tool if possible. The raw schema
-	// lives on t.Tool — its underlying field is unexported, but we
-	// roundtrip via its JSON form.
-	schemaJSON, err := json.Marshal(t.Tool.InputSchema)
-	if err == nil {
+	var schemaBytes []byte
+	if len(t.Tool.RawInputSchema) > 0 {
+		schemaBytes = t.Tool.RawInputSchema
+	} else {
+		// NewTool path: marshal the typed schema to raw JSON so we can
+		// inject and re-attach.
+		b, err := json.Marshal(t.Tool.InputSchema)
+		if err == nil {
+			schemaBytes = b
+		}
+	}
+	if len(schemaBytes) > 0 {
 		var schema map[string]any
-		if err := json.Unmarshal(schemaJSON, &schema); err == nil {
+		if err := json.Unmarshal(schemaBytes, &schema); err == nil {
 			schema = services.InjectRequireApprovalSchema(schema)
 			if updated, err := json.Marshal(schema); err == nil {
 				t.Tool = mcp.NewToolWithRawSchema(t.Tool.Name, t.Tool.Description, updated)
