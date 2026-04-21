@@ -134,6 +134,11 @@ func (a *App) configureIntegration(ctx context.Context, caller *services.Caller,
 		targetUser = &uid
 	}
 
+	existing, err := models.GetIntegration(ctx, a.pool, caller.TenantID, spec.Provider, spec.AuthType, targetUser)
+	if err != nil {
+		return "", fmt.Errorf("checking existing integration: %w", err)
+	}
+
 	p, err := models.CreatePendingIntegration(
 		ctx, a.pool,
 		caller.TenantID, caller.UserID,
@@ -150,9 +155,13 @@ func (a *App) configureIntegration(ctx context.Context, caller *services.Caller,
 		return "", fmt.Errorf("building setup url: %w", err)
 	}
 
+	verb := "configure"
+	if existing != nil {
+		verb = "update"
+	}
 	return fmt.Sprintf(
-		"To configure %s, visit: %s\n\nThe link is single-use and expires in %d minutes. Once the user has submitted the form, call check_integration_status with pending_id=%s.",
-		spec.DisplayName, url, int(a.tokenTTL().Minutes()), p.ID,
+		"To %s %s, visit: %s\n\nThe link is single-use and expires in %d minutes. Once the user has submitted the form, call check_integration_status with pending_id=%s.",
+		verb, spec.DisplayName, url, int(a.tokenTTL().Minutes()), p.ID,
 	), nil
 }
 

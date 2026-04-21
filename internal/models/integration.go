@@ -161,6 +161,11 @@ func CompletePendingIntegration(
 		return uuid.Nil, fmt.Errorf("marshaling config: %w", err)
 	}
 
+	// On conflict (i.e. update), nil pointers for username/tokens mean
+	// "keep the stored value" — the web handler passes nil for a secret
+	// field whose input wasn't rendered on the update form. Config is
+	// always fully replaced; clearing a non-secret field (empty map
+	// entry) is a supported operation.
 	var integrationID uuid.UUID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO integrations (
@@ -169,11 +174,11 @@ func CompletePendingIntegration(
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant_id, provider, auth_type, user_id)
 		DO UPDATE SET
-			username       = EXCLUDED.username,
-			primary_token  = EXCLUDED.primary_token,
-			secondary_token = EXCLUDED.secondary_token,
-			config         = EXCLUDED.config,
-			updated_at     = now()
+			username        = COALESCE(EXCLUDED.username, integrations.username),
+			primary_token   = COALESCE(EXCLUDED.primary_token, integrations.primary_token),
+			secondary_token = COALESCE(EXCLUDED.secondary_token, integrations.secondary_token),
+			config          = EXCLUDED.config,
+			updated_at      = now()
 		RETURNING id`,
 		tenantID, targetUserID, provider, authType,
 		username, primaryEnc, secondaryEnc, configJSON,

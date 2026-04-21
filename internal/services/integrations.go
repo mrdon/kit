@@ -10,10 +10,11 @@ package services
 var IntegrationTools = []ToolMeta{
 	{
 		Name: "configure_integration",
-		Description: "Start configuring an external integration (e.g. an email account, GitHub PAT). " +
-			"Returns a short-lived URL the user must open in their browser to enter the secret. " +
-			"The URL is single-use and expires in 15 minutes. Use list_integration_types to see what can be configured. " +
-			"Re-running for an already-configured type replaces the previous config (the same row is upserted).",
+		Description: "Start configuring an external integration (e.g. an email account, GitHub PAT), or edit an existing one. " +
+			"Returns a short-lived URL the user opens in their browser to fill in a form. " +
+			"If the integration already exists, the form prefills current non-secret values and omits credential fields — a user can edit settings (signature, ports, display name, etc.) without re-entering a one-time password. " +
+			"To change a credential, the user must first delete_integration and then configure_integration fresh. " +
+			"The URL is single-use and expires in 15 minutes. Use list_integration_types to see what can be configured.",
 		Schema: PropsReq(map[string]any{
 			"provider":  Field("string", "Integration provider key (e.g. \"github\", \"email\")."),
 			"auth_type": Field("string", "Authentication mechanism (e.g. \"api_key\", \"imap_smtp\")."),

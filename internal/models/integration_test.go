@@ -152,6 +152,52 @@ func TestIntegrationUpsertOnReconfigure(t *testing.T) {
 	}
 }
 
+// TestIntegrationUpdateKeepsExistingToken covers the edit-without-
+// re-entering-password path: re-completing with nil primary_token
+// leaves the stored ciphertext untouched while still updating config.
+func TestIntegrationUpdateKeepsExistingToken(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID, userID := testTenantUser(t, ctx, pool)
+
+	p1, err := CreatePendingIntegration(ctx, pool, tenantID, userID, "test", "api_key", &userID, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := "original-ciphertext"
+	user := "alice@example.com"
+	if _, err := CompletePendingIntegration(ctx, pool, tenantID, p1.ID, &user, &original, nil, map[string]any{"sig": "old"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Edit: pass nil for primary_token, change the config.
+	p2, err := CreatePendingIntegration(ctx, pool, tenantID, userID, "test", "api_key", &userID, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CompletePendingIntegration(ctx, pool, tenantID, p2.ID, nil, nil, nil, map[string]any{"sig": "new"}); err != nil {
+		t.Fatal(err)
+	}
+
+	integ, err := GetIntegration(ctx, pool, tenantID, "test", "api_key", &userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if integ.Config["sig"] != "new" {
+		t.Errorf("config not updated: %v", integ.Config)
+	}
+	if integ.Username != user {
+		t.Errorf("username should be preserved, got %q", integ.Username)
+	}
+	gotPrimary, _, err := GetIntegrationTokens(ctx, pool, tenantID, integ.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPrimary != original {
+		t.Errorf("primary token should be preserved, got %q want %q", gotPrimary, original)
+	}
+}
+
 func TestIntegrationTenantVsUserScope(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()

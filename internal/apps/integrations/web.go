@@ -47,6 +47,10 @@ type formModel struct {
 	Error          string
 	Success        bool
 	SuccessNote    string
+	// UpdateMode is true when the submitter is editing an existing
+	// integration row. The form shows a banner and relaxes the required
+	// flag on secret fields.
+	UpdateMode bool
 }
 
 func (a *App) registerRoutes(mux *http.ServeMux) {
@@ -77,9 +81,14 @@ func (a *App) handleSetupGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defCtx := a.buildDefaultContext(r.Context(), tenant, p)
-	primary, advanced := splitFormFields(spec, defCtx)
+	existing := a.loadExistingIntegration(r.Context(), tenant.ID, p, spec)
+	primary, advanced := splitFormFields(spec, defCtx, existing)
+	title := "Configure " + spec.DisplayName
+	if existing != nil {
+		title = "Update " + spec.DisplayName
+	}
 	model := formModel{
-		Title:          "Configure " + spec.DisplayName,
+		Title:          title,
 		DisplayName:    spec.DisplayName,
 		Description:    spec.Description,
 		Scope:          string(spec.Scope),
@@ -87,6 +96,7 @@ func (a *App) handleSetupGet(w http.ResponseWriter, r *http.Request) {
 		Token:          token,
 		Fields:         primary,
 		AdvancedFields: advanced,
+		UpdateMode:     existing != nil,
 	}
 	if p.Status != models.PendingStatusPending {
 		model.Error = "This setup link has already been used or is no longer valid."
@@ -116,9 +126,11 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	formAction := fmt.Sprintf("/%s/integrations/setup", tenant.Slug)
+	existing := a.loadExistingIntegration(r.Context(), tenant.ID, p, spec)
+	defCtx := a.buildDefaultContext(r.Context(), tenant, p)
 
 	if p.Status != models.PendingStatusPending {
-		primary, advanced := splitFormFields(spec, DefaultContext{})
+		primary, advanced := splitFormFields(spec, defCtx, existing)
 		renderForm(w, formModel{
 			Title:          "Configure " + spec.DisplayName,
 			DisplayName:    spec.DisplayName,
@@ -129,6 +141,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 			Fields:         primary,
 			AdvancedFields: advanced,
 			Error:          "This setup link has already been used.",
+			UpdateMode:     existing != nil,
 		})
 		return
 	}
@@ -144,9 +157,18 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	for _, f := range spec.Fields {
 		value := strings.TrimSpace(r.FormValue(f.Name))
 		if value == "" {
-			if f.Required {
+			// In update mode a blank secret means "keep the stored token" —
+			// don't error, don't set the ptr (nil flows through to the
+			// COALESCE in CompletePendingIntegration).
+			if f.Required && (!f.IsSecret() || existing == nil) {
 				validationError = displayFieldLabel(f) + " is required."
 				break
+			}
+			// For non-secret config fields we still want to record an
+			// empty value so the user can clear (e.g. remove a signature)
+			// without deleting the whole integration.
+			if f.effectiveTarget() == TargetConfig && existing != nil {
+				configMap[f.Name] = ""
 			}
 			continue
 		}
@@ -177,7 +199,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if validationError != "" {
-		primary, advanced := splitFormFields(spec, DefaultContext{})
+		primary, advanced := splitFormFields(spec, defCtx, existing)
 		renderForm(w, formModel{
 			Title:          "Configure " + spec.DisplayName,
 			DisplayName:    spec.DisplayName,
@@ -188,6 +210,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 			Fields:         primary,
 			AdvancedFields: advanced,
 			Error:          validationError,
+			UpdateMode:     existing != nil,
 		})
 		return
 	}
@@ -234,6 +257,22 @@ func (a *App) encryptSecret(plain string) (string, error) {
 		return "", errors.New("failed to encrypt the secret — try again")
 	}
 	return enc, nil
+}
+
+// loadExistingIntegration returns the live integration row for the
+// pending's (tenant, user, provider, auth_type) key, or nil if there
+// isn't one. Non-fatal: on DB error we log and fall back to
+// fresh-setup behavior so the user isn't blocked by a transient issue.
+func (a *App) loadExistingIntegration(ctx context.Context, tenantID uuid.UUID, p *models.PendingIntegration, spec TypeSpec) *models.Integration {
+	if a.pool == nil || p == nil {
+		return nil
+	}
+	integ, err := models.GetIntegration(ctx, a.pool, tenantID, spec.Provider, spec.AuthType, p.TargetUserID)
+	if err != nil {
+		slog.Warn("integrations: looking up existing row for prefill", "tenant_id", tenantID, "provider", spec.Provider, "auth_type", spec.AuthType, "error", err)
+		return nil
+	}
+	return integ
 }
 
 // buildDefaultContext assembles the user + tenant bits that a FieldSpec's
@@ -328,13 +367,18 @@ func isServerErr(err error) bool {
 }
 
 // splitFormFields returns (primary, advanced) slices built from a spec's
-// Fields, preserving declaration order within each group. Defaults are
-// resolved via FieldSpec.DefaultBuilder or .Default — secret fields never
-// get a default (we don't want to echo a stored token back into the
-// form, and on a fresh setup there's nothing sensible to prefill).
-func splitFormFields(spec TypeSpec, defCtx DefaultContext) (primary, advanced []formField) {
+// Fields, preserving declaration order within each group. On update (a
+// non-nil existing integration) non-secret fields prefill from the live
+// row; secret fields are omitted entirely — one-time-use credentials
+// like Gmail app passwords can't meaningfully be prefilled and asking
+// the user to re-enter them on every edit is hostile. Changing a secret
+// requires deleting the integration and reconfiguring.
+func splitFormFields(spec TypeSpec, defCtx DefaultContext, existing *models.Integration) (primary, advanced []formField) {
 	primary = make([]formField, 0, len(spec.Fields))
 	for _, f := range spec.Fields {
+		if existing != nil && f.IsSecret() {
+			continue
+		}
 		t := f.InputType
 		if t == "" {
 			if f.IsSecret() {
@@ -349,10 +393,11 @@ func splitFormFields(spec TypeSpec, defCtx DefaultContext) (primary, advanced []
 		}
 		def := ""
 		if !f.IsSecret() {
-			if f.DefaultBuilder != nil {
-				def = f.DefaultBuilder(defCtx)
-			} else {
-				def = f.Default
+			if existing != nil {
+				def = existingValue(existing, f)
+			}
+			if def == "" {
+				def = fieldDefault(f, defCtx)
 			}
 		}
 		ff := formField{
@@ -371,6 +416,37 @@ func splitFormFields(spec TypeSpec, defCtx DefaultContext) (primary, advanced []
 		}
 	}
 	return primary, advanced
+}
+
+// fieldDefault resolves a non-secret field's default via DefaultBuilder
+// (preferred — context-aware) or the static Default string.
+func fieldDefault(f FieldSpec, dc DefaultContext) string {
+	if f.DefaultBuilder != nil {
+		return f.DefaultBuilder(dc)
+	}
+	return f.Default
+}
+
+// existingValue returns the stored value of field f on integ, routed by
+// FieldSpec.Target. Returns empty string when the field isn't set.
+func existingValue(integ *models.Integration, f FieldSpec) string {
+	switch f.effectiveTarget() {
+	case TargetUsername:
+		return integ.Username
+	case TargetConfig:
+		if integ.Config == nil {
+			return ""
+		}
+		if v, ok := integ.Config[f.Name]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
+	default:
+		// Tokens never prefill.
+		return ""
+	}
 }
 
 func displayFieldLabel(f FieldSpec) string {
