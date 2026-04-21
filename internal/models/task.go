@@ -47,7 +47,7 @@ const (
 func ModelIDFor(tier string) string {
 	switch tier {
 	case TaskModelSonnet:
-		return "claude-sonnet-4-5-20241022"
+		return "claude-sonnet-4-6"
 	default:
 		return "claude-haiku-4-5-20251001"
 	}
