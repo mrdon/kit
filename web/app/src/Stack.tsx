@@ -96,7 +96,7 @@ export default function Stack() {
 
   return (
     <main className="feed" ref={feedRef} onScroll={onScroll}>
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} mode="popLayout">
         {items.map((it) => (
           <motion.section
             key={itemKey(it)}
