@@ -68,16 +68,24 @@ export default function Stack() {
     };
   }, [load]);
 
+  // showBurst pops the big checkmark overlay. Called the moment the
+  // commit decision is made (start of runAction) so the feedback lands
+  // in sync with the exit animation instead of after the API round
+  // trip — otherwise a slow send leaves the user staring at an empty
+  // screen before the burst catches up.
+  const showBurst = (item: StackItem, emoji: string) => {
+    setBurst({ id: itemKey(item), emoji });
+    window.setTimeout(() => setBurst(null), 900);
+  };
+
   // Server's ActionResult tells us which items to drop. We animate the
   // card off first, then patch state so AnimatePresence can collapse.
-  const onCommit = (item: StackItem, emoji: string, removedIDs: string[]) => {
+  const onCommit = (item: StackItem, _emoji: string, removedIDs: string[]) => {
     const key = itemKey(item);
     window.setTimeout(() => {
       setItems((cs) =>
         cs ? cs.filter((x) => !removedIDs.includes(itemKey(x)) && itemKey(x) !== key) : cs,
       );
-      setBurst({ id: key, emoji });
-      window.setTimeout(() => setBurst(null), 900);
     }, 260);
   };
 
@@ -154,6 +162,7 @@ export default function Stack() {
               ref={idx === 0 ? topCardRef : null}
               item={it}
               onCommit={onCommit}
+              onShowBurst={showBurst}
               onLongPress={setChatItem}
               disableLongPress={chatItem !== null}
             />
@@ -256,12 +265,13 @@ const HOLD_TO_COMMIT_S = 2;
 type SwipeCardProps = {
   item: StackItem;
   onCommit: (item: StackItem, emoji: string, removedIDs: string[]) => void;
+  onShowBurst: (item: StackItem, emoji: string) => void;
   onLongPress: (item: StackItem) => void;
   disableLongPress: boolean;
 };
 
 const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard(
-  { item, onCommit, onLongPress, disableLongPress }: SwipeCardProps,
+  { item, onCommit, onShowBurst, onLongPress, disableLongPress }: SwipeCardProps,
   ref,
 ) {
   const rightAction = findAction(item.actions, 'right');
@@ -306,6 +316,10 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
   const runAction = async (direction: CommitDirection, action: StackAction) => {
     setBusy(true);
     setSwipingOut(direction);
+    // Burst fires immediately so it lands with the exit animation
+    // regardless of how long the server takes; item removal still
+    // waits for the server to confirm (and to tell us what to drop).
+    onShowBurst(item, action.emoji);
     try {
       const result = await api.doAction(
         item.source_app,
