@@ -27,8 +27,8 @@ function Face({ item }: { item: StackItem }) {
       <div className="gate-face">
         {rec && renderToolPreview(rec.tool_name, rec.tool_arguments)}
         <div className="hint">
-          Hold → to {approveLabel.toLowerCase()}
-          {rejectLabel ? ` · hold ← to ${rejectLabel.toLowerCase()}` : ''}
+          Swipe right to {approveLabel.toLowerCase()}
+          {rejectLabel ? ` · swipe left to ${rejectLabel.toLowerCase()}` : ''}
         </div>
       </div>
     );
