@@ -115,6 +115,66 @@ func (p *cardsProvider) DoAction(ctx context.Context, caller *services.Caller, k
 	return nil, fmt.Errorf("unknown action %s/%s", kind, actionID)
 }
 
+// buildDecisionActions turns a decision's options into swipe actions.
+// The recommended option is the right swipe (using its own label so a
+// gated send_email reads "Send" not "Approve"). For gate-artifact
+// cards we also add a left swipe bound to the alternate option so the
+// user can reject inline instead of drilling into the detail view —
+// it's the gate-card equivalent of a briefing's "Not useful" swipe.
+func buildDecisionActions(d *DecisionData) []shared.StackAction {
+	if d == nil {
+		return nil
+	}
+	rec := findOption(d.Options, d.RecommendedOptionID)
+	rightLabel := "Approve"
+	if rec != nil && rec.Label != "" {
+		rightLabel = rec.Label
+	}
+	actions := []shared.StackAction{{
+		ID:        "resolve",
+		Direction: "right",
+		Label:     rightLabel,
+		Emoji:     "✅",
+	}}
+	if !d.IsGateArtifact {
+		return actions
+	}
+	// Gate cards are always "approve / skip" — find the non-recommended
+	// option and make it the left swipe.
+	for _, opt := range d.Options {
+		if opt.OptionID == d.RecommendedOptionID {
+			continue
+		}
+		params, err := json.Marshal(map[string]string{"option_id": opt.OptionID})
+		if err != nil {
+			break
+		}
+		label := opt.Label
+		if label == "" {
+			label = "Skip"
+		}
+		actions = append(actions, shared.StackAction{
+			ID:        "resolve",
+			Direction: "left",
+			Label:     label,
+			Emoji:     "🚫",
+			Params:    params,
+		})
+		break
+	}
+	return actions
+}
+
+// findOption returns the option with the given id, or nil.
+func findOption(opts []DecisionOption, id string) *DecisionOption {
+	for i := range opts {
+		if opts[i].OptionID == id {
+			return &opts[i]
+		}
+	}
+	return nil
+}
+
 func briefingAckFromAction(actionID string) (BriefingAckKind, bool) {
 	switch actionID {
 	case "ack_archived":
@@ -147,12 +207,7 @@ func cardToStackItem(c *Card) (shared.StackItem, error) {
 			return it, errors.New("decision card missing decision data")
 		}
 		it.PriorityTier = decisionTier(c.Decision.Priority)
-		it.Actions = []shared.StackAction{{
-			ID:        "resolve",
-			Direction: "right",
-			Label:     "Approve",
-			Emoji:     "✅",
-		}}
+		it.Actions = buildDecisionActions(c.Decision)
 		meta, err := json.Marshal(map[string]any{
 			"priority":              c.Decision.Priority,
 			"recommended_option_id": c.Decision.RecommendedOptionID,

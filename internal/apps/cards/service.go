@@ -290,9 +290,13 @@ func (s *CardService) CreateGateCard(
 	if err != nil {
 		return uuid.Nil, "", fmt.Errorf("creating gate card: %w", err)
 	}
+	// Link to the feed root, not the detail page — the pending gate
+	// card surfaces at the top of the stack and the whole stack view
+	// carries the face/preview. Dropping users on the detail page
+	// forced an extra tap for no added info.
 	cardURL := ""
 	if s.baseURL != "" && ec.Tenant.Slug != "" {
-		cardURL = fmt.Sprintf("%s/%s/stack/cards/decision/%s", s.baseURL, ec.Tenant.Slug, card.ID)
+		cardURL = fmt.Sprintf("%s/%s/", s.baseURL, ec.Tenant.Slug)
 	}
 	return card.ID, cardURL, nil
 }

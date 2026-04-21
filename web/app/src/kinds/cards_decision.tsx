@@ -16,12 +16,20 @@ function Face({ item }: { item: StackItem }) {
   const m = meta(item);
   if (!m) return null;
   const rec = m.options.find((o) => o.option_id === m.recommended_option_id);
-  // Gate artifacts (user approving a privileged tool call) get a
-  // clearer face hint than ordinary decisions.
+  // Gate artifacts (user approving a privileged tool call) render the
+  // tool preview directly on the face — the user shouldn't have to
+  // drill into detail just to see which email they're approving.
   if (m.is_gate_artifact) {
+    const alt = m.options.find((o) => o.option_id !== m.recommended_option_id);
+    const approveLabel = rec?.label ?? 'approve';
+    const rejectLabel = alt?.label;
     return (
-      <div className="hint">
-        Review the proposed action, then swipe right to approve · tap for details
+      <div className="gate-face">
+        {rec && renderToolPreview(rec.tool_name, rec.tool_arguments)}
+        <div className="hint">
+          Hold → to {approveLabel.toLowerCase()}
+          {rejectLabel ? ` · hold ← to ${rejectLabel.toLowerCase()}` : ''}
+        </div>
       </div>
     );
   }

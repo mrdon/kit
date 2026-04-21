@@ -354,6 +354,12 @@ main.feed > .card-screen {
 }
 .detail .back:active { opacity: 0.7; }
 
+/* Gate-artifact decision face: render the tool preview inline on the
+   card itself so the user doesn't have to tap in to read the email. */
+.gate-face { margin-top: 8px; }
+.gate-face .tool-preview { font-size: 14px; }
+.gate-face .hint { margin-top: 10px; }
+
 .error-fallback {
   background: #fef2f2;
   border: 1px solid #fecaca;
