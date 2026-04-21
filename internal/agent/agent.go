@@ -42,6 +42,11 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *
 	}
 }
 
+// LLM exposes the Anthropic client so MCP wiring that doesn't route through
+// the agent loop (e.g. the MCP create_task handler running the Haiku model
+// classifier) can share one client instead of constructing its own.
+func (a *Agent) LLM() *anthropic.Client { return a.llm }
+
 // RunInput is everything the agent loop needs for a single turn.
 // Required fields (Slack through UserText) identify the conversation;
 // optional fields configure one run's observer hooks, system-prompt

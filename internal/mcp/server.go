@@ -10,6 +10,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/agent"
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
@@ -64,7 +65,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 	registerResources(sh.Server, pool, svc)
 
-	tools := buildAllTools(pool, svc, a, enc, sched)
+	tools := buildAllTools(pool, svc, a, enc, sched, a.LLM())
 	sh.Server.AddTools(tools...)
 
 	toolNames := make([]string, len(tools))
@@ -78,19 +79,30 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 // buildAllTools collects every MCP tool — core + app-contributed — into a single
 // slice for server-level registration. Handlers resolve the caller per request.
-func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler) []mcpserver.ServerTool {
+// llm is threaded in for handlers that do one-shot Claude calls (e.g. the
+// create_task classifier); groups that don't need it ignore the param.
+func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler, llm *anthropic.Client) []mcpserver.ServerTool {
+	type handlerFn func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
+	// Uniform shim so every handler can be invoked with the same arg set,
+	// regardless of whether it uses llm. Special-cased groups (TaskTools)
+	// register their handler directly below.
+	wrap := func(h handlerFn) func(string, *pgxpool.Pool, *services.Services, *anthropic.Client) mcpserver.ToolHandlerFunc {
+		return func(name string, pool *pgxpool.Pool, svc *services.Services, _ *anthropic.Client) mcpserver.ToolHandlerFunc {
+			return h(name, pool, svc)
+		}
+	}
 	allMetas := []struct {
 		metas   []services.ToolMeta
-		handler func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
+		handler func(string, *pgxpool.Pool, *services.Services, *anthropic.Client) mcpserver.ToolHandlerFunc
 	}{
-		{services.SkillTools, skillMCPHandler},
-		{services.RuleTools, ruleMCPHandler},
-		{services.MemoryTools, memoryMCPHandler},
-		{services.RoleTools, roleMCPHandler},
+		{services.SkillTools, wrap(skillMCPHandler)},
+		{services.RuleTools, wrap(ruleMCPHandler)},
+		{services.MemoryTools, wrap(memoryMCPHandler)},
+		{services.RoleTools, wrap(roleMCPHandler)},
 		{services.TaskTools, taskMCPHandler},
-		{services.TenantTools, tenantMCPHandler},
-		{services.UserTools, userMCPHandler},
-		{services.SessionTools, sessionMCPHandler},
+		{services.TenantTools, wrap(tenantMCPHandler)},
+		{services.UserTools, wrap(userMCPHandler)},
+		{services.SessionTools, wrap(sessionMCPHandler)},
 	}
 
 	var out []mcpserver.ServerTool
@@ -99,7 +111,7 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 			schema := services.InjectRequireApprovalSchema(meta.Schema)
 			schemaJSON, _ := json.Marshal(schema)
 			tool := mcp.NewToolWithRawSchema(meta.Name, meta.Description, schemaJSON)
-			inner := group.handler(meta.Name, pool, svc)
+			inner := group.handler(meta.Name, pool, svc, llm)
 			out = append(out, mcpserver.ServerTool{
 				Tool:    tool,
 				Handler: gatedMCP(meta.Name, inner),

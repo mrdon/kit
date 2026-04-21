@@ -14,15 +14,17 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/agent"
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/mcpauth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
+	"github.com/mrdon/kit/internal/tools"
 )
 
-func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
+func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *anthropic.Client) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "create_task":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
@@ -35,19 +37,16 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 				return mcp.NewToolResultError("cron_expr is required for MCP task creation."), nil
 			}
 
-			// MCP callers (Claude Code, external orchestrators) aren't
-			// classified — they don't have a live LLM handle here and the
-			// caller usually knows its own model needs better than a
-			// one-shot Haiku triage would. Empty string → Haiku default.
-			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, caller.Timezone, channelID, scope, "", false, nil)
+			model := tools.ClassifyTaskModel(ctx, llm, desc)
+			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, caller.Timezone, channelID, scope, model, false, nil)
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
 			}
 			if err != nil {
 				return nil, err
 			}
-			return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s). Next run: %s",
-				task.ID, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
+			return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s, model: %s). Next run: %s",
+				task.ID, task.Model, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
 		})
 	case "list_tasks":
 		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
