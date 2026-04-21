@@ -33,7 +33,7 @@ func registerEmailAgentTools(r *tools.Registry, a *App) {
 // rendered by SendEmailPreview on the card option itself, so the card
 // title + body focus on the "who/why" and the option labels swap
 // "Approve/Skip" for the verbs the user expects.
-func sendEmailGatePreview(input json.RawMessage) tools.GateCardPreview {
+func sendEmailGatePreview(_ *tools.ExecContext, input json.RawMessage) tools.GateCardPreview {
 	// Intentionally empty Body: the tool preview on the card face
 	// already shows To/Subject/body, so an extra "Kit drafted this
 	// email" paragraph just eats vertical space above the preview.

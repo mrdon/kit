@@ -142,7 +142,12 @@ type Def struct {
 	// tools (when the agent sets require_approval). A nil func falls
 	// back to a synthesized default based on the tool name. Fields
 	// left empty on the returned struct also fall back individually.
-	GateCardPreview func(args json.RawMessage) GateCardPreview
+	//
+	// Receives the ExecContext so preview helpers can resolve friendly
+	// names from the DB (e.g. Slack channel id → #name) instead of
+	// dumping raw identifiers into the card title. Previews that don't
+	// need lookup ignore the ec arg.
+	GateCardPreview func(ec *ExecContext, args json.RawMessage) GateCardPreview
 }
 
 // Registry holds all registered tools.
@@ -541,7 +546,7 @@ func (r *Registry) createGateCard(ec *ExecContext, def Def, input json.RawMessag
 	}
 	preview := defaultGateCardPreview(def.Name)
 	if def.GateCardPreview != nil {
-		custom := def.GateCardPreview(input)
+		custom := def.GateCardPreview(ec, input)
 		if custom.Title != "" {
 			preview.Title = custom.Title
 		}

@@ -62,14 +62,14 @@ func registerCoreTools(r *Registry, botInitiated bool) {
 	})
 }
 
-func postToChannelGatePreview(input json.RawMessage) GateCardPreview {
+func postToChannelGatePreview(ec *ExecContext, input json.RawMessage) GateCardPreview {
 	var args struct {
 		Channel string `json:"channel"`
 	}
 	_ = json.Unmarshal(input, &args)
 	title := "Post to Slack channel?"
 	if args.Channel != "" {
-		title = "Post to " + displayChannel(args.Channel) + "?"
+		title = "Post to " + displayChannel(ec, args.Channel) + "?"
 	}
 	return GateCardPreview{
 		Title:        title,
@@ -78,14 +78,14 @@ func postToChannelGatePreview(input json.RawMessage) GateCardPreview {
 	}
 }
 
-func dmUserGatePreview(input json.RawMessage) GateCardPreview {
+func dmUserGatePreview(ec *ExecContext, input json.RawMessage) GateCardPreview {
 	var args struct {
 		UserID string `json:"user_id"`
 	}
 	_ = json.Unmarshal(input, &args)
 	title := "Send DM?"
 	if args.UserID != "" {
-		title = "Send DM to <@" + args.UserID + ">?"
+		title = "Send DM to " + displayUser(ec, args.UserID) + "?"
 	}
 	return GateCardPreview{
 		Title:        title,
@@ -94,20 +94,79 @@ func dmUserGatePreview(input json.RawMessage) GateCardPreview {
 	}
 }
 
-// displayChannel prefixes a bare channel name with '#'. Leaves Slack
-// channel ids (start with C/G/D) alone since the PWA can render those
-// as-is and the agent can pass either shape.
-func displayChannel(c string) string {
+// displayChannel renders a channel argument in human-friendly form.
+// Resolves a Slack channel id (C…/G…/D…) to its configured name via
+// app_slack_channels when ec carries a pool and tenant; falls back to
+// prefixing a bare name with '#'. Ids that don't resolve stay as-is
+// so the user at least sees a copy-pasteable identifier.
+func displayChannel(ec *ExecContext, c string) string {
 	if c == "" {
 		return c
 	}
 	if c[0] == '#' {
 		return c
 	}
-	if c[0] == 'C' || c[0] == 'G' || c[0] == 'D' {
+	if looksLikeSlackChannelID(c) {
+		if name := lookupChannelName(ec, c); name != "" {
+			return "#" + name
+		}
 		return c
 	}
 	return "#" + c
+}
+
+func looksLikeSlackChannelID(c string) bool {
+	if len(c) < 2 {
+		return false
+	}
+	switch c[0] {
+	case 'C', 'G', 'D':
+		return true
+	}
+	return false
+}
+
+func lookupChannelName(ec *ExecContext, slackID string) string {
+	if ec == nil || ec.Pool == nil || ec.Tenant == nil {
+		return ""
+	}
+	var name string
+	err := ec.Pool.QueryRow(ec.Ctx, `
+		SELECT channel_name FROM app_slack_channels
+		WHERE tenant_id = $1 AND slack_channel_id = $2
+		LIMIT 1`,
+		ec.Tenant.ID, slackID,
+	).Scan(&name)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+// displayUser renders a Slack user id in human-friendly form. Resolves
+// against the users table when ec has a pool + tenant; falls back to
+// the raw id wrapped in @…. The Slack `<@UID>` mention shape only
+// renders in Slack itself, so for a Kit-side card we prefer a plain
+// name or "@UID" string.
+func displayUser(ec *ExecContext, slackUserID string) string {
+	if ec == nil || ec.Pool == nil || ec.Tenant == nil {
+		return "@" + slackUserID
+	}
+	var displayName, slackName string
+	err := ec.Pool.QueryRow(ec.Ctx, `
+		SELECT COALESCE(display_name, ''), slack_user_id
+		FROM users
+		WHERE tenant_id = $1 AND slack_user_id = $2
+		LIMIT 1`,
+		ec.Tenant.ID, slackUserID,
+	).Scan(&displayName, &slackName)
+	if err != nil {
+		return "@" + slackUserID
+	}
+	if displayName != "" {
+		return "@" + displayName
+	}
+	return "@" + slackName
 }
 
 func replyInThreadHandler(ec *ExecContext, input json.RawMessage) (string, error) {

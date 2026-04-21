@@ -35,7 +35,7 @@ func registerTaskTools(r *Registry, isAdmin bool) {
 // require_approval on create_task. The description + schedule are what
 // the user mostly wants to review; the card body preview component
 // renders the full arguments.
-func createTaskGatePreview(input json.RawMessage) GateCardPreview {
+func createTaskGatePreview(_ *ExecContext, input json.RawMessage) GateCardPreview {
 	var args struct {
 		Description string `json:"description"`
 	}
