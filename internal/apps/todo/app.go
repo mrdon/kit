@@ -1,6 +1,7 @@
 package todo
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -39,7 +40,7 @@ func (a *TodoApp) ToolMetas() []services.ToolMeta {
 	return todoTools
 }
 
-func (a *TodoApp) RegisterAgentTools(registerer any, isAdmin bool) {
+func (a *TodoApp) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, isAdmin bool) {
 	r := registerer.(*tools.Registry)
 	registerTodoAgentTools(r, isAdmin, a.svc)
 }

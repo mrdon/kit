@@ -5,6 +5,8 @@
 package email
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,6 +15,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/crypto"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -64,12 +67,36 @@ func (a *App) ToolMetas() []services.ToolMeta {
 	return emailTools
 }
 
-func (a *App) RegisterAgentTools(registerer any, _ bool) {
+// RegisterAgentTools only registers the email tools if the caller has
+// an email integration row configured. An unconfigured user gets a
+// registry with no search/read/send tools — they route through the
+// always-available configure_integration flow instead.
+func (a *App) RegisterAgentTools(ctx context.Context, registerer any, caller *services.Caller, _ bool) {
 	r, ok := registerer.(*tools.Registry)
 	if !ok {
 		return
 	}
+	if !a.callerHasAccount(ctx, caller) {
+		return
+	}
 	registerEmailAgentTools(r, a)
+}
+
+// callerHasAccount checks whether the given caller has a configured
+// email integration. Returns false on nil caller, unconfigured app, or
+// DB error — safe-default: hide the tools if we can't be sure they'll
+// work.
+func (a *App) callerHasAccount(ctx context.Context, caller *services.Caller) bool {
+	if caller == nil || a.pool == nil {
+		return false
+	}
+	uid := caller.UserID
+	integ, err := models.GetIntegration(ctx, a.pool, caller.TenantID, Provider, AuthType, &uid)
+	if err != nil {
+		slog.Warn("email: checking integration row for caller", "tenant_id", caller.TenantID, "user_id", caller.UserID, "error", err)
+		return false
+	}
+	return integ != nil
 }
 
 // RegisterMCPTools deliberately returns nil. send_email is PolicyGate and

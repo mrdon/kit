@@ -39,7 +39,7 @@ func (a *CalendarApp) ToolMetas() []services.ToolMeta {
 	return calendarTools
 }
 
-func (a *CalendarApp) RegisterAgentTools(registerer any, isAdmin bool) {
+func (a *CalendarApp) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, isAdmin bool) {
 	r := registerer.(*tools.Registry)
 	registerCalendarAgentTools(r, isAdmin, a.svc)
 }

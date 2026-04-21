@@ -232,7 +232,7 @@ func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool
 
 	// App tools
 	for _, a := range apps.All() {
-		a.RegisterAgentTools(r, isAdmin)
+		a.RegisterAgentTools(ctx, r, caller, isAdmin)
 	}
 
 	// Dynamic per-tenant exposed tools. Skipped silently if no runner is

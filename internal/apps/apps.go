@@ -38,7 +38,12 @@ type App interface {
 
 	// RegisterAgentTools adds this app's tools to the agent registry.
 	// The registerer is *tools.Registry but declared as any to avoid import cycles.
-	RegisterAgentTools(registerer any, isAdmin bool)
+	//
+	// ctx and caller are per-session so apps can gate registration on
+	// runtime state (e.g. the email app hides its tools when the caller
+	// has no email integration configured). Both may be nil in test paths
+	// that build a registry without a caller; apps should no-op safely.
+	RegisterAgentTools(ctx context.Context, registerer any, caller *services.Caller, isAdmin bool)
 
 	// RegisterMCPTools returns this app's MCP tools. Handlers resolve the
 	// caller from ctx at call time, so tools can be registered once at

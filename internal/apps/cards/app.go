@@ -173,7 +173,7 @@ func (a *CardsApp) ToolMetas() []services.ToolMeta {
 	return cardsTools
 }
 
-func (a *CardsApp) RegisterAgentTools(registerer any, isAdmin bool) {
+func (a *CardsApp) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, isAdmin bool) {
 	r := registerer.(*tools.Registry)
 	registerCardsAgentTools(r, isAdmin, a.svc)
 }

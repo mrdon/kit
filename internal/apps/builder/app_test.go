@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"testing"
 
 	"github.com/mrdon/kit/internal/apps"
@@ -49,7 +50,7 @@ func TestAppPhase4Contract(t *testing.T) {
 	}
 	// RegisterAgentTools and RegisterRoutes must not panic on nil args or
 	// for a non-admin caller.
-	a.RegisterAgentTools(nil, false)
+	a.RegisterAgentTools(context.TODO(), nil, nil, false)
 	a.RegisterRoutes(nil)
 }
 

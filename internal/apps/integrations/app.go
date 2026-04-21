@@ -75,7 +75,7 @@ func (a *App) ToolMetas() []services.ToolMeta {
 	return services.IntegrationTools
 }
 
-func (a *App) RegisterAgentTools(registerer any, _ bool) {
+func (a *App) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, _ bool) {
 	r, ok := registerer.(*tools.Registry)
 	if !ok {
 		return

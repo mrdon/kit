@@ -157,7 +157,7 @@ func metaHandler(name string) func(*execContextLike, json.RawMessage) (string, e
 // RegisterAgentTools wires the Phase 4 meta-tools into the agent registry.
 // Skips registration entirely for non-admins — the MCP side keeps the admin
 // check inside the handler (tools are registered once at server startup).
-func (a *App) RegisterAgentTools(registerer any, isAdmin bool) {
+func (a *App) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, isAdmin bool) {
 	if !isAdmin || a.pool == nil {
 		return
 	}

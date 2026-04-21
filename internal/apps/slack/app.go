@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,7 +37,7 @@ func (a *SlackApp) ToolMetas() []services.ToolMeta {
 	return slackTools
 }
 
-func (a *SlackApp) RegisterAgentTools(registerer any, isAdmin bool) {
+func (a *SlackApp) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, isAdmin bool) {
 	r := registerer.(*tools.Registry)
 	registerSlackAgentTools(r, isAdmin, a.svc)
 }
