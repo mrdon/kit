@@ -81,36 +81,50 @@ export default function Stack() {
     }, 260);
   };
 
-  // Keyboard shortcuts for desktop testing. Drive the top card through
-  // the same runAction path used by a real swipe — imperative handle on
-  // the card triggers the exit animation + burst + commit so the
-  // keyboard and the finger look identical.
-  //   ArrowRight → commit the right swipe action
-  //   ArrowLeft  → commit the left swipe action
-  //   Enter      → open the detail view
+  // Keyboard shortcuts for desktop testing. Hold-to-commit: pressing
+  // an arrow key starts pushing the top card across at a constant
+  // speed; releasing before the threshold snaps it back, holding for
+  // the full 2s commits the action. Mirrors the feel of a real swipe
+  // (reviewable + cancelable) rather than an instant action.
+  //   ArrowRight (hold 2s) → commit the right swipe action
+  //   ArrowLeft  (hold 2s) → commit the left swipe action
+  //   Enter                → open the detail view
   const navigate = useNavigate();
   const topCardRef = useRef<SwipeCardHandle | null>(null);
   useEffect(() => {
     if (!items || items.length === 0 || chatItem) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
         return;
       }
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Enter') return;
       const active = items[0];
       if (!active) return;
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.repeat) {
         e.preventDefault();
         navigate(`/stack/${active.source_app}/${active.kind}/${active.id}`);
         return;
       }
-      const dir: CommitDirection = e.key === 'ArrowRight' ? 'right' : 'left';
-      e.preventDefault();
-      topCardRef.current?.swipe(dir);
+      if (e.repeat) return; // ignore OS auto-repeat while held
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        topCardRef.current?.startSwipe('right');
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        topCardRef.current?.startSwipe('left');
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        topCardRef.current?.cancelSwipe();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, [items, chatItem, navigate]);
 
   if (err) return <div className="empty">Error: {err}</div>;
@@ -225,8 +239,19 @@ function findAction(actions: StackAction[], direction: CommitDirection): StackAc
 }
 
 type SwipeCardHandle = {
-  swipe: (direction: CommitDirection) => void;
+  // startSwipe begins the keyboard hold-to-commit animation. x
+  // advances toward the commit threshold at a constant linear rate;
+  // completing triggers the same runAction path a real swipe uses.
+  startSwipe: (direction: CommitDirection) => void;
+  // cancelSwipe aborts an in-flight keyboard push and snaps the card
+  // back to resting. No-op after runAction has already fired.
+  cancelSwipe: () => void;
 };
+
+// HOLD_TO_COMMIT_S sets how long a user must hold an arrow key for
+// the card to cross its swipe threshold. Short enough to feel
+// responsive, long enough to bail out if you reconsider mid-push.
+const HOLD_TO_COMMIT_S = 2;
 
 type SwipeCardProps = {
   item: StackItem;
@@ -297,20 +322,41 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
     }
   };
 
-  // Imperative handle so Stack's keyboard shortcuts can trigger the
-  // same runAction path a physical swipe uses — animation, commit,
-  // and burst fire identically regardless of input source.
+  // pushAnimRef holds the in-flight hold-to-commit animation so a key
+  // release can stop it before the threshold is crossed.
+  const pushAnimRef = useRef<ReturnType<typeof animate> | null>(null);
+
+  // Imperative handle so Stack's keyboard shortcuts can drive the
+  // same motion-value path a real swipe uses. Pressing an arrow key
+  // slides the card toward the commit threshold at a constant speed;
+  // releasing before completion snaps it back.
   useImperativeHandle(
     ref,
     () => ({
-      swipe: (direction) => {
+      startSwipe: (direction) => {
         if (busy) return;
         const action = direction === 'right' ? rightAction : leftAction;
         if (!action) return;
-        runAction(direction, action);
+        if (pushAnimRef.current) pushAnimRef.current.stop();
+        const target = direction === 'right' ? threshold + 20 : -(threshold + 20);
+        pushAnimRef.current = animate(x, target, {
+          duration: HOLD_TO_COMMIT_S,
+          ease: 'linear',
+          onComplete: () => {
+            pushAnimRef.current = null;
+            runAction(direction, action);
+          },
+        });
+      },
+      cancelSwipe: () => {
+        if (!pushAnimRef.current) return;
+        pushAnimRef.current.stop();
+        pushAnimRef.current = null;
+        if (busy) return;
+        animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
       },
     }),
-    [busy, rightAction, leftAction, item],
+    [busy, rightAction, leftAction, threshold, x],
   );
 
   const onDragEnd = async (_e: unknown, info: PanInfo) => {
