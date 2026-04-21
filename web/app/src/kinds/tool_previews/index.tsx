@@ -1,9 +1,8 @@
 import type { ComponentType } from 'react';
+import { SendEmailPreview } from './send_email';
 
 // Preview-component dispatch registry. Per-tool renderers (send_email,
-// create_todo, …) land with their respective tool PRs; this scaffold
-// ships only the dispatch + JsonPreview fallback so the email-app PR
-// just adds an entry to the map.
+// create_todo, …) land with their respective tool PRs.
 //
 // Tool preview components render the `tool_arguments` JSON in a
 // human-friendly layout — e.g. send_email renders subject + body +
@@ -15,10 +14,10 @@ export type ToolPreviewProps = {
 
 export type ToolPreviewComponent = ComponentType<ToolPreviewProps>;
 
-// Populated by each tool PR via toolPreviews[name] = MyPreview.
-// Using a const map keeps the registry in one place without an
-// import cycle; no runtime registration needed.
-export const toolPreviews: Record<string, ToolPreviewComponent> = {};
+// Per-tool renderers, keyed by tool name.
+export const toolPreviews: Record<string, ToolPreviewComponent> = {
+  send_email: SendEmailPreview,
+};
 
 // JsonPreview is the fallback when toolPreviews has no entry for
 // tool_name. Renders a collapsed <details> block so the user can

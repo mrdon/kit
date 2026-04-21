@@ -32,16 +32,17 @@ type formField struct {
 
 // formModel is the data passed to the template.
 type formModel struct {
-	Title       string
-	DisplayName string
-	Description string
-	Scope       string
-	Action      string
-	Token       string
-	Fields      []formField
-	Error       string
-	Success     bool
-	SuccessNote string
+	Title          string
+	DisplayName    string
+	Description    string
+	Scope          string
+	Action         string
+	Token          string
+	Fields         []formField // primary fields, always visible
+	AdvancedFields []formField // advanced fields, collapsed under <details>
+	Error          string
+	Success        bool
+	SuccessNote    string
 }
 
 func (a *App) registerRoutes(mux *http.ServeMux) {
@@ -71,14 +72,16 @@ func (a *App) handleSetupGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	primary, advanced := splitFormFields(spec)
 	model := formModel{
-		Title:       "Configure " + spec.DisplayName,
-		DisplayName: spec.DisplayName,
-		Description: spec.Description,
-		Scope:       string(spec.Scope),
-		Action:      fmt.Sprintf("/%s/integrations/setup", tenant.Slug),
-		Token:       token,
-		Fields:      buildFormFields(spec),
+		Title:          "Configure " + spec.DisplayName,
+		DisplayName:    spec.DisplayName,
+		Description:    spec.Description,
+		Scope:          string(spec.Scope),
+		Action:         fmt.Sprintf("/%s/integrations/setup", tenant.Slug),
+		Token:          token,
+		Fields:         primary,
+		AdvancedFields: advanced,
 	}
 	if p.Status != models.PendingStatusPending {
 		model.Error = "This setup link has already been used or is no longer valid."
@@ -110,15 +113,17 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	formAction := fmt.Sprintf("/%s/integrations/setup", tenant.Slug)
 
 	if p.Status != models.PendingStatusPending {
+		primary, advanced := splitFormFields(spec)
 		renderForm(w, formModel{
-			Title:       "Configure " + spec.DisplayName,
-			DisplayName: spec.DisplayName,
-			Description: spec.Description,
-			Scope:       string(spec.Scope),
-			Action:      formAction,
-			Token:       token,
-			Fields:      buildFormFields(spec),
-			Error:       "This setup link has already been used.",
+			Title:          "Configure " + spec.DisplayName,
+			DisplayName:    spec.DisplayName,
+			Description:    spec.Description,
+			Scope:          string(spec.Scope),
+			Action:         formAction,
+			Token:          token,
+			Fields:         primary,
+			AdvancedFields: advanced,
+			Error:          "This setup link has already been used.",
 		})
 		return
 	}
@@ -167,15 +172,17 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if validationError != "" {
+		primary, advanced := splitFormFields(spec)
 		renderForm(w, formModel{
-			Title:       "Configure " + spec.DisplayName,
-			DisplayName: spec.DisplayName,
-			Description: spec.Description,
-			Scope:       string(spec.Scope),
-			Action:      formAction,
-			Token:       token,
-			Fields:      buildFormFields(spec),
-			Error:       validationError,
+			Title:          "Configure " + spec.DisplayName,
+			DisplayName:    spec.DisplayName,
+			Description:    spec.Description,
+			Scope:          string(spec.Scope),
+			Action:         formAction,
+			Token:          token,
+			Fields:         primary,
+			AdvancedFields: advanced,
+			Error:          validationError,
 		})
 		return
 	}
@@ -275,8 +282,10 @@ func isServerErr(err error) bool {
 	return strings.HasPrefix(s, "server ")
 }
 
-func buildFormFields(spec TypeSpec) []formField {
-	out := make([]formField, 0, len(spec.Fields))
+// splitFormFields returns (primary, advanced) slices built from a spec's
+// Fields, preserving declaration order within each group.
+func splitFormFields(spec TypeSpec) (primary, advanced []formField) {
+	primary = make([]formField, 0, len(spec.Fields))
 	for _, f := range spec.Fields {
 		t := f.InputType
 		if t == "" {
@@ -290,15 +299,20 @@ func buildFormFields(spec TypeSpec) []formField {
 		if label == "" {
 			label = f.Name
 		}
-		out = append(out, formField{
+		ff := formField{
 			Name:      f.Name,
 			Label:     label,
 			InputType: t,
 			Required:  f.Required,
 			Help:      f.Help,
-		})
+		}
+		if f.Advanced {
+			advanced = append(advanced, ff)
+		} else {
+			primary = append(primary, ff)
+		}
 	}
-	return out
+	return primary, advanced
 }
 
 func displayFieldLabel(f FieldSpec) string {

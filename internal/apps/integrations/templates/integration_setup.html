@@ -18,6 +18,9 @@
   input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
   .help { font-size: 0.85rem; color: #6b7280; margin-top: 4px; }
   .required { color: #dc2626; margin-left: 3px; }
+  details.advanced { margin: 8px 0 20px; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
+  details.advanced > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: #4b5563; padding: 2px 0; }
+  details.advanced[open] > summary { margin-bottom: 12px; }
   button { background: #1f2937; color: #fff; border: none; padding: 12px 24px; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; font-family: inherit; width: 100%; }
   button:hover { background: #374151; }
   .error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 0.95rem; }
@@ -52,6 +55,18 @@
           <input type="{{.InputType}}" id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off">
           {{if .Help}}<div class="help">{{.Help}}</div>{{end}}
         </div>
+        {{end}}
+        {{if .AdvancedFields}}
+        <details class="advanced">
+          <summary>Advanced</summary>
+          {{range .AdvancedFields}}
+          <div class="field">
+            <label for="f-{{.Name}}">{{.Label}}{{if .Required}}<span class="required">*</span>{{end}}</label>
+            <input type="{{.InputType}}" id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}} autocomplete="off">
+            {{if .Help}}<div class="help">{{.Help}}</div>{{end}}
+          </div>
+          {{end}}
+        </details>
         {{end}}
         <button type="submit">Save</button>
       </form>

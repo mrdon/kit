@@ -20,6 +20,7 @@ import (
 	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
+	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	_ "github.com/mrdon/kit/internal/apps/todo"
@@ -128,6 +129,7 @@ func main() {
 	// signing secret). Done after sessionSecret resolves so we reuse the
 	// same fallback chain.
 	integrations.Configure(enc, cfg.BaseURL, sessionSecret)
+	email.Configure(enc)
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)

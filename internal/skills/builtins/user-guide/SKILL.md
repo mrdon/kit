@@ -115,6 +115,26 @@ Once configured, just ask:
 
 Calendars are scoped to roles like other Kit resources. Use `list_calendars` to see what's configured (and the last sync status), and `get_calendar_events` for date or keyword queries. Kit re-fetches each calendar in the background, so changes on the source feed show up automatically.
 
+## Email
+
+Connect any IMAP + SMTP mailbox so Kit can read your inbox and draft replies on your behalf. Gmail works via an app password (enable 2FA, then generate one at https://myaccount.google.com/apppasswords). iCloud, Yahoo, Fastmail, and self-hosted IMAP work with their normal passwords. Microsoft 365 / Outlook.com aren't supported yet — they require OAuth.
+
+Credentials go through the shared integrations flow — Kit mints a one-time URL, you enter your password in a browser form, and the LLM never sees it:
+
+> "Set up my email."
+
+(Kit calls `configure_integration(provider="email", auth_type="imap_smtp")` and relays the URL.)
+
+Once configured, ask:
+
+> "Any emails from Jim this week?"
+> "Read uid 12345."
+> "Draft a reply to that last email thanking them and proposing Thursday at 1pm."
+
+**Sends always go through an approval card.** When you ask Kit to send email, the drafted message appears in your card stack — you can review it, long-press to revise ("make it more formal, drop the last paragraph"), and swipe to approve. Kit never sends directly. The body is markdown; the recipient's mail client sees both a rich-HTML and plain-text version.
+
+Tools: `search_emails`, `read_email`, `mark_read`, `send_email` (agent-side only — `send_email` is not exposed via MCP because it's gated).
+
 ## Decisions and briefings (card stack)
 
 Kit surfaces agent-driven prompts in a swipeable mobile card stack at `/app/` (sign in via Slack). Install it to your home screen: iOS Safari → Share → Add to Home Screen; Android Chrome → ⋮ → Install app.

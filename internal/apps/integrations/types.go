@@ -38,6 +38,7 @@ type FieldSpec struct {
 	Target    string // TargetConfig (default when empty) | TargetUsername | TargetPrimary/SecondaryToken
 	Required  bool
 	Help      string // optional hint text shown under the input
+	Advanced  bool   // if true, rendered inside a collapsed "Advanced" section on the form
 }
 
 // TypeSpec declares a registrable (provider, auth_type) pair.
