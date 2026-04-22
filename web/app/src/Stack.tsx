@@ -482,20 +482,24 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       )}
       {Face && <Face item={item} />}
       {canSwipeRight && rightAction && (
-        <motion.div
-          className="swipe-hint right"
-          style={{ opacity: rightOpacity, scale: rightScale }}
-        >
-          {rightAction.emoji} {rightAction.label}
-        </motion.div>
+        <div className="swipe-hint-wrap">
+          <motion.div
+            className="swipe-hint right"
+            style={{ opacity: rightOpacity, scale: rightScale }}
+          >
+            {rightAction.emoji} {rightAction.label}
+          </motion.div>
+        </div>
       )}
       {canSwipeLeft && leftAction && (
-        <motion.div
-          className="swipe-hint left"
-          style={{ opacity: leftOpacity, scale: leftScale }}
-        >
-          {leftAction.emoji} {leftAction.label}
-        </motion.div>
+        <div className="swipe-hint-wrap">
+          <motion.div
+            className="swipe-hint left"
+            style={{ opacity: leftOpacity, scale: leftScale }}
+          >
+            {leftAction.emoji} {leftAction.label}
+          </motion.div>
+        </div>
       )}
     </motion.article>
   );

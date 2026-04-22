@@ -240,27 +240,31 @@ main.feed > .card-screen {
 .badge.tone-warn   { background: var(--badge-warn-bg);   color: var(--badge-warn-fg); }
 .badge.tone-info   { background: var(--badge-info-bg);   color: var(--badge-info-fg); }
 
-.swipe-hint {
+.swipe-hint-wrap {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  font-weight: 600;
-  padding: 10px 18px;
-  border-radius: 999px;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
+}
+
+.swipe-hint {
+  font-weight: 700;
+  font-size: clamp(28px, 7vw, 48px);
+  padding: 18px 32px;
+  border-radius: 18px;
+  text-align: center;
+  white-space: nowrap;
   opacity: 0;
-  transition: opacity 120ms;
-  font-size: 15px;
 }
 
 .swipe-hint.right {
-  right: 18px;
   background: var(--swipe-right-bg);
   color: var(--swipe-right-fg);
 }
 
 .swipe-hint.left {
-  left: 18px;
   background: var(--swipe-left-bg);
   color: var(--swipe-left-fg);
 }
