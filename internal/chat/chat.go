@@ -166,6 +166,14 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		// registry. Gated tools still get their normal approval gates
 		// at the registry level.
 		runInput.DropGatedTools = false
+		// Use Sonnet for the quick-capture surface. Haiku was
+		// frequently hallucinating — replying "Created todo X" without
+		// actually calling create_todo — which defeats the whole point
+		// of a capture tool. Sonnet follows tool-use instructions much
+		// more reliably at the cost of a few extra cents per turn, a
+		// fair trade for a surface where "it said it did but didn't"
+		// is the worst failure mode.
+		runInput.Model = "sonnet"
 	}
 
 	if err := in.Agent.Run(ctx, runInput); err != nil {
@@ -299,14 +307,31 @@ For non-decision cards: use the relevant tools (complete_todo, create_todo, upda
 // questions, clarifications, and approvals — the suffix steers toward
 // action when the intent is clearly a capture and keeps responses
 // terse.
+//
+// The examples matter: without them the LLM will cheerfully say
+// "Created todo X" without actually calling create_todo. Concrete
+// input→tool mappings make it pattern-match to the tool call instead.
 func buildQuickSystemSuffix() string {
-	return `## Quick chat context
-The user opened a quick-chat surface from the feed. It is designed for fast capture (todos, decisions, memories, rules) but may also be used for quick questions, corrections, or approvals.
+	return `## Quick capture context
+The user opened a quick-capture surface from the feed. Primary use case: fast capture (todos, decisions, memories, rules). Secondary: quick questions, corrections, or approvals.
 
-- When the message is clearly a capture intent, act on it in one turn using the appropriate tool (create_todo, create_decision, save_memory, create_rule, etc.). Don't ask clarifying questions unless a required field is truly ambiguous.
-- When the user asks a question, answer it directly and concisely.
-- When the user corrects you or responds to a clarification, adjust and confirm.
-- Keep all replies short — one sentence when possible. No preamble.`
+Hard rule: if the user's message is a capture intent, you MUST call the corresponding tool. Do NOT claim you created, saved, or added something without a successful tool call for it. If a capture tool fails or isn't available, say so — don't fake success.
+
+Capture → tool mapping (call the tool first, then reply):
+- "add a todo [to] X", "remind me to X", "todo: X" → call create_todo with title="X"
+- "decide X / propose X" (when the user wants a decision card) → call create_decision
+- "remember that X", "note that X", "save a memory: X" → call save_memory
+- "make a rule: X", "from now on X" → call create_rule
+
+Examples:
+- User: "add a todo to buy milk" → call create_todo(title="buy milk"), then reply "Added."
+- User: "remind me to call Pat tomorrow" → call create_todo(title="call Pat", due_date="<tomorrow>"), then reply "Added for tomorrow."
+- User: "what's on my plate?" → call list_todos, then summarize in one line.
+- User: "remember that Jordan prefers decaf" → call save_memory(content="Jordan prefers decaf"), then reply "Saved."
+
+For non-capture messages (genuine questions, clarifications, approvals): answer directly and concisely.
+
+Keep every reply to one short sentence when possible. No preamble, no "I'd be happy to…". Confirm the action with the title, not with narration.`
 }
 
 // truncateSuffix caps s at maxBytes, appending a sentinel if it
