@@ -494,7 +494,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
           className="swipe-hint left"
           style={{ opacity: leftOpacity, scale: leftScale }}
         >
-          {leftAction.emoji}
+          {leftAction.emoji} {leftAction.label}
         </motion.div>
       )}
     </motion.article>

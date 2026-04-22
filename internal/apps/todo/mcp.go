@@ -42,6 +42,8 @@ func todoMCPHandler(name string, svc *TodoService) mcpserver.ToolHandlerFunc {
 		return mcpAddTodoComment(svc)
 	case "complete_todo":
 		return mcpCompleteTodo(svc)
+	case "snooze_todo":
+		return mcpSnoozeTodo(svc)
 	default:
 		return nil
 	}
@@ -264,5 +266,41 @@ func mcpCompleteTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText("Completed: " + t.Title), nil
+	})
+}
+
+func mcpSnoozeTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		idStr, _ := req.RequireString("todo_id")
+		todoID, err := uuid.Parse(idStr)
+		if err != nil {
+			return mcp.NewToolResultError("Invalid todo_id UUID."), nil
+		}
+
+		args := req.GetArguments()
+		var days int
+		switch v := args["days"].(type) {
+		case float64:
+			days = int(v)
+		case int:
+			days = v
+		}
+		until, err := SnoozeDaysToUntil(days)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		t, err := svc.Snooze(ctx, caller, todoID, until)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				return mcp.NewToolResultError("Todo not found."), nil
+			}
+			if errors.Is(err, services.ErrForbidden) {
+				return mcp.NewToolResultError("Permission denied."), nil
+			}
+			return nil, err
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Snoozed %q for %d day(s). Visible again after %s.", t.Title, days, until.Format("2006-01-02 15:04"))), nil
 	})
 }

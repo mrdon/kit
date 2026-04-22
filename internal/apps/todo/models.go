@@ -24,6 +24,7 @@ type Todo struct {
 	ScopeID       uuid.UUID  `json:"scope_id"`
 	Visibility    string     `json:"visibility"` // "scoped" or "public"
 	DueDate       *time.Time `json:"due_date,omitempty"`
+	SnoozedUntil  *time.Time `json:"snoozed_until,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ClosedAt      *time.Time `json:"closed_at,omitempty"`
@@ -64,21 +65,23 @@ type TodoUpdates struct {
 	Visibility    *string
 	DueDate       *time.Time
 	ClearDueDate  bool
+	SnoozedUntil  *time.Time
+	ClearSnooze   bool
 }
 
 // todoColumns is the SELECT list for app_todos, always aliased as t. in the
 // query — the alias is required because list queries JOIN scopes which has
 // its own id/tenant_id columns.
-const todoColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.visibility, t.due_date, t.created_at, t.updated_at, t.closed_at`
+const todoColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.created_at, t.updated_at, t.closed_at`
 
 func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	var t Todo
 	var description, blockedReason *string
-	var dueDate *time.Time
+	var dueDate, snoozedUntil *time.Time
 	err := row.Scan(
 		&t.ID, &t.TenantID, &t.Title, &description,
 		&t.Status, &t.Priority, &blockedReason,
-		&t.ScopeID, &t.Visibility, &dueDate,
+		&t.ScopeID, &t.Visibility, &dueDate, &snoozedUntil,
 		&t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
 	)
 	if err != nil {
@@ -91,6 +94,7 @@ func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 		t.BlockedReason = *blockedReason
 	}
 	t.DueDate = dueDate
+	t.SnoozedUntil = snoozedUntil
 	return &t, nil
 }
 
@@ -186,7 +190,7 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 	}
 
 	if f.Overdue {
-		b.WriteString(` AND t.due_date < CURRENT_DATE AND t.status != 'done'`)
+		b.WriteString(` AND t.due_date < CURRENT_DATE AND t.status NOT IN ('done','cancelled')`)
 	}
 
 	if f.ClosedSince != nil {
@@ -239,7 +243,7 @@ func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.U
 		argN++
 		sets = append(sets, fmt.Sprintf("status = $%d", argN))
 		args = append(args, *u.Status)
-		if *u.Status == "done" {
+		if *u.Status == "done" || *u.Status == "cancelled" {
 			sets = append(sets, "closed_at = now()")
 		} else {
 			sets = append(sets, "closed_at = NULL")
@@ -274,6 +278,14 @@ func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.U
 	}
 	if u.ClearDueDate {
 		sets = append(sets, "due_date = NULL")
+	}
+	if u.SnoozedUntil != nil {
+		argN++
+		sets = append(sets, fmt.Sprintf("snoozed_until = $%d", argN))
+		args = append(args, *u.SnoozedUntil)
+	}
+	if u.ClearSnooze {
+		sets = append(sets, "snoozed_until = NULL")
 	}
 
 	if len(sets) == 0 {

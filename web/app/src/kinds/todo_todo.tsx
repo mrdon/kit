@@ -23,7 +23,7 @@ function Face({ item }: { item: StackItem }) {
           )}
         </div>
       )}
-      <div className="hint">Swipe right to complete</div>
+      <div className="hint">Swipe right ✅ · left 😴 (1d) · tap for more</div>
     </div>
   );
 }
@@ -56,6 +56,25 @@ function Detail({
       <div className="acks">
         <button disabled={busy} onClick={() => onAction('complete')}>
           ✅ Complete
+        </button>
+        <button disabled={busy} onClick={() => onAction('snooze', { days: 1 })}>
+          😴 1 day
+        </button>
+        <button disabled={busy} onClick={() => onAction('snooze', { days: 3 })}>
+          😴 3 days
+        </button>
+        <button disabled={busy} onClick={() => onAction('snooze', { days: 7 })}>
+          😴 1 week
+        </button>
+      </div>
+      <div className="acks" style={{ marginTop: '1rem' }}>
+        <button
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm('Delete this todo?')) onAction('delete');
+          }}
+        >
+          🗑️ Delete
         </button>
       </div>
       {events.length > 0 && (

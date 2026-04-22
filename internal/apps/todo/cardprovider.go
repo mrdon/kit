@@ -111,7 +111,7 @@ func enrichOne(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, t *T
 	return st, nil
 }
 
-func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, _ json.RawMessage) (*shared.ActionResult, error) {
+func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, params json.RawMessage) (*shared.ActionResult, error) {
 	if kind != "todo" {
 		return nil, services.ErrNotFound
 	}
@@ -131,6 +131,28 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 		}
 		_ = t
 		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+	case "snooze":
+		var body struct {
+			Days int `json:"days"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &body); err != nil {
+				return nil, fmt.Errorf("invalid snooze params: %w", err)
+			}
+		}
+		until, err := SnoozeDaysToUntil(body.Days)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.app.svc.Snooze(ctx, caller, todoID, until); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+	case "delete":
+		if _, err := p.app.svc.Cancel(ctx, caller, todoID); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
 	}
 	return nil, fmt.Errorf("unknown todo action %q", actionID)
 }
@@ -143,13 +165,15 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	args := []any{c.TenantID}
 
 	b.WriteString(`SELECT t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason,
-		t.scope_id, t.visibility, t.due_date, t.created_at, t.updated_at, t.closed_at,
+		t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.created_at, t.updated_at, t.closed_at,
 		s.user_id, u.display_name, r.name
 		FROM app_todos t
 		JOIN scopes s ON s.id = t.scope_id
 		LEFT JOIN users u ON u.id = s.user_id
 		LEFT JOIN roles r ON r.id = s.role_id
-		WHERE t.tenant_id = $1 AND t.status != 'done'`)
+		WHERE t.tenant_id = $1
+		  AND t.status NOT IN ('done','cancelled')
+		  AND (t.snoozed_until IS NULL OR t.snoozed_until <= now())`)
 
 	if !c.IsAdmin {
 		// Personal surface: caller is the assignee or holds the role.
@@ -188,11 +212,11 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	for rows.Next() {
 		var st stackTodo
 		var description, blockedReason, assigneeName, roleName *string
-		var dueDate *time.Time
+		var dueDate, snoozedUntil *time.Time
 		if err := rows.Scan(
 			&st.ID, &st.TenantID, &st.Title, &description,
 			&st.Status, &st.Priority, &blockedReason,
-			&st.ScopeID, &st.Visibility, &dueDate,
+			&st.ScopeID, &st.Visibility, &dueDate, &snoozedUntil,
 			&st.CreatedAt, &st.UpdatedAt, &st.ClosedAt,
 			&st.AssigneeID, &assigneeName, &roleName,
 		); err != nil {
@@ -205,6 +229,7 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 			st.BlockedReason = *blockedReason
 		}
 		st.DueDate = dueDate
+		st.SnoozedUntil = snoozedUntil
 		if assigneeName != nil {
 			st.AssigneeName = *assigneeName
 		}
@@ -230,6 +255,7 @@ func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 		CreatedAt:    t.CreatedAt,
 		Actions: []shared.StackAction{
 			{ID: "complete", Direction: "right", Label: "Complete", Emoji: "✅"},
+			{ID: "snooze", Direction: "left", Label: "Snooze 1 day", Emoji: "😴", Params: json.RawMessage(`{"days":1}`)},
 		},
 	}
 	if badge, ok := dueBadge(t.DueDate); ok {

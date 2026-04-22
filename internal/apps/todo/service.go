@@ -64,6 +64,8 @@ type UpdateInput struct {
 	BlockedReason *string
 	DueDate       *time.Time
 	ClearDueDate  bool
+	SnoozedUntil  *time.Time
+	ClearSnooze   bool
 
 	NewAssignee *uuid.UUID // re-scope to this user
 	NewRoleName *string    // re-scope to this role; "" or ClearRoleScope to fall back to caller
@@ -233,6 +235,8 @@ func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uui
 		Visibility:    u.Visibility,
 		DueDate:       u.DueDate,
 		ClearDueDate:  u.ClearDueDate,
+		SnoozedUntil:  u.SnoozedUntil,
+		ClearSnooze:   u.ClearSnooze,
 	}
 
 	if u.Status != nil && *u.Status != t.Status {
@@ -260,6 +264,51 @@ func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uui
 func (s *TodoService) Complete(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, error) {
 	done := "done"
 	return s.Update(ctx, c, todoID, UpdateInput{Status: &done})
+}
+
+// Cancel is a shortcut to soft-delete a todo via the 'cancelled' status. The
+// row stays in the DB so an admin can recover it with an UPDATE; it just
+// drops off the swipe feed.
+func (s *TodoService) Cancel(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, error) {
+	cancelled := "cancelled"
+	return s.Update(ctx, c, todoID, UpdateInput{Status: &cancelled})
+}
+
+// SnoozeDaysToUntil validates a snooze duration (must be 1, 3, or 7) and
+// returns the absolute snoozed_until timestamp. Shared by the card action
+// handler, agent tool, and MCP tool so the allowed values and time
+// calculation live in one place.
+func SnoozeDaysToUntil(days int) (time.Time, error) {
+	if days != 1 && days != 3 && days != 7 {
+		return time.Time{}, fmt.Errorf("snooze days must be 1, 3, or 7 (got %d)", days)
+	}
+	return time.Now().Add(time.Duration(days) * 24 * time.Hour), nil
+}
+
+// Snooze hides the todo from the caller's swipe feed until `until`. Re-snooze
+// overwrites the timestamp. A comment event records the action for the audit
+// log — we reuse the existing comment type rather than a new event_type so
+// the CHECK constraint stays narrow.
+func (s *TodoService) Snooze(ctx context.Context, c *services.Caller, todoID uuid.UUID, until time.Time) (*Todo, error) {
+	t, err := getTodo(ctx, s.pool, c.TenantID, todoID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, services.ErrNotFound
+		}
+		return nil, err
+	}
+	if !s.canRead(ctx, c, t) {
+		return nil, services.ErrNotFound
+	}
+	if !s.canWrite(ctx, c, t) {
+		return nil, services.ErrForbidden
+	}
+	if err := updateTodo(ctx, s.pool, c.TenantID, todoID, TodoUpdates{SnoozedUntil: &until}); err != nil {
+		return nil, err
+	}
+	_ = appendEvent(ctx, s.pool, c.TenantID, todoID, &c.UserID, "comment",
+		"Snoozed until "+until.Format(time.RFC3339), "", "")
+	return getTodo(ctx, s.pool, c.TenantID, todoID)
 }
 
 // AddComment appends a comment to the activity log.
@@ -318,6 +367,8 @@ func FormatTodo(t *Todo) string {
 		status = "Blocked"
 	case "done":
 		status = "Done"
+	case "cancelled":
+		status = "Cancelled"
 	default:
 		status = t.Status
 	}

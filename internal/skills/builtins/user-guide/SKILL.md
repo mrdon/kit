@@ -89,7 +89,7 @@ Kit tracks todos for your team. Create them from conversation or explicitly:
 > "Create a todo to restock the paper towels, assign it to me."
 > "What todos are overdue?"
 
-Todos support priorities, due dates, role scoping, and an activity log. Use `list_todos` to see open items or `complete_todo` to mark one done.
+Todos support priorities, due dates, role scoping, and an activity log. Use `list_todos` to see open items or `complete_todo` to mark one done. Use `snooze_todo` (with `days` = 1, 3, or 7) to hide a todo from your swipe feed temporarily while keeping it active. To delete, set `status` to `cancelled` via `update_todo` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
 
 ## Slack Channel Search
 

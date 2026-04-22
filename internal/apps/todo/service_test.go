@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -304,4 +305,213 @@ func containsTodo(todos []Todo, id uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+func containsStackTodo(todos []stackTodo, id uuid.UUID) bool {
+	for _, t := range todos {
+		if t.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSnoozeHidesFromFeed: snooze hides a todo from the swipe feed but keeps
+// it visible via List. Expired snoozes reappear in the feed.
+func TestSnoozeHidesFromFeed(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.alice)
+
+	td, err := f.svc.Create(ctx, caller, CreateInput{Title: "snoozable"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Pre-check: visible in both surfaces.
+	stack, err := listStackTodos(ctx, f.pool, caller, 50)
+	if err != nil {
+		t.Fatalf("pre-snooze stack: %v", err)
+	}
+	if !containsStackTodo(stack, td.ID) {
+		t.Fatalf("expected todo in swipe feed before snooze")
+	}
+
+	// Snooze 1 day.
+	until := time.Now().Add(24 * time.Hour)
+	if _, err := f.svc.Snooze(ctx, caller, td.ID, until); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+
+	// Gone from swipe feed.
+	stack, err = listStackTodos(ctx, f.pool, caller, 50)
+	if err != nil {
+		t.Fatalf("post-snooze stack: %v", err)
+	}
+	if containsStackTodo(stack, td.ID) {
+		t.Fatalf("snoozed todo should be hidden from swipe feed")
+	}
+
+	// Still returned by List (snooze is a feed-visibility hint, not a status).
+	listed, err := f.svc.List(ctx, caller, TodoFilters{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !containsTodo(listed, td.ID) {
+		t.Fatalf("snoozed todo should still appear in list_todos")
+	}
+
+	// Simulate snooze expiry.
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE app_todos SET snoozed_until = now() - interval '1 minute' WHERE id = $1`,
+		td.ID,
+	); err != nil {
+		t.Fatalf("expire snooze: %v", err)
+	}
+	stack, err = listStackTodos(ctx, f.pool, caller, 50)
+	if err != nil {
+		t.Fatalf("expired stack: %v", err)
+	}
+	if !containsStackTodo(stack, td.ID) {
+		t.Fatalf("expired-snooze todo should reappear in swipe feed")
+	}
+}
+
+// TestSnoozeOverwrites: re-snoozing overwrites the existing snoozed_until
+// rather than stacking or failing.
+func TestSnoozeOverwrites(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.alice)
+
+	td, err := f.svc.Create(ctx, caller, CreateInput{Title: "re-snooze"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	first := time.Now().Add(24 * time.Hour)
+	if _, err := f.svc.Snooze(ctx, caller, td.ID, first); err != nil {
+		t.Fatalf("first snooze: %v", err)
+	}
+
+	second := time.Now().Add(7 * 24 * time.Hour)
+	got, err := f.svc.Snooze(ctx, caller, td.ID, second)
+	if err != nil {
+		t.Fatalf("second snooze: %v", err)
+	}
+	if got.SnoozedUntil == nil {
+		t.Fatalf("expected snoozed_until to be set")
+	}
+	// Within a small tolerance, snoozed_until should match the second call.
+	if delta := got.SnoozedUntil.Sub(second); delta < -time.Second || delta > time.Second {
+		t.Fatalf("snoozed_until = %v, want ~%v (delta %v)", *got.SnoozedUntil, second, delta)
+	}
+}
+
+// TestSnoozeForbidden: non-scope caller cannot snooze someone else's private
+// todo — they can't even see it, so ErrNotFound is returned to avoid leaking
+// the todo's existence.
+func TestSnoozeForbidden(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	td, err := f.svc.Create(ctx, f.caller(t, f.alice), CreateInput{Title: "alice private"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	until := time.Now().Add(24 * time.Hour)
+	_, err = f.svc.Snooze(ctx, f.caller(t, f.bob), td.ID, until)
+	if !errors.Is(err, services.ErrNotFound) {
+		t.Fatalf("bob.Snooze on alice's private todo: want ErrNotFound, got %v", err)
+	}
+}
+
+// TestCancelHidesFromFeed: Cancel sets status='cancelled' and drops the
+// todo off the swipe feed while keeping it in the DB for recovery.
+func TestCancelHidesFromFeed(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.alice)
+
+	td, err := f.svc.Create(ctx, caller, CreateInput{Title: "to cancel"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := f.svc.Cancel(ctx, caller, td.ID)
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if got.Status != "cancelled" {
+		t.Fatalf("status = %q, want cancelled", got.Status)
+	}
+	if got.ClosedAt == nil {
+		t.Fatalf("cancel should populate closed_at")
+	}
+
+	// Gone from swipe feed.
+	stack, err := listStackTodos(ctx, f.pool, caller, 50)
+	if err != nil {
+		t.Fatalf("stack: %v", err)
+	}
+	if containsStackTodo(stack, td.ID) {
+		t.Fatalf("cancelled todo should be hidden from swipe feed")
+	}
+
+	// Still in List (cancelled is a soft delete).
+	listed, err := f.svc.List(ctx, caller, TodoFilters{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !containsTodo(listed, td.ID) {
+		t.Fatalf("cancelled todo should still appear in list_todos")
+	}
+
+	// Row still in DB — admin recovery is a direct UPDATE.
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE app_todos SET status='open', closed_at=NULL WHERE id = $1`,
+		td.ID,
+	); err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+	stack, err = listStackTodos(ctx, f.pool, caller, 50)
+	if err != nil {
+		t.Fatalf("recovered stack: %v", err)
+	}
+	if !containsStackTodo(stack, td.ID) {
+		t.Fatalf("recovered todo should reappear in swipe feed")
+	}
+}
+
+// TestCancelForbidden: non-scope caller cannot cancel someone else's private
+// todo — returns ErrNotFound to avoid leaking existence.
+func TestCancelForbidden(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	td, err := f.svc.Create(ctx, f.caller(t, f.alice), CreateInput{Title: "alice private"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	_, err = f.svc.Cancel(ctx, f.caller(t, f.bob), td.ID)
+	if !errors.Is(err, services.ErrNotFound) {
+		t.Fatalf("bob.Cancel on alice's private todo: want ErrNotFound, got %v", err)
+	}
+}
+
+// TestSnoozeDaysToUntilValidation: the shared validation helper rejects any
+// value outside {1,3,7}.
+func TestSnoozeDaysToUntilValidation(t *testing.T) {
+	for _, days := range []int{0, 2, 5, 8, -1, 100} {
+		if _, err := SnoozeDaysToUntil(days); err == nil {
+			t.Errorf("SnoozeDaysToUntil(%d) = nil err, want error", days)
+		}
+	}
+	for _, days := range []int{1, 3, 7} {
+		if _, err := SnoozeDaysToUntil(days); err != nil {
+			t.Errorf("SnoozeDaysToUntil(%d) = %v, want nil", days, err)
+		}
+	}
 }

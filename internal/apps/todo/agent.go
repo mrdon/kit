@@ -42,6 +42,8 @@ func todoAgentHandler(name string, svc *TodoService) tools.HandlerFunc {
 		return handleAddTodoComment(svc)
 	case "complete_todo":
 		return handleCompleteTodo(svc)
+	case "snooze_todo":
+		return handleSnoozeTodo(svc)
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown todo tool: %s", name)
@@ -321,5 +323,40 @@ func handleCompleteTodo(svc *TodoService) tools.HandlerFunc {
 		}
 
 		return "Completed: " + t.Title, nil
+	}
+}
+
+func handleSnoozeTodo(svc *TodoService) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
+		var inp struct {
+			TodoID string `json:"todo_id"`
+			Days   int    `json:"days"`
+		}
+		if err := json.Unmarshal(input, &inp); err != nil {
+			return "", fmt.Errorf("parsing input: %w", err)
+		}
+
+		todoID, err := uuid.Parse(inp.TodoID)
+		if err != nil {
+			return "Invalid todo_id UUID.", nil
+		}
+		until, err := SnoozeDaysToUntil(inp.Days)
+		if err != nil {
+			return err.Error(), nil
+		}
+
+		caller := ec.Caller()
+		t, err := svc.Snooze(ec.Ctx, caller, todoID, until)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				return "Todo not found.", nil
+			}
+			if errors.Is(err, services.ErrForbidden) {
+				return "You don't have permission to snooze this todo.", nil
+			}
+			return "", fmt.Errorf("snoozing todo: %w", err)
+		}
+
+		return fmt.Sprintf("Snoozed %q for %d day(s). Visible again after %s.", t.Title, inp.Days, until.Format("2006-01-02 15:04")), nil
 	}
 }

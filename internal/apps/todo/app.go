@@ -73,14 +73,14 @@ var todoTools = []services.ToolMeta{
 	},
 	{
 		Name:        "list_todos",
-		Description: "List todos with optional filters. Returns todos visible to you.",
+		Description: "List todos with optional filters. Returns todos visible to you. Includes cancelled todos (soft-deleted) — filter by status if you want to exclude them.",
 		Schema: services.Props(map[string]any{
-			"status":         services.Field("string", "Filter by status: open, in_progress, blocked, done"),
+			"status":         services.Field("string", "Filter by status: open, in_progress, blocked, done, cancelled"),
 			"priority":       services.Field("string", "Filter by priority: low, medium, high, urgent"),
 			"assigned_to_me": map[string]any{"type": "boolean", "description": "Only show todos assigned to me"},
 			"role_scope":     services.Field("string", "Filter by role scope"),
 			"search":         services.Field("string", "Full-text search on title and description"),
-			"overdue":        map[string]any{"type": "boolean", "description": "Only show overdue todos (past due date, not done)"},
+			"overdue":        map[string]any{"type": "boolean", "description": "Only show overdue todos (past due date, not done or cancelled)"},
 			"closed_since":   services.Field("string", "Show todos closed since this date (YYYY-MM-DD)"),
 		}),
 	},
@@ -93,12 +93,12 @@ var todoTools = []services.ToolMeta{
 	},
 	{
 		Name:        "update_todo",
-		Description: "Update a todo. Setting status to 'blocked' requires blocked_reason. Setting status to 'done' records closed_at.",
+		Description: "Update a todo. Setting status to 'blocked' requires blocked_reason. Setting status to 'done' or 'cancelled' records closed_at. Use 'cancelled' as a soft delete (recoverable via DB update).",
 		Schema: services.PropsReq(map[string]any{
 			"todo_id":        services.Field("string", "The todo UUID"),
 			"title":          services.Field("string", "New title"),
 			"description":    services.Field("string", "New description"),
-			"status":         services.Field("string", "New status: open, in_progress, blocked, done"),
+			"status":         services.Field("string", "New status: open, in_progress, blocked, done, cancelled"),
 			"priority":       services.Field("string", "New priority: low, medium, high, urgent"),
 			"blocked_reason": services.Field("string", "Reason for blocking (required when status=blocked)"),
 			"assigned_to":    services.Field("string", "User to re-scope to. Mutually exclusive with role_scope."),
@@ -106,6 +106,14 @@ var todoTools = []services.ToolMeta{
 			"due_date":       services.Field("string", "Due date in YYYY-MM-DD format"),
 			"visibility":     services.Field("string", "'scoped' or 'public'."),
 		}, "todo_id"),
+	},
+	{
+		Name:        "snooze_todo",
+		Description: "Hide a todo from the swipe feed for 1, 3, or 7 days. The todo stays active and still appears in list_todos; it just drops out of the feed until the snooze expires.",
+		Schema: services.PropsReq(map[string]any{
+			"todo_id": services.Field("string", "The todo UUID"),
+			"days":    map[string]any{"type": "integer", "description": "Snooze duration in days. Must be 1, 3, or 7."},
+		}, "todo_id", "days"),
 	},
 	{
 		Name:        "add_todo_comment",
