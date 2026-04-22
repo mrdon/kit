@@ -60,9 +60,17 @@ export default function ChatSheetBody({
     setDismissing(false);
   };
 
-  const onStreamDone = ({ actionTaken }: { actionTaken: boolean }) => {
+  const onStreamDone = ({
+    actionTaken,
+    askedQuestion,
+  }: {
+    actionTaken: boolean;
+    askedQuestion: boolean;
+  }) => {
     onTurnDone?.();
-    if (autoDismissOnAction && actionTaken) {
+    // Stay open when the agent's final response is a question — even
+    // if a tool fired. Otherwise the user can't see or answer it.
+    if (autoDismissOnAction && actionTaken && !askedQuestion) {
       setDismissing(true);
       dismissTimerRef.current = window.setTimeout(() => {
         dismissTimerRef.current = null;

@@ -43,8 +43,11 @@ export type ChatStreamOptions = {
   // session on (user, clientSessionID) when the card is absent.
   clientSessionID?: string;
   // Fired on each successful turn done event (for refreshing the stack
-  // or running auto-dismiss logic in the parent sheet).
-  onDone?: (info: { actionTaken: boolean }) => void;
+  // or running auto-dismiss logic in the parent sheet). askedQuestion
+  // is true when the final response text ends with a question mark —
+  // a belt-and-braces signal that the agent expects the user to reply,
+  // so quick-chat shouldn't auto-dismiss even if a tool fired.
+  onDone?: (info: { actionTaken: boolean; askedQuestion: boolean }) => void;
 };
 
 // Terminal tools — firing one of these is just the agent's response,
@@ -76,6 +79,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
       abortRef.current = ctrl;
       setBusy(true);
       let actionTaken = false;
+      let lastResponse = '';
       try {
         const resp = await api.chatExecute(
           executeUrl,
@@ -116,13 +120,18 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
             }
             case ChatEvent.Response: {
               const d = parseEventData(frame.data) as { text?: string };
-              if (typeof d.text === 'string') updateTurn(turnKey, { response: d.text });
+              if (typeof d.text === 'string') {
+                lastResponse = d.text;
+                updateTurn(turnKey, { response: d.text });
+              }
               break;
             }
-            case ChatEvent.Done:
+            case ChatEvent.Done: {
               updateTurn(turnKey, { inFlight: false, status: 'done' });
-              onDone?.({ actionTaken });
+              const askedQuestion = /\?\s*$/.test(lastResponse);
+              onDone?.({ actionTaken, askedQuestion });
               break;
+            }
             case ChatEvent.Error: {
               const d = parseEventData(frame.data) as { message?: string };
               updateTurn(turnKey, {
