@@ -26,7 +26,33 @@ const (
 	EventTypeError            SessionEventType = "error"
 	EventTypeSessionComplete  SessionEventType = "session_complete"
 	EventTypeDecisionResolved SessionEventType = "decision_resolved"
+	EventTypePolicyEnforced   SessionEventType = "policy_enforced"
 )
+
+// PolicyEnforcedAction names the specific policy intervention recorded
+// in a PolicyEnforced session event. Written into the event's data
+// payload so list_sessions / get_session_events can explain why a
+// task behaved unexpectedly.
+type PolicyEnforcedAction string
+
+const (
+	PolicyActionAllowListReject   PolicyEnforcedAction = "allow_list_reject"
+	PolicyActionForceGateApplied  PolicyEnforcedAction = "force_gate_applied"
+	PolicyActionPinnedArgOverride PolicyEnforcedAction = "pinned_arg_override"
+)
+
+// PolicyEnforcedData is the payload shape for EventTypePolicyEnforced.
+// OldValue/NewValue are populated for pinned_arg_override (the agent's
+// original value and the pinned replacement); empty for the other
+// actions.
+type PolicyEnforcedData struct {
+	Action   PolicyEnforcedAction `json:"action"`
+	ToolName string               `json:"tool_name"`
+	ArgKey   string               `json:"arg_key,omitempty"`
+	OldValue any                  `json:"old_value,omitempty"`
+	NewValue any                  `json:"new_value,omitempty"`
+	Reason   string               `json:"reason,omitempty"`
+}
 
 type SessionEvent struct {
 	ID        uuid.UUID

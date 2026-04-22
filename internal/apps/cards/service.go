@@ -643,6 +643,23 @@ func (s *CardService) runResolveTool(
 		return nil, fmt.Errorf("tool executor not configured; cannot run %q", opt.ToolName)
 	}
 
+	// Resume-path policy re-check. If the card's origin task has a
+	// policy whose allowed_tools list no longer includes this tool
+	// (edited between card creation and approval), refuse the resolve
+	// with a clear error rather than silently running. Pinned args are
+	// frozen at card-create — opt.ToolArguments already reflects the
+	// pinned values the user approved on the card face.
+	if locked.Decision != nil && locked.Decision.OriginTaskID != nil {
+		task, err := models.GetTask(ctx, s.pool, c.TenantID, *locked.Decision.OriginTaskID)
+		if err == nil && task != nil {
+			if policy, perr := models.ParseConfigPolicy(task.Config); perr == nil && !policy.IsAllowed(opt.ToolName) {
+				msg := fmt.Sprintf("task policy no longer permits %q", opt.ToolName)
+				s.abortResolving(ctx, c.TenantID, cardID, msg)
+				return nil, errors.New(msg)
+			}
+		}
+	}
+
 	output, halted, err := s.toolExec(ctx, c, cardID, resolveToken, opt.ToolName, opt.ToolArguments)
 	if err != nil {
 		s.abortResolving(ctx, c.TenantID, cardID, err.Error())

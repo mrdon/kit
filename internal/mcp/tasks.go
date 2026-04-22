@@ -37,8 +37,21 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 				return mcp.NewToolResultError("cron_expr is required for MCP task creation."), nil
 			}
 
+			policy, perr := policyFromMCP(req)
+			if perr != "" {
+				return mcp.NewToolResultError(perr), nil
+			}
+
 			model := tools.ClassifyTaskModel(ctx, llm, desc)
-			task, err := svc.Tasks.Create(ctx, caller, desc, cronExpr, caller.Timezone, channelID, scope, model, false, nil)
+			task, err := svc.Tasks.Create(ctx, caller, services.CreateInput{
+				Description: desc,
+				CronExpr:    cronExpr,
+				Timezone:    caller.Timezone,
+				ChannelID:   channelID,
+				Scope:       scope,
+				Model:       model,
+				Policy:      policy,
+			})
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
 			}
@@ -90,10 +103,21 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 				return mcp.NewToolResultText("Task deleted."), nil
 			}
 			desc := req.GetString("description", "")
-			if desc == "" {
-				return mcp.NewToolResultError("Provide description to update, or delete=true to remove."), nil
+			policy, perr := policyFromMCP(req)
+			if perr != "" {
+				return mcp.NewToolResultError(perr), nil
 			}
-			err = svc.Tasks.Update(ctx, caller, taskID, desc)
+			update := services.UpdateInput{}
+			if desc != "" {
+				update.Description = &desc
+			}
+			if policy != nil {
+				update.Policy = policy
+			}
+			if update.Description == nil && update.Policy == nil {
+				return mcp.NewToolResultError("Provide description, policy, or delete=true."), nil
+			}
+			err = svc.Tasks.Update(ctx, caller, taskID, update)
 			if errors.Is(err, services.ErrNotFound) {
 				return mcp.NewToolResultError("Task not found."), nil
 			}
@@ -228,4 +252,28 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 	})
 
 	return mcpserver.ServerTool{Tool: tool, Handler: handler}
+}
+
+// policyFromMCP extracts and parses the optional "policy" argument from
+// an MCP create_task / update_task request. Returns (nil, "") when no
+// policy was supplied. Returns (nil, userMessage) on validation failure
+// (syntactic only — tool-name validation is deferred to fire time at
+// the MCP surface since this code path doesn't have a per-caller
+// tools.Registry handy).
+func policyFromMCP(req mcp.CallToolRequest) (*models.Policy, string) {
+	raw, ok := req.GetArguments()["policy"]
+	if !ok || raw == nil {
+		return nil, ""
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, "Invalid policy: " + err.Error()
+	}
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.DisallowUnknownFields()
+	var p models.Policy
+	if err := dec.Decode(&p); err != nil {
+		return nil, "Invalid policy: " + err.Error()
+	}
+	return &p, ""
 }

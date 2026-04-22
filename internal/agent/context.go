@@ -19,6 +19,12 @@ type TaskContext struct {
 	Description   string
 	AuthorSlackID string
 	AuthorName    string
+
+	// Policy, when non-nil, is the task's capability manifest. The agent
+	// copies it onto the ExecContext at build time so the registry
+	// enforces allow-list / force-gate / pinned_args on every tool call
+	// in this run. Nil means "no restrictions" — today's behaviour.
+	Policy *models.Policy
 }
 
 // BuildSystemPrompt assembles the system prompt from platform rules, tenant info,

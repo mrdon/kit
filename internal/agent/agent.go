@@ -232,6 +232,9 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 		taskID := in.Task.ID
 		ec.TaskID = &taskID
 	}
+	if in.Task != nil && in.Task.Policy != nil {
+		ec.TaskPolicy = in.Task.Policy
+	}
 	return ec
 }
 
@@ -537,7 +540,8 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 			models.EventTypeLLMRequest,
 			models.EventTypeLLMResponse,
 			models.EventTypeError,
-			models.EventTypeSessionComplete:
+			models.EventTypeSessionComplete,
+			models.EventTypePolicyEnforced:
 			// Diagnostic / telemetry events — not part of the conversation.
 		}
 	}

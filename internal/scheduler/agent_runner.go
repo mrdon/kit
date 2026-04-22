@@ -90,11 +90,18 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, task models.Task) {
 	if user.DisplayName != nil && *user.DisplayName != "" {
 		authorName = *user.DisplayName
 	}
+	policy, err := models.ParseConfigPolicy(task.Config)
+	if err != nil {
+		slog.Error("parsing task policy", "task_id", task.ID, "error", err)
+		s.recordAgentTaskError(ctx, task, "parsing task policy", slack, user)
+		return
+	}
 	tc := &agent.TaskContext{
 		ID:            task.ID,
 		Description:   task.Description,
 		AuthorSlackID: user.SlackUserID,
 		AuthorName:    authorName,
+		Policy:        policy,
 	}
 
 	// On resume the full context is in session history (original prompt,

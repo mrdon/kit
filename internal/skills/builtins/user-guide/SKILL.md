@@ -47,6 +47,8 @@ Tasks let Kit do things on a schedule — daily summaries, weekly reminders, rec
 
 **Via MCP**, use `create_task` with a description and schedule.
 
+For non-trivial tasks — especially those posting to public channels, pinning a specific argument, or needing forced approval gates before the agent can act — consult the `creating-tasks` skill. It covers cron vs one-time schedules, scope, writing a description the scheduled agent can execute, and designing the optional `policy` block that constrains the agent at fire time.
+
 ## Managing Roles and Access
 
 Kit uses roles to control who sees what. Create roles, assign users, then scope skills, rules, and tasks to those roles.

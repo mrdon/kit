@@ -80,6 +80,16 @@ type ExecContext struct {
 	// user-initiated Slack or chat runs.
 	TaskID *uuid.UUID
 
+	// TaskPolicy, when non-nil, is the capability manifest the scheduler
+	// injected for this task run. The registry consults it inside
+	// ExecuteWithResult to enforce allow-list, argument pinning, and
+	// force-gate independently of what the LLM put in the tool input.
+	// Nil for interactive Slack / chat runs and for tasks without a
+	// policy — enforcement short-circuits and today's behaviour is
+	// unchanged. ExecContext is treated as single-goroutine; callers
+	// must not mutate TaskPolicy mid-run.
+	TaskPolicy *models.Policy
+
 	// Responder is where reply_in_thread sends its output. When nil, the
 	// handler constructs a SlackResponder on demand (default behavior).
 	Responder Responder
@@ -511,10 +521,47 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 		callerRequested, input = services.ReadRequireApproval(input)
 	}
 
-	shouldGate := def.DefaultPolicy == PolicyGate || callerRequested
+	// Task-policy enforcement runs before the gate decision. Allow-list
+	// and pinned-args are no-ops when ec.TaskPolicy is nil (interactive
+	// paths); force_gate is OR'd into shouldGate below.
+	if !ec.TaskPolicy.IsAllowed(name) {
+		recordPolicyEvent(ec, models.PolicyEnforcedData{
+			Action:   models.PolicyActionAllowListReject,
+			ToolName: name,
+			Reason:   "tool not in allowed_tools",
+		})
+		return ExecResult{}, fmt.Errorf("tool %q not permitted by task policy", name)
+	}
+	if pinned := ec.TaskPolicy.PinnedFor(name); len(pinned) > 0 {
+		merged, changed, err := models.MergePinnedArgs(input, pinned)
+		if err != nil {
+			return ExecResult{}, fmt.Errorf("applying pinned args for %q: %w", name, err)
+		}
+		if changed {
+			for k, v := range pinned {
+				recordPolicyEvent(ec, models.PolicyEnforcedData{
+					Action:   models.PolicyActionPinnedArgOverride,
+					ToolName: name,
+					ArgKey:   k,
+					NewValue: v,
+				})
+			}
+		}
+		input = merged
+	}
+
+	forcedGate := ec.TaskPolicy.ForcesGate(name)
+	shouldGate := def.DefaultPolicy == PolicyGate || callerRequested || forcedGate
 	if shouldGate {
 		_, _, approved := approval.FromCtx(ec.Ctx)
 		if !approved {
+			if forcedGate && def.DefaultPolicy != PolicyGate && !callerRequested {
+				recordPolicyEvent(ec, models.PolicyEnforcedData{
+					Action:   models.PolicyActionForceGateApplied,
+					ToolName: name,
+					Reason:   "force_gate on task policy",
+				})
+			}
 			out, err := r.createGateCard(ec, def, input)
 			if err != nil {
 				return ExecResult{}, err
@@ -529,6 +576,18 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 
 	out, err := def.Handler(ec, input)
 	return ExecResult{Output: out}, err
+}
+
+// recordPolicyEvent appends a policy_enforced session event when a run
+// has a session to log against. No-ops in tests and interactive paths
+// that leave Session or Pool unset.
+func recordPolicyEvent(ec *ExecContext, data models.PolicyEnforcedData) {
+	if ec == nil || ec.Pool == nil || ec.Session == nil {
+		return
+	}
+	if err := models.AppendSessionEvent(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, models.EventTypePolicyEnforced, data); err != nil {
+		slog.Warn("failed to record policy_enforced event", "error", err, "tool", data.ToolName, "action", data.Action)
+	}
 }
 
 // defByName looks up a tool's Def. Returns (Def{}, false) if missing.
