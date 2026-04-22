@@ -442,11 +442,20 @@ func (r *Registry) DefinitionsFor(caller *services.Caller) []anthropic.Tool {
 
 // IsDefVisible centralises the visibility rule so registry, MCP, and
 // tests share one predicate. See DefinitionsFor for semantics.
+//
+// IsAdmin is Kit's tenant-scoped superuser flag (Django-style, but
+// bounded to the caller's tenant since every query filters by
+// tenant_id): a tenant admin sees every tool in their own tenant
+// regardless of AdminOnly or VisibleToRoles. Until Kit grows a real
+// permission-to-role system, this bypass keeps admins from being
+// silently locked out of tools their tenant hasn't materialised a role
+// row for.
 func IsDefVisible(d Def, caller *services.Caller) bool {
+	if caller != nil && caller.IsAdmin {
+		return true
+	}
 	if d.AdminOnly {
-		if caller == nil || !caller.IsAdmin {
-			return false
-		}
+		return false
 	}
 	if len(d.VisibleToRoles) > 0 {
 		if caller == nil {

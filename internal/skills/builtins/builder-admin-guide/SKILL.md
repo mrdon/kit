@@ -239,11 +239,13 @@ def admin_edit_thing(thing_id, **fields):
 
 The `app_items_history` trigger captures every UPDATE/DELETE for free, so admin edits are audited without extra code. If an edit goes wrong, `rollback_script_run(run_id=...)` reverses that run's mutations.
 
+**On the admin flag.** `current_user()["is_admin"]` is Kit's tenant-scoped superuser flag (Django-style `is_superuser`, but bounded to the caller's tenant). An admin bypasses every `visible_to_roles` / role-scope filter in their tenant — so `visible_to_roles=["manager"]` means "managers AND admins see it" in practice. Do NOT use the literal string `"admin"` as a role name; it isn't one. Admin-only visibility is expressed by the AdminOnly gate (which for exposed tools is implicit when you combine `visible_to_roles` with an in-script `is_admin` check as above).
+
 ## Field-type conventions
 
 The v0.1 item store is schemaless JSONB. You pick the conventions. Stick to these so tools and admins can read each other's data.
 
-- **Dates and times** → ISO8601 strings. `now()` returns UTC RFC3339Nano; `today()` returns `YYYY-MM-DD` in the caller's timezone. Strings sort lexically — you get `ORDER BY _created_at DESC` almost for free.
+- **Dates and times** → ISO8601 strings. `now()` returns UTC RFC3339Nano; `today()` returns `YYYY-MM-DD` in the caller's timezone. Strings sort lexically — so `ORDER BY _created_at DESC` and range predicates like `{"start_at": {"$gte": "2026-04-20T00:00:00Z", "$lte": "2026-04-26T23:59:59Z"}}` both work directly against RFC3339 strings. ($gte / $lte compare numerically for numbers and lexically for strings.)
 - **Money** → store cents as integer. Never float. `{"amount_cents": 1299}` not `{"amount": 12.99}`. Format at the edge when you render.
 - **Email** → lowercased string. Validate presence of `@` before insert. Lowercase means deduplication via `$in` and `$eq` just works.
 - **Phone** → E.164 (`+15551234567`) or digits-only, but pick one and stick to it. The `format_phone` helper above normalises on the way in.
@@ -372,7 +374,6 @@ Know these before you write code the sandbox will reject.
 - `try/except` around host calls — those errors unwind. Python-raised errors are catchable.
 - Aggregation pipelines — do aggregation in Python using `db_find` results.
 - Filter operators `$or`, `$and`, `$regex`, `$exists`, `$type` — deferred to v0.2. Use multiple separate queries or narrow in Python.
-- **`$gte` / `$lte` / `$gt` / `$lt` on strings** — v0.1 accepts only numeric values for these operators. For date-range queries over RFC3339 strings you must fetch by a cheap equality filter (e.g. `user_id`) and filter in Python. This bites any app with time-bucketed reporting; see the `timecards` example for the pattern.
 - Bulk writes (`insert_many` / `update_many` / `delete_many`) — iterate in Python for v0.1.
 - Positional args to `shared(...)` target functions — pass target kwargs only.
 - Deeper than one level of `tools_call` nesting — an exposed tool cannot itself call `tools_call`.
@@ -400,7 +401,7 @@ Know these before you write code the sandbox will reject.
 | `complete_todo(todo_id, note=)` | Mark done. |
 | `add_todo_comment(todo_id, content)` | Comment on a todo. |
 | `create_decision(title, body, options, priority=, role_scopes=)` | Emit a decision card. |
-| `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of **real role names** that must exist in the tenant — `admin` is a user flag (boolean on users), NOT a default role; `role_scopes=["admin"]` errors with `looking up role "admin": no rows in result set` unless an admin role has been created. For per-user delivery, use `dm_user` instead. |
+| `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of **real role names** that must exist in the tenant — `"admin"` is NOT a role, it's Kit's superuser flag, and passing `role_scopes=["admin"]` errors with `looking up role "admin": no rows in result set`. For tenant-wide visibility leave `role_scopes=[]` (admins see everything anyway via the superuser bypass). For per-user delivery use `dm_user`. |
 | `create_task(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-tasks` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |
 | `add_memory(content, scope_type=, scope_value=)` | Save a memory. |
 | `send_slack_message(channel, text, thread_ts=)` | Post to Slack. |

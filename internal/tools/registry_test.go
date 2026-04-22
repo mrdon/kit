@@ -95,23 +95,33 @@ func TestIsDefVisible_RoleGated(t *testing.T) {
 	}
 }
 
-func TestIsDefVisible_AdminAndRole(t *testing.T) {
-	// AdminOnly + VisibleToRoles is AND, not OR. An admin without the role
-	// is still excluded, and a role-holder without admin is excluded.
+func TestIsDefVisible_AdminSuperuserBypass(t *testing.T) {
+	// IsAdmin is a Django-style superuser flag: admins see everything
+	// regardless of AdminOnly or VisibleToRoles. A non-admin with the
+	// right role still sees role-gated tools.
 	adminNoRole := &services.Caller{IsAdmin: true}
 	roleNoAdmin := &services.Caller{Roles: []string{"bartender"}}
-	both := &services.Caller{IsAdmin: true, Roles: []string{"bartender"}}
+	nobody := &services.Caller{}
 
-	d := Def{Name: "x", AdminOnly: true, VisibleToRoles: []string{"bartender"}}
+	// AdminOnly + VisibleToRoles: admin sees it without needing the role.
+	d1 := Def{Name: "x", AdminOnly: true, VisibleToRoles: []string{"bartender"}}
+	if !IsDefVisible(d1, adminNoRole) {
+		t.Error("admin should see AdminOnly+role tool without the role")
+	}
+	if IsDefVisible(d1, roleNoAdmin) {
+		t.Error("role holder without admin should not see AdminOnly tool")
+	}
 
-	if IsDefVisible(d, adminNoRole) {
-		t.Error("admin without role should not see tool")
+	// Role-only tool: admin sees it regardless of roles.
+	d2 := Def{Name: "y", VisibleToRoles: []string{"bartender"}}
+	if !IsDefVisible(d2, adminNoRole) {
+		t.Error("admin should see role-gated tool without the role")
 	}
-	if IsDefVisible(d, roleNoAdmin) {
-		t.Error("role holder without admin should not see tool")
+	if !IsDefVisible(d2, roleNoAdmin) {
+		t.Error("role holder should see role-gated tool")
 	}
-	if !IsDefVisible(d, both) {
-		t.Error("admin+role should see tool")
+	if IsDefVisible(d2, nobody) {
+		t.Error("non-admin without role should not see role-gated tool")
 	}
 }
 

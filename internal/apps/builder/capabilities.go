@@ -58,6 +58,12 @@ type ScriptRunCounters struct {
 	// because action dispatch is serial per-run.
 	actions *ActionBuiltins
 
+	// db is the DBBuiltins bundle, whose MutationSummary tracks the
+	// app_items inserts/updates/deletes a script made. Snapshot folds
+	// both counters together so mutation_summary reports every row-level
+	// change the run performed, not just the Kit-native actions.
+	db *DBBuiltins
+
 	// sharedCalls is the shared() hop counter. Incremented on every
 	// successful lookup inside the SharedBuiltin dispatcher.
 	sharedCalls *atomic.Int64
@@ -92,6 +98,12 @@ func (c *ScriptRunCounters) Snapshot() map[string]any {
 		out["inserts"] = m["inserts"]
 		out["updates"] = m["updates"]
 		out["deletes"] = m["deletes"]
+	}
+	if c.db != nil {
+		m := c.db.MutationSummary()
+		out["inserts"] = out["inserts"].(int) + m["inserts"]
+		out["updates"] = out["updates"].(int) + m["updates"]
+		out["deletes"] = out["deletes"].(int) + m["deletes"]
 	}
 	if c.sharedCalls != nil {
 		out["shared_calls"] = c.sharedCalls.Load()
@@ -242,6 +254,7 @@ func BuildScriptCapabilities(
 		pool, engine,
 		params.TenantID, params.CallerUserID,
 		params.CallerRoles,
+		params.CallerIsAdmin,
 		runIDPtr,
 		func(delta RunDelta) { childRuns.Add(int64(delta.ChildRuns)) },
 		childFactory,
@@ -286,6 +299,7 @@ func BuildScriptCapabilities(
 
 	counters := &ScriptRunCounters{
 		actions:     actions,
+		db:          db,
 		sharedCalls: sharedCalls,
 		childRuns:   childRuns,
 		dbCallsLeft: db.CallsRemaining,

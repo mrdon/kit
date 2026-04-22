@@ -149,19 +149,32 @@ func renderOp(key, op string, val any, idx *int, params *[]any) (string, error) 
 		*idx++
 		return sql, nil
 	case "$gt", "$gte", "$lt", "$lte":
-		if !isNumeric(val) {
-			return "", fmt.Errorf("operator %s requires numeric value, got %T", op, val)
-		}
 		sqlOp := map[string]string{
 			"$gt":  ">",
 			"$gte": ">=",
 			"$lt":  "<",
 			"$lte": "<=",
 		}[op]
-		sql := fmt.Sprintf("(data->>'%s')::numeric %s $%d", escapeKey(key), sqlOp, *idx)
-		*params = append(*params, val)
-		*idx++
-		return sql, nil
+		// Numeric comparison when the script passed a number; otherwise
+		// fall back to lexical string comparison on the jsonb text form.
+		// Lexical ordering is what admins actually want for RFC3339
+		// timestamps, YYYY-MM-DD dates, and sortable ID strings — the
+		// whole "strings sort lexically, you get ORDER BY almost for
+		// free" convention we push in the admin guide depends on range
+		// predicates working on strings too.
+		if isNumeric(val) {
+			sql := fmt.Sprintf("(data->>'%s')::numeric %s $%d", escapeKey(key), sqlOp, *idx)
+			*params = append(*params, val)
+			*idx++
+			return sql, nil
+		}
+		if _, ok := val.(string); ok {
+			sql := fmt.Sprintf("data->>'%s' %s $%d", escapeKey(key), sqlOp, *idx)
+			*params = append(*params, val)
+			*idx++
+			return sql, nil
+		}
+		return "", fmt.Errorf("operator %s requires numeric or string value, got %T", op, val)
 	case "$in":
 		list, ok := toList(val)
 		if !ok {

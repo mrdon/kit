@@ -160,8 +160,15 @@ func TestTranslateFilter(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "$gt non-numeric errors",
-			filter:  map[string]any{"x": map[string]any{"$gt": "cat"}},
+			name:       "$gte string compares lexically (RFC3339 range)",
+			filter:     map[string]any{"start_at": map[string]any{"$gte": "2026-04-20T00:00:00Z"}},
+			startIdx:   4,
+			wantSQL:    "data->>'start_at' >= $4",
+			wantParams: []any{"2026-04-20T00:00:00Z"},
+		},
+		{
+			name:    "$gt bool errors (still neither number nor string)",
+			filter:  map[string]any{"x": map[string]any{"$gt": true}},
 			wantErr: true,
 		},
 		{

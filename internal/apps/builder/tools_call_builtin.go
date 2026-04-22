@@ -97,6 +97,7 @@ func BuildToolsCallBuiltin(
 	engine Engine,
 	tenantID, callerUserID uuid.UUID,
 	callerRoles []string,
+	callerIsAdmin bool,
 	parentRunID *uuid.UUID,
 	runMetadata func(delta RunDelta),
 	childBuiltinsFactory ChildBuiltinsFactory,
@@ -139,7 +140,11 @@ func BuildToolsCallBuiltin(
 		if err != nil {
 			return nil, err
 		}
-		if !rolesIntersect(callerRoles, tool.VisibleToRoles) {
+		// Admins are superusers — bypass role-scope check entirely. See
+		// tools.IsDefVisible for the matching semantic on the registry
+		// surface; we keep the rule in sync so agent / MCP / tools_call
+		// all behave the same.
+		if !callerIsAdmin && !rolesIntersect(callerRoles, tool.VisibleToRoles) {
 			return nil, fmt.Errorf("tools_call: tool not accessible with current role: %s", name)
 		}
 

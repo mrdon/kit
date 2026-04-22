@@ -219,9 +219,7 @@ def validate_new_shift(doc):
 // fetch by user_id (cheap equality) and filter in Python.
 const timecardsDalBody = `
 # Data access for timecards. Every doc carries user_id + user_name so
-# reports never re-resolve identity. v0.1 note: $gte/$lte only accept
-# numeric values, so date-range queries fetch by equality filter and
-# narrow in Python.
+# reports never re-resolve identity.
 
 COLLECTION = "shifts"
 
@@ -239,14 +237,11 @@ def find_all(limit=200):
     return db_find(COLLECTION, {}, limit=limit, sort=[("start_at", -1)])
 
 def find_in_range_for_user(user_id, start_iso, end_iso, limit=2000):
-    rows = db_find(COLLECTION, {"user_id": user_id}, limit=limit,
-                   sort=[("start_at", 1)])
-    out = []
-    for r in rows:
-        s = r.get("start_at") or ""
-        if s >= start_iso and s <= end_iso:
-            out.append(r)
-    return out
+    """$gte/$lte compare lexically on strings, so RFC3339 range works."""
+    return db_find(COLLECTION,
+                   {"user_id": user_id,
+                    "start_at": {"$gte": start_iso, "$lte": end_iso}},
+                   limit=limit, sort=[("start_at", 1)])
 
 def update_shift(shift_id, update):
     return db_update_one(COLLECTION, {"_id": shift_id}, update)

@@ -70,6 +70,26 @@ type DBBuiltins struct {
 	// CallsRemaining returns the remaining quota after every db_* call the
 	// script has made so far. Useful for post-run telemetry and tests.
 	CallsRemaining func() int
+
+	// Mutation counters, bumped on successful db_insert_one / db_update_one
+	// (count > 0) / db_delete_one (count > 0). The Snapshot in
+	// ScriptRunCounters folds these together with the ActionBuiltins
+	// counters so mutation_summary reports all row-level changes the
+	// script made (app_items + Kit-native entities), not just one surface.
+	insertCount int
+	updateCount int
+	deleteCount int
+}
+
+// MutationSummary reports per-run app_items mutation counts, mirroring
+// ActionBuiltins.MutationSummary so both can be aggregated by
+// ScriptRunCounters.Snapshot.
+func (d *DBBuiltins) MutationSummary() map[string]int {
+	return map[string]int{
+		"inserts": d.insertCount,
+		"updates": d.updateCount,
+		"deletes": d.deleteCount,
+	}
 }
 
 // BuildDBBuiltins wires an ItemService into a batch of Monty host functions.
@@ -101,6 +121,12 @@ func BuildDBBuiltins(
 		ScriptRunID:  runID,
 	}
 
+	// Counters are captured by pointer so both the handler closure and the
+	// returned *DBBuiltins share a single source of truth — incrementing
+	// one is visible to MutationSummary without a sync primitive (per-run
+	// dispatch is serial).
+	bundle := &DBBuiltins{}
+
 	handler := func(ctx context.Context, call *runtime.FunctionCall) (any, error) {
 		if !unlimited {
 			if remaining <= 0 {
@@ -118,15 +144,31 @@ func BuildDBBuiltins(
 
 		switch call.Name {
 		case FnInsertOne:
-			return dispatchInsertOne(ctx, svc, scope, call)
+			res, err := dispatchInsertOne(ctx, svc, scope, call)
+			if err == nil {
+				bundle.insertCount++
+			}
+			return res, err
 		case FnFindOne:
 			return dispatchFindOne(ctx, svc, scope, call)
 		case FnFind:
 			return dispatchFind(ctx, svc, scope, call)
 		case FnUpdateOne:
-			return dispatchUpdateOne(ctx, svc, scope, call)
+			res, err := dispatchUpdateOne(ctx, svc, scope, call)
+			if err == nil {
+				if n, ok := res.(int); ok && n > 0 {
+					bundle.updateCount += n
+				}
+			}
+			return res, err
 		case FnDeleteOne:
-			return dispatchDeleteOne(ctx, svc, scope, call)
+			res, err := dispatchDeleteOne(ctx, svc, scope, call)
+			if err == nil {
+				if n, ok := res.(int); ok && n > 0 {
+					bundle.deleteCount += n
+				}
+			}
+			return res, err
 		case FnCountDocuments:
 			return dispatchCount(ctx, svc, scope, call)
 		default:
@@ -173,13 +215,12 @@ func BuildDBBuiltins(
 		return remaining
 	}
 
-	return &DBBuiltins{
-		Funcs:          funcs,
-		Handler:        handler,
-		Params:         params,
-		BuiltIns:       builtIns,
-		CallsRemaining: callsRemaining,
-	}
+	bundle.Funcs = funcs
+	bundle.Handler = handler
+	bundle.Params = params
+	bundle.BuiltIns = builtIns
+	bundle.CallsRemaining = callsRemaining
+	return bundle
 }
 
 // dispatchInsertOne routes db_insert_one(collection, doc) into
