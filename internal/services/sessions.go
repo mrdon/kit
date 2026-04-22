@@ -13,13 +13,16 @@ import (
 )
 
 // SessionTools defines the shared tool metadata for session inspection.
+// Scoped to the caller's own sessions — agent traces contain email content,
+// memory reads, and decision drafts, so cross-user inspection is an operator
+// concern (SSH + psql), not a customer MCP surface.
 var SessionTools = []ToolMeta{
-	{Name: "list_sessions", Description: "List recent agent sessions for debugging. Returns session ID, channel, thread_ts, user, and timestamps.", Schema: props(map[string]any{
+	{Name: "list_sessions", Description: "List your recent agent sessions for debugging. Returns session ID, channel, thread_ts, and timestamps.", Schema: props(map[string]any{
 		"limit": field("integer", "Max sessions to return (default 20)"),
-	}), AdminOnly: true},
-	{Name: "get_session_events", Description: "Get all events for a session. Returns event type, data, and timestamp for each event in chronological order.", Schema: propsReq(map[string]any{
+	})},
+	{Name: "get_session_events", Description: "Get all events for one of your sessions. Returns event type, data, and timestamp for each event in chronological order.", Schema: propsReq(map[string]any{
 		"session_id": field("string", "The session UUID"),
-	}, "session_id"), AdminOnly: true},
+	}, "session_id")},
 }
 
 // SessionService handles session inspection with authorization.
@@ -27,18 +30,21 @@ type SessionService struct {
 	pool *pgxpool.Pool
 }
 
-// List returns recent sessions for the tenant. Admin only.
+// List returns the caller's own recent sessions.
 func (s *SessionService) List(ctx context.Context, c *Caller, limit int) ([]models.Session, error) {
-	if !c.IsAdmin {
-		return nil, ErrForbidden
-	}
-	return models.ListRecentSessions(ctx, s.pool, c.TenantID, limit)
+	return models.ListRecentSessionsForUser(ctx, s.pool, c.TenantID, c.UserID, limit)
 }
 
-// GetEvents returns all events for a session. Admin only.
+// GetEvents returns events for one of the caller's sessions. Returns
+// ErrNotFound if the session belongs to a different user — we don't leak
+// existence.
 func (s *SessionService) GetEvents(ctx context.Context, c *Caller, sessionID uuid.UUID) ([]models.SessionEvent, error) {
-	if !c.IsAdmin {
-		return nil, ErrForbidden
+	session, err := models.GetSession(ctx, s.pool, c.TenantID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil || session.UserID != c.UserID {
+		return nil, ErrNotFound
 	}
 	return models.GetSessionEvents(ctx, s.pool, c.TenantID, sessionID)
 }

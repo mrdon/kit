@@ -100,13 +100,13 @@ SQL'
 ```
 
 ### MCP tools for debugging
-- `list_sessions` / `get_session_events` — inspect agent session history (admin only)
-- `run_task` — run any task immediately; use `dry_run: true` to capture messages without posting
+- `list_sessions` / `get_session_events` — inspect your own agent session history. For debugging another user's sessions, query the DB directly (`dokku postgres:connect kit-db`) — the MCP surface is scoped to the caller so admins can't read other users' email/memory traces.
+- `run_task` — run a task you created; `dry_run: true` captures messages without posting. Admins cannot run another user's task via MCP (the scheduled agent would act as that user's identity); for SRE-style one-off triggers on someone else's task, go through the DB or operator CLI.
 - `find_user` — verify user display names and IDs
 
 ### Common checks
-- **User has no display name?** Run the "Sync user profiles from Slack" builtin task via `run_task`, or the user's name will be fetched on their next Slack message.
-- **Task misbehaving?** After the task posts its first message, its session's `slack_thread_ts` is the real Slack message ts (not a synthetic `task-*` value). Use `list_sessions` to find recent sessions in the task's channel, then `get_session_events` for the full agent trace.
+- **User has no display name?** Ask them to send a Slack message, or trigger the "Sync user profiles from Slack" builtin task yourself (you'll need to own that task — builtins belong to whoever installed them).
+- **Task misbehaving?** After the task posts its first message, its session's `slack_thread_ts` is the real Slack message ts (not a synthetic `task-*` value). If the task is yours, use `list_sessions` → `get_session_events`. If it belongs to another user, query `sessions` + `session_events` in the DB.
 - **Tenant confusion?** Query `tenants` table to see all workspaces and their `slack_team_id`.
 
 ### Voice transcription (optional)

@@ -115,7 +115,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		"dry_run": services.Field("boolean", "If true, capture messages instead of posting to Slack"),
 	}, "task_id")
 	schemaJSON, _ := json.Marshal(schema)
-	tool := mcp.NewToolWithRawSchema("run_task", "Run a task immediately for testing. In dry_run mode, messages are captured and returned instead of posted to Slack. You can run your own tasks; admins can run any task.", schemaJSON)
+	tool := mcp.NewToolWithRawSchema("run_task", "Run a task immediately for testing. In dry_run mode, messages are captured and returned instead of posted to Slack. You can only run tasks you created.", schemaJSON)
 
 	handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("task_id")
@@ -133,9 +133,12 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			return mcp.NewToolResultError("Task not found."), nil
 		}
 
-		// Non-admins can only run their own tasks
-		if !caller.IsAdmin && task.CreatedBy != caller.UserID {
-			return mcp.NewToolResultError("You can only run your own tasks."), nil
+		// run_task acts as the task's creator — the scheduled agent loads
+		// their integrations, memories, and email credentials. Admins don't
+		// get to stand in for another user; cross-user debugging is an
+		// operator/SRE concern, handled via DB/CLI, not the customer MCP.
+		if task.CreatedBy != caller.UserID {
+			return mcp.NewToolResultError("You can only run tasks you created."), nil
 		}
 
 		// Builtin tasks run native code, not the LLM agent

@@ -63,48 +63,34 @@ func (s *TaskService) Create(ctx context.Context, c *Caller, description, cronEx
 	return models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, description, cronExpr, timezone, channelID, model, runOnce, runAt, roleID, userID)
 }
 
-// List returns tasks visible to the caller. Admins see all tenant tasks.
+// List returns tasks visible to the caller through normal scope filtering:
+// tasks scoped to them personally, to roles they hold, or to the tenant.
+// Admins are not granted extra visibility into other users' personal tasks —
+// those run with the creator's identity (email, memories) and the admin is
+// not that user.
 func (s *TaskService) List(ctx context.Context, c *Caller) ([]models.Task, error) {
-	if c.IsAdmin {
-		return models.ListAllTenantTasks(ctx, s.pool, c.TenantID)
-	}
 	return models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 }
 
-// Update updates a task's description. Admins can update any; non-admins only their visible tasks.
+// Update updates a task's description. The caller must have the task in
+// their visible scope; admins don't bypass this for other users' personal
+// tasks.
 func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, description string) error {
-	if !c.IsAdmin {
-		visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
-		if err != nil {
-			return fmt.Errorf("listing visible tasks: %w", err)
-		}
-		found := false
-		for _, t := range visible {
-			if t.ID == taskID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return ErrNotFound
+	visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+	if err != nil {
+		return fmt.Errorf("listing visible tasks: %w", err)
+	}
+	for _, t := range visible {
+		if t.ID == taskID {
+			return models.UpdateTaskDescription(ctx, s.pool, c.TenantID, taskID, description)
 		}
 	}
-	return models.UpdateTaskDescription(ctx, s.pool, c.TenantID, taskID, description)
+	return ErrNotFound
 }
 
-// Delete deletes a task. Admins can delete any; non-admins only visible tasks.
+// Delete deletes a task in the caller's visible scope. Admins don't bypass
+// this for other users' personal tasks.
 func (s *TaskService) Delete(ctx context.Context, c *Caller, taskID uuid.UUID) error {
-	if c.IsAdmin {
-		task, err := models.GetTask(ctx, s.pool, c.TenantID, taskID)
-		if err != nil {
-			return fmt.Errorf("getting task: %w", err)
-		}
-		if task == nil {
-			return ErrNotFound
-		}
-		return models.DeleteTask(ctx, s.pool, c.TenantID, taskID)
-	}
-	// Non-admin: check task is visible via scope filtering
 	visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 	if err != nil {
 		return fmt.Errorf("listing visible tasks: %w", err)

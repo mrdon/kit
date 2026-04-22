@@ -232,31 +232,6 @@ func ListTasksForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, user
 	return tasks, rows.Err()
 }
 
-// ListAllTenantTasks returns all tasks for a tenant (admin view, no scope filtering).
-func ListAllTenantTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Task, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, run_once, task_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, created_at
-		FROM tasks WHERE tenant_id = $1
-		ORDER BY created_at
-	`, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("listing all tenant tasks: %w", err)
-	}
-	defer rows.Close()
-
-	var tasks []Task
-	for rows.Next() {
-		var t Task
-		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.TaskType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning task: %w", err)
-		}
-		tasks = append(tasks, t)
-	}
-	return tasks, rows.Err()
-}
-
 // UpdateTaskDescription updates a task's description. Builtin tasks cannot be updated.
 func UpdateTaskDescription(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, description string) error {
 	tag, err := pool.Exec(ctx, `

@@ -42,7 +42,8 @@ func CreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, 
 	return session, nil
 }
 
-// GetSession fetches a single session by ID.
+// GetSession fetches a single session by ID. Returns (nil, nil) if no such
+// session exists, matching the other get-by-id helpers in this package.
 func GetSession(ctx context.Context, pool *pgxpool.Pool, tenantID, sessionID uuid.UUID) (*Session, error) {
 	session := &Session{}
 	err := pool.QueryRow(ctx, `
@@ -53,24 +54,28 @@ func GetSession(ctx context.Context, pool *pgxpool.Pool, tenantID, sessionID uui
 		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
 		&session.UserID, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
+	}
 	if err != nil {
 		return nil, fmt.Errorf("getting session: %w", err)
 	}
 	return session, nil
 }
 
-// ListRecentSessions returns recent sessions ordered by updated_at descending.
-func ListRecentSessions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, limit int) ([]Session, error) {
+// ListRecentSessionsForUser returns the given user's recent sessions,
+// ordered by updated_at descending.
+func ListRecentSessionsForUser(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, limit int) ([]Session, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated, created_at, updated_at
 		FROM sessions
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND user_id = $2
 		ORDER BY updated_at DESC
-		LIMIT $2
-	`, tenantID, limit)
+		LIMIT $3
+	`, tenantID, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
