@@ -259,46 +259,46 @@ export default function Stack() {
 
   if (err) return <div className="empty">Error: {err}</div>;
   if (items === null) return <div className="empty">Loading…</div>;
-  if (items.length === 0) {
-    return (
-      <main className="feed">
+
+  // One unified render so the chat/quick-chat sheets sit at a stable
+  // tree position across items=[] ↔ items.length>0 transitions.
+  // Reconciling on stable positions keeps the sheet's turn state and
+  // the auto-dismiss timer alive when a capture creates the first card.
+  const empty = items.length === 0;
+
+  return (
+    <main className="feed" ref={empty ? null : feedRef} onScroll={empty ? undefined : onScroll}>
+      {empty ? (
         <div className="empty">
           <div>Nothing needs you right now.</div>
         </div>
-        <DegradedFooter degraded={degraded} />
-        <QuickChatFab onClick={() => setQuickChatOpen(true)} />
-        {quickChatOpen && (
-          <QuickChatSheet onClose={() => setQuickChatOpen(false)} onTurnDone={load} />
-        )}
-      </main>
-    );
-  }
-
-  return (
-    <main className="feed" ref={feedRef} onScroll={onScroll}>
-      <AnimatePresence initial={false} mode="popLayout">
-        {items.map((it, idx) => (
-          <motion.section
-            key={itemKey(it)}
-            className="card-screen"
-            layout
-            exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
-          >
-            <SwipeCard
-              ref={idx === 0 ? topCardRef : null}
-              item={it}
-              onCommit={onCommit}
-              onShowBurst={showBurst}
-              onLongPress={setChatItem}
-              disableLongPress={sheetOpen}
-            />
-          </motion.section>
-        ))}
-      </AnimatePresence>
-      <AnimatePresence>
-        {burst && <Burst key={burst.id} emoji={burst.emoji} />}
-      </AnimatePresence>
-      <QueueIndicator count={items.length} progress={progress} />
+      ) : (
+        <>
+          <AnimatePresence initial={false} mode="popLayout">
+            {items.map((it, idx) => (
+              <motion.section
+                key={itemKey(it)}
+                className="card-screen"
+                layout
+                exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
+              >
+                <SwipeCard
+                  ref={idx === 0 ? topCardRef : null}
+                  item={it}
+                  onCommit={onCommit}
+                  onShowBurst={showBurst}
+                  onLongPress={setChatItem}
+                  disableLongPress={sheetOpen}
+                />
+              </motion.section>
+            ))}
+          </AnimatePresence>
+          <AnimatePresence>
+            {burst && <Burst key={burst.id} emoji={burst.emoji} />}
+          </AnimatePresence>
+          <QueueIndicator count={items.length} progress={progress} />
+        </>
+      )}
       <DegradedFooter degraded={degraded} />
       <QuickChatFab onClick={() => setQuickChatOpen(true)} />
       {chatItem && (
