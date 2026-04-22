@@ -40,15 +40,17 @@ export type UseVoiceRecorder = {
   stop: () => Promise<string>;
 };
 
-type CardRef = { sourceApp: string; kind: string; id: string };
-
 /**
  * Encapsulates getUserMedia + MediaRecorder + the /chat/transcribe SSE
  * consumption. The composer owns partial text into the textarea: it
  * reads `partial` while recording and replaces the textarea on stop()
  * with the returned final transcript.
+ *
+ * transcribeUrl is passed in so the hook stays surface-agnostic (card
+ * chat and quick chat both hit the same card-less /chat/transcribe
+ * today, but this keeps the hook from hardcoding that).
  */
-export function useVoiceRecorder(card: CardRef): UseVoiceRecorder {
+export function useVoiceRecorder(transcribeUrl: string): UseVoiceRecorder {
   const mimeRef = useRef<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -124,7 +126,7 @@ export function useVoiceRecorder(card: CardRef): UseVoiceRecorder {
     }
 
     try {
-      const resp = await api.chatTranscribe(card.sourceApp, card.kind, card.id, blob);
+      const resp = await api.chatTranscribe(transcribeUrl, blob);
       if (resp.status === 401) {
         window.location.href = BASENAME + '/login';
         return '';
@@ -169,7 +171,7 @@ export function useVoiceRecorder(card: CardRef): UseVoiceRecorder {
       setState('idle');
       return '';
     }
-  }, [state, cleanup, card.sourceApp, card.kind, card.id]);
+  }, [state, cleanup, transcribeUrl]);
 
   // Safety net: if the component unmounts mid-recording, release the
   // mic stream. Otherwise the browser's tab indicator stays lit.

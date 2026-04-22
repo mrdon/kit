@@ -908,3 +908,51 @@ a { color: var(--link); }
   0%, 100% { opacity: 0.35; transform: scale(0.85); }
   50%      { opacity: 1;    transform: scale(1.2); }
 }
+
+/* Quick-chat FAB
+   Pinned bottom-right, opens the quick-chat sheet for fast capture.
+   touch-action: manipulation keeps taps snappy without blocking the
+   card's horizontal drag gesture underneath. */
+.quick-chat-fab {
+  position: fixed;
+  right: 20px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--card-heading);
+  color: var(--card-bg);
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--shadow-card);
+  z-index: 15;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 0.12s ease;
+}
+.quick-chat-fab:hover { transform: scale(1.04); }
+.quick-chat-fab:active { transform: scale(0.96); }
+.quick-chat-fab:focus-visible {
+  outline: 2px solid var(--link-strong);
+  outline-offset: 3px;
+}
+
+/* Auto-dismiss hold affordance. Appears between the transcript and the
+   composer while the dismiss countdown is running; any pointer tap on
+   the sheet cancels it. */
+.chat-dismiss-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--card-muted);
+  padding: 6px 12px;
+  border-top: 1px solid var(--card-border);
+  background: var(--card-bg);
+}

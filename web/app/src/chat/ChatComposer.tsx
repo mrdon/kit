@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useVoiceRecorder } from './useVoiceRecorder';
 
-type CardRef = { sourceApp: string; kind: string; id: string };
-
 type Props = {
-  card: CardRef;
+  // URL the mic uploads audio to. Card-agnostic today, but passed in
+  // so the composer stays surface-agnostic.
+  transcribeUrl: string;
   // Disabled while an execute request is in flight — prevents double-send.
   busy: boolean;
   onSubmit: (text: string) => void;
+  // Override for the textarea placeholder. Falls back to the voice-aware
+  // default when omitted.
+  placeholder?: string;
 };
 
 /**
@@ -24,10 +27,10 @@ type Props = {
  * If MediaRecorder/getUserMedia aren't available the mic is hidden and
  * the UI remains fully usable for typing.
  */
-export default function ChatComposer({ card, busy, onSubmit }: Props) {
+export default function ChatComposer({ transcribeUrl, busy, onSubmit, placeholder }: Props) {
   const [text, setText] = useState('');
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  const recorder = useVoiceRecorder(card);
+  const recorder = useVoiceRecorder(transcribeUrl);
   // Snapshot of the textarea at the moment the user starts holding the
   // mic, so streaming partials append to existing typed content
   // without clobbering it.
@@ -106,7 +109,7 @@ export default function ChatComposer({ card, busy, onSubmit }: Props) {
       <textarea
         ref={taRef}
         className="chat-input"
-        placeholder={recorder.supported ? 'Type or hold mic to talk…' : 'Type a message…'}
+        placeholder={placeholder ?? (recorder.supported ? 'Type or hold mic to talk…' : 'Type a message…')}
         rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}

@@ -35,15 +35,33 @@ export type UseChatStreamResult = {
   retry: (turnKey: string) => void;
 };
 
-type CardRef = { sourceApp: string; kind: string; id: string };
+export type ChatStreamOptions = {
+  // URL to POST each turn to. Callers build this via cardChatExecuteUrl
+  // or quickChatExecuteUrl so the hook stays agnostic to surface.
+  executeUrl: string;
+  // Required for quick chat, ignored by card chat. The server keys the
+  // session on (user, clientSessionID) when the card is absent.
+  clientSessionID?: string;
+  // Fired on each successful turn done event (for refreshing the stack
+  // or running auto-dismiss logic in the parent sheet).
+  onDone?: (info: { actionTaken: boolean }) => void;
+};
+
+// Terminal tools — firing one of these is just the agent's response,
+// not an action. Anything else firing means the agent did something.
+// Matches the Terminal: true set in internal/tools/core.go.
+const TERMINAL_TOOLS = new Set(['reply_in_thread', 'post_to_channel', 'dm_user']);
 
 /**
- * Hook that drives chat/execute SSE consumption for a single card.
+ * Hook that drives chat/execute SSE consumption.
  *
- * The caller tells us which card this chat is scoped to; we handle the
- * fetch lifecycle, SSE parsing, turn state, and abort plumbing.
+ * The caller passes in the execute URL for their surface (card vs quick)
+ * plus an optional client session id; we handle fetch lifecycle, SSE
+ * parsing, turn state, abort plumbing, and action detection for the
+ * auto-dismiss affordance.
  */
-export function useChatStream(card: CardRef, onDone?: () => void): UseChatStreamResult {
+export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
+  const { executeUrl, clientSessionID, onDone } = opts;
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -57,8 +75,14 @@ export function useChatStream(card: CardRef, onDone?: () => void): UseChatStream
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       setBusy(true);
+      let actionTaken = false;
       try {
-        const resp = await api.chatExecute(card.sourceApp, card.kind, card.id, text, ctrl.signal);
+        const resp = await api.chatExecute(
+          executeUrl,
+          text,
+          clientSessionID ? { clientSessionID } : undefined,
+          ctrl.signal,
+        );
         if (resp.status === 401) {
           // The regular api.j() handles this for JSON calls; do it
           // manually for streams.
@@ -84,7 +108,10 @@ export function useChatStream(card: CardRef, onDone?: () => void): UseChatStream
             }
             case ChatEvent.Tool: {
               const d = parseEventData(frame.data) as { name?: string };
-              if (d.name) updateTurn(turnKey, { status: d.name });
+              if (d.name) {
+                updateTurn(turnKey, { status: d.name });
+                if (!TERMINAL_TOOLS.has(d.name)) actionTaken = true;
+              }
               break;
             }
             case ChatEvent.Response: {
@@ -94,7 +121,7 @@ export function useChatStream(card: CardRef, onDone?: () => void): UseChatStream
             }
             case ChatEvent.Done:
               updateTurn(turnKey, { inFlight: false, status: 'done' });
-              onDone?.();
+              onDone?.({ actionTaken });
               break;
             case ChatEvent.Error: {
               const d = parseEventData(frame.data) as { message?: string };
@@ -122,7 +149,7 @@ export function useChatStream(card: CardRef, onDone?: () => void): UseChatStream
         setBusy(false);
       }
     },
-    [card.sourceApp, card.kind, card.id, updateTurn, onDone],
+    [executeUrl, clientSessionID, updateTurn, onDone],
   );
 
   const send = useCallback(

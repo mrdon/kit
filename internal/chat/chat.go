@@ -33,6 +33,12 @@ const SentinelChannel = "web:chat"
 // longer / split into two paragraphs" stays coherent.
 const ChatHistoryWindow = 6
 
+// QuickHistoryWindow bounds replayed pairs on the quick-chat (card-less)
+// path. Sessions are minted fresh per sheet-open, so the window only
+// needs to cover in-open correction/approval cycles. Smaller than card
+// chat because there's no card anchor to keep context tight around.
+const QuickHistoryWindow = 4
+
 // cardSuffixMaxBytes caps buildCardSystemSuffix output. The LLM sees
 // this on every turn; tool_arguments are typically JSON-serialized
 // markdown bodies that can be a few KB. 8KB total keeps the prompt
@@ -78,6 +84,12 @@ type ExecuteInput struct {
 	User   *models.User
 	Card   *shared.StackItem
 	Text   string
+	// ClientSessionID scopes a quick-chat (card-less) conversation. The
+	// client mints a UUID on sheet-open and sends it with every turn, so
+	// multi-turn within one open attaches to the same session but
+	// closing the sheet discards it. Ignored when Card is non-nil —
+	// card-scoped sessions are keyed on the card triple.
+	ClientSessionID string
 }
 
 // Execute runs one chat turn for a (tenant, user, card) triple. It
@@ -85,15 +97,20 @@ type ExecuteInput struct {
 // same card attach to the same conversation, wires a StreamingResponder
 // + OnToolCall + OnIteration hook into the agent, and runs the agent
 // loop. All stream output goes through emit.
+//
+// When in.Card is nil this is a quick-chat turn (card-less surface in
+// the feed). The session is keyed by in.ClientSessionID so a fresh
+// UUID per sheet-open gives fresh history, while multiple turns within
+// one open share context.
 func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 	if in.Text == "" {
 		return errors.New("text required")
 	}
-	if in.Card == nil {
-		return errors.New("card required")
+	if in.Card == nil && in.ClientSessionID == "" {
+		return errors.New("client_session_id required for quick chat")
 	}
 
-	thread := threadKey(in.Card, in.User.ID)
+	thread := threadKey(in.Card, in.User.ID, in.ClientSessionID)
 	session, err := resolveSession(ctx, in.Pool, in.Tenant.ID, in.User.ID, thread)
 	if err != nil {
 		slog.Warn("resolving chat session", "error", err, "tenant_id", in.Tenant.ID, "user_id", in.User.ID)
@@ -125,21 +142,30 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		OnIteration: func() {
 			_ = emit(EventStatus, map[string]any{"status": string(StatusThinking)})
 		},
+	}
+	if in.Card != nil {
 		// Inject the card as a system suffix so it doesn't accumulate
 		// in the replayed message history when the user sends
 		// follow-ups on the same card.
-		SystemSuffix: buildCardSystemSuffix(in.Card),
+		runInput.SystemSuffix = buildCardSystemSuffix(in.Card)
 		// Card-chat sessions grow one pair per revise round. Keep the
 		// window small so repeated revision turns don't balloon
 		// context size. Tool_results also get dropped from replay
 		// (they can carry KBs of echoed revise args).
-		HistoryWindow: ChatHistoryWindow,
+		runInput.HistoryWindow = ChatHistoryWindow
 		// Defense-in-depth: untrusted content in card body or option
 		// arguments shouldn't be able to coerce the chat LLM into
 		// calling a gated tool directly. The registry-level gate still
 		// catches injected calls; this just keeps the chat registry
 		// from advertising tools users shouldn't pick from here.
-		DropGatedTools: true,
+		runInput.DropGatedTools = true
+	} else {
+		runInput.SystemSuffix = buildQuickSystemSuffix()
+		runInput.HistoryWindow = QuickHistoryWindow
+		// No untrusted card content here, so no need to narrow the
+		// registry. Gated tools still get their normal approval gates
+		// at the registry level.
+		runInput.DropGatedTools = false
 	}
 
 	if err := in.Agent.Run(ctx, runInput); err != nil {
@@ -157,10 +183,17 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 	return emit(EventDone, map[string]any{})
 }
 
-// threadKey builds the deterministic slack_thread_ts for a (card, user)
-// chat conversation. Including the user id means two users pressing the
-// same card get separate conversations.
-func threadKey(card *shared.StackItem, userID uuid.UUID) string {
+// threadKey builds the deterministic slack_thread_ts for a chat
+// conversation. For card chat (card != nil) the key is keyed on the
+// card triple + user so two users pressing the same card get separate
+// conversations and follow-ups on the same card attach. For quick chat
+// (card == nil) the key is keyed on user + clientSessionID so each
+// sheet-open gets a fresh session but multi-turn within one open
+// attaches.
+func threadKey(card *shared.StackItem, userID uuid.UUID, clientSessionID string) string {
+	if card == nil {
+		return fmt.Sprintf("chat-quick-%s-%s", userID, clientSessionID)
+	}
 	return fmt.Sprintf("chat-%s-%s-%s-%s", card.SourceApp, card.Kind, card.ID, userID)
 }
 
@@ -259,6 +292,21 @@ Body:
 For non-decision cards: use the relevant tools (complete_todo, create_todo, update_todo, create_task, etc.) to carry out what the user asks. Reply briefly in reply_in_thread confirming what you did — or ask one targeted question if the request is ambiguous.`)
 
 	return truncateSuffix(b.String(), cardSuffixMaxBytes)
+}
+
+// buildQuickSystemSuffix renders the quick-chat (card-less) guidance
+// block. The surface is designed for fast capture but may also carry
+// questions, clarifications, and approvals — the suffix steers toward
+// action when the intent is clearly a capture and keeps responses
+// terse.
+func buildQuickSystemSuffix() string {
+	return `## Quick chat context
+The user opened a quick-chat surface from the feed. It is designed for fast capture (todos, decisions, memories, rules) but may also be used for quick questions, corrections, or approvals.
+
+- When the message is clearly a capture intent, act on it in one turn using the appropriate tool (create_todo, create_decision, save_memory, create_rule, etc.). Don't ask clarifying questions unless a required field is truly ambiguous.
+- When the user asks a question, answer it directly and concisely.
+- When the user corrects you or responds to a clarification, adjust and confirm.
+- Keep all replies short — one sentence when possible. No preamble.`
 }
 
 // truncateSuffix caps s at maxBytes, appending a sentinel if it

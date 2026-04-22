@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/mrdon/kit/internal/apps/cards/shared"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/chat"
 	"github.com/mrdon/kit/internal/models"
@@ -90,6 +91,11 @@ func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) 
 
 type chatExecuteRequest struct {
 	Text string `json:"text"`
+	// ClientSessionID is required for the quick-chat (card-less) path
+	// and ignored for card chat. The client mints a UUID on sheet-open
+	// so fresh per open / multi-turn within open works without server
+	// state.
+	ClientSessionID string `json:"client_session_id,omitempty"`
 }
 
 // handleChatExecute runs one chat turn against a card and streams the
@@ -165,29 +171,41 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The same handler backs two route mounts: the card-scoped path
+	// fills source_app/kind/id; the quick-chat (card-less) path leaves
+	// them empty. Card lookup is skipped when source_app is empty.
 	sourceApp := r.PathValue("source_app")
 	kind := r.PathValue("kind")
 	id := r.PathValue("id")
 
-	p := providerByName(sourceApp)
-	if p == nil {
-		_ = emit(chat.EventError, map[string]any{"message": "unknown source_app"})
-		return
-	}
-	detail, err := p.GetItem(r.Context(), caller, kind, id)
-	if err != nil {
-		// Surface permission/not-found clearly (caller needs to know) but
-		// hide any unexpected error detail behind a generic message —
-		// the real error is in the server log for investigation.
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			_ = emit(chat.EventError, map[string]any{"message": "we couldn't find that card"})
-		case errors.Is(err, services.ErrForbidden):
-			_ = emit(chat.EventError, map[string]any{"message": "you don't have access to that card"})
-		default:
-			slog.Warn("fetching card for chat", "error", err, "card", sourceApp+":"+kind+":"+id)
-			_ = emit(chat.EventError, map[string]any{"message": "we couldn't load that card; please try again"})
+	var cardItem *shared.StackItem
+	if sourceApp != "" {
+		p := providerByName(sourceApp)
+		if p == nil {
+			_ = emit(chat.EventError, map[string]any{"message": "unknown source_app"})
+			return
 		}
+		detail, err := p.GetItem(r.Context(), caller, kind, id)
+		if err != nil {
+			// Surface permission/not-found clearly (caller needs to know) but
+			// hide any unexpected error detail behind a generic message —
+			// the real error is in the server log for investigation.
+			switch {
+			case errors.Is(err, services.ErrNotFound):
+				_ = emit(chat.EventError, map[string]any{"message": "we couldn't find that card"})
+			case errors.Is(err, services.ErrForbidden):
+				_ = emit(chat.EventError, map[string]any{"message": "you don't have access to that card"})
+			default:
+				slog.Warn("fetching card for chat", "error", err, "card", sourceApp+":"+kind+":"+id)
+				_ = emit(chat.EventError, map[string]any{"message": "we couldn't load that card; please try again"})
+			}
+			return
+		}
+		cardItem = &detail.Item
+	} else if req.ClientSessionID == "" {
+		// Quick chat requires a client-minted session id so per-open
+		// freshness is enforced without server state.
+		_ = emit(chat.EventError, map[string]any{"message": "client_session_id required"})
 		return
 	}
 
@@ -207,20 +225,25 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	in := chat.ExecuteInput{
-		Pool:   a.pool,
-		Agent:  a.agent,
-		Slack:  slackClient,
-		Tenant: tenant,
-		User:   user,
-		Card:   &detail.Item,
-		Text:   req.Text,
+		Pool:            a.pool,
+		Agent:           a.agent,
+		Slack:           slackClient,
+		Tenant:          tenant,
+		User:            user,
+		Card:            cardItem,
+		Text:            req.Text,
+		ClientSessionID: req.ClientSessionID,
 	}
 	if err := chat.Execute(r.Context(), in, emit); err != nil {
+		cardStr := "quick"
+		if cardItem != nil {
+			cardStr = sourceApp + ":" + kind + ":" + id
+		}
 		slog.Warn("chat execute failed",
 			"error", err,
 			"tenant_id", tenant.ID,
 			"user_id", user.ID,
-			"card", sourceApp+":"+kind+":"+id,
+			"card", cardStr,
 		)
 	}
 }

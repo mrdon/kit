@@ -156,6 +156,8 @@ Both thumbs up and thumbs down are recorded on the card (terminal state + timest
 
 **Chat with a card.** Long-press any card (about 600ms) to open a chat panel bound to that card. Type a message or hold the mic button to talk — both land in the same conversation. Use it to modify, reschedule, or ask about the card without switching back to Slack. Follow-up messages attach to the same session, so you can say "make it high priority" and then "no, actually low" and Kit understands the correction. The panel stays open until you close it.
 
+**Quick chat (the + button).** Tap the floating "+" button in the bottom-right of the feed for fast capture without a card in mind — "add a todo to buy milk", "remind me to call Pat tomorrow", "what decisions are open?". After the agent acts (creates a todo, etc.) the panel closes itself after about a second; tap the panel during that hold to keep it open if you want to correct. Questions, clarifications, and approvals keep the panel open automatically. Each open starts a fresh conversation — close and reopen for a clean slate.
+
 Voice is optional — the mic button only appears in browsers with `MediaRecorder` support (Chrome/Firefox/Edge/Safari 14.5+; Firefox on mobile falls back to typed-only). Admin setup for transcription is documented in `CLAUDE.md`.
 
 Create from an agent context (Slack, MCP, or a skill):

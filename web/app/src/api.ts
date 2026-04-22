@@ -38,6 +38,15 @@ const get = (path: string) => fetch(path, { credentials: 'same-origin' });
 const cardPath = (sourceApp: string, kind: string, id: string) =>
   `${BASENAME}/api/v1/stack/items/${encodeURIComponent(sourceApp)}/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`;
 
+// Chat URL builders. Callers build the right URL for their surface
+// (card chat vs quick chat) and pass it to chatExecute / chatTranscribe,
+// which are otherwise surface-agnostic. Transcribe is card-agnostic on
+// the server, so there's one shared URL.
+export const cardChatExecuteUrl = (sourceApp: string, kind: string, id: string) =>
+  `${cardPath(sourceApp, kind, id)}/chat/execute`;
+export const quickChatExecuteUrl = () => `${BASENAME}/api/v1/chat/quick/execute`;
+export const chatTranscribeUrl = () => `${BASENAME}/api/v1/chat/transcribe`;
+
 export const api = {
   stack: async (
     opts?: { cursor?: string; limit?: number; focus?: string },
@@ -76,20 +85,15 @@ export const api = {
     return j<ActionResult>(r);
   },
 
-  // chatTranscribe uploads audio and returns the fetch Response whose
-  // body is an SSE stream of partial/final/error events. The X-Kit-Chat
-  // header lifts the request out of the CORS "simple request" category
-  // so the server's CSRF check passes for multipart bodies.
-  chatTranscribe: (
-    sourceApp: string,
-    kind: string,
-    id: string,
-    audio: Blob,
-    signal?: AbortSignal,
-  ): Promise<Response> => {
+  // chatTranscribe uploads audio to the given URL and returns the fetch
+  // Response whose body is an SSE stream of partial/final/error events.
+  // The X-Kit-Chat header lifts the request out of the CORS "simple
+  // request" category so the server's CSRF check passes for multipart
+  // bodies.
+  chatTranscribe: (url: string, audio: Blob, signal?: AbortSignal): Promise<Response> => {
     const form = new FormData();
     form.append('audio', audio, 'clip');
-    return fetch(`${cardPath(sourceApp, kind, id)}/chat/transcribe`, {
+    return fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'X-Kit-Chat': '1' },
@@ -98,20 +102,23 @@ export const api = {
     });
   },
 
-  // chatExecute sends the user's text (typed or edited transcript) and
-  // returns an SSE stream of status/tool/response/done events.
+  // chatExecute posts the user's text (typed or edited transcript) to
+  // the given URL and returns an SSE stream of status/tool/response/done
+  // events. clientSessionID is required for quick chat and ignored by
+  // card chat (the server keys on the card triple instead).
   chatExecute: (
-    sourceApp: string,
-    kind: string,
-    id: string,
+    url: string,
     text: string,
+    opts?: { clientSessionID?: string },
     signal?: AbortSignal,
   ): Promise<Response> => {
-    return fetch(`${cardPath(sourceApp, kind, id)}/chat/execute`, {
+    const body: Record<string, unknown> = { text };
+    if (opts?.clientSessionID) body.client_session_id = opts.clientSessionID;
+    return fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
       signal,
     });
   },
