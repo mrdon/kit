@@ -57,6 +57,32 @@ rollback_script_run(run_id="<uuid from run_script>", confirm=true)
 
 Every meta-tool is admin-only. Non-admin callers never see them in their tool list and get a forbidden error on direct invocation.
 
+## Recipe: from admin prompt to working app
+
+When an admin says "build me an app for X", work through these steps in order. Most of them take one MCP call; the script body is the creative part.
+
+1. **Clarify scope** before writing anything. Ask the admin, in one or two targeted questions (not four):
+   - Who records data vs. who reads it? (Per-user? Team-wide? Role-gated?)
+   - Are there admin-only actions (e.g. "editing a closed record")?
+   - Any scheduled digests / briefings / Slack posts?
+   - Any external integrations? (There are none in v0.1 — surface that constraint early if the ask implies one.)
+
+2. **Pick collection name(s).** One concept per collection. Plural nouns: `contacts`, `shifts`, `reviews`.
+
+3. **Sketch the doc shape in comments** before writing code. What fields are set at insert vs. updated later? Which reference the caller (see "Identity and per-user scoping" below)? Which fields are admin-editable only?
+
+4. **Write one script** starting with the simplest "add" function. `run_script` to smoke-test with a sample input *before* adding more functions or exposing anything.
+
+5. **Add read/list functions.** Smoke-test each via `run_script`.
+
+6. **Add mutate/delete functions** with any admin checks in place (see "Admin-only modifications after close" below).
+
+7. **Expose each function as a tool** with a crisp `description` and a complete `args_schema`. Set `visible_to_roles` explicitly — never leave it empty unless the tool is truly open to everyone.
+
+8. **Schedule anything recurring** via `schedule_script`. A scheduled builder script creates a task under the hood; for scheduled work that touches channels, DMs, or admin-gated actions you should pass a `policy` block — see the `creating-tasks` skill for how to design `allowed_tools` / `force_gate` / `pinned_args`. Policies cannot be ignored by prompt drift; function bodies can.
+
+9. **Sanity-check** with `list_exposed_tools`, `list_schedules`, `script_stats`. If the admin will use this tomorrow, plan to check `script_stats` after the first day of real traffic.
+
 ## Service-layer pattern
 
 For a one-function app, inline is fine. For anything nontrivial, split by concern so each script stays under ~200 LOC and testable in isolation.
@@ -131,6 +157,81 @@ def add_contact(name, email, phone=None, owner_id=None):
 ```
 
 `shared("script", "fn", **kwargs)` dispatches in-app. No new `script_runs` row per hop — cheap helper calls. Cross-app composition uses `tools_call("exposed_tool_name", {...})` which *does* open a child run for audit.
+
+## Identity and per-user scoping
+
+`current_user()` returns the caller's identity as a dict:
+
+```python
+current_user()
+# → {"id": "<uuid>", "display_name": "Alice", "timezone": "America/Denver",
+#    "roles": ["admin", "sales"], "is_admin": True}
+```
+
+Use it whenever the script's behaviour depends on who called it — recording, listing, or authorising.
+
+**Never accept `user_id` as a tool argument.** Anyone invoking the tool via MCP or an agent could pass any other user's id. `current_user()` is the only trustworthy identity source inside a script.
+
+### Per-user-data pattern
+
+For apps where each user records and reads their own data, always store `user_id` at insert and always filter by it on read. Denormalise `user_name` into the doc so reports don't have to re-resolve every user.
+
+```python
+def record_thing(description):
+    me = current_user()
+    return db_insert_one("things", {
+        "user_id":      me["id"],
+        "user_name":    me["display_name"],
+        "description":  description,
+        "created_at":   now(),
+    })
+
+def list_my_things(limit=20):
+    me = current_user()
+    return db_find("things",
+                   {"user_id": me["id"]},
+                   limit=limit,
+                   sort=[("_created_at", -1)])
+```
+
+### Admin-scope overlays
+
+If admins see everyone's data but users see only their own, branch on `is_admin`:
+
+```python
+def list_things(limit=50, user_id=None):
+    me = current_user()
+    filter = {}
+    if me["is_admin"] and user_id:
+        filter["user_id"] = user_id       # admin filtered to a specific user
+    elif not me["is_admin"]:
+        filter["user_id"] = me["id"]      # non-admin always scoped to self
+    # admin with no user_id = see all (empty filter)
+    return db_find("things", filter, limit=limit,
+                   sort=[("_created_at", -1)])
+```
+
+Note: only admins should be trusted with the optional `user_id`. The check above silently ignores non-admin attempts to filter by someone else's id rather than raising — that keeps the tool convenient when a non-admin passes a legitimate-seeming parameter, while still enforcing the scope.
+
+## Admin-only modifications after close
+
+Some apps let users write records but only admins edit or delete them once "closed" (e.g. time entries, submitted reviews). Enforce this with two layers:
+
+1. **Registry layer** — `visible_to_roles=["admin"]` on `expose_script_function_as_tool` hides the tool from non-admin role lists and rejects direct invocation.
+2. **Script layer** — inside the function, re-check `current_user()["is_admin"]` and raise `PermissionError("admin only")` if false.
+
+Both matter. Without the registry layer, non-admins see the tool in their tool list and can attempt to call it (the audit trail shows the attempt). Without the script layer, a future change to `visible_to_roles` — or a `tools_call` from another script — could quietly grant access without re-reviewing the function body.
+
+```python
+# Exposed with visible_to_roles=["admin"]
+def admin_edit_thing(thing_id, **fields):
+    if not current_user()["is_admin"]:
+        raise PermissionError("admin only")
+    db_update_one("things", {"_id": thing_id}, {"$set": fields})
+    return {"ok": True}
+```
+
+The `app_items_history` trigger captures every UPDATE/DELETE for free, so admin edits are audited without extra code. If an edit goes wrong, `rollback_script_run(run_id=...)` reverses that run's mutations.
 
 ## Field-type conventions
 
@@ -259,7 +360,7 @@ For post-mortems, `script_logs(run_id=...)` returns the `log()` trail the script
 Know these before you write code the sandbox will reject.
 
 - `class Foo:` — Monty doesn't support user-defined classes. Use plain dicts and functions.
-- `import` of any kind — scripts get only the allowlisted built-ins listed below. No `requests`, no `datetime`, no `json`.
+- `import` of any kind — scripts get only the allowlisted built-ins listed below. No `requests`, no `datetime`, no `json`. For date math beyond `date_add` / `date_diff` (e.g. "start of this week in caller's TZ"), either have the caller pass explicit `start_date` / `end_date` strings or compute weekday with Zeller's congruence on the `YYYY-MM-DD` from `today()`.
 - `try/except` around host calls — those errors unwind. Python-raised errors are catchable.
 - Aggregation pipelines — do aggregation in Python using `db_find` results.
 - Filter operators `$or`, `$and`, `$regex`, `$exists`, `$type` — deferred to v0.2. Use multiple separate queries or narrow in Python.
@@ -290,7 +391,7 @@ Know these before you write code the sandbox will reject.
 | `add_todo_comment(todo_id, content)` | Comment on a todo. |
 | `create_decision(title, body, options, priority=, role_scopes=)` | Emit a decision card. |
 | `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. |
-| `create_task(description, cron=, timezone=, channel=, run_once=)` | Kit task, not script schedule. |
+| `create_task(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-tasks` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |
 | `add_memory(content, scope_type=, scope_value=)` | Save a memory. |
 | `send_slack_message(channel, text, thread_ts=)` | Post to Slack. |
 | `post_to_channel(channel, text, thread_ts=)` | Alias for `send_slack_message`. |
@@ -310,6 +411,7 @@ Know these before you write code the sandbox will reject.
 
 | Function | Purpose |
 |---|---|
+| `current_user()` | `{id, display_name, timezone, roles, is_admin}` for the caller. The only trustworthy identity source — never accept `user_id` as a tool arg. |
 | `now()` | UTC RFC3339Nano string. |
 | `today()` | `YYYY-MM-DD` in caller's timezone. |
 | `date_add(dt, days=, hours=, minutes=, seconds=)` | Shifted RFC3339Nano. |
@@ -337,6 +439,8 @@ Diagnostics: `script_logs`, `script_stats`.
 - [ ] Scripts split by concern once they pass ~200 LOC (`utils`, `dal`, `main`).
 - [ ] Every insert has a validator, even a 10-line one.
 - [ ] Every mutable field uses atomic operators, not read-modify-write.
+- [ ] Per-user scripts derive the owner from `current_user()`, never from a tool argument. Stored as `user_id` on the doc; filtered on every read.
+- [ ] Admin-only functions enforce both `visible_to_roles=["admin"]` at registry time and `current_user()["is_admin"]` inside the body.
 - [ ] Money is cents (int). Dates are ISO8601 strings. Emails are lowercased.
 - [ ] Exposed tool descriptions are precise enough the LLM picks them correctly — same discipline as `creating-skills`.
 - [ ] `run_script` works before `schedule_script` runs or `expose_script_function_as_tool` publishes.
