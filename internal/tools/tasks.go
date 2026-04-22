@@ -252,42 +252,12 @@ func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
 		}
 		fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s",
 			t.ID, t.Description, schedule, next, status)
-		if policySummary := summarizePolicy(t.Config); policySummary != "" {
+		if policySummary := services.FormatTaskPolicySummary(t.Config); policySummary != "" {
 			fmt.Fprintf(&b, " | %s", policySummary)
 		}
 		b.WriteByte('\n')
 	}
 	return b.String(), nil
-}
-
-// summarizePolicy renders a compact description of a task's policy
-// for list_tasks output, e.g. "policy: allow-list(4), force-gate(post_to_channel), pinned(channel)".
-// Returns "" when the task has no policy.
-func summarizePolicy(cfg []byte) string {
-	policy, err := models.ParseConfigPolicy(cfg)
-	if err != nil || policy == nil {
-		return ""
-	}
-	var parts []string
-	if policy.AllowedTools != nil {
-		parts = append(parts, fmt.Sprintf("allow-list(%d)", len(*policy.AllowedTools)))
-	}
-	if len(policy.ForceGate) > 0 {
-		parts = append(parts, "force-gate("+strings.Join(policy.ForceGate, ",")+")")
-	}
-	if len(policy.PinnedArgs) > 0 {
-		var keys []string
-		for tool, args := range policy.PinnedArgs {
-			for k := range args {
-				keys = append(keys, tool+"."+k)
-			}
-		}
-		parts = append(parts, "pinned("+strings.Join(keys, ",")+")")
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return "policy: " + strings.Join(parts, ", ")
 }
 
 func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (string, error) {

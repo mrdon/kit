@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -184,4 +185,37 @@ func (s *TaskService) Delete(ctx context.Context, c *Caller, taskID uuid.UUID) e
 		}
 	}
 	return ErrNotFound
+}
+
+// FormatTaskPolicySummary renders a compact description of a task's
+// policy (as persisted in task.config JSONB) for list_tasks output,
+// e.g. "policy: allow-list(4), force-gate(post_to_channel), pinned(channel)".
+// Returns "" when the task has no policy. Lives here so both agent-side
+// and MCP-side list_tasks formatters render identically — per
+// CLAUDE.md's shared-tool-parity rule.
+func FormatTaskPolicySummary(cfg []byte) string {
+	policy, err := models.ParseConfigPolicy(cfg)
+	if err != nil || policy == nil {
+		return ""
+	}
+	var parts []string
+	if policy.AllowedTools != nil {
+		parts = append(parts, fmt.Sprintf("allow-list(%d)", len(*policy.AllowedTools)))
+	}
+	if len(policy.ForceGate) > 0 {
+		parts = append(parts, "force-gate("+strings.Join(policy.ForceGate, ",")+")")
+	}
+	if len(policy.PinnedArgs) > 0 {
+		var keys []string
+		for tool, args := range policy.PinnedArgs {
+			for k := range args {
+				keys = append(keys, tool+"."+k)
+			}
+		}
+		parts = append(parts, "pinned("+strings.Join(keys, ",")+")")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "policy: " + strings.Join(parts, ", ")
 }

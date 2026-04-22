@@ -28,38 +28,7 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 	switch name {
 	case "create_task":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-			desc, _ := req.RequireString("description")
-			cronExpr := req.GetString("cron_expr", "")
-			channelID := req.GetString("channel_id", "")
-			scope := req.GetString("scope", "user")
-
-			if cronExpr == "" {
-				return mcp.NewToolResultError("cron_expr is required for MCP task creation."), nil
-			}
-
-			policy, perr := policyFromMCP(req)
-			if perr != "" {
-				return mcp.NewToolResultError(perr), nil
-			}
-
-			model := tools.ClassifyTaskModel(ctx, llm, desc)
-			task, err := svc.Tasks.Create(ctx, caller, services.CreateInput{
-				Description: desc,
-				CronExpr:    cronExpr,
-				Timezone:    caller.Timezone,
-				ChannelID:   channelID,
-				Scope:       scope,
-				Model:       model,
-				Policy:      policy,
-			})
-			if errors.Is(err, services.ErrForbidden) {
-				return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
-			}
-			if err != nil {
-				return nil, err
-			}
-			return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s, model: %s). Next run: %s",
-				task.ID, task.Model, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
+			return handleMCPCreateTask(ctx, req, caller, svc, llm)
 		})
 	case "list_tasks":
 		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
@@ -71,17 +40,22 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 				return mcp.NewToolResultText("No scheduled tasks."), nil
 			}
 			var b strings.Builder
+			b.WriteString("Scheduled tasks:\n")
 			for _, t := range tasks {
 				status := string(t.Status)
 				if t.LastError != nil {
 					status += " (error: " + *t.LastError + ")"
 				}
-				schedule := "cron: " + t.CronExpr
+				schedule := "cron: `" + t.CronExpr + "`"
 				if t.RunOnce {
 					schedule = "one-time"
 				}
-				fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s\n",
+				fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s",
 					t.ID, t.Description, schedule, t.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"), status)
+				if policySummary := services.FormatTaskPolicySummary(t.Config); policySummary != "" {
+					fmt.Fprintf(&b, " | %s", policySummary)
+				}
+				b.WriteByte('\n')
 			}
 			return mcp.NewToolResultText(b.String()), nil
 		})
@@ -257,6 +231,86 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 	})
 
 	return mcpserver.ServerTool{Tool: tool, Handler: handler}
+}
+
+// handleMCPCreateTask factors the create_task body out of taskMCPHandler
+// to keep the dispatcher's cyclomatic complexity in check. Mirrors
+// internal/tools/tasks.go's handleCreateTask — per the CLAUDE.md
+// shared-tool-parity rule, validation and return shape must match.
+func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller, svc *services.Services, llm *anthropic.Client) (*mcp.CallToolResult, error) {
+	desc, _ := req.RequireString("description")
+	cronExpr := req.GetString("cron_expr", "")
+	runAtStr := req.GetString("run_at", "")
+	channelID := req.GetString("channel_id", "")
+	scope := req.GetString("scope", "user")
+
+	if cronExpr == "" && runAtStr == "" {
+		return mcp.NewToolResultError("Provide either cron_expr (recurring) or run_at (one-time)."), nil
+	}
+	if cronExpr != "" && runAtStr != "" {
+		return mcp.NewToolResultError("Provide cron_expr or run_at, not both."), nil
+	}
+
+	runOnce := runAtStr != ""
+	var runAt *time.Time
+	if runOnce {
+		parsed, msg := parseMCPRunAt(runAtStr, caller.Timezone)
+		if msg != "" {
+			return mcp.NewToolResultError(msg), nil
+		}
+		runAt = parsed
+	}
+
+	policy, perr := policyFromMCP(req)
+	if perr != "" {
+		return mcp.NewToolResultError(perr), nil
+	}
+
+	model := tools.ClassifyTaskModel(ctx, llm, desc)
+	task, err := svc.Tasks.Create(ctx, caller, services.CreateInput{
+		Description: desc,
+		CronExpr:    cronExpr,
+		Timezone:    caller.Timezone,
+		ChannelID:   channelID,
+		Scope:       scope,
+		Model:       model,
+		RunOnce:     runOnce,
+		RunAt:       runAt,
+		Policy:      policy,
+	})
+	if errors.Is(err, services.ErrForbidden) {
+		return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	label := "Next run"
+	if runOnce {
+		label = "Runs at"
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s, model: %s). %s: %s",
+		task.ID, task.Model, label, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
+}
+
+// parseMCPRunAt parses the run_at string in the caller's timezone.
+// Returns (parsed, "") on success, (nil, userMessage) on parse failure
+// or past-date. Mirrors the agent-side ISO-8601 format acceptance.
+func parseMCPRunAt(runAtStr, timezone string) (*time.Time, string) {
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, fmt.Sprintf("Invalid timezone %q.", timezone)
+	}
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", runAtStr, loc)
+	if err != nil {
+		t, err = time.ParseInLocation("2006-01-02T15:04", runAtStr, loc)
+	}
+	if err != nil {
+		return nil, "Invalid run_at format. Use ISO 8601: 2026-04-05T21:20:00"
+	}
+	if t.Before(time.Now()) {
+		return nil, "run_at must be in the future."
+	}
+	return &t, ""
 }
 
 // policyFromMCP extracts and parses the optional "policy" argument from

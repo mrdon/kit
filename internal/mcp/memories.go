@@ -20,10 +20,13 @@ func memoryMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcps
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			content, _ := req.RequireString("content")
 			scope := req.GetString("scope", "tenant")
+			// uuid.Nil is intentional — MCP calls have no session to attribute
+			// the memory to. Agent-side save_memory passes ec.Session.ID because
+			// that path always runs inside a session.
 			if err := svc.Memories.Save(ctx, caller, content, scope, uuid.Nil); err != nil {
 				return nil, err
 			}
-			return mcp.NewToolResultText("Memory saved."), nil
+			return mcp.NewToolResultText("Got it, I'll remember that."), nil
 		})
 	case "search_memories":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
