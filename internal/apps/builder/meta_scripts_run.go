@@ -205,6 +205,7 @@ func invokeRunScript(
 		CallerUserID:   caller.UserID,
 		CallerRoles:    caller.Roles,
 		CallerTimezone: caller.Timezone,
+		CallerIsAdmin:  caller.IsAdmin,
 		RunID:          runID,
 		Limits:         limits,
 		MaxDBCalls:     maxDBCalls,

@@ -40,6 +40,7 @@ type ScriptRunParams struct {
 	CallerUserID   uuid.UUID
 	CallerRoles    []string
 	CallerTimezone string
+	CallerIsAdmin  bool
 	RunID          uuid.UUID
 	ParentRunID    *uuid.UUID
 	Limits         runtime.Limits
@@ -173,6 +174,11 @@ func BuildScriptCapabilities(
 	)
 	llm := BuildLLMBuiltins(pool, sender, params.TenantID, runIDPtr)
 	util := BuildUtilBuiltins(pool, params.TenantID, runIDPtr, params.CallerTimezone)
+	identity := BuildIdentityBuiltins(
+		pool,
+		params.TenantID, params.CallerUserID,
+		params.CallerRoles, params.CallerTimezone, params.CallerIsAdmin,
+	)
 
 	sharedCalls := &atomic.Int64{}
 	shared := BuildSharedBuiltin(
@@ -210,6 +216,11 @@ func BuildScriptCapabilities(
 		)
 		childLLM := BuildLLMBuiltins(pool, sender, tenantID, childRunIDPtr)
 		childUtil := BuildUtilBuiltins(pool, tenantID, childRunIDPtr, params.CallerTimezone)
+		childIdentity := BuildIdentityBuiltins(
+			pool,
+			tenantID, callerUserID,
+			callerRoles, params.CallerTimezone, params.CallerIsAdmin,
+		)
 		childShared := BuildSharedBuiltin(
 			pool, engine,
 			tenantID, builderAppID, callerUserID,
@@ -222,6 +233,7 @@ func BuildScriptCapabilities(
 		mergeBuiltIns(combined, combinedParams, childActions.BuiltIns, childActions.Params, "action")
 		mergeBuiltIns(combined, combinedParams, childLLM.BuiltIns, childLLM.Params, "llm")
 		mergeBuiltIns(combined, combinedParams, childUtil.BuiltIns, childUtil.Params, "util")
+		mergeBuiltIns(combined, combinedParams, childIdentity.BuiltIns, childIdentity.Params, "identity")
 		mergeBuiltIns(combined, combinedParams, childShared.BuiltIns, childShared.Params, "shared")
 		return combined, combinedParams
 	}
@@ -250,6 +262,9 @@ func BuildScriptCapabilities(
 		return nil, nil, err
 	}
 	if err := mergeBuiltInsSafe(combined, combinedParams, util.BuiltIns, util.Params, "util"); err != nil {
+		return nil, nil, err
+	}
+	if err := mergeBuiltInsSafe(combined, combinedParams, identity.BuiltIns, identity.Params, "identity"); err != nil {
 		return nil, nil, err
 	}
 	if err := mergeBuiltInsSafe(combined, combinedParams, toolsCall.BuiltIns, toolsCall.Params, "tools_call"); err != nil {
