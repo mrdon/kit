@@ -150,6 +150,10 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 
 		resp, err := a.callLLM(ctx, tenant.ID, session.ID, modelID, systemPrompt, messages, toolDefs, i, iterStart)
 		if err != nil {
+			if anthropic.IsRateLimit(err) && !session.BotInitiated {
+				a.sendRateLimitNotice(ctx, ec, in)
+				return nil
+			}
 			return err
 		}
 		usage.add(&resp.Usage)
@@ -414,6 +418,20 @@ func (a *Agent) sendFallback(ctx context.Context, ec *tools.ExecContext, in RunI
 		return
 	}
 	_ = in.Slack.PostMessage(ctx, in.Channel, in.ThreadTS, fallback)
+}
+
+// sendRateLimitNotice replies with a friendly "start a new thread"
+// message when we get a 429 from the Claude API. The common cause is a
+// long-running thread whose session history has pushed the per-minute
+// input-token budget over the limit — retrying in-thread won't help
+// because every subsequent call replays the same bloated history.
+func (a *Agent) sendRateLimitNotice(ctx context.Context, ec *tools.ExecContext, in RunInput) {
+	notice := "The conversation is getting too long for me to keep up. Please start a new thread (or DM) to continue — I'll have a fresh slate there."
+	if ec.Responder != nil {
+		_ = ec.Responder.Send(ctx, notice)
+		return
+	}
+	_ = in.Slack.PostMessage(ctx, in.Channel, in.ThreadTS, notice)
 }
 
 // historyOptions tunes replay behavior per caller. The defaults (zero

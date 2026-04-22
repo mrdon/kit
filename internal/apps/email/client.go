@@ -129,14 +129,12 @@ func imapSearch(ctx context.Context, acct *Account, query, folder string, since 
 	var uidSet imap.UIDSet
 	uidSet.AddNum(reversed...)
 
-	// Peek TEXT (body-only). No Partial fetch — some servers (greenmail
-	// in particular) return partial literals the parser chokes on. We
-	// truncate in snippetFromBytes instead, so we eat a few extra KB per
-	// summary but the path is portable.
-	bodyPeek := &imap.FetchItemBodySection{
-		Specifier: imap.PartSpecifierText,
-		Peek:      true,
-	}
+	// Peek the full message (headers + body). We need the outer headers
+	// for MIME parsing — without Content-Type we can't walk multipart
+	// bodies, and snippets end up as raw boundary/header junk. No
+	// Partial fetch — some servers (greenmail in particular) return
+	// partial literals the parser chokes on.
+	bodyPeek := &imap.FetchItemBodySection{Peek: true}
 	fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
 		UID:         true,
 		Envelope:    true,
@@ -214,7 +212,7 @@ func imapFetch(ctx context.Context, acct *Account, uid uint32, folder string) (*
 		}
 	}
 	raw := m.FindBodySection(bodySec)
-	out.Body = extractTextBody(raw)
+	out.Body = extractPlainText(raw)
 	out.Attachments = extractAttachmentNames(m.BodyStructure)
 	return out, nil
 }
@@ -331,7 +329,7 @@ func summaryFromBuf(m *imapclient.FetchMessageBuffer, bodyPeek *imap.FetchItemBo
 var collapseWS = regexp.MustCompile(`\s+`)
 
 func snippetFromBytes(b []byte) string {
-	s := string(b)
+	s := extractPlainText(b)
 	s = collapseWS.ReplaceAllString(s, " ")
 	s = strings.TrimSpace(s)
 	if len(s) > 200 {
@@ -367,24 +365,6 @@ func formatAddress(a imap.Address) string {
 		return fmt.Sprintf("%q <%s>", a.Name, email)
 	}
 	return email
-}
-
-// extractTextBody takes a raw full-message byte slice from IMAP and
-// returns a readable plain-text body. For MVP we return the raw bytes
-// decoded as UTF-8 after stripping MIME headers; robust MIME parsing can
-// land later if the heuristic disappoints.
-func extractTextBody(b []byte) string {
-	if len(b) == 0 {
-		return ""
-	}
-	s := string(b)
-	// Naive: strip lines that look like MIME headers at the top.
-	if idx := strings.Index(s, "\r\n\r\n"); idx >= 0 {
-		s = s[idx+4:]
-	} else if idx := strings.Index(s, "\n\n"); idx >= 0 {
-		s = s[idx+2:]
-	}
-	return strings.TrimSpace(s)
 }
 
 // extractAttachmentNames walks the body structure and returns any named

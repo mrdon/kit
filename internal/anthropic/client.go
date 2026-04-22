@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,26 @@ import (
 )
 
 const apiURL = "https://api.anthropic.com/v1/messages"
+
+// APIError is returned by CreateMessage when the API responds with a
+// non-2xx status. Callers use errors.As to branch on StatusCode —
+// most notably 429 (rate limit) which usually means the conversation
+// has grown past the per-minute input-token budget and should be
+// reset rather than retried.
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("API returned %d: %s", e.StatusCode, e.Body)
+}
+
+// IsRateLimit reports whether err is a 429 from the Anthropic API.
+func IsRateLimit(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusTooManyRequests
+}
 
 // Client calls the Claude Messages API.
 type Client struct {
@@ -183,7 +204,7 @@ func (c *Client) CreateMessage(ctx context.Context, req *Request) (*Response, er
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var result Response
