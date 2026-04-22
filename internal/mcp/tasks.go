@@ -200,11 +200,16 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		if user.DisplayName != nil && *user.DisplayName != "" {
 			authorName = *user.DisplayName
 		}
+		policy, perr := models.ParseConfigPolicy(task.Config)
+		if perr != nil {
+			return nil, fmt.Errorf("parsing task policy: %w", perr)
+		}
 		tc := &agent.TaskContext{
 			ID:            task.ID,
 			Description:   task.Description,
 			AuthorSlackID: user.SlackUserID,
 			AuthorName:    authorName,
+			Policy:        policy,
 		}
 
 		threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
