@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Stack from './Stack';
 import StackItemDetail from './StackItemDetail';
+import ToastViewport from './toast/ToastViewport';
 import { BASENAME } from './workspace';
 import './styles.css';
 
@@ -25,6 +26,7 @@ createRoot(document.getElementById('root')!).render(
           element={<StackItemDetail />}
         />
       </Routes>
+      <ToastViewport />
     </BrowserRouter>
   </StrictMode>,
 );

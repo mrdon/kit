@@ -956,3 +956,74 @@ a { color: var(--link); }
   border-top: 1px solid var(--card-border);
   background: var(--card-bg);
 }
+
+/* Toast viewport. Single-slot, bottom-center, slides up from below.
+   Used for pending swipe actions (with Undo), success confirmations,
+   and error recovery prompts. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  min-width: 260px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 30;
+  box-shadow: 0 10px 30px var(--shadow-card);
+  font-size: 14px;
+  animation: toast-in 0.18s ease-out;
+}
+.toast-pending {
+  background: var(--card-heading);
+  color: var(--card-bg);
+}
+.toast-success {
+  background: var(--tier-medium-accent, var(--card-heading));
+  color: var(--card-bg);
+}
+.toast-error {
+  background: var(--tier-critical-accent, #b00020);
+  color: #fff;
+}
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast-action {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.toast-action:hover { opacity: 0.85; }
+.toast-action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.toast-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.toast-close:hover { opacity: 1; }
+@keyframes toast-in {
+  from { transform: translate(-50%, 12px); opacity: 0; }
+  to   { transform: translate(-50%, 0);    opacity: 1; }
+}

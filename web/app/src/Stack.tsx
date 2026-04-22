@@ -1,12 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { api } from './api';
-import type { StackItem, StackResponse } from './types';
+import { api, stackActionUrl } from './api';
+import type { StackAction, StackItem, StackResponse } from './types';
 import { itemKey } from './types';
 import CardChatSheet from './chat/CardChatSheet';
 import QuickChatSheet from './chat/QuickChatSheet';
 import SwipeCard, { type SwipeCardHandle } from './stack/SwipeCard';
+import { showToast } from './toast/bus';
+
+// UNDO_FUSE_MS — how long a committed swipe stays pending (and
+// undoable via the toast) before the POST actually fires. Mirrors
+// Gmail's "Undo Send" window. If a new action arrives before this
+// elapses, the previous one commits early (toast is single-slot).
+const UNDO_FUSE_MS = 5000;
+
+// COMMIT_ANIMATION_MS — how long the swipe-out animation runs before
+// we filter the card out of the list. Matches the old removal delay.
+const COMMIT_ANIMATION_MS = 260;
+
+type PendingAction = {
+  id: number;
+  item: StackItem;
+  action: StackAction;
+  originalIndex: number;
+};
 
 export default function Stack() {
   const [items, setItems] = useState<StackItem[] | null>(null);
@@ -39,7 +57,16 @@ export default function Stack() {
       // then scrolling client-side.
       const focus = window.location.hash.replace(/^#/, '') || undefined;
       const resp = await api.stack({ focus });
-      setItems(resp.items ?? []);
+      // Filter out items that are pending an undo-fuse commit — the
+      // server still has them in the stack (the POST hasn't fired yet),
+      // but the user has visually swiped them off. Let them stay off.
+      const pendingKeys = new Set(
+        Array.from(pendingRef.current.values()).map((pa) => itemKey(pa.item)),
+      );
+      const items = pendingKeys.size
+        ? (resp.items ?? []).filter((x) => !pendingKeys.has(itemKey(x)))
+        : (resp.items ?? []);
+      setItems(items);
       setDegraded(resp.degraded ?? []);
       setErr(null);
     } catch (e) {
@@ -69,16 +96,119 @@ export default function Stack() {
     window.setTimeout(() => setBurst(null), 900);
   };
 
-  // Server's ActionResult tells us which items to drop. We animate the
-  // card off first, then patch state so AnimatePresence can collapse.
-  const onCommit = (item: StackItem, _emoji: string, removedIDs: string[]) => {
-    const key = itemKey(item);
-    window.setTimeout(() => {
-      setItems((cs) =>
-        cs ? cs.filter((x) => !removedIDs.includes(itemKey(x)) && itemKey(x) !== key) : cs,
+  // Pending swipe actions awaiting their undo-fuse. Keyed by pending id.
+  // We keep this in a ref so the pagehide flush and async commit can
+  // read/write without closure staleness.
+  const pendingRef = useRef<Map<number, PendingAction>>(new Map());
+  const pendingCounterRef = useRef(0);
+
+  // commitPending fires the actual POST after the undo fuse expires.
+  // On success, drop any additional items the server flagged (decision
+  // resolves can close linked cards). On failure, restore the item and
+  // show an error toast — the card pops back to the top so the user
+  // can retry.
+  const commitPending = useCallback(async (pa: PendingAction) => {
+    try {
+      const result = await api.doAction(
+        pa.item.source_app,
+        pa.item.kind,
+        pa.item.id,
+        pa.action.id,
+        pa.action.params,
       );
-    }, 260);
-  };
+      const removed = result.removed_ids ?? [];
+      if (removed.length > 0) {
+        setItems((cs) => (cs ? cs.filter((x) => !removed.includes(itemKey(x))) : cs));
+      }
+    } catch (e) {
+      const key = itemKey(pa.item);
+      setItems((cs) => {
+        if (!cs) return cs;
+        if (cs.some((x) => itemKey(x) === key)) return cs;
+        const idx = Math.min(pa.originalIndex, cs.length);
+        return [...cs.slice(0, idx), pa.item, ...cs.slice(idx)];
+      });
+      showToast({
+        kind: 'error',
+        message: (e as Error).message || 'Action failed',
+        duration: 6000,
+      });
+    }
+  }, []);
+
+  // onCommit is called by SwipeCard the moment the user completes a
+  // swipe. We wait COMMIT_ANIMATION_MS so the card finishes animating
+  // off, then remove it from the list, queue a PendingAction, and show
+  // the undo toast. The real POST only fires when the toast expires or
+  // gets replaced by a newer swipe.
+  const onCommit = useCallback(
+    (item: StackItem, action: StackAction) => {
+      const key = itemKey(item);
+      const originalIndex = items?.findIndex((x) => itemKey(x) === key) ?? 0;
+      const pendingId = ++pendingCounterRef.current;
+
+      window.setTimeout(() => {
+        setItems((cs) => (cs ? cs.filter((x) => itemKey(x) !== key) : cs));
+
+        const pa: PendingAction = { id: pendingId, item, action, originalIndex };
+        pendingRef.current.set(pendingId, pa);
+
+        showToast({
+          kind: 'pending',
+          message: `${action.emoji} ${action.label}`,
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              pendingRef.current.delete(pendingId);
+              setItems((cs) => {
+                if (!cs) return cs;
+                if (cs.some((x) => itemKey(x) === key)) return cs;
+                const idx = Math.min(originalIndex, cs.length);
+                return [...cs.slice(0, idx), item, ...cs.slice(idx)];
+              });
+            },
+          },
+          duration: UNDO_FUSE_MS,
+          onExpire: () => {
+            const p = pendingRef.current.get(pendingId);
+            if (!p) return;
+            pendingRef.current.delete(pendingId);
+            void commitPending(p);
+          },
+        });
+      }, COMMIT_ANIMATION_MS);
+    },
+    [items, commitPending],
+  );
+
+  // Flush any pending actions via sendBeacon when the page is about to
+  // go away. pagehide fires on real navigation/close; visibilitychange
+  // covers mobile app-background. sendBeacon is reliable in both.
+  useEffect(() => {
+    const flush = () => {
+      if (pendingRef.current.size === 0) return;
+      for (const pa of Array.from(pendingRef.current.values())) {
+        const body = JSON.stringify({
+          action_id: pa.action.id,
+          params: pa.action.params ?? undefined,
+        });
+        navigator.sendBeacon(
+          stackActionUrl(pa.item.source_app, pa.item.kind, pa.item.id),
+          new Blob([body], { type: 'application/json' }),
+        );
+      }
+      pendingRef.current.clear();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   // Keyboard shortcuts for desktop testing. Hold-to-commit: pressing
   // an arrow key starts pushing the top card across at a constant

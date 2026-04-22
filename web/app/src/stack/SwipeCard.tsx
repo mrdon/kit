@@ -10,9 +10,7 @@ import {
 } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '../api';
 import type { StackAction, StackItem } from '../types';
-import { itemKey } from '../types';
 import { rendererFor } from '../kinds';
 
 export type CommitDirection = 'right' | 'left';
@@ -39,7 +37,10 @@ export type SwipeCardHandle = {
 
 type SwipeCardProps = {
   item: StackItem;
-  onCommit: (item: StackItem, emoji: string, removedIDs: string[]) => void;
+  // Called when the user completes a swipe. The parent handles the
+  // optimistic removal, the 5s undo fuse, and the actual POST — this
+  // card only owns the visual commit (exit animation + burst).
+  onCommit: (item: StackItem, action: StackAction) => void;
   onShowBurst: (item: StackItem, emoji: string) => void;
   onLongPress: (item: StackItem) => void;
   disableLongPress: boolean;
@@ -102,30 +103,16 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
     else setArmed(null);
   });
 
-  const runAction = async (direction: CommitDirection, action: StackAction) => {
+  const runAction = (direction: CommitDirection, action: StackAction) => {
     if (runningRef.current) return;
     runningRef.current = true;
     setBusy(true);
     setSwipingOut(direction);
-    // Burst fires immediately so it lands with the exit animation
-    // regardless of how long the server takes; item removal still
-    // waits for the server to confirm (and to tell us what to drop).
+    // Burst fires immediately so it lands with the exit animation.
+    // The parent owns the pending-fuse + POST — this callback returns
+    // synchronously so undo feels instantaneous.
     onShowBurst(item, action.emoji);
-    try {
-      const result = await api.doAction(
-        item.source_app,
-        item.kind,
-        item.id,
-        action.id,
-        action.params,
-      );
-      onCommit(item, action.emoji, result.removed_ids ?? [itemKey(item)]);
-    } catch (e) {
-      runningRef.current = false;
-      setBusy(false);
-      setSwipingOut(null);
-      alert((e as Error).message);
-    }
+    onCommit(item, action);
   };
 
   // pushAnimRef holds the in-flight hold-to-commit animation so a key
@@ -165,16 +152,16 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
     [rightAction, leftAction, threshold, x],
   );
 
-  const onDragEnd = async (_e: unknown, info: PanInfo) => {
+  const onDragEnd = (_e: unknown, info: PanInfo) => {
     if (busy) return;
     const snapBack = () =>
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 32 });
     if (canSwipeRight && rightAction && info.offset.x > threshold) {
-      await runAction('right', rightAction);
+      runAction('right', rightAction);
       return;
     }
     if (canSwipeLeft && leftAction && info.offset.x < -threshold) {
-      await runAction('left', leftAction);
+      runAction('left', leftAction);
       return;
     }
     snapBack();
@@ -246,9 +233,9 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
           clearLongPress();
           wasDraggedRef.current = true;
         }}
-        onDragEnd={async (e, info) => {
+        onDragEnd={(e, info) => {
           clearLongPress();
-          await onDragEnd(e, info);
+          onDragEnd(e, info);
         }}
         onTap={() => {
           clearLongPress();

@@ -47,6 +47,12 @@ export const cardChatExecuteUrl = (sourceApp: string, kind: string, id: string) 
 export const quickChatExecuteUrl = () => `${BASENAME}/api/v1/chat/quick/execute`;
 export const chatTranscribeUrl = () => `${BASENAME}/api/v1/chat/transcribe`;
 
+// Action endpoint URL. Exported so the pending-action fuse can flush
+// via navigator.sendBeacon on pagehide without depending on the api
+// object's fetch wrapper.
+export const stackActionUrl = (sourceApp: string, kind: string, id: string) =>
+  `${cardPath(sourceApp, kind, id)}/action`;
+
 export const api = {
   stack: async (
     opts?: { cursor?: string; limit?: number; focus?: string },
