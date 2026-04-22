@@ -346,6 +346,7 @@ For post-mortems, `script_logs(run_id=...)` returns the `log()` trail the script
 - **Log generously.** `log("info", "triaging review", review_id=r_id, length=len(text))` writes a row to `script_logs` keyed to the current run. Cheap. Fast. Pull the trail with `script_logs(run_id=...)`.
 - **Use `script_stats`.** `script_stats(app="crm", days=7)` surfaces completed/errors/limits/cancelled counts, avg and max duration, tokens, and cost. The first place to look when you think "this app has been weird lately".
 - **Read the script_runs audit.** Each run records `status`, `duration_ms`, `mutation_summary`, plus `parent_run_id` when invoked via `tools_call`. The whole lineage is queryable.
+- **Side-effecting actions may fail under `run_script`.** `dm_user` / `send_slack_message` and other Slack-touching actions can error with `user_not_found` or similar when invoked via the admin harness, because the synthetic caller may not have a real Slack identity. Pattern: for any function that sends a message or DM, expose a parallel `preview_*` function that returns the message body without side effects — use it for smoke tests, leave the real sender for the scheduler / live Slack invocations.
 
 ## Common shapes
 
@@ -360,13 +361,16 @@ For post-mortems, `script_logs(run_id=...)` returns the `log()` trail the script
 Know these before you write code the sandbox will reject.
 
 - `class Foo:` — Monty doesn't support user-defined classes. Use plain dicts and functions.
-- `import` of any kind — scripts get only the allowlisted built-ins listed below. No `requests`, no `datetime`, no `json`. For date math beyond `date_add` / `date_diff` (e.g. "start of this week in caller's TZ"), either have the caller pass explicit `start_date` / `end_date` strings or compute weekday with Zeller's congruence on the `YYYY-MM-DD` from `today()`.
+- `import` of any kind — scripts get only the allowlisted built-ins listed below. No `requests`, no `datetime`, no `json`.
+- `"%04d" % n` **and** f-string interpolation — neither is supported by Monty. `"%04d" % n` errors with `TypeError: unsupported operand type(s) for %: 'str' and 'tuple'`. Use string concatenation and a manual zero-pad helper: `def _zp(n, w): s = str(int(n)); return ("0" * (w - len(s))) + s if len(s) < w else s`.
 - `try/except` around host calls — those errors unwind. Python-raised errors are catchable.
 - Aggregation pipelines — do aggregation in Python using `db_find` results.
 - Filter operators `$or`, `$and`, `$regex`, `$exists`, `$type` — deferred to v0.2. Use multiple separate queries or narrow in Python.
+- **`$gte` / `$lte` / `$gt` / `$lt` on strings** — v0.1 accepts only numeric values for these operators. For date-range queries over RFC3339 strings you must fetch by a cheap equality filter (e.g. `user_id`) and filter in Python. This bites any app with time-bucketed reporting; see the `timecards` example for the pattern.
 - Bulk writes (`insert_many` / `update_many` / `delete_many`) — iterate in Python for v0.1.
 - Positional args to `shared(...)` target functions — pass target kwargs only.
 - Deeper than one level of `tools_call` nesting — an exposed tool cannot itself call `tools_call`.
+- **Weekday / "start of week" helpers** — none in v0.1. For date math beyond `date_add` / `date_diff`, either have the caller pass explicit `start_date` / `end_date` strings, or compute weekday with Zeller's congruence on the `YYYY-MM-DD` from `today()`. The `timecards` example in `builder_examples` has a working `_weekday` + `_add_days_to_date` + `week_bounds` trio you can paste in.
 
 ## Quick reference
 
@@ -390,7 +394,7 @@ Know these before you write code the sandbox will reject.
 | `complete_todo(todo_id, note=)` | Mark done. |
 | `add_todo_comment(todo_id, content)` | Comment on a todo. |
 | `create_decision(title, body, options, priority=, role_scopes=)` | Emit a decision card. |
-| `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. |
+| `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of **real role names** that must exist in the tenant — `admin` is a user flag (boolean on users), NOT a default role; `role_scopes=["admin"]` errors with `looking up role "admin": no rows in result set` unless an admin role has been created. For per-user delivery, use `dm_user` instead. |
 | `create_task(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-tasks` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |
 | `add_memory(content, scope_type=, scope_value=)` | Save a memory. |
 | `send_slack_message(channel, text, thread_ts=)` | Post to Slack. |
@@ -413,9 +417,9 @@ Know these before you write code the sandbox will reject.
 |---|---|
 | `current_user()` | `{id, display_name, timezone, roles, is_admin}` for the caller. The only trustworthy identity source — never accept `user_id` as a tool arg. |
 | `now()` | UTC RFC3339Nano string. |
-| `today()` | `YYYY-MM-DD` in caller's timezone. |
-| `date_add(dt, days=, hours=, minutes=, seconds=)` | Shifted RFC3339Nano. |
-| `date_diff(a, b)` | `a-b` in seconds, float. |
+| `today()` | `YYYY-MM-DD` in caller's timezone. Must be extended (`today() + "T00:00:00Z"`) before passing to `date_add` / `date_diff`. |
+| `date_add(dt, days=, hours=, minutes=, seconds=)` | Shifted RFC3339Nano. `dt` MUST be full RFC3339 with seconds + timezone (`YYYY-MM-DDTHH:MM:SSZ` or offset). Strings like `2026-04-22T09:00` error — normalise user input first (append `:00Z` or call `parse_iso_datetime` style helper). |
+| `date_diff(a, b)` | `a-b` in seconds, float. Same input strictness as `date_add`. |
 | `log(level, message, **fields)` | Structured log row on the current run. |
 
 ### Composition

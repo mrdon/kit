@@ -152,6 +152,7 @@ var examplesByID = map[string]exampleDefinition{
 	"review_triage":            reviewTriageExample(),
 	"vendor_book_multi_script": vendorBookExample(),
 	"weekly_digest":            weeklyDigestExample(),
+	"timecards":                timecardsExample(),
 }
 
 // Individual example constructors live in the helper functions below.

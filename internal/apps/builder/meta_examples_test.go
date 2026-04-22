@@ -37,6 +37,7 @@ func TestBuilderExamples_Catalog(t *testing.T) {
 		"crm_with_service_layer",
 		"mug_club",
 		"review_triage",
+		"timecards",
 		"vendor_book_multi_script",
 		"weekly_digest",
 	}
