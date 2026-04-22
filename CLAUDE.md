@@ -79,25 +79,31 @@ make db-reset    # Wipe and restart Postgres
 
 ## Production Debugging
 
+> The dokku user's SSH login IS the dokku CLI — pass subcommands directly,
+> NOT prefixed with `dokku`. So `ssh dokku@host 'logs kit'`, not
+> `ssh dokku@host 'dokku logs kit'`. Same for `postgres:connect`, `config:get`, etc.
+
 ### Logs
 ```bash
 # Recent logs (adjust --num as needed)
-ssh dokku@apps.twdata.org 'dokku logs kit --num 200'
+ssh dokku@apps.twdata.org 'logs kit --num 200'
 
 # Filter for specific topics
-ssh dokku@apps.twdata.org 'dokku logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
+ssh dokku@apps.twdata.org 'logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
 ```
 
 ### Database queries
 ```bash
-# Interactive psql session
-ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db'
-
-# One-shot query
-ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db <<SQL
+# One-shot query (heredoc piped to postgres:connect)
+ssh dokku@apps.twdata.org 'postgres:connect kit-db' <<'SQL'
 SELECT id, slack_team_id, name FROM tenants ORDER BY created_at;
-SQL'
+SQL
+
+# List postgres services
+ssh dokku@apps.twdata.org 'postgres:list'
 ```
+The container has no shell (`dokku enter` fails with no /bin/bash); always
+go through `postgres:connect`.
 
 ### MCP tools for debugging
 - `list_sessions` / `get_session_events` — inspect your own agent session history. For debugging another user's sessions, query the DB directly (`dokku postgres:connect kit-db`) — the MCP surface is scoped to the caller so admins can't read other users' email/memory traces.
