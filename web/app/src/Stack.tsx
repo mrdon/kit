@@ -311,6 +311,10 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
   // click-to-navigate that would otherwise fire on release.
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
+  // Set when Framer detects a drag for this gesture. onTap can still fire
+  // after a small drag-and-back release, which would wrong-navigate to the
+  // detail view. Cleared on the next interaction.
+  const wasDraggedRef = useRef(false);
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -407,7 +411,28 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
   const Face = renderer.Face;
 
   return (
-    <motion.article
+    <div className="swipe-card-shell">
+      {canSwipeRight && rightAction && (
+        <div className="swipe-hint-wrap">
+          <motion.div
+            className="swipe-hint right"
+            style={{ opacity: rightOpacity, scale: rightScale }}
+          >
+            {rightAction.emoji} {rightAction.label}
+          </motion.div>
+        </div>
+      )}
+      {canSwipeLeft && leftAction && (
+        <div className="swipe-hint-wrap">
+          <motion.div
+            className="swipe-hint left"
+            style={{ opacity: leftOpacity, scale: leftScale }}
+          >
+            {leftAction.emoji} {leftAction.label}
+          </motion.div>
+        </div>
+      )}
+      <motion.article
       className={`card tier-${item.priority_tier}${armed ? ` armed-${armed}` : ''}`}
       drag={busy ? false : 'x'}
       dragConstraints={{
@@ -431,6 +456,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       }
       onTapStart={() => {
         if (disableLongPress || busy) return;
+        wasDraggedRef.current = false;
         longPressFiredRef.current = false;
         longPressTimerRef.current = window.setTimeout(() => {
           longPressFiredRef.current = true;
@@ -443,7 +469,10 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       // timer ticks to completion and opens chat on whatever card the
       // scroll started on.
       onTapCancel={clearLongPress}
-      onDragStart={clearLongPress}
+      onDragStart={() => {
+        clearLongPress();
+        wasDraggedRef.current = true;
+      }}
       onDragEnd={async (e, info) => {
         clearLongPress();
         await onDragEnd(e, info);
@@ -451,9 +480,13 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
       onTap={() => {
         clearLongPress();
         if (busy) return;
-        // onTap only fires when the pointer stays put — a vertical
-        // scroll or any drag cancels it, so scrolling the feed no
-        // longer wrong-navigates into the detail page.
+        // A drag-and-release (even small, where the card snaps back) must
+        // not fall through to the detail-view navigation — only a clean
+        // tap with no drag opens the detail page.
+        if (wasDraggedRef.current) {
+          wasDraggedRef.current = false;
+          return;
+        }
         if (longPressFiredRef.current) {
           longPressFiredRef.current = false;
           return;
@@ -481,26 +514,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
         </div>
       )}
       {Face && <Face item={item} />}
-      {canSwipeRight && rightAction && (
-        <div className="swipe-hint-wrap">
-          <motion.div
-            className="swipe-hint right"
-            style={{ opacity: rightOpacity, scale: rightScale }}
-          >
-            {rightAction.emoji} {rightAction.label}
-          </motion.div>
-        </div>
-      )}
-      {canSwipeLeft && leftAction && (
-        <div className="swipe-hint-wrap">
-          <motion.div
-            className="swipe-hint left"
-            style={{ opacity: leftOpacity, scale: leftScale }}
-          >
-            {leftAction.emoji} {leftAction.label}
-          </motion.div>
-        </div>
-      )}
-    </motion.article>
+      </motion.article>
+    </div>
   );
 });

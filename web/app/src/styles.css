@@ -240,6 +240,14 @@ main.feed > .card-screen {
 .badge.tone-warn   { background: var(--badge-warn-bg);   color: var(--badge-warn-fg); }
 .badge.tone-info   { background: var(--badge-info-bg);   color: var(--badge-info-fg); }
 
+/* Shell wraps each swipeable card so the hint can be a sibling of the
+   dragged article rather than a child — otherwise the hint rides along
+   with the card's translate. The shell itself doesn't drag. */
+.swipe-card-shell {
+  position: relative;
+  width: 100%;
+}
+
 .swipe-hint-wrap {
   position: absolute;
   inset: 0;
@@ -247,6 +255,7 @@ main.feed > .card-screen {
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  z-index: 2;
 }
 
 .swipe-hint {
