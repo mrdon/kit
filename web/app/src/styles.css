@@ -242,10 +242,15 @@ main.feed > .card-screen {
 
 /* Shell wraps each swipeable card so the hint can be a sibling of the
    dragged article rather than a child — otherwise the hint rides along
-   with the card's translate. The shell itself doesn't drag. */
+   with the card's translate. The shell itself doesn't drag, but it has
+   to forward .card-screen's flex sizing to the .card inside. */
 .swipe-card-shell {
   position: relative;
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .swipe-hint-wrap {
