@@ -142,11 +142,14 @@ func handleStackList(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyStackFocus hoists the item matching focusKey to the front of
-// items. If the item isn't already in the slice (e.g. it would fall on
-// a later paginated page) we fetch it via the source's GetItem and
-// prepend. Silent no-op on parse failure or a missing/forbidden item —
-// the page still renders in normal order.
-func applyStackFocus(ctx context.Context, caller *services.Caller, items []shared.StackItem, focusKey string) []shared.StackItem {
+// items when that item is already in the normal feed result. Silent
+// no-op if the item isn't present — we used to fall back to GetItem +
+// prepend, but GetItem bypasses feed filters like snooze/visibility,
+// so a stale deep-link hash kept resurfacing snoozed todos on every
+// refetch. A deep-link to an item that's no longer in the feed
+// (snoozed, resolved, scope-excluded) now just lands the user on the
+// normal feed — which is the right fallback.
+func applyStackFocus(_ context.Context, _ *services.Caller, items []shared.StackItem, focusKey string) []shared.StackItem {
 	parts := strings.SplitN(focusKey, ":", 3)
 	if len(parts) != 3 {
 		return items
@@ -164,15 +167,7 @@ func applyStackFocus(ctx context.Context, caller *services.Caller, items []share
 			return out
 		}
 	}
-	p := providerByName(sourceApp)
-	if p == nil {
-		return items
-	}
-	detail, err := p.GetItem(ctx, caller, kind, id)
-	if err != nil || detail == nil {
-		return items
-	}
-	return append([]shared.StackItem{detail.Item}, items...)
+	return items
 }
 
 // sortStackItems applies the canonical sort: tier rank, kind weight,
