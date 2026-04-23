@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api, stackActionUrl } from './api';
@@ -19,6 +19,14 @@ const UNDO_FUSE_MS = 5000;
 // we filter the card out of the list. Matches the old removal delay.
 const COMMIT_ANIMATION_MS = 260;
 
+// TOP_KEY_STORAGE — sessionStorage key for the itemKey of the card
+// currently at the top of the viewport. Restored after list mutations
+// (mount after navigation, resolve) so the user doesn't lose their
+// place: (1) back from the detail route lands on the same card, and
+// (2) resolving the last scrolled-to card advances to the next card
+// instead of letting scrollTop clamp back to one already seen.
+const TOP_KEY_STORAGE = 'kit:stack:topKey';
+
 type PendingAction = {
   id: number;
   item: StackItem;
@@ -36,11 +44,31 @@ export default function Stack() {
   const [quickChatOpen, setQuickChatOpen] = useState(false);
   const feedRef = useRef<HTMLElement | null>(null);
 
+  // itemsRef mirrors items so onScroll can read the current list
+  // without re-binding (it fires faster than state closures refresh).
+  const itemsRef = useRef<StackItem[] | null>(null);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   const onScroll = useCallback(() => {
     const el = feedRef.current;
     if (!el) return;
     const max = el.scrollHeight - el.clientHeight;
     setProgress(max > 0 ? el.scrollTop / max : 0);
+    // Remember the top-visible card so we can restore it across
+    // remounts (back-nav from detail) and list mutations (resolve).
+    const vh = el.clientHeight;
+    const list = itemsRef.current;
+    if (vh > 0 && list && list.length > 0) {
+      const idx = Math.min(list.length - 1, Math.max(0, Math.round(el.scrollTop / vh)));
+      try {
+        sessionStorage.setItem(TOP_KEY_STORAGE, itemKey(list[idx]));
+      } catch {
+        // sessionStorage can throw in private-mode Safari; the scroll
+        // restore is a nice-to-have so we just skip it.
+      }
+    }
   }, []);
 
   // Keep progress in sync when the item list changes (completions shrink
@@ -48,6 +76,30 @@ export default function Stack() {
   useEffect(() => {
     onScroll();
   }, [items, onScroll]);
+
+  // Restore scroll to the remembered top card after any list mutation.
+  // Runs in a layout effect so the jump happens before paint (no flicker
+  // back to the top). Skips when nothing is saved or the saved card is
+  // gone from the current list — in that case the natural scroll
+  // position stands.
+  useLayoutEffect(() => {
+    if (!items || items.length === 0) return;
+    const el = feedRef.current;
+    if (!el) return;
+    let saved: string | null = null;
+    try {
+      saved = sessionStorage.getItem(TOP_KEY_STORAGE);
+    } catch {
+      return;
+    }
+    if (!saved) return;
+    const idx = items.findIndex((i) => itemKey(i) === saved);
+    if (idx < 0) return;
+    const target = idx * el.clientHeight;
+    if (Math.abs(el.scrollTop - target) > 1) {
+      el.scrollTo({ top: target, behavior: 'auto' });
+    }
+  }, [items]);
 
   const load = useCallback(async () => {
     try {
@@ -122,6 +174,11 @@ export default function Stack() {
       }
     } catch (e) {
       const key = itemKey(pa.item);
+      try {
+        sessionStorage.setItem(TOP_KEY_STORAGE, key);
+      } catch {
+        // ignore
+      }
       setItems((cs) => {
         if (!cs) return cs;
         if (cs.some((x) => itemKey(x) === key)) return cs;
@@ -146,6 +203,21 @@ export default function Stack() {
       const key = itemKey(item);
       const originalIndex = items?.findIndex((x) => itemKey(x) === key) ?? 0;
       const pendingId = ++pendingCounterRef.current;
+      // After removal, the user should advance to what was below, not
+      // clamp back to what they already scrolled past. Point the saved
+      // top key at the next card (or the previous one if this was the
+      // last) so the restore effect places us there.
+      const neighbor =
+        (items && items[originalIndex + 1]) ||
+        (items && items[originalIndex - 1]) ||
+        null;
+      if (neighbor) {
+        try {
+          sessionStorage.setItem(TOP_KEY_STORAGE, itemKey(neighbor));
+        } catch {
+          // ignore — see onScroll for rationale
+        }
+      }
 
       window.setTimeout(() => {
         setItems((cs) => (cs ? cs.filter((x) => itemKey(x) !== key) : cs));
@@ -160,6 +232,14 @@ export default function Stack() {
             label: 'Undo',
             onClick: () => {
               pendingRef.current.delete(pendingId);
+              // Put the saved top key back on the undone card so the
+              // restore effect doesn't bounce us past it to the neighbor
+              // we set during commit.
+              try {
+                sessionStorage.setItem(TOP_KEY_STORAGE, key);
+              } catch {
+                // ignore
+              }
               setItems((cs) => {
                 if (!cs) return cs;
                 if (cs.some((x) => itemKey(x) === key)) return cs;
