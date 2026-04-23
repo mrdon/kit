@@ -232,6 +232,61 @@ func TestSnoozeUntilAtUnknownTimezoneErrors(t *testing.T) {
 	}
 }
 
+func TestSnoozeUntilNextMondayFromWednesday(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Los_Angeles")
+	// Wed 2026-04-22 14:00 PDT → next Monday 2026-04-27 03:00 PDT.
+	now := time.Date(2026, 4, 22, 14, 0, 0, 0, loc)
+	got, err := snoozeUntilNextMondayAt(now, "America/Los_Angeles")
+	if err != nil {
+		t.Fatalf("snoozeUntilNextMondayAt: %v", err)
+	}
+	local := got.In(loc)
+	if local.Weekday() != time.Monday {
+		t.Errorf("expected Monday, got %s", local.Weekday())
+	}
+	if local.Day() != 27 || local.Hour() != 3 {
+		t.Errorf("expected 2026-04-27 03:00 PDT, got %s", local)
+	}
+}
+
+func TestSnoozeUntilNextMondayFromMondayGoesAWeekOut(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Los_Angeles")
+	// Tapping "Monday" when today is Monday should land a full week
+	// out — the user sees today and means the next one.
+	now := time.Date(2026, 4, 20, 14, 0, 0, 0, loc)
+	got, err := snoozeUntilNextMondayAt(now, "America/Los_Angeles")
+	if err != nil {
+		t.Fatalf("snoozeUntilNextMondayAt: %v", err)
+	}
+	local := got.In(loc)
+	if local.Weekday() != time.Monday {
+		t.Errorf("expected Monday, got %s", local.Weekday())
+	}
+	if local.Day() != 27 {
+		t.Errorf("expected Apr 27 (next Monday), got %s", local)
+	}
+}
+
+func TestSnoozeUntilNextMondayFromSunday(t *testing.T) {
+	loc, _ := time.LoadLocation("America/New_York")
+	// Sun 2026-04-19 → Mon 2026-04-20 (one day out).
+	now := time.Date(2026, 4, 19, 10, 0, 0, 0, loc)
+	got, err := snoozeUntilNextMondayAt(now, "America/New_York")
+	if err != nil {
+		t.Fatalf("snoozeUntilNextMondayAt: %v", err)
+	}
+	local := got.In(loc)
+	if local.Day() != 20 || local.Hour() != 3 {
+		t.Errorf("expected 2026-04-20 03:00 EDT, got %s", local)
+	}
+}
+
+func TestSnoozeUntilNextMondayBadTimezone(t *testing.T) {
+	if _, err := snoozeUntilNextMondayAt(time.Now(), "Not/A/Zone"); err == nil {
+		t.Fatal("expected error for bad timezone")
+	}
+}
+
 func TestSnoozeDaysToUntilRejectsInvalidDays(t *testing.T) {
 	for _, d := range []int{0, 2, 4, 8, -1} {
 		if _, err := SnoozeDaysToUntil(d, "UTC"); err == nil {

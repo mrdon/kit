@@ -146,6 +146,11 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 			return nil, err
 		}
 		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+	case "snooze_until_monday":
+		if _, err := p.app.svc.SnoozeUntilNextMonday(ctx, caller, todoID); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
 	case "delete":
 		if _, err := p.app.svc.Cancel(ctx, caller, todoID); err != nil {
 			return nil, err

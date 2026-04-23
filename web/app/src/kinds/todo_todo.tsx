@@ -63,8 +63,8 @@ function Detail({
         <button disabled={busy} onClick={() => onAction('snooze', { days: 3 })}>
           😴 3 days
         </button>
-        <button disabled={busy} onClick={() => onAction('snooze', { days: 7 })}>
-          😴 1 week
+        <button disabled={busy} onClick={() => onAction('snooze_until_monday')}>
+          😴 Monday
         </button>
       </div>
       <div className="acks" style={{ marginTop: '1rem' }}>

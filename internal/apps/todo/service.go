@@ -328,19 +328,67 @@ func snoozeUntilAt(now time.Time, days int, tz string) (time.Time, error) {
 // around Snooze so callers don't have to fetch the tenant row
 // themselves.
 func (s *TodoService) SnoozeDays(ctx context.Context, c *services.Caller, todoID uuid.UUID, days int) (*Todo, error) {
-	tenant, err := models.GetTenantByID(ctx, s.pool, c.TenantID)
+	tz, err := s.tenantTimezone(ctx, c.TenantID)
 	if err != nil {
-		return nil, fmt.Errorf("looking up tenant: %w", err)
-	}
-	tz := "UTC"
-	if tenant != nil && tenant.Timezone != "" {
-		tz = tenant.Timezone
+		return nil, err
 	}
 	until, err := SnoozeDaysToUntil(days, tz)
 	if err != nil {
 		return nil, err
 	}
 	return s.Snooze(ctx, c, todoID, until)
+}
+
+// SnoozeUntilNextMonday snoozes the todo until the upcoming Monday at
+// snoozeHourLocal (03:00) in the tenant timezone. If today is Monday,
+// "next" means a full week out — the user tapped "Monday" knowing today
+// is Monday, so they mean the one after this.
+func (s *TodoService) SnoozeUntilNextMonday(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, error) {
+	tz, err := s.tenantTimezone(ctx, c.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	until, err := snoozeUntilNextMondayAt(time.Now(), tz)
+	if err != nil {
+		return nil, err
+	}
+	return s.Snooze(ctx, c, todoID, until)
+}
+
+func (s *TodoService) tenantTimezone(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	tenant, err := models.GetTenantByID(ctx, s.pool, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("looking up tenant: %w", err)
+	}
+	if tenant == nil || tenant.Timezone == "" {
+		return "UTC", nil
+	}
+	return tenant.Timezone, nil
+}
+
+// snoozeUntilNextMondayAt is the pure computation behind
+// SnoozeUntilNextMonday. "Next Monday" is the nearest future Monday
+// counting today's calendar day as not-Monday — so tapping on Monday
+// lands you seven days out, not back to 03:00 that same morning.
+func snoozeUntilNextMondayAt(now time.Time, tz string) (time.Time, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("loading timezone %q: %w", tz, err)
+	}
+	local := now.In(loc)
+	// Weekday(): Sunday=0, Monday=1, ..., Saturday=6. We want the offset
+	// to the next Monday strictly after today; if today is Monday the
+	// user means the following week.
+	offset := (int(time.Monday) - int(local.Weekday()) + 7) % 7
+	if offset == 0 {
+		offset = 7
+	}
+	advanced := time.Date(local.Year(), local.Month(), local.Day()+offset,
+		snoozeHourLocal, 0, 0, 0, loc)
+	return advanced.UTC(), nil
 }
 
 // Snooze hides the todo from the caller's swipe feed until `until`. Re-snooze

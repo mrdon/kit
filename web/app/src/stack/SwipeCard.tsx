@@ -61,7 +61,7 @@ const SwipeCard = forwardRef<SwipeCardHandle, SwipeCardProps>(function SwipeCard
 
   const x = useMotionValue(0);
   const threshold =
-    typeof window !== 'undefined' ? Math.max(260, window.innerWidth * 0.7) : 260;
+    typeof window !== 'undefined' ? Math.max(120, window.innerWidth * 0.35) : 120;
   const armedStart = threshold - 10;
 
   const rightOpacity = useTransform(x, [0, threshold * 0.4, threshold], [0, 0.6, 1]);
