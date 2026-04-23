@@ -355,6 +355,16 @@ func deleteApp(
 		return fmt.Errorf("app %q has %d items; call purge_app_data first", name, itemCount)
 	}
 
+	// Capture exposed-tool names before the CASCADE wipes them so the
+	// MCP revoke hook can push list_changed to live sessions. Best-effort;
+	// a DB error here shouldn't block the delete — callers will still
+	// see the app gone, they'll just keep stale entries in their session
+	// tool maps until they reconnect.
+	toolNames, toolsErr := loadAppExposedTools(ctx, pool, caller.TenantID, app.ID)
+	if toolsErr != nil {
+		slog.Warn("delete_app: pre-collecting exposed tools", "app", name, "error", toolsErr)
+	}
+
 	ct, err := pool.Exec(ctx, `
 		DELETE FROM builder_apps WHERE tenant_id = $1 AND id = $2
 	`, caller.TenantID, app.ID)
@@ -365,6 +375,17 @@ func deleteApp(
 		// Race: someone deleted between load and delete. Not fatal — caller
 		// asked us to delete it and it's gone. Report as success (idempotent).
 		slog.Info("delete_app: app vanished between load and delete", "tenant", caller.TenantID, "app", name)
+	}
+
+	// Fire the revoke hook for every tool the CASCADE just dropped so
+	// live MCP sessions see list_changed. Hook nil means no MCP wiring
+	// (tests).
+	if exposedRevokeHook != nil {
+		for _, t := range toolNames {
+			if hookErr := exposedRevokeHook(ctx, caller, t.ToolName); hookErr != nil {
+				_ = hookErr
+			}
+		}
 	}
 	return nil
 }

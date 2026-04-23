@@ -309,6 +309,46 @@ func TestDeleteApp_Succeeds(t *testing.T) {
 	}
 }
 
+// TestDeleteApp_FiresRevokeHookForExposedTools verifies the MCP fan-out
+// gap fix: when an admin deletes an app via delete_app (which cascades
+// exposed_tools rows at the DB), the MCP revoke hook is invoked for
+// each so live sessions drop the stale entries.
+func TestDeleteApp_FiresRevokeHookForExposedTools(t *testing.T) {
+	f := newScriptFixture(t)
+	scriptName := seedExposableScript(t, f)
+	ctx := context.Background()
+
+	for _, name := range []string{"rv_x", "rv_y"} {
+		if _, err := handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
+			"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": name,
+		})); err != nil {
+			t.Fatalf("expose %s: %v", name, err)
+		}
+	}
+
+	var revoked []string
+	SetExposedToolHooks(
+		func(context.Context, *services.Caller, string) error { return nil },
+		func(_ context.Context, _ *services.Caller, toolName string) error {
+			revoked = append(revoked, toolName)
+			return nil
+		},
+	)
+	t.Cleanup(func() { SetExposedToolHooks(nil, nil) })
+
+	if _, err := handleDeleteApp(f.ec(ctx), mustJSON(map[string]any{"name": f.app.Name, "confirm": true})); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if len(revoked) != 2 {
+		t.Fatalf("revoked = %v, want 2 entries", revoked)
+	}
+	have := map[string]bool{revoked[0]: true, revoked[1]: true}
+	if !have["rv_x"] || !have["rv_y"] {
+		t.Errorf("revoked names = %v, want both rv_x and rv_y", revoked)
+	}
+}
+
 func TestPurgeAppData_WithoutConfirm(t *testing.T) {
 	f := newMetaFixture(t)
 	ctx := context.Background()
