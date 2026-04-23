@@ -48,13 +48,85 @@ func timecardsExample() exampleDefinition {
 				{Name: "main", Body: timecardsMainBody},
 			},
 			Expose: []exampleExposeSpec{
-				{Script: "main", Fn: "record_shift", ToolName: "timecards_record_shift", VisibleToRoles: memberRole},
-				{Script: "main", Fn: "list_my_shifts", ToolName: "timecards_list_my_shifts", VisibleToRoles: memberRole},
-				{Script: "main", Fn: "my_week_hours", ToolName: "timecards_my_week_hours", VisibleToRoles: memberRole},
-				{Script: "main", Fn: "list_shifts", ToolName: "timecards_list_shifts", VisibleToRoles: adminOnly},
-				{Script: "main", Fn: "admin_edit_shift", ToolName: "timecards_admin_edit_shift", VisibleToRoles: adminOnly},
-				{Script: "main", Fn: "admin_delete_shift", ToolName: "timecards_admin_delete_shift", VisibleToRoles: adminOnly},
-				{Script: "main", Fn: "preview_weekly_briefing", ToolName: "timecards_preview_weekly_briefing", VisibleToRoles: adminOnly},
+				{
+					Script: "main", Fn: "record_shift", ToolName: "timecards_record_shift",
+					VisibleToRoles: memberRole,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"description": map[string]any{"type": "string", "description": "What the shift was for"},
+							"start_at":    map[string]any{"type": "string", "description": "Shift start (ISO datetime or YYYY-MM-DD)"},
+							"end_at":      map[string]any{"type": "string", "description": "Shift end. Provide either end_at or hours, not both."},
+							"hours":       map[string]any{"type": "number", "description": "Total hours worked. Provide either end_at or hours, not both."},
+						},
+						"required": []string{"description", "start_at"},
+					},
+				},
+				{
+					Script: "main", Fn: "list_my_shifts", ToolName: "timecards_list_my_shifts",
+					VisibleToRoles: memberRole,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"limit": map[string]any{"type": "integer", "description": "Max rows to return (default 20)"},
+						},
+					},
+				},
+				{
+					Script: "main", Fn: "my_week_hours", ToolName: "timecards_my_week_hours",
+					VisibleToRoles: memberRole,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"week_of": map[string]any{"type": "string", "description": "Anchor date (YYYY-MM-DD) inside the target week. Defaults to today."},
+						},
+					},
+				},
+				{
+					Script: "main", Fn: "list_shifts", ToolName: "timecards_list_shifts",
+					VisibleToRoles: adminOnly,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"limit":   map[string]any{"type": "integer", "description": "Max rows to return (default 50)"},
+							"user_id": map[string]any{"type": "string", "description": "Restrict to one user's shifts"},
+						},
+					},
+				},
+				{
+					Script: "main", Fn: "admin_edit_shift", ToolName: "timecards_admin_edit_shift",
+					VisibleToRoles: adminOnly,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"shift_id":    map[string]any{"type": "string", "description": "Shift _id to edit"},
+							"description": map[string]any{"type": "string", "description": "New description"},
+							"start_at":    map[string]any{"type": "string", "description": "New start_at"},
+							"end_at":      map[string]any{"type": "string", "description": "New end_at (exclusive with hours)"},
+							"hours":       map[string]any{"type": "number", "description": "New hours (exclusive with end_at)"},
+						},
+						"required": []string{"shift_id"},
+					},
+				},
+				{
+					Script: "main", Fn: "admin_delete_shift", ToolName: "timecards_admin_delete_shift",
+					VisibleToRoles: adminOnly,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"shift_id": map[string]any{"type": "string", "description": "Shift _id to delete"},
+						},
+						"required": []string{"shift_id"},
+					},
+				},
+				{
+					Script: "main", Fn: "preview_weekly_briefing", ToolName: "timecards_preview_weekly_briefing",
+					VisibleToRoles: adminOnly,
+					ArgsSchema: map[string]any{
+						"type":       "object",
+						"properties": map[string]any{},
+					},
+				},
 			},
 			Schedule: []exampleScheduleSpec{
 				{Script: "main", Fn: "weekly_standup_briefing", Cron: "0 9 * * 1"},

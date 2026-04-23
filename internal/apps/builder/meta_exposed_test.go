@@ -65,16 +65,52 @@ func TestExposeScriptFunctionAsTool_HappyPath(t *testing.T) {
 	}
 }
 
+func TestExposeScriptFunctionAsTool_RequiresArgsSchema(t *testing.T) {
+	// Every exposed tool must declare an args_schema so the registry-level
+	// input validator has something to check against. Omitting the field
+	// is the regression this guards.
+	f := newScriptFixture(t)
+	scriptName := seedExposableScript(t, f)
+	ctx := context.Background()
+
+	// No args_schema at all.
+	_, err := handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
+		"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": "noschema",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "args_schema is required") {
+		t.Errorf("missing args_schema: err=%v, want 'args_schema is required'", err)
+	}
+
+	// args_schema missing properties.
+	_, err = handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
+		"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": "noprops",
+		"args_schema": map[string]any{"type": "object"},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "properties") {
+		t.Errorf("no properties: err=%v, want error mentioning properties", err)
+	}
+
+	// args_schema type != object.
+	_, err = handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
+		"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": "wrongtype",
+		"args_schema": map[string]any{"type": "string"},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "object") {
+		t.Errorf("wrong type: err=%v, want error mentioning object", err)
+	}
+}
+
 func TestExposeScriptFunctionAsTool_DuplicateToolName(t *testing.T) {
 	f := newScriptFixture(t)
 	scriptName := seedExposableScript(t, f)
 	ctx := context.Background()
 
 	input := mustJSON(map[string]any{
-		"app":       f.app.Name,
-		"script":    scriptName,
-		"fn_name":   "lookup",
-		"tool_name": "dup",
+		"app":         f.app.Name,
+		"script":      scriptName,
+		"fn_name":     "lookup",
+		"tool_name":   "dup",
+		"args_schema": emptyArgsSchema(),
 	})
 	if _, err := handleExposeScriptFunctionAsTool(f.ec(ctx), input); err != nil {
 		t.Fatalf("first expose: %v", err)
@@ -98,6 +134,7 @@ func TestExposeScriptFunctionAsTool_NonAdminForbidden(t *testing.T) {
 
 	_, err := handleExposeScriptFunctionAsTool(ec, mustJSON(map[string]any{
 		"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": "x",
+		"args_schema": emptyArgsSchema(),
 	}))
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("err = %v, want ErrForbidden", err)
@@ -111,6 +148,7 @@ func TestRevokeExposedTool_HappyAndMissing(t *testing.T) {
 
 	if _, err := handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
 		"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": "r",
+		"args_schema": emptyArgsSchema(),
 	})); err != nil {
 		t.Fatalf("expose: %v", err)
 	}
@@ -146,11 +184,13 @@ func TestListExposedTools_FilterByApp(t *testing.T) {
 
 	if _, err := handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
 		"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": "t1",
+		"args_schema": emptyArgsSchema(),
 	})); err != nil {
 		t.Fatalf("expose t1: %v", err)
 	}
 	if _, err := handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
 		"app": app2.Name, "script": "other", "fn_name": "lookup", "tool_name": "t2",
+		"args_schema": emptyArgsSchema(),
 	})); err != nil {
 		t.Fatalf("expose t2: %v", err)
 	}
@@ -207,6 +247,11 @@ func TestExposedTool_EndToEnd(t *testing.T) {
 		"tool_name":        "lookup",
 		"description":      "Look up a name",
 		"visible_to_roles": []string{"bartender"},
+		"args_schema": map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"name": map[string]any{"type": "string"}},
+			"required":   []string{"name"},
+		},
 	})); err != nil {
 		t.Fatalf("expose: %v", err)
 	}
@@ -268,6 +313,7 @@ func TestExposedToolRunner_List_VisibilityAndStale(t *testing.T) {
 		"fn_name":          "lookup",
 		"tool_name":        "lookup",
 		"visible_to_roles": []string{"bartender"},
+		"args_schema":      emptyArgsSchema(),
 	})); err != nil {
 		t.Fatalf("expose: %v", err)
 	}

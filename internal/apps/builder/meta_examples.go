@@ -82,10 +82,11 @@ type exampleScriptSpec struct {
 }
 
 type exampleExposeSpec struct {
-	Script         string   `json:"script"`
-	Fn             string   `json:"fn"`
-	ToolName       string   `json:"tool_name"`
-	VisibleToRoles []string `json:"visible_to_roles"`
+	Script         string         `json:"script"`
+	Fn             string         `json:"fn"`
+	ToolName       string         `json:"tool_name"`
+	VisibleToRoles []string       `json:"visible_to_roles"`
+	ArgsSchema     map[string]any `json:"args_schema"`
 }
 
 type exampleScheduleSpec struct {
@@ -183,9 +184,42 @@ func mugClubExample() exampleDefinition {
 			AppName: "mug_club",
 			Scripts: []exampleScriptSpec{{Name: "core", Body: body}},
 			Expose: []exampleExposeSpec{
-				{Script: "core", Fn: "add_member", ToolName: "add_mug_member", VisibleToRoles: []string{"manager", "bartender"}},
-				{Script: "core", Fn: "list_members", ToolName: "list_mug_members", VisibleToRoles: []string{"manager", "bartender"}},
-				{Script: "core", Fn: "update_tier", ToolName: "update_mug_tier", VisibleToRoles: []string{"manager", "bartender"}},
+				{
+					Script: "core", Fn: "add_member", ToolName: "add_mug_member",
+					VisibleToRoles: []string{"manager", "bartender"},
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":  map[string]any{"type": "string", "description": "Member's display name"},
+							"email": map[string]any{"type": "string", "description": "Email address (stored lowercased)"},
+							"tier":  map[string]any{"type": "string", "description": "Membership tier. Defaults to silver."},
+						},
+						"required": []string{"name", "email"},
+					},
+				},
+				{
+					Script: "core", Fn: "list_members", ToolName: "list_mug_members",
+					VisibleToRoles: []string{"manager", "bartender"},
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"tier":  map[string]any{"type": "string", "description": "Optional tier filter"},
+							"limit": map[string]any{"type": "integer", "description": "Max rows to return (default 50)"},
+						},
+					},
+				},
+				{
+					Script: "core", Fn: "update_tier", ToolName: "update_mug_tier",
+					VisibleToRoles: []string{"manager", "bartender"},
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"member_id": map[string]any{"type": "string", "description": "Member _id to update"},
+							"tier":      map[string]any{"type": "string", "description": "New tier label"},
+						},
+						"required": []string{"member_id", "tier"},
+					},
+				},
 			},
 		}},
 	}
@@ -234,9 +268,42 @@ func crmExample() exampleDefinition {
 				{Name: "main", Body: main},
 			},
 			Expose: []exampleExposeSpec{
-				{Script: "main", Fn: "add_contact", ToolName: "crm_add_contact", VisibleToRoles: roles},
-				{Script: "main", Fn: "find_contact", ToolName: "crm_lookup", VisibleToRoles: roles},
-				{Script: "main", Fn: "add_note", ToolName: "crm_add_note", VisibleToRoles: roles},
+				{
+					Script: "main", Fn: "add_contact", ToolName: "crm_add_contact",
+					VisibleToRoles: roles,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":  map[string]any{"type": "string", "description": "Contact name"},
+							"email": map[string]any{"type": "string", "description": "Email address"},
+							"phone": map[string]any{"type": "string", "description": "Optional phone number (reformatted on store)"},
+						},
+						"required": []string{"name", "email"},
+					},
+				},
+				{
+					Script: "main", Fn: "find_contact", ToolName: "crm_lookup",
+					VisibleToRoles: roles,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name": map[string]any{"type": "string", "description": "Contact name to look up"},
+						},
+						"required": []string{"name"},
+					},
+				},
+				{
+					Script: "main", Fn: "add_note", ToolName: "crm_add_note",
+					VisibleToRoles: roles,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"contact_id": map[string]any{"type": "string", "description": "Contact _id"},
+							"note":       map[string]any{"type": "string", "description": "Note text to append"},
+						},
+						"required": []string{"contact_id", "note"},
+					},
+				},
 			},
 		}},
 	}
@@ -277,7 +344,16 @@ func reviewTriageExample() exampleDefinition {
 			AppName: "review_triage",
 			Scripts: []exampleScriptSpec{{Name: "main", Body: body}},
 			Expose: []exampleExposeSpec{
-				{Script: "main", Fn: "list_recent_complaints", ToolName: "recent_complaints", VisibleToRoles: []string{"manager"}},
+				{
+					Script: "main", Fn: "list_recent_complaints", ToolName: "recent_complaints",
+					VisibleToRoles: []string{"manager"},
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"limit": map[string]any{"type": "integer", "description": "Max rows to return (default 20)"},
+						},
+					},
+				},
 			},
 			Schedule: []exampleScheduleSpec{
 				{Script: "main", Fn: "triage", Cron: "0 9 * * *"},
@@ -318,8 +394,29 @@ func vendorBookExample() exampleDefinition {
 				{Name: "main", Body: main},
 			},
 			Expose: []exampleExposeSpec{
-				{Script: "main", Fn: "add_vendor", ToolName: "vendor_add", VisibleToRoles: roles},
-				{Script: "main", Fn: "list_vendors", ToolName: "vendor_list", VisibleToRoles: roles},
+				{
+					Script: "main", Fn: "add_vendor", ToolName: "vendor_add",
+					VisibleToRoles: roles,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":      map[string]any{"type": "string", "description": "Vendor name"},
+							"email":     map[string]any{"type": "string", "description": "Contact email"},
+							"specialty": map[string]any{"type": "string", "description": "Vendor specialty category"},
+						},
+						"required": []string{"name", "email", "specialty"},
+					},
+				},
+				{
+					Script: "main", Fn: "list_vendors", ToolName: "vendor_list",
+					VisibleToRoles: roles,
+					ArgsSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"specialty": map[string]any{"type": "string", "description": "Optional specialty filter"},
+						},
+					},
+				},
 			},
 		}},
 	}

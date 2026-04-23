@@ -175,9 +175,12 @@ func TestNewRegistry_ExposedToolExecutes(t *testing.T) {
 	var captured map[string]any
 	withRunner(t, &stubRunner{defs: []ExposedToolDef{
 		{
-			ToolName:       "lookup",
-			Description:    "test",
-			ArgsSchema:     map[string]any{"type": "object"},
+			ToolName:    "lookup",
+			Description: "test",
+			ArgsSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"name": map[string]any{"type": "string"}},
+			},
 			VisibleToRoles: []string{"bartender"},
 			Invoke: func(_ context.Context, _ *ExecContext, args map[string]any) (string, error) {
 				captured = args
@@ -445,6 +448,121 @@ func TestExecute_DenyCallerGateIgnoresFlag(t *testing.T) {
 	if res.Halted || called != 1 {
 		t.Errorf("DenyCallerGate tool should run directly; halted=%v called=%d", res.Halted, called)
 	}
+}
+
+func TestExecute_ValidatesUnknownField(t *testing.T) {
+	// Regression: Haiku called add_todo_comment with {"text": "..."}
+	// instead of the declared "content" field. The handler silently
+	// dropped it, AddComment wrote a NULL-content row, and the agent
+	// claimed success. The registry should catch the typo and return a
+	// tool_result the LLM can use to retry.
+	withGateCreator(t, nil)
+	called := 0
+	r := &Registry{handlers: map[string]HandlerFunc{}}
+	r.Register(Def{
+		Name: "note",
+		Schema: services.PropsReq(map[string]any{
+			"todo_id": services.Field("string", "id"),
+			"content": services.Field("string", "comment body"),
+		}, "todo_id", "content"),
+		Handler: func(_ *ExecContext, _ json.RawMessage) (string, error) {
+			called++
+			return "ran", nil
+		},
+	})
+	res, err := r.ExecuteWithResult(&ExecContext{Ctx: context.Background()}, "note",
+		json.RawMessage(`{"todo_id":"x","text":"hi"}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if called != 0 {
+		t.Errorf("handler should not have been called on unknown field")
+	}
+	if !contains(res.Output, "Unknown argument") || !contains(res.Output, "text") {
+		t.Errorf("expected unknown-argument tool_result, got %q", res.Output)
+	}
+	if !contains(res.Output, "content") {
+		t.Errorf("expected error to list valid fields including content, got %q", res.Output)
+	}
+}
+
+func TestExecute_ValidatesMissingRequired(t *testing.T) {
+	withGateCreator(t, nil)
+	called := 0
+	r := &Registry{handlers: map[string]HandlerFunc{}}
+	r.Register(Def{
+		Name: "note",
+		Schema: services.PropsReq(map[string]any{
+			"todo_id": services.Field("string", "id"),
+			"content": services.Field("string", "body"),
+		}, "todo_id", "content"),
+		Handler: func(_ *ExecContext, _ json.RawMessage) (string, error) {
+			called++
+			return "ran", nil
+		},
+	})
+	res, err := r.ExecuteWithResult(&ExecContext{Ctx: context.Background()}, "note",
+		json.RawMessage(`{"todo_id":"x"}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if called != 0 {
+		t.Errorf("handler should not have been called when required field is missing")
+	}
+	if !contains(res.Output, "Missing required") || !contains(res.Output, "content") {
+		t.Errorf("expected missing-required tool_result, got %q", res.Output)
+	}
+}
+
+func TestExecute_NoArgsSchemaRejectsArgs(t *testing.T) {
+	// A tool with no declared properties is a "takes no arguments" tool.
+	// Passing any field is a typo or hallucination and must surface as a
+	// tool_result so the LLM can correct. No free-form escape hatch.
+	withGateCreator(t, nil)
+	called := 0
+	r := &Registry{handlers: map[string]HandlerFunc{}}
+	r.Register(Def{
+		Name:   "noargs",
+		Schema: map[string]any{"type": "object"},
+		Handler: func(_ *ExecContext, _ json.RawMessage) (string, error) {
+			called++
+			return "ran", nil
+		},
+	})
+	res, err := r.ExecuteWithResult(&ExecContext{Ctx: context.Background()}, "noargs",
+		json.RawMessage(`{"anything":"goes"}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if called != 0 {
+		t.Errorf("handler must not run when no-arg tool receives args")
+	}
+	if !contains(res.Output, "Unknown argument") {
+		t.Errorf("expected unknown-argument rejection, got %q", res.Output)
+	}
+
+	// Empty input is valid for a no-arg tool.
+	res, err = r.ExecuteWithResult(&ExecContext{Ctx: context.Background()}, "noargs",
+		json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("execute empty: %v", err)
+	}
+	if res.Output != "ran" || called != 1 {
+		t.Errorf("no-arg tool should run on empty input; out=%q called=%d", res.Output, called)
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestDefaultGateCardPreview(t *testing.T) {

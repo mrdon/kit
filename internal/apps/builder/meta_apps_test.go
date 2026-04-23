@@ -321,6 +321,7 @@ func TestDeleteApp_FiresRevokeHookForExposedTools(t *testing.T) {
 	for _, name := range []string{"rv_x", "rv_y"} {
 		if _, err := handleExposeScriptFunctionAsTool(f.ec(ctx), mustJSON(map[string]any{
 			"app": f.app.Name, "script": scriptName, "fn_name": "lookup", "tool_name": name,
+			"args_schema": emptyArgsSchema(),
 		})); err != nil {
 			t.Fatalf("expose %s: %v", name, err)
 		}
@@ -455,4 +456,11 @@ func mustJSON(m map[string]any) json.RawMessage {
 		panic(err)
 	}
 	return b
+}
+
+// emptyArgsSchema is the minimum schema the expose handler accepts — a
+// no-arg tool shape. Use in tests where the function under test isn't
+// the schema validation itself.
+func emptyArgsSchema() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
 }

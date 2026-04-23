@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -584,8 +585,100 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 		// wedged card doesn't double-execute.
 	}
 
+	if msg := validateToolInput(def.Schema, input); msg != "" {
+		return ExecResult{Output: msg}, nil
+	}
+
 	out, err := def.Handler(ec, input)
 	return ExecResult{Output: out}, err
+}
+
+// validateToolInput checks the raw JSON input against the tool's declared
+// schema before dispatch. Its purpose is to turn LLM argument mistakes —
+// typo'd field names, missing required fields — into a tool_result the
+// model can read and retry, instead of silently dropping the field after
+// json.Unmarshal and letting the handler no-op. Returns the message to
+// surface to the caller, or "" when the input is valid.
+//
+// The check is intentionally narrow: top-level object schemas only,
+// reject unknown properties (strict) and missing required fields. Type
+// mismatches are left to handler-side unmarshal since the shape of that
+// error is usually specific enough for the LLM to self-correct. A schema
+// without a `properties` block (or a non-object top-level type) is
+// treated as "accept anything" and skipped — matches how the few
+// free-form tool schemas we have are used.
+func validateToolInput(schema map[string]any, input json.RawMessage) string {
+	if schema == nil {
+		return ""
+	}
+	if t, _ := schema["type"].(string); t != "" && t != "object" {
+		return ""
+	}
+	// No properties block = "no args." Tools with real arguments declare
+	// them; a no-arg tool declares properties: {}. Either way we validate
+	// strictly — there is no "accept anything" mode by design, so a
+	// typo'd or hallucinated argument always surfaces as a tool_result
+	// the LLM can correct against.
+	props, _ := schema["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+	}
+
+	raw := map[string]json.RawMessage{}
+	if len(input) > 0 && !bytes.Equal(bytes.TrimSpace(input), []byte("null")) {
+		if err := json.Unmarshal(input, &raw); err != nil {
+			return fmt.Sprintf("Invalid arguments: %s. Expected a JSON object matching the tool schema.", err.Error())
+		}
+	}
+
+	// require_approval is stripped from the payload before this point for
+	// normal tools. DenyCallerGate tools keep it in the payload (their
+	// handlers can observe it), so tolerate the key here regardless.
+	var unknown []string
+	for k := range raw {
+		if k == services.RequireApprovalField {
+			continue
+		}
+		if _, ok := props[k]; !ok {
+			unknown = append(unknown, k)
+		}
+	}
+	if len(unknown) > 0 {
+		slices.Sort(unknown)
+		known := make([]string, 0, len(props))
+		for k := range props {
+			known = append(known, k)
+		}
+		slices.Sort(known)
+		return fmt.Sprintf("Unknown argument(s): %s. Expected one of: %s. Check the tool schema and retry.",
+			strings.Join(unknown, ", "), strings.Join(known, ", "))
+	}
+
+	var missing []string
+	switch req := schema["required"].(type) {
+	case []string:
+		for _, name := range req {
+			if _, present := raw[name]; !present {
+				missing = append(missing, name)
+			}
+		}
+	case []any:
+		for _, v := range req {
+			name, _ := v.(string)
+			if name == "" {
+				continue
+			}
+			if _, present := raw[name]; !present {
+				missing = append(missing, name)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		return fmt.Sprintf("Missing required argument(s): %s. Retry the call with those fields set.", strings.Join(missing, ", "))
+	}
+
+	return ""
 }
 
 // recordPolicyEvent appends a policy_enforced session event when a run

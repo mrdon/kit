@@ -154,6 +154,7 @@ func replayExample(t *testing.T, f *acceptanceFixture, def exampleDefinition) st
 			"fn_name":          e.Fn,
 			"tool_name":        e.ToolName,
 			"visible_to_roles": e.VisibleToRoles,
+			"args_schema":      e.ArgsSchema,
 		})); err != nil {
 			t.Fatalf("expose %q: %v", e.ToolName, err)
 		}

@@ -43,9 +43,9 @@ var metaExposedTools = []services.ToolMeta{
 			"fn_name":          services.Field("string", "Function inside the script to expose"),
 			"tool_name":        services.Field("string", "Name the tool appears under in the catalog (tenant-unique)"),
 			"description":      services.Field("string", "Human-readable description for the LLM"),
-			"args_schema":      map[string]any{"type": "object", "description": "JSON Schema object describing the tool's arguments"},
+			"args_schema":      map[string]any{"type": "object", "description": "JSON Schema object describing the tool's arguments. Required — must be an object with a `properties` map naming every argument the function accepts. Pass {\"type\":\"object\",\"properties\":{}} for a no-arg tool."},
 			"visible_to_roles": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Roles that may see + invoke the tool. Empty list means no one (default-deny)."},
-		}, "app", "script", "fn_name", "tool_name"),
+		}, "app", "script", "fn_name", "tool_name", "args_schema"),
 		AdminOnly: true,
 	},
 	{
@@ -201,6 +201,9 @@ func exposeScriptFunctionAsTool(
 	if fnName == "" {
 		return nil, errors.New("fn_name must be non-empty")
 	}
+	if err := validateArgsSchema(argsSchema); err != nil {
+		return nil, err
+	}
 
 	app, err := loadBuilderAppByName(ctx, pool, caller.TenantID, appName)
 	if err != nil {
@@ -262,6 +265,30 @@ func exposeScriptFunctionAsTool(
 		IsStale:        false,
 		CreatedAt:      createdAt,
 	}, nil
+}
+
+// validateArgsSchema enforces that every exposed tool declares its
+// argument shape at expose time. We can't infer the Python signature
+// from the builder substrate, so without a declared schema the
+// registry-level validator can't tell typo'd or hallucinated args from
+// real ones. Rather than silently accept anything, require admins to
+// declare properties up front. A no-arg tool is spelled as
+// {"type":"object","properties":{}}.
+func validateArgsSchema(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return errors.New("args_schema is required — declare the tool's arguments as a JSON Schema object, e.g. {\"type\":\"object\",\"properties\":{}} for a no-arg tool")
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("args_schema must be a JSON object: %w", err)
+	}
+	if t, _ := m["type"].(string); t != "object" {
+		return errors.New("args_schema.type must be \"object\"")
+	}
+	if _, ok := m["properties"].(map[string]any); !ok {
+		return errors.New("args_schema must include a \"properties\" map naming every accepted argument (use {} for a no-arg tool)")
+	}
+	return nil
 }
 
 // revokeExposedTool deletes one exposed_tools row. Full delete, not a

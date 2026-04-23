@@ -189,6 +189,7 @@ func TestBuilderExamples_MugClubEndToEnd(t *testing.T) {
 			"fn_name":          e.Fn,
 			"tool_name":        e.ToolName,
 			"visible_to_roles": e.VisibleToRoles,
+			"args_schema":      e.ArgsSchema,
 		})); err != nil {
 			t.Fatalf("expose %q: %v", e.ToolName, err)
 		}
