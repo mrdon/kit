@@ -40,7 +40,7 @@ func TestScheduleScript_HappyPath(t *testing.T) {
 		"app":      f.app.Name,
 		"script":   "tick",
 		"fn":       "tick",
-		"cron":     "*/5 * * * *",
+		"cron":     "0 * * * *",
 		"timezone": "UTC",
 	}))
 	if err != nil {
@@ -53,7 +53,7 @@ func TestScheduleScript_HappyPath(t *testing.T) {
 	if dto.ID == uuid.Nil {
 		t.Error("id is nil UUID")
 	}
-	if dto.Cron != "*/5 * * * *" {
+	if dto.Cron != "0 * * * *" {
 		t.Errorf("cron = %q", dto.Cron)
 	}
 	if !dto.Active {
@@ -119,6 +119,67 @@ func TestScheduleScript_InvalidCron(t *testing.T) {
 	}
 }
 
+// TestScheduleScript_SubHourlyRejected stops a fat-fingered every-minute
+// cron at admin time so it cannot quietly burn the tenant's daily LLM cap.
+func TestScheduleScript_SubHourlyRejected(t *testing.T) {
+	f := newScriptFixture(t)
+	ctx := context.Background()
+	seedScheduleScript(t, f, "tick")
+
+	for _, cronExpr := range []string{"* * * * *", "*/5 * * * *", "*/30 * * * *"} {
+		_, err := handleScheduleScript(f.ec(ctx), mustJSON(map[string]any{
+			"app":    f.app.Name,
+			"script": "tick",
+			"fn":     "tick",
+			"cron":   cronExpr,
+		}))
+		if err == nil {
+			t.Errorf("cron %q accepted; want sub-hourly rejection", cronExpr)
+			continue
+		}
+		if !strings.Contains(err.Error(), "minimum interval is 1h") {
+			t.Errorf("cron %q: err = %v, want 1h minimum message", cronExpr, err)
+		}
+	}
+
+	var n int
+	_ = f.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM tasks
+		WHERE tenant_id = $1 AND task_type = 'builder_script'
+	`, f.tenant.ID).Scan(&n)
+	if n != 0 {
+		t.Errorf("row leaked despite sub-hourly rejection: %d rows", n)
+	}
+}
+
+// TestScheduleScript_DefaultsToCallerTimezone verifies the schedule picks up
+// the admin's own tz when they omit `timezone`. Otherwise a "Monday 9am DM"
+// from a PT admin would silently fire at 02:00 PT.
+func TestScheduleScript_DefaultsToCallerTimezone(t *testing.T) {
+	f := newScriptFixture(t)
+	ctx := context.Background()
+	seedScheduleScript(t, f, "tick")
+
+	f.admin.Timezone = "America/Los_Angeles"
+
+	out, err := handleScheduleScript(f.ec(ctx), mustJSON(map[string]any{
+		"app":    f.app.Name,
+		"script": "tick",
+		"fn":     "tick",
+		"cron":   "0 9 * * 1",
+	}))
+	if err != nil {
+		t.Fatalf("schedule: %v", err)
+	}
+	var dto scheduleDTO
+	if err := json.Unmarshal([]byte(out), &dto); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if dto.Timezone != "America/Los_Angeles" {
+		t.Errorf("timezone = %q, want America/Los_Angeles", dto.Timezone)
+	}
+}
+
 // TestScheduleScript_UnknownScript errors cleanly when the script doesn't
 // exist under (tenant, app).
 func TestScheduleScript_UnknownScript(t *testing.T) {
@@ -129,7 +190,7 @@ func TestScheduleScript_UnknownScript(t *testing.T) {
 		"app":    f.app.Name,
 		"script": "ghost",
 		"fn":     "tick",
-		"cron":   "*/5 * * * *",
+		"cron":   "0 * * * *",
 	}))
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("err = %v, want 'not found'", err)
@@ -148,7 +209,7 @@ func TestScheduleScript_DuplicateActive(t *testing.T) {
 		"app":    f.app.Name,
 		"script": "tick",
 		"fn":     "tick",
-		"cron":   "*/5 * * * *",
+		"cron":   "0 * * * *",
 	})
 	if _, err := handleScheduleScript(f.ec(ctx), input); err != nil {
 		t.Fatalf("first schedule: %v", err)
@@ -170,7 +231,7 @@ func TestScheduleScript_ReviveInactive(t *testing.T) {
 		"app":    f.app.Name,
 		"script": "tick",
 		"fn":     "tick",
-		"cron":   "*/5 * * * *",
+		"cron":   "0 * * * *",
 	})); err != nil {
 		t.Fatalf("first schedule: %v", err)
 	}
@@ -211,7 +272,7 @@ func TestUnscheduleScript_FlipsActive(t *testing.T) {
 	seedScheduleScript(t, f, "tick")
 
 	if _, err := handleScheduleScript(f.ec(ctx), mustJSON(map[string]any{
-		"app": f.app.Name, "script": "tick", "fn": "tick", "cron": "*/5 * * * *",
+		"app": f.app.Name, "script": "tick", "fn": "tick", "cron": "0 * * * *",
 	})); err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
@@ -256,7 +317,7 @@ func TestListSchedules_FilterByApp(t *testing.T) {
 	seedScheduleScript(t, f, "tick")
 
 	if _, err := handleScheduleScript(f.ec(ctx), mustJSON(map[string]any{
-		"app": f.app.Name, "script": "tick", "fn": "tick", "cron": "*/5 * * * *",
+		"app": f.app.Name, "script": "tick", "fn": "tick", "cron": "0 * * * *",
 	})); err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
@@ -315,7 +376,7 @@ func TestScheduleTools_NonAdminForbidden(t *testing.T) {
 		fn    func(*execContextLike, json.RawMessage) (string, error)
 		input string
 	}{
-		{"app_schedule_script", handleScheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick","cron":"*/5 * * * *"}`},
+		{"app_schedule_script", handleScheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick","cron":"0 * * * *"}`},
 		{"app_unschedule_script", handleUnscheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick"}`},
 		{"app_list_schedules", handleListSchedules, `{}`},
 	}

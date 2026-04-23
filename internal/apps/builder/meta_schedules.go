@@ -47,13 +47,13 @@ import (
 var metaScheduleTools = []services.ToolMeta{
 	{
 		Name:        "app_schedule_script",
-		Description: "Schedule a function in a builder-app script to run on a cron expression. Re-scheduling the same (script, fn) updates cron + timezone and flips active=true.",
+		Description: "Schedule a function in a builder-app script to run on a cron expression. Re-scheduling the same (script, fn) updates cron + timezone and flips active=true. Minimum interval is 1 hour.",
 		Schema: services.PropsReq(map[string]any{
 			"app":      services.Field("string", "Builder app name that owns the script"),
 			"script":   services.Field("string", "Script identifier"),
 			"fn":       services.Field("string", "Function inside the script to invoke on each tick"),
-			"cron":     services.Field("string", "5-field cron expression (e.g. '*/5 * * * *')"),
-			"timezone": services.Field("string", "IANA timezone for the cron (defaults to UTC)"),
+			"cron":     services.Field("string", "5-field cron expression (e.g. '0 9 * * 1' for Monday 9am). Must fire no more than once per hour."),
+			"timezone": services.Field("string", "IANA timezone for the cron. Defaults to the caller's timezone."),
 		}, "app", "script", "fn", "cron"),
 		AdminOnly: true,
 	},
@@ -134,6 +134,9 @@ func handleScheduleScript(ec *execContextLike, input json.RawMessage) (string, e
 	}
 	tz, _ := argOptionalString(m, "timezone")
 	if tz == "" {
+		tz = ec.Caller.Timezone
+	}
+	if tz == "" {
 		tz = "UTC"
 	}
 
@@ -193,6 +196,15 @@ func parseScheduleCron(expr, tz string) (cron.Schedule, *time.Location, error) {
 	sched, err := parser.Parse(expr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing cron %q: %w", expr, err)
+	}
+	// Reject sub-hourly schedules. Each tick can spawn LLM calls, and tenants
+	// have a daily spend cap; a fat-fingered "* * * * *" would burn through
+	// it in one afternoon. Catching it at schedule time is cheap and loud.
+	now := time.Now().In(loc)
+	t1 := sched.Next(now)
+	t2 := sched.Next(t1)
+	if t2.Sub(t1) < time.Hour {
+		return nil, nil, fmt.Errorf("cron %q fires more often than once per hour; minimum interval is 1h", expr)
 	}
 	return sched, loc, nil
 }

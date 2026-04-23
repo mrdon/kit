@@ -55,6 +55,8 @@ app_expose_tool(
 )
 
 # 5. (Optional) schedule
+# `timezone` defaults to your timezone — pass it explicitly only if the
+# function should fire on someone else's clock. Minimum interval is 1 hour.
 app_schedule_script(app="crm", script="main", fn="nightly_cleanup", cron="0 2 * * *")
 
 # 6. Undo a bad run
@@ -83,7 +85,7 @@ When an admin says "build me an app for X", work through these steps in order. M
 
 6. **Add mutate/delete functions** with any admin checks in place (see "Admin-only modifications after close" below).
 
-7. **Expose each function as a tool** with a crisp `description` and a complete `args_schema`. Set `visible_to_roles` explicitly — never leave it empty unless the tool is truly open to everyone.
+7. **Expose each function as a tool** with a crisp `description` and a complete `args_schema`. Set `visible_to_roles` explicitly — never leave it empty unless the tool is truly open to everyone. When in doubt about the JSON-Schema shape, copy the `args_schema` from the closest entry in `builder_examples` and adapt — hand-writing schemas from scratch is the easiest place for subtle drift to creep in.
 
 8. **Schedule anything recurring** via `app_schedule_script`. A scheduled builder script creates a task under the hood; for scheduled work that touches channels, DMs, or admin-gated actions you should pass a `policy` block — see the `creating-tasks` skill for how to design `allowed_tools` / `force_gate` / `pinned_args`. Policies cannot be ignored by prompt drift; function bodies can.
 
@@ -365,7 +367,7 @@ For post-mortems, `app_script_logs(run_id=...)` returns the `log()` trail the sc
 - **Scheduled digest.** One script with a `run()` function that reads recent items and posts to a channel. One `app_schedule_script` entry. Example: `weekly_digest`.
 - **LLM-assisted triage.** Scheduled `run()` that picks up untriaged items, calls `llm_classify` / `llm_extract`, writes results back, and optionally emits a decision card via `create_decision`. Example: `review_triage`.
 - **Multi-script with shared helpers.** `utils` + `dal` + `main`, composed with `shared(...)`. Example: `crm`.
-- **Event-driven.** v0.1 has no event triggers. Simulate with a frequent (`*/5 * * * *`) scheduled function that polls. True `on_insert` / `on_update` hooks arrive in v0.2.
+- **Event-driven.** v0.1 has no event triggers, and the schedule floor is 1 hour, so polling is too coarse to feel real-time. Surface the user need as a decision card or todo until `on_insert` / `on_update` hooks land in v0.2.
 
 ## Not supported in v0.1
 

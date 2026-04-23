@@ -40,7 +40,7 @@ def beat():
 	if _, err := createScript(ctx, f.pool, f.admin, f.app.Name, "beater", body, ""); err != nil {
 		t.Fatalf("create script: %v", err)
 	}
-	if _, err := scheduleScript(ctx, f.pool, f.admin, f.app.Name, "beater", "beat", "*/5 * * * *", "UTC"); err != nil {
+	if _, err := scheduleScript(ctx, f.pool, f.admin, f.app.Name, "beater", "beat", "0 * * * *", "UTC"); err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestBuilderRunner_DemotedAdmin(t *testing.T) {
 	if _, err := createScript(ctx, f.pool, f.admin, f.app.Name, "beater", body, ""); err != nil {
 		t.Fatalf("create script: %v", err)
 	}
-	if _, err := scheduleScript(ctx, f.pool, f.admin, f.app.Name, "beater", "beat", "*/5 * * * *", "UTC"); err != nil {
+	if _, err := scheduleScript(ctx, f.pool, f.admin, f.app.Name, "beater", "beat", "0 * * * *", "UTC"); err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
 	if _, err := f.pool.Exec(ctx, `
@@ -173,7 +173,7 @@ func TestBuilderRunner_NoRunnerSkipsWork(t *testing.T) {
 	if _, err := createScript(ctx, f.pool, f.admin, f.app.Name, "silent", "def beat():\n    return 1\n", ""); err != nil {
 		t.Fatalf("create script: %v", err)
 	}
-	if _, err := scheduleScript(ctx, f.pool, f.admin, f.app.Name, "silent", "beat", "*/5 * * * *", "UTC"); err != nil {
+	if _, err := scheduleScript(ctx, f.pool, f.admin, f.app.Name, "silent", "beat", "0 * * * *", "UTC"); err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
 
