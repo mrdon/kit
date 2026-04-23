@@ -386,6 +386,53 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 	}
 }
 
+// TestSnoozeHidesRoleScopedFromFeed regression: a role-scoped todo that is
+// snoozed must stay out of any member's feed. The original query appended
+// PersonalScopeFilter's OR-fragment to the WHERE without wrapping it in
+// parens, so `AND user_id = $2 OR role_id = ANY($3)` was parsed (by SQL
+// precedence) as `(everything_else AND user_id = $2) OR role_id = ANY($3)`.
+// The trailing OR short-circuited the tenant, status, and snooze filters,
+// and role-scoped snoozed todos leaked into the feed.
+func TestSnoozeHidesRoleScopedFromFeed(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// Create a role-scoped todo (scope = member role, no user_id).
+	td, err := f.svc.Create(ctx, f.caller(t, f.alice), CreateInput{
+		Title:    "team task",
+		RoleName: "member",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Snooze 1 day.
+	until := time.Now().Add(24 * time.Hour)
+	if _, err := f.svc.Snooze(ctx, f.caller(t, f.alice), td.ID, until); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+
+	// Bob is also in 'member'; the role-scoped snoozed todo must not appear
+	// in his feed. Before the paren fix this returned the row because the
+	// role_id ANY clause short-circuited the snooze filter.
+	stack, err := listStackTodos(ctx, f.pool, f.caller(t, f.bob), 50)
+	if err != nil {
+		t.Fatalf("stack: %v", err)
+	}
+	if containsStackTodo(stack, td.ID) {
+		t.Fatalf("role-scoped snoozed todo should be hidden from member feed")
+	}
+
+	// And from the snoozer's own feed, same reason.
+	stack, err = listStackTodos(ctx, f.pool, f.caller(t, f.alice), 50)
+	if err != nil {
+		t.Fatalf("stack alice: %v", err)
+	}
+	if containsStackTodo(stack, td.ID) {
+		t.Fatalf("role-scoped snoozed todo should be hidden from snoozer feed")
+	}
+}
+
 // TestSnoozeOverwrites: re-snoozing overwrites the existing snoozed_until
 // rather than stacking or failing.
 func TestSnoozeOverwrites(t *testing.T) {

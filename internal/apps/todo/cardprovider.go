@@ -307,8 +307,9 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	// audit other users' todos still have list_todos via MCP.
 	scopeFrag, scopeArgs := c.PersonalScopeFilter("s", 2)
 	args = append(args, scopeArgs...)
-	b.WriteString(` AND `)
+	b.WriteString(` AND (`)
 	b.WriteString(scopeFrag)
+	b.WriteString(`)`)
 
 	b.WriteString(`
 		ORDER BY
