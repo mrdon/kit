@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from './api';
 import type { DetailResponse, StackItem, TaskStatus } from './types';
+import { itemKey } from './types';
 import { rendererFor } from './kinds';
 import ErrorBoundary from './ErrorBoundary';
 
@@ -73,7 +74,15 @@ export default function StackItemDetail() {
         actionID,
         actionParams,
       );
-      navigate('/');
+      // Wake puts the todo BACK into the active feed — hoist it to
+      // the top via the focus hash so the user sees the thing they
+      // just woke, not the feed root. Other actions remove the item,
+      // so a plain "/" is right for them.
+      if (actionID === 'wake') {
+        navigate(`/#${itemKey(item)}`);
+      } else {
+        navigate('/');
+      }
     } catch (e) {
       alert((e as Error).message);
       setBusy(false);
