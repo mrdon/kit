@@ -48,7 +48,7 @@ func TestAcceptance_ReviewTriage_Showcase(t *testing.T) {
 	// Verify the schedule meta-tool accepted the cron expression.
 	schedOut, err := handleListSchedules(f.adminEC(ctx), mustJSON(map[string]any{"app": appName}))
 	if err != nil {
-		t.Fatalf("list_schedules: %v", err)
+		t.Fatalf("app_list_schedules: %v", err)
 	}
 	var schedules []scheduleDTO
 	_ = json.Unmarshal([]byte(schedOut), &schedules)
@@ -89,7 +89,7 @@ func TestAcceptance_ReviewTriage_Showcase(t *testing.T) {
 		"fn":     "triage",
 	}))
 	if err != nil {
-		t.Fatalf("run_script triage: %v", err)
+		t.Fatalf("app_run_script triage: %v", err)
 	}
 	var runResp runScriptResponse
 	if err := json.Unmarshal([]byte(runOut), &runResp); err != nil {

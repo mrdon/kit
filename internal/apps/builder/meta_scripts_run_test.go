@@ -1,4 +1,4 @@
-// Package builder: meta_scripts_run_test.go covers the run_script meta-tool
+// Package builder: meta_scripts_run_test.go covers the app_run_script meta-tool
 // + its interactions with the Phase 3 builtin bundles (db_*, llm_*). Split
 // from meta_scripts_test.go to keep each file under the 500-LOC cap.
 package builder
@@ -32,7 +32,7 @@ func TestRunScript_HappyPath(t *testing.T) {
 
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "math", "add", map[string]any{"x": float64(2), "y": float64(3)}, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Errorf("status = %q, want completed (err=%q)", resp.Status, resp.Error)
@@ -68,7 +68,7 @@ def main():
 
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "noter", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status = %q err=%q", resp.Status, resp.Error)
@@ -111,7 +111,7 @@ def main():
 
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "classifier", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status=%q err=%q", resp.Status, resp.Error)
@@ -141,7 +141,7 @@ func TestRunScript_ScriptException(t *testing.T) {
 
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "boomer", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script returned Go error: %v", err)
+		t.Fatalf("app_run_script returned Go error: %v", err)
 	}
 	if resp.Status != RunStatusError {
 		t.Errorf("status = %q, want error", resp.Status)
@@ -170,7 +170,7 @@ func TestRunScript_LimitExceeded(t *testing.T) {
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "looper", "main", nil,
 		map[string]any{"max_duration_ms": float64(250)})
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status == RunStatusCompleted {
 		t.Fatalf("status = completed; expected cancelled/limit_exceeded")
@@ -225,7 +225,7 @@ func TestRunScript_Concurrent(t *testing.T) {
 	}
 }
 
-// scriptTestDeps wires run_script's dependencies for tests: the shared
+// scriptTestDeps wires app_run_script's dependencies for tests: the shared
 // testEngine, a null-ish sender, and seeds a generous
 // tenant_builder_config row so the LLM budget pre-check doesn't
 // short-circuit.

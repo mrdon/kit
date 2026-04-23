@@ -6,7 +6,7 @@
 //
 //   - TestAcceptance_MugClub_DayOneSmoke (this file): the "one-shot easy"
 //     pitch check. Admin installs mug_club via builder_examples ->
-//     create_app -> create_script -> expose_script_function_as_tool, a
+//     create_app -> app_create_script -> app_expose_tool, a
 //     non-admin bartender discovers the tool through tools.NewRegistry,
 //     invokes it, rows land (with concurrent-invocation atomicity).
 //
@@ -120,8 +120,8 @@ func (f *acceptanceFixture) adminEC(ctx context.Context) *execContextLike {
 	return &execContextLike{Ctx: ctx, Pool: f.pool, Caller: f.admin}
 }
 
-// replayExample drives create_app + create_script + expose +
-// schedule_script for every entry in an example definition's first app
+// replayExample drives create_app + app_create_script + expose +
+// app_schedule_script for every entry in an example definition's first app
 // (every existing example has exactly one app). Returns the app name
 // that ended up in the DB.
 func replayExample(t *testing.T, f *acceptanceFixture, def exampleDefinition) string {
@@ -144,7 +144,7 @@ func replayExample(t *testing.T, f *acceptanceFixture, def exampleDefinition) st
 			"name": s.Name,
 			"body": s.Body,
 		})); err != nil {
-			t.Fatalf("create_script %q: %v", s.Name, err)
+			t.Fatalf("app_create_script %q: %v", s.Name, err)
 		}
 	}
 	for _, e := range spec.Expose {
@@ -165,7 +165,7 @@ func replayExample(t *testing.T, f *acceptanceFixture, def exampleDefinition) st
 			"fn":     sc.Fn,
 			"cron":   sc.Cron,
 		})); err != nil {
-			t.Fatalf("schedule_script %q/%q: %v", sc.Script, sc.Fn, err)
+			t.Fatalf("app_schedule_script %q/%q: %v", sc.Script, sc.Fn, err)
 		}
 	}
 	return spec.AppName
@@ -287,10 +287,10 @@ func TestAcceptance_MugClub_DayOneSmoke(t *testing.T) {
 		t.Fatalf("parse example: %v", err)
 	}
 
-	// 2. Replay the example through create_app / create_script / expose.
+	// 2. Replay the example through create_app / app_create_script / expose.
 	appName := replayExample(t, f, def)
 
-	// 3. Verify list_apps / list_scripts / list_exposed_tools reflect
+	// 3. Verify list_apps / app_list_scripts / app_list_tools reflect
 	//    the install.
 	listOut, err := handleListApps(f.adminEC(ctx), nil)
 	if err != nil {
@@ -304,7 +304,7 @@ func TestAcceptance_MugClub_DayOneSmoke(t *testing.T) {
 
 	scriptsOut, err := handleListScripts(f.adminEC(ctx), mustJSON(map[string]any{"app": appName}))
 	if err != nil {
-		t.Fatalf("list_scripts: %v", err)
+		t.Fatalf("app_list_scripts: %v", err)
 	}
 	var scripts []scriptSummary
 	_ = json.Unmarshal([]byte(scriptsOut), &scripts)
@@ -314,7 +314,7 @@ func TestAcceptance_MugClub_DayOneSmoke(t *testing.T) {
 
 	exposedOut, err := handleListExposedTools(f.adminEC(ctx), mustJSON(map[string]any{"app": appName}))
 	if err != nil {
-		t.Fatalf("list_exposed_tools: %v", err)
+		t.Fatalf("app_list_tools: %v", err)
 	}
 	var exposed []exposedToolDTO
 	_ = json.Unmarshal([]byte(exposedOut), &exposed)

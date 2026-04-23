@@ -244,7 +244,7 @@ func TestExposedTool_EndToEnd(t *testing.T) {
 
 	// Audit: a script_runs row was created with triggered_by=manual (since
 	// invokeRunScript uses manual; this is a v0.1 limitation — exposed
-	// invocations go through the same keystone as admin run_script).
+	// invocations go through the same keystone as admin app_run_script).
 	var runCount int
 	if err := f.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM script_runs

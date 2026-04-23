@@ -44,7 +44,7 @@ type AppItem struct {
 // AppItemHistory is the temporal shadow row for AppItem. The PL/pgSQL trigger
 // on app_items AFTER UPDATE OR DELETE inserts the prior state here with
 // valid_from = max(OLD.created_at, OLD.updated_at) and valid_to = now().
-// rollback_script_run replays these rows back into app_items.
+// app_rollback_script_run replays these rows back into app_items.
 type AppItemHistory struct {
 	HistoryID    int64           `json:"history_id"     db:"history_id"`
 	ID           uuid.UUID       `json:"id"             db:"id"`

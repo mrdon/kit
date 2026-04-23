@@ -3,7 +3,7 @@
 // test Postgres. Each test seeds its own tenant + admin user + app so
 // tests parallelise without stepping on each other.
 //
-// The run_script and rollback_script_run tests live in
+// The app_run_script and app_rollback_script_run tests live in
 // meta_scripts_run_test.go and meta_scripts_rollback_test.go respectively
 // to keep each file under the 500-LOC cap.
 package builder
@@ -99,7 +99,7 @@ func TestCreateScript_HappyPath(t *testing.T) {
 		"description": "returns 42",
 	}))
 	if err != nil {
-		t.Fatalf("create_script: %v", err)
+		t.Fatalf("app_create_script: %v", err)
 	}
 	var dto scriptDTO
 	if err := json.Unmarshal([]byte(out), &dto); err != nil {
@@ -118,7 +118,7 @@ func TestCreateScript_HappyPath(t *testing.T) {
 	// Verify the revision body round-trips.
 	detail, err := getScript(ctx, f.pool, f.admin, f.app.Name, "answer")
 	if err != nil {
-		t.Fatalf("get_script: %v", err)
+		t.Fatalf("app_get_script: %v", err)
 	}
 	if detail.Body != body {
 		t.Errorf("body mismatch: got %q want %q", detail.Body, body)
@@ -142,7 +142,7 @@ func TestCreateScript_DuplicateName(t *testing.T) {
 	}
 }
 
-// TestUpdateScript_AdvancesRevision verifies update_script creates a
+// TestUpdateScript_AdvancesRevision verifies app_update_script creates a
 // new revision and repoints current_rev_id.
 func TestUpdateScript_AdvancesRevision(t *testing.T) {
 	f := newScriptFixture(t)
@@ -160,7 +160,7 @@ func TestUpdateScript_AdvancesRevision(t *testing.T) {
 		"body": "def main(): return 2\n",
 	}))
 	if err != nil {
-		t.Fatalf("update_script: %v", err)
+		t.Fatalf("app_update_script: %v", err)
 	}
 	var updated scriptDTO
 	if err := json.Unmarshal([]byte(out), &updated); err != nil {
@@ -203,7 +203,7 @@ func TestListScripts_FilterByApp(t *testing.T) {
 
 	out, err := handleListScripts(f.ec(ctx), mustJSON(map[string]any{"app": f.app.Name}))
 	if err != nil {
-		t.Fatalf("list_scripts: %v", err)
+		t.Fatalf("app_list_scripts: %v", err)
 	}
 	var list []scriptSummary
 	if err := json.Unmarshal([]byte(out), &list); err != nil {
@@ -245,12 +245,12 @@ func TestScriptTools_NonAdminForbidden(t *testing.T) {
 		fn    func(*execContextLike, json.RawMessage) (string, error)
 		input string
 	}{
-		{"create_script", handleCreateScript, fmt.Sprintf(`{"app":%q,"name":"x","body":"def main(): return 1"}`, f.app.Name)},
-		{"update_script", handleUpdateScript, fmt.Sprintf(`{"app":%q,"name":"p","body":"def main(): return 2"}`, f.app.Name)},
-		{"list_scripts", handleListScripts, fmt.Sprintf(`{"app":%q}`, f.app.Name)},
-		{"get_script", handleGetScript, fmt.Sprintf(`{"app":%q,"name":"p"}`, f.app.Name)},
-		{"run_script", handleRunScript, fmt.Sprintf(`{"app":%q,"script":"p","fn":"main"}`, f.app.Name)},
-		{"rollback_script_run", handleRollbackScriptRun, `{"run_id":"00000000-0000-0000-0000-000000000000","confirm":true}`},
+		{"app_create_script", handleCreateScript, fmt.Sprintf(`{"app":%q,"name":"x","body":"def main(): return 1"}`, f.app.Name)},
+		{"app_update_script", handleUpdateScript, fmt.Sprintf(`{"app":%q,"name":"p","body":"def main(): return 2"}`, f.app.Name)},
+		{"app_list_scripts", handleListScripts, fmt.Sprintf(`{"app":%q}`, f.app.Name)},
+		{"app_get_script", handleGetScript, fmt.Sprintf(`{"app":%q,"name":"p"}`, f.app.Name)},
+		{"app_run_script", handleRunScript, fmt.Sprintf(`{"app":%q,"script":"p","fn":"main"}`, f.app.Name)},
+		{"app_rollback_script_run", handleRollbackScriptRun, `{"run_id":"00000000-0000-0000-0000-000000000000","confirm":true}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

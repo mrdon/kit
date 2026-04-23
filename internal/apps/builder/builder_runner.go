@@ -4,7 +4,7 @@
 // row whose config JSONB carries {"script_id","fn_name"}; we resolve the
 // owning app, re-check the creator's admin status (demoted admins have
 // their schedules deactivated rather than running under stale privilege),
-// and hand off to invokeRunScript — the same keystone run_script uses for
+// and hand off to invokeRunScript — the same keystone app_run_script uses for
 // manual invocations.
 //
 // Why a separate file:
@@ -36,9 +36,9 @@ import (
 )
 
 // builderRunner implements scheduler.TaskRunner for task_type='builder_script'.
-// It holds the same scriptRunDeps that the manual run_script handler uses,
+// It holds the same scriptRunDeps that the manual app_run_script handler uses,
 // so a scheduled run sees identical engine behaviour — a scheduled tick
-// is literally "someone invoking run_script on your behalf."
+// is literally "someone invoking app_run_script on your behalf."
 type builderRunner struct {
 	pool *pgxpool.Pool
 	deps *scriptRunDeps
@@ -62,7 +62,7 @@ func (r *builderRunner) TaskType() string {
 
 // Run is the entry point the scheduler calls for each claimed
 // task_type='builder_script' row. Re-checks the creator's admin status,
-// resolves the script, invokes the same keystone as run_script, and
+// resolves the script, invokes the same keystone as app_run_script, and
 // advances next_run_at from the cron expression.
 func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 	if r.deps == nil || r.deps.Engine == nil {
@@ -164,7 +164,7 @@ func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 }
 
 // parseBuilderScriptTaskConfig extracts (script_id, fn_name) from a
-// task.Config JSONB payload. The schedule_script meta-tool writes this
+// task.Config JSONB payload. The app_schedule_script meta-tool writes this
 // exact shape; a parse error means the row was tampered with (not a
 // pre-existing row left by an older binary, since this column was added
 // in the same migration that introduced task_type='builder_script').
@@ -191,7 +191,7 @@ func parseBuilderScriptTaskConfig(task *models.Task) (uuid.UUID, string, error) 
 
 // advanceNextRun computes the next cron tick and flips the task back to
 // status='active' so the scheduler picks it up again. A bad cron (data
-// corruption, since we validated at schedule_script time) deactivates
+// corruption, since we validated at app_schedule_script time) deactivates
 // the row rather than looping forever.
 func (r *builderRunner) advanceNextRun(ctx context.Context, task *models.Task) {
 	loc, err := time.LoadLocation(task.Timezone)
@@ -222,7 +222,7 @@ func (r *builderRunner) advanceNextRun(ctx context.Context, task *models.Task) {
 }
 
 // deactivate flips a task_type='builder_script' row to status='inactive'.
-// The row survives (admins see it in list_schedules with active=false)
+// The row survives (admins see it in app_list_schedules with active=false)
 // so they can understand what was paused and why. The reason is logged,
 // not persisted — a last_error column could surface it in v0.2.
 func (r *builderRunner) deactivate(ctx context.Context, task *models.Task, reason string) {

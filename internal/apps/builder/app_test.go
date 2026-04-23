@@ -54,23 +54,32 @@ func TestAppPhase4Contract(t *testing.T) {
 	a.RegisterRoutes(nil)
 }
 
-// TestAppMetaToolNames locks the Phase 4a + 4b meta-tool list so later
-// subtasks notice if one gets dropped by accident. 4c/4d/4e will extend.
+// TestAppMetaToolNames locks the builder meta-tool list so a rename or
+// removal is noticed by a test rather than in production. App-scoped
+// tools use the `_app_` prefix to distinguish them from future
+// tenant-level shared-library scripts.
 func TestAppMetaToolNames(t *testing.T) {
 	want := map[string]bool{
-		"create_app":          false,
-		"list_apps":           false,
-		"get_app":             false,
-		"delete_app":          false,
-		"purge_app_data":      false,
-		"create_script":       false,
-		"update_script":       false,
-		"list_scripts":        false,
-		"get_script":          false,
-		"run_script":          false,
-		"rollback_script_run": false,
-		"script_logs":         false,
-		"script_stats":        false,
+		"create_app":              false,
+		"list_apps":               false,
+		"get_app":                 false,
+		"delete_app":              false,
+		"purge_app_data":          false,
+		"app_create_script":       false,
+		"app_update_script":       false,
+		"app_list_scripts":        false,
+		"app_get_script":          false,
+		"app_delete_script":       false,
+		"app_run_script":          false,
+		"app_rollback_script_run": false,
+		"app_script_logs":         false,
+		"app_script_stats":        false,
+		"app_schedule_script":     false,
+		"app_unschedule_script":   false,
+		"app_list_schedules":      false,
+		"app_expose_tool":         false,
+		"app_revoke_tool":         false,
+		"app_list_tools":          false,
 	}
 	for _, m := range (&App{}).ToolMetas() {
 		if _, ok := want[m.Name]; ok {

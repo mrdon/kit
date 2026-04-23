@@ -1,8 +1,8 @@
 // Package builder: meta_schedules_test.go drives the Phase 4c schedule
 // meta-tools end-to-end. Reuses the scriptFixture from
 // meta_scripts_test.go so each test starts with a seeded (tenant, admin,
-// app, script) and can jump straight to exercising schedule_script /
-// unschedule_script / list_schedules.
+// app, script) and can jump straight to exercising app_schedule_script /
+// app_unschedule_script / app_list_schedules.
 package builder
 
 import (
@@ -29,7 +29,7 @@ func seedScheduleScript(t *testing.T, f *scriptFixture, name string) {
 	}
 }
 
-// TestScheduleScript_HappyPath verifies schedule_script inserts the row,
+// TestScheduleScript_HappyPath verifies app_schedule_script inserts the row,
 // populates next_run_at, and returns a dto the LLM can consume.
 func TestScheduleScript_HappyPath(t *testing.T) {
 	f := newScriptFixture(t)
@@ -44,7 +44,7 @@ func TestScheduleScript_HappyPath(t *testing.T) {
 		"timezone": "UTC",
 	}))
 	if err != nil {
-		t.Fatalf("schedule_script: %v", err)
+		t.Fatalf("app_schedule_script: %v", err)
 	}
 	var dto scheduleDTO
 	if err := json.Unmarshal([]byte(out), &dto); err != nil {
@@ -278,7 +278,7 @@ func TestListSchedules_FilterByApp(t *testing.T) {
 	// Filtered by f.app: only the "tick" schedule.
 	out, err := handleListSchedules(f.ec(ctx), mustJSON(map[string]any{"app": f.app.Name}))
 	if err != nil {
-		t.Fatalf("list_schedules: %v", err)
+		t.Fatalf("app_list_schedules: %v", err)
 	}
 	var list []scheduleDTO
 	if err := json.Unmarshal([]byte(out), &list); err != nil {
@@ -291,7 +291,7 @@ func TestListSchedules_FilterByApp(t *testing.T) {
 	// Unfiltered: both schedules show up.
 	outAll, err := handleListSchedules(f.ec(ctx), mustJSON(map[string]any{}))
 	if err != nil {
-		t.Fatalf("list_schedules all: %v", err)
+		t.Fatalf("app_list_schedules all: %v", err)
 	}
 	var all []scheduleDTO
 	_ = json.Unmarshal([]byte(outAll), &all)
@@ -315,9 +315,9 @@ func TestScheduleTools_NonAdminForbidden(t *testing.T) {
 		fn    func(*execContextLike, json.RawMessage) (string, error)
 		input string
 	}{
-		{"schedule_script", handleScheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick","cron":"*/5 * * * *"}`},
-		{"unschedule_script", handleUnscheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick"}`},
-		{"list_schedules", handleListSchedules, `{}`},
+		{"app_schedule_script", handleScheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick","cron":"*/5 * * * *"}`},
+		{"app_unschedule_script", handleUnscheduleScript, `{"app":"` + f.app.Name + `","script":"tick","fn":"tick"}`},
+		{"app_list_schedules", handleListSchedules, `{}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

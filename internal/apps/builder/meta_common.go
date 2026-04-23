@@ -1,5 +1,5 @@
 // Package builder: meta_common.go collects the shared helpers every Phase 4
-// meta-tool (create_app, add_script, schedule_script, expose_tool, ...) reaches
+// meta-tool (create_app, add_script, app_schedule_script, expose_tool, ...) reaches
 // for. Parsing the tool input JSON, enforcing admin-only guardrails, looking up
 // a builder_app by (tenant_id, name), and formatting the JSON result all live
 // here so the per-category files (meta_apps.go, meta_scripts.go, ...) can stay

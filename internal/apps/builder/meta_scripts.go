@@ -1,20 +1,26 @@
 // Package builder: meta_scripts.go implements the script-CRUD meta-tools
-// (create_script, update_script, list_scripts, get_script). The sibling
-// meta_scripts_run.go holds run_script and meta_scripts_rollback.go holds
-// rollback_script_run — same package, same handler pattern as meta_apps.go,
-// split only to keep each file under the 500-LOC soft cap.
+// (app_create_script, app_update_script, app_list_scripts,
+// app_get_script, app_delete_script). The sibling meta_scripts_run.go
+// holds app_run_script and meta_scripts_rollback.go holds
+// app_rollback_script_run — same package, same handler pattern as
+// meta_apps.go, split only to keep each file under the 500-LOC soft cap.
+//
+// The `_app_` prefix distinguishes these app-scoped script ops from
+// future tenant-level shared-library scripts.
 //
 // Contract summary:
 //
-//	create_script(app, name, body, description?) -> { id, name, app, current_rev_id, created_at }
-//	update_script(app, name, body)               -> { id, name, app, current_rev_id, created_at }
-//	list_scripts(app)                            -> [ { id, name, description }, ... ]
-//	get_script(app, name)                        -> { id, name, description, body, created_at }
+//	app_create_script(app, name, body, description?) -> { id, name, app, current_rev_id, created_at }
+//	app_update_script(app, name, body)               -> { id, name, app, current_rev_id, created_at }
+//	app_list_scripts(app)                            -> [ { id, name, description }, ... ]
+//	app_get_script(app, name)                        -> { id, name, description, body, created_at }
+//	app_delete_script(app, name, confirm)            -> { deleted: "<name>" }
 //
 // Every tool is admin-only: non-admins get ErrForbidden via guardAdmin.
-// create_script and update_script wrap their two INSERTs in a transaction
-// so we never end up with an orphan scripts row whose current_rev_id is
-// NULL on first-create, or a new revision row unreferenced on update.
+// app_create_script and app_update_script wrap their two INSERTs in a
+// transaction so we never end up with an orphan scripts row whose
+// current_rev_id is NULL on first-create, or a new revision row
+// unreferenced on update.
 package builder
 
 import (
@@ -31,11 +37,11 @@ import (
 )
 
 // metaScriptTools enumerates the four script-CRUD meta-tools plus
-// run_script and rollback_script_run. Admin-only across the board;
+// app_run_script and app_rollback_script_run. Admin-only across the board;
 // registered via App.ToolMetas so the services catalog picks them up.
 var metaScriptTools = []services.ToolMeta{
 	{
-		Name:        "create_script",
+		Name:        "app_create_script",
 		Description: "Create a new script in a builder app. Appends the first script_revisions row and sets scripts.current_rev_id. Script names are unique within an app.",
 		Schema: services.PropsReq(map[string]any{
 			"app":         services.Field("string", "Builder app name that owns this script"),
@@ -46,8 +52,8 @@ var metaScriptTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "update_script",
-		Description: "Append a new revision to an existing script and point current_rev_id at it. The prior revisions stay in script_revisions for audit.",
+		Name:        "app_update_script",
+		Description: "Append a new revision to an existing app script and point current_rev_id at it. The prior revisions stay in script_revisions for audit.",
 		Schema: services.PropsReq(map[string]any{
 			"app":  services.Field("string", "Builder app name"),
 			"name": services.Field("string", "Script identifier"),
@@ -56,7 +62,7 @@ var metaScriptTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "list_scripts",
+		Name:        "app_list_scripts",
 		Description: "List scripts in a builder app, returning { id, name, description } for each.",
 		Schema: services.PropsReq(map[string]any{
 			"app": services.Field("string", "Builder app name"),
@@ -64,8 +70,8 @@ var metaScriptTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "get_script",
-		Description: "Fetch a script's current revision body plus its metadata.",
+		Name:        "app_get_script",
+		Description: "Fetch an app script's current revision body plus its metadata.",
 		Schema: services.PropsReq(map[string]any{
 			"app":  services.Field("string", "Builder app name"),
 			"name": services.Field("string", "Script identifier"),
@@ -73,8 +79,18 @@ var metaScriptTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "run_script",
-		Description: "Invoke a function on a script. Opens a script_runs row for audit, enforces per-tenant limits, and returns the function's result plus run metadata.",
+		Name:        "app_delete_script",
+		Description: "Delete a script from a builder app. Fails if the script has any active schedules or exposed tools — revoke those first. Requires confirm=true. Revision history remains for audit, but the script becomes unrunnable.",
+		Schema: services.PropsReq(map[string]any{
+			"app":     services.Field("string", "Builder app name"),
+			"name":    services.Field("string", "Script identifier"),
+			"confirm": map[string]any{"type": "boolean", "description": "Must be true — safety interlock."},
+		}, "app", "name", "confirm"),
+		AdminOnly: true,
+	},
+	{
+		Name:        "app_run_script",
+		Description: "Invoke a function on an app script. Opens a script_runs row for audit, enforces per-tenant limits, and returns the function's result plus run metadata.",
 		Schema: services.PropsReq(map[string]any{
 			"app":    services.Field("string", "Builder app name"),
 			"script": services.Field("string", "Script identifier"),
@@ -85,8 +101,8 @@ var metaScriptTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "rollback_script_run",
-		Description: "Roll back the mutations made by a completed script_run using the temporal history. Requires confirm=true.",
+		Name:        "app_rollback_script_run",
+		Description: "Roll back the mutations made by a completed app-script run using the temporal history. Requires confirm=true.",
 		Schema: services.PropsReq(map[string]any{
 			"run_id":  services.Field("string", "script_runs.id to roll back"),
 			"confirm": map[string]any{"type": "boolean", "description": "Must be true — safety interlock."},
@@ -100,7 +116,7 @@ var metaScriptTools = []services.ToolMeta{
 // the stitching.
 func MetaScriptTools() []services.ToolMeta { return metaScriptTools }
 
-// scriptDTO is the JSON shape create_script / update_script / get_script
+// scriptDTO is the JSON shape app_create_script / app_update_script / app_get_script
 // return. Kept narrow on purpose — tenant_id and created_by are internal.
 type scriptDTO struct {
 	ID           uuid.UUID  `json:"id"`
@@ -117,17 +133,19 @@ type scriptDTO struct {
 // can short-circuit.
 func metaScriptAgentHandler(name string) func(ec *execContextLike, input json.RawMessage) (string, error) {
 	switch name {
-	case "create_script":
+	case "app_create_script":
 		return handleCreateScript
-	case "update_script":
+	case "app_update_script":
 		return handleUpdateScript
-	case "list_scripts":
+	case "app_list_scripts":
 		return handleListScripts
-	case "get_script":
+	case "app_get_script":
 		return handleGetScript
-	case "run_script":
+	case "app_delete_script":
+		return handleDeleteScript
+	case "app_run_script":
 		return handleRunScript
-	case "rollback_script_run":
+	case "app_rollback_script_run":
 		return handleRollbackScriptRun
 	default:
 		return nil
@@ -218,6 +236,93 @@ func handleGetScript(ec *execContextLike, input json.RawMessage) (string, error)
 		return "", err
 	}
 	return formatToolResult(dto)
+}
+
+func handleDeleteScript(ec *execContextLike, input json.RawMessage) (string, error) {
+	m, err := parseInput(input)
+	if err != nil {
+		return "", err
+	}
+	appName, err := argString(m, "app")
+	if err != nil {
+		return "", err
+	}
+	name, err := argString(m, "name")
+	if err != nil {
+		return "", err
+	}
+	confirm, _ := m["confirm"].(bool)
+	if !confirm {
+		return "", errors.New("app_delete_script requires confirm=true")
+	}
+	if err := deleteScript(ec.Ctx, ec.Pool, ec.Caller, appName, name); err != nil {
+		return "", err
+	}
+	return formatToolResult(map[string]any{"deleted": name})
+}
+
+// deleteScript removes a script row (cascade drops revisions, runs, and
+// any unrevoked exposed_tools — but we refuse upfront when exposed tools
+// or active schedules exist so the admin revokes them explicitly.
+// Otherwise a script deletion could silently unpublish tools that live
+// users depend on.
+func deleteScript(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	caller *services.Caller,
+	appName, name string,
+) error {
+	if err := guardAdmin(caller); err != nil {
+		return err
+	}
+	app, err := loadBuilderAppByName(ctx, pool, caller.TenantID, appName)
+	if err != nil {
+		return err
+	}
+
+	var scriptID uuid.UUID
+	err = pool.QueryRow(ctx, `
+		SELECT id FROM scripts
+		WHERE tenant_id = $1 AND builder_app_id = $2 AND name = $3
+	`, caller.TenantID, app.ID, name).Scan(&scriptID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("script %q not found in app %q", name, appName)
+		}
+		return fmt.Errorf("loading script: %w", err)
+	}
+
+	var exposedCount int
+	if err = pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM exposed_tools
+		WHERE tenant_id = $1 AND script_id = $2 AND is_stale = false
+	`, caller.TenantID, scriptID).Scan(&exposedCount); err != nil {
+		return fmt.Errorf("counting exposed tools: %w", err)
+	}
+	if exposedCount > 0 {
+		return fmt.Errorf("script %q has %d exposed tool(s) — revoke them first with app_revoke_tool", name, exposedCount)
+	}
+
+	var scheduleCount int
+	if err = pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM tasks
+		WHERE tenant_id = $1
+		  AND task_type = 'builder_script'
+		  AND status = 'active'
+		  AND (config->>'script_id')::uuid = $2
+	`, caller.TenantID, scriptID).Scan(&scheduleCount); err != nil {
+		return fmt.Errorf("counting schedules: %w", err)
+	}
+	if scheduleCount > 0 {
+		return fmt.Errorf("script %q has %d active schedule(s) — unschedule first with app_unschedule_script", name, scheduleCount)
+	}
+
+	if _, err = pool.Exec(ctx, `
+		DELETE FROM scripts WHERE tenant_id = $1 AND id = $2
+	`, caller.TenantID, scriptID); err != nil {
+		return fmt.Errorf("deleting script: %w", err)
+	}
+	return nil
 }
 
 // createScript performs the two-statement insert inside one transaction:
@@ -387,7 +492,7 @@ func updateScript(
 
 // listScripts returns the script summaries for one app. Mirrors the
 // scriptSummary shape from meta_apps.go so the LLM sees a consistent
-// result whether it called list_scripts or get_app.
+// result whether it called app_list_scripts or get_app.
 func listScripts(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -405,7 +510,7 @@ func listScripts(
 }
 
 // getScript fetches a script plus the body of its current revision. If
-// current_rev_id is NULL (shouldn't happen after create_script's
+// current_rev_id is NULL (shouldn't happen after app_create_script's
 // transaction, but defensively handled) we surface an error rather than
 // returning an empty body that looks valid.
 func getScript(

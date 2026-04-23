@@ -39,7 +39,7 @@ type Script struct {
 }
 
 // ScriptRevision is an immutable snapshot of a script's body. Every
-// create_script / update_script appends one. Runs record the exact revision
+// app_create_script / app_update_script appends one. Runs record the exact revision
 // they executed so rollback + audit are exact.
 type ScriptRevision struct {
 	ID        uuid.UUID  `json:"id"         db:"id"`

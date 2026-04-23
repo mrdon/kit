@@ -14,7 +14,7 @@
 //	today()                                             # YYYY-MM-DD in caller tz
 //	date_add(dt, days=, hours=, minutes=, seconds=)     # shifted RFC3339Nano
 //	date_diff(a, b)                                     # a-b seconds, float
-//	log(level, message, **fields)                       # INSERT into script_logs
+//	log(level, message, **fields)                       # INSERT into app_script_logs
 package builder
 
 import (
@@ -208,9 +208,9 @@ func dispatchDateDiff(call *runtime.FunctionCall) (any, error) {
 	return a.Sub(b).Seconds(), nil
 }
 
-// dispatchLog inserts a single row into script_logs when runID is set; when
+// dispatchLog inserts a single row into app_script_logs when runID is set; when
 // runID is nil it drops the line onto slog so we don't lose the signal but
-// don't violate the script_logs NOT NULL constraint on script_run_id.
+// don't violate the app_script_logs NOT NULL constraint on script_run_id.
 func dispatchLog(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -272,7 +272,7 @@ func dispatchLog(
 	return nil, nil //nolint:nilnil // log() returns None
 }
 
-// isValidLogLevel mirrors the CHECK constraint on script_logs.level.
+// isValidLogLevel mirrors the CHECK constraint on app_script_logs.level.
 func isValidLogLevel(level string) bool {
 	switch level {
 	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:

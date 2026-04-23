@@ -272,7 +272,7 @@ func loadAppScripts(ctx context.Context, pool *pgxpool.Pool, tenantID, appID uui
 // surfacing the script name instead of the raw config UUID (admins read
 // schedules by script name, not UUID). Only returns active entries —
 // get_app is a "what's live right now?" read-out; history lives in
-// list_schedules which returns inactive too.
+// app_list_schedules which returns inactive too.
 func loadAppSchedules(ctx context.Context, pool *pgxpool.Pool, tenantID, appID uuid.UUID) ([]scheduleSummary, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT t.id, s.name, t.config->>'fn_name', t.cron_expr

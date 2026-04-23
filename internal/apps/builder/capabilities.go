@@ -1,6 +1,6 @@
 // Package builder: capabilities.go assembles the Phase 3 builtin bundles
 // (db_*, actions, llm_*, utilities, tools_call, shared) into one
-// runtime.Capabilities struct that run_script hands to the engine. It also
+// runtime.Capabilities struct that app_run_script hands to the engine. It also
 // returns a ScriptRunCounters handle so the post-run UPDATE can populate
 // the script_runs row with mutation_summary, tokens_used, cost_cents, etc.
 //
@@ -8,7 +8,7 @@
 // knows about every bundle at once; individual bundles continue to live
 // in their own files under db_builtins.go / action_builtins.go / etc.
 // If any bundle grows new builtins we just need to rebuild the combined
-// map here — the rest of the run_script flow stays unchanged.
+// map here — the rest of the app_run_script flow stays unchanged.
 //
 // Key disjointness: every bundle namespaces its names (db_*, llm_*, plus
 // action verbs like create_todo, tools_call, shared). Combining them
@@ -30,7 +30,7 @@ import (
 )
 
 // ScriptRunParams carries the identity + scope a single script invocation
-// needs. The run_script handler builds one of these from the caller's
+// needs. The app_run_script handler builds one of these from the caller's
 // MCP/agent context and the loaded app; downstream (tools_call,
 // shared) receives only what its narrower surface needs, but the parent
 // orchestrator starts from this full shape.
@@ -47,7 +47,7 @@ type ScriptRunParams struct {
 }
 
 // ScriptRunCounters exposes the per-run counters the orchestrator captures
-// at assembly time. After the script runs, run_script calls Snapshot to
+// at assembly time. After the script runs, app_run_script calls Snapshot to
 // pull a map suitable for json-marshal into script_runs.mutation_summary,
 // and reads TokensUsed / CostCents separately to populate the dedicated
 // script_runs columns.

@@ -185,7 +185,7 @@ func TestGetApp_WithInventory(t *testing.T) {
 
 	// Reach under the hood to seed a script, a schedule, and an exposed
 	// tool. Phase 4a doesn't have the meta-tools for these yet — later
-	// subtasks wire add_script / schedule_script / expose_tool.
+	// subtasks wire add_script / app_schedule_script / expose_tool.
 	app, err := loadBuilderAppByName(ctx, f.pool, f.tenant.ID, "inv")
 	if err != nil {
 		t.Fatalf("load: %v", err)

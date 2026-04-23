@@ -1,4 +1,4 @@
-// Package builder: meta_scripts_rollback_test.go covers the rollback_script_run
+// Package builder: meta_scripts_rollback_test.go covers the app_rollback_script_run
 // meta-tool end-to-end against Postgres. Split from meta_scripts_test.go to
 // keep each file under the 500-LOC cap.
 package builder
@@ -56,7 +56,7 @@ def main():
 
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "mutator", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status=%q err=%q", resp.Status, resp.Error)
@@ -136,7 +136,7 @@ def main():
 
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "deleter", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status=%q err=%q", resp.Status, resp.Error)
@@ -180,7 +180,7 @@ def main():
 	}
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "triplet", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status=%q err=%q", resp.Status, resp.Error)

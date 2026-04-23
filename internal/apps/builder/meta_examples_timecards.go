@@ -14,7 +14,7 @@
 //   - Lenient input parsing + strict normalisation before storage so
 //     date_add / date_diff and lexical sort both work.
 //   - A `preview_weekly_briefing` companion to the scheduled DM function
-//     so run_script smoke tests don't fail on `dm_user` side effects.
+//     so app_run_script smoke tests don't fail on `dm_user` side effects.
 //   - Weekday / "start of week" math done in pure Python (Zeller's)
 //     because Monty has no datetime module and $gte / $lte won't work
 //     on string fields in v0.1.
@@ -267,7 +267,7 @@ def delete_shift(shift_id):
 //   - weekly_standup_briefing DMs the installer (not a role-scoped
 //     briefing, since v0.1 briefings scope by role not individual).
 //   - preview_weekly_briefing returns the same body without the DM so
-//     run_script smoke tests don't fail on a synthetic caller's Slack id.
+//     app_run_script smoke tests don't fail on a synthetic caller's Slack id.
 const timecardsMainBody = `
 # Timecards business logic.
 #
@@ -460,7 +460,7 @@ def weekly_standup_briefing():
 def preview_weekly_briefing():
     """Same body weekly_standup_briefing would send, without the DM.
 
-    Use this for smoke tests — run_script against weekly_standup_briefing
+    Use this for smoke tests — app_run_script against weekly_standup_briefing
     may fail on the Slack call when invoked from the admin harness.
     """
     summary = my_week_hours()

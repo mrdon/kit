@@ -1,4 +1,4 @@
-// Package builder: meta_scripts_rollback.go implements rollback_script_run
+// Package builder: meta_scripts_rollback.go implements app_rollback_script_run
 // — the meta-tool that undoes the mutations a script run made against
 // app_items using the temporal history table populated by the
 // app_items_history_record trigger (see migration 017_app_builder.sql).
@@ -56,7 +56,7 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// rollbackResponse is the JSON shape rollback_script_run returns. The
+// rollbackResponse is the JSON shape app_rollback_script_run returns. The
 // three counters (deleted/restored/reinserted) are separate so the caller
 // can tell "we deleted 3 inserts" apart from "we restored 3 updates".
 type rollbackResponse struct {

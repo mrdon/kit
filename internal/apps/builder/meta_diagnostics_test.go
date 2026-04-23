@@ -1,5 +1,5 @@
 // Package builder: meta_diagnostics_test.go exercises the Phase 4e
-// diagnostic meta-tools (script_logs + script_stats) end-to-end against
+// diagnostic meta-tools (app_script_logs + app_script_stats) end-to-end against
 // Postgres. Each test seeds its own tenant + admin user + app via
 // newScriptFixture so tests parallelise without cross-contamination.
 package builder
@@ -19,7 +19,7 @@ import (
 
 // insertStatsRun inserts a script_runs row with the given status/duration.
 // Centralised here because multiple stats tests need to fabricate runs
-// without going through run_script (which always yields completed runs in
+// without going through app_run_script (which always yields completed runs in
 // happy-path scenarios).
 func insertStatsRun(
 	t *testing.T,
@@ -55,7 +55,7 @@ func insertStatsRun(
 
 // seedScriptForStats creates a script + revision for stats tests and
 // returns both ids so tests can attach runs directly without going
-// through run_script.
+// through app_run_script.
 func seedScriptForStats(t *testing.T, ctx context.Context, f *scriptFixture, name string) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	dto, err := createScript(ctx, f.pool, f.admin, f.app.Name, name, "def main(): return 1\n", "")
@@ -89,7 +89,7 @@ func insertLLMCall(
 }
 
 // TestScriptLogs_HappyPath runs a script that calls log("info", "hi",
-// user="jane") and verifies script_logs surfaces the row with fields
+// user="jane") and verifies app_script_logs surfaces the row with fields
 // intact.
 func TestScriptLogs_HappyPath(t *testing.T) {
 	f := newScriptFixture(t)
@@ -110,7 +110,7 @@ def main():
 	}
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, f.app.Name, "logger", "main", nil, nil)
 	if err != nil {
-		t.Fatalf("run_script: %v", err)
+		t.Fatalf("app_run_script: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status=%q err=%q", resp.Status, resp.Error)
@@ -120,7 +120,7 @@ def main():
 		"run_id": resp.RunID.String(),
 	}))
 	if err != nil {
-		t.Fatalf("script_logs: %v", err)
+		t.Fatalf("app_script_logs: %v", err)
 	}
 	var rows []scriptLogRow
 	if err := json.Unmarshal([]byte(out), &rows); err != nil {
@@ -209,7 +209,7 @@ func TestScriptLogs_Limit(t *testing.T) {
 		"limit":  float64(50),
 	}))
 	if err != nil {
-		t.Fatalf("script_logs: %v", err)
+		t.Fatalf("app_script_logs: %v", err)
 	}
 	var rows []scriptLogRow
 	if err := json.Unmarshal([]byte(out), &rows); err != nil {
@@ -264,7 +264,7 @@ func TestScriptStats_BasicAggregates(t *testing.T) {
 
 	out, err := handleScriptStats(f.ec(ctx), mustJSON(map[string]any{}))
 	if err != nil {
-		t.Fatalf("script_stats: %v", err)
+		t.Fatalf("app_script_stats: %v", err)
 	}
 	var resp scriptStatsResponse
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
@@ -331,7 +331,7 @@ func TestScriptStats_AppFilter(t *testing.T) {
 	// Filtering to app A should show only 2 completed runs.
 	out, err := handleScriptStats(f.ec(ctx), mustJSON(map[string]any{"app": f.app.Name}))
 	if err != nil {
-		t.Fatalf("script_stats: %v", err)
+		t.Fatalf("app_script_stats: %v", err)
 	}
 	var resp scriptStatsResponse
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
@@ -350,7 +350,7 @@ func TestScriptStats_AppFilter(t *testing.T) {
 	// Filtering to "other" sees only that one run.
 	out2, err := handleScriptStats(f.ec(ctx), mustJSON(map[string]any{"app": other.Name}))
 	if err != nil {
-		t.Fatalf("script_stats other: %v", err)
+		t.Fatalf("app_script_stats other: %v", err)
 	}
 	var resp2 scriptStatsResponse
 	if err := json.Unmarshal([]byte(out2), &resp2); err != nil {
@@ -379,7 +379,7 @@ func TestScriptStats_ScriptFilter(t *testing.T) {
 		"script": "targeted",
 	}))
 	if err != nil {
-		t.Fatalf("script_stats: %v", err)
+		t.Fatalf("app_script_stats: %v", err)
 	}
 	var resp scriptStatsResponse
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
@@ -422,7 +422,7 @@ func TestScriptStats_DaysWindow(t *testing.T) {
 	// Default (7 days) — excludes the 30-day-old run.
 	out, err := handleScriptStats(f.ec(ctx), mustJSON(map[string]any{}))
 	if err != nil {
-		t.Fatalf("script_stats default: %v", err)
+		t.Fatalf("app_script_stats default: %v", err)
 	}
 	var week scriptStatsResponse
 	if err := json.Unmarshal([]byte(out), &week); err != nil {
@@ -438,7 +438,7 @@ func TestScriptStats_DaysWindow(t *testing.T) {
 	// 90 days — includes both.
 	out, err = handleScriptStats(f.ec(ctx), mustJSON(map[string]any{"days": float64(90)}))
 	if err != nil {
-		t.Fatalf("script_stats 90d: %v", err)
+		t.Fatalf("app_script_stats 90d: %v", err)
 	}
 	var wide scriptStatsResponse
 	if err := json.Unmarshal([]byte(out), &wide); err != nil {
@@ -454,7 +454,7 @@ func TestScriptStats_DaysWindow(t *testing.T) {
 	// Exceeding the cap gets clamped back to 90.
 	out, err = handleScriptStats(f.ec(ctx), mustJSON(map[string]any{"days": float64(5000)}))
 	if err != nil {
-		t.Fatalf("script_stats huge: %v", err)
+		t.Fatalf("app_script_stats huge: %v", err)
 	}
 	var clamped scriptStatsResponse
 	if err := json.Unmarshal([]byte(out), &clamped); err != nil {

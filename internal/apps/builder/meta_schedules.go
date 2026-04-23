@@ -8,17 +8,17 @@
 //
 // Contract summary:
 //
-//	schedule_script(app, script, fn, cron, timezone="UTC")
+//	app_schedule_script(app, script, fn, cron, timezone="UTC")
 //	    -> { id, app, script, fn, cron, timezone, next_run_at, active }
-//	unschedule_script(app, script, fn)
+//	app_unschedule_script(app, script, fn)
 //	    -> { unscheduled: true }
-//	list_schedules(app=None)
+//	app_list_schedules(app=None)
 //	    -> [ { id, app, script, fn, cron, timezone, next_run_at, active }, ... ]
 //
 // Why `flip status=inactive` rather than DELETE on unschedule:
 //   - Keeps history for "why did this fire last Tuesday but not Wednesday?"
 //   - The partial unique index on (tenant_id, script_id, fn_name) WHERE
-//     status='active' means a later schedule_script for the same
+//     status='active' means a later app_schedule_script for the same
 //     (script, fn) can revive the inactive row rather than erroring.
 //
 // Admin-only: every handler calls guardAdmin. The MCP tool surface is the
@@ -46,8 +46,8 @@ import (
 // through App.ToolMetas.
 var metaScheduleTools = []services.ToolMeta{
 	{
-		Name:        "schedule_script",
-		Description: "Schedule a script function to run on a cron expression. Re-scheduling the same (script, fn) updates cron + timezone and flips active=true.",
+		Name:        "app_schedule_script",
+		Description: "Schedule a function in a builder-app script to run on a cron expression. Re-scheduling the same (script, fn) updates cron + timezone and flips active=true.",
 		Schema: services.PropsReq(map[string]any{
 			"app":      services.Field("string", "Builder app name that owns the script"),
 			"script":   services.Field("string", "Script identifier"),
@@ -58,8 +58,8 @@ var metaScheduleTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "unschedule_script",
-		Description: "Deactivate a scheduled script. The row is preserved with active=false so history + cron expression survive.",
+		Name:        "app_unschedule_script",
+		Description: "Deactivate a scheduled app-script. The row is preserved with active=false so history + cron expression survive.",
 		Schema: services.PropsReq(map[string]any{
 			"app":    services.Field("string", "Builder app name"),
 			"script": services.Field("string", "Script identifier"),
@@ -68,8 +68,8 @@ var metaScheduleTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "list_schedules",
-		Description: "List scheduled scripts in the tenant. Optional app filter. Returns active and inactive entries so admins can audit what is paused.",
+		Name:        "app_list_schedules",
+		Description: "List scheduled app-scripts in the tenant. Optional app filter. Returns active and inactive entries so admins can audit what is paused.",
 		Schema: services.Props(map[string]any{
 			"app": services.Field("string", "Builder app name to filter by (optional)"),
 		}),
@@ -81,7 +81,7 @@ var metaScheduleTools = []services.ToolMeta{
 // App.ToolMetas so both agent + MCP registration wire them automatically.
 func MetaScheduleTools() []services.ToolMeta { return metaScheduleTools }
 
-// scheduleDTO is the JSON shape schedule_script / list_schedules return.
+// scheduleDTO is the JSON shape app_schedule_script / app_list_schedules return.
 // Kept narrow on purpose — tenant_id is internal, and the script name +
 // app name surface instead of raw UUIDs so the LLM can refer back to
 // schedules by human-readable identifier.
@@ -100,11 +100,11 @@ type scheduleDTO struct {
 // name. Nil for unknown names so app.go's registration loop skips them.
 func metaScheduleAgentHandler(name string) func(ec *execContextLike, input json.RawMessage) (string, error) {
 	switch name {
-	case "schedule_script":
+	case "app_schedule_script":
 		return handleScheduleScript
-	case "unschedule_script":
+	case "app_unschedule_script":
 		return handleUnscheduleScript
-	case "list_schedules":
+	case "app_list_schedules":
 		return handleListSchedules
 	default:
 		return nil
@@ -181,7 +181,7 @@ func handleListSchedules(ec *execContextLike, input json.RawMessage) (string, er
 }
 
 // parseScheduleCron validates a cron expression using the same 5-field
-// parser the tasks table uses (so schedule_script ↔ CreateTask stay
+// parser the tasks table uses (so app_schedule_script ↔ CreateTask stay
 // consistent). Returns a cron.Schedule the caller can use to compute
 // next_run_at.
 func parseScheduleCron(expr, tz string) (cron.Schedule, *time.Location, error) {

@@ -272,7 +272,7 @@ def main():
 }
 
 // TestLog_WritesRow: fires log("info", "hello", user="jane") and asserts a
-// script_logs row lands with the level/message/fields.
+// app_script_logs row lands with the level/message/fields.
 func TestLog_WritesRow(t *testing.T) {
 	f := newItemFixture(t)
 	ctx, cancel := newCtx(t)
@@ -379,19 +379,19 @@ def main():
 		t.Errorf("result = %v, want ok", result)
 	}
 
-	// No script_logs rows for this tenant.
+	// No app_script_logs rows for this tenant.
 	var n int
 	err = f.pool.QueryRow(ctx, `SELECT COUNT(*) FROM script_logs WHERE tenant_id = $1`, f.tenant.ID).Scan(&n)
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 0 {
-		t.Errorf("script_logs rows = %d, want 0 (runID nil should go to slog)", n)
+		t.Errorf("app_script_logs rows = %d, want 0 (runID nil should go to slog)", n)
 	}
 }
 
 // createScriptRun inserts a minimal script + revision + script_run so the
-// script_logs.script_run_id FK is satisfied when TestLog_WritesRow inserts.
+// app_script_logs.script_run_id FK is satisfied when TestLog_WritesRow inserts.
 func createScriptRun(t *testing.T, f *itemFixture) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()

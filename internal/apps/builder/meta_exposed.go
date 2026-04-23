@@ -35,8 +35,8 @@ import (
 // registered via App.ToolMetas so the services catalog picks them up.
 var metaExposedTools = []services.ToolMeta{
 	{
-		Name:        "expose_script_function_as_tool",
-		Description: "Publish a script function as an agent/MCP tool available to callers holding one of the listed roles. UNIQUE per (tenant, tool_name); trying to reuse a name fails.",
+		Name:        "app_expose_tool",
+		Description: "Publish a function in a builder-app script as an agent/MCP tool available to callers holding one of the listed roles. UNIQUE per (tenant, tool_name); trying to reuse a name fails.",
 		Schema: services.PropsReq(map[string]any{
 			"app":              services.Field("string", "Builder app name that owns the script"),
 			"script":           services.Field("string", "Script identifier"),
@@ -49,16 +49,16 @@ var metaExposedTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "revoke_exposed_tool",
-		Description: "Delete an exposed_tools row by tool_name. Audit rows (script_runs) survive; this only removes the publication.",
+		Name:        "app_revoke_tool",
+		Description: "Delete a published app-tool by tool_name. Audit rows (script_runs) survive; this only removes the publication.",
 		Schema: services.PropsReq(map[string]any{
 			"tool_name": services.Field("string", "Tool name to revoke"),
 		}, "tool_name"),
 		AdminOnly: true,
 	},
 	{
-		Name:        "list_exposed_tools",
-		Description: "List exposed tools in this tenant. Optional `app` filter restricts to one builder app. Result includes is_stale so admins can spot broken publications.",
+		Name:        "app_list_tools",
+		Description: "List published app-tools in this tenant. Optional `app` filter restricts to one builder app. Result includes is_stale so admins can spot broken publications.",
 		Schema: services.Props(map[string]any{
 			"app": services.Field("string", "Optional: filter to one builder app name"),
 		}),
@@ -89,11 +89,11 @@ type exposedToolDTO struct {
 // meta-tool name. Nil for unknown names.
 func metaExposedAgentHandler(name string) func(ec *execContextLike, input json.RawMessage) (string, error) {
 	switch name {
-	case "expose_script_function_as_tool":
+	case "app_expose_tool":
 		return handleExposeScriptFunctionAsTool
-	case "revoke_exposed_tool":
+	case "app_revoke_tool":
 		return handleRevokeExposedTool
-	case "list_exposed_tools":
+	case "app_list_tools":
 		return handleListExposedTools
 	default:
 		return nil
@@ -167,7 +167,7 @@ func handleListExposedTools(ec *execContextLike, input json.RawMessage) (string,
 
 // exposeScriptFunctionAsTool inserts an exposed_tools row. The app+script
 // join is resolved server-side so the LLM doesn't need to remember UUIDs;
-// it names things the way it named them during create_app / create_script.
+// it names things the way it named them during create_app / app_create_script.
 // UNIQUE (tenant_id, tool_name) surfaces via isUniqueViolation as a clean
 // duplicate error.
 func exposeScriptFunctionAsTool(

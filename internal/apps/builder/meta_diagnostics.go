@@ -1,30 +1,30 @@
 // Package builder: meta_diagnostics.go implements the two Phase 4e
-// diagnostic meta-tools — script_logs and script_stats. Both are admin-only
+// diagnostic meta-tools — app_script_logs and app_script_stats. Both are admin-only
 // and tenant-scoped; they exist so an admin debugging a misbehaving script
 // can inspect its log() output and see aggregate health numbers without
 // shelling into the DB.
 //
 // Contract summary:
 //
-//	script_logs(run_id, limit=100)
+//	app_script_logs(run_id, limit=100)
 //	    -> [ {level, message, fields, created_at}, ... ]
 //
-//	script_stats(app=None, script=None, days=7)
+//	app_script_stats(app=None, script=None, days=7)
 //	    -> {completed, errors, limits, cancelled,
 //	        avg_duration_ms, max_duration_ms,
 //	        tokens, cost_cents, days, scope}
 //
 // Why these two and not more:
-//   - `script_logs` maps 1:1 to the row emission from util_builtins.go's
+//   - `app_script_logs` maps 1:1 to the row emission from util_builtins.go's
 //     dispatchLog — the admin-side read path needs to match the runtime
 //     write path or the feature is useless.
-//   - `script_stats` rolls up script_runs + llm_call_log into one shot so
+//   - `app_script_stats` rolls up script_runs + llm_call_log into one shot so
 //     admins don't have to join the two tables themselves. The 7-day
 //     default window matches the landing-page "last week" convention.
 //
 // Tenant isolation is enforced in two places per tool:
 //  1. `guardAdmin` rejects non-admin callers (mirrors every other meta-tool).
-//  2. Every SQL clause filters on caller.TenantID. For script_logs the
+//  2. Every SQL clause filters on caller.TenantID. For app_script_logs the
 //     handler pre-verifies run ownership via script_runs so a cross-tenant
 //     run_id comes back as a clean "run not found" instead of leaking
 //     other tenants' log rows via a silent empty result.
@@ -59,7 +59,7 @@ const (
 // elsewhere in the package.
 var metaDiagnosticTools = []services.ToolMeta{
 	{
-		Name:        "script_logs",
+		Name:        "app_script_logs",
 		Description: "Fetch per-run log lines written by a script via the log() built-in. Returns level, message, fields, and timestamp for each row.",
 		Schema: services.PropsReq(map[string]any{
 			"run_id": services.Field("string", "script_runs.id to fetch logs for"),
@@ -68,7 +68,7 @@ var metaDiagnosticTools = []services.ToolMeta{
 		AdminOnly: true,
 	},
 	{
-		Name:        "script_stats",
+		Name:        "app_script_stats",
 		Description: "Aggregate script_runs + llm_call_log counters across a time window. Optional app/script filters narrow the scope.",
 		Schema: services.Props(map[string]any{
 			"app":    services.Field("string", "Builder app name to filter by (optional)"),
@@ -87,16 +87,16 @@ func MetaDiagnosticTools() []services.ToolMeta { return metaDiagnosticTools }
 // Nil for unknown names so the registration loop in app.go short-circuits.
 func metaDiagnosticAgentHandler(name string) func(ec *execContextLike, input json.RawMessage) (string, error) {
 	switch name {
-	case "script_logs":
+	case "app_script_logs":
 		return handleScriptLogs
-	case "script_stats":
+	case "app_script_stats":
 		return handleScriptStats
 	default:
 		return nil
 	}
 }
 
-// scriptLogRow is the JSON shape script_logs returns for each row. We
+// scriptLogRow is the JSON shape app_script_logs returns for each row. We
 // decode `fields` to a typed map so the LLM sees structured JSON rather
 // than a re-encoded blob in a string.
 type scriptLogRow struct {
@@ -106,7 +106,7 @@ type scriptLogRow struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
-// scriptStatsResponse is the JSON shape script_stats returns. Separate
+// scriptStatsResponse is the JSON shape app_script_stats returns. Separate
 // counters per terminal status so admins can tell "limit_exceeded" apart
 // from "error" without a follow-up query. `scope` is a human-readable
 // descriptor of the applied filter so the LLM can echo it back when
@@ -157,7 +157,7 @@ func handleScriptLogs(ec *execContextLike, input json.RawMessage) (string, error
 
 // fetchScriptLogs loads log rows for a given run. Tenant isolation is a
 // two-step dance: verify the run exists and belongs to the caller's tenant
-// first (clean "run not found" otherwise), then query script_logs
+// first (clean "run not found" otherwise), then query app_script_logs
 // restricted to that tenant. The pre-verification step is load-bearing —
 // without it a cross-tenant run_id would silently return [] which looks
 // indistinguishable from "this run had no logs".
@@ -202,7 +202,7 @@ func fetchScriptLogs(
 			createdAt      time.Time
 		)
 		if err := rows.Scan(&level, &message, &fieldsJSON, &createdAt); err != nil {
-			return nil, fmt.Errorf("scanning script_logs row: %w", err)
+			return nil, fmt.Errorf("scanning app_script_logs row: %w", err)
 		}
 		row := scriptLogRow{Level: level, Message: message, CreatedAt: createdAt}
 		if len(fieldsJSON) > 0 {
@@ -215,7 +215,7 @@ func fetchScriptLogs(
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating script_logs rows: %w", err)
+		return nil, fmt.Errorf("iterating app_script_logs rows: %w", err)
 	}
 	return out, nil
 }

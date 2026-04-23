@@ -24,7 +24,7 @@ import (
 
 // InstallScriptRunDeps builds the production scriptRunDeps (Monty engine +
 // shared services + Anthropic sender + per-tenant Slack factory) and wires
-// them into the package-global used by run_script and the scheduled-script
+// them into the package-global used by app_run_script and the scheduled-script
 // task runner. Call from main once apps.Init has run and the pool is live.
 // Returns a close func that tears down the WASM runtime on shutdown.
 //
@@ -101,7 +101,7 @@ func (a *App) Name() string { return "builder" }
 //   - Builder apps run as tenant-scoped scripts and should not leak into
 //     every user's agent turn (prompt bloat, cross-tenant noise).
 //   - Admin-side guidance for using the meta-tools (create_app /
-//     create_script / expose_script_function_as_tool / ...) ships as an
+//     app_create_script / app_expose_tool / ...) ships as an
 //     admin-only built-in skill (`internal/skills/builtins/builder-admin-guide/`).
 //     The skill catalog already role-filters its contributions to the
 //     system prompt, so the admin guide lands in admin sessions and

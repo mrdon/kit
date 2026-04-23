@@ -130,7 +130,7 @@ start_of_today_utc = today() + "T00:00:00Z"
 
 ### Parallel `preview_*` for Slack-sending functions
 
-`dm_user`, `send_slack_message`, `post_to_channel` may fail with `user_not_found` or similar when you invoke the function via `run_script` — the admin harness's synthetic caller has no real Slack identity. Don't try to `try/except` around it (host errors are not catchable). Instead, expose a parallel `preview_*` function that returns the composed message body without the side effect:
+`dm_user`, `send_slack_message`, `post_to_channel` may fail with `user_not_found` or similar when you invoke the function via `app_run_script` — the admin harness's synthetic caller has no real Slack identity. Don't try to `try/except` around it (host errors are not catchable). Instead, expose a parallel `preview_*` function that returns the composed message body without the side effect:
 
 ```python
 def weekly_briefing():
@@ -143,7 +143,7 @@ def preview_weekly_briefing():
     return {"ok": True, "message": _format(summary), **summary}
 ```
 
-Smoke-test with `preview_weekly_briefing` via `run_script`; leave `weekly_briefing` to fire from the scheduler or a real user invocation.
+Smoke-test with `preview_weekly_briefing` via `app_run_script`; leave `weekly_briefing` to fire from the scheduler or a real user invocation.
 
 ## Error handling
 
@@ -156,7 +156,7 @@ Two error classes:
 
 Consequence: you cannot retry a failed host call inside Python. Return early on conditions you expect (`if doc is None: return {"ok": False, ...}`) instead of letting a host call fail.
 
-Mid-mutation aborts can be reversed with `rollback_script_run(run_id=..., confirm=true)` — that reverts the app_items mutations the run made. Side effects from actions (briefings, todos, DMs) are NOT rolled back; design so the mutations happen before any side effect, not after.
+Mid-mutation aborts can be reversed with `app_rollback_script_run(run_id=..., confirm=true)` — that reverts the app_items mutations the run made. Side effects from actions (briefings, todos, DMs) are NOT rolled back; design so the mutations happen before any side effect, not after.
 
 ## Return values
 

@@ -1,8 +1,8 @@
 // Package builder: meta_examples_test.go covers the builder_examples
 // meta-tool. Unit tests check the catalog + lookup semantics against the
 // static map; the end-to-end test takes the mug_club payload and drives
-// it through create_app + create_script + expose_script_function_as_tool
-// + run_script, verifying the example is more than a README — it really
+// it through create_app + app_create_script + app_expose_tool
+// + app_run_script, verifying the example is more than a README — it really
 // spins up into a working bundle.
 package builder
 
@@ -129,8 +129,8 @@ func TestBuilderExamples_NonAdminForbidden(t *testing.T) {
 
 // TestBuilderExamples_MugClubEndToEnd is the proof that the example
 // payload is actually executable: pull the mug_club bundle via the tool,
-// replay it against create_app + create_script + expose, then call
-// run_script on one of its functions and verify an app_items row lands.
+// replay it against create_app + app_create_script + expose, then call
+// app_run_script on one of its functions and verify an app_items row lands.
 func TestBuilderExamples_MugClubEndToEnd(t *testing.T) {
 	f := newScriptFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -167,14 +167,14 @@ func TestBuilderExamples_MugClubEndToEnd(t *testing.T) {
 		t.Fatalf("create_app: %v", err)
 	}
 
-	// 3. Replay: create_script for each spec.Scripts entry.
+	// 3. Replay: app_create_script for each spec.Scripts entry.
 	for _, s := range spec.Scripts {
 		if _, err := handleCreateScript(f.ec(ctx), mustJSON(map[string]any{
 			"app":  appName,
 			"name": s.Name,
 			"body": s.Body,
 		})); err != nil {
-			t.Fatalf("create_script %q: %v", s.Name, err)
+			t.Fatalf("app_create_script %q: %v", s.Name, err)
 		}
 	}
 
@@ -200,7 +200,7 @@ func TestBuilderExamples_MugClubEndToEnd(t *testing.T) {
 	resp, err := invokeRunScript(ctx, f.pool, f.admin, deps, appName, "core", "add_member",
 		map[string]any{"name": "Ada Lovelace", "email": "ADA@example.com"}, nil)
 	if err != nil {
-		t.Fatalf("run_script add_member: %v", err)
+		t.Fatalf("app_run_script add_member: %v", err)
 	}
 	if resp.Status != RunStatusCompleted {
 		t.Fatalf("status = %q, want completed (err=%q)", resp.Status, resp.Error)
@@ -240,7 +240,7 @@ func TestBuilderExamples_MugClubEndToEnd(t *testing.T) {
 	//    immediately invoke them via tools_call / the MCP catalog.
 	exposed, err := listExposedTools(ctx, f.pool, f.admin, appName)
 	if err != nil {
-		t.Fatalf("list_exposed_tools: %v", err)
+		t.Fatalf("app_list_tools: %v", err)
 	}
 	if len(exposed) != len(spec.Expose) {
 		t.Errorf("exposed count = %d, want %d", len(exposed), len(spec.Expose))

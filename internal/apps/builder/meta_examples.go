@@ -1,7 +1,7 @@
 // Package builder: meta_examples.go implements the `builder_examples`
 // meta-tool — admins call this to discover curated starter app bundles
 // they can paste into Claude Code and materialise via create_app /
-// create_script / expose_script_function_as_tool. Admin-only; tenant-
+// app_create_script / app_expose_tool. Admin-only; tenant-
 // agnostic (the payloads are static templates, not DB reads).
 //
 // Contract:
@@ -36,7 +36,7 @@ import (
 var metaExampleTools = []services.ToolMeta{
 	{
 		Name:        "builder_examples",
-		Description: "Browse curated starter examples for the builder substrate. Without args, returns a list of {id, title, description}. With name='...', returns the full example definition so the admin can paste it through create_app + create_script + expose_script_function_as_tool.",
+		Description: "Browse curated starter examples for the builder substrate. Without args, returns a list of {id, title, description}. With name='...', returns the full example definition so the admin can paste it through create_app + app_create_script + app_expose_tool.",
 		Schema: services.Props(map[string]any{
 			"name": services.Field("string", "Optional example id (e.g. 'mug_club'). If omitted, returns the catalog."),
 		}),

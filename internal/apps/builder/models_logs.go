@@ -24,7 +24,7 @@ const (
 )
 
 // ScriptLog is a single log line emitted during a script run via the runtime's
-// log(level, msg, **fields) built-in. Queried by admins via the script_logs
+// log(level, msg, **fields) built-in. Queried by admins via the app_script_logs
 // meta-tool.
 type ScriptLog struct {
 	ID          int64           `json:"id"             db:"id"`

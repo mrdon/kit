@@ -11,7 +11,7 @@
 //     tenant, verifies each backing fn still exists in the current
 //     revision (lazy stale check), and returns the callable set.
 //  3. When the agent picks one, the closure's Invoke re-enters
-//     invokeRunScript — the same keystone admins use via run_script.
+//     invokeRunScript — the same keystone admins use via app_run_script.
 //
 // v0.1 simplification: we shadow the caller's IsAdmin to true so
 // guardAdmin inside invokeRunScript lets us through. Visibility is
@@ -69,7 +69,7 @@ type exposedRow struct {
 
 // List enumerates non-stale exposed tools for the caller's tenant, lazily
 // marking freshly-broken rows stale. Each returned entry's Invoke closure
-// calls invokeRunScript via the existing run_script path, so audit +
+// calls invokeRunScript via the existing app_run_script path, so audit +
 // limits + mutation tracking all land the same way they do for admin
 // runs.
 func (r *exposedToolRunner) List(ctx context.Context, caller *services.Caller) ([]tools.ExposedToolDef, error) {
@@ -182,7 +182,7 @@ func (r *exposedToolRunner) markStale(ctx context.Context, tenantID, toolID uuid
 }
 
 // invokeExposedTool routes an agent's exposed-tool invocation through
-// invokeRunScript (the same keystone admins use via run_script). The
+// invokeRunScript (the same keystone admins use via app_run_script). The
 // caller here is the session's caller (possibly non-admin), so we bypass
 // guardAdmin by constructing a shadow admin-flagged caller — visibility
 // is already enforced upstream by the registry via VisibleToRoles.
@@ -226,7 +226,7 @@ func (r *exposedToolRunner) invokeExposedTool(
 
 // scriptBodyHasFn does a cheap substring check for `def <name>(`. This
 // matches the v0.1 plan: admins catch parse-level mistakes via
-// update_script's own validation; staleness here is a safety net for
+// app_update_script's own validation; staleness here is a safety net for
 // "I updated the script and forgot to remove the exposure" type errors.
 func scriptBodyHasFn(body, fnName string) bool {
 	if fnName == "" {

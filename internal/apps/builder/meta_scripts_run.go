@@ -1,4 +1,4 @@
-// Package builder: meta_scripts_run.go implements the run_script meta-tool
+// Package builder: meta_scripts_run.go implements the app_run_script meta-tool
 // — the keystone where every Phase 3 substrate (db_*, actions, llm_*,
 // util, tools_call, shared) composes into one script invocation and the
 // script_runs audit row gets populated.
@@ -45,13 +45,13 @@ import (
 
 // Default per-run limits. Matched against tenant_builder_config at
 // resolveLimits time; admins can raise the DB cap or LLM cap per tenant,
-// and the `limits` kwarg on run_script provides a one-shot override.
+// and the `limits` kwarg on app_run_script provides a one-shot override.
 const (
 	defaultMaxDBCalls = 1000
 	defaultMaxRuntime = 30 * time.Second
 )
 
-// runScriptResponse is what run_script returns to the admin caller.
+// runScriptResponse is what app_run_script returns to the admin caller.
 // Separate from script_runs columns so the LLM sees a narrow surface and
 // we control precisely what crosses that boundary.
 type runScriptResponse struct {
@@ -65,7 +65,7 @@ type runScriptResponse struct {
 	Error           string         `json:"error,omitempty"`
 }
 
-// scriptRunDeps are the process-wide dependencies run_script needs beyond
+// scriptRunDeps are the process-wide dependencies app_run_script needs beyond
 // what execContextLike carries. The default wiring in app.go installs
 // them at init (services + engine + sender + slack factory). Tests inject
 // their own. Stored via a package-global because execContextLike is
@@ -85,11 +85,11 @@ type scriptRunDeps struct {
 }
 
 // currentRunDeps is set via SetScriptRunDeps during app Init. Nil is
-// allowed (tests that don't need run_script simply never call it) and
+// allowed (tests that don't need app_run_script simply never call it) and
 // handleRunScript errors cleanly in that case.
 var currentRunDeps *scriptRunDeps
 
-// SetScriptRunDeps wires process-wide dependencies for run_script. Called
+// SetScriptRunDeps wires process-wide dependencies for app_run_script. Called
 // from app.go once the app has a pool + services + engine; tests call it
 // directly with a stub engine/sender to exercise the full flow.
 func SetScriptRunDeps(deps *scriptRunDeps) {
@@ -146,7 +146,7 @@ func invokeRunScript(
 		return nil, err
 	}
 	if deps == nil || deps.Engine == nil {
-		return nil, errors.New("run_script: engine not wired (internal bug — SetScriptRunDeps not called)")
+		return nil, errors.New("app_run_script: engine not wired (internal bug — SetScriptRunDeps not called)")
 	}
 
 	app, err := loadBuilderAppByName(ctx, pool, caller.TenantID, appName)

@@ -7,11 +7,11 @@ This guide is the map. It assumes you've connected Claude Code to your tenant's 
 ## Workflow at a glance
 
 1. `create_app` groups all your related scripts, schedules, and exposed tools into one bundle.
-2. `create_script` adds Python source under that bundle.
-3. `run_script` executes a function synchronously so you can test interactively.
-4. `expose_script_function_as_tool` makes a function callable by your team through the normal agent/MCP surface.
-5. `schedule_script` fires a function on a cron expression.
-6. `rollback_script_run` reverses data mutations from a specific run if something went wrong.
+2. `app_create_script` adds Python source under that bundle.
+3. `app_run_script` executes a function synchronously so you can test interactively.
+4. `app_expose_tool` makes a function callable by your team through the normal agent/MCP surface.
+5. `app_schedule_script` fires a function on a cron expression.
+6. `app_rollback_script_run` reverses data mutations from a specific run if something went wrong.
 
 ### The shape of each call
 
@@ -20,7 +20,7 @@ This guide is the map. It assumes you've connected Claude Code to your tenant's 
 create_app(name="crm", description="Customer tracking + intake")
 
 # 2. Script
-create_script(
+app_create_script(
     app="crm",
     name="main",
     body="""
@@ -32,11 +32,11 @@ def add_contact(name, email):
 )
 
 # 3. Test it
-run_script(app="crm", script="main", fn="add_contact",
+app_run_script(app="crm", script="main", fn="add_contact",
            args={"name": "Jane", "email": "Jane@Example.com"})
 
 # 4. Expose it to your team
-expose_script_function_as_tool(
+app_expose_tool(
     app="crm",
     script="main",
     fn_name="add_contact",
@@ -49,10 +49,10 @@ expose_script_function_as_tool(
 )
 
 # 5. (Optional) schedule
-schedule_script(app="crm", script="main", fn="nightly_cleanup", cron="0 2 * * *")
+app_schedule_script(app="crm", script="main", fn="nightly_cleanup", cron="0 2 * * *")
 
 # 6. Undo a bad run
-rollback_script_run(run_id="<uuid from run_script>", confirm=true)
+app_rollback_script_run(run_id="<uuid from app_run_script>", confirm=true)
 ```
 
 Every meta-tool is admin-only. Non-admin callers never see them in their tool list and get a forbidden error on direct invocation.
@@ -71,17 +71,17 @@ When an admin says "build me an app for X", work through these steps in order. M
 
 3. **Sketch the doc shape in comments** before writing code. What fields are set at insert vs. updated later? Which reference the caller (see "Identity and per-user scoping" below)? Which fields are admin-editable only?
 
-4. **Write one script** starting with the simplest "add" function. `run_script` to smoke-test with a sample input *before* adding more functions or exposing anything. **Load `writing-monty-scripts` now** if you haven't already — it covers the language-level quirks (no classes, no imports, no f-strings, weird date-math edges) and gives you copy-paste helpers.
+4. **Write one script** starting with the simplest "add" function. `app_run_script` to smoke-test with a sample input *before* adding more functions or exposing anything. **Load `writing-monty-scripts` now** if you haven't already — it covers the language-level quirks (no classes, no imports, no f-strings, weird date-math edges) and gives you copy-paste helpers.
 
-5. **Add read/list functions.** Smoke-test each via `run_script`.
+5. **Add read/list functions.** Smoke-test each via `app_run_script`.
 
 6. **Add mutate/delete functions** with any admin checks in place (see "Admin-only modifications after close" below).
 
 7. **Expose each function as a tool** with a crisp `description` and a complete `args_schema`. Set `visible_to_roles` explicitly — never leave it empty unless the tool is truly open to everyone.
 
-8. **Schedule anything recurring** via `schedule_script`. A scheduled builder script creates a task under the hood; for scheduled work that touches channels, DMs, or admin-gated actions you should pass a `policy` block — see the `creating-tasks` skill for how to design `allowed_tools` / `force_gate` / `pinned_args`. Policies cannot be ignored by prompt drift; function bodies can.
+8. **Schedule anything recurring** via `app_schedule_script`. A scheduled builder script creates a task under the hood; for scheduled work that touches channels, DMs, or admin-gated actions you should pass a `policy` block — see the `creating-tasks` skill for how to design `allowed_tools` / `force_gate` / `pinned_args`. Policies cannot be ignored by prompt drift; function bodies can.
 
-9. **Sanity-check** with `list_exposed_tools`, `list_schedules`, `script_stats`. If the admin will use this tomorrow, plan to check `script_stats` after the first day of real traffic.
+9. **Sanity-check** with `app_list_tools`, `app_list_schedules`, `app_script_stats`. If the admin will use this tomorrow, plan to check `app_script_stats` after the first day of real traffic.
 
 ## Service-layer pattern
 
@@ -234,7 +234,7 @@ def admin_edit_thing(thing_id, **fields):
     return {"ok": True}
 ```
 
-The `app_items_history` trigger captures every UPDATE/DELETE for free, so admin edits are audited without extra code. If an edit goes wrong, `rollback_script_run(run_id=...)` reverses that run's mutations.
+The `app_items_history` trigger captures every UPDATE/DELETE for free, so admin edits are audited without extra code. If an edit goes wrong, `app_rollback_script_run(run_id=...)` reverses that run's mutations.
 
 **On the admin flag.** Admin status is membership in the builtin `admin` role — a tenant-scoped superuser flag (Django-style `is_superuser`, but bounded to the caller's tenant). Admins bypass `visible_to_roles` / role-scope filters **at the agent + MCP registry surface** — so via the LLM or Claude-Code MCP, `visible_to_roles=["manager"]` means "managers AND admins see it." Note that `tools_call` inside a script does **NOT** grant that bypass (it's authoritative): if a tool needs to be callable from other scripts as an admin, include `"admin"` in its `visible_to_roles` explicitly. Scripts check their own caller via `"admin" in current_user()["roles"]`.
 
@@ -319,7 +319,7 @@ Tips:
 - **Early-return on noise.** Scan with cheap string checks before spending tokens. If an incoming review has fewer than 20 characters, skip `llm_classify` entirely.
 - **Batch when possible.** One `llm_extract` call over 10 concatenated items can be half the cost of 10 separate calls. Have the schema return a list.
 - **Cache results in `app_items`.** If you re-triage the same text every hour, store the classification on the item. Check the item first, only call `llm_classify` on cache miss.
-- **Watch `script_stats`.** `script_stats(app="...", days=7)` rolls up cost cents, tokens, and run counts. Budget surprises show up here first.
+- **Watch `app_script_stats`.** `app_script_stats(app="...", days=7)` rolls up cost cents, tokens, and run counts. Budget surprises show up here first.
 
 ## Error handling
 
@@ -341,22 +341,22 @@ def process(review_id):
     return {"ok": True}
 ```
 
-When a run does abort mid-mutation, use `rollback_script_run(run_id=..., confirm=true)` to reverse the data changes via the temporal history tables. Schedules, exposed tools, and memory writes are not rolled back — only `app_items` mutations.
+When a run does abort mid-mutation, use `app_rollback_script_run(run_id=..., confirm=true)` to reverse the data changes via the temporal history tables. Schedules, exposed tools, and memory writes are not rolled back — only `app_items` mutations.
 
-For post-mortems, `script_logs(run_id=...)` returns the `log()` trail the script wrote.
+For post-mortems, `app_script_logs(run_id=...)` returns the `log()` trail the script wrote.
 
 ## Debugging
 
-- **Run synchronously first.** `run_script` waits for the run to finish and returns the function's value plus a `run_id`. Test every function there before you schedule or expose it.
-- **Log generously.** `log("info", "triaging review", review_id=r_id, length=len(text))` writes a row to `script_logs` keyed to the current run. Cheap. Fast. Pull the trail with `script_logs(run_id=...)`.
-- **Use `script_stats`.** `script_stats(app="crm", days=7)` surfaces completed/errors/limits/cancelled counts, avg and max duration, tokens, and cost. The first place to look when you think "this app has been weird lately".
+- **Run synchronously first.** `app_run_script` waits for the run to finish and returns the function's value plus a `run_id`. Test every function there before you schedule or expose it.
+- **Log generously.** `log("info", "triaging review", review_id=r_id, length=len(text))` writes a row to `app_script_logs` keyed to the current run. Cheap. Fast. Pull the trail with `app_script_logs(run_id=...)`.
+- **Use `app_script_stats`.** `app_script_stats(app="crm", days=7)` surfaces completed/errors/limits/cancelled counts, avg and max duration, tokens, and cost. The first place to look when you think "this app has been weird lately".
 - **Read the script_runs audit.** Each run records `status`, `duration_ms`, `mutation_summary`, plus `parent_run_id` when invoked via `tools_call`. The whole lineage is queryable.
-- **Side-effecting actions may fail under `run_script`.** `dm_user` / `send_slack_message` and other Slack-touching actions can error with `user_not_found` or similar when invoked via the admin harness, because the synthetic caller may not have a real Slack identity. Pattern: for any function that sends a message or DM, expose a parallel `preview_*` function that returns the message body without side effects — use it for smoke tests, leave the real sender for the scheduler / live Slack invocations.
+- **Side-effecting actions may fail under `app_run_script`.** `dm_user` / `send_slack_message` and other Slack-touching actions can error with `user_not_found` or similar when invoked via the admin harness, because the synthetic caller may not have a real Slack identity. Pattern: for any function that sends a message or DM, expose a parallel `preview_*` function that returns the message body without side effects — use it for smoke tests, leave the real sender for the scheduler / live Slack invocations.
 
 ## Common shapes
 
 - **CRUD-only.** Single script, no LLM, no schedule. One exposed `add_*` and one `list_*` function. Example: `mug_club`.
-- **Scheduled digest.** One script with a `run()` function that reads recent items and posts to a channel. One `schedule_script` entry. Example: `weekly_digest`.
+- **Scheduled digest.** One script with a `run()` function that reads recent items and posts to a channel. One `app_schedule_script` entry. Example: `weekly_digest`.
 - **LLM-assisted triage.** Scheduled `run()` that picks up untriaged items, calls `llm_classify` / `llm_extract`, writes results back, and optionally emits a decision card via `create_decision`. Example: `review_triage`.
 - **Multi-script with shared helpers.** `utils` + `dal` + `main`, composed with `shared(...)`. Example: `crm`.
 - **Event-driven.** v0.1 has no event triggers. Simulate with a frequent (`*/5 * * * *`) scheduled function that polls. True `on_insert` / `on_update` hooks arrive in v0.2.
@@ -438,10 +438,10 @@ Know these before you write code the sandbox will reject.
 ### Meta-tools (admin-only, called from Claude Code)
 
 App lifecycle: `create_app`, `list_apps`, `get_app`, `delete_app`, `purge_app_data`.
-Scripts: `create_script`, `update_script`, `list_scripts`, `get_script`, `run_script`, `rollback_script_run`.
-Schedules: `schedule_script`, `unschedule_script`, `list_schedules`.
-Exposure: `expose_script_function_as_tool`, `revoke_exposed_tool`, `list_exposed_tools`.
-Diagnostics: `script_logs`, `script_stats`.
+Scripts: `app_create_script`, `app_update_script`, `app_list_scripts`, `app_get_script`, `app_run_script`, `app_rollback_script_run`.
+Schedules: `app_schedule_script`, `app_unschedule_script`, `app_list_schedules`.
+Exposure: `app_expose_tool`, `app_revoke_tool`, `app_list_tools`.
+Diagnostics: `app_script_logs`, `app_script_stats`.
 
 ## Pre-flight checklist
 
@@ -453,9 +453,9 @@ Diagnostics: `script_logs`, `script_stats`.
 - [ ] Admin-only functions use `visible_to_roles=["admin"]` at registry time (names the builtin admin role so it works everywhere, including `tools_call`) AND re-check `"admin" in current_user()["roles"]` inside the body.
 - [ ] Money is cents (int). Dates are ISO8601 strings. Emails are lowercased.
 - [ ] Exposed tool descriptions are precise enough the LLM picks them correctly — same discipline as `creating-skills`.
-- [ ] `run_script` works before `schedule_script` runs or `expose_script_function_as_tool` publishes.
+- [ ] `app_run_script` works before `app_schedule_script` runs or `app_expose_tool` publishes.
 - [ ] Budget-sensitive code early-returns on obvious noise before calling `llm_*`.
-- [ ] You checked `script_stats` after the first day of real traffic.
+- [ ] You checked `app_script_stats` after the first day of real traffic.
 
 ---
 
