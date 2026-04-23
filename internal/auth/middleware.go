@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -216,7 +217,7 @@ func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*servi
 		Identity: user.SlackUserID,
 		Roles:    roles,
 		RoleIDs:  roleIDs,
-		IsAdmin:  user.IsAdmin,
+		IsAdmin:  slices.Contains(roles, models.RoleAdmin),
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}, nil
 }

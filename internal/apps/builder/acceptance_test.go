@@ -72,11 +72,11 @@ func newAcceptanceFixture(t *testing.T, roleName string) *acceptanceFixture {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	adminUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin_"+uuid.NewString()[:8], "Admin User", true)
+	adminUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin_"+uuid.NewString()[:8], "Admin User")
 	if err != nil {
 		t.Fatalf("creating admin user: %v", err)
 	}
-	roleUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_"+roleName+"_"+uuid.NewString()[:8], "Role User", false)
+	roleUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_"+roleName+"_"+uuid.NewString()[:8], "Role User")
 	if err != nil {
 		t.Fatalf("creating role user: %v", err)
 	}

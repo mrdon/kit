@@ -43,11 +43,7 @@ func userHandler(name string) HandlerFunc {
 		var b strings.Builder
 		fmt.Fprintf(&b, "Found %d user(s):\n", len(users))
 		for _, u := range users {
-			b.WriteString("- " + services.FormatUserLine(&u))
-			if u.IsAdmin {
-				b.WriteString(" [admin]")
-			}
-			b.WriteString("\n")
+			b.WriteString("- " + services.FormatUserLine(&u) + "\n")
 		}
 		return b.String(), nil
 	}

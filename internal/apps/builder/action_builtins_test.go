@@ -57,9 +57,15 @@ func newActionFixture(t *testing.T) *actionFixture {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_act_"+uuid.NewString()[:8], "Action Admin", true)
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_act_"+uuid.NewString()[:8], "Action Admin")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
+	}
+	if _, err := models.GetOrCreateRole(ctx, pool, tenant.ID, models.RoleAdmin, "admin"); err != nil {
+		t.Fatalf("creating admin role: %v", err)
+	}
+	if err := models.AssignRole(ctx, pool, tenant.ID, user.ID, models.RoleAdmin); err != nil {
+		t.Fatalf("assigning admin role: %v", err)
 	}
 
 	var appID uuid.UUID
@@ -346,7 +352,7 @@ func TestActionBuiltins_FindUser_ByDisplayName(t *testing.T) {
 
 	// Seed a second user with a unique display name.
 	_, err := models.GetOrCreateUser(context.Background(), f.pool, f.tenant.ID,
-		"U_jane_"+uuid.NewString()[:6], "Jane Cooper", false)
+		"U_jane_"+uuid.NewString()[:6], "Jane Cooper")
 	if err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -409,7 +415,7 @@ func TestActionBuiltins_ScriptEndToEnd_FindUserThenCreateTodo(t *testing.T) {
 
 	// Seed a user to find.
 	_, err := models.GetOrCreateUser(context.Background(), f.pool, f.tenant.ID,
-		"U_jane_"+uuid.NewString()[:6], "Jane E2E", false)
+		"U_jane_"+uuid.NewString()[:6], "Jane E2E")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}

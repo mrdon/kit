@@ -40,7 +40,6 @@ type ScriptRunParams struct {
 	CallerUserID   uuid.UUID
 	CallerRoles    []string
 	CallerTimezone string
-	CallerIsAdmin  bool
 	RunID          uuid.UUID
 	ParentRunID    *uuid.UUID
 	Limits         runtime.Limits
@@ -189,7 +188,7 @@ func BuildScriptCapabilities(
 	identity := BuildIdentityBuiltins(
 		pool,
 		params.TenantID, params.CallerUserID,
-		params.CallerRoles, params.CallerTimezone, params.CallerIsAdmin,
+		params.CallerRoles, params.CallerTimezone,
 	)
 
 	sharedCalls := &atomic.Int64{}
@@ -231,7 +230,7 @@ func BuildScriptCapabilities(
 		childIdentity := BuildIdentityBuiltins(
 			pool,
 			tenantID, callerUserID,
-			callerRoles, params.CallerTimezone, params.CallerIsAdmin,
+			callerRoles, params.CallerTimezone,
 		)
 		childShared := BuildSharedBuiltin(
 			pool, engine,
@@ -254,7 +253,6 @@ func BuildScriptCapabilities(
 		pool, engine,
 		params.TenantID, params.CallerUserID,
 		params.CallerRoles,
-		params.CallerIsAdmin,
 		runIDPtr,
 		func(delta RunDelta) { childRuns.Add(int64(delta.ChildRuns)) },
 		childFactory,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -114,7 +115,7 @@ func (ec *ExecContext) Caller() *services.Caller {
 		Identity: ec.User.SlackUserID,
 		Roles:    roles,
 		RoleIDs:  roleIDs,
-		IsAdmin:  ec.User.IsAdmin,
+		IsAdmin:  slices.Contains(roles, models.RoleAdmin),
 		Timezone: services.ResolveTimezone(ec.User.Timezone, ec.Tenant.Timezone),
 	}
 }
@@ -443,13 +444,13 @@ func (r *Registry) DefinitionsFor(caller *services.Caller) []anthropic.Tool {
 // IsDefVisible centralises the visibility rule so registry, MCP, and
 // tests share one predicate. See DefinitionsFor for semantics.
 //
-// IsAdmin is Kit's tenant-scoped superuser flag (Django-style, but
-// bounded to the caller's tenant since every query filters by
-// tenant_id): a tenant admin sees every tool in their own tenant
-// regardless of AdminOnly or VisibleToRoles. Until Kit grows a real
-// permission-to-role system, this bypass keeps admins from being
-// silently locked out of tools their tenant hasn't materialised a role
-// row for.
+// IsAdmin is computed from membership in the builtin `admin` role at
+// Caller construction — Kit's tenant-scoped superuser flag (Django-style
+// `is_superuser`, bounded to the caller's tenant since every query
+// filters by tenant_id). A tenant admin sees every tool in their own
+// tenant regardless of AdminOnly or VisibleToRoles. This bypass keeps
+// admins from being silently locked out of tools their tenant hasn't
+// materialised a role row for.
 func IsDefVisible(d Def, caller *services.Caller) bool {
 	if caller != nil && caller.IsAdmin {
 		return true

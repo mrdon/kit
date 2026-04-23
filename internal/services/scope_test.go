@@ -132,7 +132,7 @@ func TestGetOrCreateScopeIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating role: %v", err)
 	}
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_scope", "Scope User", false)
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_scope", "Scope User")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}

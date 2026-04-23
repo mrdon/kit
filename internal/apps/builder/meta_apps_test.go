@@ -53,7 +53,7 @@ func newMetaFixture(t *testing.T) *metaFixture {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_meta_"+uuid.NewString()[:8], "Meta Admin", true)
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_meta_"+uuid.NewString()[:8], "Meta Admin")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}

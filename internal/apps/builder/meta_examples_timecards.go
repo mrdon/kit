@@ -8,7 +8,9 @@
 // shipped app, not a hand-crafted teaching aid. Patterns worth copying:
 //   - Per-user scoping via current_user() (user_id + user_name on every row).
 //   - Admin-only edit/delete with both visible_to_roles=["admin"] at the
-//     registry and an in-script current_user()["is_admin"] guard.
+//     registry (naming the builtin admin role so tools_call works too —
+//     the agent surface also admits admins via superuser bypass) and an
+//     in-script `"admin" in current_user()["roles"]` guard.
 //   - Lenient input parsing + strict normalisation before storage so
 //     date_add / date_diff and lexical sort both work.
 //   - A `preview_weekly_briefing` companion to the scheduled DM function
@@ -18,12 +20,21 @@
 //     on string fields in v0.1.
 package builder
 
+import "github.com/mrdon/kit/internal/models"
+
 // timecardsExample returns the canonical per-user time-tracking starter.
 // Discovered via subagent dogfood: a plausible admin prompt produced
 // this shape, so it's the most honest benchmark of the substrate's UX.
 func timecardsExample() exampleDefinition {
-	memberAndAdmin := []string{"admin", "member"}
-	adminOnly := []string{"admin"}
+	// User tools are visible to anyone with the tenant's "member" role;
+	// admins bypass visible_to_roles at the agent/registry surface so they
+	// see them without needing the role. Admin-only tools name the
+	// "admin" builtin role explicitly so they work across every surface
+	// — including tools_call, where visible_to_roles is authoritative
+	// and admin bypass does NOT apply. Script bodies also re-check
+	// `"admin" in current_user()["roles"]` as defence-in-depth.
+	memberRole := []string{models.RoleMember}
+	adminOnly := []string{models.RoleAdmin}
 
 	return exampleDefinition{
 		ID:          "timecards",
@@ -37,9 +48,9 @@ func timecardsExample() exampleDefinition {
 				{Name: "main", Body: timecardsMainBody},
 			},
 			Expose: []exampleExposeSpec{
-				{Script: "main", Fn: "record_shift", ToolName: "timecards_record_shift", VisibleToRoles: memberAndAdmin},
-				{Script: "main", Fn: "list_my_shifts", ToolName: "timecards_list_my_shifts", VisibleToRoles: memberAndAdmin},
-				{Script: "main", Fn: "my_week_hours", ToolName: "timecards_my_week_hours", VisibleToRoles: memberAndAdmin},
+				{Script: "main", Fn: "record_shift", ToolName: "timecards_record_shift", VisibleToRoles: memberRole},
+				{Script: "main", Fn: "list_my_shifts", ToolName: "timecards_list_my_shifts", VisibleToRoles: memberRole},
+				{Script: "main", Fn: "my_week_hours", ToolName: "timecards_my_week_hours", VisibleToRoles: memberRole},
 				{Script: "main", Fn: "list_shifts", ToolName: "timecards_list_shifts", VisibleToRoles: adminOnly},
 				{Script: "main", Fn: "admin_edit_shift", ToolName: "timecards_admin_edit_shift", VisibleToRoles: adminOnly},
 				{Script: "main", Fn: "admin_delete_shift", ToolName: "timecards_admin_delete_shift", VisibleToRoles: adminOnly},
@@ -270,7 +281,7 @@ const timecardsMainBody = `
 
 def _require_admin():
     me = current_user()
-    if not me["is_admin"]:
+    if "admin" not in me["roles"]:
         raise PermissionError("admin only")
     return me
 
@@ -325,9 +336,10 @@ def list_my_shifts(limit=20):
 def list_shifts(limit=50, user_id=None):
     """Admin-only tool via registry; non-admins see only their own."""
     me = current_user()
-    if me["is_admin"] and user_id:
+    is_admin = "admin" in me["roles"]
+    if is_admin and user_id:
         rows = shared("dal", "find_by_user", user_id=user_id, limit=limit)
-    elif me["is_admin"]:
+    elif is_admin:
         rows = shared("dal", "find_all", limit=limit)
     else:
         rows = shared("dal", "find_by_user", user_id=me["id"], limit=limit)

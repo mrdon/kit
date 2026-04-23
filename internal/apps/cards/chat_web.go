@@ -218,7 +218,7 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 
 	// Mirror the Slack path's setup-complete gate: non-admins can't
 	// drive the agent until setup is done, regardless of transport.
-	if !tenant.SetupComplete && !user.IsAdmin {
+	if !tenant.SetupComplete && !caller.IsAdmin {
 		_ = emit(chat.EventResponse, map[string]any{"text": "I'm still being set up — please ask your admin to finish."})
 		_ = emit(chat.EventDone, map[string]any{})
 		return

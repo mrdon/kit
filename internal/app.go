@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -92,13 +93,16 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	if info, err := client.GetUserInfo(ctx, evt.SlackUserID); err == nil {
 		displayName = info.DisplayName
 	}
-	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, evt.SlackUserID, displayName, false)
+	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, evt.SlackUserID, displayName)
 	if err != nil {
 		slog.Error("resolving user", "error", err)
 		return
 	}
 
-	if !tenant.SetupComplete && !user.IsAdmin {
+	roles, _ := models.GetUserRoleNames(ctx, a.Pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	isAdmin := slices.Contains(roles, models.RoleAdmin)
+
+	if !tenant.SetupComplete && !isAdmin {
 		slog.Info("setup incomplete, suppressing response", "tenant_id", tenant.ID, "user_id", user.ID)
 		_ = client.PostMessage(ctx, evt.Channel, evt.ThreadTS,
 			"I'm still being set up! Please ask your admin to finish setting me up.")
@@ -119,7 +123,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	)
 
 	text := evt.Text
-	if len(evt.Files) > 0 && user.IsAdmin {
+	if len(evt.Files) > 0 && isAdmin {
 		text = a.ingestFiles(ctx, client, tenant.ID, evt.Channel, evt.ThreadTS, text, evt.Files)
 	}
 

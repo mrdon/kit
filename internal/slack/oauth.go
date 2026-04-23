@@ -137,26 +137,32 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create default "member" role if tenant doesn't have one yet
-	if tenant.DefaultRoleID == nil {
-		role, err := models.CreateRole(ctx, h.pool, tenant.ID, "member", "Default role for all team members")
-		if err != nil {
-			slog.Warn("creating default role", "error", err)
-		} else {
-			_ = models.SetDefaultRole(ctx, h.pool, tenant.ID, &role.ID)
-		}
+	// Ensure builtin roles exist for this tenant. Idempotent — safe to run on
+	// every install/reinstall.
+	memberRole, err := models.GetOrCreateRole(ctx, h.pool, tenant.ID, models.RoleMember, "Default role for all team members")
+	if err != nil {
+		slog.Warn("ensuring member role", "error", err)
+	}
+	if _, err := models.GetOrCreateRole(ctx, h.pool, tenant.ID, models.RoleAdmin, "Tenant administrators"); err != nil {
+		slog.Warn("ensuring admin role", "error", err)
+	}
+	if tenant.DefaultRoleID == nil && memberRole != nil {
+		_ = models.SetDefaultRole(ctx, h.pool, tenant.ID, &memberRole.ID)
 	}
 
-	// Create admin user (the person who installed) — fetch name from Slack
+	// Create the installer user and grant them admin — fetch name from Slack
 	adminName := ""
 	if info, err := botClient.GetUserInfo(ctx, resp.AuthedUser.ID); err == nil {
 		adminName = info.DisplayName
 	}
-	_, err = models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, adminName, true)
+	adminUser, err := models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, adminName)
 	if err != nil {
 		slog.Error("creating admin user", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+	if err := models.AssignRole(ctx, h.pool, tenant.ID, adminUser.ID, models.RoleAdmin); err != nil {
+		slog.Warn("assigning admin role to installer", "error", err)
 	}
 
 	slog.Info("oauth install complete",

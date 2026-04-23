@@ -45,7 +45,7 @@ expose_script_function_as_tool(
     args_schema={"type": "object", "required": ["name", "email"], "properties": {
         "name": {"type": "string"}, "email": {"type": "string"}
     }},
-    visible_to_roles=["admin", "sales"]
+    visible_to_roles=["sales"]  # admins see it too via the superuser bypass
 )
 
 # 5. (Optional) schedule
@@ -165,7 +165,9 @@ def add_contact(name, email, phone=None, owner_id=None):
 ```python
 current_user()
 # → {"id": "<uuid>", "display_name": "Alice", "timezone": "America/Denver",
-#    "roles": ["admin", "sales"], "is_admin": True}
+#    "roles": ["admin", "sales"]}
+# "admin" and "member" are builtin roles every tenant has. Check admin
+# status via `"admin" in current_user()["roles"]`.
 ```
 
 Use it whenever the script's behaviour depends on who called it — recording, listing, or authorising.
@@ -196,15 +198,16 @@ def list_my_things(limit=20):
 
 ### Admin-scope overlays
 
-If admins see everyone's data but users see only their own, branch on `is_admin`:
+If admins see everyone's data but users see only their own, branch on admin role membership:
 
 ```python
 def list_things(limit=50, user_id=None):
     me = current_user()
+    is_admin = "admin" in me["roles"]
     filter = {}
-    if me["is_admin"] and user_id:
+    if is_admin and user_id:
         filter["user_id"] = user_id       # admin filtered to a specific user
-    elif not me["is_admin"]:
+    elif not is_admin:
         filter["user_id"] = me["id"]      # non-admin always scoped to self
     # admin with no user_id = see all (empty filter)
     return db_find("things", filter, limit=limit,
@@ -217,15 +220,15 @@ Note: only admins should be trusted with the optional `user_id`. The check above
 
 Some apps let users write records but only admins edit or delete them once "closed" (e.g. time entries, submitted reviews). Enforce this with two layers:
 
-1. **Registry layer** — `visible_to_roles=["admin"]` on `expose_script_function_as_tool` hides the tool from non-admin role lists and rejects direct invocation.
-2. **Script layer** — inside the function, re-check `current_user()["is_admin"]` and raise `PermissionError("admin only")` if false.
+1. **Registry layer** — `visible_to_roles=["admin"]`. Names the builtin admin role explicitly so the tool is visible to admins across every surface — including `tools_call`, where `visible_to_roles` is authoritative and the admin superuser bypass does NOT apply.
+2. **Script layer** — inside the function, re-check `"admin" in current_user()["roles"]` and raise `PermissionError("admin only")` if false.
 
-Both matter. Without the registry layer, non-admins see the tool in their tool list and can attempt to call it (the audit trail shows the attempt). Without the script layer, a future change to `visible_to_roles` — or a `tools_call` from another script — could quietly grant access without re-reviewing the function body.
+Both matter. Without the registry layer, any non-admin with a matching role would see the tool in their catalog and could attempt to call it. Without the script layer, a `tools_call` from another script — or a future widening of `visible_to_roles` — could quietly grant access without re-reviewing the function body.
 
 ```python
-# Exposed with visible_to_roles=["admin"]
+# Exposed with visible_to_roles=["admin"]  (admin-only across every surface)
 def admin_edit_thing(thing_id, **fields):
-    if not current_user()["is_admin"]:
+    if "admin" not in current_user()["roles"]:
         raise PermissionError("admin only")
     db_update_one("things", {"_id": thing_id}, {"$set": fields})
     return {"ok": True}
@@ -233,7 +236,7 @@ def admin_edit_thing(thing_id, **fields):
 
 The `app_items_history` trigger captures every UPDATE/DELETE for free, so admin edits are audited without extra code. If an edit goes wrong, `rollback_script_run(run_id=...)` reverses that run's mutations.
 
-**On the admin flag.** `current_user()["is_admin"]` is Kit's tenant-scoped superuser flag (Django-style `is_superuser`, but bounded to the caller's tenant). An admin bypasses every `visible_to_roles` / role-scope filter in their tenant — so `visible_to_roles=["manager"]` means "managers AND admins see it" in practice. Do NOT use the literal string `"admin"` as a role name; it isn't one. Admin-only visibility is expressed by the AdminOnly gate (which for exposed tools is implicit when you combine `visible_to_roles` with an in-script `is_admin` check as above).
+**On the admin flag.** Admin status is membership in the builtin `admin` role — a tenant-scoped superuser flag (Django-style `is_superuser`, but bounded to the caller's tenant). Admins bypass every `visible_to_roles` / role-scope filter in their tenant — so `visible_to_roles=["manager"]` means "managers AND admins see it" in practice. Scripts check via `"admin" in current_user()["roles"]`.
 
 ## Field-type conventions
 
@@ -395,7 +398,7 @@ Know these before you write code the sandbox will reject.
 | `complete_todo(todo_id, note=)` | Mark done. |
 | `add_todo_comment(todo_id, content)` | Comment on a todo. |
 | `create_decision(title, body, options, priority=, role_scopes=)` | Emit a decision card. |
-| `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of **real role names** that must exist in the tenant — `"admin"` is NOT a role, it's Kit's superuser flag, and passing `role_scopes=["admin"]` errors with `looking up role "admin": no rows in result set`. For tenant-wide visibility leave `role_scopes=[]` (admins see everything anyway via the superuser bypass). For per-user delivery use `dm_user`. |
+| `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of role names that must exist in the tenant — every tenant has the builtin `admin` and `member` roles, so `role_scopes=["admin"]` restricts to admins. For tenant-wide visibility leave `role_scopes=[]` (admins also see everything at the agent surface via the superuser bypass). For per-user delivery use `dm_user`. |
 | `create_task(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-tasks` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |
 | `add_memory(content, scope_type=, scope_value=)` | Save a memory. |
 | `send_slack_message(channel, text, thread_ts=)` | Post to Slack. |
@@ -416,7 +419,7 @@ Know these before you write code the sandbox will reject.
 
 | Function | Purpose |
 |---|---|
-| `current_user()` | `{id, display_name, timezone, roles, is_admin}` for the caller. The only trustworthy identity source — never accept `user_id` as a tool arg. |
+| `current_user()` | `{id, display_name, timezone, roles}` for the caller. The only trustworthy identity source — never accept `user_id` as a tool arg. Check admin via `"admin" in roles`. |
 | `now()` | UTC RFC3339Nano string. |
 | `today()` | `YYYY-MM-DD` in caller's timezone. Must be extended (`today() + "T00:00:00Z"`) before passing to `date_add` / `date_diff`. |
 | `date_add(dt, days=, hours=, minutes=, seconds=)` | Shifted RFC3339Nano. `dt` MUST be full RFC3339 with seconds + timezone (`YYYY-MM-DDTHH:MM:SSZ` or offset). Strings like `2026-04-22T09:00` error — normalise user input first (append `:00Z` or call `parse_iso_datetime` style helper). |
@@ -445,7 +448,7 @@ Diagnostics: `script_logs`, `script_stats`.
 - [ ] Every insert has a validator, even a 10-line one.
 - [ ] Every mutable field uses atomic operators, not read-modify-write.
 - [ ] Per-user scripts derive the owner from `current_user()`, never from a tool argument. Stored as `user_id` on the doc; filtered on every read.
-- [ ] Admin-only functions enforce both `visible_to_roles=["admin"]` at registry time and `current_user()["is_admin"]` inside the body.
+- [ ] Admin-only functions use `visible_to_roles=["admin"]` at registry time (names the builtin admin role so it works everywhere, including `tools_call`) AND re-check `"admin" in current_user()["roles"]` inside the body.
 - [ ] Money is cents (int). Dates are ISO8601 strings. Emails are lowercased.
 - [ ] Exposed tool descriptions are precise enough the LLM picks them correctly — same discipline as `creating-skills`.
 - [ ] `run_script` works before `schedule_script` runs or `expose_script_function_as_tool` publishes.

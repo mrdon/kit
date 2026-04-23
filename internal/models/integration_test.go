@@ -25,7 +25,7 @@ func testTenantUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (tena
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
-	user, err := GetOrCreateUser(ctx, pool, tenant.ID, "U_"+uuid.NewString()[:8], "Int Tester", false)
+	user, err := GetOrCreateUser(ctx, pool, tenant.ID, "U_"+uuid.NewString()[:8], "Int Tester")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestIntegrationListHidesOtherUsers(t *testing.T) {
 	tenantID, userA := testTenantUser(t, ctx, pool)
 
 	// Create a second user in the same tenant.
-	userBRow, err := GetOrCreateUser(ctx, pool, tenantID, "U_other_"+uuid.NewString()[:8], "Bob", false)
+	userBRow, err := GetOrCreateUser(ctx, pool, tenantID, "U_other_"+uuid.NewString()[:8], "Bob")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestIntegrationDeleteForbidden(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	tenantID, userA := testTenantUser(t, ctx, pool)
-	userBRow, err := GetOrCreateUser(ctx, pool, tenantID, "U_other_"+uuid.NewString()[:8], "Bob", false)
+	userBRow, err := GetOrCreateUser(ctx, pool, tenantID, "U_other_"+uuid.NewString()[:8], "Bob")
 	if err != nil {
 		t.Fatal(err)
 	}

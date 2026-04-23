@@ -29,11 +29,7 @@ func userMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpser
 		var b strings.Builder
 		fmt.Fprintf(&b, "Found %d user(s):\n", len(users))
 		for _, u := range users {
-			b.WriteString("- " + services.FormatUserLine(&u))
-			if u.IsAdmin {
-				b.WriteString(" [admin]")
-			}
-			b.WriteString("\n")
+			b.WriteString("- " + services.FormatUserLine(&u) + "\n")
 		}
 		return mcp.NewToolResultText(b.String()), nil
 	})

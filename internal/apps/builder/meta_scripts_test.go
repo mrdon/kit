@@ -54,9 +54,15 @@ func newScriptFixture(t *testing.T) *scriptFixture {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_script_"+uuid.NewString()[:8], "Script Admin", true)
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_script_"+uuid.NewString()[:8], "Script Admin")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
+	}
+	if _, err := models.GetOrCreateRole(ctx, pool, tenant.ID, models.RoleAdmin, "admin"); err != nil {
+		t.Fatalf("creating admin role: %v", err)
+	}
+	if err := models.AssignRole(ctx, pool, tenant.ID, user.ID, models.RoleAdmin); err != nil {
+		t.Fatalf("assigning admin role: %v", err)
 	}
 
 	caller := &services.Caller{

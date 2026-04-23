@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -89,11 +90,16 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	if userTZ == "" {
 		userTZ = tenant.Timezone
 	}
-	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v, timezone: %s)", displayName, user.IsAdmin, userTZ))
+
+	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	isAdmin := slices.Contains(roleNames, models.RoleAdmin)
+
+	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v, timezone: %s)", displayName, isAdmin, userTZ))
 
 	// Setup status
 	if !tenant.SetupComplete {
-		if user.IsAdmin {
+		if isAdmin {
 			parts = append(parts, platformOnboardingRules())
 		} else {
 			parts = append(parts, "This organization is still being set up. Let the user know to contact their admin for setup help.")
@@ -101,15 +107,13 @@ Format messages using Slack mrkdwn (NOT standard markdown). Key differences:
 	}
 
 	// Shared knowledge context (rules, skills, memories)
-	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
-	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
 	caller := &services.Caller{
 		TenantID: tenant.ID,
 		UserID:   user.ID,
 		Identity: user.SlackUserID,
 		Roles:    roleNames,
 		RoleIDs:  roleIDs,
-		IsAdmin:  user.IsAdmin,
+		IsAdmin:  isAdmin,
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}
 	parts = append(parts, services.BuildKnowledgeContext(ctx, pool, caller, tenant))

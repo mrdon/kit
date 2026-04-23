@@ -2,11 +2,22 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Builtin role names. Every tenant has these two roles; they cannot be
+// deleted via the role tools. `member` is auto-assigned to users with no
+// explicit roles; `admin` is granted via AssignRole and gates admin-only
+// tools.
+const (
+	RoleAdmin  = "admin"
+	RoleMember = "member"
 )
 
 type Role struct {
@@ -61,6 +72,27 @@ func CreateRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating role: %w", err)
+	}
+	return role, nil
+}
+
+// GetOrCreateRole returns the existing role by (tenant, name), or creates it.
+// Idempotent — safe to call on every install/reinstall for builtin roles.
+// On conflict, `description` is NOT updated: the no-op `SET name = EXCLUDED.name`
+// exists only so RETURNING emits the existing row. Callers that need to update
+// description should call UpdateRole separately.
+func GetOrCreateRole(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, description string) (*Role, error) {
+	role := &Role{}
+	err := pool.QueryRow(ctx, `
+		INSERT INTO roles (id, tenant_id, name, description)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name
+		RETURNING id, tenant_id, name, description, created_at
+	`, uuid.New(), tenantID, name, nilIfEmpty(description)).Scan(
+		&role.ID, &role.TenantID, &role.Name, &role.Description, &role.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get or create role: %w", err)
 	}
 	return role, nil
 }
@@ -164,7 +196,7 @@ func CountRoleDeletionImpact(ctx context.Context, pool *pgxpool.Pool, tenantID u
 // ListRoleMembers returns all users assigned to a role by name.
 func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, roleName string) ([]User, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT u.id, u.tenant_id, u.slack_user_id, u.display_name, u.is_admin, u.timezone, u.created_at
+		SELECT u.id, u.tenant_id, u.slack_user_id, u.display_name, u.timezone, u.created_at
 		FROM users u
 		JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
 		JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
@@ -179,12 +211,37 @@ func ListRoleMembers(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	var users []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.SlackUserID, &u.DisplayName, &u.IsAdmin, &u.Timezone, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.SlackUserID, &u.DisplayName, &u.Timezone, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
 	}
 	return users, rows.Err()
+}
+
+// FindAdminUser returns one user assigned to the admin role for the tenant,
+// or nil if no admins exist. Used by the scheduler to pick a `created_by` for
+// builtin tasks.
+func FindAdminUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (*User, error) {
+	u := &User{}
+	err := pool.QueryRow(ctx, `
+		SELECT u.id, u.tenant_id, u.slack_user_id, u.display_name, u.timezone, u.created_at
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+		JOIN roles r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+		WHERE u.tenant_id = $1 AND r.name = $2
+		ORDER BY u.created_at
+		LIMIT 1
+	`, tenantID, RoleAdmin).Scan(
+		&u.ID, &u.TenantID, &u.SlackUserID, &u.DisplayName, &u.Timezone, &u.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil //nolint:nilnil // no admin is not an error
+		}
+		return nil, fmt.Errorf("finding admin user: %w", err)
+	}
+	return u, nil
 }
 
 // GetUserRoleIDs returns the role IDs for a user.

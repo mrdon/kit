@@ -40,7 +40,7 @@ func TestCurrentUser_ShapeWithoutPool(t *testing.T) {
 
 	tenantID := uuid.New()
 	userID := uuid.New()
-	bundle := BuildIdentityBuiltins(nil, tenantID, userID, []string{"admin", "manager"}, "America/Denver", true)
+	bundle := BuildIdentityBuiltins(nil, tenantID, userID, []string{"admin", "manager"}, "America/Denver")
 
 	src := `
 def main():
@@ -64,9 +64,6 @@ def main():
 	if got := m["timezone"]; got != "America/Denver" {
 		t.Errorf("timezone = %v, want America/Denver", got)
 	}
-	if got := m["is_admin"]; got != true {
-		t.Errorf("is_admin = %v, want true", got)
-	}
 
 	roles, ok := m["roles"].([]any)
 	if !ok {
@@ -84,12 +81,12 @@ func TestCurrentUser_NilRolesReturnsEmptyList(t *testing.T) {
 	ctx, cancel := newCtx(t)
 	defer cancel()
 
-	bundle := BuildIdentityBuiltins(nil, uuid.New(), uuid.New(), nil, "UTC", false)
+	bundle := BuildIdentityBuiltins(nil, uuid.New(), uuid.New(), nil, "UTC")
 
 	src := `
 def main():
     u = current_user()
-    return {"roles": u["roles"], "is_admin": u["is_admin"]}
+    return {"roles": u["roles"]}
 `
 	result, _, err := runIdentity(t, ctx, src, bundle)
 	if err != nil {
@@ -102,9 +99,6 @@ def main():
 	}
 	if len(roles) != 0 {
 		t.Errorf("roles = %v, want empty list", roles)
-	}
-	if m["is_admin"] != false {
-		t.Errorf("is_admin = %v, want false", m["is_admin"])
 	}
 }
 
@@ -126,12 +120,12 @@ func TestCurrentUser_DisplayNameFromDB(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_identity_"+uuid.NewString()[:8], "Alice Example", true)
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_identity_"+uuid.NewString()[:8], "Alice Example")
 	if err != nil {
 		t.Fatalf("user: %v", err)
 	}
 
-	bundle := BuildIdentityBuiltins(pool, tenant.ID, user.ID, []string{"admin"}, "UTC", true)
+	bundle := BuildIdentityBuiltins(pool, tenant.ID, user.ID, []string{"admin"}, "UTC")
 
 	src := `
 def main():

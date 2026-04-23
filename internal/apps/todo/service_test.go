@@ -3,6 +3,7 @@ package todo
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -41,26 +42,32 @@ func newFixture(t *testing.T) *fixture {
 		_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	role, err := models.CreateRole(ctx, pool, tenant.ID, "member", "regular member")
+	role, err := models.CreateRole(ctx, pool, tenant.ID, models.RoleMember, "regular member")
 	if err != nil {
 		t.Fatalf("creating member role: %v", err)
 	}
-	alice, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice", "Alice", false)
+	if _, err := models.CreateRole(ctx, pool, tenant.ID, models.RoleAdmin, "admin"); err != nil {
+		t.Fatalf("creating admin role: %v", err)
+	}
+	alice, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice", "Alice")
 	if err != nil {
 		t.Fatalf("creating alice: %v", err)
 	}
-	bob, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_bob", "Bob", false)
+	bob, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_bob", "Bob")
 	if err != nil {
 		t.Fatalf("creating bob: %v", err)
 	}
-	admin, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin", "Admin", true)
+	admin, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin", "Admin")
 	if err != nil {
 		t.Fatalf("creating admin: %v", err)
 	}
 	for _, u := range []*models.User{alice, bob, admin} {
-		if err := models.AssignRole(ctx, pool, tenant.ID, u.ID, "member"); err != nil {
+		if err := models.AssignRole(ctx, pool, tenant.ID, u.ID, models.RoleMember); err != nil {
 			t.Fatalf("assigning member role: %v", err)
 		}
+	}
+	if err := models.AssignRole(ctx, pool, tenant.ID, admin.ID, models.RoleAdmin); err != nil {
+		t.Fatalf("assigning admin role: %v", err)
 	}
 	return &fixture{
 		pool:       pool,
@@ -75,14 +82,16 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) caller(t *testing.T, u *models.User) *services.Caller {
 	t.Helper()
-	roleIDs, _ := models.GetUserRoleIDs(context.Background(), f.pool, f.tenant.ID, u.ID, nil)
+	ctx := context.Background()
+	roleIDs, _ := models.GetUserRoleIDs(ctx, f.pool, f.tenant.ID, u.ID, nil)
+	roleNames, _ := models.GetUserRoleNames(ctx, f.pool, f.tenant.ID, u.ID, nil)
 	return &services.Caller{
 		TenantID: f.tenant.ID,
 		UserID:   u.ID,
 		Identity: u.SlackUserID,
-		Roles:    []string{"member"},
+		Roles:    roleNames,
 		RoleIDs:  roleIDs,
-		IsAdmin:  u.IsAdmin,
+		IsAdmin:  slices.Contains(roleNames, models.RoleAdmin),
 	}
 }
 

@@ -2,14 +2,17 @@
 // the host function current_user(). Without this, per-user apps would
 // have to accept user_id as a tool argument — which a client could
 // spoof, so we never want to rely on it. The runtime already threads
-// CallerUserID / CallerRoles / CallerTimezone / IsAdmin through
-// ScriptRunParams; this file is just the Python-side surface.
+// CallerUserID / CallerRoles / CallerTimezone through ScriptRunParams;
+// this file is just the Python-side surface.
 //
 // The exposed surface:
 //
 //	current_user()
 //	# → {"id": "<uuid>", "display_name": "...", "timezone": "...",
-//	#    "roles": ["admin", "manager"], "is_admin": True|False}
+//	#    "roles": ["admin", "manager"]}
+//
+// "admin" and "member" are builtin roles. To check admin status, test
+// `"admin" in current_user()["roles"]`.
 //
 // display_name is looked up from the users table on each call, which is
 // a one-row query per invocation. Most scripts never call current_user()
@@ -44,22 +47,21 @@ type IdentityBuiltins struct {
 
 // BuildIdentityBuiltins wires identity host functions for one script run.
 //
-// The caller's fields (UserID, Roles, Timezone, IsAdmin) are captured at
-// assembly time and returned verbatim from current_user(); display_name
-// is looked up on invocation so we don't pay the query for scripts that
-// never touch identity.
+// The caller's fields (UserID, Roles, Timezone) are captured at assembly
+// time and returned verbatim from current_user(); display_name is looked
+// up on invocation so we don't pay the query for scripts that never touch
+// identity.
 func BuildIdentityBuiltins(
 	pool *pgxpool.Pool,
 	tenantID uuid.UUID,
 	callerUserID uuid.UUID,
 	callerRoles []string,
 	callerTimezone string,
-	callerIsAdmin bool,
 ) *IdentityBuiltins {
 	handler := func(ctx context.Context, call *runtime.FunctionCall) (any, error) {
 		switch call.Name {
 		case FnCurrentUser:
-			return dispatchCurrentUser(ctx, pool, tenantID, callerUserID, callerRoles, callerTimezone, callerIsAdmin)
+			return dispatchCurrentUser(ctx, pool, tenantID, callerUserID, callerRoles, callerTimezone)
 		default:
 			return nil, fmt.Errorf("identity_builtins: unknown function %q", call.Name)
 		}
@@ -105,7 +107,6 @@ func dispatchCurrentUser(
 	callerUserID uuid.UUID,
 	callerRoles []string,
 	callerTimezone string,
-	callerIsAdmin bool,
 ) (any, error) {
 	displayName := ""
 	if pool != nil && callerUserID != uuid.Nil {
@@ -126,6 +127,5 @@ func dispatchCurrentUser(
 		"display_name": displayName,
 		"timezone":     callerTimezone,
 		"roles":        rolesCopy,
-		"is_admin":     callerIsAdmin,
 	}, nil
 }

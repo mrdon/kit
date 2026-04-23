@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/mrdon/kit/internal/models"
 )
 
@@ -40,18 +42,22 @@ func (s *Scheduler) ensureBuiltinTasks(ctx context.Context) {
 	}
 
 	for _, tenant := range tenants {
-		// Find any admin user to use as created_by
-		users, err := models.ListUsersByTenant(ctx, s.pool, tenant.ID)
-		if err != nil || len(users) == 0 {
-			slog.Warn("no users for tenant, skipping builtin tasks", "tenant_id", tenant.ID)
+		// Use any admin user as created_by; fall back to any user if no admin.
+		adminUser, err := models.FindAdminUser(ctx, s.pool, tenant.ID)
+		if err != nil {
+			slog.Warn("finding admin user for tenant builtin tasks", "tenant_id", tenant.ID, "error", err)
 			continue
 		}
-		var adminID = users[0].ID
-		for _, u := range users {
-			if u.IsAdmin {
-				adminID = u.ID
-				break
+		var adminID uuid.UUID
+		if adminUser != nil {
+			adminID = adminUser.ID
+		} else {
+			users, err := models.ListUsersByTenant(ctx, s.pool, tenant.ID)
+			if err != nil || len(users) == 0 {
+				slog.Warn("no users for tenant, skipping builtin tasks", "tenant_id", tenant.ID)
+				continue
 			}
+			adminID = users[0].ID
 		}
 
 		for _, bt := range builtinTasks {

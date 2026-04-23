@@ -183,9 +183,9 @@ func mugClubExample() exampleDefinition {
 			AppName: "mug_club",
 			Scripts: []exampleScriptSpec{{Name: "core", Body: body}},
 			Expose: []exampleExposeSpec{
-				{Script: "core", Fn: "add_member", ToolName: "add_mug_member", VisibleToRoles: []string{"admin", "manager", "bartender"}},
-				{Script: "core", Fn: "list_members", ToolName: "list_mug_members", VisibleToRoles: []string{"admin", "manager", "bartender"}},
-				{Script: "core", Fn: "update_tier", ToolName: "update_mug_tier", VisibleToRoles: []string{"admin", "manager", "bartender"}},
+				{Script: "core", Fn: "add_member", ToolName: "add_mug_member", VisibleToRoles: []string{"manager", "bartender"}},
+				{Script: "core", Fn: "list_members", ToolName: "list_mug_members", VisibleToRoles: []string{"manager", "bartender"}},
+				{Script: "core", Fn: "update_tier", ToolName: "update_mug_tier", VisibleToRoles: []string{"manager", "bartender"}},
 			},
 		}},
 	}
@@ -222,7 +222,7 @@ func crmExample() exampleDefinition {
 		"def add_note(contact_id, note):\n" +
 		"    db_update_one(\"contacts\", {\"_id\": contact_id}, {\"$push\": {\"notes\": {\"text\": note, \"at\": now()}}})\n" +
 		"    return {\"ok\": True}\n"
-	roles := []string{"admin", "manager", "sales"}
+	roles := []string{"manager", "sales"} // admins see these via superuser bypass
 	return exampleDefinition{
 		ID:          "crm_with_service_layer",
 		Title:       "CRM with a shared service layer",
@@ -277,7 +277,7 @@ func reviewTriageExample() exampleDefinition {
 			AppName: "review_triage",
 			Scripts: []exampleScriptSpec{{Name: "main", Body: body}},
 			Expose: []exampleExposeSpec{
-				{Script: "main", Fn: "list_recent_complaints", ToolName: "recent_complaints", VisibleToRoles: []string{"admin", "manager"}},
+				{Script: "main", Fn: "list_recent_complaints", ToolName: "recent_complaints", VisibleToRoles: []string{"manager"}},
 			},
 			Schedule: []exampleScheduleSpec{
 				{Script: "main", Fn: "triage", Cron: "0 9 * * *"},
@@ -306,7 +306,7 @@ func vendorBookExample() exampleDefinition {
 		"def list_vendors(specialty=None):\n" +
 		"    filter = {\"specialty\": specialty} if specialty else {}\n" +
 		"    return db_find(\"vendors\", filter, sort=[(\"name\", 1)], limit=100)\n"
-	roles := []string{"admin", "manager"}
+	roles := []string{"manager"} // admins see these via superuser bypass
 	return exampleDefinition{
 		ID:          "vendor_book_multi_script",
 		Title:       "Vendor book — cross-script validators",

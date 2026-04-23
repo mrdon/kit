@@ -102,7 +102,7 @@ def beat():
 }
 
 // TestBuilderRunner_DemotedAdmin verifies the claim-time admin check.
-// Flipping the creator's IsAdmin=false between schedule time and tick
+// Unassigning the creator's admin role between schedule time and tick
 // time must deactivate the builder_script task row and skip execution.
 func TestBuilderRunner_DemotedAdmin(t *testing.T) {
 	f := newScriptFixture(t)
@@ -128,10 +128,8 @@ func TestBuilderRunner_DemotedAdmin(t *testing.T) {
 		t.Fatalf("backdate: %v", err)
 	}
 
-	// Demote the admin.
-	if _, err := f.pool.Exec(ctx, `
-		UPDATE users SET is_admin = FALSE WHERE id = $1
-	`, f.admin.UserID); err != nil {
+	// Demote the admin by unassigning the admin role.
+	if err := models.UnassignRole(ctx, f.pool, f.tenant.ID, f.admin.UserID, models.RoleAdmin); err != nil {
 		t.Fatalf("demote: %v", err)
 	}
 

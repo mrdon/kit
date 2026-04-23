@@ -61,7 +61,7 @@ func newFixture(t *testing.T) *gatedFixture {
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_"+uuid.NewString()[:8], "Gated Tester", false)
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_"+uuid.NewString()[:8], "Gated Tester")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}

@@ -96,9 +96,10 @@ func TestIsDefVisible_RoleGated(t *testing.T) {
 }
 
 func TestIsDefVisible_AdminSuperuserBypass(t *testing.T) {
-	// IsAdmin is a Django-style superuser flag: admins see everything
-	// regardless of AdminOnly or VisibleToRoles. A non-admin with the
-	// right role still sees role-gated tools.
+	// IsAdmin (derived from membership in the builtin admin role at Caller
+	// construction) is a tenant-scoped superuser flag: admins see
+	// everything regardless of AdminOnly or VisibleToRoles. A non-admin
+	// with the right role still sees role-gated tools.
 	adminNoRole := &services.Caller{IsAdmin: true}
 	roleNoAdmin := &services.Caller{Roles: []string{"bartender"}}
 	nobody := &services.Caller{}

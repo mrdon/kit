@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -85,7 +86,19 @@ func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 		r.advanceNextRun(ctx, task)
 		return nil
 	}
-	if user == nil || !user.IsAdmin {
+	if user == nil {
+		slog.Warn("builder_script creator no longer exists — deactivating",
+			"task_id", task.ID, "creator_id", task.CreatedBy)
+		r.deactivate(ctx, task, "creator no longer exists")
+		return nil
+	}
+	roles, err := models.GetUserRoleNames(ctx, r.pool, task.TenantID, user.ID, nil)
+	if err != nil {
+		slog.Error("loading builder_script creator roles", "task_id", task.ID, "error", err)
+		r.advanceNextRun(ctx, task)
+		return nil
+	}
+	if !slices.Contains(roles, models.RoleAdmin) {
 		slog.Warn("builder_script creator is no longer admin — deactivating",
 			"task_id", task.ID, "creator_id", task.CreatedBy)
 		r.deactivate(ctx, task, "creator no longer admin")
@@ -119,24 +132,11 @@ func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 		tz = "UTC"
 	}
 
-	// Load the creator's current roles at claim time — not at schedule
-	// time — so a role change between schedule and fire is reflected.
-	// Without this, current_user()["roles"] would always be empty inside
-	// a scheduled run and tools_call checks against visible_to_roles
-	// would fail even when the creator still holds the required role.
-	roles, err := models.GetUserRoleNames(ctx, r.pool, task.TenantID, user.ID, nil)
-	if err != nil {
-		slog.Warn("loading builder_script creator roles", "task_id", task.ID, "error", err)
-		// Fall through with nil roles — is_admin is still true above so
-		// meta-gated actions still work; only role-gated tools_call will
-		// be affected.
-	}
-
 	caller := &services.Caller{
 		TenantID: task.TenantID,
 		UserID:   user.ID,
 		Roles:    roles,
-		IsAdmin:  true, // already re-checked above
+		IsAdmin:  true, // already re-checked above via roles
 		Timezone: tz,
 	}
 

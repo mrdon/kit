@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -134,7 +135,7 @@ func (d *actionDeps) caller(ctx context.Context) (*services.Caller, error) {
 		UserID:   d.callerUserID,
 		Identity: user.SlackUserID,
 		Roles:    roles,
-		IsAdmin:  user.IsAdmin,
+		IsAdmin:  slices.Contains(roles, models.RoleAdmin),
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}
 	return d.callerCache, nil

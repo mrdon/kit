@@ -60,7 +60,7 @@ func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleNa
 	if !c.IsAdmin {
 		return ErrForbidden
 	}
-	user, err := models.GetOrCreateUser(ctx, s.pool, c.TenantID, slackUserID, "", false)
+	user, err := models.GetOrCreateUser(ctx, s.pool, c.TenantID, slackUserID, "")
 	if err != nil {
 		return fmt.Errorf("resolving user: %w", err)
 	}
@@ -107,10 +107,14 @@ func (s *RoleService) DeletionImpact(ctx context.Context, c *Caller, name string
 // Delete deletes a role. Admin only. By default refuses if the role has
 // scope-attached data; pass force=true to confirm. Inline-scope entities
 // (todos, memories) are destroyed; join-table entities lose the role's
-// scope row and become invisible.
+// scope row and become invisible. The builtin `admin` and `member` roles
+// cannot be deleted.
 func (s *RoleService) Delete(ctx context.Context, c *Caller, name string, force bool) error {
 	if !c.IsAdmin {
 		return ErrForbidden
+	}
+	if name == models.RoleAdmin || name == models.RoleMember {
+		return fmt.Errorf("cannot delete builtin role %q", name)
 	}
 	if !force {
 		impact, err := models.CountRoleDeletionImpact(ctx, s.pool, c.TenantID, name)
