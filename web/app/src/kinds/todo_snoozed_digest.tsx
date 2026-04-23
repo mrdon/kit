@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { KindRenderer } from '.';
 import type { StackItem } from '../types';
-import { BASENAME } from '../workspace';
 
 type DigestRow = {
   id: string;
@@ -57,7 +56,7 @@ function Detail({ item }: { item: StackItem }) {
     <ul className="snoozed-digest">
       {rows.map((r) => (
         <li key={r.id}>
-          <Link to={`${BASENAME}/stack/todo/todo/${r.id}`} className="snoozed-row">
+          <Link to={`/stack/todo/todo/${r.id}`} className="snoozed-row">
             <span className="snoozed-row-title">{r.title}</span>
             <span className="snoozed-row-meta">
               <span className={`priority-chip priority-${r.priority}`}>
