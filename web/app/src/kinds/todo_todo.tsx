@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { api } from '../api';
 import type { KindRenderer } from '.';
 import type { StackItem, TodoEvent, TodoMetadata } from '../types';
 
@@ -32,15 +34,74 @@ function Detail({
   item,
   extras,
   onAction,
+  onRefresh,
   busy,
 }: {
   item: StackItem;
   extras?: Record<string, unknown>;
   onAction: (actionID: string, params?: unknown) => void;
+  onRefresh: () => void;
   busy: boolean;
 }) {
   const m = meta(item);
   const events = (extras?.events as TodoEvent[] | null) ?? [];
+
+  // Regenerate state. Baseline is a fingerprint of the resolution chips
+  // and recommended step taken at the moment we fire the action; the
+  // server runs Haiku asynchronously and stamps new chip IDs on every
+  // successful regen, so we poll getItem until the fingerprint changes.
+  // Timeout at 20s so a Haiku error or a same-output regen doesn't
+  // leave the button spinning forever.
+  const [regenerating, setRegenerating] = useState(false);
+  const baselineRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!regenerating || baselineRef.current === null) return;
+    const fp = JSON.stringify({
+      actions: item.actions ?? [],
+      rec: item.recommended_next_step ?? null,
+    });
+    if (fp !== baselineRef.current) {
+      setRegenerating(false);
+      baselineRef.current = null;
+    }
+  }, [item, regenerating]);
+
+  useEffect(() => {
+    if (!regenerating) return;
+    const start = Date.now();
+    const timer = window.setInterval(() => {
+      if (Date.now() - start > 20000) {
+        setRegenerating(false);
+        baselineRef.current = null;
+        return;
+      }
+      onRefresh();
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [regenerating, onRefresh]);
+
+  const handleRegenerate = async () => {
+    if (regenerating || busy) return;
+    baselineRef.current = JSON.stringify({
+      actions: item.actions ?? [],
+      rec: item.recommended_next_step ?? null,
+    });
+    try {
+      await api.doAction(
+        item.source_app,
+        item.kind,
+        item.id,
+        'regenerate_resolutions',
+      );
+    } catch (e) {
+      baselineRef.current = null;
+      alert((e as Error).message);
+      return;
+    }
+    setRegenerating(true);
+  };
+
   return (
     <>
       {m && (
@@ -68,6 +129,9 @@ function Detail({
         </button>
       </div>
       <div className="acks" style={{ marginTop: '1rem' }}>
+        <button disabled={busy || regenerating} onClick={handleRegenerate}>
+          {regenerating ? '⏳ Regenerating…' : '↻ Regenerate suggestions'}
+        </button>
         <button
           disabled={busy}
           onClick={() => {

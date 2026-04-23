@@ -169,6 +169,20 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 			return nil, errors.New("resolution_id is required")
 		}
 		return p.acceptResolution(ctx, caller, todoID, body.ResolutionID)
+	case "regenerate_resolutions":
+		if p.app.llm == nil {
+			return nil, errors.New("todo app not configured with an LLM client")
+		}
+		todo, _, err := p.app.svc.Get(ctx, caller, todoID)
+		if err != nil {
+			return nil, err
+		}
+		// Fire-and-forget: the suggester goroutine writes new
+		// resolutions to the row when Haiku returns. The client polls
+		// getItem until it sees a change (new resolution ids) and
+		// swaps the UI out of the spinning state.
+		go runResolutionSuggester(p.app.svc.pool, p.app.llm, *caller, *todo)
+		return &shared.ActionResult{}, nil
 	}
 	return nil, fmt.Errorf("unknown todo action %q", actionID)
 }

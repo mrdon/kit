@@ -129,7 +129,13 @@ export default function StackItemDetail() {
       )}
       {Detail && (
         <ErrorBoundary>
-          <Detail item={item} extras={extras} onAction={onAction} busy={busy} />
+          <Detail
+            item={item}
+            extras={extras}
+            onAction={onAction}
+            onRefresh={load}
+            busy={busy}
+          />
         </ErrorBoundary>
       )}
     </SwipeBackShell>

@@ -10,7 +10,13 @@ import { todoTodo } from './todo_todo';
 // the word "todo" without colliding.
 export type KindRenderer = {
   Face?: ComponentType<{ item: StackItem }>;
-  Detail?: ComponentType<{ item: StackItem; extras?: Record<string, unknown>; onAction: (actionID: string, params?: unknown) => void; busy: boolean }>;
+  Detail?: ComponentType<{
+    item: StackItem;
+    extras?: Record<string, unknown>;
+    onAction: (actionID: string, params?: unknown) => void;
+    onRefresh: () => void;
+    busy: boolean;
+  }>;
 };
 
 const registry: Record<string, KindRenderer> = {
