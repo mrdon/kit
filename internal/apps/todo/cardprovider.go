@@ -286,14 +286,15 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		  AND t.status NOT IN ('done','cancelled')
 		  AND (t.snoozed_until IS NULL OR t.snoozed_until <= now())`)
 
-	if !c.IsAdmin {
-		// Personal surface: caller is the assignee or holds the role.
-		// Tenant-wide (s.user_id IS NULL AND s.role_id IS NULL) is excluded.
-		scopeFrag, scopeArgs := c.PersonalScopeFilter("s", 2)
-		args = append(args, scopeArgs...)
-		b.WriteString(` AND `)
-		b.WriteString(scopeFrag)
-	}
+	// Personal surface: caller is the assignee or holds the role.
+	// Tenant-wide (s.user_id IS NULL AND s.role_id IS NULL) is excluded.
+	// Applies to admins too — the swipe feed is inherently personal, so
+	// admins don't get flooded with every user's todos. Admins who need to
+	// audit other users' todos still have list_todos via MCP.
+	scopeFrag, scopeArgs := c.PersonalScopeFilter("s", 2)
+	args = append(args, scopeArgs...)
+	b.WriteString(` AND `)
+	b.WriteString(scopeFrag)
 
 	b.WriteString(`
 		ORDER BY

@@ -240,26 +240,25 @@ func listCards(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UU
 // briefing acks. Role-scoped briefings stay visible to role members
 // until each individually acks; the LEFT JOIN + IS NULL filter
 // implements that per-user exclusion.
-func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, isAdmin bool) ([]*Card, error) {
+//
+// The swipe stack is a personal surface, so scope filtering applies even
+// to admins — otherwise admins see every user's personal decisions and
+// briefings in their feed. Admin audit of other users' cards goes through
+// list_decisions / list_briefings.
+func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID) ([]*Card, error) {
 	var b strings.Builder
 	b.WriteString(baseCardQuery)
-	// userID is always $2 so the SQL is the same for admin and non-admin.
 	args := []any{tenantID, userID}
 	b.WriteString(` LEFT JOIN app_card_user_acks ua ON ua.card_id = c.id AND ua.user_id = $2`)
 
-	if isAdmin {
-		b.WriteString(` WHERE c.tenant_id = $1 AND c.state = $3 AND ua.card_id IS NULL`)
-		args = append(args, CardStatePending)
-	} else {
-		scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 3, userID, roleIDs)
-		b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id JOIN scopes sc ON sc.id = s.scope_id WHERE c.tenant_id = $1 AND (`)
-		b.WriteString(scopeSQL)
-		b.WriteString(`) AND c.state = $`)
-		fmt.Fprintf(&b, "%d", 3+len(scopeArgs))
-		b.WriteString(` AND ua.card_id IS NULL`)
-		args = append(args, scopeArgs...)
-		args = append(args, CardStatePending)
-	}
+	scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 3, userID, roleIDs)
+	b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id JOIN scopes sc ON sc.id = s.scope_id WHERE c.tenant_id = $1 AND (`)
+	b.WriteString(scopeSQL)
+	b.WriteString(`) AND c.state = $`)
+	fmt.Fprintf(&b, "%d", 3+len(scopeArgs))
+	b.WriteString(` AND ua.card_id IS NULL`)
+	args = append(args, scopeArgs...)
+	args = append(args, CardStatePending)
 	b.WriteString(`
 		ORDER BY
 			CASE
@@ -273,10 +272,8 @@ func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UU
 			c.created_at DESC
 		LIMIT 100`)
 
-	query := b.String()
-	if !isAdmin {
-		query = strings.Replace(query, "SELECT ", "SELECT DISTINCT ", 1)
-	}
+	// DISTINCT because a card can match multiple scope rows (personal + role).
+	query := strings.Replace(b.String(), "SELECT ", "SELECT DISTINCT ", 1)
 
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {

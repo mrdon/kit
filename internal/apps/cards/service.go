@@ -428,7 +428,7 @@ func (s *CardService) ListBriefings(ctx context.Context, c *services.Caller, f C
 // already acked are filtered out so role-scoped briefings stay visible
 // to teammates who haven't yet seen them.
 func (s *CardService) Stack(ctx context.Context, c *services.Caller) ([]*Card, error) {
-	return listStack(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, c.IsAdmin)
+	return listStack(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 }
 
 // DMOpener is the minimal Slack surface required to resolve a decision
