@@ -510,17 +510,6 @@ func TestCancelForbidden(t *testing.T) {
 	}
 }
 
-// TestSnoozeDaysToUntilValidation: the shared validation helper rejects any
-// value outside {1,3,7}.
-func TestSnoozeDaysToUntilValidation(t *testing.T) {
-	for _, days := range []int{0, 2, 5, 8, -1, 100} {
-		if _, err := SnoozeDaysToUntil(days); err == nil {
-			t.Errorf("SnoozeDaysToUntil(%d) = nil err, want error", days)
-		}
-	}
-	for _, days := range []int{1, 3, 7} {
-		if _, err := SnoozeDaysToUntil(days); err != nil {
-			t.Errorf("SnoozeDaysToUntil(%d) = %v, want nil", days, err)
-		}
-	}
-}
+// Validation for SnoozeDaysToUntil is covered by
+// TestSnoozeDaysToUntilRejectsInvalidDays in resolutions_test.go, which
+// also exercises the tz-aware 03:00 rule.

@@ -12,7 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/apps/cards/shared"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
 // cardProvider surfaces todos as stack items. Scope is explicit — only
@@ -140,11 +142,7 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 				return nil, fmt.Errorf("invalid snooze params: %w", err)
 			}
 		}
-		until, err := SnoozeDaysToUntil(body.Days)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := p.app.svc.Snooze(ctx, caller, todoID, until); err != nil {
+		if _, err := p.app.svc.SnoozeDays(ctx, caller, todoID, body.Days); err != nil {
 			return nil, err
 		}
 		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
@@ -153,8 +151,116 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 			return nil, err
 		}
 		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+	case "resolve":
+		var body struct {
+			ResolutionID string `json:"resolution_id"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &body); err != nil {
+				return nil, fmt.Errorf("invalid resolve params: %w", err)
+			}
+		}
+		if body.ResolutionID == "" {
+			return nil, errors.New("resolution_id is required")
+		}
+		return p.acceptResolution(ctx, caller, todoID, body.ResolutionID)
 	}
 	return nil, fmt.Errorf("unknown todo action %q", actionID)
+}
+
+// acceptResolution turns a tapped resolution chip into a run-once or
+// recurring task. The task posts its output to the caller's DM, mirroring
+// how card decisions resolve. Removes the accepted chip from the stored
+// array and returns the patched item so the client drops the chip
+// without refetching.
+func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Caller, todoID uuid.UUID, resolutionID string) (*shared.ActionResult, error) {
+	if p.app.taskSvc == nil || p.app.enc == nil {
+		return nil, errors.New("todo app not fully configured (missing task service or encryptor)")
+	}
+
+	todo, _, err := p.app.svc.Get(ctx, caller, todoID)
+	if err != nil {
+		return nil, err
+	}
+
+	var chosen *Resolution
+	for i := range todo.Resolutions {
+		if todo.Resolutions[i].ID == resolutionID {
+			chosen = &todo.Resolutions[i]
+			break
+		}
+	}
+	if chosen == nil {
+		return nil, services.ErrNotFound
+	}
+
+	dmChannel, err := openCallerDM(ctx, p.app.svc.pool, p.app.enc, caller)
+	if err != nil {
+		return nil, fmt.Errorf("opening DM: %w", err)
+	}
+
+	in := services.CreateInput{
+		Description: chosen.Prompt,
+		Timezone:    "UTC",
+		ChannelID:   dmChannel,
+		Scope:       "user",
+		RunOnce:     chosen.Shape == "once",
+	}
+	if chosen.Shape == "once" {
+		now := time.Now()
+		in.RunAt = &now
+	} else {
+		in.CronExpr = chosen.Cron
+	}
+	if _, err := p.app.taskSvc.Create(ctx, caller, in); err != nil {
+		return nil, fmt.Errorf("creating task: %w", err)
+	}
+
+	if err := removeTodoResolution(ctx, p.app.svc.pool, caller.TenantID, todoID, resolutionID); err != nil {
+		return nil, err
+	}
+
+	// Rebuild the patched stack item so the client drops the accepted
+	// chip without a refetch.
+	updated, _, err := p.app.svc.Get(ctx, caller, todoID)
+	if err != nil {
+		return nil, err
+	}
+	enriched, err := enrichOne(ctx, p.app.svc.pool, caller.TenantID, updated)
+	if err != nil {
+		return nil, err
+	}
+	item, err := todoToStackItem(enriched)
+	if err != nil {
+		return nil, err
+	}
+	return &shared.ActionResult{Item: &item}, nil
+}
+
+// openCallerDM looks up the tenant's bot token, decrypts it, and opens
+// a DM channel to the caller. Mirrors cards/mcp.go:slackClientForCaller
+// so tapped-chip output lands exactly where resolved decisions do.
+func openCallerDM(ctx context.Context, pool *pgxpool.Pool, enc cryptoDecryptor, caller *services.Caller) (string, error) {
+	tenant, err := models.GetTenantByID(ctx, pool, caller.TenantID)
+	if err != nil {
+		return "", fmt.Errorf("looking up tenant: %w", err)
+	}
+	if tenant == nil {
+		return "", errors.New("tenant not found")
+	}
+	token, err := enc.Decrypt(tenant.BotToken)
+	if err != nil {
+		return "", fmt.Errorf("decrypting bot token: %w", err)
+	}
+	client := kitslack.NewClient(token)
+	return client.OpenConversation(ctx, caller.Identity)
+}
+
+// cryptoDecryptor is the narrow slice of *crypto.Encryptor this file
+// needs. Declared as an interface so the accept path can be exercised
+// with a stub in tests without hauling in the real encryptor.
+type cryptoDecryptor interface {
+	Decrypt(ciphertext string) (string, error)
 }
 
 // listStackTodos restricts to the caller's personal surface (scopes that
@@ -165,7 +271,7 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	args := []any{c.TenantID}
 
 	b.WriteString(`SELECT t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason,
-		t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.created_at, t.updated_at, t.closed_at,
+		t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at,
 		s.user_id, u.display_name, r.name
 		FROM app_todos t
 		JOIN scopes s ON s.id = t.scope_id
@@ -213,10 +319,12 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		var st stackTodo
 		var description, blockedReason, assigneeName, roleName *string
 		var dueDate, snoozedUntil *time.Time
+		var resolutionsJSON []byte
 		if err := rows.Scan(
 			&st.ID, &st.TenantID, &st.Title, &description,
 			&st.Status, &st.Priority, &blockedReason,
 			&st.ScopeID, &st.Visibility, &dueDate, &snoozedUntil,
+			&resolutionsJSON,
 			&st.CreatedAt, &st.UpdatedAt, &st.ClosedAt,
 			&st.AssigneeID, &assigneeName, &roleName,
 		); err != nil {
@@ -230,6 +338,11 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		}
 		st.DueDate = dueDate
 		st.SnoozedUntil = snoozedUntil
+		if len(resolutionsJSON) > 0 {
+			if err := json.Unmarshal(resolutionsJSON, &st.Resolutions); err != nil {
+				return nil, fmt.Errorf("decoding stack todo resolutions: %w", err)
+			}
+		}
 		if assigneeName != nil {
 			st.AssigneeName = *assigneeName
 		}
@@ -257,6 +370,30 @@ func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 			{ID: "complete", Direction: "right", Label: "Complete", Emoji: "✅"},
 			{ID: "snooze", Direction: "left", Label: "Snooze 1 day", Emoji: "😴", Params: json.RawMessage(`{"days":1}`)},
 		},
+	}
+	for _, r := range t.Resolutions {
+		if r.Kind != ResolutionKindTask {
+			continue
+		}
+		params, err := json.Marshal(map[string]string{"resolution_id": r.ID})
+		if err != nil {
+			return it, fmt.Errorf("encoding resolution params: %w", err)
+		}
+		it.Actions = append(it.Actions, shared.StackAction{
+			ID:        "resolve",
+			Direction: "tap",
+			Label:     r.Label,
+			Emoji:     "✨",
+			Params:    params,
+		})
+	}
+	if len(t.Resolutions) > 0 {
+		first := t.Resolutions[0]
+		it.RecommendedNextStep = &shared.RecommendedNextStep{
+			Kind:  first.Kind,
+			Label: first.Label,
+			Body:  first.Body,
+		}
 	}
 	if badge, ok := dueBadge(t.DueDate); ok {
 		it.Badges = append(it.Badges, badge)

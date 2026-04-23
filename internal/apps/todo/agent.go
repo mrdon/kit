@@ -340,13 +340,8 @@ func handleSnoozeTodo(svc *TodoService) tools.HandlerFunc {
 		if err != nil {
 			return "Invalid todo_id UUID.", nil
 		}
-		until, err := SnoozeDaysToUntil(inp.Days)
-		if err != nil {
-			return err.Error(), nil
-		}
-
 		caller := ec.Caller()
-		t, err := svc.Snooze(ec.Ctx, caller, todoID, until)
+		t, err := svc.SnoozeDays(ec.Ctx, caller, todoID, inp.Days)
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
 				return "Todo not found.", nil
@@ -354,9 +349,12 @@ func handleSnoozeTodo(svc *TodoService) tools.HandlerFunc {
 			if errors.Is(err, services.ErrForbidden) {
 				return "You don't have permission to snooze this todo.", nil
 			}
+			if strings.Contains(err.Error(), "snooze days must be") {
+				return err.Error(), nil
+			}
 			return "", fmt.Errorf("snoozing todo: %w", err)
 		}
 
-		return fmt.Sprintf("Snoozed %q for %d day(s). Visible again after %s.", t.Title, inp.Days, until.Format("2006-01-02 15:04")), nil
+		return fmt.Sprintf("Snoozed %q for %d day(s). Visible again after %s.", t.Title, inp.Days, t.SnoozedUntil.Format("2006-01-02 15:04 MST")), nil
 	}
 }

@@ -2,6 +2,7 @@ package todo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -14,20 +15,21 @@ import (
 
 // Todo represents a todo item.
 type Todo struct {
-	ID            uuid.UUID  `json:"id"`
-	TenantID      uuid.UUID  `json:"tenant_id"`
-	Title         string     `json:"title"`
-	Description   string     `json:"description,omitempty"`
-	Status        string     `json:"status"`
-	Priority      string     `json:"priority"`
-	BlockedReason string     `json:"blocked_reason,omitempty"`
-	ScopeID       uuid.UUID  `json:"scope_id"`
-	Visibility    string     `json:"visibility"` // "scoped" or "public"
-	DueDate       *time.Time `json:"due_date,omitempty"`
-	SnoozedUntil  *time.Time `json:"snoozed_until,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ClosedAt      *time.Time `json:"closed_at,omitempty"`
+	ID            uuid.UUID    `json:"id"`
+	TenantID      uuid.UUID    `json:"tenant_id"`
+	Title         string       `json:"title"`
+	Description   string       `json:"description,omitempty"`
+	Status        string       `json:"status"`
+	Priority      string       `json:"priority"`
+	BlockedReason string       `json:"blocked_reason,omitempty"`
+	ScopeID       uuid.UUID    `json:"scope_id"`
+	Visibility    string       `json:"visibility"` // "scoped" or "public"
+	DueDate       *time.Time   `json:"due_date,omitempty"`
+	SnoozedUntil  *time.Time   `json:"snoozed_until,omitempty"`
+	Resolutions   []Resolution `json:"resolutions,omitempty"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+	ClosedAt      *time.Time   `json:"closed_at,omitempty"`
 }
 
 // TodoEvent represents an entry in the activity log.
@@ -72,16 +74,18 @@ type TodoUpdates struct {
 // todoColumns is the SELECT list for app_todos, always aliased as t. in the
 // query — the alias is required because list queries JOIN scopes which has
 // its own id/tenant_id columns.
-const todoColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.created_at, t.updated_at, t.closed_at`
+const todoColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at`
 
 func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	var t Todo
 	var description, blockedReason *string
 	var dueDate, snoozedUntil *time.Time
+	var resolutionsJSON []byte
 	err := row.Scan(
 		&t.ID, &t.TenantID, &t.Title, &description,
 		&t.Status, &t.Priority, &blockedReason,
 		&t.ScopeID, &t.Visibility, &dueDate, &snoozedUntil,
+		&resolutionsJSON,
 		&t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
 	)
 	if err != nil {
@@ -95,6 +99,11 @@ func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	}
 	t.DueDate = dueDate
 	t.SnoozedUntil = snoozedUntil
+	if len(resolutionsJSON) > 0 {
+		if err := json.Unmarshal(resolutionsJSON, &t.Resolutions); err != nil {
+			return nil, fmt.Errorf("decoding resolutions: %w", err)
+		}
+	}
 	return &t, nil
 }
 
@@ -368,4 +377,45 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// setTodoResolutions writes the full resolutions array for a todo, replacing
+// whatever was there. Writing an empty slice stores JSON [] (not NULL) so
+// callers can distinguish "Haiku ran and nothing fit" from "not yet run".
+// A no-op (zero rows affected) when the todo has been deleted.
+func setTodoResolutions(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, resolutions []Resolution) error {
+	if resolutions == nil {
+		resolutions = []Resolution{}
+	}
+	payload, err := json.Marshal(resolutions)
+	if err != nil {
+		return fmt.Errorf("encoding resolutions: %w", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`UPDATE app_todos SET resolutions = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, todoID, payload,
+	); err != nil {
+		return fmt.Errorf("writing resolutions: %w", err)
+	}
+	return nil
+}
+
+// removeTodoResolution drops the resolution with the matching id from the
+// stored array. Uses a jsonb subselect so concurrent removes of different
+// ids don't race on array indices.
+func removeTodoResolution(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, resolutionID string) error {
+	if _, err := pool.Exec(ctx, `
+		UPDATE app_todos
+		SET resolutions = COALESCE(
+			(SELECT jsonb_agg(elem)
+			 FROM jsonb_array_elements(resolutions) AS elem
+			 WHERE elem->>'id' <> $3),
+			'[]'::jsonb),
+		    updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID, todoID, resolutionID,
+	); err != nil {
+		return fmt.Errorf("removing resolution: %w", err)
+	}
+	return nil
 }

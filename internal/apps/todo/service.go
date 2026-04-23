@@ -19,6 +19,10 @@ import (
 // TodoService handles todo operations with authorization.
 type TodoService struct {
 	pool *pgxpool.Pool
+	// app is the owning TodoApp; used to reach Configure-wired
+	// dependencies (llm) at call time. May be nil in tests that
+	// construct a service via NewService(pool).
+	app *TodoApp
 }
 
 // ErrInvalidRole is returned when a todo is created/updated with a role name
@@ -121,6 +125,15 @@ func (s *TodoService) Create(ctx context.Context, c *services.Caller, in CreateI
 	}
 
 	_ = appendEvent(ctx, s.pool, c.TenantID, t.ID, &c.UserID, "comment", "Created todo", "", "")
+
+	// Fire the resolution suggester asynchronously. Detached context
+	// because the request context may cancel before Haiku finishes; the
+	// goroutine has its own semaphore + logging. Caller/todo passed by
+	// value so a later mutation by the request path can't observe them.
+	if s.app != nil && s.app.llm != nil {
+		go runResolutionSuggester(s.pool, s.app.llm, *c, *t)
+	}
+
 	return t, nil
 }
 
@@ -274,15 +287,60 @@ func (s *TodoService) Cancel(ctx context.Context, c *services.Caller, todoID uui
 	return s.Update(ctx, c, todoID, UpdateInput{Status: &cancelled})
 }
 
-// SnoozeDaysToUntil validates a snooze duration (must be 1, 3, or 7) and
-// returns the absolute snoozed_until timestamp. Shared by the card action
-// handler, agent tool, and MCP tool so the allowed values and time
-// calculation live in one place.
-func SnoozeDaysToUntil(days int) (time.Time, error) {
+// snoozeHourLocal is the clock hour (local to the tenant's timezone) a
+// snoozed todo reappears at. 03:00 keeps the todo off the feed through
+// the overnight window regardless of how late the user is working;
+// anything on the snoozer's desk for the next morning shows up before
+// they wake up, not in the middle of the night.
+const snoozeHourLocal = 3
+
+// SnoozeDaysToUntil validates a snooze duration (must be 1, 3, or 7)
+// and returns the snoozed_until timestamp: N calendar days from today
+// (in tz), clock set to snoozeHourLocal local, converted to UTC. Shared
+// by the card action handler, agent tool, and MCP tool so the allowed
+// values and time calculation live in one place.
+func SnoozeDaysToUntil(days int, tz string) (time.Time, error) {
 	if days != 1 && days != 3 && days != 7 {
 		return time.Time{}, fmt.Errorf("snooze days must be 1, 3, or 7 (got %d)", days)
 	}
-	return time.Now().Add(time.Duration(days) * 24 * time.Hour), nil
+	return snoozeUntilAt(time.Now(), days, tz)
+}
+
+// snoozeUntilAt is the pure computation behind SnoozeDaysToUntil,
+// exposed to the test package so the "advance N days then set to
+// 03:00 local" rule can be verified without freezing wall time.
+func snoozeUntilAt(now time.Time, days int, tz string) (time.Time, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("loading timezone %q: %w", tz, err)
+	}
+	local := now.In(loc)
+	advanced := time.Date(local.Year(), local.Month(), local.Day()+days,
+		snoozeHourLocal, 0, 0, 0, loc)
+	return advanced.UTC(), nil
+}
+
+// SnoozeDays looks up the tenant timezone and snoozes the todo until
+// snoozeHourLocal (03:00) local time N days from today. Thin wrapper
+// around Snooze so callers don't have to fetch the tenant row
+// themselves.
+func (s *TodoService) SnoozeDays(ctx context.Context, c *services.Caller, todoID uuid.UUID, days int) (*Todo, error) {
+	tenant, err := models.GetTenantByID(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("looking up tenant: %w", err)
+	}
+	tz := "UTC"
+	if tenant != nil && tenant.Timezone != "" {
+		tz = tenant.Timezone
+	}
+	until, err := SnoozeDaysToUntil(days, tz)
+	if err != nil {
+		return nil, err
+	}
+	return s.Snooze(ctx, c, todoID, until)
 }
 
 // Snooze hides the todo from the caller's swipe feed until `until`. Re-snooze

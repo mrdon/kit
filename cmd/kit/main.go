@@ -23,7 +23,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
-	_ "github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/todo"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"
@@ -130,6 +130,11 @@ func main() {
 	// same fallback chain.
 	integrations.Configure(enc, cfg.BaseURL, sessionSecret)
 	email.Configure(enc)
+	// Wire the todo app's resolution-suggester deps: the LLM for the
+	// Haiku suggester, the TaskService for spawning tasks when the user
+	// taps a resolution chip, and the encryptor for decrypting the
+	// tenant bot token at DM-open time.
+	todo.Configure(builderLLM, svc.Tasks, enc)
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)

@@ -57,11 +57,22 @@ type StackItem struct {
 	PriorityTier PriorityTier `json:"priority_tier"`
 	// KindWeight is a within-tier tiebreak: decisions (0) outrank briefings
 	// (1) which outrank todos (2) when the tier is identical. Server-only.
-	KindWeight int             `json:"-"`
-	Actions    []StackAction   `json:"actions"`
-	Badges     []StackBadge    `json:"badges,omitempty"`
-	Metadata   json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt  time.Time       `json:"created_at"`
+	KindWeight          int                  `json:"-"`
+	Actions             []StackAction        `json:"actions"`
+	Badges              []StackBadge         `json:"badges,omitempty"`
+	Metadata            json.RawMessage      `json:"metadata,omitempty"`
+	RecommendedNextStep *RecommendedNextStep `json:"recommended_next_step,omitempty"`
+	CreatedAt           time.Time            `json:"created_at"`
+}
+
+// RecommendedNextStep is a single "what should I do next" block
+// rendered at the top of the detail view above the rest of the
+// content. Kind mirrors the underlying resolution kind ("task" means a
+// Kit-executable chip also exists on the card; "advice" is display-only).
+type RecommendedNextStep struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	Body  string `json:"body,omitempty"`
 }
 
 // StackAction is one swipe or tap affordance on a card.

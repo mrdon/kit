@@ -8,24 +8,47 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
 
+var instance *TodoApp
+
 func init() {
-	apps.Register(&TodoApp{})
+	instance = &TodoApp{}
+	apps.Register(instance)
 }
 
 // TodoApp is the todo/ticket tracking app.
 type TodoApp struct {
-	svc *TodoService
+	svc     *TodoService
+	llm     *anthropic.Client
+	taskSvc *services.TaskService
+	enc     *crypto.Encryptor
+}
+
+// Configure wires the anthropic client (for the resolution suggester),
+// the TaskService (for spawning tasks when a user taps a resolution
+// chip), and the encryptor (for decrypting the tenant bot token to open
+// a DM at resolve time). Call once from main.go after services.New.
+// Safe to omit in tests: missing llm silently skips the suggester;
+// missing taskSvc/enc fails any chip tap with a clear error.
+func Configure(llm *anthropic.Client, taskSvc *services.TaskService, enc *crypto.Encryptor) {
+	if instance == nil {
+		return
+	}
+	instance.llm = llm
+	instance.taskSvc = taskSvc
+	instance.enc = enc
 }
 
 // Init sets up the service after DB is available and registers this
 // app's CardProvider so its todos surface in the PWA stack.
 func (a *TodoApp) Init(pool *pgxpool.Pool) {
-	a.svc = &TodoService{pool: pool}
+	a.svc = &TodoService{pool: pool, app: a}
 	apps.RegisterCardProvider(&cardProvider{app: a})
 }
 

@@ -105,6 +105,23 @@ export default function StackItemDetail() {
           ))}
         </div>
       )}
+      {item.recommended_next_step && (
+        <>
+          <div className={`recommended-next-step kind-${item.recommended_next_step.kind}`}>
+            <div className="recommended-next-step-eyebrow">Recommended next step</div>
+            <div className="recommended-next-step-label">
+              {item.recommended_next_step.kind === 'task' ? '✨ ' : '💡 '}
+              {item.recommended_next_step.label}
+            </div>
+            {item.recommended_next_step.body && (
+              <div className="recommended-next-step-body">
+                {item.recommended_next_step.body}
+              </div>
+            )}
+          </div>
+          <hr className="recommended-next-step-divider" />
+        </>
+      )}
       {item.body && (
         <div className="body markdown">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.body}</ReactMarkdown>

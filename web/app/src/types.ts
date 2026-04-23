@@ -23,6 +23,15 @@ export type StackBadge = {
   tone: 'urgent' | 'warn' | 'info';
 };
 
+// Rendered as a highlighted block at the top of the detail view above
+// the body. "task" kind also has a corresponding tap chip on the card;
+// "advice" is display-only (no chip, not tappable).
+export type RecommendedNextStep = {
+  kind: 'task' | 'advice';
+  label: string;
+  body?: string;
+};
+
 export type StackItem<M = unknown> = {
   source_app: string;
   kind: string;
@@ -35,6 +44,7 @@ export type StackItem<M = unknown> = {
   actions: StackAction[];
   badges?: StackBadge[];
   metadata?: M;
+  recommended_next_step?: RecommendedNextStep;
   created_at: string;
 };
 

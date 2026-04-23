@@ -285,12 +285,7 @@ func mcpSnoozeTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 		case int:
 			days = v
 		}
-		until, err := SnoozeDaysToUntil(days)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
-		t, err := svc.Snooze(ctx, caller, todoID, until)
+		t, err := svc.SnoozeDays(ctx, caller, todoID, days)
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
 				return mcp.NewToolResultError("Todo not found."), nil
@@ -298,9 +293,12 @@ func mcpSnoozeTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
 			}
+			if strings.Contains(err.Error(), "snooze days must be") {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			return nil, err
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("Snoozed %q for %d day(s). Visible again after %s.", t.Title, days, until.Format("2006-01-02 15:04"))), nil
+		return mcp.NewToolResultText(fmt.Sprintf("Snoozed %q for %d day(s). Visible again after %s.", t.Title, days, t.SnoozedUntil.Format("2006-01-02 15:04 MST"))), nil
 	})
 }
