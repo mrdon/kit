@@ -40,11 +40,20 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 	adminOnly, roleGated := collectToolVisibility()
 
+	// Builder-published tools ride on per-session tool maps
+	// (SessionWithTools) — the register/unregister hooks seed + tear down
+	// those maps, and publish/revoke fan-outs push list_changed
+	// notifications on the fly. See exposed_tools.go.
+	hooks := &mcpserver.Hooks{}
+	hooks.AddOnRegisterSession(onRegisterSession)
+	hooks.AddOnUnregisterSession(onUnregisterSession)
+
 	sh.Server = mcpserver.NewMCPServer(
 		"kit",
 		"1.0.0",
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithResourceCapabilities(true, false),
+		mcpserver.WithHooks(hooks),
 		mcpserver.WithToolFilter(func(ctx context.Context, tools []mcp.Tool) []mcp.Tool {
 			caller := auth.CallerFromContext(ctx)
 			filtered := make([]mcp.Tool, 0, len(tools))

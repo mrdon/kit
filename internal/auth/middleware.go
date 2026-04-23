@@ -23,6 +23,14 @@ func CallerFromContext(ctx context.Context) *services.Caller {
 	return c
 }
 
+// WithCaller returns ctx with the Caller injected under the same key
+// CallerFromContext reads. Exported so packages that bypass HTTP (e.g.,
+// the MCP session-register hooks in tests) can build a ctx without
+// depending on the private context-key type.
+func WithCaller(ctx context.Context, caller *services.Caller) context.Context {
+	return context.WithValue(ctx, callerKey, caller)
+}
+
 // BearerMiddleware extracts a Bearer token, resolves it to a Caller, and adds it to context.
 // Returns 401 if no valid token is found.
 func BearerMiddleware(pool *pgxpool.Pool, next http.Handler) http.Handler {

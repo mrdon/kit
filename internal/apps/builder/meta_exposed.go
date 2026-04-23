@@ -134,6 +134,15 @@ func handleExposeScriptFunctionAsTool(ec *execContextLike, input json.RawMessage
 	if err != nil {
 		return "", err
 	}
+	if exposedPublishHook != nil {
+		if hookErr := exposedPublishHook(ec.Ctx, ec.Caller, toolName); hookErr != nil {
+			// Log via the caller-visible return? No — the DB insert already
+			// succeeded, so the tool is published. Swallow the fan-out
+			// error and let logs surface it. The hook implementation is
+			// expected to log internally.
+			_ = hookErr
+		}
+	}
 	return formatToolResult(dto)
 }
 
@@ -148,6 +157,11 @@ func handleRevokeExposedTool(ec *execContextLike, input json.RawMessage) (string
 	}
 	if err := revokeExposedTool(ec.Ctx, ec.Pool, ec.Caller, toolName); err != nil {
 		return "", err
+	}
+	if exposedRevokeHook != nil {
+		if hookErr := exposedRevokeHook(ec.Ctx, ec.Caller, toolName); hookErr != nil {
+			_ = hookErr
+		}
 	}
 	return formatToolResult(map[string]string{"revoked": toolName})
 }

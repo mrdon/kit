@@ -80,6 +80,26 @@ func init() {
 	apps.Register(&App{})
 }
 
+// ExposedToolHook is the callback signature invoked from meta_exposed.go
+// after the DB insert or delete for a published tool succeeds. The MCP
+// surface installs hooks that push the change into live sessions so
+// clients see `notifications/tools/list_changed` immediately. Nil hooks
+// are a no-op (tests that don't wire MCP).
+type ExposedToolHook func(ctx context.Context, caller *services.Caller, toolName string) error
+
+var (
+	exposedPublishHook ExposedToolHook
+	exposedRevokeHook  ExposedToolHook
+)
+
+// SetExposedToolHooks wires the hooks called after exposeScriptFunctionAsTool
+// and revokeExposedTool succeed. Call once at startup from cmd/kit/main.go.
+// Safe to call with (nil, nil) to disable in tests.
+func SetExposedToolHooks(publish, revoke ExposedToolHook) {
+	exposedPublishHook = publish
+	exposedRevokeHook = revoke
+}
+
 // App is the scriptable app substrate. Admins use it to build tenant-scoped
 // apps via Claude Code + Kit's MCP. v0.1 scaffolding lived in Phase 1-3;
 // Phase 4 lights up the meta-tools — create_app, list_apps, get_app,

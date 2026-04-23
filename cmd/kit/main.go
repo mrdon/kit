@@ -230,6 +230,17 @@ func main() {
 	// MCP server + OAuth (svc was constructed earlier for the builder
 	// runtime; reuse it here so both surfaces share one services bundle).
 	mcpHolder := kitmcp.NewServer(pool, svc, app.Agent, enc, sched)
+
+	// Wire builder-published tools into MCP via per-session tool maps.
+	// - InstallExposedToolRegistry gives the per-session register hook
+	//   access to the MCPServer, pool, and the invoke dispatcher.
+	// - SetExposedToolHooks tells the builder app_expose_tool /
+	//   app_revoke_tool handlers to fan the change out to live sessions.
+	kitmcp.InstallExposedToolRegistry(mcpHolder, func(ctx context.Context, caller *services.Caller, toolName string, args map[string]any) (string, error) {
+		return builderapp.InvokeExposedTool(ctx, pool, caller, toolName, args)
+	})
+	builderapp.SetExposedToolHooks(kitmcp.PublishExposedTool, kitmcp.RevokeExposedTool)
+
 	mcpHTTP := mcpserver.NewStreamableHTTPServer(mcpHolder.Server,
 		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
 			return auth.InjectCallerFromRequest(ctx, pool, r)
