@@ -651,6 +651,29 @@ main.feed > .card-screen {
 }
 .snoozed-row-due, .snoozed-row-wake { font-weight: 400; }
 
+.snoozed-face-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.snoozed-face-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  min-width: 0;
+}
+.snoozed-face-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
 .todo-meta {
   display: flex;
   flex-wrap: wrap;
