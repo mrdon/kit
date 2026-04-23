@@ -106,8 +106,18 @@ export default function Stack() {
       // location.hash (set by Slack deep-links) asks the backend to
       // hoist that itemKey to the top of the page, so we render the
       // target card at index 0 without pulling hundreds of rows and
-      // then scrolling client-side.
+      // then scrolling client-side. Consume it once — the server's
+      // focus path calls GetItem which bypasses feed filters like
+      // snooze, so a stale hash would keep re-hoisting a snoozed card
+      // on every refetch (visibility change, chat close, back-nav).
       const focus = window.location.hash.replace(/^#/, '') || undefined;
+      if (focus) {
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + window.location.search,
+        );
+      }
       const resp = await api.stack({ focus });
       // Filter out items that are pending an undo-fuse commit — the
       // server still has them in the stack (the POST hasn't fired yet),
