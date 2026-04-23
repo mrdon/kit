@@ -65,15 +65,26 @@ func mcpLoadSkill(svc *services.Services) mcpserver.ToolHandlerFunc {
 		idStr, _ := req.RequireString("skill_id")
 		skillID, err := uuid.Parse(idStr)
 		if err != nil {
-			// Not a UUID — try as a built-in skill name.
-			skill, berr := svc.Skills.LoadByName(caller, idStr)
-			if errors.Is(berr, services.ErrNotFound) {
+			// Not a UUID — try as a slug name, tenant skills then builtins.
+			skill, files, rerr := svc.Skills.ResolveByName(ctx, caller, idStr)
+			if errors.Is(rerr, services.ErrNotFound) {
 				return mcp.NewToolResultError("Skill not found."), nil
 			}
-			if berr != nil {
-				return nil, berr
+			if errors.Is(rerr, services.ErrForbidden) {
+				return mcp.NewToolResultError("Access denied."), nil
 			}
-			return mcp.NewToolResultText(skill.ToSKILLMD()), nil
+			if rerr != nil {
+				return nil, rerr
+			}
+			var b strings.Builder
+			b.WriteString(skill.ToSKILLMD())
+			if len(files) > 0 {
+				b.WriteString("\n\n## Files\n")
+				for _, f := range files {
+					fmt.Fprintf(&b, "- [%s] %s\n", f.ID, f.Filename)
+				}
+			}
+			return mcp.NewToolResultText(b.String()), nil
 		}
 		skill, files, err := svc.Skills.Load(ctx, caller, skillID)
 		if errors.Is(err, services.ErrNotFound) {

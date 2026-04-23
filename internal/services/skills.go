@@ -83,6 +83,32 @@ func (s *SkillService) LoadByName(c *Caller, name string) (*models.Skill, error)
 	}, nil
 }
 
+// ResolveByName looks up a skill by its slug name, trying tenant DB
+// skills first and then builtins. Returns the skill plus its files when
+// the DB path matches (builtins have no attached files). Used by
+// load_skill so task-scheduled prompts like `load_skill skill_id=foo`
+// resolve the tenant's own skills without needing a UUID.
+func (s *SkillService) ResolveByName(ctx context.Context, c *Caller, name string) (*models.Skill, []models.SkillFile, error) {
+	skill, err := models.GetSkillByName(ctx, s.pool, c.TenantID, name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading skill by name: %w", err)
+	}
+	if skill != nil {
+		if !c.IsAdmin {
+			if err := s.checkSkillAccess(ctx, c, skill.ID); err != nil {
+				return nil, nil, err
+			}
+		}
+		files, _ := models.ListSkillFiles(ctx, s.pool, c.TenantID, skill.ID)
+		return skill, files, nil
+	}
+	b, berr := s.LoadByName(c, name)
+	if berr != nil {
+		return nil, nil, berr
+	}
+	return b, nil, nil
+}
+
 // LoadFile returns a skill file by ID with authorization on the parent skill.
 func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID) (*models.SkillFile, error) {
 	ref, err := models.GetSkillReference(ctx, s.pool, c.TenantID, fileID)

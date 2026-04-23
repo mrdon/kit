@@ -108,6 +108,19 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, task models.Task) {
 	// prior tool calls, the decision_resolved event). The fresh user
 	// message only needs to nudge the agent to re-evaluate.
 	userText := task.Description
+	if task.SkillID != nil {
+		skill, serr := models.GetSkill(ctx, s.pool, tenant.ID, *task.SkillID)
+		if serr != nil || skill == nil {
+			msg := fmt.Sprintf("loading skill %s", task.SkillID)
+			slog.Error("loading skill for task", "task_id", task.ID, "skill_id", *task.SkillID, "error", serr)
+			s.recordAgentTaskError(ctx, task, msg, slack, user)
+			return
+		}
+		userText = fmt.Sprintf(
+			"Load the skill named %q (call load_skill with skill_id=%q) and follow its instructions.",
+			skill.Name, skill.Name,
+		)
+	}
 	if isResume {
 		userText = "A decision you created has been resolved. Review the updated state and continue the workflow — either create any remaining decisions, produce your final output, or wait if other decisions are still pending."
 	}

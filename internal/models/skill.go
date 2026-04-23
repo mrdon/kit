@@ -397,6 +397,28 @@ func GetSkill(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UU
 	return s, nil
 }
 
+// GetSkillByName returns a skill by its per-tenant unique slug name, or
+// nil if none matches. Used by create_task to validate skill_name at
+// row-insert time; the skill_name column is a plain text reference (no
+// FK) so the lookup exists only to catch typos early.
+func GetSkillByName(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (*Skill, error) {
+	s := &Skill{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, tenant_id, name, description, content, user_invocable, source, created_at, updated_at
+		FROM skills WHERE tenant_id = $1 AND name = $2
+	`, tenantID, name).Scan(
+		&s.ID, &s.TenantID, &s.Name, &s.Description, &s.Content,
+		&s.UserInvocable, &s.Source, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting skill by name: %w", err)
+	}
+	return s, nil
+}
+
 // --- Skill files ---
 
 func AddSkillFile(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID, filename, content string) (*SkillFile, error) {

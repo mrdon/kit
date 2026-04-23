@@ -138,6 +138,7 @@ func registryHasTool(reg *Registry, name string) bool {
 func handleCreateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (string, error) {
 	var inp struct {
 		Description string          `json:"description"`
+		SkillName   string          `json:"skill_name"`
 		CronExpr    string          `json:"cron_expr"`
 		RunAt       string          `json:"run_at"`
 		ChannelID   string          `json:"channel_id"`
@@ -191,6 +192,7 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	model := ClassifyTaskModel(ec.Ctx, ec.LLM, inp.Description)
 	task, err := ec.Svc.Tasks.Create(ec.Ctx, ec.Caller(), services.CreateInput{
 		Description: inp.Description,
+		SkillName:   inp.SkillName,
 		CronExpr:    inp.CronExpr,
 		Timezone:    tz,
 		ChannelID:   inp.ChannelID,
@@ -202,6 +204,9 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	})
 	if errors.Is(err, services.ErrForbidden) {
 		return "Only admins can create tenant-scoped tasks.", nil
+	}
+	if errors.Is(err, services.ErrNotFound) {
+		return fmt.Sprintf("Skill %q not found.", inp.SkillName), nil
 	}
 	if err != nil {
 		return "", err
@@ -261,9 +266,12 @@ func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
 }
 
 func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (string, error) {
+	// SkillName uses a pointer so we can distinguish "not supplied"
+	// (leave alone) from "empty string" (clear the skill_id).
 	var inp struct {
 		ID          string          `json:"id"`
 		Description string          `json:"description"`
+		SkillName   *string         `json:"skill_name"`
 		Policy      json.RawMessage `json:"policy"`
 		Delete      bool            `json:"delete"`
 	}
@@ -298,15 +306,21 @@ func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	if inp.Description != "" {
 		update.Description = &inp.Description
 	}
+	if inp.SkillName != nil {
+		update.SkillName = inp.SkillName
+	}
 	if policy != nil {
 		update.Policy = policy
 	}
-	if update.Description == nil && update.Policy == nil {
-		return "Provide description, policy, or delete=true.", nil
+	if update.Description == nil && update.SkillName == nil && update.Policy == nil {
+		return "Provide description, skill_name, policy, or delete=true.", nil
 	}
 
 	err = ec.Svc.Tasks.Update(ec.Ctx, ec.Caller(), taskID, update)
 	if errors.Is(err, services.ErrNotFound) {
+		if inp.SkillName != nil && *inp.SkillName != "" {
+			return fmt.Sprintf("Task not found, or skill %q not found, or you don't have permission to update it.", *inp.SkillName), nil
+		}
 		return "Task not found or you don't have permission to update it.", nil
 	}
 	if err != nil {

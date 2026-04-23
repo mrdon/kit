@@ -14,8 +14,9 @@ import (
 
 // TaskTools defines the shared tool metadata for task operations.
 var TaskTools = []ToolMeta{
-	{Name: "create_task", Description: "Schedule a recurring or one-time task. Kit runs the description through the full agent at the scheduled time. For non-trivial tasks — especially those needing argument pinning, tool allow-lists, or forced approval gates — load the `creating-tasks` builtin skill before calling.", Schema: propsReq(map[string]any{
-		"description": field("string", "What to do when the task runs"),
+	{Name: "create_task", Description: "Schedule a recurring or one-time task. Kit runs the description through the full agent at the scheduled time. To run a specific skill instead of a free-form prompt, pass skill_name — the scheduled agent will load and execute that skill. For non-trivial tasks — especially those needing argument pinning, tool allow-lists, or forced approval gates — load the `creating-tasks` builtin skill before calling.", Schema: propsReq(map[string]any{
+		"description": field("string", "Short human-readable label for the task. When skill_name is omitted, this text is also the agent prompt."),
+		"skill_name":  field("string", "Slug name of the skill to load and execute at fire time (e.g. 'daily-standup'). Omit to run description as a free-form prompt."),
 		"cron_expr":   field("string", "Cron expression for recurring tasks: minute hour day-of-month month day-of-week"),
 		"run_at":      field("string", "ISO 8601 datetime for one-time tasks (e.g. '2026-04-05T21:20:00'). Use this OR cron_expr, not both."),
 		"channel_id":  field("string", "Slack channel ID where output should be posted"),
@@ -23,9 +24,10 @@ var TaskTools = []ToolMeta{
 		"policy":      policyField(),
 	}, "description")},
 	{Name: "list_tasks", Description: "List scheduled tasks visible to the current user.", Schema: props(map[string]any{})},
-	{Name: "update_task", Description: "Update or delete a scheduled task. Provide description to change it, policy to replace its capability manifest, or set delete=true to remove the task. See the `creating-tasks` skill for policy shape.", Schema: propsReq(map[string]any{
+	{Name: "update_task", Description: "Update or delete a scheduled task. Provide description to change it, skill_name to change which skill runs (empty string to clear and fall back to the description prompt), policy to replace its capability manifest, or set delete=true to remove the task. See the `creating-tasks` skill for policy shape.", Schema: propsReq(map[string]any{
 		"id":          field("string", "The task UUID"),
 		"description": field("string", "New task description (optional)"),
+		"skill_name":  field("string", "New skill slug to run, or empty string to clear (optional)"),
 		"policy":      policyField(),
 		"delete":      field("boolean", "Set to true to delete the task (optional)"),
 	}, "id")},
@@ -76,9 +78,14 @@ type CreateInput struct {
 	ChannelID   string
 	Scope       string
 	Model       string
-	RunOnce     bool
-	RunAt       *time.Time
-	Policy      *models.Policy
+	// SkillName, when set, makes the scheduler load this skill (by its
+	// per-tenant unique slug name) and execute it instead of running
+	// Description as a free-form prompt. Description is still required
+	// as the human-readable label.
+	SkillName string
+	RunOnce   bool
+	RunAt     *time.Time
+	Policy    *models.Policy
 }
 
 // Create creates a scheduled task with scope resolution.
@@ -109,7 +116,19 @@ func (s *TaskService) Create(ctx context.Context, c *Caller, in CreateInput) (*m
 		}
 		roleID = &rid
 	}
-	task, err := models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, in.Description, in.CronExpr, in.Timezone, in.ChannelID, in.Model, in.RunOnce, in.RunAt, roleID, userID)
+	var skillID *uuid.UUID
+	if in.SkillName != "" {
+		skill, serr := models.GetSkillByName(ctx, s.pool, c.TenantID, in.SkillName)
+		if serr != nil {
+			return nil, fmt.Errorf("looking up skill %q: %w", in.SkillName, serr)
+		}
+		if skill == nil {
+			return nil, ErrNotFound
+		}
+		id := skill.ID
+		skillID = &id
+	}
+	task, err := models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, in.Description, in.CronExpr, in.Timezone, in.ChannelID, in.Model, skillID, in.RunOnce, in.RunAt, roleID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +154,12 @@ func (s *TaskService) List(ctx context.Context, c *Caller) ([]models.Task, error
 // means "don't touch." Policy is replace-wholesale — a non-nil pointer
 // overwrites the task's policy; callers that want to tweak a single
 // sub-field must read the current policy and re-write the full shape.
+// SkillName follows the same nil-means-no-change rule; a non-nil pointer
+// to the empty string clears skill_id (task falls back to
+// description-as-prompt), any other value re-resolves to a skill ID.
 type UpdateInput struct {
 	Description *string
+	SkillName   *string
 	Policy      *models.Policy
 }
 
@@ -161,6 +184,23 @@ func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, i
 	}
 	if in.Description != nil {
 		if err := models.UpdateTaskDescription(ctx, s.pool, c.TenantID, taskID, *in.Description); err != nil {
+			return err
+		}
+	}
+	if in.SkillName != nil {
+		var skillID *uuid.UUID
+		if *in.SkillName != "" {
+			skill, serr := models.GetSkillByName(ctx, s.pool, c.TenantID, *in.SkillName)
+			if serr != nil {
+				return fmt.Errorf("looking up skill %q: %w", *in.SkillName, serr)
+			}
+			if skill == nil {
+				return ErrNotFound
+			}
+			id := skill.ID
+			skillID = &id
+		}
+		if err := models.UpdateTaskSkillID(ctx, s.pool, c.TenantID, taskID, skillID); err != nil {
 			return err
 		}
 	}

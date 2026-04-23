@@ -86,15 +86,29 @@ func handleLoadSkill(ec *ExecContext, input json.RawMessage) (string, error) {
 	}
 	skillID, err := uuid.Parse(inp.SkillID)
 	if err != nil {
-		// Not a UUID — try as a built-in skill name.
-		skill, berr := ec.Svc.Skills.LoadByName(ec.Caller(), inp.SkillID)
-		if errors.Is(berr, services.ErrNotFound) {
+		// Not a UUID — try as a slug name. ResolveByName checks tenant
+		// skills first, then builtins, so task-scheduled prompts like
+		// `load_skill skill_id=daily-standup` resolve without a UUID.
+		skill, files, rerr := ec.Svc.Skills.ResolveByName(ec.Ctx, ec.Caller(), inp.SkillID)
+		if errors.Is(rerr, services.ErrNotFound) {
 			return "Skill not found.", nil
 		}
-		if berr != nil {
-			return "", berr
+		if errors.Is(rerr, services.ErrForbidden) {
+			return "You don't have access to this skill.", nil
 		}
-		return skill.ToSKILLMD(), nil
+		if rerr != nil {
+			return "", rerr
+		}
+		var b strings.Builder
+		b.WriteString(skill.ToSKILLMD())
+		if len(files) > 0 {
+			b.WriteString("\n\n## Files\n")
+			for _, f := range files {
+				fmt.Fprintf(&b, "- [%s] %s\n", f.ID, f.Filename)
+			}
+			b.WriteString("\nUse load_skill_file to read a specific file.")
+		}
+		return b.String(), nil
 	}
 	skill, files, err := ec.Svc.Skills.Load(ec.Ctx, ec.Caller(), skillID)
 	if errors.Is(err, services.ErrNotFound) {

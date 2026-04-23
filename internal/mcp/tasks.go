@@ -85,14 +85,22 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 			if desc != "" {
 				update.Description = &desc
 			}
+			if raw, ok := req.GetArguments()["skill_name"]; ok {
+				if s, ok := raw.(string); ok {
+					update.SkillName = &s
+				}
+			}
 			if policy != nil {
 				update.Policy = policy
 			}
-			if update.Description == nil && update.Policy == nil {
-				return mcp.NewToolResultError("Provide description, policy, or delete=true."), nil
+			if update.Description == nil && update.SkillName == nil && update.Policy == nil {
+				return mcp.NewToolResultError("Provide description, skill_name, policy, or delete=true."), nil
 			}
 			err = svc.Tasks.Update(ctx, caller, taskID, update)
 			if errors.Is(err, services.ErrNotFound) {
+				if update.SkillName != nil && *update.SkillName != "" {
+					return mcp.NewToolResultError(fmt.Sprintf("Task not found, or skill %q not found.", *update.SkillName)), nil
+				}
 				return mcp.NewToolResultError("Task not found."), nil
 			}
 			if err != nil {
@@ -192,13 +200,27 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			return nil, fmt.Errorf("creating session: %w", err)
 		}
 
+		userText := task.Description
+		if task.SkillID != nil {
+			skill, serr := models.GetSkill(ctx, pool, tenant.ID, *task.SkillID)
+			if serr != nil {
+				return nil, fmt.Errorf("loading skill %s: %w", *task.SkillID, serr)
+			}
+			if skill == nil {
+				return mcp.NewToolResultError("Task's skill no longer exists."), nil
+			}
+			userText = fmt.Sprintf(
+				"Load the skill named %q (call load_skill with skill_id=%q) and follow its instructions.",
+				skill.Name, skill.Name,
+			)
+		}
 		runErr := a.Run(ctx, agent.RunInput{
 			Slack:    slack,
 			Tenant:   tenant,
 			User:     user,
 			Session:  session,
 			Channel:  task.ChannelID,
-			UserText: task.Description,
+			UserText: userText,
 			Task:     tc,
 			Model:    task.Model,
 		})
@@ -239,6 +261,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 // shared-tool-parity rule, validation and return shape must match.
 func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller, svc *services.Services, llm *anthropic.Client) (*mcp.CallToolResult, error) {
 	desc, _ := req.RequireString("description")
+	skillName := req.GetString("skill_name", "")
 	cronExpr := req.GetString("cron_expr", "")
 	runAtStr := req.GetString("run_at", "")
 	channelID := req.GetString("channel_id", "")
@@ -269,6 +292,7 @@ func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *s
 	model := tools.ClassifyTaskModel(ctx, llm, desc)
 	task, err := svc.Tasks.Create(ctx, caller, services.CreateInput{
 		Description: desc,
+		SkillName:   skillName,
 		CronExpr:    cronExpr,
 		Timezone:    caller.Timezone,
 		ChannelID:   channelID,
@@ -280,6 +304,9 @@ func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *s
 	})
 	if errors.Is(err, services.ErrForbidden) {
 		return mcp.NewToolResultError("Insufficient permissions for this scope."), nil
+	}
+	if errors.Is(err, services.ErrNotFound) {
+		return mcp.NewToolResultError(fmt.Sprintf("Skill %q not found.", skillName)), nil
 	}
 	if err != nil {
 		return nil, err
