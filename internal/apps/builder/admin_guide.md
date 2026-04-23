@@ -71,7 +71,7 @@ When an admin says "build me an app for X", work through these steps in order. M
 
 3. **Sketch the doc shape in comments** before writing code. What fields are set at insert vs. updated later? Which reference the caller (see "Identity and per-user scoping" below)? Which fields are admin-editable only?
 
-4. **Write one script** starting with the simplest "add" function. `run_script` to smoke-test with a sample input *before* adding more functions or exposing anything.
+4. **Write one script** starting with the simplest "add" function. `run_script` to smoke-test with a sample input *before* adding more functions or exposing anything. **Load `writing-monty-scripts` now** if you haven't already — it covers the language-level quirks (no classes, no imports, no f-strings, weird date-math edges) and gives you copy-paste helpers.
 
 5. **Add read/list functions.** Smoke-test each via `run_script`.
 
@@ -365,16 +365,18 @@ For post-mortems, `script_logs(run_id=...)` returns the `log()` trail the script
 
 Know these before you write code the sandbox will reject.
 
-- `class Foo:` — Monty doesn't support user-defined classes. Use plain dicts and functions.
-- `import` of any kind — scripts get only the allowlisted built-ins listed below. No `requests`, no `datetime`, no `json`.
-- `"%04d" % n` **and** f-string interpolation — neither is supported by Monty. `"%04d" % n` errors with `TypeError: unsupported operand type(s) for %: 'str' and 'tuple'`. Use string concatenation and a manual zero-pad helper: `def _zp(n, w): s = str(int(n)); return ("0" * (w - len(s))) + s if len(s) < w else s`.
-- `try/except` around host calls — those errors unwind. Python-raised errors are catchable.
-- Aggregation pipelines — do aggregation in Python using `db_find` results.
-- Filter operators `$or`, `$and`, `$regex`, `$exists`, `$type` — deferred to v0.2. Use multiple separate queries or narrow in Python.
-- Bulk writes (`insert_many` / `update_many` / `delete_many`) — iterate in Python for v0.1.
-- Positional args to `shared(...)` target functions — pass target kwargs only.
-- Deeper than one level of `tools_call` nesting — an exposed tool cannot itself call `tools_call`.
-- **Weekday / "start of week" helpers** — none in v0.1. For date math beyond `date_add` / `date_diff`, either have the caller pass explicit `start_date` / `end_date` strings, or compute weekday with Zeller's congruence on the `YYYY-MM-DD` from `today()`. The `timecards` example in `builder_examples` has a working `_weekday` + `_add_days_to_date` + `week_bounds` trio you can paste in.
+**Load the `writing-monty-scripts` skill for the full language-level detail** — what's rejected, idiomatic workarounds, copy-paste helpers (weekday via Zeller's, add-days, ISO normalisation, zero-pad), and the `preview_*` pattern for Slack-touching functions. Headlines only here:
+
+- No `class` definitions. Plain dicts + module-level functions.
+- No `import` of anything. No `datetime`, `json`, `re`, `requests`, `math`.
+- No `"%s" % n` / f-strings. String concat + a `_zp` zero-pad helper.
+- `try/except` does NOT catch host-call errors (`db_*`, `llm_*`, actions, Slack). Return early on expected edges.
+- Filter operators `$or` / `$and` / `$regex` / `$exists` / `$type` are v0.2.
+- Bulk writes (`*_many`) are v0.2 — iterate in Python.
+- `shared(...)` target fn takes kwargs only.
+- `tools_call` is one level of nesting max.
+- No weekday / start-of-week helpers; use Zeller's (see the skill).
+- `date_add` / `date_diff` require full RFC3339 with seconds + `Z`; normalise user input first.
 
 ## Quick reference
 
