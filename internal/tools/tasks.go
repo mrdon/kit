@@ -262,7 +262,7 @@ func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
 
 func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (string, error) {
 	var inp struct {
-		TaskID      string          `json:"task_id"`
+		ID          string          `json:"id"`
 		Description string          `json:"description"`
 		Policy      json.RawMessage `json:"policy"`
 		Delete      bool            `json:"delete"`
@@ -270,9 +270,9 @@ func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	taskID, err := uuid.Parse(inp.TaskID)
+	taskID, err := uuid.Parse(inp.ID)
 	if err != nil {
-		return "Invalid task ID.", nil
+		return "Invalid task id.", nil
 	}
 
 	if inp.Delete {

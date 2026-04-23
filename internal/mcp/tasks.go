@@ -61,10 +61,10 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 		})
 	case "update_task":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-			idStr, _ := req.RequireString("task_id")
+			idStr, _ := req.RequireString("id")
 			taskID, err := uuid.Parse(idStr)
 			if err != nil {
-				return mcp.NewToolResultError("Invalid task ID."), nil
+				return mcp.NewToolResultError("Invalid task id."), nil
 			}
 			if req.GetBool("delete", false) {
 				err = svc.Tasks.Delete(ctx, caller, taskID)
@@ -109,17 +109,17 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 // beyond the standard handler signature.
 func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler) mcpserver.ServerTool {
 	schema := services.PropsReq(map[string]any{
-		"task_id": services.Field("string", "The task UUID to run"),
+		"id":      services.Field("string", "The task UUID to run"),
 		"dry_run": services.Field("boolean", "If true, capture messages instead of posting to Slack"),
-	}, "task_id")
+	}, "id")
 	schemaJSON, _ := json.Marshal(schema)
 	tool := mcp.NewToolWithRawSchema("run_task", "Run a task immediately for testing. In dry_run mode, messages are captured and returned instead of posted to Slack. You can only run tasks you created.", schemaJSON)
 
 	handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("task_id")
+		idStr, _ := req.RequireString("id")
 		taskID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid task ID."), nil
+			return mcp.NewToolResultError("Invalid task id."), nil
 		}
 		dryRun := req.GetBool("dry_run", false)
 

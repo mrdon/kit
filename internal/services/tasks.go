@@ -24,11 +24,11 @@ var TaskTools = []ToolMeta{
 	}, "description")},
 	{Name: "list_tasks", Description: "List scheduled tasks visible to the current user.", Schema: props(map[string]any{})},
 	{Name: "update_task", Description: "Update or delete a scheduled task. Provide description to change it, policy to replace its capability manifest, or set delete=true to remove the task. See the `creating-tasks` skill for policy shape.", Schema: propsReq(map[string]any{
-		"task_id":     field("string", "The task UUID"),
+		"id":          field("string", "The task UUID"),
 		"description": field("string", "New task description (optional)"),
 		"policy":      policyField(),
 		"delete":      field("boolean", "Set to true to delete the task (optional)"),
-	}, "task_id")},
+	}, "id")},
 }
 
 // policyField returns the JSON-schema fragment describing the optional
