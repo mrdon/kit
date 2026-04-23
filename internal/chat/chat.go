@@ -153,19 +153,20 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		// context size. Tool_results also get dropped from replay
 		// (they can carry KBs of echoed revise args).
 		runInput.HistoryWindow = ChatHistoryWindow
-		// Defense-in-depth: untrusted content in card body or option
-		// arguments shouldn't be able to coerce the chat LLM into
-		// calling a gated tool directly. The registry-level gate still
-		// catches injected calls; this just keeps the chat registry
-		// from advertising tools users shouldn't pick from here.
-		runInput.DropGatedTools = true
+		// Drop gated tools only when chatting on a decision card. The
+		// intended path there is revise_decision_option (mutates this
+		// card); leaving send_email/etc. available invites the LLM to
+		// mint a second gate card instead of revising the first. On
+		// todos/briefings there's no parallel-card concern and the
+		// registry-level gate still enforces approval, so gated tools
+		// stay available — the user needs to be able to say "email X"
+		// from a todo without switching surfaces.
+		if in.Card.Kind == "decision" {
+			runInput.DropGatedTools = true
+		}
 	} else {
 		runInput.SystemSuffix = buildQuickSystemSuffix()
 		runInput.HistoryWindow = QuickHistoryWindow
-		// No untrusted card content here, so no need to narrow the
-		// registry. Gated tools still get their normal approval gates
-		// at the registry level.
-		runInput.DropGatedTools = false
 		// Use Sonnet for the quick-capture surface. Haiku was
 		// frequently hallucinating — replying "Created todo X" without
 		// actually calling create_todo — which defeats the whole point
