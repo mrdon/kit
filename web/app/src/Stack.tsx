@@ -287,6 +287,12 @@ export default function Stack() {
     return () => {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onVisibility);
+      // SPA route change (e.g. tapping into a card's detail view)
+      // unmounts Stack without firing pagehide or visibilitychange —
+      // without this flush, any in-flight undo-fuse snooze/complete
+      // silently dies with the component and the server never hears
+      // about it. The snoozed card then reappears on remount.
+      flush();
     };
   }, []);
 
