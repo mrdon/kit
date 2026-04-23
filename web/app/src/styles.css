@@ -619,6 +619,38 @@ main.feed > .card-screen {
 .priority-chip.priority-low    { background: var(--card-border);          color: var(--card-muted); }
 .assignee, .role-scope { font-weight: 500; }
 
+.snoozed-digest {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.snoozed-digest li { margin: 0; }
+.snoozed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--card-fg);
+}
+.snoozed-row:hover { border-color: var(--card-muted); }
+.snoozed-row-title { font-weight: 500; }
+.snoozed-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--card-muted);
+}
+.snoozed-row-due, .snoozed-row-wake { font-weight: 400; }
+
 .todo-meta {
   display: flex;
   flex-wrap: wrap;

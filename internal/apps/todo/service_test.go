@@ -338,7 +338,7 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 	}
 
 	// Pre-check: visible in both surfaces.
-	stack, err := listStackTodos(ctx, f.pool, caller, 50)
+	stack, err := listStackTodos(ctx, f.pool, caller, 50, false)
 	if err != nil {
 		t.Fatalf("pre-snooze stack: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 	}
 
 	// Gone from swipe feed.
-	stack, err = listStackTodos(ctx, f.pool, caller, 50)
+	stack, err = listStackTodos(ctx, f.pool, caller, 50, false)
 	if err != nil {
 		t.Fatalf("post-snooze stack: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 	); err != nil {
 		t.Fatalf("expire snooze: %v", err)
 	}
-	stack, err = listStackTodos(ctx, f.pool, caller, 50)
+	stack, err = listStackTodos(ctx, f.pool, caller, 50, false)
 	if err != nil {
 		t.Fatalf("expired stack: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestSnoozeHidesRoleScopedFromFeed(t *testing.T) {
 	// Bob is also in 'member'; the role-scoped snoozed todo must not appear
 	// in his feed. Before the paren fix this returned the row because the
 	// role_id ANY clause short-circuited the snooze filter.
-	stack, err := listStackTodos(ctx, f.pool, f.caller(t, f.bob), 50)
+	stack, err := listStackTodos(ctx, f.pool, f.caller(t, f.bob), 50, false)
 	if err != nil {
 		t.Fatalf("stack: %v", err)
 	}
@@ -424,12 +424,110 @@ func TestSnoozeHidesRoleScopedFromFeed(t *testing.T) {
 	}
 
 	// And from the snoozer's own feed, same reason.
-	stack, err = listStackTodos(ctx, f.pool, f.caller(t, f.alice), 50)
+	stack, err = listStackTodos(ctx, f.pool, f.caller(t, f.alice), 50, false)
 	if err != nil {
 		t.Fatalf("stack alice: %v", err)
 	}
 	if containsStackTodo(stack, td.ID) {
 		t.Fatalf("role-scoped snoozed todo should be hidden from snoozer feed")
+	}
+}
+
+// TestSnoozedDigestIncludesRoleScoped: the digest query is the mirror
+// of the active feed — same scope scaffolding, inverted snooze predicate.
+// Asserts the paren-wrap holds for the snoozed path too: a role-scoped
+// snoozed todo must be visible in any role member's digest.
+func TestSnoozedDigestIncludesRoleScoped(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	td, err := f.svc.Create(ctx, f.caller(t, f.alice), CreateInput{
+		Title:    "team deferred",
+		RoleName: "member",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Snooze(ctx, f.caller(t, f.alice), td.ID, time.Now().Add(24*time.Hour)); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+
+	for label, user := range map[string]*models.User{"alice": f.alice, "bob": f.bob} {
+		snoozed, err := listStackTodos(ctx, f.pool, f.caller(t, user), 50, true)
+		if err != nil {
+			t.Fatalf("snoozed stack %s: %v", label, err)
+		}
+		if !containsStackTodo(snoozed, td.ID) {
+			t.Fatalf("%s should see role-scoped snoozed todo in digest", label)
+		}
+	}
+}
+
+// TestSnoozedDigestExcludesDone: the paren-fragility is precedence-
+// symmetric — a missing paren on the snoozed query would let closed-but-
+// snoozed rows leak through the status filter the same way role-scoped
+// ones leaked through the snooze filter in the active feed. Guard against
+// that regression.
+func TestSnoozedDigestExcludesDone(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.alice)
+
+	td, err := f.svc.Create(ctx, caller, CreateInput{Title: "finished already"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Snooze(ctx, caller, td.ID, time.Now().Add(24*time.Hour)); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+	if _, err := f.svc.Complete(ctx, caller, td.ID); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	snoozed, err := listStackTodos(ctx, f.pool, caller, 50, true)
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	if containsStackTodo(snoozed, td.ID) {
+		t.Fatalf("completed-but-snoozed todo must not appear in digest")
+	}
+}
+
+// TestWakeActionClearsSnooze: tapping "Wake now" routes through the
+// wake action, which calls Update with ClearSnooze. The todo should
+// (a) have snoozed_until cleared and (b) reappear in the active feed.
+func TestWakeActionClearsSnooze(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.alice)
+
+	td, err := f.svc.Create(ctx, caller, CreateInput{Title: "wake me"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Snooze(ctx, caller, td.ID, time.Now().Add(24*time.Hour)); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+
+	p := &cardProvider{app: &TodoApp{svc: f.svc}}
+	if _, err := p.DoAction(ctx, caller, "todo", td.ID.String(), "wake", nil); err != nil {
+		t.Fatalf("wake: %v", err)
+	}
+
+	refreshed, _, err := f.svc.Get(ctx, caller, td.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if refreshed.SnoozedUntil != nil {
+		t.Fatalf("snoozed_until should be nil after wake, got %v", refreshed.SnoozedUntil)
+	}
+
+	stack, err := listStackTodos(ctx, f.pool, caller, 50, false)
+	if err != nil {
+		t.Fatalf("stack: %v", err)
+	}
+	if !containsStackTodo(stack, td.ID) {
+		t.Fatalf("woken todo should reappear in active feed")
 	}
 }
 
@@ -507,7 +605,7 @@ func TestCancelHidesFromFeed(t *testing.T) {
 	}
 
 	// Gone from swipe feed.
-	stack, err := listStackTodos(ctx, f.pool, caller, 50)
+	stack, err := listStackTodos(ctx, f.pool, caller, 50, false)
 	if err != nil {
 		t.Fatalf("stack: %v", err)
 	}
@@ -531,7 +629,7 @@ func TestCancelHidesFromFeed(t *testing.T) {
 	); err != nil {
 		t.Fatalf("recover: %v", err)
 	}
-	stack, err = listStackTodos(ctx, f.pool, caller, 50)
+	stack, err = listStackTodos(ctx, f.pool, caller, 50, false)
 	if err != nil {
 		t.Fatalf("recovered stack: %v", err)
 	}

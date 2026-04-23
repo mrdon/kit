@@ -3,6 +3,7 @@ import type { StackItem } from '../types';
 import { cardsDecision } from './cards_decision';
 import { cardsBriefing } from './cards_briefing';
 import { todoTodo } from './todo_todo';
+import { todoSnoozedDigest } from './todo_snoozed_digest';
 
 // A KindRenderer is a pair of components: one small strip of chrome shown
 // on the card face (below the title/body) and one block shown in the
@@ -23,6 +24,7 @@ const registry: Record<string, KindRenderer> = {
   'cards:decision': cardsDecision,
   'cards:briefing': cardsBriefing,
   'todo:todo': todoTodo,
+  'todo:snoozed_digest': todoSnoozedDigest,
 };
 
 export function rendererFor(item: Pick<StackItem, 'source_app' | 'kind'>): KindRenderer {

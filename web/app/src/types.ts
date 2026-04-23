@@ -113,6 +113,7 @@ export type TodoMetadata = {
   assigned_to?: string;
   assigned_to_name?: string;
   role_scope?: string;
+  snoozed_until?: string;
 };
 
 export type TodoEvent = {

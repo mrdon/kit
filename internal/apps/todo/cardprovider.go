@@ -41,7 +41,7 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 	if limit <= 0 {
 		limit = 50
 	}
-	todos, err := listStackTodos(ctx, p.app.svc.pool, caller, limit)
+	todos, err := listStackTodos(ctx, p.app.svc.pool, caller, limit, false)
 	if err != nil {
 		return shared.StackPage{}, err
 	}
@@ -53,10 +53,41 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 		}
 		items = append(items, it)
 	}
+
+	// Digest card: one footer item listing everything in the snoozed
+	// pile so users have a way to see what they've deferred. Only
+	// emitted when there's at least one snoozed row; otherwise the
+	// feed ends cleanly on active cards (or the empty state).
+	snoozed, err := listStackTodos(ctx, p.app.svc.pool, caller, limit, true)
+	if err != nil {
+		return shared.StackPage{}, err
+	}
+	if len(snoozed) > 0 {
+		digest, err := buildSnoozedDigest(caller, snoozed)
+		if err != nil {
+			return shared.StackPage{}, err
+		}
+		items = append(items, digest)
+	}
 	return shared.StackPage{Items: items}, nil
 }
 
 func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kind, id string) (*shared.DetailResponse, error) {
+	if kind == "snoozed_digest" {
+		// Back-nav or deep-link to the digest after the pile has
+		// changed (user woke the last todo, etc.) — re-run the
+		// query and return a fresh item. A 0-row digest is
+		// friendlier than 404ing the user mid-navigation.
+		snoozed, err := listStackTodos(ctx, p.app.svc.pool, caller, 100, true)
+		if err != nil {
+			return nil, err
+		}
+		item, err := buildSnoozedDigest(caller, snoozed)
+		if err != nil {
+			return nil, err
+		}
+		return &shared.DetailResponse{Item: item}, nil
+	}
 	if kind != "todo" {
 		return nil, services.ErrNotFound
 	}
@@ -151,6 +182,17 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 			return nil, err
 		}
 		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+	case "wake":
+		// Clear the snooze so the todo reappears in the active feed.
+		// Surface affordance: only shown on cards whose snoozed_until
+		// is in the future, so the client never fires this on an
+		// already-active todo. No RemovedIDs — the client navigates
+		// back to / and refetches, which surfaces the now-awake row.
+		clear := UpdateInput{ClearSnooze: true}
+		if _, err := p.app.svc.Update(ctx, caller, todoID, clear); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{}, nil
 	case "delete":
 		if _, err := p.app.svc.Cancel(ctx, caller, todoID); err != nil {
 			return nil, err
@@ -285,7 +327,13 @@ type cryptoDecryptor interface {
 // listStackTodos restricts to the caller's personal surface (scopes that
 // belong to them, by user or role membership) — tenant-wide public todos are
 // excluded so the stack stays personal. JOINs roles/users for display fields.
-func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int) ([]stackTodo, error) {
+//
+// snoozedOnly=false returns the active feed (currently visible); snoozedOnly=
+// true returns the snoozed pile (hidden from the feed, surfaced via the
+// digest card). Single function because the WHERE scaffolding — tenant,
+// status, personal-scope filter — is identical; only the snooze predicate
+// and ORDER BY differ. Keeps the PersonalScopeFilter paren-wrap in one place.
+func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int, snoozedOnly bool) ([]stackTodo, error) {
 	var b strings.Builder
 	args := []any{c.TenantID}
 
@@ -297,8 +345,14 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		LEFT JOIN users u ON u.id = s.user_id
 		LEFT JOIN roles r ON r.id = s.role_id
 		WHERE t.tenant_id = $1
-		  AND t.status NOT IN ('done','cancelled')
+		  AND t.status NOT IN ('done','cancelled')`)
+	if snoozedOnly {
+		b.WriteString(`
+		  AND t.snoozed_until IS NOT NULL AND t.snoozed_until > now()`)
+	} else {
+		b.WriteString(`
 		  AND (t.snoozed_until IS NULL OR t.snoozed_until <= now())`)
+	}
 
 	// Personal surface: caller is the assignee or holds the role.
 	// Tenant-wide (s.user_id IS NULL AND s.role_id IS NULL) is excluded.
@@ -311,7 +365,22 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	b.WriteString(scopeFrag)
 	b.WriteString(`)`)
 
-	b.WriteString(`
+	if snoozedOnly {
+		// Snoozed pile: order by priority then due, with nearest wake
+		// time last — the user scans the digest for what's coming back.
+		b.WriteString(`
+		ORDER BY
+			CASE t.priority
+				WHEN 'urgent' THEN 0
+				WHEN 'high'   THEN 1
+				WHEN 'medium' THEN 2
+				WHEN 'low'    THEN 3
+			END,
+			t.due_date ASC NULLS LAST,
+			t.snoozed_until ASC
+		LIMIT `)
+	} else {
+		b.WriteString(`
 		ORDER BY
 			CASE
 				WHEN t.due_date < CURRENT_DATE THEN 0
@@ -327,6 +396,7 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 			t.due_date ASC NULLS LAST,
 			t.created_at DESC
 		LIMIT `)
+	}
 	fmt.Fprintf(&b, "%d", limit)
 
 	rows, err := pool.Query(ctx, b.String(), args...)
@@ -419,6 +489,17 @@ func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 	if badge, ok := dueBadge(t.DueDate); ok {
 		it.Badges = append(it.Badges, badge)
 	}
+	// Wake action is only reachable from the digest-linked detail,
+	// where the todo is always snoozed. Gate server-side too so the
+	// action never appears on an already-active card.
+	if t.SnoozedUntil != nil && t.SnoozedUntil.After(time.Now()) {
+		it.Actions = append(it.Actions, shared.StackAction{
+			ID:        "wake",
+			Direction: "tap",
+			Label:     "Wake now",
+			Emoji:     "⏰",
+		})
+	}
 	meta, err := json.Marshal(map[string]any{
 		"due_date":         t.DueDate,
 		"priority":         t.Priority,
@@ -427,12 +508,57 @@ func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 		"assigned_to":      t.AssigneeID,
 		"assigned_to_name": t.AssigneeName,
 		"role_scope":       t.RoleScopeName,
+		"snoozed_until":    t.SnoozedUntil,
 	})
 	if err != nil {
 		return it, fmt.Errorf("encoding todo metadata: %w", err)
 	}
 	it.Metadata = meta
 	return it, nil
+}
+
+// buildSnoozedDigest assembles the footer card that lists the caller's
+// snoozed todos. Not paginated — the pile is small and users want to
+// scan it at a glance; limit is set at the query layer.
+func buildSnoozedDigest(c *services.Caller, snoozed []stackTodo) (shared.StackItem, error) {
+	type digestRow struct {
+		ID           string     `json:"id"`
+		Title        string     `json:"title"`
+		Priority     string     `json:"priority"`
+		DueDate      *time.Time `json:"due_date,omitempty"`
+		SnoozedUntil *time.Time `json:"snoozed_until"`
+	}
+	rows := make([]digestRow, 0, len(snoozed))
+	for i := range snoozed {
+		rows = append(rows, digestRow{
+			ID:           snoozed[i].ID.String(),
+			Title:        snoozed[i].Title,
+			Priority:     snoozed[i].Priority,
+			DueDate:      snoozed[i].DueDate,
+			SnoozedUntil: snoozed[i].SnoozedUntil,
+		})
+	}
+	meta, err := json.Marshal(map[string]any{"items": rows})
+	if err != nil {
+		return shared.StackItem{}, fmt.Errorf("encoding digest metadata: %w", err)
+	}
+	title := fmt.Sprintf("Snoozed (%d)", len(rows))
+	return shared.StackItem{
+		SourceApp: "todo",
+		Kind:      "snoozed_digest",
+		KindLabel: "Snoozed",
+		Icon:      "😴",
+		ID:        c.UserID.String(),
+		Title:     title,
+		Body:      "Tap to see what you've put off.",
+		// Minimal tier + high KindWeight keeps the digest at the very
+		// bottom of the feed, after any TierMinimal briefings (weight 1).
+		PriorityTier: shared.TierMinimal,
+		KindWeight:   10,
+		CreatedAt:    time.Now(),
+		Actions:      []shared.StackAction{},
+		Metadata:     meta,
+	}, nil
 }
 
 // todoTier maps a todo to one of the shared priority tiers. Due today or

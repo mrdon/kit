@@ -45,6 +45,9 @@ function Detail({
 }) {
   const m = meta(item);
   const events = (extras?.events as TodoEvent[] | null) ?? [];
+  const isSnoozed = !!(
+    m?.snoozed_until && new Date(m.snoozed_until).getTime() > Date.now()
+  );
 
   // Regenerate state. Baseline is a fingerprint of the resolution chips
   // and recommended step taken at the moment we fire the action; the
@@ -118,6 +121,11 @@ function Detail({
         <button disabled={busy} onClick={() => onAction('complete')}>
           ✅ Complete
         </button>
+        {isSnoozed && (
+          <button disabled={busy} onClick={() => onAction('wake')}>
+            ⏰ Wake now
+          </button>
+        )}
         <button disabled={busy} onClick={() => onAction('snooze', { days: 1 })}>
           😴 1 day
         </button>
