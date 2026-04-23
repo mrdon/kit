@@ -242,7 +242,7 @@ def admin_edit_thing(thing_id, **fields):
 
 The `app_items_history` trigger captures every UPDATE/DELETE for free, so admin edits are audited without extra code. If an edit goes wrong, `rollback_script_run(run_id=...)` reverses that run's mutations.
 
-**On the admin flag.** Admin status is membership in the builtin `admin` role — a tenant-scoped superuser flag (Django-style `is_superuser`, but bounded to the caller's tenant). Admins bypass every `visible_to_roles` / role-scope filter in their tenant — so `visible_to_roles=["manager"]` means "managers AND admins see it" in practice. Scripts check via `"admin" in current_user()["roles"]`.
+**On the admin flag.** Admin status is membership in the builtin `admin` role — a tenant-scoped superuser flag (Django-style `is_superuser`, but bounded to the caller's tenant). Admins bypass `visible_to_roles` / role-scope filters **at the agent + MCP registry surface** — so via the LLM or Claude-Code MCP, `visible_to_roles=["manager"]` means "managers AND admins see it." Note that `tools_call` inside a script does **NOT** grant that bypass (it's authoritative): if a tool needs to be callable from other scripts as an admin, include `"admin"` in its `visible_to_roles` explicitly. Scripts check their own caller via `"admin" in current_user()["roles"]`.
 
 ## Field-type conventions
 
