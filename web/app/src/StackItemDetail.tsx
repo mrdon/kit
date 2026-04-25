@@ -14,6 +14,7 @@ import type { DetailResponse, StackItem, TaskStatus } from './types';
 import { itemKey } from './types';
 import { rendererFor } from './kinds';
 import ErrorBoundary from './ErrorBoundary';
+import CardChatSheet from './chat/CardChatSheet';
 
 export default function StackItemDetail() {
   const params = useParams<{ source_app: string; kind: string; id: string }>();
@@ -22,6 +23,7 @@ export default function StackItemDetail() {
   const [extras, setExtras] = useState<Record<string, unknown> | undefined>();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!params.source_app || !params.kind || !params.id) return;
@@ -146,6 +148,28 @@ export default function StackItemDetail() {
             busy={busy}
           />
         </ErrorBoundary>
+      )}
+      <div className="detail-chat-row">
+        <button
+          type="button"
+          className="detail-chat-button"
+          onClick={() => setChatOpen(true)}
+        >
+          💬 Chat about this
+        </button>
+      </div>
+      {chatOpen && (
+        <CardChatSheet
+          sourceApp={item.source_app}
+          kind={item.kind}
+          id={item.id}
+          title={item.title}
+          onClose={() => {
+            setChatOpen(false);
+            load();
+          }}
+          onTurnDone={load}
+        />
       )}
     </SwipeBackShell>
   );

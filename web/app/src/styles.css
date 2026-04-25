@@ -591,6 +591,27 @@ main.feed > .card-screen {
   color: var(--card-muted);
 }
 
+.detail-chat-row {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.detail-chat-button {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--card-heading);
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.detail-chat-button:active {
+  opacity: 0.7;
+}
+
 .todo-face {
   flex-shrink: 0;
 }
