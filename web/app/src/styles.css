@@ -672,6 +672,14 @@ main.feed > .card-screen {
 }
 .snoozed-row-due, .snoozed-row-wake { font-weight: 400; }
 
+/* Snoozed-digest face: list grows to fill remaining card space and
+   masks any overflow with a fade so the pile never escapes the card. */
+.todo-face.snoozed-face {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .snoozed-face-list {
   list-style: none;
   padding: 0;
@@ -679,7 +687,13 @@ main.feed > .card-screen {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
 }
+.snoozed-face .hint { flex-shrink: 0; }
 .snoozed-face-list li {
   display: flex;
   align-items: center;

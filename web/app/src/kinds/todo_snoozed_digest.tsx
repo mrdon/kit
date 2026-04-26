@@ -18,16 +18,12 @@ function digestMeta(item: StackItem): DigestMetadata | undefined {
   return item.metadata as DigestMetadata | undefined;
 }
 
-const FACE_PREVIEW = 3;
-
 function Face({ item }: { item: StackItem }) {
   const rows = digestMeta(item)?.items ?? [];
-  const preview = rows.slice(0, FACE_PREVIEW);
-  const more = rows.length - preview.length;
   return (
-    <div className="todo-face">
+    <div className="todo-face snoozed-face">
       <ul className="snoozed-face-list">
-        {preview.map((r) => (
+        {rows.map((r) => (
           <li key={r.id}>
             <span className={`priority-chip priority-${r.priority}`}>
               {r.priority}
@@ -36,9 +32,7 @@ function Face({ item }: { item: StackItem }) {
           </li>
         ))}
       </ul>
-      <div className="hint">
-        {more > 0 ? `+${more} more · tap for all` : 'tap for details'}
-      </div>
+      <div className="hint">tap for details</div>
     </div>
   );
 }
