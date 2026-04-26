@@ -294,14 +294,15 @@ func (s *TodoService) Cancel(ctx context.Context, c *services.Caller, todoID uui
 // they wake up, not in the middle of the night.
 const snoozeHourLocal = 3
 
-// SnoozeDaysToUntil validates a snooze duration (must be 1, 3, or 7)
+// SnoozeDaysToUntil validates a snooze duration (between 1 and 365 days)
 // and returns the snoozed_until timestamp: N calendar days from today
 // (in tz), clock set to snoozeHourLocal local, converted to UTC. Shared
-// by the card action handler, agent tool, and MCP tool so the allowed
-// values and time calculation live in one place.
+// by the card action handler, agent tool, and MCP tool so the bounds
+// and time calculation live in one place. The UI exposes a curated set
+// of options; this validator only catches typos and abuse.
 func SnoozeDaysToUntil(days int, tz string) (time.Time, error) {
-	if days != 1 && days != 3 && days != 7 {
-		return time.Time{}, fmt.Errorf("snooze days must be 1, 3, or 7 (got %d)", days)
+	if days < 1 || days > 365 {
+		return time.Time{}, fmt.Errorf("snooze days must be between 1 and 365 (got %d)", days)
 	}
 	return snoozeUntilAt(time.Now(), days, tz)
 }

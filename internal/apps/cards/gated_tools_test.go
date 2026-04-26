@@ -294,6 +294,7 @@ func TestReviseCannotChangeToolName(t *testing.T) {
 	}
 	if approveOpt == nil {
 		t.Fatalf("approve option missing")
+		return
 	}
 	if approveOpt.ToolName != testgated.ToolName {
 		t.Fatalf("tool_name changed to %q after revise", approveOpt.ToolName)

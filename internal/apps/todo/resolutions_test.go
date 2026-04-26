@@ -288,12 +288,12 @@ func TestSnoozeUntilNextMondayBadTimezone(t *testing.T) {
 }
 
 func TestSnoozeDaysToUntilRejectsInvalidDays(t *testing.T) {
-	for _, d := range []int{0, 2, 4, 8, -1} {
+	for _, d := range []int{0, -1, 366, 1000} {
 		if _, err := SnoozeDaysToUntil(d, "UTC"); err == nil {
 			t.Errorf("expected error for days=%d", d)
 		}
 	}
-	for _, d := range []int{1, 3, 7} {
+	for _, d := range []int{1, 3, 7, 14, 30, 90, 365} {
 		if _, err := SnoozeDaysToUntil(d, "UTC"); err != nil {
 			t.Errorf("days=%d should succeed, got %v", d, err)
 		}

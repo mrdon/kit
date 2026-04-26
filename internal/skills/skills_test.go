@@ -10,6 +10,7 @@ func TestBuiltinsIncludeBuilderAdminGuide(t *testing.T) {
 	s := GetBuiltin("builder-admin-guide")
 	if s == nil {
 		t.Fatalf("builder-admin-guide builtin not found")
+		return
 	}
 	if !s.AdminOnly {
 		t.Fatalf("builder-admin-guide should be admin_only")

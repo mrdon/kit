@@ -132,10 +132,10 @@ var todoTools = []services.ToolMeta{
 	},
 	{
 		Name:        "snooze_todo",
-		Description: "Hide a todo from the swipe feed for 1, 3, or 7 days. The todo stays active and still appears in list_todos; it just drops out of the feed until the snooze expires.",
+		Description: "Hide a todo from the swipe feed for N days. The todo stays active and still appears in list_todos; it just drops out of the feed until the snooze expires (wakes at 03:00 local on the target day).",
 		Schema: services.PropsReq(map[string]any{
 			"todo_id": services.Field("string", "The todo UUID"),
-			"days":    map[string]any{"type": "integer", "description": "Snooze duration in days. Must be 1, 3, or 7."},
+			"days":    map[string]any{"type": "integer", "description": "Snooze duration in days, 1-365. Common picks: 1, 3, 7, 14, 30."},
 		}, "todo_id", "days"),
 	},
 	{
