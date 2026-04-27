@@ -214,7 +214,13 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 				skill.Name, skill.Name,
 			)
 		}
-		runErr := a.Run(ctx, agent.RunInput{
+		// The agent loop can run for tens of seconds (LLM calls + IMAP +
+		// tool fan-out) — well past nginx's proxy_read_timeout and the MCP
+		// transport's tolerance. Spawn it on a background ctx so the HTTP
+		// request can return immediately with a run_id; the caller polls
+		// get_task_status to read progress and dry-run captures off the
+		// session_events log.
+		runIn := agent.RunInput{
 			Slack:    slack,
 			Tenant:   tenant,
 			User:     user,
@@ -223,36 +229,171 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			UserText: userText,
 			Task:     tc,
 			Model:    task.Model,
-		})
-
-		if dryRun {
-			var b strings.Builder
-			fmt.Fprintf(&b, "Dry run complete for task %s\n\n", task.ID)
-			if len(slack.Captured) == 0 {
-				b.WriteString("No messages were sent.\n")
-			} else {
-				for i, msg := range slack.Captured {
-					fmt.Fprintf(&b, "--- Message %d ---\n", i+1)
-					fmt.Fprintf(&b, "Channel: %s\n", msg.Channel)
-					if msg.ThreadTS != "" {
-						fmt.Fprintf(&b, "Thread: %s\n", msg.ThreadTS)
-					}
-					fmt.Fprintf(&b, "Text:\n%s\n\n", msg.Text)
-				}
+		}
+		go func() {
+			runCtx := context.Background()
+			runErr := a.Run(runCtx, runIn)
+			if dryRun {
+				_ = models.AppendSessionEvent(runCtx, pool, tenant.ID, session.ID,
+					models.EventTypeDryRunCaptures, slack.Captured)
 			}
 			if runErr != nil {
-				fmt.Fprintf(&b, "Agent error: %s\n", runErr)
+				_ = models.AppendSessionEvent(runCtx, pool, tenant.ID, session.ID,
+					models.EventTypeError, map[string]any{"error": runErr.Error()})
 			}
-			return mcp.NewToolResultText(b.String()), nil
-		}
+		}()
 
-		if runErr != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("Task ran with error: %s", runErr)), nil
+		mode := "live"
+		if dryRun {
+			mode = "dry-run"
 		}
-		return mcp.NewToolResultText("Task executed successfully."), nil
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"Task %q started (%s, run_id=%s).\n\nCall get_task_status with run_id=%s to check progress and read results.",
+			task.Description, mode, session.ID, session.ID,
+		)), nil
 	})
 
 	return mcpserver.ServerTool{Tool: tool, Handler: handler}
+}
+
+// buildGetTaskStatusTool creates the get_task_status MCP tool, which reads
+// the session log for a run started by run_task and renders status,
+// tool calls so far, errors, and dry-run captured messages.
+func buildGetTaskStatusTool(pool *pgxpool.Pool, svc *services.Services) mcpserver.ServerTool {
+	schema := services.PropsReq(map[string]any{
+		"run_id": services.Field("string", "The run_id returned by run_task (a session UUID)."),
+	}, "run_id")
+	schemaJSON, _ := json.Marshal(schema)
+	tool := mcp.NewToolWithRawSchema("get_task_status", "Check the status of a task run started via run_task. Returns whether the run is still going, tool calls executed, dry-run captured messages, and any errors.", schemaJSON)
+
+	handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		idStr, _ := req.RequireString("run_id")
+		sessionID, err := uuid.Parse(idStr)
+		if err != nil {
+			return mcp.NewToolResultError("Invalid run_id."), nil
+		}
+		events, err := svc.Sessions.GetEvents(ctx, caller, sessionID)
+		if errors.Is(err, services.ErrNotFound) {
+			return mcp.NewToolResultError("Run not found."), nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("loading run events: %w", err)
+		}
+		return mcp.NewToolResultText(formatTaskRunStatus(sessionID, events)), nil
+	})
+
+	return mcpserver.ServerTool{Tool: tool, Handler: handler}
+}
+
+// formatTaskRunStatus renders a session's events as a task-run status
+// report. Designed for the get_task_status tool — concise enough that the
+// caller doesn't drown in raw event JSON, but complete enough to debug a
+// failed run without reaching for get_session_events.
+func formatTaskRunStatus(sessionID uuid.UUID, events []models.SessionEvent) string {
+	if len(events) == 0 {
+		return fmt.Sprintf("Run %s: no events recorded yet — the run may still be initializing.", sessionID)
+	}
+
+	var (
+		started      = events[0].CreatedAt
+		lastEvt      = events[len(events)-1].CreatedAt
+		completed    bool
+		completedAt  time.Time
+		toolCalls    []string
+		errorMsgs    []string
+		dryRunMsgs   []kitslack.CapturedMessage
+		hasDryRunEvt bool
+	)
+	for _, e := range events {
+		switch e.EventType {
+		case models.EventTypeAssistantTurn:
+			toolCalls = append(toolCalls, extractToolNames(e.Data)...)
+		case models.EventTypeError:
+			var payload map[string]any
+			if json.Unmarshal(e.Data, &payload) == nil {
+				if msg, ok := payload["error"].(string); ok && msg != "" {
+					errorMsgs = append(errorMsgs, msg)
+				}
+			}
+		case models.EventTypeSessionComplete:
+			completed = true
+			completedAt = e.CreatedAt
+		case models.EventTypeDryRunCaptures:
+			hasDryRunEvt = true
+			_ = json.Unmarshal(e.Data, &dryRunMsgs)
+		case models.EventTypeMessageReceived,
+			models.EventTypeMessageSent,
+			models.EventTypeLLMRequest,
+			models.EventTypeLLMResponse,
+			models.EventTypeToolResults,
+			models.EventTypeDecisionResolved,
+			models.EventTypePolicyEnforced:
+			// Not surfaced in the run-status report.
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Run %s\n", sessionID)
+	switch {
+	case len(errorMsgs) > 0 && completed:
+		fmt.Fprintf(&b, "Status: completed with errors (%s)\n", completedAt.Sub(started).Round(time.Second))
+	case completed:
+		fmt.Fprintf(&b, "Status: completed (%s)\n", completedAt.Sub(started).Round(time.Second))
+	case len(errorMsgs) > 0:
+		fmt.Fprintf(&b, "Status: failed (%s elapsed)\n", lastEvt.Sub(started).Round(time.Second))
+	default:
+		fmt.Fprintf(&b, "Status: running (%s elapsed)\n", time.Since(started).Round(time.Second))
+	}
+
+	if len(toolCalls) > 0 {
+		fmt.Fprintf(&b, "\nTool calls (%d):\n", len(toolCalls))
+		for _, name := range toolCalls {
+			fmt.Fprintf(&b, "  - %s\n", name)
+		}
+	}
+
+	if hasDryRunEvt {
+		fmt.Fprintf(&b, "\nDry-run captured messages (%d):\n", len(dryRunMsgs))
+		for i, msg := range dryRunMsgs {
+			fmt.Fprintf(&b, "--- Message %d ---\n", i+1)
+			fmt.Fprintf(&b, "Channel: %s\n", msg.Channel)
+			if msg.ThreadTS != "" {
+				fmt.Fprintf(&b, "Thread: %s\n", msg.ThreadTS)
+			}
+			fmt.Fprintf(&b, "Text:\n%s\n\n", msg.Text)
+		}
+	}
+
+	if len(errorMsgs) > 0 {
+		b.WriteString("\nErrors:\n")
+		for _, msg := range errorMsgs {
+			fmt.Fprintf(&b, "  - %s\n", msg)
+		}
+	}
+
+	return b.String()
+}
+
+// extractToolNames pulls the names of tool_use blocks out of an
+// assistant_turn event payload (which mirrors the LLM's response Content
+// array). Best-effort — unrecognised shapes silently contribute nothing.
+func extractToolNames(data json.RawMessage) []string {
+	var payload struct {
+		Content []struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"content"`
+	}
+	if json.Unmarshal(data, &payload) != nil {
+		return nil
+	}
+	var names []string
+	for _, c := range payload.Content {
+		if c.Type == "tool_use" && c.Name != "" {
+			names = append(names, c.Name)
+		}
+	}
+	return names
 }
 
 // handleMCPCreateTask factors the create_task body out of taskMCPHandler

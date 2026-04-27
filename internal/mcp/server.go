@@ -135,6 +135,8 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 
 	// run_task needs agent + enc + scheduler, registered separately from the standard loop
 	out = append(out, wrapAppTool(buildRunTaskTool(pool, svc, a, enc, sched)))
+	// get_task_status reads the session log a run_task call writes to.
+	out = append(out, wrapAppTool(buildGetTaskStatusTool(pool, svc)))
 
 	return out
 }

@@ -62,6 +62,7 @@ func TestIntegrationLifecycle(t *testing.T) {
 	}
 	if p2 == nil {
 		t.Fatalf("pending gone after complete (expired?)")
+		return
 	}
 	if p2.Status != PendingStatusConsumed {
 		t.Errorf("expected consumed, got %s", p2.Status)
@@ -74,6 +75,7 @@ func TestIntegrationLifecycle(t *testing.T) {
 	}
 	if integ == nil {
 		t.Fatalf("integration missing after complete")
+		return
 	}
 	if integ.ID != integID {
 		t.Errorf("id mismatch: %s vs %s", integ.ID, integID)
@@ -230,6 +232,7 @@ func TestIntegrationTenantVsUserScope(t *testing.T) {
 	}
 	if tRow == nil {
 		t.Fatal("tenant integration missing")
+		return
 	}
 	if tRow.UserID != nil {
 		t.Errorf("tenant row should have nil user_id, got %v", tRow.UserID)
@@ -242,6 +245,7 @@ func TestIntegrationTenantVsUserScope(t *testing.T) {
 	}
 	if uRow == nil {
 		t.Fatal("user integration missing")
+		return
 	}
 	if uRow.UserID == nil || *uRow.UserID != userID {
 		t.Errorf("user row user_id = %v, want %s", uRow.UserID, userID)

@@ -541,7 +541,8 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 			models.EventTypeLLMResponse,
 			models.EventTypeError,
 			models.EventTypeSessionComplete,
-			models.EventTypePolicyEnforced:
+			models.EventTypePolicyEnforced,
+			models.EventTypeDryRunCaptures:
 			// Diagnostic / telemetry events — not part of the conversation.
 		}
 	}
