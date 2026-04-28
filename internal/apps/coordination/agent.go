@@ -63,18 +63,17 @@ slot is {start, end} in RFC3339.`,
 
 func registerCoordinationAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 	for _, meta := range coordinationTools {
-		var policy tools.Policy
-		switch meta.Name {
-		case "start_coordination":
-			policy = tools.PolicyGate
-		default:
-			policy = tools.PolicyAllow
-		}
+		// All coordination tools are PolicyAllow. The user explicitly
+		// asked for the coordination, so creating one doesn't need
+		// gating. The outbound DMs the engine sends to participants
+		// are the identity-sensitive operation — those go through
+		// per-message approval cards (handled in the engine via
+		// coord.config.auto_approve).
 		r.Register(tools.Def{
 			Name:          meta.Name,
 			Description:   meta.Description,
 			Schema:        meta.Schema,
-			DefaultPolicy: policy,
+			DefaultPolicy: tools.PolicyAllow,
 			Handler:       agentHandlerFor(meta.Name, svc),
 		})
 	}
@@ -134,7 +133,17 @@ func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Coordination started: id=%s, %d participants. The bot will DM them with the candidate slots and update you on progress.", coord.ID, len(inp.Participants)), nil
+			// Drive the engine immediately so the organizer sees the
+			// first approval card (or first outbound, if auto-approved)
+			// without waiting up to 60s for the next cron tick.
+			if svc.app != nil && svc.app.engine != nil {
+				_ = svc.app.engine.Tick(ec.Ctx)
+			}
+			gateMsg := "you'll get an approval card in your swipe stack with the drafted DMs before they go out"
+			if inp.AutoApprove {
+				gateMsg = "DMs are going out now (auto-approve was enabled at start)"
+			}
+			return fmt.Sprintf("Coordination started (id=%s, %d participants) — %s. Use get_coordination to check status.", coord.ID, len(inp.Participants), gateMsg), nil
 		}
 
 	case "list_coordinations":

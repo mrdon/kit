@@ -63,17 +63,10 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 	}
 	deadline := time.Now().Add(time.Duration(deadlineDays) * 24 * time.Hour)
 
-	// Phase 1: per-message approval gating is not yet wired (the spec
-	// describes it but the card flow lands in a follow-up). Default
-	// AutoApprove to true so initial outreach goes out without manual
-	// per-message approval. The agent's start_coordination tool itself
-	// is PolicyGate, so the user has already approved the coordination
-	// as a whole.
-	autoApprove := true
-	if !in.AutoApprove {
-		autoApprove = true // forced on for Phase 1 regardless of input
-	}
-
+	// AutoApprove defaults to false — outbound DMs to participants are
+	// the identity-sensitive operation and the organizer should approve
+	// at least the first wave. They can flip auto_approve via the
+	// "Send + auto-approve future" option on the approval card.
 	coord := &Coordination{
 		TenantID:    c.TenantID,
 		OrganizerID: c.UserID,
@@ -86,7 +79,7 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 			StartDate:       in.StartDate,
 			EndDate:         in.EndDate,
 			CandidateSlots:  in.CandidateSlots,
-			AutoApprove:     autoApprove,
+			AutoApprove:     in.AutoApprove,
 			Notes:           in.Notes,
 			OrganizerTZ:     in.OrganizerTZ,
 		},

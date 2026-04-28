@@ -154,19 +154,58 @@ func (e *Engine) processReadyGroup(ctx context.Context, coord *Coordination, rea
 	}
 
 	if !coord.Config.AutoApprove {
-		// Surface a single approval card for this batch. The card holds
-		// the drafted bodies in its metadata; on resolution, the shepherd
-		// task (or a follow-up tool call from the option) sends them.
-		// Phase 1: stub — log and proceed to send directly. Decision card
-		// flows are wired up in a subsequent commit.
-		slog.Info("approval gating not yet wired; sending directly",
-			"coord", coord.ID, "drafts", len(drafts))
+		// Surface a batched approval card. The drafted bodies travel
+		// through the card's tool-args so the resolve handler can
+		// re-send them verbatim (no re-drafting). Park each
+		// participant's next_nudge_at while we wait on the organizer.
+		approvals := make([]approvalDraft, 0, len(drafts))
+		for _, d := range drafts {
+			approvals = append(approvals, approvalDraft{
+				ParticipantID: d.participant.ID.String(),
+				Body:          d.body,
+			})
+			parked := d.participant
+			parked.NextNudgeAt = nil
+			if err := UpdateParticipant(ctx, e.pool, &parked); err != nil {
+				slog.Error("parking participant for approval", "error", err)
+			}
+		}
+		if err := e.app.surfaceApprovalCard(ctx, coord, approvals); err != nil {
+			slog.Error("surfacing approval card", "error", err, "coord", coord.ID)
+		}
+		return nil
 	}
 
 	for _, d := range drafts {
 		if err := e.sendOne(ctx, coord, d.participant, d.body); err != nil {
 			slog.Error("sending message", "error", err, "participant", d.participant.ID)
 			continue
+		}
+	}
+	return nil
+}
+
+// SendApprovedBatch is called from the approval-card resolve handler.
+// It sends each pre-drafted body via Messenger and updates the
+// participant rows (status/round/nudge schedule) the same way the
+// auto-approve path does.
+func (e *Engine) SendApprovedBatch(ctx context.Context, coord *Coordination, drafts []approvalDraft) error {
+	for _, d := range drafts {
+		pid, err := uuid.Parse(d.ParticipantID)
+		if err != nil {
+			slog.Error("invalid participant id in draft", "error", err, "id", d.ParticipantID)
+			continue
+		}
+		p, err := GetParticipant(ctx, e.pool, coord.TenantID, pid)
+		if err != nil {
+			slog.Error("loading participant for approved send", "error", err, "id", pid)
+			continue
+		}
+		if p == nil {
+			continue
+		}
+		if err := e.sendOne(ctx, coord, *p, d.Body); err != nil {
+			slog.Error("approved send", "error", err, "participant", pid)
 		}
 	}
 	return nil

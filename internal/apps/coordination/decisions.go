@@ -18,6 +18,86 @@ import (
 	"github.com/mrdon/kit/internal/tools"
 )
 
+// approvalDraft is one drafted message awaiting organizer approval,
+// embedded in the send-approval card's ToolArguments so the resolution
+// path can re-send the exact text without re-drafting.
+type approvalDraft struct {
+	ParticipantID string `json:"participant_id"`
+	Body          string `json:"body"`
+}
+
+// surfaceApprovalCard surfaces a single batched approval card to the
+// organizer covering all drafted outbound messages for this coord/tick.
+// On resolution, the resolve_decision handler reads the embedded drafts
+// from the tool args and sends them via the engine's approved-send path.
+func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordination, drafts []approvalDraft) error {
+	if a.cards == nil {
+		return errors.New("CardService not configured")
+	}
+	if len(drafts) == 0 {
+		return nil
+	}
+	caller, err := a.organizerCaller(ctx, coord)
+	if err != nil {
+		return fmt.Errorf("building caller: %w", err)
+	}
+
+	parts, _ := ListParticipants(ctx, a.pool, coord.TenantID, coord.ID)
+	body := buildApprovalBody(coord, drafts, parts)
+
+	sendArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "send_drafts",
+		"drafts":          drafts,
+	})
+	sendAutoArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "send_drafts_auto",
+		"drafts":          drafts,
+	})
+	cancelArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "cancel",
+	})
+
+	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
+		Title: coord.Config.Title + " — approve outbound DMs",
+		Body:  body,
+		Kind:  cards.CardKindDecision,
+		Decision: &cards.DecisionCreateInput{
+			Priority:            cards.DecisionPriorityMedium,
+			RecommendedOptionID: "send_drafts_auto",
+			Options: []cards.DecisionOption{
+				{OptionID: "send_drafts", Label: "Send", ToolName: coordinationResolveDecision, ToolArguments: sendArgs},
+				{OptionID: "send_drafts_auto", Label: "Send + auto-approve future", ToolName: coordinationResolveDecision, ToolArguments: sendAutoArgs},
+				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
+			},
+		},
+	})
+	return err
+}
+
+// buildApprovalBody renders the markdown shown to the organizer on the
+// approval card. Includes the title, each drafted message body, and the
+// participant identifier so the organizer can verify before approving.
+func buildApprovalBody(coord *Coordination, drafts []approvalDraft, parts []Participant) string {
+	idToIdent := map[string]string{}
+	for _, p := range parts {
+		idToIdent[p.ID.String()] = p.Identifier
+	}
+	var b strings.Builder
+	b.WriteString("Here's what I'd send. Approve to send these DMs.\n\n")
+	for _, d := range drafts {
+		ident := idToIdent[d.ParticipantID]
+		if ident == "" {
+			ident = "(unknown)"
+		}
+		fmt.Fprintf(&b, "**To %s:**\n%s\n\n---\n\n", ident, d.Body)
+	}
+	b.WriteString("\"Send + auto-approve\" sends these and skips this prompt for any future outbound on this coordination.")
+	return b.String()
+}
+
 // surfaceConvergenceCard creates a decision card for the organizer when
 // the engine has detected a slot that works for all responded
 // participants. Options invoke the internal coordination_resolve_decision
@@ -221,10 +301,11 @@ const coordinationResolveDecision = "coordination_resolve_decision"
 
 // resolveDecisionInput is the args shape passed by decision card options.
 type resolveDecisionInput struct {
-	CoordinationID      string `json:"coordination_id"`
-	Action              string `json:"action"`
-	SlotKey             string `json:"slot_key,omitempty"`
-	DeclinedParticipant string `json:"declined_participant,omitempty"`
+	CoordinationID      string          `json:"coordination_id"`
+	Action              string          `json:"action"`
+	SlotKey             string          `json:"slot_key,omitempty"`
+	DeclinedParticipant string          `json:"declined_participant,omitempty"`
+	Drafts              []approvalDraft `json:"drafts,omitempty"`
 }
 
 // registerResolveDecisionTool wires the internal resolve tool into the
@@ -274,6 +355,10 @@ func resolveDecisionHandler(app *CoordinationApp) tools.HandlerFunc {
 			return resolveExtend(ec.Ctx, app, coord)
 		case "proceed_without":
 			return resolveProceedWithout(ec.Ctx, app, coord, inp.DeclinedParticipant)
+		case "send_drafts":
+			return resolveSendDrafts(ec.Ctx, app, coord, inp.Drafts, false)
+		case "send_drafts_auto":
+			return resolveSendDrafts(ec.Ctx, app, coord, inp.Drafts, true)
 		}
 		return "", fmt.Errorf("unknown action %q", inp.Action)
 	}
@@ -371,6 +456,28 @@ func resolveProceedWithout(ctx context.Context, app *CoordinationApp, coord *Coo
 		slog.Error("re-arming after proceed_without", "error", err)
 	}
 	return "Proceeding without that participant.", nil
+}
+
+// resolveSendDrafts dispatches the organizer-approved batch of drafted
+// messages. If autoApprove is true, it flips coord.config.auto_approve
+// so subsequent batches send without re-prompting.
+func resolveSendDrafts(ctx context.Context, app *CoordinationApp, coord *Coordination, drafts []approvalDraft, autoApprove bool) (string, error) {
+	if autoApprove && !coord.Config.AutoApprove {
+		coord.Config.AutoApprove = true
+		if err := UpdateCoordinationConfig(ctx, app.pool, coord.TenantID, coord.ID, coord.Config); err != nil {
+			return "", fmt.Errorf("flipping auto_approve: %w", err)
+		}
+	}
+	if app.engine == nil {
+		return "", errors.New("engine not configured")
+	}
+	if err := app.engine.SendApprovedBatch(ctx, coord, drafts); err != nil {
+		return "", fmt.Errorf("sending approved batch: %w", err)
+	}
+	if autoApprove {
+		return fmt.Sprintf("Sent %d message(s). Future outbound on this coordination will go without further approval.", len(drafts)), nil
+	}
+	return fmt.Sprintf("Sent %d message(s).", len(drafts)), nil
 }
 
 func findSlotByKey(slots []Slot, key string) *Slot {
