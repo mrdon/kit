@@ -56,6 +56,15 @@ type SendRequest struct {
 	// Optional; if zero and the recipient is a Slack user already known to
 	// Kit, Messenger looks them up.
 	UserID uuid.UUID
+
+	// SessionThreadKey overrides the default thread_ts ("") used when
+	// resolving the recipient's session. Apps that need their outbound
+	// (and the matching inbound) isolated from other bot↔user activity
+	// in the same channel set this. Coordination uses
+	// "participant:<participant_id>" so each (coord, participant) gets
+	// its own session, isolated from other coordinations and from
+	// ad-hoc agent chat.
+	SessionThreadKey string
 }
 
 // SentMessage is the result of a successful Send.
@@ -93,11 +102,21 @@ type InboundMessage struct {
 // to the awaiting outbound's purpose.
 type ReplyHandler func(ctx context.Context, msg InboundMessage, originRef string) (handled bool, err error)
 
+// SessionResolver lets an app claim ownership of an inbound message's
+// session before the default channel-level resolution kicks in. Apps
+// that maintain their own per-(activity, recipient) sessions register
+// a resolver so messenger routes inbound replies to the right session.
+//
+// Returns nil session if this resolver doesn't claim the inbound —
+// messenger then tries the next resolver, falling back to channel-level.
+type SessionResolver func(ctx context.Context, evt InboundEvent) (*models.Session, string, string, error)
+
 // Messenger is the public interface.
 type Messenger interface {
 	Send(ctx context.Context, req SendRequest) (SentMessage, error)
 	Dispatch(ctx context.Context, evt InboundEvent) (handled bool, err error)
 	RegisterReplyHandler(origin string, handler ReplyHandler)
+	RegisterSessionResolver(resolver SessionResolver)
 }
 
 // SlackPoster is the subset of *kitslack.Client that Messenger uses.
@@ -117,8 +136,9 @@ type Default struct {
 	// Tests inject a stub here.
 	SlackClientFor func(ctx context.Context, tenantID uuid.UUID) (SlackPoster, error)
 
-	mu       sync.RWMutex
-	handlers map[string]ReplyHandler
+	mu        sync.RWMutex
+	handlers  map[string]ReplyHandler
+	resolvers []SessionResolver
 }
 
 // New constructs a Default Messenger.
@@ -139,6 +159,14 @@ func (m *Default) RegisterReplyHandler(origin string, handler ReplyHandler) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.handlers[origin] = handler
+}
+
+// RegisterSessionResolver appends a session resolver. Resolvers are
+// tried in registration order during inbound dispatch.
+func (m *Default) RegisterSessionResolver(resolver SessionResolver) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resolvers = append(m.resolvers, resolver)
 }
 
 func (m *Default) handlerFor(origin string) (ReplyHandler, bool) {
@@ -190,47 +218,60 @@ func (m *Default) Send(ctx context.Context, req SendRequest) (SentMessage, error
 // Dispatch attempts to claim an inbound message. Returns (true, nil) if
 // a registered handler took it; (false, nil) to fall through to the
 // caller's default path (typically the agent loop).
+//
+// Inbound resolution: registered SessionResolvers are tried first (an
+// app like coordination can claim the inbound based on its own state —
+// e.g. "this user has an active participant row"). If no resolver
+// claims, fall back to thread/channel session lookup.
 func (m *Default) Dispatch(ctx context.Context, evt InboundEvent) (bool, error) {
 	if evt.TenantID == uuid.Nil {
 		return false, errors.New("messenger.Dispatch: TenantID required")
 	}
 
-	// Resolve session: try thread match first, then channel-level (un-threaded)
-	// match. Both keys exist in the existing sessions schema; thread_ts="" is
-	// the conventional "no thread" sentinel.
-	session, err := m.resolveSessionForInbound(ctx, evt)
-	if err != nil {
-		return false, fmt.Errorf("resolving session: %w", err)
-	}
-	if session == nil {
-		return false, nil
+	var (
+		session   *models.Session
+		origin    string
+		originRef string
+	)
+
+	m.mu.RLock()
+	resolvers := append([]SessionResolver(nil), m.resolvers...)
+	m.mu.RUnlock()
+
+	for _, r := range resolvers {
+		s, o, ref, err := r(ctx, evt)
+		if err != nil {
+			return false, fmt.Errorf("session resolver: %w", err)
+		}
+		if s != nil {
+			session, origin, originRef = s, o, ref
+			break
+		}
 	}
 
-	// Find the most recent outbound on this session that's awaiting a reply
-	// from us. If the most recent message_sent has no Origin (e.g. it was
-	// written by the agent loop's send_slack_message), there's no Messenger
-	// handler to call — fall through.
-	origin, originRef, ok, err := m.latestAwaitingOrigin(ctx, evt.TenantID, session.ID)
-	if err != nil {
-		return false, fmt.Errorf("looking up await_reply state: %w", err)
-	}
-	if !ok {
-		return false, nil
+	if session == nil {
+		// Fall back to the existing thread/channel-level session (used by
+		// the agent loop's own message_sent events).
+		s, err := m.resolveSessionForInbound(ctx, evt)
+		if err != nil {
+			return false, fmt.Errorf("resolving session: %w", err)
+		}
+		if s == nil {
+			return false, nil
+		}
+		o, ref, ok, err := m.latestAwaitingOrigin(ctx, evt.TenantID, s.ID)
+		if err != nil {
+			return false, fmt.Errorf("looking up await_reply state: %w", err)
+		}
+		if !ok {
+			return false, nil
+		}
+		session, origin, originRef = s, o, ref
 	}
 
 	handler, hasHandler := m.handlerFor(origin)
 	if !hasHandler {
-		// Origin string didn't match any registered handler. Fall through.
 		return false, nil
-	}
-
-	// Record the inbound on the session before invoking the handler. The
-	// handler may write further events.
-	if err := models.AppendSessionEvent(ctx, m.Pool, evt.TenantID, session.ID, models.EventTypeMessageReceived, map[string]any{
-		"text":    evt.Body,
-		"channel": evt.SlackChannelID,
-	}); err != nil {
-		return false, fmt.Errorf("recording inbound: %w", err)
 	}
 
 	handled, err := handler(ctx, InboundMessage{
@@ -240,6 +281,21 @@ func (m *Default) Dispatch(ctx context.Context, evt InboundEvent) (bool, error) 
 	}, originRef)
 	if err != nil {
 		return false, fmt.Errorf("reply handler %q: %w", origin, err)
+	}
+
+	// Only record the inbound on the resolved session if the handler
+	// claimed it. If the handler returns false, the agent loop will run
+	// in a different (channel-level) session and log the inbound there;
+	// double-logging confuses subsequent context reconstruction.
+	if handled {
+		if err := models.AppendSessionEvent(ctx, m.Pool, evt.TenantID, session.ID, models.EventTypeMessageReceived, map[string]any{
+			"text":       evt.Body,
+			"channel":    evt.SlackChannelID,
+			"origin":     origin,
+			"origin_ref": originRef,
+		}); err != nil {
+			return true, fmt.Errorf("recording inbound: %w", err)
+		}
 	}
 	return handled, nil
 }

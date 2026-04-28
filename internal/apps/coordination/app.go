@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -16,6 +17,20 @@ import (
 	"github.com/mrdon/kit/internal/services/messenger"
 	"github.com/mrdon/kit/internal/tools"
 )
+
+// MessengerOrigin is the value used for messenger.SendRequest.Origin
+// (and the corresponding RegisterReplyHandler key). Centralized so
+// the engine, reply handler, decision-card payloads, and tests all
+// reference the same string.
+const MessengerOrigin = "coordination"
+
+// participantSessionThreadKey is the messenger.SendRequest.SessionThreadKey
+// prefix that gives each (coord, participant) its own session. Format:
+// "participant:<participant_id>" — chosen so per-participant isolation
+// doesn't accidentally collide with anything else writing to sessions.
+func participantSessionThreadKey(participantID uuid.UUID) string {
+	return "participant:" + participantID.String()
+}
 
 var instance *CoordinationApp
 
@@ -50,14 +65,16 @@ func Configure(llm *anthropic.Client, msg *messenger.Default, cardSvc *cards.Car
 }
 
 // Init sets up the service after the DB pool is available and registers
-// the reply handler with Messenger so inbound replies route to the
-// engine.
+// the reply handler + session resolver with Messenger so inbound
+// replies from active coordination participants route to that
+// participant's per-coord session (not the shared channel session).
 func (a *CoordinationApp) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = newService(pool, a)
 	a.engine = newEngine(pool, a)
 	if a.msg != nil {
-		a.msg.RegisterReplyHandler("coordination", a.handleInboundReply)
+		a.msg.RegisterReplyHandler(MessengerOrigin, a.handleInboundReply)
+		a.msg.RegisterSessionResolver(a.resolveInboundSession)
 	}
 }
 

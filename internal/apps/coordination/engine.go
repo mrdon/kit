@@ -220,9 +220,12 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 		Channel:    "slack",
 		Recipient:  messenger.Recipient{SlackUserID: p.Identifier},
 		Body:       body,
-		Origin:     "coordination",
+		Origin:     MessengerOrigin,
 		OriginRef:  p.ID.String(),
 		AwaitReply: true,
+		// Per-participant session — isolates this coord's conversation
+		// from any other bot↔user activity in the same DM channel.
+		SessionThreadKey: participantSessionThreadKey(p.ID),
 	})
 	if err != nil {
 		return fmt.Errorf("messenger.Send: %w", err)
@@ -319,13 +322,14 @@ func (e *Engine) NotifyCancel(ctx context.Context, coord *Coordination) error {
 		}
 		body := "Sorry — this scheduling has been cancelled. No further action needed from you."
 		_, err := e.app.msg.Send(ctx, messenger.SendRequest{
-			TenantID:   coord.TenantID,
-			Channel:    "slack",
-			Recipient:  messenger.Recipient{SlackUserID: p.Identifier},
-			Body:       body,
-			Origin:     "coordination",
-			OriginRef:  p.ID.String(),
-			AwaitReply: false,
+			TenantID:         coord.TenantID,
+			Channel:          "slack",
+			Recipient:        messenger.Recipient{SlackUserID: p.Identifier},
+			Body:             body,
+			Origin:           MessengerOrigin,
+			OriginRef:        p.ID.String(),
+			AwaitReply:       false,
+			SessionThreadKey: participantSessionThreadKey(p.ID),
 		})
 		if err != nil {
 			slog.Error("cancel notify", "error", err, "participant", p.ID)

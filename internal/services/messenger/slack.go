@@ -43,9 +43,13 @@ func (m *Default) sendSlack(ctx context.Context, req SendRequest) (SentMessage, 
 		}
 	}
 
-	// Resolve or create the per-(tenant, channel, no-thread) session.
-	// Empty thread_ts is the "no thread" sentinel.
-	session, err := models.GetOrCreateSession(ctx, m.Pool, req.TenantID, imChannel, "", userID)
+	// Resolve or create the session. Default key is "" (channel-level),
+	// but apps can override via SessionThreadKey to isolate their flow
+	// from other bot↔user activity in the same channel. Coordination
+	// uses "participant:<id>" so each (coord, participant) gets its own
+	// session.
+	threadKey := req.SessionThreadKey
+	session, err := models.GetOrCreateSession(ctx, m.Pool, req.TenantID, imChannel, threadKey, userID)
 	if err != nil {
 		return SentMessage{}, fmt.Errorf("resolving session: %w", err)
 	}

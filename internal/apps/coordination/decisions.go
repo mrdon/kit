@@ -559,7 +559,7 @@ func notifyOrganizer(ctx context.Context, app *CoordinationApp, coord *Coordinat
 		Channel:    "slack",
 		Recipient:  messenger.Recipient{SlackUserID: user.SlackUserID},
 		Body:       body,
-		Origin:     "coordination",
+		Origin:     MessengerOrigin,
 		OriginRef:  coord.ID.String(),
 		AwaitReply: false,
 		UserID:     coord.OrganizerID,
@@ -587,13 +587,14 @@ func (a *CoordinationApp) notifyParticipantsConfirmed(ctx context.Context, coord
 		}
 		body := fmt.Sprintf("Confirmed for %s. The organizer will send a calendar invite shortly.", when)
 		_, err := a.msg.Send(ctx, messenger.SendRequest{
-			TenantID:   coord.TenantID,
-			Channel:    "slack",
-			Recipient:  messenger.Recipient{SlackUserID: p.Identifier},
-			Body:       body,
-			Origin:     "coordination",
-			OriginRef:  p.ID.String(),
-			AwaitReply: false,
+			TenantID:         coord.TenantID,
+			Channel:          "slack",
+			Recipient:        messenger.Recipient{SlackUserID: p.Identifier},
+			Body:             body,
+			Origin:           MessengerOrigin,
+			OriginRef:        p.ID.String(),
+			AwaitReply:       false,
+			SessionThreadKey: participantSessionThreadKey(p.ID),
 		})
 		if err != nil {
 			slog.Error("notifying confirmed", "error", err, "participant", p.ID)
