@@ -108,6 +108,7 @@ func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 				CandidateSlots  []slotInput `json:"candidate_slots"`
 				Participants    []string    `json:"participants"`
 				Notes           string      `json:"notes"`
+				Description     string      `json:"description"` // alias for notes
 				AutoApprove     bool        `json:"auto_approve"`
 				DeadlineDays    int         `json:"deadline_days"`
 				OrganizerTZ     string      `json:"organizer_tz"`
@@ -115,26 +116,53 @@ func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 			if err := json.Unmarshal(raw, &inp); err != nil {
 				return "", fmt.Errorf("parsing args: %w", err)
 			}
-			start, err := parseISODate(inp.StartDate)
-			if err != nil {
-				return "", fmt.Errorf("start_date: %w", err)
-			}
-			end, err := parseISODate(inp.EndDate)
-			if err != nil {
-				return "", fmt.Errorf("end_date: %w", err)
-			}
+			// Resolve slots first so we can infer the missing date/duration
+			// fields from them.
 			slots, err := convertSlots(inp.CandidateSlots)
 			if err != nil {
 				return "", err
 			}
+			if len(slots) == 0 {
+				return "", errors.New("candidate_slots required")
+			}
+			start := tryParseISODate(inp.StartDate)
+			if start.IsZero() {
+				start = slots[0].Start
+				for _, s := range slots {
+					if s.Start.Before(start) {
+						start = s.Start
+					}
+				}
+			}
+			end := tryParseISODate(inp.EndDate)
+			if end.IsZero() {
+				end = slots[0].End
+				for _, s := range slots {
+					if s.End.After(end) {
+						end = s.End
+					}
+				}
+			}
+			duration := inp.DurationMinutes
+			if duration <= 0 {
+				// Infer from the first slot's duration.
+				duration = int(slots[0].End.Sub(slots[0].Start).Minutes())
+				if duration <= 0 {
+					duration = 30
+				}
+			}
+			notes := inp.Notes
+			if notes == "" {
+				notes = inp.Description
+			}
 			coord, err := svc.Start(ec.Ctx, ec.Caller(), StartInput{
 				Title:           inp.Title,
-				DurationMinutes: inp.DurationMinutes,
+				DurationMinutes: duration,
 				StartDate:       start,
 				EndDate:         end,
 				CandidateSlots:  slots,
 				Participants:    inp.Participants,
-				Notes:           inp.Notes,
+				Notes:           notes,
 				AutoApprove:     inp.AutoApprove,
 				DeadlineDays:    inp.DeadlineDays,
 				OrganizerTZ:     inp.OrganizerTZ,
@@ -237,8 +265,9 @@ func formatStatus(st *Status) string {
 }
 
 type slotInput struct {
-	Start string `json:"start"`
-	End   string `json:"end"`
+	Start           string `json:"start"`
+	End             string `json:"end"`
+	DurationMinutes int    `json:"duration_minutes"` // alternative to End
 }
 
 func convertSlots(in []slotInput) ([]Slot, error) {
@@ -248,9 +277,17 @@ func convertSlots(in []slotInput) ([]Slot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("slot %d start: %w", i, err)
 		}
-		end, err := parseFlexibleTimestamp(s.End)
-		if err != nil {
-			return nil, fmt.Errorf("slot %d end: %w", i, err)
+		var end time.Time
+		if s.End != "" {
+			end, err = parseFlexibleTimestamp(s.End)
+			if err != nil {
+				return nil, fmt.Errorf("slot %d end: %w", i, err)
+			}
+		} else if s.DurationMinutes > 0 {
+			end = start.Add(time.Duration(s.DurationMinutes) * time.Minute)
+		} else {
+			// Default to a 30-min slot when neither end nor duration is set.
+			end = start.Add(30 * time.Minute)
 		}
 		out = append(out, Slot{Start: start, End: end})
 	}
@@ -287,4 +324,15 @@ func parseISODate(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Parse(time.RFC3339, s)
+}
+
+// tryParseISODate is a non-fatal variant — returns a zero time.Time if
+// the input is empty or unparseable, so callers can fall through to a
+// default rather than aborting.
+func tryParseISODate(s string) time.Time {
+	t, err := parseISODate(s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
