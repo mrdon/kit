@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,12 +12,46 @@ import (
 
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
-// lookupUserBySlack is a thin wrapper around models.GetUserBySlackID
-// that hides the not-found case (returns nil user, nil error).
-func lookupUserBySlack(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackID string) (*models.User, error) {
-	return models.GetUserBySlackID(ctx, pool, tenantID, slackID)
+// ensureParticipantUser resolves a Slack user ID to a Kit user record.
+// If the user isn't in our DB yet (common for participants who've never
+// DM'd Kit themselves), fetch their profile from Slack and upsert.
+// Returns nil on hard failure (don't block coordination start; the
+// participant just won't have a display name).
+func ensureParticipantUser(ctx context.Context, pool *pgxpool.Pool, app *CoordinationApp, tenantID uuid.UUID, slackID string) *models.User {
+	if u, err := models.GetUserBySlackID(ctx, pool, tenantID, slackID); err == nil && u != nil {
+		return u
+	}
+	// Need the tenant's bot token to call Slack. Messenger holds the
+	// encryptor; reuse its tenant→client resolution path.
+	if app == nil || app.msg == nil || app.msg.Encryptor == nil {
+		slog.Warn("ensureParticipantUser: messenger/encryptor not configured", "slack_id", slackID)
+		return nil
+	}
+	tenant, err := models.GetTenantByID(ctx, pool, tenantID)
+	if err != nil || tenant == nil {
+		return nil
+	}
+	botToken, err := app.msg.Encryptor.Decrypt(tenant.BotToken)
+	if err != nil {
+		slog.Warn("decrypting bot token for profile fetch", "error", err)
+		return nil
+	}
+	slack := kitslack.NewClient(botToken)
+	displayName := ""
+	if info, err := slack.GetUserInfo(ctx, slackID); err == nil {
+		displayName = info.DisplayName
+	} else {
+		slog.Warn("slack GetUserInfo failed for participant", "slack_id", slackID, "error", err)
+	}
+	u, err := models.GetOrCreateUser(ctx, pool, tenantID, slackID, displayName)
+	if err != nil {
+		slog.Warn("upserting kit user for participant", "slack_id", slackID, "error", err)
+		return nil
+	}
+	return u
 }
 
 // Service is the public entry point for coordination. Tools (agent and
@@ -121,7 +156,11 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 			Constraints:    Constraints{SlotVerdicts: map[string]SlotVerdict{}},
 			Rounds:         []Round{},
 		}
-		if u, err := lookupUserBySlack(ctx, s.pool, c.TenantID, slackID); err == nil && u != nil {
+		// Ensure the Kit user record exists (fetch from Slack and upsert
+		// if we've never seen them). Without this, downstream session
+		// creation fails the user_id FK, and we can't render display
+		// names on cards either.
+		if u := ensureParticipantUser(ctx, s.pool, s.app, c.TenantID, slackID); u != nil {
 			p.UserID = &u.ID
 		}
 		if err := CreateParticipant(ctx, s.pool, p); err != nil {

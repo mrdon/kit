@@ -215,6 +215,10 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 	if e.app.msg == nil {
 		return errors.New("messenger not configured")
 	}
+	var userID uuid.UUID
+	if p.UserID != nil {
+		userID = *p.UserID
+	}
 	sent, err := e.app.msg.Send(ctx, messenger.SendRequest{
 		TenantID:   coord.TenantID,
 		Channel:    "slack",
@@ -223,6 +227,7 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 		Origin:     MessengerOrigin,
 		OriginRef:  p.ID.String(),
 		AwaitReply: true,
+		UserID:     userID,
 		// Per-participant session — isolates this coord's conversation
 		// from any other bot↔user activity in the same DM channel.
 		SessionThreadKey: participantSessionThreadKey(p.ID),
