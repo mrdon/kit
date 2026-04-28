@@ -78,6 +78,13 @@ func registerCoordinationAgentTools(r *tools.Registry, isAdmin bool, svc *Servic
 			Handler:       agentHandlerFor(meta.Name, svc),
 		})
 	}
+	// Internal resolve tool — invoked by decision card option resolutions
+	// only. Not in coordinationTools (no MCP exposure, no system prompt
+	// mention). Lives at the bottom of the registry for the resolve path
+	// to find by name.
+	if svc != nil && svc.app != nil {
+		registerResolveDecisionTool(r, svc.app)
+	}
 	_ = isAdmin
 }
 

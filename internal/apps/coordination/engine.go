@@ -257,9 +257,12 @@ func (e *Engine) sweepConvergence(ctx context.Context) error {
 		}
 		slog.Info("coordination converged",
 			"coord", coord.ID, "slot", slot.Key())
-		// Phase 1: just transition. Decision card surfacing in subsequent commit.
 		if err := UpdateCoordinationStatus(ctx, e.pool, c.tenant, coord.ID, StatusConverged, &CoordinationResult{ChosenSlot: &slot}); err != nil {
 			slog.Error("converged status update", "error", err)
+			continue
+		}
+		if err := e.app.surfaceConvergenceCard(ctx, coord, slot); err != nil {
+			slog.Error("surfacing convergence card", "error", err, "coord", coord.ID)
 		}
 	}
 	return nil
@@ -293,11 +296,18 @@ func (e *Engine) NotifyCancel(ctx context.Context, coord *Coordination) error {
 	return nil
 }
 
-// handleAbandonment marks the coordination abandoned and notifies the
-// organizer. Phase 1 stub: just status flip + slog.
+// handleAbandonment surfaces an abandonment decision card to the
+// organizer. The status only flips to abandoned once they tap "abandon"
+// on the card — until then the coordination stays active so they can
+// extend or change participants.
 func (e *Engine) handleAbandonment(ctx context.Context, coord *Coordination, reason string) error {
-	slog.Info("coordination abandoned", "coord", coord.ID, "reason", reason)
-	return UpdateCoordinationStatus(ctx, e.pool, coord.TenantID, coord.ID, StatusAbandoned, nil)
+	slog.Info("surfacing abandonment card", "coord", coord.ID, "reason", reason)
+	if err := e.app.surfaceAbandonmentCard(ctx, coord, reason); err != nil {
+		// If we can't surface the card, fall back to direct status flip.
+		slog.Error("surfacing abandonment card", "error", err)
+		return UpdateCoordinationStatus(ctx, e.pool, coord.TenantID, coord.ID, StatusAbandoned, nil)
+	}
+	return nil
 }
 
 // nudgeInterval returns the wait between nudges for the given count.

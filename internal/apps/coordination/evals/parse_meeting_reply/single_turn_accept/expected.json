@@ -1,0 +1,6 @@
+{
+  "intent": "reply",
+  "current_constraints": {
+    "2026-05-12T14:00:00Z|2026-05-12T14:30:00Z": "accept"
+  }
+}

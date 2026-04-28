@@ -1,0 +1,11 @@
+{
+  "candidate_slots": [
+    {"start": "2026-05-12T14:00:00Z", "end": "2026-05-12T14:30:00Z"},
+    {"start": "2026-05-13T13:00:00Z", "end": "2026-05-13T13:30:00Z"},
+    {"start": "2026-05-14T19:00:00Z", "end": "2026-05-14T19:30:00Z"}
+  ],
+  "message_log": [
+    {"direction": "outbound", "body": "Hi Alice — I'm Kit, a scheduling assistant. Don is trying to set up a 30-min meeting with you next week. Are any of these times OK? Tue May 12 10am, Wed May 13 9am, Thu May 14 3pm. No thread reply needed — just message me back."},
+    {"direction": "inbound", "body": "Tuesday 10am works for me"}
+  ]
+}

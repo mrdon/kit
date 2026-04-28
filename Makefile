@@ -39,6 +39,9 @@ $(APP_DIR)/node_modules:
 app-clean: ## Remove frontend build output + node_modules
 	@rm -rf $(APP_DIR)/dist $(APP_DIR)/node_modules
 
+eval-parse: ## Run coordination parseMeetingReply evals against the live API (costs money, requires ANTHROPIC_API_KEY)
+	@cd internal/apps/coordination/evals && go test -tags eval -v ./...
+
 test: up ## Run tests (requires Postgres via `make up`)
 	@echo "Running tests..."
 	@OUTPUT=$$(go test -race -cover ./... 2>&1 | grep -v 'no such tool "covdata"'); \

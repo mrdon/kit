@@ -72,9 +72,10 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on decline: %w", err)
 		}
-		// Surfacing the "Alice declined — proceed without her or abandon?"
-		// card to the organizer is a Phase 1.5 wiring item.
 		slog.Info("participant declined", "participant", p.ID, "coord", coord.ID)
+		if err := a.surfaceDeclineCard(ctx, coord, p); err != nil {
+			slog.Error("surfacing decline card", "error", err, "coord", coord.ID)
+		}
 		return true, nil
 
 	case "out_of_window":

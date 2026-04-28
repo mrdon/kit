@@ -1,0 +1,9 @@
+{
+  "candidate_slots": [
+    {"start": "2026-05-12T14:00:00Z", "end": "2026-05-12T14:30:00Z"}
+  ],
+  "message_log": [
+    {"direction": "outbound", "body": "Hi Alice — Don wants to schedule. Tue May 12 10am OK?"},
+    {"direction": "inbound", "body": "hey what's the PTO policy?"}
+  ]
+}
