@@ -312,9 +312,15 @@ type resolveDecisionInput struct {
 // (callers don't invoke it directly).
 func registerResolveDecisionTool(r *tools.Registry, app *CoordinationApp) {
 	r.Register(tools.Def{
-		Name:           coordinationResolveDecision,
-		Description:    "Internal: resolve a coordination decision card. Invoked by card options, not by users.",
-		Schema:         services.PropsReq(map[string]any{"coordination_id": services.Field("string", "")}, "coordination_id"),
+		Name:        coordinationResolveDecision,
+		Description: "Internal: resolve a coordination decision card. Invoked by card options, not by users.",
+		Schema: services.PropsReq(map[string]any{
+			"coordination_id":      services.Field("string", "Coordination UUID"),
+			"action":               services.Field("string", "confirm | reject_slot | cancel | abandon | extend | proceed_without | send_drafts | send_drafts_auto | skip_one"),
+			"slot_key":             services.Field("string", "Slot key (for confirm/reject_slot actions)"),
+			"declined_participant": services.Field("string", "Participant id (for proceed_without action)"),
+			"drafts":               services.Field("array", "Drafted messages to send (for send_drafts/send_drafts_auto/skip_one actions)"),
+		}, "coordination_id", "action"),
 		DefaultPolicy:  tools.PolicyAllow,
 		AdminOnly:      false,
 		DenyCallerGate: true,
