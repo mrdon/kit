@@ -110,9 +110,41 @@ func fetchAndParse(ctx context.Context, client *http.Client, rawURL string) ([]E
 	return parseFeed(body)
 }
 
+// sanitizeICalFeed strips ATTENDEE and ORGANIZER properties (and their folded
+// continuation lines) from an iCal feed. Kit doesn't surface either, and
+// Google Calendar exports occasionally emit malformed ATTENDEE entries (e.g.
+// parameters with no value) that cause the strict parser to abort the entire
+// feed — losing every event in the calendar.
+func sanitizeICalFeed(body []byte) []byte {
+	text := strings.ReplaceAll(string(body), "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+
+	out := make([]string, 0, len(lines))
+	skipping := false
+	for _, line := range lines {
+		isContinuation := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+		if isContinuation {
+			if skipping {
+				continue
+			}
+			out = append(out, line)
+			continue
+		}
+		upper := strings.ToUpper(line)
+		if strings.HasPrefix(upper, "ATTENDEE:") || strings.HasPrefix(upper, "ATTENDEE;") ||
+			strings.HasPrefix(upper, "ORGANIZER:") || strings.HasPrefix(upper, "ORGANIZER;") {
+			skipping = true
+			continue
+		}
+		skipping = false
+		out = append(out, line)
+	}
+	return []byte(strings.Join(out, "\r\n"))
+}
+
 // parseFeed parses raw iCal bytes into Events. Exposed for tests.
 func parseFeed(body []byte) ([]Event, error) {
-	cal, err := ics.ParseCalendar(strings.NewReader(string(body)))
+	cal, err := ics.ParseCalendar(strings.NewReader(string(sanitizeICalFeed(body))))
 	if err != nil {
 		return nil, fmt.Errorf("parsing iCal: %w", err)
 	}

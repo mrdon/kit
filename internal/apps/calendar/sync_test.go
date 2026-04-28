@@ -136,6 +136,42 @@ func TestParseFeed_MultipleEvents(t *testing.T) {
 	}
 }
 
+// fixtureBadAttendee reproduces the Google Calendar export shape that broke
+// Sleuth's onboarding: an ATTENDEE line with parameters but no `:value`,
+// plus folded continuation, plus an ORGANIZER. The strict parser would
+// otherwise return "unexpected end of property ATTENDEE" and lose every
+// event in the feed.
+const fixtureBadAttendee = "BEGIN:VCALENDAR\r\n" +
+	"VERSION:2.0\r\n" +
+	"PRODID:-//Kit Test//EN\r\n" +
+	"BEGIN:VEVENT\r\n" +
+	"UID:evt-bad-attendee@example.com\r\n" +
+	"SUMMARY:Sync meeting\r\n" +
+	"DTSTART:20260411T140000Z\r\n" +
+	"DTEND:20260411T150000Z\r\n" +
+	"ORGANIZER;CN=Owner:mailto:owner@example.com\r\n" +
+	"ATTENDEE;CN=Foo Bar;EMAIL=foo@bar.com;ROLE=REQ-PARTICIPANT;PARTSTAT=NEED\r\n" +
+	" S-ACTION;RSVP=TRUE\r\n" +
+	"ATTENDEE;CN=Baz:mailto:baz@example.com\r\n" +
+	"END:VEVENT\r\n" +
+	"END:VCALENDAR\r\n"
+
+func TestParseFeed_SurvivesMalformedAttendee(t *testing.T) {
+	events, err := parseFeed([]byte(fixtureBadAttendee))
+	if err != nil {
+		t.Fatalf("parseFeed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].UID != "evt-bad-attendee@example.com" {
+		t.Errorf("UID: got %q", events[0].UID)
+	}
+	if events[0].Summary != "Sync meeting" {
+		t.Errorf("Summary: got %q", events[0].Summary)
+	}
+}
+
 func TestParseFeed_SkipsEventsWithoutUID(t *testing.T) {
 	events, err := parseFeed([]byte(fixtureNoUID))
 	if err != nil {
