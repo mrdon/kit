@@ -20,6 +20,7 @@ import (
 	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
+	"github.com/mrdon/kit/internal/apps/coordination"
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
@@ -179,6 +180,11 @@ func main() {
 		slog.Warn("whisper transcription disabled", "error", err)
 	}
 	cards.ConfigureChat(app.Agent, enc, transcriber)
+
+	// Coordination needs builderLLM, the Messenger from app, the CardService
+	// (for surfacing decision cards), and the TaskService (for shepherd
+	// tasks). Wired here because Messenger lives on app.
+	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Tasks)
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)

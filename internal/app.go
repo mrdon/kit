@@ -18,6 +18,7 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/ingest"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services/messenger"
 	kitslack "github.com/mrdon/kit/internal/slack"
 	"github.com/mrdon/kit/internal/web"
 )
@@ -29,6 +30,7 @@ type App struct {
 	Agent     *agent.Agent
 	LLM       *anthropic.Client
 	Fetcher   *web.Fetcher
+	Messenger *messenger.Default
 	BaseURL   string
 }
 
@@ -42,6 +44,7 @@ func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey, baseURL string, r
 		Fetcher:   fetcher,
 		Agent:     agent.NewAgent(pool, llm, fetcher),
 		LLM:       llm,
+		Messenger: messenger.New(pool, enc),
 		BaseURL:   baseURL,
 	}
 }
@@ -107,6 +110,28 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		_ = client.PostMessage(ctx, evt.Channel, evt.ThreadTS,
 			"I'm still being set up! Please ask your admin to finish setting me up.")
 		return
+	}
+
+	// Give the Messenger first crack at the message: if a coordination (or
+	// future app) is awaiting a reply on this user's session, route there.
+	// Returns handled=false if no app claims it; falls through to the
+	// regular agent loop below.
+	if a.Messenger != nil {
+		handled, err := a.Messenger.Dispatch(ctx, messenger.InboundEvent{
+			TenantID:       tenant.ID,
+			Channel:        "slack",
+			SlackChannelID: evt.Channel,
+			SlackUserID:    evt.SlackUserID,
+			ThreadTS:       evt.ThreadTS,
+			UserID:         user.ID,
+			Body:           evt.Text,
+		})
+		if err != nil {
+			slog.Error("messenger dispatch", "error", err, "tenant_id", tenant.ID)
+		}
+		if handled {
+			return
+		}
 	}
 
 	session, err := a.resolveSession(ctx, client, tenant.ID, user.ID, evt.Channel, evt.ThreadTS, evt.TriggerTS)
