@@ -96,8 +96,21 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 		return nil, fmt.Errorf("creating coordination: %w", err)
 	}
 
+	// Resolve organizer's Slack ID once so we can drop them from the
+	// participants list (the organizer doesn't need a DM asking when
+	// they're free — they initiated the coordination).
+	organizerSlackID := ""
+	if u, err := models.GetUserByID(ctx, s.pool, c.TenantID, c.UserID); err == nil && u != nil {
+		organizerSlackID = u.SlackUserID
+	}
+
 	now := time.Now()
+	created := 0
 	for _, slackID := range in.Participants {
+		if slackID == organizerSlackID {
+			// Don't DM the organizer about their own meeting.
+			continue
+		}
 		p := &Participant{
 			TenantID:       c.TenantID,
 			CoordinationID: coord.ID,
@@ -108,14 +121,19 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 			Constraints:    Constraints{SlotVerdicts: map[string]SlotVerdict{}},
 			Rounds:         []Round{},
 		}
-		// Resolve to a Kit user where possible so we can render display
-		// names on cards instead of opaque Slack IDs.
 		if u, err := lookupUserBySlack(ctx, s.pool, c.TenantID, slackID); err == nil && u != nil {
 			p.UserID = &u.ID
 		}
 		if err := CreateParticipant(ctx, s.pool, p); err != nil {
 			return nil, fmt.Errorf("creating participant %s: %w", slackID, err)
 		}
+		created++
+	}
+	if created < 2 {
+		// We need at least two participants besides the organizer.
+		// Roll back the coordination row to keep state consistent.
+		_, _ = s.pool.Exec(ctx, "DELETE FROM app_coordinations WHERE id = $1", coord.ID)
+		return nil, errors.New("need at least two participants besides the organizer")
 	}
 
 	return coord, nil

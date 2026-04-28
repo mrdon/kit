@@ -154,24 +154,23 @@ func (e *Engine) processReadyGroup(ctx context.Context, coord *Coordination, rea
 	}
 
 	if !coord.Config.AutoApprove {
-		// Surface a batched approval card. The drafted bodies travel
-		// through the card's tool-args so the resolve handler can
-		// re-send them verbatim (no re-drafting). Park each
-		// participant's next_nudge_at while we wait on the organizer.
-		approvals := make([]approvalDraft, 0, len(drafts))
+		// One approval card per draft (one per participant). Each card's
+		// tool-args round-trip the drafted body so resolution sends the
+		// exact text without re-drafting. Park each participant's
+		// next_nudge_at while we wait on the organizer.
 		for _, d := range drafts {
-			approvals = append(approvals, approvalDraft{
-				ParticipantID: d.participant.ID.String(),
-				Body:          d.body,
-			})
 			parked := d.participant
 			parked.NextNudgeAt = nil
 			if err := UpdateParticipant(ctx, e.pool, &parked); err != nil {
 				slog.Error("parking participant for approval", "error", err)
 			}
-		}
-		if err := e.app.surfaceApprovalCard(ctx, coord, approvals); err != nil {
-			slog.Error("surfacing approval card", "error", err, "coord", coord.ID)
+			draft := approvalDraft{
+				ParticipantID: d.participant.ID.String(),
+				Body:          d.body,
+			}
+			if err := e.app.surfaceApprovalCard(ctx, coord, &d.participant, draft); err != nil {
+				slog.Error("surfacing approval card", "error", err, "coord", coord.ID, "participant", d.participant.ID)
+			}
 		}
 		return nil
 	}

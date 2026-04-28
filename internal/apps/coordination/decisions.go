@@ -19,32 +19,42 @@ import (
 )
 
 // approvalDraft is one drafted message awaiting organizer approval,
-// embedded in the send-approval card's ToolArguments so the resolution
-// path can re-send the exact text without re-drafting.
+// round-tripped through the card's tool args so resolution sends
+// the exact approved text without re-drafting.
 type approvalDraft struct {
 	ParticipantID string `json:"participant_id"`
 	Body          string `json:"body"`
 }
 
-// surfaceApprovalCard surfaces a single batched approval card to the
-// organizer covering all drafted outbound messages for this coord/tick.
-// On resolution, the resolve_decision handler reads the embedded drafts
-// from the tool args and sends them via the engine's approved-send path.
-func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordination, drafts []approvalDraft) error {
+// surfaceApprovalCard creates one approval card per drafted message —
+// one per participant. Each card has its own Send / Don't send /
+// Send + auto-approve future / Cancel options. This lets the organizer
+// review and act on each draft independently (and, eventually, edit
+// each one before sending).
+func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordination, p *Participant, draft approvalDraft) error {
 	if a.cards == nil {
 		return errors.New("CardService not configured")
-	}
-	if len(drafts) == 0 {
-		return nil
 	}
 	caller, err := a.organizerCaller(ctx, coord)
 	if err != nil {
 		return fmt.Errorf("building caller: %w", err)
 	}
 
-	parts, _ := ListParticipants(ctx, a.pool, coord.TenantID, coord.ID)
-	body := a.buildApprovalBody(ctx, coord, drafts, parts)
+	name := p.Identifier
+	if p.UserID != nil {
+		if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+			name = *u.DisplayName
+		}
+	}
 
+	body := fmt.Sprintf(
+		"Here's what I'd send to **%s**:\n\n---\n\n%s\n\n---\n\n"+
+			"Swipe right to send. Swipe left to skip this one (I'll ask you what to do).\n"+
+			"Tap for details to send-and-auto-approve future, or to cancel the whole coordination.",
+		name, draft.Body,
+	)
+
+	drafts := []approvalDraft{draft}
 	sendArgs, _ := json.Marshal(map[string]any{
 		"coordination_id": coord.ID.String(),
 		"action":          "send_drafts",
@@ -55,56 +65,32 @@ func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordi
 		"action":          "send_drafts_auto",
 		"drafts":          drafts,
 	})
+	skipArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "skip_one",
+		"drafts":          drafts,
+	})
 	cancelArgs, _ := json.Marshal(map[string]any{
 		"coordination_id": coord.ID.String(),
 		"action":          "cancel",
 	})
 
 	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
-		Title: coord.Config.Title + " — approve outbound DMs",
+		Title: fmt.Sprintf("Send DM to %s — %s", name, coord.Config.Title),
 		Body:  body,
 		Kind:  cards.CardKindDecision,
 		Decision: &cards.DecisionCreateInput{
-			Priority: cards.DecisionPriorityMedium,
-			// Swipe-right defaults to "Send" — approve just this batch.
-			// "Send + auto-approve future" is opt-in for the user who
-			// trusts the bot to keep going without further prompts.
+			Priority:            cards.DecisionPriorityMedium,
 			RecommendedOptionID: "send_drafts",
 			Options: []cards.DecisionOption{
 				{OptionID: "send_drafts", Label: "Send", ToolName: coordinationResolveDecision, ToolArguments: sendArgs},
+				{OptionID: "skip_one", Label: "Don't send to " + name, ToolName: coordinationResolveDecision, ToolArguments: skipArgs},
 				{OptionID: "send_drafts_auto", Label: "Send + auto-approve future", ToolName: coordinationResolveDecision, ToolArguments: sendAutoArgs},
 				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
 			},
 		},
 	})
 	return err
-}
-
-// buildApprovalBody renders the markdown shown to the organizer on the
-// approval card. Each "To {name}" header uses the participant's display
-// name (resolved from the Kit user record) — not their raw Slack ID.
-func (a *CoordinationApp) buildApprovalBody(ctx context.Context, coord *Coordination, drafts []approvalDraft, parts []Participant) string {
-	idToName := map[string]string{}
-	for _, p := range parts {
-		name := p.Identifier // fallback
-		if p.UserID != nil {
-			if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
-				name = *u.DisplayName
-			}
-		}
-		idToName[p.ID.String()] = name
-	}
-	var b strings.Builder
-	b.WriteString("Here's what I'd send. Approve to send these DMs.\n\n")
-	for _, d := range drafts {
-		name := idToName[d.ParticipantID]
-		if name == "" {
-			name = "(unknown)"
-		}
-		fmt.Fprintf(&b, "**To %s:**\n%s\n\n---\n\n", name, d.Body)
-	}
-	b.WriteString("\"Send + auto-approve\" sends these and skips this prompt for any future outbound on this coordination.")
-	return b.String()
 }
 
 // surfaceConvergenceCard creates a decision card for the organizer when
@@ -147,6 +133,7 @@ func (a *CoordinationApp) surfaceConvergenceCard(ctx context.Context, coord *Coo
 			RecommendedOptionID: "confirm",
 			Options: []cards.DecisionOption{
 				{OptionID: "confirm", Label: "Confirm", ToolName: coordinationResolveDecision, ToolArguments: confirmArgs},
+				// Swipe-left = "Try a different slot" (first non-recommended).
 				{OptionID: "reject_slot", Label: "Try a different slot", ToolName: coordinationResolveDecision, ToolArguments: rejectArgs},
 				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
 			},
@@ -184,11 +171,13 @@ func (a *CoordinationApp) surfaceAbandonmentCard(ctx context.Context, coord *Coo
 		Body:  body,
 		Kind:  cards.CardKindDecision,
 		Decision: &cards.DecisionCreateInput{
-			Priority:            cards.DecisionPriorityMedium,
-			RecommendedOptionID: "abandon",
+			Priority: cards.DecisionPriorityMedium,
+			// Swipe-right = "Extend"; swipe-left = "Abandon". Recommended
+			// is "Extend" because it's the less destructive action.
+			RecommendedOptionID: "extend",
 			Options: []cards.DecisionOption{
-				{OptionID: "abandon", Label: "Abandon", ToolName: coordinationResolveDecision, ToolArguments: abandonArgs},
 				{OptionID: "extend", Label: "Extend by 7 days", ToolName: coordinationResolveDecision, ToolArguments: extendArgs},
+				{OptionID: "abandon", Label: "Abandon", ToolName: coordinationResolveDecision, ToolArguments: abandonArgs},
 			},
 		},
 	})
@@ -368,6 +357,8 @@ func resolveDecisionHandler(app *CoordinationApp) tools.HandlerFunc {
 			return resolveSendDrafts(ec.Ctx, app, coord, inp.Drafts, false)
 		case "send_drafts_auto":
 			return resolveSendDrafts(ec.Ctx, app, coord, inp.Drafts, true)
+		case "skip_one":
+			return resolveSkipOne(ec.Ctx, app, coord, inp.Drafts)
 		}
 		return "", fmt.Errorf("unknown action %q", inp.Action)
 	}
@@ -423,10 +414,50 @@ func resolveCancel(ctx context.Context, app *CoordinationApp, coord *Coordinatio
 	return "Coordination cancelled.", nil
 }
 
+// resolveSkipOne is fired when the organizer rejects a single drafted
+// DM via swipe-left. It does NOT cancel the coordination or notify the
+// other participants — just stops THIS one draft and asks the organizer
+// what to do for that participant. The participant stays parked
+// (next_nudge_at nil) until the organizer indicates how to proceed.
+func resolveSkipOne(ctx context.Context, app *CoordinationApp, coord *Coordination, drafts []approvalDraft) (string, error) {
+	if len(drafts) == 0 {
+		return "Skipped (no drafts in card args).", nil
+	}
+	d := drafts[0]
+	pid, err := uuid.Parse(d.ParticipantID)
+	if err != nil {
+		return "", fmt.Errorf("invalid participant_id: %w", err)
+	}
+	p, err := GetParticipant(ctx, app.pool, coord.TenantID, pid)
+	if err != nil || p == nil {
+		return "", fmt.Errorf("loading participant: %w", err)
+	}
+	name := p.Identifier
+	if p.UserID != nil {
+		if u, err := models.GetUserByID(ctx, app.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+			name = *u.DisplayName
+		}
+	}
+	msg := fmt.Sprintf(
+		"Got it — I won't send that draft to **%s** for %q. They're parked: "+
+			"no outbound to them until you say how to proceed.\n\n"+
+			"What would you like me to do? Some options:\n"+
+			"• Reach out to %s yourself, then tell me what they said\n"+
+			"• Have me try again with different times or framing\n"+
+			"• Skip them entirely (proceed with the others)\n"+
+			"• Cancel the coordination\n\n"+
+			"Just reply here.",
+		name, coord.Config.Title, name,
+	)
+	notifyOrganizer(ctx, app, coord, msg)
+	return fmt.Sprintf("Skipped DM to %s. Asked the organizer what to do next.", name), nil
+}
+
 func resolveAbandon(ctx context.Context, app *CoordinationApp, coord *Coordination) (string, error) {
 	if err := UpdateCoordinationStatus(ctx, app.pool, coord.TenantID, coord.ID, StatusAbandoned, nil); err != nil {
 		return "", err
 	}
+	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Abandoned %q. Nothing further will go out.", coord.Config.Title))
 	return "Coordination abandoned.", nil
 }
 
@@ -509,6 +540,33 @@ func (a *CoordinationApp) armResponded(ctx context.Context, coord *Coordination)
 		WHERE tenant_id = $1 AND coordination_id = $2 AND status = 'responded'
 	`, coord.TenantID, coord.ID, now)
 	return err
+}
+
+// notifyOrganizer DMs the organizer in Slack via Messenger. AwaitReply
+// is false so any reply they post falls through to the regular agent
+// loop (which has access to the coordination tools and can act on
+// natural-language follow-ups).
+func notifyOrganizer(ctx context.Context, app *CoordinationApp, coord *Coordination, body string) {
+	if app.msg == nil {
+		return
+	}
+	user, err := models.GetUserByID(ctx, app.pool, coord.TenantID, coord.OrganizerID)
+	if err != nil || user == nil || user.SlackUserID == "" {
+		return
+	}
+	_, err = app.msg.Send(ctx, messenger.SendRequest{
+		TenantID:   coord.TenantID,
+		Channel:    "slack",
+		Recipient:  messenger.Recipient{SlackUserID: user.SlackUserID},
+		Body:       body,
+		Origin:     "coordination",
+		OriginRef:  coord.ID.String(),
+		AwaitReply: false,
+		UserID:     coord.OrganizerID,
+	})
+	if err != nil {
+		slog.Error("notifying organizer", "error", err, "coord", coord.ID)
+	}
 }
 
 // notifyParticipantsConfirmed sends a closure DM to each responded
