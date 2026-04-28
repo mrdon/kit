@@ -258,12 +258,14 @@ func dmUserHandler(ec *ExecContext, input json.RawMessage) (string, error) {
 			return "", err
 		}
 		logMessageSent(ec, dm, "", inp.Text, true)
+		logOnRecipientSession(ec, inp.UserID, dm, inp.Text)
 		return "DM sent.", nil
 	}
 	if err := ec.Slack.PostMessage(ec.Ctx, dm, "", inp.Text); err != nil {
 		return "", err
 	}
 	logMessageSent(ec, dm, "", inp.Text, true)
+	logOnRecipientSession(ec, inp.UserID, dm, inp.Text)
 	return "DM sent.", nil
 }
 
@@ -273,5 +275,33 @@ func logMessageSent(ec *ExecContext, channel, threadTS, text string, isDM bool) 
 		"thread_ts": threadTS,
 		"text":      text,
 		"is_dm":     isDM,
+	})
+}
+
+// logOnRecipientSession ensures the recipient's per-(channel, no-thread)
+// session exists and has the bot's outbound DM in its event log. Without
+// this, when the recipient replies (which lands in their own session),
+// the agent loop reconstructs context from an empty event log and asks
+// the recipient "what are you talking about?". The agent's session log
+// (logMessageSent above) is preserved separately so the agent's own
+// chat history stays coherent.
+func logOnRecipientSession(ec *ExecContext, recipientSlackID, dmChannel, text string) {
+	if ec.Pool == nil || ec.Tenant == nil {
+		return
+	}
+	user, err := models.GetUserBySlackID(ec.Ctx, ec.Pool, ec.Tenant.ID, recipientSlackID)
+	if err != nil || user == nil {
+		// Recipient isn't a Kit user — nothing to anchor a session to.
+		return
+	}
+	session, err := models.GetOrCreateSession(ec.Ctx, ec.Pool, ec.Tenant.ID, dmChannel, "", user.ID)
+	if err != nil || session == nil {
+		return
+	}
+	_ = models.AppendSessionEvent(ec.Ctx, ec.Pool, ec.Tenant.ID, session.ID, models.EventTypeMessageSent, map[string]any{
+		"channel":   dmChannel,
+		"thread_ts": "",
+		"text":      text,
+		"is_dm":     true,
 	})
 }
