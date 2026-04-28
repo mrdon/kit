@@ -43,7 +43,7 @@ func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordi
 	}
 
 	parts, _ := ListParticipants(ctx, a.pool, coord.TenantID, coord.ID)
-	body := buildApprovalBody(coord, drafts, parts)
+	body := a.buildApprovalBody(ctx, coord, drafts, parts)
 
 	sendArgs, _ := json.Marshal(map[string]any{
 		"coordination_id": coord.ID.String(),
@@ -65,8 +65,11 @@ func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordi
 		Body:  body,
 		Kind:  cards.CardKindDecision,
 		Decision: &cards.DecisionCreateInput{
-			Priority:            cards.DecisionPriorityMedium,
-			RecommendedOptionID: "send_drafts_auto",
+			Priority: cards.DecisionPriorityMedium,
+			// Swipe-right defaults to "Send" — approve just this batch.
+			// "Send + auto-approve future" is opt-in for the user who
+			// trusts the bot to keep going without further prompts.
+			RecommendedOptionID: "send_drafts",
 			Options: []cards.DecisionOption{
 				{OptionID: "send_drafts", Label: "Send", ToolName: coordinationResolveDecision, ToolArguments: sendArgs},
 				{OptionID: "send_drafts_auto", Label: "Send + auto-approve future", ToolName: coordinationResolveDecision, ToolArguments: sendAutoArgs},
@@ -78,21 +81,27 @@ func (a *CoordinationApp) surfaceApprovalCard(ctx context.Context, coord *Coordi
 }
 
 // buildApprovalBody renders the markdown shown to the organizer on the
-// approval card. Includes the title, each drafted message body, and the
-// participant identifier so the organizer can verify before approving.
-func buildApprovalBody(coord *Coordination, drafts []approvalDraft, parts []Participant) string {
-	idToIdent := map[string]string{}
+// approval card. Each "To {name}" header uses the participant's display
+// name (resolved from the Kit user record) — not their raw Slack ID.
+func (a *CoordinationApp) buildApprovalBody(ctx context.Context, coord *Coordination, drafts []approvalDraft, parts []Participant) string {
+	idToName := map[string]string{}
 	for _, p := range parts {
-		idToIdent[p.ID.String()] = p.Identifier
+		name := p.Identifier // fallback
+		if p.UserID != nil {
+			if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+				name = *u.DisplayName
+			}
+		}
+		idToName[p.ID.String()] = name
 	}
 	var b strings.Builder
 	b.WriteString("Here's what I'd send. Approve to send these DMs.\n\n")
 	for _, d := range drafts {
-		ident := idToIdent[d.ParticipantID]
-		if ident == "" {
-			ident = "(unknown)"
+		name := idToName[d.ParticipantID]
+		if name == "" {
+			name = "(unknown)"
 		}
-		fmt.Fprintf(&b, "**To %s:**\n%s\n\n---\n\n", ident, d.Body)
+		fmt.Fprintf(&b, "**To %s:**\n%s\n\n---\n\n", name, d.Body)
 	}
 	b.WriteString("\"Send + auto-approve\" sends these and skips this prompt for any future outbound on this coordination.")
 	return b.String()

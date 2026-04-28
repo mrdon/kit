@@ -9,8 +9,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
+
+// lookupUserBySlack is a thin wrapper around models.GetUserBySlackID
+// that hides the not-found case (returns nil user, nil error).
+func lookupUserBySlack(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackID string) (*models.User, error) {
+	return models.GetUserBySlackID(ctx, pool, tenantID, slackID)
+}
 
 // Service is the public entry point for coordination. Tools (agent and
 // MCP) call into Service; the cron sweeper drives Engine.
@@ -100,6 +107,11 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 			NextNudgeAt:    &now,
 			Constraints:    Constraints{SlotVerdicts: map[string]SlotVerdict{}},
 			Rounds:         []Round{},
+		}
+		// Resolve to a Kit user where possible so we can render display
+		// names on cards instead of opaque Slack IDs.
+		if u, err := lookupUserBySlack(ctx, s.pool, c.TenantID, slackID); err == nil && u != nil {
+			p.UserID = &u.ID
 		}
 		if err := CreateParticipant(ctx, s.pool, p); err != nil {
 			return nil, fmt.Errorf("creating participant %s: %w", slackID, err)

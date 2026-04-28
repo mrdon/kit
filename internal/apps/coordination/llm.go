@@ -41,17 +41,27 @@ func (a *CoordinationApp) draftMessage(ctx context.Context, coord *Coordination,
 		organizerName = *organizer.DisplayName
 	}
 
+	// Resolve participant display name — falls back to "" if not a Kit
+	// user (the prompt then tells the bot to use a generic greeting).
+	participantName := ""
+	if p.UserID != nil {
+		if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil {
+			participantName = *u.DisplayName
+		}
+	}
+
 	slotsBlob := slotsForPrompt(coord.Config.CandidateSlots, coord.Config.OrganizerTZ)
 	user := fmt.Sprintf(`
 Reason: %s
 Organizer name: %s
+Participant name: %s
 Meeting title: %s
 Duration: %d minutes
 Candidate slots:
 %s
 Notes from organizer: %s
 Nudge count for this participant: %d
-`, reason, organizerName, coord.Config.Title, coord.Config.DurationMinutes,
+`, reason, organizerName, participantName, coord.Config.Title, coord.Config.DurationMinutes,
 		slotsBlob, coord.Config.Notes, p.NudgeCount)
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
