@@ -19,12 +19,20 @@ var coordinationTools = []services.ToolMeta{
 		Name: "start_coordination",
 		Description: `Start a multi-party meeting-time coordination. The bot DMs each
 participant with the candidate slots, parses their replies, and surfaces
-a decision card to you when a slot works for everyone.
+a decision card to the organizer when a slot works for everyone.
 
-You must pre-compute candidate_slots — typically 3 free 30-min windows
-within the requested date range, drawn from the organizer's calendar
-(if iCal configured) or from the windows the organizer typed in. Each
-slot is {start, end} in RFC3339.`,
+The participants list is "who to DM" — do NOT include the organizer
+even if they're attending the meeting. The organizer's availability is
+already known via candidate_slots (which you pre-computed from their
+calendar or stated windows). For a 1:1 meeting between the organizer
+and Alice, pass participants=["U_ALICE"]. For a meeting between Alice
+and Bob arranged by the organizer, pass participants=["U_ALICE",
+"U_BOB"]. If the organizer's slack ID slips into the list, it's
+filtered out automatically.
+
+candidate_slots is typically 3 free 30-min windows within the requested
+date range. Each slot is {start, end} in RFC3339 (or naive ISO format —
+treated as UTC).`,
 		Schema: services.PropsReq(map[string]any{
 			"title":            services.Field("string", "What the meeting is about (e.g. 'Q2 review')"),
 			"duration_minutes": services.Field("integer", "Meeting length in minutes"),
