@@ -60,8 +60,8 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 	if len(in.CandidateSlots) == 0 {
 		return nil, errors.New("candidate_slots required (the agent must pre-compute these from the organizer's calendar or stated availability)")
 	}
-	if len(in.Participants) < 1 {
-		return nil, errors.New("at least one participant required")
+	if len(in.Participants) < 2 {
+		return nil, errors.New("at least two participants required (counting the organizer if they're attending)")
 	}
 
 	deadlineDays := in.DeadlineDays

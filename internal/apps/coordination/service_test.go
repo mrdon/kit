@@ -106,7 +106,7 @@ func TestService_Start_ValidatesInput(t *testing.T) {
 		{"no title", StartInput{DurationMinutes: 30, CandidateSlots: []Slot{{}}, Participants: []string{"a", "b"}}, "title"},
 		{"no duration", StartInput{Title: "x", CandidateSlots: []Slot{{}}, Participants: []string{"a", "b"}}, "duration"},
 		{"no slots", StartInput{Title: "x", DurationMinutes: 30, Participants: []string{"a", "b"}}, "candidate_slots"},
-		{"no participants", StartInput{Title: "x", DurationMinutes: 30, CandidateSlots: []Slot{{}}, Participants: []string{}}, "participant"},
+		{"too few participants", StartInput{Title: "x", DurationMinutes: 30, CandidateSlots: []Slot{{}}, Participants: []string{"a"}}, "two participants"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
