@@ -235,17 +235,39 @@ type slotInput struct {
 func convertSlots(in []slotInput) ([]Slot, error) {
 	out := make([]Slot, 0, len(in))
 	for i, s := range in {
-		start, err := time.Parse(time.RFC3339, s.Start)
+		start, err := parseFlexibleTimestamp(s.Start)
 		if err != nil {
 			return nil, fmt.Errorf("slot %d start: %w", i, err)
 		}
-		end, err := time.Parse(time.RFC3339, s.End)
+		end, err := parseFlexibleTimestamp(s.End)
 		if err != nil {
 			return nil, fmt.Errorf("slot %d end: %w", i, err)
 		}
 		out = append(out, Slot{Start: start, End: end})
 	}
 	return out, nil
+}
+
+// parseFlexibleTimestamp accepts RFC3339 with Z/offset, plain
+// "YYYY-MM-DDTHH:MM:SS" (assumed UTC), and "YYYY-MM-DD HH:MM:SS"
+// variants. The agent doesn't always produce a timezone in its slot
+// output; the engine treats missing-tz as UTC.
+func parseFlexibleTimestamp(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, errors.New("empty timestamp")
+	}
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized timestamp format %q", s)
 }
 
 func parseISODate(s string) (time.Time, error) {

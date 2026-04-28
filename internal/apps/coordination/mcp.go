@@ -154,11 +154,11 @@ func parseSlotsFromMCP(raw []any) ([]Slot, error) {
 		case map[string]any:
 			startStr, _ := v["start"].(string)
 			endStr, _ := v["end"].(string)
-			start, err := time.Parse(time.RFC3339, startStr)
+			start, err := parseFlexibleTimestamp(startStr)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d start: %w", i, err)
 			}
-			end, err := time.Parse(time.RFC3339, endStr)
+			end, err := parseFlexibleTimestamp(endStr)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d end: %w", i, err)
 			}
@@ -168,11 +168,11 @@ func parseSlotsFromMCP(raw []any) ([]Slot, error) {
 			if err := json.Unmarshal([]byte(v), &s); err != nil {
 				return nil, fmt.Errorf("slot %d: %w", i, err)
 			}
-			start, err := time.Parse(time.RFC3339, s.Start)
+			start, err := parseFlexibleTimestamp(s.Start)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d start: %w", i, err)
 			}
-			end, err := time.Parse(time.RFC3339, s.End)
+			end, err := parseFlexibleTimestamp(s.End)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d end: %w", i, err)
 			}

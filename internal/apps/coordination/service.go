@@ -60,8 +60,8 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 	if len(in.CandidateSlots) == 0 {
 		return nil, errors.New("candidate_slots required (the agent must pre-compute these from the organizer's calendar or stated availability)")
 	}
-	if len(in.Participants) < 2 {
-		return nil, errors.New("at least two participants required")
+	if len(in.Participants) < 1 {
+		return nil, errors.New("at least one participant required")
 	}
 
 	deadlineDays := in.DeadlineDays
@@ -129,11 +129,12 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 		}
 		created++
 	}
-	if created < 2 {
-		// We need at least two participants besides the organizer.
-		// Roll back the coordination row to keep state consistent.
+	if created < 1 {
+		// After filtering the organizer out, we need at least one
+		// person to actually DM. Roll back the coordination row to
+		// keep state consistent.
 		_, _ = s.pool.Exec(ctx, "DELETE FROM app_coordinations WHERE id = $1", coord.ID)
-		return nil, errors.New("need at least two participants besides the organizer")
+		return nil, errors.New("at least one participant besides the organizer is required")
 	}
 
 	return coord, nil
