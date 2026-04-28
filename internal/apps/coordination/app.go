@@ -65,16 +65,25 @@ func (a *CoordinationApp) Name() string { return "coordination" }
 
 func (a *CoordinationApp) SystemPrompt() string {
 	return `## Coordination
-You can run multi-party coordinations on the user's behalf — finding
-meeting times across multiple people. Use start_coordination when the
-user wants to schedule something with two or more attendees and lacks
-a fixed time. Provide participants as a list of Slack user IDs you've
-already resolved with find_user. After starting, the engine handles
-outreach, reminders, and convergence on its own; the user will see a
-decision card when a slot is agreed. Use get_coordination if the user
-asks for status. Don't try to do scheduling outreach via direct DMs
-yourself — coordinations exist precisely to handle the multi-day async
-case the agent loop can't.`
+For ANY meeting-scheduling outreach to one or more people, you MUST use
+start_coordination — never dm_user, post_to_channel, or any other tool
+to send scheduling messages to participants. The participants list is
+"who to DM" and does NOT include the organizer (their availability is
+implicit via candidate_slots). For a 1:1 between the organizer and
+Alice, pass participants=["U_ALICE"]. For a meeting Alice ↔ Bob arranged
+by the organizer, pass ["U_ALICE","U_BOB"].
+
+If start_coordination errors, READ THE ERROR and fix the call. Do NOT
+fall back to manually sending DMs via dm_user — that bypasses the
+organizer's per-message approval cards and is treated as an unauthorized
+outbound. If you genuinely can't recover, ask the organizer in chat
+what to do instead.
+
+After start_coordination succeeds, the engine handles outreach,
+reminders, and convergence on its own. The organizer will see an
+approval card per drafted DM, then a convergence card when a slot is
+agreed. Use get_coordination if asked for status; cancel_coordination
+to abort.`
 }
 
 func (a *CoordinationApp) ToolMetas() []services.ToolMeta {

@@ -51,12 +51,13 @@ func registerCoreTools(r *Registry, botInitiated bool) {
 
 	r.Register(Def{
 		Name:        "dm_user",
-		Description: "Send a direct message to a specific user. Use for private, user-directed output (e.g. \"remind me\", \"DM the manager\"). user_id is the Slack user id, not a display name.",
+		Description: "Send a direct message to a specific user. Use for private, user-directed output (e.g. \"remind me\", \"DM the manager\"). user_id is the Slack user id, not a display name. Sends are gated by default — the caller reviews the drafted DM in an approval card before it goes out.",
 		Schema: propsReq(map[string]any{
 			"user_id": field("string", "Slack user id (starts with 'U')"),
 			"text":    field("string", "The message text (Slack mrkdwn)"),
 		}, "user_id", "text"),
 		Terminal:        true,
+		DefaultPolicy:   PolicyGate,
 		GateCardPreview: dmUserGatePreview,
 		Handler:         dmUserHandler,
 	})
