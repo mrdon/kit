@@ -53,7 +53,10 @@ type CoordinationApp struct {
 }
 
 // Configure wires the app's runtime dependencies. Call once from main.go
-// after services.New.
+// after services.New. Registers the reply handler with Messenger so
+// inbound DMs from active participants route to coordination — has to
+// happen here (not in Init) because msg is set by Configure but Init
+// may have already run with msg == nil.
 func Configure(llm *anthropic.Client, msg *messenger.Default, cardSvc *cards.CardService, taskSvc *services.TaskService) {
 	if instance == nil {
 		return
@@ -62,20 +65,16 @@ func Configure(llm *anthropic.Client, msg *messenger.Default, cardSvc *cards.Car
 	instance.msg = msg
 	instance.cards = cardSvc
 	instance.taskSvc = taskSvc
+	if msg != nil {
+		msg.RegisterReplyHandler(MessengerOrigin, instance.handleInboundReply)
+	}
 }
 
-// Init sets up the service after the DB pool is available and registers
-// the reply handler with Messenger. Inbound routing is handled by
-// Messenger's generic "most recent bot outbound with await_reply=true"
-// query, which finds coord's per-(participant) session via the
-// message_sent event and routes to handleInboundReply.
+// Init sets up the service after the DB pool is available.
 func (a *CoordinationApp) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = newService(pool, a)
 	a.engine = newEngine(pool, a)
-	if a.msg != nil {
-		a.msg.RegisterReplyHandler(MessengerOrigin, a.handleInboundReply)
-	}
 }
 
 func (a *CoordinationApp) Name() string { return "coordination" }
