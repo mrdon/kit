@@ -375,7 +375,6 @@ export default function Stack() {
               <motion.section
                 key={itemKey(it)}
                 className="card-screen"
-                layout
                 exit={{ height: 0, opacity: 0, transition: { duration: 0.25 } }}
               >
                 <SwipeCard
