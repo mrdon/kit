@@ -184,8 +184,10 @@ func (a *CoordinationApp) surfaceAbandonmentCard(ctx context.Context, coord *Coo
 	return err
 }
 
-// surfaceDeclineCard surfaces "X declined — proceed without them or
-// abandon?" to the organizer.
+// surfaceDeclineCard surfaces "X declined — cancel?" to the organizer.
+// Phase 1 doesn't have a working "proceed without them" recompute path
+// yet, so the only option here is cancel. Future: re-add proceed-without
+// when the recompute logic correctly handles the smaller participant set.
 func (a *CoordinationApp) surfaceDeclineCard(ctx context.Context, coord *Coordination, declined *Participant) error {
 	if a.cards == nil {
 		return errors.New("CardService not configured")
@@ -195,17 +197,12 @@ func (a *CoordinationApp) surfaceDeclineCard(ctx context.Context, coord *Coordin
 		return err
 	}
 
-	proceedArgs, _ := json.Marshal(map[string]any{
-		"coordination_id":      coord.ID.String(),
-		"action":               "proceed_without",
-		"declined_participant": declined.ID.String(),
-	})
-	abandonArgs, _ := json.Marshal(map[string]any{
+	cancelArgs, _ := json.Marshal(map[string]any{
 		"coordination_id": coord.ID.String(),
-		"action":          "abandon",
+		"action":          "cancel",
 	})
 
-	body := participantName(declined) + " declined the meeting. Proceed with the remaining attendees, or abandon this coordination?"
+	body := participantName(declined) + " declined the meeting. Cancel this coordination? (You can start a new one with a different attendee list.)"
 
 	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
 		Title: fmt.Sprintf("%s — %s declined", coord.Config.Title, participantName(declined)),
@@ -213,10 +210,56 @@ func (a *CoordinationApp) surfaceDeclineCard(ctx context.Context, coord *Coordin
 		Kind:  cards.CardKindDecision,
 		Decision: &cards.DecisionCreateInput{
 			Priority:            cards.DecisionPriorityMedium,
-			RecommendedOptionID: "proceed_without",
+			RecommendedOptionID: "cancel",
 			Options: []cards.DecisionOption{
-				{OptionID: "proceed_without", Label: "Proceed without them", ToolName: coordinationResolveDecision, ToolArguments: proceedArgs},
-				{OptionID: "abandon", Label: "Abandon", ToolName: coordinationResolveDecision, ToolArguments: abandonArgs},
+				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
+			},
+		},
+	})
+	return err
+}
+
+// surfaceTimedOutCard surfaces a card to the organizer when a
+// participant has missed the configured number of nudges. The
+// organizer can either cancel the whole coord or reset the participant's
+// nudge counter to give them another chance.
+func (a *CoordinationApp) surfaceTimedOutCard(ctx context.Context, coord *Coordination, p *Participant) error {
+	if a.cards == nil {
+		return errors.New("CardService not configured")
+	}
+	caller, err := a.organizerCaller(ctx, coord)
+	if err != nil {
+		return err
+	}
+	name := participantName(p)
+	if p.UserID != nil {
+		if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+			name = *u.DisplayName
+		}
+	}
+
+	resetArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "reset_nudge",
+		"slot_key":        p.ID.String(), // reuse slot_key field for participant_id
+	})
+	cancelArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "cancel",
+	})
+
+	body := fmt.Sprintf("**%s** hasn't responded after %d nudge(s).\n\nReset their nudge counter to give them another chance, or cancel the coordination?", name, p.NudgeCount)
+
+	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
+		Title: fmt.Sprintf("%s — %s hasn't replied", coord.Config.Title, name),
+		Body:  body,
+		Kind:  cards.CardKindDecision,
+		Decision: &cards.DecisionCreateInput{
+			Priority:            cards.DecisionPriorityMedium,
+			RecommendedOptionID: "reset_nudge",
+			Options: []cards.DecisionOption{
+				{OptionID: "reset_nudge", Label: "Try again (reset nudges)", ToolName: coordinationResolveDecision, ToolArguments: resetArgs},
+				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
 			},
 		},
 	})
@@ -242,17 +285,12 @@ func (a *CoordinationApp) surfaceOutOfWindowCard(ctx context.Context, coord *Coo
 		}
 	}
 
-	proceedArgs, _ := json.Marshal(map[string]any{
-		"coordination_id":      coord.ID.String(),
-		"action":               "proceed_without",
-		"declined_participant": p.ID.String(),
-	})
 	cancelArgs, _ := json.Marshal(map[string]any{
 		"coordination_id": coord.ID.String(),
 		"action":          "cancel",
 	})
 
-	body := fmt.Sprintf("**%s** can't do the proposed time(s).\n\nWhat they said: %q\n\nThe coord engine doesn't yet expand the candidate set on its own — to honor their suggestion, cancel this coord and start a new one with the new times. Or proceed without them.", name, suggestion)
+	body := fmt.Sprintf("**%s** can't do the proposed time(s).\n\nWhat they said: %q\n\nCancel this coordination and start a new one with the new time?", name, suggestion)
 
 	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
 		Title: fmt.Sprintf("%s — %s suggests a different time", coord.Config.Title, name),
@@ -260,9 +298,8 @@ func (a *CoordinationApp) surfaceOutOfWindowCard(ctx context.Context, coord *Coo
 		Kind:  cards.CardKindDecision,
 		Decision: &cards.DecisionCreateInput{
 			Priority:            cards.DecisionPriorityMedium,
-			RecommendedOptionID: "proceed_without",
+			RecommendedOptionID: "cancel",
 			Options: []cards.DecisionOption{
-				{OptionID: "proceed_without", Label: "Proceed without " + name, ToolName: coordinationResolveDecision, ToolArguments: proceedArgs},
 				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
 			},
 		},
@@ -412,6 +449,11 @@ func resolveDecisionHandler(app *CoordinationApp) tools.HandlerFunc {
 			return resolveSendDrafts(ec.Ctx, app, coord, inp.Drafts, true)
 		case "skip_one":
 			return resolveSkipOne(ec.Ctx, app, coord, inp.Drafts)
+		case "reset_nudge":
+			// SlotKey field is reused as the participant id for the
+			// timed-out card path (avoids adding another field to the
+			// resolve schema).
+			return resolveResetNudge(ec.Ctx, app, coord, inp.SlotKey)
 		}
 		return "", fmt.Errorf("unknown action %q", inp.Action)
 	}
@@ -431,6 +473,12 @@ func resolveConfirm(ctx context.Context, app *CoordinationApp, coord *Coordinati
 	if err := app.notifyParticipantsConfirmed(ctx, coord, *slot); err != nil {
 		slog.Error("notifying confirmed", "error", err)
 	}
+	loc, _ := loadTZ(coord.Config.OrganizerTZ)
+	if loc == nil {
+		loc = time.UTC
+	}
+	when := slot.Start.In(loc).Format("Mon Jan 2 at 3:04 PM")
+	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Confirmed %q for %s. Participants notified. You'll need to send the actual calendar invite — I can't do that yet.", coord.Config.Title, when))
 	return "Coordination confirmed. Participants notified.", nil
 }
 
@@ -464,7 +512,40 @@ func resolveCancel(ctx context.Context, app *CoordinationApp, coord *Coordinatio
 	if app.engine != nil {
 		_ = app.engine.NotifyCancel(ctx, coord)
 	}
+	parts, _ := ListParticipants(ctx, app.pool, coord.TenantID, coord.ID)
+	contacted := 0
+	for _, p := range parts {
+		if p.Status == ParticipantContacted || p.Status == ParticipantResponded {
+			contacted++
+		}
+	}
+	msg := fmt.Sprintf("Cancelled %q.", coord.Config.Title)
+	if contacted > 0 {
+		msg += fmt.Sprintf(" Sent a brief 'cancelled' note to %d participant(s).", contacted)
+	}
+	notifyOrganizer(ctx, app, coord, msg)
 	return "Coordination cancelled.", nil
+}
+
+// resolveResetNudge resets the participant's nudge counter and re-arms
+// them so the engine drafts another outreach next sweep tick.
+func resolveResetNudge(ctx context.Context, app *CoordinationApp, coord *Coordination, participantRef string) (string, error) {
+	pid, err := uuid.Parse(participantRef)
+	if err != nil {
+		return "", fmt.Errorf("invalid participant id: %w", err)
+	}
+	p, err := GetParticipant(ctx, app.pool, coord.TenantID, pid)
+	if err != nil || p == nil {
+		return "", fmt.Errorf("loading participant: %w", err)
+	}
+	now := time.Now()
+	p.Status = ParticipantPending
+	p.NudgeCount = 0
+	p.NextNudgeAt = &now
+	if err := UpdateParticipant(ctx, app.pool, p); err != nil {
+		return "", fmt.Errorf("resetting nudge: %w", err)
+	}
+	return fmt.Sprintf("Reset nudges for %s. They'll get a fresh outreach soon.", p.Identifier), nil
 }
 
 // resolveSkipOne is fired when the organizer rejects a single drafted
@@ -523,6 +604,7 @@ func resolveExtend(ctx context.Context, app *CoordinationApp, coord *Coordinatio
 	if err != nil {
 		return "", err
 	}
+	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Extended %q deadline by 7 days.", coord.Config.Title))
 	return "Deadline extended by 7 days.", nil
 }
 

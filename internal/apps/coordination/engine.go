@@ -260,6 +260,11 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 	if err := UpdateParticipant(ctx, e.pool, &p); err != nil {
 		return fmt.Errorf("updating participant: %w", err)
 	}
+	if p.Status == ParticipantTimedOut {
+		if err := e.app.surfaceTimedOutCard(ctx, coord, &p); err != nil {
+			slog.Error("surfacing timed_out card", "error", err, "coord", coord.ID)
+		}
+	}
 	return nil
 }
 
