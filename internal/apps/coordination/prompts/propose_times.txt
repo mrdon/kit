@@ -18,11 +18,23 @@ Shape:
 }
 
 Rules:
-- "converged" is true ONLY if every active (non-declined) participant
-  has explicitly accepted the SAME specific time. If they all listed
-  Wed 4pm in their availability but nobody explicitly said "yes Wed 4pm
-  works", that's NOT converged — it's a candidate. Set converged=false
-  and put Wed 4pm in proposed_times.
+- "converged" is true when every active (non-declined) participant's
+  stated availability is satisfied by ONE specific time. A range or
+  window (e.g. "anytime Friday", "Tuesday afternoon", "9–11am Mon")
+  satisfies any specific time inside it — treat that as an explicit
+  acceptance of any time within the window. An exact pinpoint time
+  (e.g. "Friday at 12pm") only satisfies itself.
+  Examples:
+    * Alice: "Friday at 12pm". Bob: "anytime Friday". → converged on
+      "Friday at 12:00 PM" (12pm is inside Bob's window).
+    * Alice: "Tue 2-4pm". Bob: "Tue at 3pm". → converged on
+      "Tue at 3:00 PM" (3pm is inside Alice's window).
+    * Alice: "Wed 4pm". Bob: "Wed 4pm or Thu 10am". → converged on
+      "Wed at 4:00 PM" (everyone's availability includes it).
+    * Alice: "Mon morning". Bob: "Mon afternoon". → not converged.
+      Pick 1–3 specific times you'd ask one of them to flex on.
+- If converged, set chosen_time to the human-readable specific time
+  and ALSO include it in proposed_times.
 - "proposed_times" should be 1-3 concrete times (with date + time of
   day) that look like they could work for everyone based on what they've
   said. Pick times that satisfy the intersection of constraints.

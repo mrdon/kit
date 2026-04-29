@@ -131,8 +131,9 @@ func (e *Engine) sweepReadyParticipants(ctx context.Context, now time.Time) erro
 }
 
 // processReadyGroup drafts messages for each ready participant in this
-// coordination, then either sends them directly (if auto_approve) or
-// surfaces a batched approval card.
+// coordination, then either sends them directly (if auto_approve, or
+// the recipient is the organizer themselves) or surfaces an approval
+// card.
 func (e *Engine) processReadyGroup(ctx context.Context, coord *Coordination, ready []Participant) error {
 	type draft struct {
 		participant Participant
@@ -154,32 +155,33 @@ func (e *Engine) processReadyGroup(ctx context.Context, coord *Coordination, rea
 		return nil
 	}
 
-	if !coord.Config.AutoApprove {
-		// One approval card per draft (one per participant). Each card's
-		// tool-args round-trip the drafted body so resolution sends the
-		// exact text without re-drafting. Park each participant's
-		// next_nudge_at while we wait on the organizer.
-		for _, d := range drafts {
-			parked := d.participant
-			parked.NextNudgeAt = nil
-			if err := UpdateParticipant(ctx, e.pool, &parked); err != nil {
-				slog.Error("parking participant for approval", "error", err)
-			}
-			draft := approvalDraft{
-				ParticipantID: d.participant.ID.String(),
-				Body:          d.body,
-			}
-			if err := e.app.surfaceApprovalCard(ctx, coord, &d.participant, draft); err != nil {
-				slog.Error("surfacing approval card", "error", err, "coord", coord.ID, "participant", d.participant.ID)
-			}
-		}
-		return nil
-	}
-
 	for _, d := range drafts {
-		if err := e.sendOne(ctx, coord, d.participant, d.body); err != nil {
-			slog.Error("sending message", "error", err, "participant", d.participant.ID)
+		// The organizer participant is asking themselves; surfacing an
+		// approval card to the organizer for a DM whose recipient is the
+		// organizer is meaningless gating. Send directly.
+		isOrganizer := d.participant.UserID != nil && *d.participant.UserID == coord.OrganizerID
+		if coord.Config.AutoApprove || isOrganizer {
+			if err := e.sendOne(ctx, coord, d.participant, d.body); err != nil {
+				slog.Error("sending message", "error", err, "participant", d.participant.ID)
+			}
 			continue
+		}
+
+		// Park this participant's next_nudge_at while we wait on the
+		// organizer's approval. The card's tool-args round-trip the
+		// drafted body so resolution sends the exact text without
+		// re-drafting.
+		parked := d.participant
+		parked.NextNudgeAt = nil
+		if err := UpdateParticipant(ctx, e.pool, &parked); err != nil {
+			slog.Error("parking participant for approval", "error", err)
+		}
+		card := approvalDraft{
+			ParticipantID: d.participant.ID.String(),
+			Body:          d.body,
+		}
+		if err := e.app.surfaceApprovalCard(ctx, coord, &d.participant, card); err != nil {
+			slog.Error("surfacing approval card", "error", err, "coord", coord.ID, "participant", d.participant.ID)
 		}
 	}
 	return nil
@@ -280,8 +282,11 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 		if p.Status == ParticipantDeclined || p.Status == ParticipantTimedOut {
 			continue
 		}
-		// Anyone still active gets re-engaged.
-		p.Status = ParticipantContacted
+		// Re-arm everyone for the next sweep. Leave status alone — they
+		// remain "responded" until sendOne actually re-contacts them.
+		// Pre-flipping to "contacted" here was a bug: it could break
+		// the allReplied check on a subsequent reply if not every
+		// re-engaged participant's outbound had actually gone out yet.
 		p.NextNudgeAt = &now
 		_ = UpdateParticipant(ctx, e.pool, &p)
 	}
