@@ -358,7 +358,7 @@ func buildAbandonmentBody(coord *Coordination, reason string, parts []Participan
 			fmt.Fprintf(&b, "- %s — %s\n", p.Identifier, availability)
 		}
 	}
-	b.WriteString("\nExtend gives everyone another 5 rounds. Cancel ends the coordination — you can start a fresh one with a different attendee list if needed.")
+	fmt.Fprintf(&b, "\nExtend gives everyone another %d rounds. Cancel ends the coordination — you can start a fresh one with a different attendee list if needed.", MaxRounds)
 	return b.String()
 }
 
@@ -586,16 +586,21 @@ func resolveAbandon(ctx context.Context, app *CoordinationApp, coord *Coordinati
 }
 
 func resolveExtend(ctx context.Context, app *CoordinationApp, coord *Coordination) (string, error) {
+	// Extend covers two contexts: deadline-driven abandonment (push the
+	// deadline by 7 days) and round-limit-driven abandonment (give the
+	// negotiation another MaxRounds rounds). We reset both so the coord
+	// has fresh runway either way.
 	newDeadline := time.Now().Add(7 * 24 * time.Hour)
 	_, err := app.pool.Exec(ctx, `
-		UPDATE app_coordinations SET deadline_at = $3, updated_at = now()
+		UPDATE app_coordinations
+		SET deadline_at = $3, round_count = 0, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 	`, coord.TenantID, coord.ID, newDeadline)
 	if err != nil {
 		return "", err
 	}
-	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Extended %q deadline by 7 days.", coord.Config.Title))
-	return "Deadline extended by 7 days.", nil
+	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Extended %q — deadline +7 days, %d more rounds available.", coord.Config.Title, MaxRounds))
+	return fmt.Sprintf("Extended: deadline +7 days, %d more rounds.", MaxRounds), nil
 }
 
 func resolveProceedWithout(ctx context.Context, app *CoordinationApp, coord *Coordination, declinedRef string) (string, error) {

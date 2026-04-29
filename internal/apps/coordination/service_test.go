@@ -68,10 +68,17 @@ func TestService_Start_WritesRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListParticipants: %v", err)
 	}
-	if len(parts) != 2 {
-		t.Fatalf("participants = %d, want 2", len(parts))
+	// 2 participants + organizer (auto-added with availability prepopulated)
+	if len(parts) != 3 {
+		t.Fatalf("participants = %d, want 3 (Alice, Bob, organizer)", len(parts))
 	}
 	for _, p := range parts {
+		if p.UserID != nil && *p.UserID == organizer.ID {
+			if p.Status != ParticipantResponded {
+				t.Errorf("organizer status = %s, want responded (availability prepopulated)", p.Status)
+			}
+			continue
+		}
 		if p.Status != ParticipantPending {
 			t.Errorf("participant %s status = %s, want pending", p.Identifier, p.Status)
 		}
