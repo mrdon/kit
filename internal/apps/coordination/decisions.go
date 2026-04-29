@@ -593,13 +593,16 @@ func (a *CoordinationApp) notifyParticipantsConfirmed(ctx context.Context, coord
 		}
 		body := fmt.Sprintf("Confirmed for %s. The organizer will send a calendar invite shortly.", when)
 		_, err := a.msg.Send(ctx, messenger.SendRequest{
-			TenantID:         coord.TenantID,
-			Channel:          "slack",
-			Recipient:        messenger.Recipient{SlackUserID: p.Identifier},
-			Body:             body,
-			Origin:           MessengerOrigin,
-			OriginRef:        p.ID.String(),
-			AwaitReply:       false,
+			TenantID:  coord.TenantID,
+			Channel:   "slack",
+			Recipient: messenger.Recipient{SlackUserID: p.Identifier},
+			Body:      body,
+			Origin:    MessengerOrigin,
+			OriginRef: p.ID.String(),
+			// Keep awaiting so late corrections ("actually 11 not 10")
+			// still route back to this coord rather than falling through
+			// to the agent loop.
+			AwaitReply:       true,
 			SessionThreadKey: participantSessionThreadKey(p.ID),
 		})
 		if err != nil {

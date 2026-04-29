@@ -102,21 +102,11 @@ type InboundMessage struct {
 // to the awaiting outbound's purpose.
 type ReplyHandler func(ctx context.Context, msg InboundMessage, originRef string) (handled bool, err error)
 
-// SessionResolver lets an app claim ownership of an inbound message's
-// session before the default channel-level resolution kicks in. Apps
-// that maintain their own per-(activity, recipient) sessions register
-// a resolver so messenger routes inbound replies to the right session.
-//
-// Returns nil session if this resolver doesn't claim the inbound —
-// messenger then tries the next resolver, falling back to channel-level.
-type SessionResolver func(ctx context.Context, evt InboundEvent) (*models.Session, string, string, error)
-
 // Messenger is the public interface.
 type Messenger interface {
 	Send(ctx context.Context, req SendRequest) (SentMessage, error)
 	Dispatch(ctx context.Context, evt InboundEvent) (handled bool, err error)
 	RegisterReplyHandler(origin string, handler ReplyHandler)
-	RegisterSessionResolver(resolver SessionResolver)
 }
 
 // SlackPoster is the subset of *kitslack.Client that Messenger uses.
@@ -136,9 +126,8 @@ type Default struct {
 	// Tests inject a stub here.
 	SlackClientFor func(ctx context.Context, tenantID uuid.UUID) (SlackPoster, error)
 
-	mu        sync.RWMutex
-	handlers  map[string]ReplyHandler
-	resolvers []SessionResolver
+	mu       sync.RWMutex
+	handlers map[string]ReplyHandler
 }
 
 // New constructs a Default Messenger.
@@ -159,14 +148,6 @@ func (m *Default) RegisterReplyHandler(origin string, handler ReplyHandler) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.handlers[origin] = handler
-}
-
-// RegisterSessionResolver appends a session resolver. Resolvers are
-// tried in registration order during inbound dispatch.
-func (m *Default) RegisterSessionResolver(resolver SessionResolver) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.resolvers = append(m.resolvers, resolver)
 }
 
 func (m *Default) handlerFor(origin string) (ReplyHandler, bool) {
@@ -219,132 +200,78 @@ func (m *Default) Send(ctx context.Context, req SendRequest) (SentMessage, error
 // a registered handler took it; (false, nil) to fall through to the
 // caller's default path (typically the agent loop).
 //
-// Inbound resolution: registered SessionResolvers are tried first (an
-// app like coordination can claim the inbound based on its own state —
-// e.g. "this user has an active participant row"). If no resolver
-// claims, fall back to thread/channel session lookup.
+// Routing rule: most-recent-bot-outbound-with-await-reply wins. We
+// query session_events for the most recent message_sent to this user
+// in this channel where await_reply=true. Whatever app sent that
+// outbound (via its origin metadata) is the handler we route to. The
+// handler runs and the parser/etc. can decide if the inbound is
+// actually relevant to that conversation — if not, returns false and
+// dispatch falls through to the agent loop.
 func (m *Default) Dispatch(ctx context.Context, evt InboundEvent) (bool, error) {
 	if evt.TenantID == uuid.Nil {
 		return false, errors.New("messenger.Dispatch: TenantID required")
 	}
-
-	var (
-		session   *models.Session
-		origin    string
-		originRef string
-	)
-
-	m.mu.RLock()
-	resolvers := append([]SessionResolver(nil), m.resolvers...)
-	m.mu.RUnlock()
-
-	for _, r := range resolvers {
-		s, o, ref, err := r(ctx, evt)
-		if err != nil {
-			return false, fmt.Errorf("session resolver: %w", err)
-		}
-		if s != nil {
-			session, origin, originRef = s, o, ref
-			break
-		}
+	if evt.SlackChannelID == "" || evt.UserID == uuid.Nil {
+		return false, nil
 	}
 
-	if session == nil {
-		// Fall back to the existing thread/channel-level session (used by
-		// the agent loop's own message_sent events).
-		s, err := m.resolveSessionForInbound(ctx, evt)
-		if err != nil {
-			return false, fmt.Errorf("resolving session: %w", err)
-		}
-		if s == nil {
-			return false, nil
-		}
-		o, ref, ok, err := m.latestAwaitingOrigin(ctx, evt.TenantID, s.ID)
-		if err != nil {
-			return false, fmt.Errorf("looking up await_reply state: %w", err)
-		}
-		if !ok {
-			return false, nil
-		}
-		session, origin, originRef = s, o, ref
+	row := m.Pool.QueryRow(ctx, `
+		SELECT s.id, se.data
+		FROM session_events se
+		JOIN sessions s ON s.id = se.session_id
+		WHERE s.tenant_id = $1
+		  AND s.slack_channel_id = $2
+		  AND s.user_id = $3
+		  AND se.event_type = $4
+		  AND (se.data->>'await_reply')::boolean = true
+		ORDER BY se.created_at DESC
+		LIMIT 1
+	`, evt.TenantID, evt.SlackChannelID, evt.UserID, string(models.EventTypeMessageSent))
+
+	var sessionID uuid.UUID
+	var rawData json.RawMessage
+	if err := row.Scan(&sessionID, &rawData); err != nil {
+		// pgx.ErrNoRows is the common "no awaiting outbound" path.
+		return false, nil //nolint:nilerr // intentional: no claim
 	}
 
-	handler, hasHandler := m.handlerFor(origin)
+	var data outboundEventData
+	if err := json.Unmarshal(rawData, &data); err != nil {
+		// Old-shape message_sent events (no origin) — fall through.
+		return false, nil //nolint:nilerr // intentional: no claim
+	}
+	if data.Origin == "" {
+		return false, nil
+	}
+
+	handler, hasHandler := m.handlerFor(data.Origin)
 	if !hasHandler {
 		return false, nil
 	}
 
 	handled, err := handler(ctx, InboundMessage{
-		SessionID: session.ID,
+		SessionID: sessionID,
 		Body:      evt.Body,
 		Source:    evt,
-	}, originRef)
+	}, data.OriginRef)
 	if err != nil {
-		return false, fmt.Errorf("reply handler %q: %w", origin, err)
+		return false, fmt.Errorf("reply handler %q: %w", data.Origin, err)
 	}
 
-	// Only record the inbound on the resolved session if the handler
-	// claimed it. If the handler returns false, the agent loop will run
-	// in a different (channel-level) session and log the inbound there;
-	// double-logging confuses subsequent context reconstruction.
+	// Only record the inbound on the routed session if the handler
+	// claimed it. If the handler returns false (parser said the message
+	// is unrelated), the agent loop runs in its own session and logs
+	// the inbound there — we don't want a stale "unrelated" message
+	// polluting this conversation's context.
 	if handled {
-		if err := models.AppendSessionEvent(ctx, m.Pool, evt.TenantID, session.ID, models.EventTypeMessageReceived, map[string]any{
+		if err := models.AppendSessionEvent(ctx, m.Pool, evt.TenantID, sessionID, models.EventTypeMessageReceived, map[string]any{
 			"text":       evt.Body,
 			"channel":    evt.SlackChannelID,
-			"origin":     origin,
-			"origin_ref": originRef,
+			"origin":     data.Origin,
+			"origin_ref": data.OriginRef,
 		}); err != nil {
 			return true, fmt.Errorf("recording inbound: %w", err)
 		}
 	}
 	return handled, nil
-}
-
-// resolveSessionForInbound looks up a session for an inbound message.
-// Tries (channel, thread_ts) match first if thread_ts is set; falls back
-// to (channel, "") match for un-threaded DMs. Returns nil session if no
-// match — the inbound should fall through to the regular agent path.
-//
-//nolint:nilnil // (nil, nil) is the intentional "no match" signal here.
-func (m *Default) resolveSessionForInbound(ctx context.Context, evt InboundEvent) (*models.Session, error) {
-	if evt.SlackChannelID == "" {
-		return nil, nil
-	}
-	// Thread-replies and channel-level messages key by thread_ts; for
-	// un-threaded DMs, thread_ts is "".
-	session, err := models.FindSessionByThread(ctx, m.Pool, evt.TenantID, evt.SlackChannelID, evt.ThreadTS)
-	if err != nil {
-		return nil, err
-	}
-	return session, nil
-}
-
-// latestAwaitingOrigin finds the most recent EventTypeMessageSent on the
-// session whose data has await_reply=true. Returns the origin and
-// origin_ref, or ok=false if no such event exists.
-func (m *Default) latestAwaitingOrigin(ctx context.Context, tenantID, sessionID uuid.UUID) (origin, originRef string, ok bool, err error) {
-	row := m.Pool.QueryRow(ctx, `
-		SELECT data
-		FROM session_events
-		WHERE tenant_id = $1 AND session_id = $2 AND event_type = $3
-		ORDER BY created_at DESC
-		LIMIT 1
-	`, tenantID, sessionID, string(models.EventTypeMessageSent))
-	var raw json.RawMessage
-	if err := row.Scan(&raw); err != nil {
-		// pgx returns ErrNoRows when there's no message_sent on this session,
-		// which means nothing is awaiting reply.
-		return "", "", false, nil
-	}
-	var data outboundEventData
-	if err := json.Unmarshal(raw, &data); err != nil {
-		// Older message_sent events (written by tools/core.go) have a
-		// different payload shape — they unmarshal cleanly into
-		// outboundEventData with empty Origin. Treat as not-awaiting.
-		return "", "", false, nil
-	}
-	if !data.AwaitReply || data.Origin == "" {
-		return "", "", false, nil
-	}
-	return data.Origin, data.OriginRef, true, nil
 }

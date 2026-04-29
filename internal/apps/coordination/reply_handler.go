@@ -13,39 +13,6 @@ import (
 	"github.com/mrdon/kit/internal/services/messenger"
 )
 
-// resolveInboundSession is registered with Messenger as a SessionResolver.
-// For an inbound DM from a Slack user, look up the most recent active
-// coordination participant for that user (status contacted/responded).
-// If found, return their per-coord session so the reply lands in the
-// right context — not the user's shared channel-level session.
-func (a *CoordinationApp) resolveInboundSession(ctx context.Context, evt messenger.InboundEvent) (*models.Session, string, string, error) {
-	if evt.Channel != "slack" || evt.SlackUserID == "" {
-		return nil, "", "", nil
-	}
-	row := a.pool.QueryRow(ctx, `
-		SELECT p.id, p.session_id
-		FROM app_coordination_participants p
-		JOIN app_coordinations c ON c.id = p.coordination_id
-		WHERE p.tenant_id = $1
-		  AND p.identifier = $2
-		  AND p.status IN ('contacted','responded')
-		  AND p.session_id IS NOT NULL
-		  AND c.status = 'active'
-		ORDER BY p.updated_at DESC
-		LIMIT 1
-	`, evt.TenantID, evt.SlackUserID)
-	var participantID, sessionID uuid.UUID
-	if err := row.Scan(&participantID, &sessionID); err != nil {
-		// pgx.ErrNoRows: no active coord participant for this user
-		return nil, "", "", nil //nolint:nilerr // intentional: no claim
-	}
-	session, err := models.GetSession(ctx, a.pool, evt.TenantID, sessionID)
-	if err != nil || session == nil {
-		return nil, "", "", err
-	}
-	return session, MessengerOrigin, participantID.String(), nil
-}
-
 // handleInboundReply is registered with Messenger as origin="coordination".
 // Messenger has already resolved the session and confirmed an awaiting
 // outbound from us; this handler does meeting-specific intent
@@ -81,6 +48,14 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 	if err != nil {
 		return false, fmt.Errorf("building message log: %w", err)
 	}
+	// Messenger defers writing the message_received event until the
+	// handler claims the inbound, so it isn't in session_events yet.
+	// Append it explicitly so the parser sees the latest reply.
+	log = append(log, MessageLogEntry{
+		Direction: "inbound",
+		Body:      msg.Body,
+		At:        time.Now(),
+	})
 
 	parsed, err := a.parseMeetingReply(ctx, log, coord.Config.CandidateSlots, coord.Config.OrganizerTZ)
 	if err != nil {

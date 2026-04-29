@@ -65,16 +65,16 @@ func Configure(llm *anthropic.Client, msg *messenger.Default, cardSvc *cards.Car
 }
 
 // Init sets up the service after the DB pool is available and registers
-// the reply handler + session resolver with Messenger so inbound
-// replies from active coordination participants route to that
-// participant's per-coord session (not the shared channel session).
+// the reply handler with Messenger. Inbound routing is handled by
+// Messenger's generic "most recent bot outbound with await_reply=true"
+// query, which finds coord's per-(participant) session via the
+// message_sent event and routes to handleInboundReply.
 func (a *CoordinationApp) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = newService(pool, a)
 	a.engine = newEngine(pool, a)
 	if a.msg != nil {
 		a.msg.RegisterReplyHandler(MessengerOrigin, a.handleInboundReply)
-		a.msg.RegisterSessionResolver(a.resolveInboundSession)
 	}
 }
 

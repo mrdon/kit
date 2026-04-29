@@ -214,6 +214,7 @@ func TestDispatch_NoSession(t *testing.T) {
 		Channel:        "slack",
 		SlackChannelID: "D_unknown",
 		SlackUserID:    fx.user.SlackUserID,
+		UserID:         fx.user.ID,
 		Body:           "hello?",
 	})
 	if err != nil {
@@ -250,6 +251,7 @@ func TestDispatch_NoAwaitReplyFallthrough(t *testing.T) {
 		Channel:        "slack",
 		SlackChannelID: fx.slack.imChannel,
 		SlackUserID:    fx.user.SlackUserID,
+		UserID:         fx.user.ID,
 		Body:           "thanks",
 	})
 	if err != nil {
@@ -291,6 +293,7 @@ func TestDispatch_HandlerCalled(t *testing.T) {
 		Channel:        "slack",
 		SlackChannelID: fx.slack.imChannel,
 		SlackUserID:    fx.user.SlackUserID,
+		UserID:         fx.user.ID,
 		Body:           "Tuesday 10am works",
 	})
 	if err != nil {
@@ -340,6 +343,7 @@ func TestDispatch_HandlerFallthrough(t *testing.T) {
 		Channel:        "slack",
 		SlackChannelID: fx.slack.imChannel,
 		SlackUserID:    fx.user.SlackUserID,
+		UserID:         fx.user.ID,
 		Body:           "what's the PTO policy?",
 	})
 	if err != nil {
@@ -369,6 +373,7 @@ func TestDispatch_NoHandlerRegistered(t *testing.T) {
 		Channel:        "slack",
 		SlackChannelID: fx.slack.imChannel,
 		SlackUserID:    fx.user.SlackUserID,
+		UserID:         fx.user.ID,
 		Body:           "any reply",
 	})
 	if err != nil {
