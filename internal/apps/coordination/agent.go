@@ -190,7 +190,17 @@ func startCoordinationHandler(svc *Service) tools.HandlerFunc {
 		if inp.AutoApprove {
 			gateMsg = "DMs are going out now (auto-approve was enabled at start)"
 		}
-		return fmt.Sprintf("Coordination started (id=%s, %d participants) — %s. Use get_coordination to check status.", coord.ID, len(inp.Participants), gateMsg), nil
+		// Be explicit that NOTHING is locked in yet — when the user says
+		// "schedule a meeting", the agent often parrots back "meeting
+		// scheduled" which is misleading: at this point we've only kicked
+		// off outreach. Confirmation only comes after everyone agrees.
+		return fmt.Sprintf(
+			"Outreach started (coordination id=%s, %d participant(s)) — nothing is locked in yet; %s. "+
+				"You'll see a confirmation card once everyone agrees on a time. "+
+				"When reporting back to the user, do NOT say 'meeting scheduled' or similar — say you're reaching out to participants to find a time. "+
+				"Use get_coordination to check status.",
+			coord.ID, len(inp.Participants), gateMsg,
+		), nil
 	}
 }
 

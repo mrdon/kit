@@ -113,6 +113,13 @@ approval card per drafted DM, then a convergence card when a slot is
 agreed. Use get_coordination if asked for status; cancel_coordination
 to abort.
 
+start_coordination only KICKS OFF the outreach — nothing is locked in
+at that point. When telling the user the result, say you're reaching
+out / starting to negotiate / queued the outreach. NEVER say "meeting
+scheduled", "meeting set", "meeting booked", or anything implying the
+time is confirmed. Confirmation happens only after everyone agrees and
+the organizer taps Confirm on the convergence card.
+
 The engine periodically DMs the organizer with progress updates
 ("X updated their availability for Y: ..."). When the organizer
 follows up on one of those updates — or mentions a meeting/scheduling
