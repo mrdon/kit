@@ -108,7 +108,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 			return false, fmt.Errorf("updating participant on accept: %w", err)
 		}
 		ackParticipant(ctx, a, coord, p, fmt.Sprintf("Got it — %s. I'll check with the others and circle back.", parsed.AcceptedTime))
-		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** accepted *%s* for %q.", participantDisplayName(ctx, a, coord, p), parsed.AcceptedTime, coord.Config.Title))
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** accepted *%s* for %q. I'll check with anyone still pending; you'll see a confirmation card if everyone aligns or a follow-up card if more outreach is needed.", participantDisplayName(ctx, a, coord, p), parsed.AcceptedTime, coord.Config.Title))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
@@ -123,7 +123,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 			return false, fmt.Errorf("updating participant on refine: %w", err)
 		}
 		ackParticipant(ctx, a, coord, p, "Got it — checking with the others and I'll circle back.")
-		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** updated their availability for %q: %s", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Availability))
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** updated their availability for %q: %s\n\nI'm working on a proposal that fits everyone — you'll see a confirmation card in your stack if we converge, or a follow-up card to send another round of DMs.", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Availability))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}

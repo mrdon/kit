@@ -111,7 +111,16 @@ After start_coordination succeeds, the engine handles outreach,
 reminders, and convergence on its own. The organizer will see an
 approval card per drafted DM, then a convergence card when a slot is
 agreed. Use get_coordination if asked for status; cancel_coordination
-to abort.`
+to abort.
+
+The engine periodically DMs the organizer with progress updates
+("X updated their availability for Y: ..."). When the organizer
+follows up on one of those updates — or mentions a meeting/scheduling
+context in a way that doesn't make sense from this turn alone — call
+list_coordinations first to find the active coord they likely mean,
+then get_coordination on it. Don't guess from the conversation alone:
+the live state (who's responded, what was proposed, what's next) lives
+in those tools.`
 }
 
 func (a *CoordinationApp) ToolMetas() []services.ToolMeta {
