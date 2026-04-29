@@ -27,7 +27,7 @@ func TestService_Start_WritesRows(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
 
-	organizer, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_org_"+uuid.NewString()[:8], "Organizer")
+	organizer, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_org_"+uuid.NewString()[:8], "Organizer", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestService_Start_ValidatesInput(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
 
-	user, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_x", "")
+	user, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_x", "", "")
 	app := &CoordinationApp{pool: pool}
 	svc := newService(pool, app)
 	caller := &services.Caller{TenantID: tenant.ID, UserID: user.ID}
@@ -137,8 +137,8 @@ func TestService_Cancel_RequiresOrganizer(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
 
-	organizer, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_org", "Org")
-	other, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_other", "Other")
+	organizer, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_org", "Org", "")
+	other, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_other", "Other", "")
 
 	app := &CoordinationApp{pool: pool}
 	svc := newService(pool, app)

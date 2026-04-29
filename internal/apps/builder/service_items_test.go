@@ -53,7 +53,7 @@ func newItemFixture(t *testing.T) *itemFixture {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_builder_"+uuid.NewString()[:8], "Builder User")
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_builder_"+uuid.NewString()[:8], "Builder User", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestItemService_DeleteOne_HistoryHasDeleterProvenance(t *testing.T) {
 
 	// Delete with a new run id + different caller.
 	deleterRun := uuid.New()
-	deleterUser, err := models.GetOrCreateUser(ctx, f.pool, f.tenant.ID, "U_deleter_"+uuid.NewString()[:8], "Deleter")
+	deleterUser, err := models.GetOrCreateUser(ctx, f.pool, f.tenant.ID, "U_deleter_"+uuid.NewString()[:8], "Deleter", "")
 	if err != nil {
 		t.Fatalf("deleter user: %v", err)
 	}

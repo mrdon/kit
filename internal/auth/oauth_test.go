@@ -183,7 +183,7 @@ func twoTenants(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (*models.
 
 func makeUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackID string) *models.User {
 	t.Helper()
-	user, err := models.GetOrCreateUser(ctx, pool, tenantID, slackID+"_"+uuid.NewString(), "Test User")
+	user, err := models.GetOrCreateUser(ctx, pool, tenantID, slackID+"_"+uuid.NewString(), "Test User", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}

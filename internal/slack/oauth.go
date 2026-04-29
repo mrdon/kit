@@ -150,12 +150,13 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		_ = models.SetDefaultRole(ctx, h.pool, tenant.ID, &memberRole.ID)
 	}
 
-	// Create the installer user and grant them admin — fetch name from Slack
-	adminName := ""
+	// Create the installer user and grant them admin — fetch name + tz from Slack
+	adminName, adminTZ := "", ""
 	if info, err := botClient.GetUserInfo(ctx, resp.AuthedUser.ID); err == nil {
 		adminName = info.DisplayName
+		adminTZ = info.Timezone
 	}
-	adminUser, err := models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, adminName)
+	adminUser, err := models.GetOrCreateUser(ctx, h.pool, tenant.ID, resp.AuthedUser.ID, adminName, adminTZ)
 	if err != nil {
 		slog.Error("creating admin user", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

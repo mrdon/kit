@@ -91,12 +91,16 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 	}
 	dmUserID = evt.SlackUserID
 
-	// Get or create user — fetch display name from Slack on first contact
-	displayName := ""
+	// Get or create user — fetch display name + timezone from Slack on
+	// first contact. Timezone backfills lazily once: any existing row
+	// with timezone='' gets populated with what Slack reports here, and
+	// subsequent calls leave a populated TZ alone.
+	displayName, timezone := "", ""
 	if info, err := client.GetUserInfo(ctx, evt.SlackUserID); err == nil {
 		displayName = info.DisplayName
+		timezone = info.Timezone
 	}
-	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, evt.SlackUserID, displayName)
+	user, err := models.GetOrCreateUser(ctx, a.Pool, tenant.ID, evt.SlackUserID, displayName, timezone)
 	if err != nil {
 		slog.Error("resolving user", "error", err)
 		return

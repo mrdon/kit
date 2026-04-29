@@ -49,15 +49,15 @@ func newFixture(t *testing.T) *fixture {
 	if _, err := models.CreateRole(ctx, pool, tenant.ID, models.RoleAdmin, "admin"); err != nil {
 		t.Fatalf("creating admin role: %v", err)
 	}
-	alice, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice", "Alice")
+	alice, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice", "Alice", "")
 	if err != nil {
 		t.Fatalf("creating alice: %v", err)
 	}
-	bob, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_bob", "Bob")
+	bob, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_bob", "Bob", "")
 	if err != nil {
 		t.Fatalf("creating bob: %v", err)
 	}
-	admin, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin", "Admin")
+	admin, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin", "Admin", "")
 	if err != nil {
 		t.Fatalf("creating admin: %v", err)
 	}

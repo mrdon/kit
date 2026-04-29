@@ -76,7 +76,7 @@ func newFixture(t *testing.T) *fixture {
 		_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice_"+uuid.NewString()[:8], "Alice")
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice_"+uuid.NewString()[:8], "Alice", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}

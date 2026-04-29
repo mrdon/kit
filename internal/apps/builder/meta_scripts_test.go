@@ -54,7 +54,7 @@ func newScriptFixture(t *testing.T) *scriptFixture {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_script_"+uuid.NewString()[:8], "Script Admin")
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_script_"+uuid.NewString()[:8], "Script Admin", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}

@@ -120,7 +120,7 @@ func TestCurrentUser_DisplayNameFromDB(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_identity_"+uuid.NewString()[:8], "Alice Example")
+	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_identity_"+uuid.NewString()[:8], "Alice Example", "")
 	if err != nil {
 		t.Fatalf("user: %v", err)
 	}

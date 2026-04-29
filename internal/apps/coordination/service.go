@@ -65,13 +65,14 @@ func ensureParticipantUser(ctx context.Context, pool *pgxpool.Pool, app *Coordin
 		return nil
 	}
 	slack := kitslack.NewClient(botToken)
-	displayName := ""
+	displayName, timezone := "", ""
 	if info, err := slack.GetUserInfo(ctx, slackID); err == nil {
 		displayName = info.DisplayName
+		timezone = info.Timezone
 	} else {
 		slog.Warn("slack GetUserInfo failed for participant", "slack_id", slackID, "error", err)
 	}
-	u, err := models.GetOrCreateUser(ctx, pool, tenantID, slackID, displayName)
+	u, err := models.GetOrCreateUser(ctx, pool, tenantID, slackID, displayName, timezone)
 	if err != nil {
 		slog.Warn("upserting kit user for participant", "slack_id", slackID, "error", err)
 		return nil

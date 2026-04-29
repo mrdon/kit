@@ -60,7 +60,7 @@ func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleNa
 	if !c.IsAdmin {
 		return ErrForbidden
 	}
-	user, err := models.GetOrCreateUser(ctx, s.pool, c.TenantID, slackUserID, "")
+	user, err := models.GetOrCreateUser(ctx, s.pool, c.TenantID, slackUserID, "", "")
 	if err != nil {
 		return fmt.Errorf("resolving user: %w", err)
 	}

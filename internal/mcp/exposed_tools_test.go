@@ -107,7 +107,7 @@ func seedExposed(t *testing.T, toolName string, visibleToRoles []string) *expose
 		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
 
-	admin, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin_"+uuid.NewString()[:8], "MCP Admin")
+	admin, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin_"+uuid.NewString()[:8], "MCP Admin", "")
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
@@ -117,7 +117,7 @@ func seedExposed(t *testing.T, toolName string, visibleToRoles []string) *expose
 	if err := models.AssignRole(ctx, pool, tenant.ID, admin.ID, models.RoleAdmin); err != nil {
 		t.Fatalf("assign admin: %v", err)
 	}
-	nonAdminUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_user_"+uuid.NewString()[:8], "MCP User")
+	nonAdminUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_user_"+uuid.NewString()[:8], "MCP User", "")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

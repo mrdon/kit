@@ -73,7 +73,7 @@ func TestSkillRoleScoping(t *testing.T) {
 	}
 
 	// Member user, holding only the "member" role.
-	memberUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_member", "Member User")
+	memberUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_member", "Member User", "")
 	if err != nil {
 		t.Fatalf("creating member user: %v", err)
 	}

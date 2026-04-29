@@ -26,15 +26,24 @@ type User struct {
 }
 
 // GetOrCreateUser finds a user by tenant + slack_user_id, creating if needed.
-func GetOrCreateUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string, displayName string) (*User, error) {
+//
+// timezone is the IANA TZ from Slack (users.info.tz). It populates the
+// row on insert and lazily fills in an existing row whose timezone is
+// still empty — e.g. a user created before we started fetching the
+// profile. Once a non-empty TZ is stored, subsequent calls won't
+// overwrite it (avoids stomping on a user-set value with whatever Slack
+// reports). Callers that don't know the TZ pass "".
+func GetOrCreateUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string, displayName, timezone string) (*User, error) {
 	user := &User{}
 	err := pool.QueryRow(ctx, `
-		INSERT INTO users (id, tenant_id, slack_user_id, display_name)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (id, tenant_id, slack_user_id, display_name, timezone)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (tenant_id, slack_user_id)
-		DO UPDATE SET display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), users.display_name)
+		DO UPDATE SET
+			display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), users.display_name),
+			timezone = CASE WHEN users.timezone = '' THEN EXCLUDED.timezone ELSE users.timezone END
 		RETURNING id, tenant_id, slack_user_id, display_name, timezone, created_at
-	`, uuid.New(), tenantID, slackUserID, nilIfEmpty(displayName)).Scan(
+	`, uuid.New(), tenantID, slackUserID, nilIfEmpty(displayName), timezone).Scan(
 		&user.ID, &user.TenantID, &user.SlackUserID, &user.DisplayName,
 		&user.Timezone, &user.CreatedAt,
 	)
