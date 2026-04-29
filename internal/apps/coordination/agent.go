@@ -99,95 +99,105 @@ func registerCoordinationAgentTools(r *tools.Registry, isAdmin bool, svc *Servic
 	_ = isAdmin
 }
 
+func startCoordinationHandler(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+		var inp struct {
+			Title           string      `json:"title"`
+			DurationMinutes int         `json:"duration_minutes"`
+			StartDate       string      `json:"start_date"`
+			EndDate         string      `json:"end_date"`
+			CandidateSlots  []slotInput `json:"candidate_slots"`
+			Participants    []string    `json:"participants"`
+			Notes           string      `json:"notes"`
+			Description     string      `json:"description"` // alias for notes
+			AutoApprove     bool        `json:"auto_approve"`
+			DeadlineDays    int         `json:"deadline_days"`
+			OrganizerTZ     string      `json:"organizer_tz"`
+		}
+		if err := json.Unmarshal(raw, &inp); err != nil {
+			return "", fmt.Errorf("parsing args: %w", err)
+		}
+		// Resolve slots first so we can infer the missing date/duration
+		// fields from them. Pass organizer_tz so naive timestamps
+		// (no timezone offset) are interpreted in that location, not
+		// UTC — the agent rarely emits offsets, but the user almost
+		// always means a local time. When the LLM omits organizer_tz,
+		// fall back to the caller's resolved timezone so "4pm" in
+		// Mountain doesn't get stored as 4pm UTC and surface as
+		// "10am" in everyone's local rendering.
+		if inp.OrganizerTZ == "" {
+			inp.OrganizerTZ = ec.Caller().Timezone
+		}
+		slots, err := convertSlots(inp.CandidateSlots, inp.OrganizerTZ)
+		if err != nil {
+			return "", err
+		}
+		if len(slots) == 0 {
+			return "", errors.New("candidate_slots required")
+		}
+		start := tryParseISODate(inp.StartDate)
+		if start.IsZero() {
+			start = slots[0].Start
+			for _, s := range slots {
+				if s.Start.Before(start) {
+					start = s.Start
+				}
+			}
+		}
+		end := tryParseISODate(inp.EndDate)
+		if end.IsZero() {
+			end = slots[0].End
+			for _, s := range slots {
+				if s.End.After(end) {
+					end = s.End
+				}
+			}
+		}
+		duration := inp.DurationMinutes
+		if duration <= 0 {
+			// Infer from the first slot's duration.
+			duration = int(slots[0].End.Sub(slots[0].Start).Minutes())
+			if duration <= 0 {
+				duration = 30
+			}
+		}
+		notes := inp.Notes
+		if notes == "" {
+			notes = inp.Description
+		}
+		coord, err := svc.Start(ec.Ctx, ec.Caller(), StartInput{
+			Title:           inp.Title,
+			DurationMinutes: duration,
+			StartDate:       start,
+			EndDate:         end,
+			CandidateSlots:  slots,
+			Participants:    inp.Participants,
+			Notes:           notes,
+			AutoApprove:     inp.AutoApprove,
+			DeadlineDays:    inp.DeadlineDays,
+			OrganizerTZ:     inp.OrganizerTZ,
+		})
+		if err != nil {
+			return "", err
+		}
+		// Drive the engine immediately so the organizer sees the
+		// first approval card (or first outbound, if auto-approved)
+		// without waiting up to 60s for the next cron tick.
+		if svc.app != nil && svc.app.engine != nil {
+			_ = svc.app.engine.Tick(ec.Ctx)
+		}
+		gateMsg := "you'll get an approval card in your swipe stack with the drafted DMs before they go out"
+		if inp.AutoApprove {
+			gateMsg = "DMs are going out now (auto-approve was enabled at start)"
+		}
+		return fmt.Sprintf("Coordination started (id=%s, %d participants) — %s. Use get_coordination to check status.", coord.ID, len(inp.Participants), gateMsg), nil
+	}
+}
+
 func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 	switch name {
 	case "start_coordination":
-		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
-			var inp struct {
-				Title           string      `json:"title"`
-				DurationMinutes int         `json:"duration_minutes"`
-				StartDate       string      `json:"start_date"`
-				EndDate         string      `json:"end_date"`
-				CandidateSlots  []slotInput `json:"candidate_slots"`
-				Participants    []string    `json:"participants"`
-				Notes           string      `json:"notes"`
-				Description     string      `json:"description"` // alias for notes
-				AutoApprove     bool        `json:"auto_approve"`
-				DeadlineDays    int         `json:"deadline_days"`
-				OrganizerTZ     string      `json:"organizer_tz"`
-			}
-			if err := json.Unmarshal(raw, &inp); err != nil {
-				return "", fmt.Errorf("parsing args: %w", err)
-			}
-			// Resolve slots first so we can infer the missing date/duration
-			// fields from them. Pass organizer_tz so naive timestamps
-			// (no timezone offset) are interpreted in that location, not
-			// UTC — the agent rarely emits offsets, but the user almost
-			// always means a local time.
-			slots, err := convertSlots(inp.CandidateSlots, inp.OrganizerTZ)
-			if err != nil {
-				return "", err
-			}
-			if len(slots) == 0 {
-				return "", errors.New("candidate_slots required")
-			}
-			start := tryParseISODate(inp.StartDate)
-			if start.IsZero() {
-				start = slots[0].Start
-				for _, s := range slots {
-					if s.Start.Before(start) {
-						start = s.Start
-					}
-				}
-			}
-			end := tryParseISODate(inp.EndDate)
-			if end.IsZero() {
-				end = slots[0].End
-				for _, s := range slots {
-					if s.End.After(end) {
-						end = s.End
-					}
-				}
-			}
-			duration := inp.DurationMinutes
-			if duration <= 0 {
-				// Infer from the first slot's duration.
-				duration = int(slots[0].End.Sub(slots[0].Start).Minutes())
-				if duration <= 0 {
-					duration = 30
-				}
-			}
-			notes := inp.Notes
-			if notes == "" {
-				notes = inp.Description
-			}
-			coord, err := svc.Start(ec.Ctx, ec.Caller(), StartInput{
-				Title:           inp.Title,
-				DurationMinutes: duration,
-				StartDate:       start,
-				EndDate:         end,
-				CandidateSlots:  slots,
-				Participants:    inp.Participants,
-				Notes:           notes,
-				AutoApprove:     inp.AutoApprove,
-				DeadlineDays:    inp.DeadlineDays,
-				OrganizerTZ:     inp.OrganizerTZ,
-			})
-			if err != nil {
-				return "", err
-			}
-			// Drive the engine immediately so the organizer sees the
-			// first approval card (or first outbound, if auto-approved)
-			// without waiting up to 60s for the next cron tick.
-			if svc.app != nil && svc.app.engine != nil {
-				_ = svc.app.engine.Tick(ec.Ctx)
-			}
-			gateMsg := "you'll get an approval card in your swipe stack with the drafted DMs before they go out"
-			if inp.AutoApprove {
-				gateMsg = "DMs are going out now (auto-approve was enabled at start)"
-			}
-			return fmt.Sprintf("Coordination started (id=%s, %d participants) — %s. Use get_coordination to check status.", coord.ID, len(inp.Participants), gateMsg), nil
-		}
+		return startCoordinationHandler(svc)
 
 	case "list_coordinations":
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
