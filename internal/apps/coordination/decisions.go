@@ -657,7 +657,7 @@ func resolveConfirmFreeform(ctx context.Context, app *CoordinationApp, coord *Co
 			OriginRef:        p.ID.String(),
 			AwaitReply:       true,
 			UserID:           userID,
-			SessionThreadKey: participantSessionThreadKey(p.ID),
+			SessionThreadKey: coordSessionThreadKey(coord, &p),
 		})
 	}
 	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Confirmed %q for %s. Participants notified. You'll need to send the actual calendar invite — I can't do that yet.", coord.Config.Title, chosenTime))
@@ -763,7 +763,7 @@ func (a *CoordinationApp) notifyParticipantsConfirmed(ctx context.Context, coord
 			// still route back to this coord rather than falling through
 			// to the agent loop.
 			AwaitReply:       true,
-			SessionThreadKey: participantSessionThreadKey(p.ID),
+			SessionThreadKey: coordSessionThreadKey(coord, &p),
 		})
 		if err != nil {
 			slog.Error("notifying confirmed", "error", err, "participant", p.ID)

@@ -340,8 +340,10 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 		AwaitReply: true,
 		UserID:     userID,
 		// Per-participant session — isolates this coord's conversation
-		// from any other bot↔user activity in the same DM channel.
-		SessionThreadKey: participantSessionThreadKey(p.ID),
+		// from any other bot↔user activity in the same DM channel. The
+		// organizer is special-cased to "" so their coord DMs land in
+		// their main bot session.
+		SessionThreadKey: coordSessionThreadKey(coord, &p),
 	})
 	if err != nil {
 		return fmt.Errorf("messenger.Send: %w", err)
@@ -459,7 +461,7 @@ func (e *Engine) NotifyCancel(ctx context.Context, coord *Coordination) error {
 			Origin:           MessengerOrigin,
 			OriginRef:        p.ID.String(),
 			AwaitReply:       false,
-			SessionThreadKey: participantSessionThreadKey(p.ID),
+			SessionThreadKey: coordSessionThreadKey(coord, &p),
 		})
 		if err != nil {
 			slog.Error("cancel notify", "error", err, "participant", p.ID)

@@ -32,6 +32,18 @@ func participantSessionThreadKey(participantID uuid.UUID) string {
 	return "participant:" + participantID.String()
 }
 
+// coordSessionThreadKey picks the right SessionThreadKey for an outbound
+// to a participant. The organizer participant gets "" (their main bot DM
+// session) so coord messages thread under their existing conversation
+// instead of arriving as a fresh PM. All other participants get the
+// per-(coord, participant) key.
+func coordSessionThreadKey(coord *Coordination, p *Participant) string {
+	if p.UserID != nil && *p.UserID == coord.OrganizerID {
+		return ""
+	}
+	return participantSessionThreadKey(p.ID)
+}
+
 var instance *CoordinationApp
 
 func init() {

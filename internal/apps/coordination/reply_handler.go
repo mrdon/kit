@@ -107,8 +107,11 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on accept: %w", err)
 		}
-		ackParticipant(ctx, a, coord, p, "Got it, "+parsed.AcceptedTime+" works for you. I'll check with the others and let you know when we're locked in.")
-		// Run a propose pass — if everyone has accepted the same time, we're converged.
+		// No immediate ack — the participant's reply propagates to the
+		// other participants first, and they'll hear back when we have
+		// an actual answer (convergence card, or the next round of
+		// outreach with new context). Sending "got it, I'll check
+		// around" before checking around is filler noise.
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
@@ -122,7 +125,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on refine: %w", err)
 		}
-		ackParticipant(ctx, a, coord, p, "Got it. I'll check with everyone else and circle back.")
+		// No immediate ack — see "accept" branch above for rationale.
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
@@ -151,7 +154,7 @@ func ackParticipant(ctx context.Context, a *CoordinationApp, coord *Coordination
 		OriginRef:        p.ID.String(),
 		AwaitReply:       true, // keep awaiting so further corrections route back
 		UserID:           userID,
-		SessionThreadKey: participantSessionThreadKey(p.ID),
+		SessionThreadKey: coordSessionThreadKey(coord, p),
 	})
 	if err != nil {
 		slog.Error("acking participant", "error", err, "participant", p.ID)
