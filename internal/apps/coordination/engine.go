@@ -264,6 +264,7 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 		if err := e.app.surfaceTimedOutCard(ctx, coord, &p); err != nil {
 			slog.Error("surfacing timed_out card", "error", err, "coord", coord.ID)
 		}
+		notifyOrganizer(ctx, e.app, coord, fmt.Sprintf("**%s** hasn't replied after %d nudge(s) for %q. There's a card in your stack to retry or cancel.", p.Identifier, p.NudgeCount, coord.Config.Title))
 	}
 	return nil
 }

@@ -84,6 +84,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := a.surfaceDeclineCard(ctx, coord, p); err != nil {
 			slog.Error("surfacing decline card", "error", err, "coord", coord.ID)
 		}
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** declined the meeting %q. There's a card in your stack to cancel.", participantDisplayName(ctx, a, coord, p), coord.Config.Title))
 		return true, nil
 
 	case "out_of_window":
@@ -91,6 +92,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := a.surfaceOutOfWindowCard(ctx, coord, p, parsed.Notes); err != nil {
 			slog.Error("surfacing out_of_window card", "error", err, "coord", coord.ID)
 		}
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** can't do the time(s) you proposed for %q. They said: %q\n\nThere's a card in your stack to cancel and restart with a new time.", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Notes))
 		return true, nil
 
 	case "reply":
@@ -131,6 +133,18 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 	}
 
 	return false, nil
+}
+
+// participantDisplayName resolves a participant to a friendly name.
+// Falls back to the raw Slack ID if the user record has no display
+// name set.
+func participantDisplayName(ctx context.Context, a *CoordinationApp, coord *Coordination, p *Participant) string {
+	if p.UserID != nil {
+		if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+			return *u.DisplayName
+		}
+	}
+	return p.Identifier
 }
 
 // buildMessageLog reconstructs the per-participant conversation history
