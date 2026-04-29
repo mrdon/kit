@@ -233,11 +233,18 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 		return nil
 	}
 
+	slog.Info("advancing coord round",
+		"coord", coord.ID, "round", coord.RoundCount, "states", len(states))
 	proposed, err := e.app.proposeRound(ctx, coord, states)
 	if err != nil {
 		slog.Error("proposing next round", "error", err, "coord", coord.ID)
 		return err
 	}
+	slog.Info("propose round result",
+		"coord", coord.ID, "converged", proposed.Converged,
+		"chosen_time", proposed.ChosenTime,
+		"proposed_times", proposed.ProposedTimes,
+		"summary", proposed.Summary)
 
 	if proposed.Converged && proposed.ChosenTime != "" {
 		// Mark coord as converged and surface the confirmation card.

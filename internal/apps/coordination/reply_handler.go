@@ -63,6 +63,10 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		slog.Error("parsing meeting reply", "error", err, "participant", p.ID)
 		return false, nil
 	}
+	slog.Info("coord reply parsed",
+		"coord", coord.ID, "participant", p.ID,
+		"intent", parsed.Intent, "availability", parsed.Availability,
+		"accepted_time", parsed.AcceptedTime)
 
 	switch parsed.Intent {
 	case "unrelated":

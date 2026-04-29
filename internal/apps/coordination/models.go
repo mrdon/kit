@@ -289,11 +289,11 @@ func CreateParticipant(ctx context.Context, pool *pgxpool.Pool, p *Participant) 
 	row := pool.QueryRow(ctx, `
 		INSERT INTO app_coordination_participants
 		    (tenant_id, coordination_id, identifier, user_id, session_id, channel, status,
-		     rounds, constraints, nudge_count, next_nudge_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		     rounds, constraints, availability, accepted_time, nudge_count, next_nudge_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, created_at, updated_at
 	`, p.TenantID, p.CoordinationID, p.Identifier, p.UserID, p.SessionID, p.Channel,
-		p.Status, rounds, constraints, p.NudgeCount, p.NextNudgeAt)
+		p.Status, rounds, constraints, p.Availability, p.AcceptedTime, p.NudgeCount, p.NextNudgeAt)
 	return row.Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -371,10 +371,11 @@ func UpdateParticipant(ctx context.Context, pool *pgxpool.Pool, p *Participant) 
 	_, err := pool.Exec(ctx, `
 		UPDATE app_coordination_participants
 		SET status = $3, session_id = $4, rounds = $5, constraints = $6,
-		    nudge_count = $7, next_nudge_at = $8, updated_at = now()
+		    availability = $7, accepted_time = $8,
+		    nudge_count = $9, next_nudge_at = $10, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 	`, p.TenantID, p.ID, p.Status, p.SessionID, rounds, constraints,
-		p.NudgeCount, p.NextNudgeAt)
+		p.Availability, p.AcceptedTime, p.NudgeCount, p.NextNudgeAt)
 	return err
 }
 
