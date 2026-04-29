@@ -19,6 +19,9 @@ var draftMessagePrompt string
 //go:embed prompts/parse_meeting_reply.txt
 var parseReplyPrompt string
 
+//go:embed prompts/propose_times.txt
+var proposeTimesPrompt string
+
 const modelHaiku = "claude-haiku-4-5-20251001"
 
 // draftMessage produces an outbound message body for a coordination
@@ -51,18 +54,23 @@ func (a *CoordinationApp) draftMessage(ctx context.Context, coord *Coordination,
 	}
 
 	slotsBlob := slotsForPrompt(coord.Config.CandidateSlots, coord.Config.OrganizerTZ)
+	proposalBlock := ""
+	if len(coord.Config.LatestProposal.ProposedTimes) > 0 || coord.Config.LatestProposal.Summary != "" {
+		proposalBlock = fmt.Sprintf("\nNegotiation state (round %d):\n  Summary: %s\n  Proposed times: %v\n",
+			coord.RoundCount, coord.Config.LatestProposal.Summary, coord.Config.LatestProposal.ProposedTimes)
+	}
 	user := fmt.Sprintf(`
 Reason: %s
 Organizer name: %s
 Participant name: %s
 Meeting title: %s
 Duration: %d minutes
-Candidate slots:
-%s
+Candidate slots (initial proposal):
+%s%s
 Notes from organizer: %s
 Nudge count for this participant: %d
 `, reason, organizerName, participantName, coord.Config.Title, coord.Config.DurationMinutes,
-		slotsBlob, coord.Config.Notes, p.NudgeCount)
+		slotsBlob, proposalBlock, coord.Config.Notes, p.NudgeCount)
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
 		Model:     modelHaiku,
@@ -105,16 +113,18 @@ type MessageLogEntry struct {
 }
 
 // ParsedResponse is the LLM's understanding of the latest inbound
-// message in light of the full conversation log.
+// message in light of the full conversation log. New shape for the
+// iterative-negotiation flow: free-form availability text + intent.
 type ParsedResponse struct {
-	Intent             string                 `json:"intent"` // reply | ambiguous | unrelated | decline | out_of_window
-	CurrentConstraints map[string]SlotVerdict `json:"current_constraints,omitempty"`
+	Intent             string                 `json:"intent"` // accept | refine | decline | vague | unrelated
+	Availability       string                 `json:"availability,omitempty"`
+	AcceptedTime       string                 `json:"accepted_time,omitempty"`
+	CurrentConstraints map[string]SlotVerdict `json:"current_constraints,omitempty"` // legacy; will be removed
 	Notes              string                 `json:"notes,omitempty"`
 }
 
-// parseMeetingReply is the LLM call that classifies the participant's
-// latest message and extracts their current constraint set, given the
-// full message log + candidate slot list.
+// parseMeetingReply is the LLM call that extracts the participant's
+// current availability statement and intent from the conversation log.
 func (a *CoordinationApp) parseMeetingReply(ctx context.Context, log []MessageLogEntry, slots []Slot, organizerTZ string) (*ParsedResponse, error) {
 	if a.llm == nil {
 		return nil, errors.New("LLM not configured")
@@ -123,22 +133,13 @@ func (a *CoordinationApp) parseMeetingReply(ctx context.Context, log []MessageLo
 	slotsBlob := slotsForPrompt(slots, organizerTZ)
 
 	user := fmt.Sprintf(`
-Candidate slots (with their stable keys):
+Initial proposed slots (organizer's first pass):
 %s
 
 Conversation log (chronological):
 %s
 
-Output JSON only, in this shape:
-{
-  "intent": "reply" | "ambiguous" | "unrelated" | "decline" | "out_of_window",
-  "current_constraints": {"<slot_key>": "accept" | "reject" | "unspecified", ...},
-  "notes": "free-form text"
-}
-
-The current_constraints map should reflect the participant's CURRENT view
-across all of their messages — if they corrected themselves, only the
-latest stance matters. Use "unspecified" for slots they haven't addressed.
+Read the system prompt for the JSON output shape.
 `, slotsBlob, string(logJSON))
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
@@ -169,9 +170,68 @@ latest stance matters. Use "unspecified" for slots they haven't addressed.
 	return &parsed, nil
 }
 
+// ProposeResponse is the output of the LLM solver, given all
+// participants' current availability statements.
+type ProposeResponse struct {
+	Converged              bool     `json:"converged"`
+	ChosenTime             string   `json:"chosen_time,omitempty"`
+	ProposedTimes          []string `json:"proposed_times,omitempty"`
+	Summary                string   `json:"summary,omitempty"`
+	NeedsClarificationFrom []string `json:"needs_clarification_from,omitempty"`
+}
+
+// ParticipantState is the input to proposeRound: each active
+// participant's name + availability + acceptance state.
+type ParticipantState struct {
+	Name         string `json:"name"`
+	SlackID      string `json:"slack_id,omitempty"`
+	Availability string `json:"availability"`
+	AcceptedTime string `json:"accepted_time,omitempty"`
+	Status       string `json:"status"`
+}
+
+// proposeRound asks the LLM to look at all participant availability
+// statements and either find a converged time or propose 1-3 viable
+// candidates.
+func (a *CoordinationApp) proposeRound(ctx context.Context, coord *Coordination, parts []ParticipantState) (*ProposeResponse, error) {
+	if a.llm == nil {
+		return nil, errors.New("LLM not configured")
+	}
+	partsJSON, _ := json.Marshal(parts)
+	user := fmt.Sprintf(`
+Coordination: %q
+Organizer timezone: %s
+
+Participants and their stated availability:
+%s
+
+Read the system prompt for the JSON output shape. Output JSON only.
+`, coord.Config.Title, coord.Config.OrganizerTZ, string(partsJSON))
+
+	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
+		Model:     modelHaiku,
+		MaxTokens: 800,
+		System:    []anthropic.SystemBlock{{Type: "text", Text: proposeTimesPrompt}},
+		Messages: []anthropic.Message{
+			{Role: "user", Content: []anthropic.Content{{Type: "text", Text: user}}},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("proposeRound LLM: %w", err)
+	}
+	raw := strings.TrimSpace(resp.TextContent())
+	raw = stripCodeFence(raw)
+
+	var parsed ProposeResponse
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("unmarshaling proposer output %q: %w", raw, err)
+	}
+	return &parsed, nil
+}
+
 func validIntent(s string) bool {
 	switch s {
-	case "reply", "ambiguous", "unrelated", "decline", "out_of_window":
+	case "accept", "refine", "decline", "vague", "unrelated":
 		return true
 	}
 	return false

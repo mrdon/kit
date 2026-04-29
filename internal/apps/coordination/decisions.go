@@ -184,11 +184,12 @@ func (a *CoordinationApp) surfaceAbandonmentCard(ctx context.Context, coord *Coo
 	return err
 }
 
-// surfaceDeclineCard surfaces "X declined — cancel?" to the organizer.
-// Phase 1 doesn't have a working "proceed without them" recompute path
-// yet, so the only option here is cancel. Future: re-add proceed-without
-// when the recompute logic correctly handles the smaller participant set.
-func (a *CoordinationApp) surfaceDeclineCard(ctx context.Context, coord *Coordination, declined *Participant) error {
+// surfaceConvergenceCardFreeForm surfaces a confirmation card when
+// the LLM solver decides everyone aligned on a specific time. The
+// chosenTime is human-readable (e.g. "Wed Apr 30 at 4:00 PM"); we
+// don't have a structured Slot for it because the negotiation flow
+// works with free-form availability statements.
+func (a *CoordinationApp) surfaceConvergenceCardFreeForm(ctx context.Context, coord *Coordination, chosenTime, summary string) error {
 	if a.cards == nil {
 		return errors.New("CardService not configured")
 	}
@@ -196,22 +197,27 @@ func (a *CoordinationApp) surfaceDeclineCard(ctx context.Context, coord *Coordin
 	if err != nil {
 		return err
 	}
-
+	confirmArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "confirm_freeform",
+		"slot_key":        chosenTime, // reuse field for human-readable time
+	})
 	cancelArgs, _ := json.Marshal(map[string]any{
 		"coordination_id": coord.ID.String(),
 		"action":          "cancel",
 	})
 
-	body := participantName(declined) + " declined the meeting. Cancel this coordination? (You can start a new one with a different attendee list.)"
+	body := fmt.Sprintf("**%s** works for everyone.\n\n%s\n\nConfirm to mark this resolved. The bot will notify everyone. (You'll still need to send the calendar invite yourself for now.)", chosenTime, summary)
 
 	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
-		Title: fmt.Sprintf("%s — %s declined", coord.Config.Title, participantName(declined)),
+		Title: coord.Config.Title + " — slot agreed",
 		Body:  body,
 		Kind:  cards.CardKindDecision,
 		Decision: &cards.DecisionCreateInput{
 			Priority:            cards.DecisionPriorityMedium,
-			RecommendedOptionID: "cancel",
+			RecommendedOptionID: "confirm_freeform",
 			Options: []cards.DecisionOption{
+				{OptionID: "confirm_freeform", Label: "Confirm " + chosenTime, ToolName: coordinationResolveDecision, ToolArguments: confirmArgs},
 				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
 			},
 		},
@@ -266,46 +272,10 @@ func (a *CoordinationApp) surfaceTimedOutCard(ctx context.Context, coord *Coordi
 	return err
 }
 
-// surfaceOutOfWindowCard surfaces "X can't do the proposed window —
-// {their suggestion}" to the organizer. They can either proceed without
-// the participant, abandon the coord, or take it from there.
-func (a *CoordinationApp) surfaceOutOfWindowCard(ctx context.Context, coord *Coordination, p *Participant, suggestion string) error {
-	if a.cards == nil {
-		return errors.New("CardService not configured")
-	}
-	caller, err := a.organizerCaller(ctx, coord)
-	if err != nil {
-		return err
-	}
-
-	name := participantName(p)
-	if p.UserID != nil {
-		if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
-			name = *u.DisplayName
-		}
-	}
-
-	cancelArgs, _ := json.Marshal(map[string]any{
-		"coordination_id": coord.ID.String(),
-		"action":          "cancel",
-	})
-
-	body := fmt.Sprintf("**%s** can't do the proposed time(s).\n\nWhat they said: %q\n\nCancel this coordination and start a new one with the new time?", name, suggestion)
-
-	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
-		Title: fmt.Sprintf("%s — %s suggests a different time", coord.Config.Title, name),
-		Body:  body,
-		Kind:  cards.CardKindDecision,
-		Decision: &cards.DecisionCreateInput{
-			Priority:            cards.DecisionPriorityMedium,
-			RecommendedOptionID: "cancel",
-			Options: []cards.DecisionOption{
-				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
-			},
-		},
-	})
-	return err
-}
+// surfaceOutOfWindowCard removed — replaced by the iterative
+// negotiation flow in handleInboundReply (engine.AdvanceRound), which
+// keeps the negotiation alive and broadcasts new info to others rather
+// than terminating with a cancel-only card.
 
 // organizerCaller constructs a services.Caller for the coordination's
 // organizer, used when creating decision cards on their behalf.
@@ -367,11 +337,28 @@ func buildConvergenceBody(coord *Coordination, slot Slot, parts []Participant) s
 
 func buildAbandonmentBody(coord *Coordination, reason string, parts []Participant) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Couldn't converge: %s\n\n", reason)
-	fmt.Fprintf(&b, "Status by participant:\n")
-	for _, p := range parts {
-		fmt.Fprintf(&b, "- %s — %s (rounds=%d)\n", p.Identifier, p.Status, len(p.Rounds))
+	fmt.Fprintf(&b, "Couldn't land on a time everyone can make: %s\n\n", reason)
+	if coord.Config.LatestProposal.Summary != "" {
+		fmt.Fprintf(&b, "Latest summary: %s\n\n", coord.Config.LatestProposal.Summary)
 	}
+	fmt.Fprintf(&b, "Where each person stands:\n")
+	for _, p := range parts {
+		availability := p.Availability
+		if availability == "" {
+			availability = "(no availability stated)"
+		}
+		switch p.Status {
+		case ParticipantDeclined:
+			fmt.Fprintf(&b, "- %s — **declined**\n", p.Identifier)
+		case ParticipantTimedOut:
+			fmt.Fprintf(&b, "- %s — **didn't reply** after %d nudge(s)\n", p.Identifier, p.NudgeCount)
+		case ParticipantPending, ParticipantContacted:
+			fmt.Fprintf(&b, "- %s — still awaiting reply\n", p.Identifier)
+		default:
+			fmt.Fprintf(&b, "- %s — %s\n", p.Identifier, availability)
+		}
+	}
+	b.WriteString("\nExtend gives everyone another 5 rounds. Cancel ends the coordination — you can start a fresh one with a different attendee list if needed.")
 	return b.String()
 }
 
@@ -454,6 +441,9 @@ func resolveDecisionHandler(app *CoordinationApp) tools.HandlerFunc {
 			// timed-out card path (avoids adding another field to the
 			// resolve schema).
 			return resolveResetNudge(ec.Ctx, app, coord, inp.SlotKey)
+		case "confirm_freeform":
+			// SlotKey carries the human-readable chosen time string.
+			return resolveConfirmFreeform(ec.Ctx, app, coord, inp.SlotKey)
 		}
 		return "", fmt.Errorf("unknown action %q", inp.Action)
 	}
@@ -631,6 +621,42 @@ func resolveProceedWithout(ctx context.Context, app *CoordinationApp, coord *Coo
 		slog.Error("re-arming after proceed_without", "error", err)
 	}
 	return "Proceeding without that participant.", nil
+}
+
+// resolveConfirmFreeform handles confirmation of an LLM-detected
+// convergence. chosenTime is the human-readable string; we just stash
+// it in result and notify everyone.
+func resolveConfirmFreeform(ctx context.Context, app *CoordinationApp, coord *Coordination, chosenTime string) (string, error) {
+	if err := UpdateCoordinationStatus(ctx, app.pool, coord.TenantID, coord.ID, StatusConfirmed, &CoordinationResult{}); err != nil {
+		return "", err
+	}
+	parts, _ := ListParticipants(ctx, app.pool, coord.TenantID, coord.ID)
+	for _, p := range parts {
+		if p.Status != ParticipantResponded {
+			continue
+		}
+		if app.msg == nil {
+			break
+		}
+		var userID uuid.UUID
+		if p.UserID != nil {
+			userID = *p.UserID
+		}
+		body := fmt.Sprintf("Confirmed for %s. The organizer will send a calendar invite shortly.", chosenTime)
+		_, _ = app.msg.Send(ctx, messenger.SendRequest{
+			TenantID:         coord.TenantID,
+			Channel:          "slack",
+			Recipient:        messenger.Recipient{SlackUserID: p.Identifier},
+			Body:             body,
+			Origin:           MessengerOrigin,
+			OriginRef:        p.ID.String(),
+			AwaitReply:       true,
+			UserID:           userID,
+			SessionThreadKey: participantSessionThreadKey(p.ID),
+		})
+	}
+	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Confirmed %q for %s. Participants notified. You'll need to send the actual calendar invite — I can't do that yet.", coord.Config.Title, chosenTime))
+	return "Coordination confirmed.", nil
 }
 
 // resolveSendDrafts dispatches the organizer-approved batch of drafted

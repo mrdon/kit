@@ -68,69 +68,59 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 	case "unrelated":
 		return false, nil
 
-	case "ambiguous":
-		// Acknowledge but don't change constraints. Don't reschedule a
-		// nudge yet — give the participant time.
-		ackParticipant(ctx, a, coord, p, "Sounds good — let me know when you have a chance to check.")
-		return true, nil
-
 	case "decline":
 		p.Status = ParticipantDeclined
+		p.Availability = ""
 		p.NextNudgeAt = nil
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on decline: %w", err)
 		}
 		slog.Info("participant declined", "participant", p.ID, "coord", coord.ID)
 		ackParticipant(ctx, a, coord, p, "Understood, thanks for letting me know. I'll pass that along to "+organizerNameFor(ctx, a, coord)+".")
-		if err := a.surfaceDeclineCard(ctx, coord, p); err != nil {
-			slog.Error("surfacing decline card", "error", err, "coord", coord.ID)
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** declined the meeting %q. The negotiation will continue with the remaining participants.", participantDisplayName(ctx, a, coord, p), coord.Config.Title))
+		// Trigger a fresh round since participant set changed.
+		if a.engine != nil {
+			_ = a.engine.AdvanceRound(ctx, coord)
 		}
-		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** declined the meeting %q. There's a card in your stack to cancel.", participantDisplayName(ctx, a, coord, p), coord.Config.Title))
 		return true, nil
 
-	case "out_of_window":
-		slog.Info("participant out_of_window", "participant", p.ID, "coord", coord.ID, "notes", parsed.Notes)
-		ackParticipant(ctx, a, coord, p, "Got it — I'll check with "+organizerNameFor(ctx, a, coord)+" about that time and circle back.")
-		if err := a.surfaceOutOfWindowCard(ctx, coord, p, parsed.Notes); err != nil {
-			slog.Error("surfacing out_of_window card", "error", err, "coord", coord.ID)
-		}
-		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** can't do the time(s) you proposed for %q. They said: %q\n\nThere's a card in your stack to cancel and restart with a new time.", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Notes))
-		return true, nil
-
-	case "reply":
-		// Replace the participant's current constraints with the parser
-		// output and mark them responded.
-		p.Constraints = Constraints{
-			SlotVerdicts: parsed.CurrentConstraints,
-			Notes:        parsed.Notes,
-		}
+	case "vague":
+		p.Availability = parsed.Availability
 		p.Status = ParticipantResponded
 		p.NextNudgeAt = nil
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
-			return false, fmt.Errorf("updating participant: %w", err)
+			return false, fmt.Errorf("updating participant on vague reply: %w", err)
 		}
-		ackParticipant(ctx, a, coord, p, "Got it, thanks. I'll let you know once everyone's aligned.")
+		// Bot follows up with this same participant for specifics.
+		ackParticipant(ctx, a, coord, p, "Thanks — could you give me a more specific time? E.g. \"Tuesday at 2pm\" or \"Friday morning 9-11\".")
+		return true, nil
 
-		// Recompute candidates given the new constraint. Any responded
-		// participant whose stance is invalidated gets next_nudge_at=now()
-		// so the next sweep tick re-engages them.
-		parts, err := ListParticipants(ctx, a.pool, coord.TenantID, coord.ID)
-		if err == nil {
-			_, invalidated := recomputeMeeting(coord, parts)
-			now := time.Now()
-			for _, id := range invalidated {
-				if id == p.ID {
-					continue // don't immediately re-engage the participant who just replied
-				}
-				for i := range parts {
-					if parts[i].ID == id {
-						parts[i].Status = ParticipantResponded
-						parts[i].NextNudgeAt = &now
-						_ = UpdateParticipant(ctx, a.pool, &parts[i])
-						break
-					}
-				}
-			}
+	case "accept":
+		p.Availability = parsed.Availability
+		p.AcceptedTime = parsed.AcceptedTime
+		p.Status = ParticipantResponded
+		p.NextNudgeAt = nil
+		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
+			return false, fmt.Errorf("updating participant on accept: %w", err)
+		}
+		ackParticipant(ctx, a, coord, p, "Got it, "+parsed.AcceptedTime+" works for you. I'll check with the others and let you know when we're locked in.")
+		// Run a propose pass — if everyone has accepted the same time, we're converged.
+		if a.engine != nil {
+			_ = a.engine.AdvanceRound(ctx, coord)
+		}
+		return true, nil
+
+	case "refine":
+		p.Availability = parsed.Availability
+		p.AcceptedTime = "" // refining = no specific commitment
+		p.Status = ParticipantResponded
+		p.NextNudgeAt = nil
+		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
+			return false, fmt.Errorf("updating participant on refine: %w", err)
+		}
+		ackParticipant(ctx, a, coord, p, "Got it. I'll check with everyone else and circle back.")
+		if a.engine != nil {
+			_ = a.engine.AdvanceRound(ctx, coord)
 		}
 		return true, nil
 	}

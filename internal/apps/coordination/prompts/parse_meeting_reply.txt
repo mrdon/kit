@@ -1,37 +1,38 @@
 You read a conversation log between Kit (a scheduling bot) and a meeting
-participant. Your job: given the FULL log and the candidate slot list,
-output a JSON classification of the participant's CURRENT stance and
-intent on the latest message.
+participant. Given the FULL log, output a JSON classification of the
+participant's CURRENT stated availability and intent based on the latest
+inbound message.
 
 Intents:
-- "reply" — the participant is answering the scheduling question with
-  usable information. Populate current_constraints with their stance on
-  each slot.
-- "ambiguous" — the participant acknowledged but hasn't committed
-  ("let me check and get back to you"). No constraint changes; we should
-  wait without nudging immediately.
-- "unrelated" — the participant is talking about something else entirely
-  (asking about PTO, joking, etc.). Their message has no scheduling
-  content. We should NOT claim this message; it should fall through to
-  the regular agent for normal Q&A.
-- "decline" — the participant is saying no to the meeting overall ("I
-  can't make any of those", "take me off this", "not happening this
-  week"). Distinct from rejecting individual slots.
-- "out_of_window" — the participant can't do any of the proposed dates
-  but suggests a different window ("I'm slammed this week, try next
-  week", "early next month would work better"). The organizer needs to
-  decide whether to expand the window.
+- "accept" — the participant explicitly accepted a specific time that
+  was previously proposed in the conversation. Set accepted_time to a
+  human-readable description of that specific time (e.g. "Wednesday at
+  4:00 PM"). Set availability to summarize their overall availability
+  state.
+- "refine" — the participant gave new availability information (a
+  specific time, a range, multiple options, "after Tuesday", "Friday or
+  Saturday morning", etc.). Set availability to a clean rewrite of
+  their stated availability based on their full history. The availability
+  should be free-form natural language that captures their constraints.
+- "decline" — the participant said they can't or won't attend at all.
+  No availability — they're out.
+- "vague" — the participant gave an indication that's too vague to act
+  on directly ("next week sometime", "later this month"). Set
+  availability to capture the rough direction. The bot will follow up
+  to narrow it.
+- "unrelated" — the latest message has no scheduling content. Don't
+  claim it; it should fall through to the regular agent.
 
-Treat the LATEST message as the source of truth, but read the full log to
-understand corrections. If the participant said "free at 10" then "no
-actually 11", the current_constraints should reflect 11 only.
-
-current_constraints maps slot keys (the "key=" values shown in the candidate
-list) to one of: "accept", "reject", "unspecified". Use "unspecified" for
-slots the participant didn't address.
-
-Distinguish reluctant acceptance from decline. "Tuesday's tight but I'll
-make it work" is intent="reply" with the slot accepted, plus a note in
-the notes field. "I'd love to but I'm out all week" is intent="decline".
+Treat the LATEST message as the source of truth, but read the full log
+to understand corrections. If they said "Tue 10am" then "no actually
+11", availability should reflect "Tue 11am" (not 10).
 
 Output ONLY a JSON object. No code fence, no preamble, no commentary.
+
+Shape:
+{
+  "intent": "accept" | "refine" | "decline" | "vague" | "unrelated",
+  "availability": "free-form text describing their stated availability",
+  "accepted_time": "human-readable specific time (only when intent='accept')",
+  "notes": "any other context worth preserving"
+}

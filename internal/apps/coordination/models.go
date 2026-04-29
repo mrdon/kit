@@ -64,18 +64,27 @@ type TimeWindow struct {
 	End   time.Time `json:"end"`
 }
 
+// ProposalState captures the LLM solver's most recent proposal so the
+// next outbound to participants can include the running summary +
+// proposed times.
+type ProposalState struct {
+	Summary       string   `json:"summary,omitempty"`
+	ProposedTimes []string `json:"proposed_times,omitempty"`
+}
+
 // CoordinationConfig is the kind-specific config jsonb on app_coordinations.
 // Phase 1 only has meeting fields; later kinds will discriminate via Kind.
 type CoordinationConfig struct {
-	Title            string       `json:"title"`
-	DurationMinutes  int          `json:"duration_minutes"`
-	StartDate        time.Time    `json:"start_date"`
-	EndDate          time.Time    `json:"end_date"`
-	OrganizerWindows []TimeWindow `json:"organizer_windows,omitempty"`
-	CandidateSlots   []Slot       `json:"candidate_slots"`
-	AutoApprove      bool         `json:"auto_approve"`
-	Notes            string       `json:"notes,omitempty"`
-	OrganizerTZ      string       `json:"organizer_tz,omitempty"`
+	Title            string        `json:"title"`
+	DurationMinutes  int           `json:"duration_minutes"`
+	StartDate        time.Time     `json:"start_date"`
+	EndDate          time.Time     `json:"end_date"`
+	OrganizerWindows []TimeWindow  `json:"organizer_windows,omitempty"`
+	CandidateSlots   []Slot        `json:"candidate_slots"`
+	AutoApprove      bool          `json:"auto_approve"`
+	Notes            string        `json:"notes,omitempty"`
+	OrganizerTZ      string        `json:"organizer_tz,omitempty"`
+	LatestProposal   ProposalState `json:"latest_proposal,omitzero"`
 }
 
 // CoordinationResult is the kind-specific result jsonb populated on

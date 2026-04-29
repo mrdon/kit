@@ -185,6 +185,109 @@ func (e *Engine) processReadyGroup(ctx context.Context, coord *Coordination, rea
 	return nil
 }
 
+// AdvanceRound is called after a participant's reply updates the
+// negotiation state. It runs the LLM proposer to check for convergence
+// and, if not converged, drafts the next round of outreach to anyone
+// still pending.
+func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
+	parts, err := ListParticipants(ctx, e.pool, coord.TenantID, coord.ID)
+	if err != nil {
+		return err
+	}
+
+	// If anyone hasn't responded yet for round 1, just wait — proposer
+	// runs after we have at least all-replies-once.
+	allReplied := true
+	for _, p := range parts {
+		if p.Status == ParticipantPending || p.Status == ParticipantContacted {
+			allReplied = false
+			break
+		}
+	}
+	if !allReplied {
+		return nil
+	}
+
+	// Build participant state for the proposer.
+	states := make([]ParticipantState, 0, len(parts))
+	for _, p := range parts {
+		if p.Status == ParticipantDeclined || p.Status == ParticipantTimedOut {
+			continue
+		}
+		name := p.Identifier
+		if p.UserID != nil {
+			if u, err := models.GetUserByID(ctx, e.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+				name = *u.DisplayName
+			}
+		}
+		states = append(states, ParticipantState{
+			Name:         name,
+			SlackID:      p.Identifier,
+			Availability: p.Availability,
+			AcceptedTime: p.AcceptedTime,
+			Status:       p.Status,
+		})
+	}
+	if len(states) < 2 {
+		// No one to negotiate with. Skip.
+		return nil
+	}
+
+	proposed, err := e.app.proposeRound(ctx, coord, states)
+	if err != nil {
+		slog.Error("proposing next round", "error", err, "coord", coord.ID)
+		return err
+	}
+
+	if proposed.Converged && proposed.ChosenTime != "" {
+		// Mark coord as converged and surface the confirmation card.
+		if err := UpdateCoordinationStatus(ctx, e.pool, coord.TenantID, coord.ID, StatusConverged, &CoordinationResult{ChosenSlot: &Slot{}}); err != nil {
+			slog.Error("converged status update", "error", err)
+		}
+		if err := e.app.surfaceConvergenceCardFreeForm(ctx, coord, proposed.ChosenTime, proposed.Summary); err != nil {
+			slog.Error("surfacing convergence card", "error", err, "coord", coord.ID)
+		}
+		return nil
+	}
+
+	// Round limit check
+	if coord.RoundCount >= MaxRounds {
+		slog.Info("round limit hit", "coord", coord.ID, "rounds", coord.RoundCount)
+		_ = e.app.surfaceAbandonmentCard(ctx, coord, fmt.Sprintf("After %d rounds we couldn't find a time everyone agrees on.", coord.RoundCount))
+		return nil
+	}
+
+	// Bump round and re-engage all responded participants who haven't
+	// yet accepted the proposed time(s) this round. Each gets a new
+	// outreach with the latest state + proposed times.
+	if _, err := e.pool.Exec(ctx, `
+		UPDATE app_coordinations SET round_count = round_count + 1, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
+	`, coord.TenantID, coord.ID); err != nil {
+		return fmt.Errorf("incrementing round_count: %w", err)
+	}
+
+	now := e.now()
+	for i := range parts {
+		p := parts[i]
+		if p.Status == ParticipantDeclined || p.Status == ParticipantTimedOut {
+			continue
+		}
+		// Anyone still active gets re-engaged.
+		p.Status = ParticipantContacted
+		p.NextNudgeAt = &now
+		_ = UpdateParticipant(ctx, e.pool, &p)
+	}
+	// Stash the latest proposed-times list and summary on the coord
+	// config so the next draft cycle can include them in messages.
+	coord.Config.LatestProposal = ProposalState{
+		Summary:       proposed.Summary,
+		ProposedTimes: proposed.ProposedTimes,
+	}
+	_ = UpdateCoordinationConfig(ctx, e.pool, coord.TenantID, coord.ID, coord.Config)
+	return nil
+}
+
 // SendApprovedBatch is called from the approval-card resolve handler.
 // It sends each pre-drafted body via Messenger and updates the
 // participant rows (status/round/nudge schedule) the same way the
