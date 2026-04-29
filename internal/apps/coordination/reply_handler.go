@@ -122,7 +122,14 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on refine: %w", err)
 		}
-		ackParticipant(ctx, a, coord, p, "Got it — checking with the others and I'll circle back.")
+		// Echo the parsed availability back so the participant knows
+		// we understood what they said. A bare "Got it" leaves them
+		// wondering if the bot heard them right.
+		ack := "Got it — checking with the others and I'll circle back."
+		if parsed.Availability != "" {
+			ack = fmt.Sprintf("Got it — %s. I'll check with the others and circle back.", parsed.Availability)
+		}
+		ackParticipant(ctx, a, coord, p, ack)
 		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** updated their availability for %q: %s\n\nI'm working on a proposal that fits everyone — you'll see a confirmation card in your stack if we converge, or a follow-up card to send another round of DMs.", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Availability))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)

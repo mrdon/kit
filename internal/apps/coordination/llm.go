@@ -178,6 +178,11 @@ type ProposeResponse struct {
 	ProposedTimes          []string `json:"proposed_times,omitempty"`
 	Summary                string   `json:"summary,omitempty"`
 	NeedsClarificationFrom []string `json:"needs_clarification_from,omitempty"`
+	// NeedsOutreach lists participants whose stated availability does
+	// not yet satisfy any proposed_time (and so need another DM). The
+	// engine uses this to skip re-engaging participants whose answer
+	// already covers a candidate time.
+	NeedsOutreach []string `json:"needs_outreach,omitempty"`
 }
 
 // ParticipantState is the input to proposeRound: each active

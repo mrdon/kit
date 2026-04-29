@@ -14,7 +14,8 @@ Shape:
   "chosen_time": "human-readable specific time (only if converged=true and you have a clear winner)",
   "proposed_times": ["Wed Apr 30 10:00 AM", "Thu May 1 2:00 PM"],
   "summary": "one-paragraph summary of what each participant said and where the bot is in the negotiation",
-  "needs_clarification_from": ["participant name 1", ...]
+  "needs_clarification_from": ["participant name 1", ...],
+  "needs_outreach": ["participant name 1", ...]
 }
 
 Rules:
@@ -43,6 +44,20 @@ Rules:
 - If a participant gave only a vague hint ("next week sometime") and
   hasn't been narrowed yet, list them in needs_clarification_from. The
   bot will follow up with that specific person for specifics.
+- "needs_outreach" is the list of participants the bot should ask
+  again before the next round. Include a participant ONLY if their
+  current stated availability does not satisfy any of the
+  proposed_times (range containment counts — see "converged" rules).
+  Do NOT include participants whose stated availability already covers
+  one or more proposed_times; re-asking them is wasteful and confusing.
+  If converged is true, leave needs_outreach empty.
+  Examples (continuing the participants above):
+    * Alice: "Wed 4pm" (responded). Bob: "Mon afternoon" (responded).
+      proposed_times = ["Wed at 4 PM"]. → needs_outreach = ["Bob"]
+      (Alice's avail covers Wed 4pm; Bob's doesn't).
+    * Alice: "Thu 10-10:30 only". Bob: "anytime Mon".
+      proposed_times = ["Mon at 10 AM"]. → needs_outreach = ["Alice"]
+      (Bob already covers Mon 10am; only Alice needs to flex).
 - If there's no time that fits everyone's stated availability, set
-  proposed_times to [] and explain in summary which constraints conflict.
-  The bot will go to another round asking participants to flex.
+  proposed_times to [] and put everyone (except declined) in
+  needs_outreach so the bot can ask them all to flex.

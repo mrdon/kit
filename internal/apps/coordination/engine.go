@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -210,9 +211,12 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 		return nil
 	}
 
-	// Build participant state for the proposer.
+	// Build participant state for the proposer. Track each state's
+	// name in a parallel map so we can resolve proposer-output names
+	// back to the underlying participant when applying needs_outreach.
 	states := make([]ParticipantState, 0, len(parts))
-	for _, p := range parts {
+	nameByPartIndex := make(map[int]string, len(parts))
+	for i, p := range parts {
 		if p.Status == ParticipantDeclined || p.Status == ParticipantTimedOut {
 			continue
 		}
@@ -222,6 +226,7 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 				name = *u.DisplayName
 			}
 		}
+		nameByPartIndex[i] = name
 		states = append(states, ParticipantState{
 			Name:         name,
 			SlackID:      p.Identifier,
@@ -246,6 +251,7 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 		"coord", coord.ID, "converged", proposed.Converged,
 		"chosen_time", proposed.ChosenTime,
 		"proposed_times", proposed.ProposedTimes,
+		"needs_outreach", proposed.NeedsOutreach,
 		"summary", proposed.Summary)
 
 	if proposed.Converged && proposed.ChosenTime != "" {
@@ -276,17 +282,20 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 		return fmt.Errorf("incrementing round_count: %w", err)
 	}
 
+	// Re-engage only the participants the proposer flagged as needing
+	// another ask. Re-asking someone whose stated availability already
+	// covers a proposed time is wasteful and confusing. If the proposer
+	// returned an empty list (older prompt, parse miss), fall back to
+	// re-engaging everyone so the negotiation doesn't stall silently.
+	targets := selectOutreachTargets(parts, nameByPartIndex, proposed.NeedsOutreach)
 	now := e.now()
-	for i := range parts {
-		p := parts[i]
-		if p.Status == ParticipantDeclined || p.Status == ParticipantTimedOut {
-			continue
-		}
-		// Re-arm everyone for the next sweep. Leave status alone — they
-		// remain "responded" until sendOne actually re-contacts them.
-		// Pre-flipping to "contacted" here was a bug: it could break
-		// the allReplied check on a subsequent reply if not every
-		// re-engaged participant's outbound had actually gone out yet.
+	for _, idx := range targets {
+		p := parts[idx]
+		// Leave status alone — they remain "responded" until sendOne
+		// actually re-contacts them. Pre-flipping to "contacted" here
+		// was a bug: it could break the allReplied check on a subsequent
+		// reply if not every re-engaged participant's outbound had
+		// actually gone out yet.
 		p.NextNudgeAt = &now
 		_ = UpdateParticipant(ctx, e.pool, &p)
 	}
@@ -503,6 +512,47 @@ func nudgeInterval(nudgeCount int) time.Duration {
 }
 
 const slackNudgeThreshold = 2
+
+// selectOutreachTargets returns the indices into parts that should be
+// re-engaged for the next round. Uses the proposer's needs_outreach
+// list (matched by display name or slack id) when present; falls back
+// to "everyone non-terminal" if the list is empty so a parser miss
+// doesn't silently stall the negotiation.
+func selectOutreachTargets(parts []Participant, nameByIdx map[int]string, needsOutreach []string) []int {
+	active := make([]int, 0, len(parts))
+	for i, p := range parts {
+		if p.Status == ParticipantDeclined || p.Status == ParticipantTimedOut {
+			continue
+		}
+		active = append(active, i)
+	}
+	if len(needsOutreach) == 0 {
+		return active
+	}
+	// Build a case-insensitive set of names + slack IDs to match against.
+	want := make(map[string]struct{}, len(needsOutreach))
+	for _, n := range needsOutreach {
+		want[strings.ToLower(strings.TrimSpace(n))] = struct{}{}
+	}
+	out := make([]int, 0, len(active))
+	for _, i := range active {
+		name := strings.ToLower(nameByIdx[i])
+		slackID := strings.ToLower(parts[i].Identifier)
+		if _, ok := want[name]; ok {
+			out = append(out, i)
+			continue
+		}
+		if _, ok := want[slackID]; ok {
+			out = append(out, i)
+		}
+	}
+	if len(out) == 0 {
+		// Parser returned names we couldn't match. Don't stall — fall
+		// back to re-engaging everyone.
+		return active
+	}
+	return out
+}
 
 // pickReason chooses a draftMessage reason based on participant state.
 // "initial" for first contact, "nudge" for follow-ups while still
