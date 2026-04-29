@@ -70,8 +70,8 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 
 	case "ambiguous":
 		// Acknowledge but don't change constraints. Don't reschedule a
-		// nudge yet — give the participant time. (next_nudge_at stays
-		// where it was.)
+		// nudge yet — give the participant time.
+		ackParticipant(ctx, a, coord, p, "Sounds good — let me know when you have a chance to check.")
 		return true, nil
 
 	case "decline":
@@ -81,6 +81,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 			return false, fmt.Errorf("updating participant on decline: %w", err)
 		}
 		slog.Info("participant declined", "participant", p.ID, "coord", coord.ID)
+		ackParticipant(ctx, a, coord, p, "Understood, thanks for letting me know. I'll pass that along to "+organizerNameFor(ctx, a, coord)+".")
 		if err := a.surfaceDeclineCard(ctx, coord, p); err != nil {
 			slog.Error("surfacing decline card", "error", err, "coord", coord.ID)
 		}
@@ -89,6 +90,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 
 	case "out_of_window":
 		slog.Info("participant out_of_window", "participant", p.ID, "coord", coord.ID, "notes", parsed.Notes)
+		ackParticipant(ctx, a, coord, p, "Got it — I'll check with "+organizerNameFor(ctx, a, coord)+" about that time and circle back.")
 		if err := a.surfaceOutOfWindowCard(ctx, coord, p, parsed.Notes); err != nil {
 			slog.Error("surfacing out_of_window card", "error", err, "coord", coord.ID)
 		}
@@ -107,6 +109,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant: %w", err)
 		}
+		ackParticipant(ctx, a, coord, p, "Got it, thanks. I'll let you know once everyone's aligned.")
 
 		// Recompute candidates given the new constraint. Any responded
 		// participant whose stance is invalidated gets next_nudge_at=now()
@@ -133,6 +136,42 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 	}
 
 	return false, nil
+}
+
+// ackParticipant DMs the participant a brief acknowledgment so they
+// know their reply landed. Doesn't await a reply — just informational.
+func ackParticipant(ctx context.Context, a *CoordinationApp, coord *Coordination, p *Participant, body string) {
+	if a.msg == nil {
+		return
+	}
+	var userID uuid.UUID
+	if p.UserID != nil {
+		userID = *p.UserID
+	}
+	_, err := a.msg.Send(ctx, messenger.SendRequest{
+		TenantID:         coord.TenantID,
+		Channel:          "slack",
+		Recipient:        messenger.Recipient{SlackUserID: p.Identifier},
+		Body:             body,
+		Origin:           MessengerOrigin,
+		OriginRef:        p.ID.String(),
+		AwaitReply:       true, // keep awaiting so further corrections route back
+		UserID:           userID,
+		SessionThreadKey: participantSessionThreadKey(p.ID),
+	})
+	if err != nil {
+		slog.Error("acking participant", "error", err, "participant", p.ID)
+	}
+}
+
+// organizerNameFor returns the organizer's display name (or a generic
+// fallback) for use in messages back to participants.
+func organizerNameFor(ctx context.Context, a *CoordinationApp, coord *Coordination) string {
+	u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, coord.OrganizerID)
+	if err != nil || u == nil || u.DisplayName == nil || *u.DisplayName == "" {
+		return "the organizer"
+	}
+	return *u.DisplayName
 }
 
 // participantDisplayName resolves a participant to a friendly name.
