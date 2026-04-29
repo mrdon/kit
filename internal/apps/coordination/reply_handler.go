@@ -107,11 +107,8 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on accept: %w", err)
 		}
-		// No immediate ack — the participant's reply propagates to the
-		// other participants first, and they'll hear back when we have
-		// an actual answer (convergence card, or the next round of
-		// outreach with new context). Sending "got it, I'll check
-		// around" before checking around is filler noise.
+		ackParticipant(ctx, a, coord, p, fmt.Sprintf("Got it — %s. I'll check with the others and circle back.", parsed.AcceptedTime))
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** accepted *%s* for %q.", participantDisplayName(ctx, a, coord, p), parsed.AcceptedTime, coord.Config.Title))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
@@ -125,7 +122,8 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
 			return false, fmt.Errorf("updating participant on refine: %w", err)
 		}
-		// No immediate ack — see "accept" branch above for rationale.
+		ackParticipant(ctx, a, coord, p, "Got it — checking with the others and I'll circle back.")
+		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** updated their availability for %q: %s", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Availability))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
