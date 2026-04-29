@@ -61,9 +61,18 @@ func (m *Default) sendSlack(ctx context.Context, req SendRequest) (SentMessage, 
 	// the organizer's main session — narrow the anchor to outbounds
 	// matching that origin so each coord gets its own thread instead of
 	// burying the new message under unrelated history.
-	threadTS, err := earliestOutboundTS(ctx, m.Pool, session.ID, req.Origin, req.OriginRef)
-	if err != nil {
-		return SentMessage{}, fmt.Errorf("looking up thread anchor: %w", err)
+	//
+	// Sessions that opt into isolation via SessionThreadKey already have
+	// every outbound in their flow on its own session — Slack threading
+	// on top of that buries follow-ups in a thread sidebar that
+	// recipients often miss in 1:1 DMs. Skip threading for those so the
+	// conversation reads as a normal back-and-forth DM.
+	threadTS := ""
+	if req.SessionThreadKey == "" {
+		threadTS, err = earliestOutboundTS(ctx, m.Pool, session.ID, req.Origin, req.OriginRef)
+		if err != nil {
+			return SentMessage{}, fmt.Errorf("looking up thread anchor: %w", err)
+		}
 	}
 
 	ts, err := client.PostMessageReturningTS(ctx, imChannel, threadTS, req.Body)
