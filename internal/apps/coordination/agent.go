@@ -31,8 +31,11 @@ and Bob arranged by the organizer, pass participants=["U_ALICE",
 filtered out automatically.
 
 candidate_slots is typically 3 free 30-min windows within the requested
-date range. Each slot is {start, end} in RFC3339 (or naive ISO format —
-treated as UTC).`,
+date range. Each slot is {start, end} in ISO format. If you include a
+timezone offset (e.g. "2026-04-29T10:00:00-06:00"), it's used directly.
+If you omit the offset (e.g. "2026-04-29T10:00:00"), the timestamp is
+interpreted in organizer_tz — so when the user says "10am Mountain"
+just pass naive ISO and set organizer_tz="America/Denver".`,
 		Schema: services.PropsReq(map[string]any{
 			"title":            services.Field("string", "What the meeting is about (e.g. 'Q2 review')"),
 			"candidate_slots":  services.Field("array", "Array of {start, end} ISO-8601 timestamps. 3 slots is typical."),
@@ -117,8 +120,11 @@ func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 				return "", fmt.Errorf("parsing args: %w", err)
 			}
 			// Resolve slots first so we can infer the missing date/duration
-			// fields from them.
-			slots, err := convertSlots(inp.CandidateSlots)
+			// fields from them. Pass organizer_tz so naive timestamps
+			// (no timezone offset) are interpreted in that location, not
+			// UTC — the agent rarely emits offsets, but the user almost
+			// always means a local time.
+			slots, err := convertSlots(inp.CandidateSlots, inp.OrganizerTZ)
 			if err != nil {
 				return "", err
 			}
@@ -270,16 +276,22 @@ type slotInput struct {
 	DurationMinutes int    `json:"duration_minutes"` // alternative to End
 }
 
-func convertSlots(in []slotInput) ([]Slot, error) {
+func convertSlots(in []slotInput, organizerTZ string) ([]Slot, error) {
+	loc := time.UTC
+	if organizerTZ != "" {
+		if l, err := time.LoadLocation(organizerTZ); err == nil {
+			loc = l
+		}
+	}
 	out := make([]Slot, 0, len(in))
 	for i, s := range in {
-		start, err := parseFlexibleTimestamp(s.Start)
+		start, err := parseTimestampInLocation(s.Start, loc)
 		if err != nil {
 			return nil, fmt.Errorf("slot %d start: %w", i, err)
 		}
 		var end time.Time
 		if s.End != "" {
-			end, err = parseFlexibleTimestamp(s.End)
+			end, err = parseTimestampInLocation(s.End, loc)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d end: %w", i, err)
 			}
@@ -294,22 +306,25 @@ func convertSlots(in []slotInput) ([]Slot, error) {
 	return out, nil
 }
 
-// parseFlexibleTimestamp accepts RFC3339 with Z/offset, plain
-// "YYYY-MM-DDTHH:MM:SS" (assumed UTC), and "YYYY-MM-DD HH:MM:SS"
-// variants. The agent doesn't always produce a timezone in its slot
-// output; the engine treats missing-tz as UTC.
-func parseFlexibleTimestamp(s string) (time.Time, error) {
+// parseTimestampInLocation parses a timestamp; if it has an explicit
+// timezone offset (RFC3339), that wins. If it's naive (just date+time),
+// it's interpreted in `loc` — typically the organizer's timezone, since
+// the LLM almost always emits naive timestamps even when the user said
+// "10am Mountain".
+func parseTimestampInLocation(s string, loc *time.Location) (time.Time, error) {
 	if s == "" {
 		return time.Time{}, errors.New("empty timestamp")
 	}
-	formats := []string{
-		time.RFC3339,
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	naiveLayouts := []string{
 		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
 		"2006-01-02T15:04",
 	}
-	for _, f := range formats {
-		if t, err := time.Parse(f, s); err == nil {
+	for _, layout := range naiveLayouts {
+		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
 			return t, nil
 		}
 	}

@@ -64,7 +64,7 @@ func mcpStartCoordination(svc *Service) mcpserver.ToolHandlerFunc {
 		}
 
 		slotsRaw, _ := args["candidate_slots"].([]any)
-		slots, err := parseSlotsFromMCP(slotsRaw)
+		slots, err := parseSlotsFromMCP(slotsRaw, organizerTZ)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -145,7 +145,13 @@ func mcpCancelCoordination(svc *Service) mcpserver.ToolHandlerFunc {
 	})
 }
 
-func parseSlotsFromMCP(raw []any) ([]Slot, error) {
+func parseSlotsFromMCP(raw []any, organizerTZ string) ([]Slot, error) {
+	loc := time.UTC
+	if organizerTZ != "" {
+		if l, err := time.LoadLocation(organizerTZ); err == nil {
+			loc = l
+		}
+	}
 	out := make([]Slot, 0, len(raw))
 	for i, r := range raw {
 		// Each entry can come in as a JSON object (map[string]any) or a
@@ -154,11 +160,11 @@ func parseSlotsFromMCP(raw []any) ([]Slot, error) {
 		case map[string]any:
 			startStr, _ := v["start"].(string)
 			endStr, _ := v["end"].(string)
-			start, err := parseFlexibleTimestamp(startStr)
+			start, err := parseTimestampInLocation(startStr, loc)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d start: %w", i, err)
 			}
-			end, err := parseFlexibleTimestamp(endStr)
+			end, err := parseTimestampInLocation(endStr, loc)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d end: %w", i, err)
 			}
@@ -168,11 +174,11 @@ func parseSlotsFromMCP(raw []any) ([]Slot, error) {
 			if err := json.Unmarshal([]byte(v), &s); err != nil {
 				return nil, fmt.Errorf("slot %d: %w", i, err)
 			}
-			start, err := parseFlexibleTimestamp(s.Start)
+			start, err := parseTimestampInLocation(s.Start, loc)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d start: %w", i, err)
 			}
-			end, err := parseFlexibleTimestamp(s.End)
+			end, err := parseTimestampInLocation(s.End, loc)
 			if err != nil {
 				return nil, fmt.Errorf("slot %d end: %w", i, err)
 			}
