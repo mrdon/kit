@@ -100,7 +100,7 @@ func defaultDraft(coord *Coordination, p *Participant, reason string) string {
 	case "reengage_invalidated":
 		return fmt.Sprintf("Sorry to come back to you on %q — others' availability shifted. Updated options coming.", coord.Config.Title)
 	default:
-		return fmt.Sprintf("Hi — I'm Kit, a scheduling assistant. Trying to set up %q. Are any of these times OK? %s", coord.Config.Title, slotsForBody(coord.Config.CandidateSlots, coord.Config.OrganizerTZ))
+		return fmt.Sprintf("The organizer is trying to set up %q. Are any of these times OK? %s", coord.Config.Title, slotsForBody(coord.Config.CandidateSlots, coord.Config.OrganizerTZ))
 	}
 }
 

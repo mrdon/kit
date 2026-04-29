@@ -569,8 +569,7 @@ func resolveSkipOne(ctx context.Context, app *CoordinationApp, coord *Coordinati
 			"• Reach out to %s yourself, then tell me what they said\n"+
 			"• Have me try again with different times or framing\n"+
 			"• Skip them entirely (proceed with the others)\n"+
-			"• Cancel the coordination\n\n"+
-			"Just reply here.",
+			"• Cancel the coordination",
 		name, coord.Config.Title, name,
 	)
 	notifyOrganizer(ctx, app, coord, msg)
