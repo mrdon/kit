@@ -13,6 +13,7 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	kitslack "github.com/mrdon/kit/internal/slack"
 	"github.com/mrdon/kit/internal/tools"
 	"github.com/mrdon/kit/internal/tools/approval"
 	"github.com/mrdon/kit/internal/web"
@@ -83,10 +84,16 @@ func buildResolveToolExecutor(pool *pgxpool.Pool, svc *services.Services, enc *c
 		// the approval marker too.
 		approvedCtx := approval.WithToken(ctx, approval.Mint(cardID, resolveToken))
 
+		botToken, err := enc.Decrypt(tenant.BotToken)
+		if err != nil {
+			return "", false, fmt.Errorf("decrypting bot token: %w", err)
+		}
+
 		reg := tools.NewRegistry(approvedCtx, caller, false /* not bot-initiated */)
 		ec := &tools.ExecContext{
 			Ctx:     approvedCtx,
 			Pool:    pool,
+			Slack:   kitslack.NewClient(botToken),
 			Fetcher: fetcher,
 			Tenant:  tenant,
 			User:    user,
