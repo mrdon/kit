@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,30 @@ import (
 // DM'd Kit themselves), fetch their profile from Slack and upsert.
 // Returns nil on hard failure (don't block coordination start; the
 // participant just won't have a display name).
+// describeOrganizerAvailability turns the organizer's initial
+// candidate_slots into a natural-language availability statement that
+// the LLM solver can read alongside other participants' free-form
+// availability. The format is intentionally simple and human-readable
+// since the LLM consumes it.
+func describeOrganizerAvailability(slots []Slot, tz string) string {
+	if len(slots) == 0 {
+		return ""
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil || loc == nil {
+		loc = time.UTC
+	}
+	parts := make([]string, 0, len(slots))
+	for _, s := range slots {
+		parts = append(parts, s.Start.In(loc).Format("Mon Jan 2 3:04 PM")+" – "+s.End.In(loc).Format("3:04 PM"))
+	}
+	tzNote := ""
+	if tz != "" {
+		tzNote = " (organizer timezone: " + tz + ")"
+	}
+	return "Available at: " + strings.Join(parts, "; ") + tzNote
+}
+
 func ensureParticipantUser(ctx context.Context, pool *pgxpool.Pool, app *CoordinationApp, tenantID uuid.UUID, slackID string) *models.User {
 	if u, err := models.GetUserBySlackID(ctx, pool, tenantID, slackID); err == nil && u != nil {
 		return u
@@ -77,6 +102,12 @@ type StartInput struct {
 	AutoApprove     bool
 	DeadlineDays    int // nil/0 → defaults to 7
 	OrganizerTZ     string
+	// OrganizerAttending defaults to true. When true, the organizer is
+	// added to the participants list internally with status='responded'
+	// and Availability prepopulated from their candidate_slots — they're
+	// part of the negotiation, just don't get the initial-outreach DM
+	// since their availability is already stated.
+	OrganizerAttending *bool
 }
 
 // Start creates a coordination, its participants, and arms the first
@@ -131,20 +162,46 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 		return nil, fmt.Errorf("creating coordination: %w", err)
 	}
 
-	// Resolve organizer's Slack ID once so we can drop them from the
-	// participants list (the organizer doesn't need a DM asking when
-	// they're free — they initiated the coordination).
+	// Resolve organizer's Slack ID and (optionally) add them as a
+	// participant for the negotiation. Default: organizer is attending,
+	// so they get a participant row with status=responded prepopulated
+	// from their candidate_slots. They DON'T get an initial-outreach DM
+	// (their availability is already stated), but they DO get DM'd if
+	// someone else suggests a new time.
 	organizerSlackID := ""
+	var organizerKitUserID *uuid.UUID
 	if u, err := models.GetUserByID(ctx, s.pool, c.TenantID, c.UserID); err == nil && u != nil {
 		organizerSlackID = u.SlackUserID
+		uid := u.ID
+		organizerKitUserID = &uid
+	}
+	organizerAttending := true
+	if in.OrganizerAttending != nil {
+		organizerAttending = *in.OrganizerAttending
 	}
 
 	now := time.Now()
 	created := 0
+	if organizerAttending && organizerSlackID != "" {
+		op := &Participant{
+			TenantID:       c.TenantID,
+			CoordinationID: coord.ID,
+			Identifier:     organizerSlackID,
+			UserID:         organizerKitUserID,
+			Channel:        "slack",
+			Status:         ParticipantResponded,
+			Constraints:    Constraints{SlotVerdicts: map[string]SlotVerdict{}},
+			Rounds:         []Round{},
+			Availability:   describeOrganizerAvailability(in.CandidateSlots, in.OrganizerTZ),
+			// No NextNudgeAt — organizer doesn't get an initial outreach.
+		}
+		if err := CreateParticipant(ctx, s.pool, op); err != nil {
+			return nil, fmt.Errorf("creating organizer participant: %w", err)
+		}
+	}
 	for _, slackID := range in.Participants {
 		if slackID == organizerSlackID {
-			// Don't DM the organizer about their own meeting.
-			continue
+			continue // already added (or intentionally skipped)
 		}
 		p := &Participant{
 			TenantID:       c.TenantID,
@@ -156,10 +213,6 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 			Constraints:    Constraints{SlotVerdicts: map[string]SlotVerdict{}},
 			Rounds:         []Round{},
 		}
-		// Ensure the Kit user record exists (fetch from Slack and upsert
-		// if we've never seen them). Without this, downstream session
-		// creation fails the user_id FK, and we can't render display
-		// names on cards either.
 		if u := ensureParticipantUser(ctx, s.pool, s.app, c.TenantID, slackID); u != nil {
 			p.UserID = &u.ID
 		}
@@ -169,8 +222,6 @@ func (s *Service) Start(ctx context.Context, c *services.Caller, in StartInput) 
 		created++
 	}
 	if created < 1 {
-		// All passed-in participants matched the organizer. We need at
-		// least one external person to DM. Roll back to keep state clean.
 		_, _ = s.pool.Exec(ctx, "DELETE FROM app_coordinations WHERE id = $1", coord.ID)
 		return nil, errors.New("at least one participant besides the organizer is required")
 	}

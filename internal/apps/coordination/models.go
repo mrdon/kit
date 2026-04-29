@@ -95,9 +95,14 @@ type Coordination struct {
 	Result         *CoordinationResult
 	DeadlineAt     *time.Time
 	ShepherdTaskID *uuid.UUID
+	RoundCount     int
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+// MaxRounds is the negotiation cap. After this many rounds without
+// convergence, the engine surfaces an abandonment card to the organizer.
+const MaxRounds = 5
 
 // Round is one ask/answer cycle for a participant. asked_slots
 // snapshots the candidate set at the time of the ask so re-engagement
@@ -139,10 +144,21 @@ type Participant struct {
 	Status         string
 	Rounds         []Round
 	Constraints    Constraints
-	NudgeCount     int
-	NextNudgeAt    *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// Availability is free-form natural-language availability text
+	// accumulated across the participant's replies. The LLM solver
+	// reads this to propose viable times. Replaces the discrete
+	// constraint-voting model (which couldn't handle "anytime after
+	// Tuesday" or "Fri or Sat morning").
+	Availability string
+	// AcceptedTime is the RFC3339 string (or any unique key) of the
+	// proposed time the participant explicitly accepted in the most
+	// recent round. Convergence = all active participants have the same
+	// non-empty AcceptedTime.
+	AcceptedTime string
+	NudgeCount   int
+	NextNudgeAt  *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // CreateCoordination inserts a new coordination. Result is nil at
@@ -165,7 +181,7 @@ func CreateCoordination(ctx context.Context, pool *pgxpool.Pool, c *Coordination
 func GetCoordination(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) (*Coordination, error) {
 	row := pool.QueryRow(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, created_at, updated_at
+		       deadline_at, shepherd_task_id, round_count, created_at, updated_at
 		FROM app_coordinations
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
@@ -177,7 +193,7 @@ func GetCoordination(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.
 func ListActiveCoordinations(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Coordination, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, created_at, updated_at
+		       deadline_at, shepherd_task_id, round_count, created_at, updated_at
 		FROM app_coordinations
 		WHERE tenant_id = $1 AND status = 'active'
 		ORDER BY created_at
@@ -203,7 +219,7 @@ func ListActiveCoordinations(ctx context.Context, pool *pgxpool.Pool, tenantID u
 func ListAllActiveCoordinations(ctx context.Context, pool *pgxpool.Pool) ([]Coordination, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, created_at, updated_at
+		       deadline_at, shepherd_task_id, round_count, created_at, updated_at
 		FROM app_coordinations
 		WHERE status = 'active'
 		ORDER BY tenant_id, created_at
@@ -276,7 +292,7 @@ func CreateParticipant(ctx context.Context, pool *pgxpool.Pool, p *Participant) 
 func ListParticipants(ctx context.Context, pool *pgxpool.Pool, tenantID, coordID uuid.UUID) ([]Participant, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, coordination_id, identifier, user_id, session_id, channel,
-		       status, rounds, constraints, nudge_count, next_nudge_at, created_at, updated_at
+		       status, rounds, constraints, availability, accepted_time, nudge_count, next_nudge_at, created_at, updated_at
 		FROM app_coordination_participants
 		WHERE tenant_id = $1 AND coordination_id = $2
 		ORDER BY created_at
@@ -301,7 +317,7 @@ func ListParticipants(ctx context.Context, pool *pgxpool.Pool, tenantID, coordID
 func GetParticipant(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) (*Participant, error) {
 	row := pool.QueryRow(ctx, `
 		SELECT id, tenant_id, coordination_id, identifier, user_id, session_id, channel,
-		       status, rounds, constraints, nudge_count, next_nudge_at, created_at, updated_at
+		       status, rounds, constraints, availability, accepted_time, nudge_count, next_nudge_at, created_at, updated_at
 		FROM app_coordination_participants
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
@@ -315,7 +331,7 @@ func GetParticipant(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.U
 func ListReadyParticipants(ctx context.Context, pool *pgxpool.Pool, now time.Time) ([]Participant, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, coordination_id, identifier, user_id, session_id, channel,
-		       status, rounds, constraints, nudge_count, next_nudge_at, created_at, updated_at
+		       status, rounds, constraints, availability, accepted_time, nudge_count, next_nudge_at, created_at, updated_at
 		FROM app_coordination_participants
 		WHERE status IN ('pending','contacted','responded')
 		  AND next_nudge_at IS NOT NULL
@@ -359,7 +375,7 @@ func UpdateParticipant(ctx context.Context, pool *pgxpool.Pool, p *Participant) 
 func FindParticipantBySession(ctx context.Context, pool *pgxpool.Pool, tenantID, sessionID uuid.UUID) (*Participant, error) {
 	row := pool.QueryRow(ctx, `
 		SELECT id, tenant_id, coordination_id, identifier, user_id, session_id, channel,
-		       status, rounds, constraints, nudge_count, next_nudge_at, created_at, updated_at
+		       status, rounds, constraints, availability, accepted_time, nudge_count, next_nudge_at, created_at, updated_at
 		FROM app_coordination_participants
 		WHERE tenant_id = $1 AND session_id = $2
 		  AND status IN ('contacted','responded')
@@ -388,7 +404,7 @@ func scanCoordination(s scannable) (*Coordination, error) {
 	var resultJSON sql.NullString
 	if err := s.Scan(
 		&c.ID, &c.TenantID, &c.OrganizerID, &c.Kind, &c.Status, &configJSON,
-		&resultJSON, &c.DeadlineAt, &c.ShepherdTaskID, &c.CreatedAt, &c.UpdatedAt,
+		&resultJSON, &c.DeadlineAt, &c.ShepherdTaskID, &c.RoundCount, &c.CreatedAt, &c.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -411,7 +427,7 @@ func scanParticipant(s scannable) (*Participant, error) {
 	if err := s.Scan(
 		&p.ID, &p.TenantID, &p.CoordinationID, &p.Identifier, &p.UserID, &p.SessionID,
 		&p.Channel, &p.Status, &roundsJSON, &constraintsJSON,
-		&p.NudgeCount, &p.NextNudgeAt, &p.CreatedAt, &p.UpdatedAt,
+		&p.Availability, &p.AcceptedTime, &p.NudgeCount, &p.NextNudgeAt, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}

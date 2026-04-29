@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/mrdon/kit/internal/models"
 	kitslack "github.com/mrdon/kit/internal/slack"
@@ -54,15 +55,24 @@ func (m *Default) sendSlack(ctx context.Context, req SendRequest) (SentMessage, 
 		return SentMessage{}, fmt.Errorf("resolving session: %w", err)
 	}
 
-	// Top-level DM (no thread).
-	ts, err := client.PostMessageReturningTS(ctx, imChannel, "", req.Body)
+	// Slack thread anchor: if we've sent at least one outbound on this
+	// session before, post the new message as a thread reply under the
+	// FIRST outbound. Keeps a single coord's worth of messages visually
+	// grouped in the participant's DM ("Sorry, cancelled" reads in
+	// context of "Don wants to set up..." instead of as a naked alert).
+	threadTS, err := earliestOutboundTS(ctx, m.Pool, session.ID)
+	if err != nil {
+		return SentMessage{}, fmt.Errorf("looking up thread anchor: %w", err)
+	}
+
+	ts, err := client.PostMessageReturningTS(ctx, imChannel, threadTS, req.Body)
 	if err != nil {
 		return SentMessage{}, fmt.Errorf("posting DM: %w", err)
 	}
 
 	if err := models.AppendSessionEvent(ctx, m.Pool, req.TenantID, session.ID, models.EventTypeMessageSent, outboundEventData{
 		Channel:          imChannel,
-		ThreadTS:         "",
+		ThreadTS:         threadTS,
 		Text:             req.Body,
 		IsDM:             true,
 		ChannelMessageID: ts,
@@ -77,6 +87,34 @@ func (m *Default) sendSlack(ctx context.Context, req SendRequest) (SentMessage, 
 		SessionID:        session.ID,
 		ChannelMessageID: ts,
 	}, nil
+}
+
+// earliestOutboundTS returns the channel_message_id of the OLDEST
+// message_sent event on this session, used as the Slack thread anchor
+// for subsequent outbounds. Returns "" if no prior outbound — meaning
+// the next send goes top-level.
+func earliestOutboundTS(ctx context.Context, pool poolLike, sessionID uuid.UUID) (string, error) {
+	row := pool.QueryRow(ctx, `
+		SELECT data->>'channel_message_id'
+		FROM session_events
+		WHERE session_id = $1 AND event_type = $2
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, sessionID, string(models.EventTypeMessageSent))
+	var ts *string
+	if err := row.Scan(&ts); err != nil {
+		return "", nil //nolint:nilerr // pgx.ErrNoRows means no anchor
+	}
+	if ts == nil {
+		return "", nil
+	}
+	return *ts, nil
+}
+
+// poolLike is the subset of pgxpool.Pool used by earliestOutboundTS,
+// kept narrow so the helper stays testable.
+type poolLike interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 // slackClient returns a SlackPoster for the tenant. Uses the injected

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services/messenger"
 )
 
@@ -331,7 +332,15 @@ func (e *Engine) NotifyCancel(ctx context.Context, coord *Coordination) error {
 		if p.Status != ParticipantContacted && p.Status != ParticipantResponded {
 			continue
 		}
-		body := "Sorry — this scheduling has been cancelled. No further action needed from you."
+		// Reference the title and the organizer so the participant can
+		// connect this DM to the earlier outreach. A naked "this
+		// scheduling has been cancelled" reads as out-of-context noise
+		// if they didn't pay close attention to the original message.
+		organizerName := "the organizer"
+		if u, err := models.GetUserByID(ctx, e.pool, coord.TenantID, coord.OrganizerID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+			organizerName = *u.DisplayName
+		}
+		body := fmt.Sprintf("Sorry, %s cancelled the %q meeting scheduling. No further action needed.", organizerName, coord.Config.Title)
 		_, err := e.app.msg.Send(ctx, messenger.SendRequest{
 			TenantID:         coord.TenantID,
 			Channel:          "slack",
