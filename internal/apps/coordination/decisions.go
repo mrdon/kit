@@ -223,6 +223,53 @@ func (a *CoordinationApp) surfaceDeclineCard(ctx context.Context, coord *Coordin
 	return err
 }
 
+// surfaceOutOfWindowCard surfaces "X can't do the proposed window —
+// {their suggestion}" to the organizer. They can either proceed without
+// the participant, abandon the coord, or take it from there.
+func (a *CoordinationApp) surfaceOutOfWindowCard(ctx context.Context, coord *Coordination, p *Participant, suggestion string) error {
+	if a.cards == nil {
+		return errors.New("CardService not configured")
+	}
+	caller, err := a.organizerCaller(ctx, coord)
+	if err != nil {
+		return err
+	}
+
+	name := participantName(p)
+	if p.UserID != nil {
+		if u, err := models.GetUserByID(ctx, a.pool, coord.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
+			name = *u.DisplayName
+		}
+	}
+
+	proceedArgs, _ := json.Marshal(map[string]any{
+		"coordination_id":      coord.ID.String(),
+		"action":               "proceed_without",
+		"declined_participant": p.ID.String(),
+	})
+	cancelArgs, _ := json.Marshal(map[string]any{
+		"coordination_id": coord.ID.String(),
+		"action":          "cancel",
+	})
+
+	body := fmt.Sprintf("**%s** can't do the proposed time(s).\n\nWhat they said: %q\n\nThe coord engine doesn't yet expand the candidate set on its own — to honor their suggestion, cancel this coord and start a new one with the new times. Or proceed without them.", name, suggestion)
+
+	_, err = a.cards.CreateDecision(ctx, caller, cards.CardCreateInput{
+		Title: fmt.Sprintf("%s — %s suggests a different time", coord.Config.Title, name),
+		Body:  body,
+		Kind:  cards.CardKindDecision,
+		Decision: &cards.DecisionCreateInput{
+			Priority:            cards.DecisionPriorityMedium,
+			RecommendedOptionID: "proceed_without",
+			Options: []cards.DecisionOption{
+				{OptionID: "proceed_without", Label: "Proceed without " + name, ToolName: coordinationResolveDecision, ToolArguments: proceedArgs},
+				{OptionID: "cancel", Label: "Cancel coordination", ToolName: coordinationResolveDecision, ToolArguments: cancelArgs},
+			},
+		},
+	})
+	return err
+}
+
 // organizerCaller constructs a services.Caller for the coordination's
 // organizer, used when creating decision cards on their behalf.
 func (a *CoordinationApp) organizerCaller(ctx context.Context, coord *Coordination) (*services.Caller, error) {

@@ -87,10 +87,10 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 		return true, nil
 
 	case "out_of_window":
-		// The participant can't do the requested date range. Surface to
-		// the organizer (also a Phase 1.5 card-wiring item). For now,
-		// log + leave the participant as-is.
 		slog.Info("participant out_of_window", "participant", p.ID, "coord", coord.ID, "notes", parsed.Notes)
+		if err := a.surfaceOutOfWindowCard(ctx, coord, p, parsed.Notes); err != nil {
+			slog.Error("surfacing out_of_window card", "error", err, "coord", coord.ID)
+		}
 		return true, nil
 
 	case "reply":
