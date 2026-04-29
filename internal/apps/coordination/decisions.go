@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/apps/cards"
 	"github.com/mrdon/kit/internal/models"
@@ -707,11 +708,54 @@ func (a *CoordinationApp) armResponded(ctx context.Context, coord *Coordination)
 	return err
 }
 
-// notifyOrganizer DMs the organizer in Slack via Messenger. AwaitReply
-// is false so any reply they post falls through to the regular agent
-// loop (which has access to the coordination tools and can act on
-// natural-language follow-ups).
+// notifyOrganizer DMs the organizer in Slack via Messenger.
+//
+// AwaitReply is false by default — pure status notifications ("Cancelled",
+// "Confirmed", "X declined") don't expect a structured response, so any
+// reply they post falls through to the regular agent loop.
+//
+// For notifies that DO want a parsed reply (e.g. "X updated availability"
+// — the organizer naturally replies with their own preferred time), use
+// notifyOrganizerAwaiting so the reply routes to the coord's reply
+// handler with the organizer's participant_id as origin_ref. Otherwise
+// the reply gets caught by an older await-reply outbound (possibly from
+// a now-closed coord) and ends up in the agent loop with no context.
 func notifyOrganizer(ctx context.Context, app *CoordinationApp, coord *Coordination, body string) {
+	notifyOrganizerSend(ctx, app, coord, body, coord.ID.String(), false)
+}
+
+// notifyOrganizerAwaiting is the await-reply variant used when the
+// notify text is a question to which the organizer's natural-language
+// reply should be parsed as their own scheduling input. Origin_ref is
+// the organizer-participant_id so the reply lands in handleInboundReply
+// for that participant. Falls back to plain notifyOrganizer if the
+// organizer isn't actually a participant on this coord.
+func notifyOrganizerAwaiting(ctx context.Context, app *CoordinationApp, coord *Coordination, body string) {
+	pid, err := organizerParticipantID(ctx, app.pool, coord)
+	if err != nil || pid == uuid.Nil {
+		notifyOrganizer(ctx, app, coord, body)
+		return
+	}
+	notifyOrganizerSend(ctx, app, coord, body, pid.String(), true)
+}
+
+// organizerParticipantID returns the participant_id row for the
+// organizer-as-participant on this coord, or uuid.Nil if the organizer
+// isn't part of the participant list (organizer_attending=false).
+func organizerParticipantID(ctx context.Context, pool *pgxpool.Pool, coord *Coordination) (uuid.UUID, error) {
+	parts, err := ListParticipants(ctx, pool, coord.TenantID, coord.ID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	for _, p := range parts {
+		if p.UserID != nil && *p.UserID == coord.OrganizerID {
+			return p.ID, nil
+		}
+	}
+	return uuid.Nil, nil
+}
+
+func notifyOrganizerSend(ctx context.Context, app *CoordinationApp, coord *Coordination, body, originRef string, awaitReply bool) {
 	if app.msg == nil {
 		return
 	}
@@ -725,8 +769,8 @@ func notifyOrganizer(ctx context.Context, app *CoordinationApp, coord *Coordinat
 		Recipient:  messenger.Recipient{SlackUserID: user.SlackUserID},
 		Body:       body,
 		Origin:     MessengerOrigin,
-		OriginRef:  coord.ID.String(),
-		AwaitReply: false,
+		OriginRef:  originRef,
+		AwaitReply: awaitReply,
 		UserID:     coord.OrganizerID,
 	})
 	if err != nil {

@@ -40,11 +40,29 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 	if coord == nil || coord.Status != StatusActive {
 		return false, nil
 	}
-	if p.SessionID == nil {
+
+	// Resolve the session to read history from. The organizer-participant
+	// row gets created without a session_id (the organizer doesn't get
+	// initial outreach) — it's populated lazily by the first sendOne.
+	// If they reply to an awaiting notify before any outreach has fired,
+	// p.SessionID will still be nil; fall back to the session messenger
+	// dispatched on, which is the organizer's main bot DM.
+	sessionID := msg.SessionID
+	if p.SessionID != nil {
+		sessionID = *p.SessionID
+	}
+	if sessionID == uuid.Nil {
 		return false, nil
 	}
+	if p.SessionID == nil {
+		sid := sessionID
+		p.SessionID = &sid
+		if err := UpdateParticipant(ctx, a.pool, p); err != nil {
+			slog.Warn("setting participant session_id from inbound", "error", err, "participant", p.ID)
+		}
+	}
 
-	log, err := a.buildMessageLog(ctx, msg.Source.TenantID, *p.SessionID)
+	log, err := a.buildMessageLog(ctx, msg.Source.TenantID, sessionID)
 	if err != nil {
 		return false, fmt.Errorf("building message log: %w", err)
 	}
@@ -108,7 +126,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 			return false, fmt.Errorf("updating participant on accept: %w", err)
 		}
 		ackParticipant(ctx, a, coord, p, fmt.Sprintf("Got it — %s. I'll check with the others and circle back.", parsed.AcceptedTime))
-		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** accepted *%s* for %q. I'll check with anyone still pending; you'll see a confirmation card if everyone aligns or a follow-up card if more outreach is needed.", participantDisplayName(ctx, a, coord, p), parsed.AcceptedTime, coord.Config.Title))
+		notifyOrganizerAwaiting(ctx, a, coord, fmt.Sprintf("**%s** accepted *%s* for %q. I'll check with anyone still pending; you'll see a confirmation card if everyone aligns or a follow-up card if more outreach is needed.", participantDisplayName(ctx, a, coord, p), parsed.AcceptedTime, coord.Config.Title))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
@@ -130,7 +148,7 @@ func (a *CoordinationApp) handleInboundReply(ctx context.Context, msg messenger.
 			ack = fmt.Sprintf("Got it — %s. I'll check with the others and circle back.", parsed.Availability)
 		}
 		ackParticipant(ctx, a, coord, p, ack)
-		notifyOrganizer(ctx, a, coord, fmt.Sprintf("**%s** updated their availability for %q: %s\n\nI'm working on a proposal that fits everyone — you'll see a confirmation card in your stack if we converge, or a follow-up card to send another round of DMs.", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Availability))
+		notifyOrganizerAwaiting(ctx, a, coord, fmt.Sprintf("**%s** updated their availability for %q: %s\n\nI'm working on a proposal that fits everyone — you'll see a confirmation card in your stack if we converge, or a follow-up card to send another round of DMs. (Reply here with your own preferred time and I'll add you to the proposal.)", participantDisplayName(ctx, a, coord, p), coord.Config.Title, parsed.Availability))
 		if a.engine != nil {
 			_ = a.engine.AdvanceRound(ctx, coord)
 		}
