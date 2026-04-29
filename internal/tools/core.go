@@ -270,6 +270,13 @@ func dmUserHandler(ec *ExecContext, input json.RawMessage) (string, error) {
 }
 
 func logMessageSent(ec *ExecContext, channel, threadTS, text string, isDM bool) {
+	// Gated-tool resolve path runs without a Session — nothing to log
+	// against on the caller side. The recipient session log
+	// (logOnRecipientSession) still fires so the recipient sees the DM
+	// in their own thread.
+	if ec.Session == nil {
+		return
+	}
 	_ = models.AppendSessionEvent(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.Session.ID, models.EventTypeMessageSent, map[string]any{
 		"channel":   channel,
 		"thread_ts": threadTS,
