@@ -39,7 +39,13 @@ func registerResolveCardTool(r *tools.Registry, app *VotingApp) {
 		DefaultPolicy:  tools.PolicyAllow,
 		AdminOnly:      false,
 		DenyCallerGate: true,
-		Handler:        resolveCardHandler(app),
+		// Internal: only invoked by the card-resolve dispatch path. Keeping
+		// the tool out of the LLM's catalog prevents the agent from
+		// recording verdicts directly with `action=object` and skipping the
+		// CardService.ResolveDecision flow (which is what flips the card to
+		// resolved and removes it from the participant's feed).
+		Internal: true,
+		Handler:  resolveCardHandler(app),
 	})
 }
 

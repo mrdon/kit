@@ -396,7 +396,10 @@ func registerResolveDecisionTool(r *tools.Registry, app *CoordinationApp) {
 		DefaultPolicy:  tools.PolicyAllow,
 		AdminOnly:      false,
 		DenyCallerGate: true,
-		Handler:        resolveDecisionHandler(app),
+		// Internal: only fires via card-option resolution; not for the LLM
+		// to invoke directly with crafted args.
+		Internal: true,
+		Handler:  resolveDecisionHandler(app),
 	})
 }
 

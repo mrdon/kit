@@ -142,6 +142,17 @@ type Def struct {
 	VisibleToRoles []string
 	Terminal       bool // if true, calling this tool ends the agent loop
 
+	// Internal hides the tool from every agent catalog (including admin
+	// callers, which AdminOnly does not). The tool stays in the
+	// registry's name → handler map so direct invocations via
+	// Execute/ExecuteWithResult still resolve. Use for tools that are
+	// only meant to be invoked by the framework (e.g. card-option
+	// resolvers like voting_resolve_card / coordination_resolve_decision)
+	// — exposing them to the LLM tempts it to call them directly with
+	// crafted args, bypassing the surface flow they were designed to
+	// dispatch from.
+	Internal bool
+
 	// DefaultPolicy controls whether Registry.Execute dispatches the
 	// handler directly (PolicyAllow, the default) or intercepts the
 	// call into an approval decision card (PolicyGate). See
@@ -453,6 +464,12 @@ func (r *Registry) DefinitionsFor(caller *services.Caller) []anthropic.Tool {
 // admins from being silently locked out of tools their tenant hasn't
 // materialised a role row for.
 func IsDefVisible(d Def, caller *services.Caller) bool {
+	// Internal tools are catalog-invisible to every caller, admins
+	// included — the framework reaches them by name, not through
+	// discovery, so there's no agent flow that should ever surface them.
+	if d.Internal {
+		return false
+	}
 	if caller != nil && caller.IsAdmin {
 		return true
 	}
