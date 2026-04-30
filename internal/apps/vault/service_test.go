@@ -267,3 +267,59 @@ func TestValidateScopesRejectsDuplicates(t *testing.T) {
 		t.Fatal("expected duplicate scope rejection")
 	}
 }
+
+// TestRegisterUpsertOnPendingRetry exercises the canary-failure recovery
+// path. A user who hits a transient browser error between INSERT and
+// /self_unlock_test must be able to re-register without operator help.
+// The non-Replace UPSERT keyed on pending=true is the recovery primitive.
+func TestRegisterUpsertOnPendingRetry(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+	admin := adminCaller(tenantID, userID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	// First register: succeeds, row is pending=true.
+	if err := svc.Register(ctx, admin, RegisterParams{
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: []byte("ct1"),
+		UserPrivateKeyNonce:      make([]byte, 12),
+		WrappedVaultKey:          []byte("wrapped1"),
+	}, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+
+	// Second register (simulating canary-failure retry): also succeeds,
+	// row is rewritten with the new keys.
+	if err := svc.Register(ctx, admin, RegisterParams{
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: []byte("ct2"),
+		UserPrivateKeyNonce:      make([]byte, 12),
+		WrappedVaultKey:          []byte("wrapped2"),
+	}, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("retry register: %v", err)
+	}
+
+	// After SelfUnlockTest activates the row, further non-Replace
+	// registrations must be rejected (only Replace can replace an
+	// active row).
+	if err := models.MarkVaultUserActive(ctx, pool, tenantID, userID); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+	err := svc.Register(ctx, admin, RegisterParams{
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"CCCCCCCCCCCCCCCCCCCCCC=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: []byte("ct3"),
+		UserPrivateKeyNonce:      make([]byte, 12),
+		WrappedVaultKey:          []byte("wrapped3"),
+	}, svc.AuditFromRequest(admin, r))
+	if err == nil {
+		t.Fatal("register against an active row should fail without Replace=true")
+	}
+}

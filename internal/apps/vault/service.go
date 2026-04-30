@@ -193,6 +193,9 @@ func (s *Service) CreateEntry(ctx context.Context, c *services.Caller, p CreateE
 	if err := validateScopes(p.Scopes); err != nil {
 		return uuid.Nil, err
 	}
+	if err := s.validateScopesAgainstTenant(ctx, c.TenantID, p.Scopes); err != nil {
+		return uuid.Nil, err
+	}
 	id, err := models.CreateVaultEntry(ctx, s.pool, models.VaultEntry{
 		TenantID:        c.TenantID,
 		OwnerUserID:     c.UserID,
@@ -230,6 +233,9 @@ func (s *Service) UpdateEntry(ctx context.Context, c *services.Caller, entryID u
 	}
 	if p.UpdateScopes {
 		if err := validateScopes(p.Scopes); err != nil {
+			return err
+		}
+		if err := s.validateScopesAgainstTenant(ctx, c.TenantID, p.Scopes); err != nil {
 			return err
 		}
 	}
@@ -278,6 +284,9 @@ func (s *Service) UpdateScopes(ctx context.Context, c *services.Caller, entryID 
 	if err := validateScopes(scopes); err != nil {
 		return err
 	}
+	if err := s.validateScopesAgainstTenant(ctx, c.TenantID, scopes); err != nil {
+		return err
+	}
 
 	prev, err := models.ListVaultEntryScopes(ctx, s.pool, c.TenantID, entryID)
 	if err != nil {
@@ -285,18 +294,22 @@ func (s *Service) UpdateScopes(ctx context.Context, c *services.Caller, entryID 
 	}
 	added, removed := scopeDiff(prev, scopes)
 
-	// Step-up auth is intentionally NOT enforced here even on widening.
-	// The agent surface registers update_secret_scopes as PolicyGate
-	// unconditionally, so any agent-driven change already required a
-	// fresh user approval via the decision card. Adding step-up on top
-	// would create a UX trap: a gate-approved widening could fail with
-	// ErrStepUpRequired if the user's most recent unlock was on a
-	// different device, with no UI to recover from.
+	// Step-up auth on widening only. The plan requires this for grant +
+	// scope-widening; gating the agent surface alone leaves the MCP path
+	// uncovered. Pure narrowing (only removals) runs direct so the agent
+	// can clean up scope rows without a fresh unlock prompt.
 	//
-	// HTTP-direct callers (the web /vault/<id>/edit page, when it
-	// exists) should enforce step-up at the handler level instead. The
-	// MCP path bypasses both, but MCP callers are already explicitly
-	// authorized by the harness operator.
+	// Note: when the agent surface gate fires (PolicyGate), the user
+	// approves on the web — at that point they're authenticated but
+	// haven't necessarily unlocked. The step-up requirement here may
+	// surface as an extra unlock prompt before the operation completes.
+	// Acceptable trade-off: widening is rare and security-critical;
+	// narrowing is common and direct.
+	if len(added) > 0 {
+		if err := s.requireRecentUnlock(ctx, c); err != nil {
+			return err
+		}
+	}
 
 	if err := models.ReplaceVaultEntryScopes(ctx, s.pool, c.TenantID, entryID, scopes); err != nil {
 		return err
@@ -408,7 +421,12 @@ func (s *Service) Unlock(ctx context.Context, c *services.Caller, authHash []byt
 	if err := models.ResetFailedUnlocks(ctx, s.pool, c.TenantID, c.UserID); err != nil {
 		slog.Warn("vault: resetting failed_unlocks", "error", err)
 	}
-	audit.log(ctx, "vault.unlock", "vault_user", &c.UserID, EvtUnlock{})
+	// vault.unlock is fail-closed: step-up auth queries this row
+	// shortly after to authorize widening / grant operations. A
+	// silently-dropped audit row would lock out a legitimate user.
+	if err := audit.logRequired(ctx, "vault.unlock", "vault_user", &c.UserID, EvtUnlock{}); err != nil {
+		return nil, fmt.Errorf("recording unlock: %w", err)
+	}
 
 	return &UnlockResult{
 		KDFParams:                v.KDFParams,
@@ -600,13 +618,19 @@ func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool
 
 // SelfUnlockTest flips pending=false after the browser has demonstrated the
 // keys round-trip cleanly. Called immediately after Register, with the
-// auth_hash the browser just derived. Constant-time comparison.
-func (s *Service) SelfUnlockTest(ctx context.Context, c *services.Caller, authHash []byte) error {
+// auth_hash the browser just derived. Constant-time comparison plus the
+// same per-IP rate limit as Unlock so an attacker can't use this as a
+// faster brute-force oracle.
+func (s *Service) SelfUnlockTest(ctx context.Context, c *services.Caller, authHash []byte, audit auditCtx) error {
+	if audit.ip != nil && !s.rateLimit.allow(audit.ip.String()) {
+		return ErrUnlockLocked
+	}
 	v, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
 	if err != nil {
 		return err
 	}
 	if v == nil {
+		_ = subtle.ConstantTimeCompare(authHash, dummyHash())
 		return ErrUnlockMismatch
 	}
 	if subtle.ConstantTimeCompare(authHash, v.AuthHash) != 1 {
@@ -669,6 +693,34 @@ func (s *Service) notifyUser(ctx context.Context, tenantID, userID uuid.UUID, bo
 	if err := s.notify.NotifyUser(ctx, tenantID, userID, body); err != nil {
 		slog.Warn("vault: notifying user failed", "user_id", userID, "error", err)
 	}
+}
+
+// DeclinePending deletes a vault_users row that hasn't been granted yet
+// (wrapped_vault_key IS NULL). Used by the admin's "Decline" action on
+// the grant decision card. Refuses if the user already has access —
+// those go through RevokeGrant. Admin-only.
+func (s *Service) DeclinePending(ctx context.Context, c *services.Caller, targetUserID uuid.UUID, audit auditCtx) error {
+	if !c.IsAdmin {
+		return services.ErrForbidden
+	}
+	target, err := models.GetVaultUser(ctx, s.pool, c.TenantID, targetUserID)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return models.ErrNotFound
+	}
+	if target.WrappedVaultKey != nil {
+		return errors.New("user already has access; use revoke instead")
+	}
+	if _, err := s.pool.Exec(ctx,
+		`DELETE FROM app_vault_users WHERE tenant_id = $1 AND user_id = $2 AND wrapped_vault_key IS NULL`,
+		c.TenantID, targetUserID,
+	); err != nil {
+		return fmt.Errorf("decline pending: %w", err)
+	}
+	audit.log(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{})
+	return nil
 }
 
 // RevokeGrant nulls the target user's wrapped_vault_key. Forward secrecy
@@ -797,6 +849,51 @@ func validateScopes(scopes []models.VaultEntryScope) error {
 	return nil
 }
 
+// validateScopesAgainstTenant verifies every user/role principal id in
+// the scope set actually belongs to the caller's tenant. Without this,
+// a malicious caller could write scope rows referencing a uuid from a
+// different tenant — those rows would never match the scope filter (it
+// also checks tenant_id), but they pollute the table with dead refs.
+func (s *Service) validateScopesAgainstTenant(ctx context.Context, tenantID uuid.UUID, scopes []models.VaultEntryScope) error {
+	var userIDs, roleIDs []uuid.UUID
+	for _, sc := range scopes {
+		if sc.ScopeID == nil {
+			continue
+		}
+		switch sc.ScopeKind {
+		case "user":
+			userIDs = append(userIDs, *sc.ScopeID)
+		case "role":
+			roleIDs = append(roleIDs, *sc.ScopeID)
+		}
+	}
+	if len(userIDs) > 0 {
+		var found int
+		err := s.pool.QueryRow(ctx, `
+			SELECT count(*) FROM users WHERE tenant_id = $1 AND id = ANY($2)
+		`, tenantID, userIDs).Scan(&found)
+		if err != nil {
+			return fmt.Errorf("validate user scopes: %w", err)
+		}
+		if found != len(userIDs) {
+			return errors.New("scope references a user not in this tenant")
+		}
+	}
+	if len(roleIDs) > 0 {
+		var found int
+		err := s.pool.QueryRow(ctx, `
+			SELECT count(*) FROM roles WHERE tenant_id = $1 AND id = ANY($2)
+		`, tenantID, roleIDs).Scan(&found)
+		if err != nil {
+			return fmt.Errorf("validate role scopes: %w", err)
+		}
+		if found != len(roleIDs) {
+			return errors.New("scope references a role not in this tenant")
+		}
+	}
+	return nil
+}
+
 func scopeKey(s models.VaultEntryScope) string {
 	if s.ScopeID == nil {
 		return s.ScopeKind + ":-"
@@ -872,12 +969,14 @@ func pubkeyFingerprint(pub []byte) string {
 // dummyHash returns 32 random bytes for the constant-time miss path.
 // Fresh per call so the comparison can't be distinguished from a real
 // auth_hash compare via any side channel — only the timing matters.
+// crypto/rand failures are catastrophic for the host (it indicates a
+// kernel-level RNG problem); panic rather than fall back to a
+// deterministic buffer that an attacker could exploit.
 func dummyHash() []byte {
 	b := make([]byte, 32)
-	// crypto/rand failures here would be catastrophic for the host; if
-	// they happen, the all-zeros buffer is a safe fallback because the
-	// caller compares against an attacker-supplied 32 bytes either way.
-	_, _ = cryptorand.Read(b)
+	if _, err := cryptorand.Read(b); err != nil {
+		panic(fmt.Errorf("crypto/rand: %w", err))
+	}
 	return b
 }
 

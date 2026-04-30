@@ -217,8 +217,13 @@ func (a *App) handleSelfUnlockTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := a.svc.SelfUnlockTest(r.Context(), caller, body.AuthHash); err != nil {
-		http.Error(w, "verification failed", http.StatusUnauthorized)
+	if err := a.svc.SelfUnlockTest(r.Context(), caller, body.AuthHash, a.svc.AuditFromRequest(caller, r)); err != nil {
+		switch {
+		case errors.Is(err, ErrUnlockLocked):
+			http.Error(w, "too many attempts", http.StatusTooManyRequests)
+		default:
+			http.Error(w, "verification failed", http.StatusUnauthorized)
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -514,42 +519,25 @@ func (a *App) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
 // handleDeclinePending drops a vault_users row that hasn't been granted
 // yet. The "Decline" button on the admin's grant decision card calls
 // this; rejecting a registration is recoverable (the user can re-register).
-// Refuses to delete a row that already has a wrapped_vault_key — those
-// require RevokeGrant, which is a separate, more deliberate action.
+// Service.DeclinePending enforces admin-only and the not-yet-granted check.
 func (a *App) handleDeclinePending(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
-	if !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
 	targetID, err := uuid.Parse(r.PathValue("user_id"))
 	if err != nil {
 		http.Error(w, "bad user id", http.StatusBadRequest)
 		return
 	}
-	target, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, targetID)
-	if err != nil {
-		slog.Error("vault: decline lookup", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	if err := a.svc.DeclinePending(r.Context(), caller, targetID, a.svc.AuditFromRequest(caller, r)); err != nil {
+		switch {
+		case errors.Is(err, services.ErrForbidden):
+			http.Error(w, "admin only", http.StatusForbidden)
+		case errors.Is(err, models.ErrNotFound):
+			http.NotFound(w, r)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
-	if target == nil {
-		http.NotFound(w, r)
-		return
-	}
-	if target.WrappedVaultKey != nil {
-		http.Error(w, "user already has access; use revoke instead", http.StatusConflict)
-		return
-	}
-	if _, err := a.pool.Exec(r.Context(),
-		`DELETE FROM app_vault_users WHERE tenant_id = $1 AND user_id = $2 AND wrapped_vault_key IS NULL`,
-		caller.TenantID, targetID,
-	); err != nil {
-		slog.Error("vault: decline delete", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	a.svc.AuditFromRequest(caller, r).log(r.Context(), "vault.revoke_grant", "vault_user", &targetID, EvtRevokeGrant{})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

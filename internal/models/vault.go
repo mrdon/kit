@@ -109,12 +109,21 @@ type VaultRegisterParams struct {
 	Replace                  bool   // master-password reset path
 }
 
-// AnyVaultUserExists returns true if at least one row exists for the tenant
-// (used to determine whether registration is bootstrap or post-bootstrap).
+// AnyVaultUserExists returns true if the tenant vault has been
+// successfully bootstrapped — at least one user holds a
+// wrapped_vault_key AND has completed the self-unlock canary
+// (pending=false). Pending rows from a failed bootstrap retry don't
+// count, so a canary-failure retry by the same admin still classifies
+// as "bootstrap" and they can re-upload a fresh wrapped_vault_key.
 func AnyVaultUserExists(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (bool, error) {
 	var ok bool
 	err := pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM app_vault_users WHERE tenant_id = $1)
+		SELECT EXISTS (
+			SELECT 1 FROM app_vault_users
+			WHERE tenant_id = $1
+			  AND wrapped_vault_key IS NOT NULL
+			  AND pending = FALSE
+		)
 	`, tenantID).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("checking vault initialization: %w", err)
@@ -127,7 +136,10 @@ func AnyVaultUserExists(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 // after the browser passes the self-unlock canary.
 func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterParams) error {
 	if p.Replace {
-		_, err := pool.Exec(ctx, `
+		// Replace requires an existing row. If the row was deleted
+		// between the service-layer GetVaultUser check and now, we
+		// should fail rather than silently no-op.
+		tag, err := pool.Exec(ctx, `
 			UPDATE app_vault_users
 			   SET kdf_params = $3,
 			       auth_hash = $4,
@@ -148,6 +160,9 @@ func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterP
 		if err != nil {
 			return fmt.Errorf("replacing vault user: %w", err)
 		}
+		if tag.RowsAffected() == 0 {
+			return ErrVaultUserNotFound
+		}
 		return nil
 	}
 
@@ -160,17 +175,38 @@ func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterP
 	if p.WrappedVaultKey != nil {
 		grantedAt = time.Now()
 	}
-	_, err := pool.Exec(ctx, `
+	// UPSERT keyed on (tenant_id, user_id), but ONLY allowed when the
+	// existing row is still pending=true. If a user's previous register
+	// attempt threw between INSERT and the self-unlock canary POST, this
+	// lets them retry by submitting again. Activated rows are protected
+	// by the WHERE clause; the only way to replace those is the explicit
+	// Replace=true path, which is gated separately.
+	tag, err := pool.Exec(ctx, `
 		INSERT INTO app_vault_users
 			(tenant_id, user_id, kdf_params, auth_hash, user_public_key,
 			 user_private_key_ciphertext, user_private_key_nonce,
 			 wrapped_vault_key, granted_by_user_id, granted_at, pending)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, TRUE)
+		ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+			kdf_params = EXCLUDED.kdf_params,
+			auth_hash = EXCLUDED.auth_hash,
+			user_public_key = EXCLUDED.user_public_key,
+			user_private_key_ciphertext = EXCLUDED.user_private_key_ciphertext,
+			user_private_key_nonce = EXCLUDED.user_private_key_nonce,
+			wrapped_vault_key = EXCLUDED.wrapped_vault_key,
+			granted_at = EXCLUDED.granted_at,
+			updated_at = now()
+		WHERE app_vault_users.pending = TRUE
 	`, p.TenantID, p.UserID, p.KDFParams, p.AuthHash, p.UserPublicKey,
 		p.UserPrivateKeyCiphertext, p.UserPrivateKeyNonce,
 		p.WrappedVaultKey, grantedAt)
 	if err != nil {
 		return fmt.Errorf("inserting vault user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Row exists and is already active (pending=false). Caller must
+		// use Replace=true to reset.
+		return errors.New("vault user already active; use master-password reset to replace")
 	}
 	return nil
 }

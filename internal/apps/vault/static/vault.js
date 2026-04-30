@@ -214,6 +214,19 @@ function workerCall(type, payload) {
 const DB_NAME = "kit-vault";
 const DB_STORE = "self";
 
+// dbBusy serializes all IDB operations through a single promise chain.
+// Without it, a concurrent dbPut + dbWipe race could leave wrapped key
+// material on disk after a "lock" event. Each operation appends to the
+// chain; the chain catches errors so one failure doesn't poison
+// subsequent operations.
+let dbBusy = Promise.resolve();
+function dbSerial(fn) {
+  const next = dbBusy.then(fn, fn);
+  // Don't surface the prior error to the next caller.
+  dbBusy = next.catch(() => {});
+  return next;
+}
+
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -226,32 +239,61 @@ function openDB() {
 }
 
 async function dbPut(value) {
-  const db = await openDB();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    tx.objectStore(DB_STORE).put(value, "self");
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  return dbSerial(async () => {
+    const db = await openDB();
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readwrite");
+        tx.objectStore(DB_STORE).put(value, "self");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
   });
-  db.close();
 }
 
 async function dbGet() {
-  const db = await openDB();
-  const v = await new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readonly");
-    const r = tx.objectStore(DB_STORE).get("self");
-    r.onsuccess = () => resolve(r.result || null);
-    r.onerror = () => reject(r.error);
+  return dbSerial(async () => {
+    const db = await openDB();
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readonly");
+        const r = tx.objectStore(DB_STORE).get("self");
+        r.onsuccess = () => resolve(r.result || null);
+        r.onerror = () => reject(r.error);
+      });
+    } finally {
+      db.close();
+    }
   });
-  db.close();
-  return v;
 }
 
+// dbWipe removes the entire vault DB. On `onblocked` (another open
+// connection holds the DB) we log + retry once after a short delay; if
+// it still fails we surface the failure so callers can react instead
+// of silently leaving wrapped key material on disk. Plan §"Lock /
+// wipe" requires the wipe to actually happen on every lock.
 async function dbWipe() {
-  await new Promise((resolve) => {
+  return dbSerial(async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ok = await deleteOnce();
+      if (ok) return;
+      console.warn("vault: IDB wipe blocked; retrying");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    console.error("vault: IDB wipe failed after retries; wrapped key material may persist");
+    throw new Error("idb wipe failed");
+  });
+}
+
+function deleteOnce() {
+  return new Promise((resolve) => {
     const r = indexedDB.deleteDatabase(DB_NAME);
-    r.onsuccess = r.onerror = r.onblocked = () => resolve();
+    r.onsuccess = () => resolve(true);
+    r.onerror = () => resolve(false);
+    r.onblocked = () => resolve(false);
   });
 }
 
@@ -290,7 +332,7 @@ async function lockNow() {
 // ===== page-side lock hooks =====
 
 function installLockHooks() {
-  // Lock when the tab is hidden long enough or before unload — defense
+  // Lock when the tab is hidden long enough or on tab close — defense
   // against a stale tab leaking the cached key.
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {
@@ -302,16 +344,28 @@ function installLockHooks() {
       hiddenAt = 0;
     }
   });
-  window.addEventListener("beforeunload", () => {
-    // Best-effort fire-and-forget; the worker drains in-flight ops on
-    // its own.
-    workerPort && workerPort.postMessage({ id: nextMsgID++, type: "lock" });
-  });
+  // pagehide fires reliably on mobile + bfcache navigations where
+  // beforeunload is unreliable. Both fire the lock; the worker drains
+  // its own in-flight ops, and we kick off an IDB wipe even though the
+  // tab may close before it completes.
+  const onClose = () => {
+    if (workerPort) workerPort.postMessage({ id: nextMsgID++, type: "lock" });
+    // Best-effort sync wipe trigger — browsers limit work in unload
+    // handlers but this gives the wipe its first event-loop tick before
+    // the page dies.
+    dbWipe().catch(() => {});
+  };
+  window.addEventListener("pagehide", onClose);
+  window.addEventListener("beforeunload", onClose);
 }
 
 // ===== unlock flow =====
 
 async function unlock(password) {
+  // If another tab already unlocked this SharedWorker, we don't need
+  // to re-derive — and the worker's set_key is one-shot anyway.
+  if (await workerCall("has_key")) return;
+
   // Try IndexedDB cache first — round-trip to /me only on miss.
   let cached = await dbGet();
   let kdfParams, wrappedPriv, wrappedVaultKey;
@@ -406,6 +460,13 @@ async function wireRegister() {
     if (typeof pw !== "string" || pw.length < 14) {
       setStatus("Master password must be at least 14 characters.", "error");
       return;
+    }
+
+    // If the user is retrying after a canary failure (or another tab
+    // unlocked first), the worker's set_key is one-shot per lifetime.
+    // Lock first so the new register's set_key call succeeds.
+    if (await workerCall("has_key")) {
+      await workerCall("lock");
     }
 
     const salt = crypto.getRandomValues(new Uint8Array(16));

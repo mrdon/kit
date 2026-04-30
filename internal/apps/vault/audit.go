@@ -62,6 +62,24 @@ func (a auditCtx) log(ctx context.Context, action, targetKind string, targetID *
 	}
 }
 
+// logRequired is the fail-closed counterpart of log — used for events
+// where downstream logic (e.g. step-up auth's recent-unlock lookup)
+// relies on the audit row actually being there. Currently used only
+// for vault.unlock so a silently-dropped success doesn't lock out a
+// legitimate user from sensitive ops.
+func (a auditCtx) logRequired(ctx context.Context, action, targetKind string, targetID *uuid.UUID, metadata any) error {
+	return models.AppendAudit(ctx, a.pool, models.AuditEvent{
+		TenantID:    a.tenantID,
+		ActorUserID: a.actorID,
+		Action:      action,
+		TargetKind:  targetKind,
+		TargetID:    targetID,
+		Metadata:    metadata,
+		IP:          a.ip,
+		UserAgent:   a.userAgent,
+	})
+}
+
 // ===== Pinned metadata shapes per action =====
 
 // EvtRegister is written when a user creates or replaces their vault_users row.

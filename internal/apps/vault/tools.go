@@ -96,14 +96,12 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 			AdminOnly:   meta.AdminOnly,
 			Handler:     vaultAgentHandler(meta.Name, svc),
 		}
-		// update_secret_scopes is gated unconditionally for the agent
-		// surface. The plan distinguishes widening (must gate) from
-		// narrowing (may be agent-direct), but per-call gate decisions
-		// would need a registry-level extension; gating everything is
-		// strictly more restrictive than the plan and acceptable as v1.
-		// HTTP/MCP-direct callers still get widening protection via the
-		// service-level step-up auth check (recent unlock required).
-		if meta.Name == "update_secret_scopes" {
+		// Gated agent tools per the plan + CLAUDE.md "gated tools must
+		// have one entry point" rule. Service-level checks (step-up
+		// auth on widening, IsAdmin on revoke) catch the MCP path,
+		// which doesn't run through tools.Registry.
+		switch meta.Name {
+		case "update_secret_scopes", "delete_secret":
 			def.DefaultPolicy = tools.PolicyGate
 		}
 		r.Register(def)
@@ -307,7 +305,10 @@ func scopesFromInput(in []scopeInput) ([]models.VaultEntryScope, error) {
 }
 
 // formatEntryList renders metadata-only rows for the agent's response.
-func formatEntryList(caller *services.Caller, rows []EntryListItem) string {
+// scope_summary surfaces "yours" / "tenant-wide" / "shared" so the agent
+// can answer "is this entry private to me?" questions without a second
+// round-trip.
+func formatEntryList(_ *services.Caller, rows []EntryListItem) string {
 	if len(rows) == 0 {
 		return "No vault entries match."
 	}
@@ -321,8 +322,8 @@ func formatEntryList(caller *services.Caller, rows []EntryListItem) string {
 		if e.URL != "" {
 			fmt.Fprintf(&b, " — %s", e.URL)
 		}
-		if e.IsOwner {
-			b.WriteString(" • yours")
+		if e.ScopeSummary != "" {
+			fmt.Fprintf(&b, " • %s", e.ScopeSummary)
 		}
 		b.WriteString("\n")
 	}
