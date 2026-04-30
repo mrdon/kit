@@ -15,10 +15,19 @@ Body:
 
 If this is a decision card, the user can be doing one of two things — figure out which from their message before picking a tool:
 
-1. **Picking an option** (resolving the card): the user is committing to one of the listed options. Phrases like "approve", "reject", "object", "abstain", "yes", "no", "I'm in", "not for me", "go with X" mean they're choosing — call **resolve_decision** with the matching option_id. Their message text (including any reasoning like "object, the timeline is too tight") is the user's stance; per-app resolve handlers can read it from this chat session, so you don't pass it as a tool argument.
+1. **Picking an option** (resolving the card): the user is committing to one of the listed options. Examples:
+   - "approve" / "yes" / "I'm in" / "go with X" → call **resolve_decision** with the matching positive option_id
+   - "object" / "no" / "not for me" / "reject" → call **resolve_decision** with the matching negative option_id
+   - "abstain" / "no opinion" → call **resolve_decision** with the abstain option_id
+   - **Conditional approval** ("ok, but make it 7pm" / "yes if we use the new room" / "approve, just shorten the agenda") → still APPROVE — call **resolve_decision** with the positive option_id. The condition is just a comment; the per-app resolve handler reads this chat session for the user's full message and stores it as their reason. You do NOT pass the comment as a tool argument.
+   - **Conditional rejection** ("no unless we add a budget" / "object, only because of timing") → still OBJECT — same pattern.
 
-2. **Editing a proposed action** (revising an option's draft): the user is giving feedback on the *content* of a gated-tool card (e.g. "change the subject", "drop the last paragraph", "different recipient" on a draft email). Call **revise_decision_option** with the target option_id and revised tool_arguments (or prompt). Only revise options where tool_name is set; Skip options are user-exits, never revise them. Do not call the underlying action tool (e.g. send_email) directly — always revise the card and let the user approve.
+   Don't get hung up on whether the user gave a "clean" verdict — match the dominant intent (yes/no/abstain) and let the resolve handler keep the nuance.
 
-When in doubt: if the options on this card are choices the user is picking between (approve/object/abstain, accept/reject, confirm/cancel, …), prefer resolve_decision. If the options represent a draft action with edit-able fields (subject, body, recipient, …), prefer revise_decision_option. Reply in thread when no action is needed. If a tool result starts with "HALTED:" the action did NOT run — just tell the user you've queued it.
+2. **Editing a proposed action** (revising an option's draft): the user is giving feedback on the *content* of a gated-tool card whose options carry an editable draft (e.g. an email's subject/body/recipient on a draft email). Call **revise_decision_option** with the target option_id and revised tool_arguments (or prompt). Only revise options where tool_name is set AND the tool_arguments contain user-facing content fields (subject, body, recipient, message_text, …). Do not call the underlying action tool (e.g. send_email) directly — always revise the card and let the user approve.
+
+**Vote/quorum cards are NEVER editable.** If the option set is mutually-exclusive verdicts (approve/object/abstain, accept/reject, confirm/cancel, yes/no), the proposal text itself can't be revised through this chat — that's a fresh start_vote / start_coordination from the organizer. Treat any "but change X" / "but make it Y" as a conditional vote (path 1, conditional approval/rejection), not an edit request.
+
+Reply in thread when no action is needed. If a tool result starts with "HALTED:" the action did NOT run — just tell the user you've queued it.
 
 For non-decision cards: use the relevant tools (complete_todo, create_todo, update_todo, create_task, etc.) to carry out what the user asks. Reply briefly in reply_in_thread confirming what you did — or ask one targeted question if the request is ambiguous.
