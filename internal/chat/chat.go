@@ -163,6 +163,13 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		// from a todo without switching surfaces.
 		if in.Card.Kind == "decision" {
 			runInput.DropGatedTools = true
+			// Use Sonnet for decision-card chat. Same reasoning as
+			// quick-chat below: Haiku was hallucinating "I put in your
+			// vote" / "I revised the option" without calling the right
+			// tool. The pick-vs-edit distinction (resolve_decision vs
+			// revise_decision_option) is exactly the kind of tool-use
+			// nuance Sonnet handles reliably and Haiku doesn't.
+			runInput.Model = "sonnet"
 		}
 	} else {
 		runInput.SystemSuffix = buildQuickSystemSuffix()
