@@ -8,7 +8,10 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -161,12 +164,9 @@ func (a *App) handleStatic(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	switch {
-	case strings.HasSuffix(rel, ".js"):
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	case strings.HasSuffix(rel, ".css"):
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	default:
+	if mt := mime.TypeByExtension(filepath.Ext(rel)); mt != "" {
+		w.Header().Set("Content-Type", mt)
+	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -324,7 +324,13 @@ func (a *App) handleListEntries(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	q := r.URL.Query().Get("q")
 	tag := r.URL.Query().Get("tag")
-	rows, err := a.svc.ListEntries(r.Context(), caller, q, tag, 100)
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	rows, err := a.svc.ListEntries(r.Context(), caller, q, tag, limit)
 	if err != nil {
 		slog.Error("vault: list entries", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -542,7 +548,7 @@ func (a *App) handleDeclinePending(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	a.svc.AuditFromRequest(caller, r).log(r.Context(), "vault.revoke_grant", "vault_user", &targetID, EvtRevokeGrant{TargetUserID: targetID})
+	a.svc.AuditFromRequest(caller, r).log(r.Context(), "vault.revoke_grant", "vault_user", &targetID, EvtRevokeGrant{})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -336,15 +337,4 @@ func tenantSlug(ec *tools.ExecContext) string {
 	return ec.Tenant.Slug
 }
 
-func queryEscape(s string) string {
-	// Avoid pulling in net/url here for a cheap escape; just handle the
-	// characters that actually break a URL parser: space, &, #, ?, =.
-	r := strings.NewReplacer(
-		" ", "+",
-		"&", "%26",
-		"#", "%23",
-		"?", "%3F",
-		"=", "%3D",
-	)
-	return r.Replace(s)
-}
+func queryEscape(s string) string { return url.QueryEscape(s) }

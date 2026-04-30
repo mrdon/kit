@@ -119,7 +119,7 @@ func (s *Service) ListEntries(ctx context.Context, c *services.Caller, query, ta
 // that have a tenant-scope row. Used to label list_secrets results.
 func (s *Service) tenantScopedEntryIDs(ctx context.Context, tenantID uuid.UUID, entries []models.VaultEntry) (map[uuid.UUID]bool, error) {
 	if len(entries) == 0 {
-		return nil, nil
+		return map[uuid.UUID]bool{}, nil
 	}
 	ids := make([]uuid.UUID, 0, len(entries))
 	for _, e := range entries {
@@ -646,7 +646,6 @@ func (s *Service) Grant(ctx context.Context, c *services.Caller, p GrantParams, 
 		return err
 	}
 	audit.log(ctx, "vault.grant", "vault_user", &p.TargetUserID, EvtGrant{
-		TargetUserID:            p.TargetUserID,
 		TargetPubKeyFingerprint: pubkeyFingerprint(target.UserPublicKey),
 		DuringResetCooldown:     duringCooldown,
 	})
@@ -674,7 +673,7 @@ func (s *Service) RevokeGrant(ctx context.Context, c *services.Caller, targetUse
 	if err := models.RevokeVaultGrant(ctx, s.pool, c.TenantID, targetUserID); err != nil {
 		return err
 	}
-	audit.log(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{TargetUserID: targetUserID})
+	audit.log(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{})
 	return nil
 }
 
@@ -840,9 +839,9 @@ func sortScopeRefs(refs []ScopeRef) {
 }
 
 // pubkeyFingerprint returns a Signal-style fingerprint of a public key:
-// 24 hex characters in 6 groups of 4 (XXXX XXXX XXXX XXXX XXXX XXXX).
-// The format is chosen for ease of out-of-band verification — short
-// enough to read aloud, long enough that an attacker can't brute-force a
+// 24 hex characters in 6 four-character groups separated by spaces. The
+// format is chosen for ease of out-of-band verification — short enough
+// to read aloud, long enough that an attacker can't brute-force a
 // collision under SHA-256.
 func pubkeyFingerprint(pub []byte) string {
 	if len(pub) == 0 {
@@ -850,7 +849,7 @@ func pubkeyFingerprint(pub []byte) string {
 	}
 	sum := sha256.Sum256(pub)
 	hexStr := hex.EncodeToString(sum[:12])
-	// Group as XXXX XXXX XXXX XXXX XXXX XXXX (24 → 6 × 4).
+	// 24 hex chars → 6 groups of 4, space-separated.
 	var b strings.Builder
 	for i := 0; i < len(hexStr); i += 4 {
 		if i > 0 {

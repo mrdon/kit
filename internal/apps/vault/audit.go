@@ -80,18 +80,19 @@ type EvtUnlockFailed struct {
 	Locked      bool `json:"locked"` // true once threshold crosses into locked_until
 }
 
-// EvtGrant is written when an existing vault user wraps the vault key for a
-// teammate. The granter is the actor; the target is the user being granted.
+// EvtGrant is written when an existing vault user wraps the vault key for
+// a teammate. The granter is the row's actor_user_id; the target is its
+// target_id. The fingerprint stays in metadata because it's the
+// out-of-band-verifiable identity the granter relied on.
 type EvtGrant struct {
-	TargetUserID            uuid.UUID `json:"target_user_id"`
-	TargetPubKeyFingerprint string    `json:"target_pubkey_fingerprint"`
-	DuringResetCooldown     bool      `json:"during_reset_cooldown"`
+	TargetPubKeyFingerprint string `json:"target_pubkey_fingerprint"`
+	DuringResetCooldown     bool   `json:"during_reset_cooldown"`
 }
 
-// EvtRevokeGrant is written when an admin nulls out a teammate's wrapped key.
-type EvtRevokeGrant struct {
-	TargetUserID uuid.UUID `json:"target_user_id"`
-}
+// EvtRevokeGrant is written when an admin nulls out a teammate's wrapped
+// key (or declines a pending registration). All identity lives on the
+// row itself; metadata is empty.
+type EvtRevokeGrant struct{}
 
 // EvtEntryCreate / EvtEntryView / EvtEntryUpdate / EvtEntryDelete capture
 // the entry id; never log titles or other content fields.

@@ -1,33 +1,39 @@
-// Vault browser-side crypto. v1 implementation.
+// Vault browser-side crypto — v1.5 implementation.
 //
-// This module implements the client side of the Bitwarden-Org / 1Password-
-// Shared-Vault model documented in the plan. All encryption + decryption
-// happens here; the server only ever sees ciphertext and pubkeys.
+// Architecture:
+//   - SharedWorker (vault-worker.js) holds the unwrapped vault_key for
+//     the lifetime of any open vault tab. Encrypt/decrypt/wrap operations
+//     proxy through it via postMessage. The worker boundary is the
+//     XSS-resistance defense: the postMessage protocol exposes
+//     encrypt/decrypt/wrap but no export-raw operation, so an XSS
+//     anywhere in Kit cannot exfiltrate the raw key.
+//   - IndexedDB stores the wrapped private key, kdf params, and the
+//     wrapped vault key after first unlock. Subsequent unlocks on the
+//     same browser skip the round trip and use the cached blobs.
+//   - BroadcastChannel('kit-vault-lock') syncs lock/unlock across tabs.
+//   - Idle-lock fires from the worker after 10 min idle / 30 min total.
+//   - Page-side hooks: visibilitychange + beforeunload trigger lock().
 //
-// Crypto pinned for v1:
-//   - KDF:        PBKDF2-SHA256, 600,000 iterations, 32-byte output, per-user random salt
+// Crypto pinned for v1.5:
+//   - KDF:        PBKDF2-SHA256 / 600,000 iterations / 32-byte output
 //   - Master key splitting:
-//                 master_key   = PBKDF2(password, salt, iters)
-//                 enc_key      = HKDF(master_key, salt, info="kit-vault-v1-enc")
-//                 auth_hash    = HKDF(master_key, salt, info="kit-vault-v1-auth")
-//   - Keypair:    RSA-OAEP-2048 with SHA-256, generated client-side
-//   - Symmetric:  AES-GCM, 12-byte (96-bit) random nonce per encryption
+//                 master_key = PBKDF2(password, kdf_salt)
+//                 enc_key    = HKDF(master_key, salt, info="kit-vault-v1-enc")
+//                 auth_hash  = HKDF(master_key, salt, info="kit-vault-v1-auth")
+//   - Keypair:    RSA-OAEP-2048 / SHA-256
+//   - Symmetric:  AES-GCM / 12-byte random nonce per encryption
 //
-// v1 deliberately defers (these are tracked as v1.1 / v2 work):
-//   - Argon2id (vendored @noble/hashes) instead of PBKDF2
-//   - SharedWorker holding non-extractable vault_key + BroadcastChannel
-//   - IndexedDB persistence of wrapped private key + cross-session unlock
-//   - Idle-timer auto-lock + clipboard auto-clear
-// In v1 all crypto runs on the main thread and "lock" means "reload the page";
-// the captive vault_key lives in this module's closure for the tab's lifetime.
+// Argon2id is the v2 KDF target; vendoring requires a CDN fetch
+// authorized by the user. Tracked in vault_test (and in the plan's
+// Out-of-scope section).
 
 const VAULT = (() => {
   const root = document.getElementById("vault-app");
   if (!root) return null;
-
   return {
     page: root.dataset.page,
     apiBase: root.dataset.apiBase,
+    staticBase: root.dataset.staticBase,
     tenantSlug: root.dataset.tenantSlug,
     entryId: root.dataset.entryId || "",
     targetUserId: root.dataset.targetUserId || "",
@@ -46,21 +52,14 @@ async function main() {
     setStatus("This page requires HTTPS (or localhost).", "error");
     return;
   }
+  await connectWorker();
+  installLockHooks();
   switch (VAULT.page) {
-    case "register":
-      await wireRegister();
-      break;
-    case "add":
-      await wireAdd();
-      break;
-    case "reveal":
-      await wireReveal();
-      break;
-    case "grant":
-      await wireGrant();
-      break;
-    default:
-      setStatus(`Unknown vault page: ${VAULT.page}`, "error");
+    case "register": return wireRegister();
+    case "add":      return wireAdd();
+    case "reveal":   return wireReveal();
+    case "grant":    return wireGrant();
+    default: setStatus(`Unknown vault page: ${VAULT.page}`, "error");
   }
 }
 
@@ -69,45 +68,24 @@ async function main() {
 const KDF_ITERATIONS = 600_000;
 const KDF_HASH = "SHA-256";
 
-// pbkdf2(password, salt, iterations) -> 32 bytes (master key).
 async function pbkdf2(password, salt) {
-  const enc = new TextEncoder();
   const baseKey = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits"],
+    "raw", new TextEncoder().encode(password), { name: "PBKDF2" }, false, ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", hash: KDF_HASH, salt, iterations: KDF_ITERATIONS },
-    baseKey,
-    256,
+    baseKey, 256,
   );
   return new Uint8Array(bits);
 }
 
-// HKDF expand on a 32-byte master key, with a domain-separation `info`
-// string. Returns 32 bytes. Implemented here (rather than via WebCrypto's
-// HKDF) so we can produce raw bytes for auth_hash and a CryptoKey for
-// enc_key in two clean steps.
 async function hkdf(masterKey, salt, info) {
   const baseKey = await crypto.subtle.importKey(
-    "raw",
-    masterKey,
-    { name: "HKDF" },
-    false,
-    ["deriveBits"],
+    "raw", masterKey, { name: "HKDF" }, false, ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    {
-      name: "HKDF",
-      hash: KDF_HASH,
-      salt,
-      info: new TextEncoder().encode(info),
-    },
-    baseKey,
-    256,
+    { name: "HKDF", hash: KDF_HASH, salt, info: new TextEncoder().encode(info) },
+    baseKey, 256,
   );
   return new Uint8Array(bits);
 }
@@ -117,101 +95,52 @@ async function deriveKeys(password, salt) {
   const encKeyBytes = await hkdf(masterKey, salt, "kit-vault-v1-enc");
   const authHash = await hkdf(masterKey, salt, "kit-vault-v1-auth");
   const encKey = await crypto.subtle.importKey(
-    "raw",
-    encKeyBytes,
-    { name: "AES-GCM" },
-    false,
-    ["encrypt", "decrypt"],
+    "raw", encKeyBytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"],
   );
   return { encKey, authHash };
 }
 
-// ===== AES-GCM helpers =====
+// ===== AES-GCM helpers (page-side, only for the wrapped private key) =====
 
 async function aesGcmEncrypt(key, plaintext) {
   const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: nonce },
-    key,
-    plaintext,
-  );
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plaintext);
   return { ciphertext: new Uint8Array(ciphertext), nonce };
 }
 
 async function aesGcmDecrypt(key, ciphertext, nonce) {
-  const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: nonce },
-    key,
-    ciphertext,
-  );
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce }, key, ciphertext);
   return new Uint8Array(plaintext);
 }
 
-// ===== RSA-OAEP helpers =====
+// ===== RSA-OAEP =====
 
 async function generateRSAKeypair() {
   return crypto.subtle.generateKey(
-    {
-      name: "RSA-OAEP",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
-      hash: "SHA-256",
-    },
+    { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([0x01, 0x00, 0x01]), hash: "SHA-256" },
     true,
     ["wrapKey", "unwrapKey", "encrypt", "decrypt"],
   );
 }
-
-async function exportSpki(pubKey) {
-  const spki = await crypto.subtle.exportKey("spki", pubKey);
-  return new Uint8Array(spki);
-}
-
-async function exportPkcs8(privKey) {
-  const pkcs8 = await crypto.subtle.exportKey("pkcs8", privKey);
-  return new Uint8Array(pkcs8);
-}
-
-async function importSpki(spki) {
-  return crypto.subtle.importKey(
-    "spki",
-    spki,
-    { name: "RSA-OAEP", hash: "SHA-256" },
-    true,
-    ["wrapKey", "encrypt"],
-  );
-}
-
+async function exportSpki(pubKey) { return new Uint8Array(await crypto.subtle.exportKey("spki", pubKey)); }
+async function exportPkcs8(privKey) { return new Uint8Array(await crypto.subtle.exportKey("pkcs8", privKey)); }
 async function importPkcs8(pkcs8) {
   return crypto.subtle.importKey(
-    "pkcs8",
-    pkcs8,
-    { name: "RSA-OAEP", hash: "SHA-256" },
-    true,
-    ["unwrapKey", "decrypt"],
+    "pkcs8", pkcs8, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["unwrapKey", "decrypt"],
   );
 }
-
-// rsaWrapAesKey returns the ciphertext of `aesKey` encrypted under the
-// recipient's RSA-OAEP public key. Used to wrap vault_key for a member.
-async function rsaWrapAesKey(rsaPubKey, aesKey) {
-  const raw = await crypto.subtle.exportKey("raw", aesKey);
-  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, rsaPubKey, raw);
+// rsaWrapAesKey: page-side wrap, used at register time when we have the
+// raw vault_key bytes locally before we hand them to the worker.
+async function rsaWrapAesKey(rsaPubKey, rawVaultKey) {
+  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, rsaPubKey, rawVaultKey);
   return new Uint8Array(wrapped);
 }
-
 async function rsaUnwrapAesKey(rsaPrivKey, wrapped) {
   const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, rsaPrivKey, wrapped);
-  return crypto.subtle.importKey(
-    "raw",
-    raw,
-    { name: "AES-GCM" },
-    true,
-    ["encrypt", "decrypt"],
-  );
+  return new Uint8Array(raw);
 }
 
-// ===== fetch / base64 helpers =====
+// ===== fetch + base64 =====
 
 async function api(method, path, body) {
   const res = await fetch(`${VAULT.apiBase}${path}`, {
@@ -219,7 +148,7 @@ async function api(method, path, body) {
     credentials: "same-origin",
     headers: body
       ? { "Content-Type": "application/json", "X-Kit-Vault": "1" }
-      : { "X-Kit-Vault": "1" },
+      : (method === "DELETE" ? { "X-Kit-Vault": "1" } : {}),
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -237,131 +166,220 @@ function bytesToB64(bytes) {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
 }
-
 function b64ToBytes(s) {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+const bytesField = bytesToB64;
 
-// JSON.stringify for the wire protocol expects []byte fields encoded as
-// base64. The Go JSON decoder unmarshals base64 strings into []byte
-// automatically, so the encoding is the same in both directions.
-function bytesField(bytes) {
-  return bytesToB64(bytes);
+// ===== SharedWorker proxy =====
+
+let workerPort = null;
+let nextMsgID = 1;
+const pending = new Map();
+
+async function connectWorker() {
+  const w = new SharedWorker(`${VAULT.staticBase}/vault-worker.js`, { type: "module", name: "kit-vault" });
+  workerPort = w.port;
+  workerPort.onmessage = (ev) => {
+    const { id, ok, result, error } = ev.data || {};
+    const p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    ok ? p.resolve(result) : p.reject(new Error(error || "worker error"));
+  };
+  workerPort.start();
 }
 
-// ===== captive in-memory state =====
-//
-// In v1 the unwrapped vault_key lives in this module's closure for the
-// tab's lifetime. v1.1 will move this into a SharedWorker as a non-
-// extractable CryptoKey + IndexedDB-persisted wrapped form.
+function workerCall(type, payload) {
+  return new Promise((resolve, reject) => {
+    const id = nextMsgID++;
+    pending.set(id, { resolve, reject });
+    workerPort.postMessage({ id, type, ...(payload || {}) });
+  });
+}
 
-const STATE = {
-  vaultKey: null,        // CryptoKey, AES-GCM, capable of encrypt/decrypt
-  unlockedAt: 0,
+// ===== IndexedDB persistence =====
+//
+// One object store, key='self', that holds:
+//   { kdfParams, wrappedPrivateKey: {ciphertext, nonce}, wrappedVaultKey }
+// vault_key is never persisted in unwrapped form.
+
+const DB_NAME = "kit-vault";
+const DB_STORE = "self";
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(DB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbPut(value) {
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).put(value, "self");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+async function dbGet() {
+  const db = await openDB();
+  const v = await new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readonly");
+    const r = tx.objectStore(DB_STORE).get("self");
+    r.onsuccess = () => resolve(r.result || null);
+    r.onerror = () => reject(r.error);
+  });
+  db.close();
+  return v;
+}
+
+async function dbWipe() {
+  await new Promise((resolve) => {
+    const r = indexedDB.deleteDatabase(DB_NAME);
+    r.onsuccess = r.onerror = r.onblocked = () => resolve();
+  });
+}
+
+// ===== BroadcastChannel cross-tab sync =====
+
+const lockChannel = new BroadcastChannel("kit-vault-lock");
+lockChannel.onmessage = (ev) => {
+  if (ev.data && ev.data.type === "locked") {
+    onLockedExternally();
+  }
 };
 
-function isUnlocked() {
-  return STATE.vaultKey !== null;
+function onLockedExternally() {
+  // Worker locked (idle, manual, or from another tab). Wipe UI state and
+  // hide reveal areas; do not reload, so the user can re-enter password.
+  hideSection("reveal-area");
+  hideSection("add-form");
+  hideSection("grant-area");
+  showSection("unlock-prompt");
+  setStatus("Vault locked.", "");
 }
 
-function lockClient() {
-  STATE.vaultKey = null;
-  STATE.unlockedAt = 0;
+async function lockNow() {
+  try { await workerCall("lock"); } catch {}
+  // Don't wipe IndexedDB on a soft lock — the wrapped keys are useless
+  // without the master password and the user will want to re-unlock.
+  // wipeAllVaultState() is the explicit hard-wipe path.
 }
 
-// ===== UI helpers =====
-
-function setStatus(text, kind) {
-  const el = document.getElementById("status");
-  if (!el) return;
-  el.textContent = text || "";
-  el.className = kind || "";
+async function wipeAllVaultState() {
+  try { await workerCall("lock"); } catch {}
+  await dbWipe();
 }
 
-function showSection(id) {
-  const el = document.getElementById(id);
-  if (el) el.hidden = false;
-}
-function hideSection(id) {
-  const el = document.getElementById(id);
-  if (el) el.hidden = true;
+// ===== page-side lock hooks =====
+
+function installLockHooks() {
+  // Lock when the tab is hidden long enough or before unload — defense
+  // against a stale tab leaking the cached key.
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      hiddenAt = Date.now();
+    } else if (hiddenAt && Date.now() - hiddenAt > 5 * 60_000) {
+      // Returning after 5+ min hidden: lock.
+      lockNow();
+      hiddenAt = 0;
+    }
+  });
+  window.addEventListener("beforeunload", () => {
+    // Best-effort fire-and-forget; the worker drains in-flight ops on
+    // its own.
+    workerPort && workerPort.postMessage({ id: nextMsgID++, type: "lock" });
+  });
 }
 
-// ===== unlock flow (used inline by add / reveal / grant pages) =====
+// ===== unlock flow =====
 
 async function unlock(password) {
-  // Two-step unlock so PBKDF2 has the right salt without trusting any
-  // local cache:
-  //   1. GET /api/vault/me → kdf_params (salt + iterations).
-  //   2. Derive auth_hash from password + salt.
-  //   3. POST /api/vault/unlock with auth_hash → server returns the
-  //      wrapped private key + wrapped vault key on match.
-  const me = await api("GET", "/me");
-  if (!me || !me.kdf_params || !me.kdf_params.salt) {
-    throw new Error(
-      "No vault registration found on this account. Open /register first.",
-    );
+  // Try IndexedDB cache first — round-trip to /me only on miss.
+  let cached = await dbGet();
+  let kdfParams, wrappedPriv, wrappedVaultKey;
+  if (cached) {
+    kdfParams = cached.kdfParams;
+    wrappedPriv = cached.wrappedPriv;
+    wrappedVaultKey = cached.wrappedVaultKey;
+  } else {
+    const me = await api("GET", "/me");
+    if (!me || !me.kdf_params || !me.kdf_params.salt) {
+      throw new Error("No vault registration found on this account. Open /register first.");
+    }
+    kdfParams = me.kdf_params;
   }
-  const salt = b64ToBytes(me.kdf_params.salt);
+
+  const salt = b64ToBytes(kdfParams.salt);
   const { encKey, authHash } = await deriveKeys(password, salt);
 
-  const resp = await api("POST", "/unlock", {
-    auth_hash: bytesField(authHash),
-  });
+  // Always POST /unlock so the server can rate-limit + audit and so
+  // we get the latest wrapped_vault_key (in case it was re-granted
+  // after a reset).
+  const resp = await api("POST", "/unlock", { auth_hash: bytesField(authHash) });
 
-  // Decrypt the user's RSA private key with the enc_key.
-  const wrappedPriv = b64ToBytes(resp.user_private_key_ciphertext);
+  // Decrypt the user's RSA private key with enc_key.
+  const privCT = b64ToBytes(resp.user_private_key_ciphertext);
   const privNonce = b64ToBytes(resp.user_private_key_nonce);
-  const pkcs8 = await aesGcmDecrypt(encKey, wrappedPriv, privNonce);
+  const pkcs8 = await aesGcmDecrypt(encKey, privCT, privNonce);
   const rsaPriv = await importPkcs8(pkcs8);
 
   // RSA-unwrap the vault_key.
-  const wrappedVault = b64ToBytes(resp.wrapped_vault_key);
-  const vaultKey = await rsaUnwrapAesKey(rsaPriv, wrappedVault);
+  const wrappedVK = b64ToBytes(resp.wrapped_vault_key);
+  const rawVaultKey = await rsaUnwrapAesKey(rsaPriv, wrappedVK);
 
-  STATE.vaultKey = vaultKey;
-  STATE.unlockedAt = Date.now();
-  return vaultKey;
+  // Hand to the worker. The worker imports as a CryptoKey; we zero
+  // the page-side buffer right after so the raw bytes don't linger in
+  // page memory longer than necessary.
+  await workerCall("set_key", { rawKey: rawVaultKey.buffer });
+  rawVaultKey.fill(0);
+
+  // Persist the wrapped state for future unlocks on this device.
+  await dbPut({
+    kdfParams,
+    wrappedPriv: { ciphertext: bytesToB64(privCT), nonce: bytesToB64(privNonce) },
+    wrappedVaultKey: bytesToB64(wrappedVK),
+  });
 }
 
-// ensureUnlocked shows the inline unlock prompt if we're not yet unlocked,
-// then resolves once the user has entered their master password.
 async function ensureUnlocked() {
-  if (isUnlocked()) return;
+  const ok = await workerCall("has_key");
+  if (ok) return;
   showSection("unlock-prompt");
   hideSection("add-form");
   hideSection("reveal-area");
   hideSection("grant-area");
-
   return new Promise((resolve, reject) => {
     const form = document.getElementById("unlock-form");
-    if (!form) {
-      reject(new Error("no unlock form on this page"));
-      return;
-    }
-    form.addEventListener(
-      "submit",
-      async (ev) => {
-        ev.preventDefault();
-        const pw = new FormData(form).get("master_password");
-        try {
-          await unlock(pw);
-          hideSection("unlock-prompt");
-          resolve();
-        } catch (err) {
-          const status = document.getElementById("unlock-status");
-          if (status) {
-            status.textContent = err.message || String(err);
-            status.className = "error";
-          }
-          reject(err);
+    if (!form) return reject(new Error("no unlock form on this page"));
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const pw = new FormData(form).get("master_password");
+      try {
+        await unlock(pw);
+        hideSection("unlock-prompt");
+        resolve();
+      } catch (err) {
+        const status = document.getElementById("unlock-status");
+        if (status) {
+          status.textContent = err.message || String(err);
+          status.className = "error";
         }
-      },
-      { once: true },
-    );
+        reject(err);
+      }
+    }, { once: true });
   });
 }
 
@@ -376,8 +394,7 @@ async function wireRegister() {
 
     const data = new FormData(form);
     const pw = data.get("master_password");
-    const pwConfirm = data.get("master_password_confirm");
-    if (pw !== pwConfirm) {
+    if (pw !== data.get("master_password_confirm")) {
       setStatus("Passwords don't match.", "error");
       return;
     }
@@ -398,14 +415,8 @@ async function wireRegister() {
     const rsa = await generateRSAKeypair();
     const spki = await exportSpki(rsa.publicKey);
     const pkcs8 = await exportPkcs8(rsa.privateKey);
-
-    // Wrap the private key with the enc_key.
     const wrappedPriv = await aesGcmEncrypt(encKey, pkcs8);
 
-    // Decide tenant-init vs post-init by checking the server's existing
-    // state. Easier to detect from the server's response than to encode
-    // here: we attempt registration WITHOUT a wrapped_vault_key first;
-    // if the server says "first user must self-grant" we retry with one.
     let wrappedVaultKey = null;
     let body = {
       auth_hash: bytesField(authHash),
@@ -420,25 +431,37 @@ async function wireRegister() {
     try {
       res = await api("POST", "/register", body);
     } catch (err) {
-      const msg = err.message || "";
-      if (msg.includes("first user in tenant must self-grant")) {
-        // Generate vault_key, wrap with our own pubkey, retry.
-        const vaultKey = await crypto.subtle.generateKey(
-          { name: "AES-GCM", length: 256 },
-          true,
-          ["encrypt", "decrypt"],
-        );
-        wrappedVaultKey = await rsaWrapAesKey(rsa.publicKey, vaultKey);
+      if ((err.message || "").includes("first user in tenant must self-grant")) {
+        // Bootstrap: generate vault_key, wrap with own pubkey, retry.
+        const rawVK = crypto.getRandomValues(new Uint8Array(32));
+        wrappedVaultKey = await rsaWrapAesKey(rsa.publicKey, rawVK);
         body.wrapped_vault_key = bytesField(wrappedVaultKey);
         res = await api("POST", "/register", body);
+        // Hand the raw key to the worker so this admin is unlocked,
+        // then zero the page-side buffer.
+        await workerCall("set_key", { rawKey: rawVK.buffer });
+        rawVK.fill(0);
       } else {
         throw err;
       }
     }
 
-    // Self-unlock canary: server marks the row pending=false only after
-    // we re-prove we can reproduce auth_hash from the password.
+    // Self-unlock canary so the server flips pending=false.
     await api("POST", "/self_unlock_test", { auth_hash: bytesField(authHash) });
+
+    // Persist for next-device unlock (only the bootstrap admin has a
+    // wrapped vault key right now; non-bootstrap users get one after
+    // grant and persist on first unlock).
+    if (wrappedVaultKey) {
+      await dbPut({
+        kdfParams,
+        wrappedPriv: {
+          ciphertext: bytesToB64(wrappedPriv.ciphertext),
+          nonce: bytesToB64(wrappedPriv.nonce),
+        },
+        wrappedVaultKey: bytesToB64(wrappedVaultKey),
+      });
+    }
 
     setStatus(
       wrappedVaultKey
@@ -454,8 +477,6 @@ async function wireAdd() {
   const form = document.getElementById("add-form");
   if (!form) return;
   showSection("add-form");
-
-  // Optional pre-fill from query string (?title=&url=).
   const params = new URLSearchParams(window.location.search);
   if (params.get("title")) form.elements.title.value = params.get("title");
   if (params.get("url")) form.elements.url.value = params.get("url");
@@ -469,22 +490,17 @@ async function wireAdd() {
       password: fd.get("password") || "",
       notes: fd.get("notes") || "",
     });
-    const valueBytes = new TextEncoder().encode(valueJSON);
-    const enc = await aesGcmEncrypt(STATE.vaultKey, valueBytes);
+    const enc = await workerCall("encrypt", { plaintext: new TextEncoder().encode(valueJSON) });
 
-    const tagsRaw = fd.get("tags") || "";
-    const tags = tagsRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const tags = (fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean);
 
     await api("POST", "/entries", {
       title: fd.get("title") || "",
       username: fd.get("username") || "",
       url: fd.get("url") || "",
       tags,
-      value_ciphertext: bytesField(enc.ciphertext),
-      value_nonce: bytesField(enc.nonce),
+      value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
+      value_nonce: bytesField(new Uint8Array(enc.nonce)),
     });
     setStatus("Saved.", "success");
     form.reset();
@@ -506,11 +522,10 @@ async function wireReveal() {
 
   const ct = b64ToBytes(entry.value_ciphertext);
   const nonce = b64ToBytes(entry.value_nonce);
-  const plain = await aesGcmDecrypt(STATE.vaultKey, ct, nonce);
-  const decoded = JSON.parse(new TextDecoder().decode(plain));
+  const plain = await workerCall("decrypt", { ciphertext: ct, nonce });
+  const decoded = JSON.parse(new TextDecoder().decode(new Uint8Array(plain)));
 
   const pwEl = document.getElementById("entry-password");
-  pwEl.dataset.value = decoded.password || "";
   document.getElementById("entry-notes").textContent = decoded.notes || "";
 
   document.getElementById("show-password").addEventListener("click", () => {
@@ -526,9 +541,7 @@ async function wireReveal() {
         s.className = "success";
       }
       setTimeout(async () => {
-        try {
-          await navigator.clipboard.writeText("");
-        } catch {}
+        try { await navigator.clipboard.writeText(""); } catch {}
         const s2 = document.getElementById("copy-status");
         if (s2) s2.textContent = "Cleared.";
       }, 90_000);
@@ -537,9 +550,9 @@ async function wireReveal() {
     }
   });
 
-  document.getElementById("lock-button").addEventListener("click", () => {
-    lockClient();
-    window.location.reload();
+  document.getElementById("lock-button").addEventListener("click", async () => {
+    await lockNow();
+    setStatus("Vault locked.", "");
   });
 }
 
@@ -547,13 +560,11 @@ async function wireGrant() {
   await ensureUnlocked();
   showSection("grant-area");
 
-  // Fetch the target user's pubkey + fingerprint.
   const target = await api("GET", `/users/${VAULT.targetUserId}`);
   if (!target || !target.public_key) {
     setStatus("Target user has not registered yet.", "error");
     return;
   }
-
   document.getElementById("target-name").textContent = VAULT.targetUserId;
   document.getElementById("target-fingerprint").textContent = target.fingerprint || "";
   if (target.reset) {
@@ -562,24 +573,28 @@ async function wireGrant() {
 
   document.getElementById("grant-button").addEventListener("click", async () => {
     setStatus("Wrapping vault key for target…");
-
-    // The captive STATE.vaultKey is exportable (v1; v2 makes it
-    // non-extractable in a Worker). Wrap it under the target's pubkey.
-    const targetPub = await importSpki(b64ToBytes(target.public_key));
-    const wrapped = await rsaWrapAesKey(targetPub, STATE.vaultKey);
-
+    const wrapped = await workerCall("wrap_for", { rsaSpki: b64ToBytes(target.public_key) });
     await api("POST", `/grants/${VAULT.targetUserId}`, {
-      wrapped_vault_key: bytesField(wrapped),
+      wrapped_vault_key: bytesField(new Uint8Array(wrapped)),
     });
     setStatus("Granted. The target user can now unlock the vault.", "success");
   });
 
   document.getElementById("decline-button").addEventListener("click", async () => {
-    if (!confirm("Decline this registration? The user will need to re-register from scratch.")) {
-      return;
-    }
+    if (!confirm("Decline this registration? The user will need to re-register from scratch.")) return;
     setStatus("Declining…");
     await api("DELETE", `/users/${VAULT.targetUserId}`);
     setStatus("Declined. The user's pending registration was removed.", "success");
   });
 }
+
+// ===== UI helpers =====
+
+function setStatus(text, kind) {
+  const el = document.getElementById("status");
+  if (!el) return;
+  el.textContent = text || "";
+  el.className = kind || "";
+}
+function showSection(id) { const el = document.getElementById(id); if (el) el.hidden = false; }
+function hideSection(id) { const el = document.getElementById(id); if (el) el.hidden = true; }

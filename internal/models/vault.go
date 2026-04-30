@@ -273,27 +273,6 @@ func SetVaultUserLockedUntil(ctx context.Context, pool *pgxpool.Pool, tenantID, 
 	return nil
 }
 
-// ListPendingVaultGrants returns vault_users rows in the tenant whose
-// wrapped_vault_key is NULL — i.e., users who have registered but not yet
-// been granted access. Used to render the admin-side decision card metadata.
-func ListPendingVaultGrants(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]VaultUser, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT tenant_id, user_id, kdf_params, auth_hash, user_public_key,
-		       user_private_key_ciphertext, user_private_key_nonce,
-		       wrapped_vault_key, granted_by_user_id, granted_at,
-		       failed_unlocks, locked_until, reset_pending_until, pending,
-		       created_at, updated_at
-		FROM app_vault_users
-		WHERE tenant_id = $1 AND wrapped_vault_key IS NULL AND pending = FALSE
-		ORDER BY created_at DESC
-	`, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("listing pending grants: %w", err)
-	}
-	defer rows.Close()
-	return scanVaultUsers(rows)
-}
-
 // ===== vault_entries =====
 
 // CreateVaultEntry inserts a new entry plus its scope rows in one transaction.
@@ -588,24 +567,6 @@ func insertScopeTx(ctx context.Context, tx pgx.Tx, s VaultEntryScope) error {
 		return fmt.Errorf("inserting scope: %w", err)
 	}
 	return nil
-}
-
-func scanVaultUsers(rows pgx.Rows) ([]VaultUser, error) {
-	var out []VaultUser
-	for rows.Next() {
-		var v VaultUser
-		if err := rows.Scan(
-			&v.TenantID, &v.UserID, &v.KDFParams, &v.AuthHash, &v.UserPublicKey,
-			&v.UserPrivateKeyCiphertext, &v.UserPrivateKeyNonce,
-			&v.WrappedVaultKey, &v.GrantedByUserID, &v.GrantedAt,
-			&v.FailedUnlocks, &v.LockedUntil, &v.ResetPendingUntil, &v.Pending,
-			&v.CreatedAt, &v.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan vault user: %w", err)
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
 }
 
 func scanVaultEntries(rows pgx.Rows) ([]VaultEntry, error) {
