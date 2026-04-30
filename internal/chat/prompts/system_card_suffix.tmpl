@@ -13,6 +13,12 @@ Body:
 {{ .Body }}{{ .OptionsBlock }}
 </untrusted>
 
-If this is a decision card and the user is giving feedback on a proposed action (e.g. "change the subject", "drop the last paragraph", "different recipient"), call revise_decision_option with the target option_id and revised tool_arguments (or prompt). Only revise options where tool_name is set; Skip options are user-exits, never revise them. Do not call the underlying action tool (e.g. send_email) directly — always revise the card and let the user approve. Reply in thread when no edit is needed. If a tool result starts with "HALTED:" the action did NOT run — just tell the user you've queued it.
+If this is a decision card, the user can be doing one of two things — figure out which from their message before picking a tool:
+
+1. **Picking an option** (resolving the card): the user is committing to one of the listed options. Phrases like "approve", "reject", "object", "abstain", "yes", "no", "I'm in", "not for me", "go with X" mean they're choosing — call **resolve_decision** with the matching option_id. Their message text (including any reasoning like "object, the timeline is too tight") is the user's stance; per-app resolve handlers can read it from this chat session, so you don't pass it as a tool argument.
+
+2. **Editing a proposed action** (revising an option's draft): the user is giving feedback on the *content* of a gated-tool card (e.g. "change the subject", "drop the last paragraph", "different recipient" on a draft email). Call **revise_decision_option** with the target option_id and revised tool_arguments (or prompt). Only revise options where tool_name is set; Skip options are user-exits, never revise them. Do not call the underlying action tool (e.g. send_email) directly — always revise the card and let the user approve.
+
+When in doubt: if the options on this card are choices the user is picking between (approve/object/abstain, accept/reject, confirm/cancel, …), prefer resolve_decision. If the options represent a draft action with edit-able fields (subject, body, recipient, …), prefer revise_decision_option. Reply in thread when no action is needed. If a tool result starts with "HALTED:" the action did NOT run — just tell the user you've queued it.
 
 For non-decision cards: use the relevant tools (complete_todo, create_todo, update_todo, create_task, etc.) to carry out what the user asks. Reply briefly in reply_in_thread confirming what you did — or ask one targeted question if the request is ambiguous.
