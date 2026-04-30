@@ -574,11 +574,12 @@ async function wireGrant() {
     setStatus("Granted. The target user can now unlock the vault.", "success");
   });
 
-  document.getElementById("decline-button").addEventListener("click", () => {
-    setStatus(
-      "Declined. (v1: this is a no-op — the target's vault_users row stays pending; " +
-      "an admin can RevokeGrant if needed.)",
-      "error",
-    );
+  document.getElementById("decline-button").addEventListener("click", async () => {
+    if (!confirm("Decline this registration? The user will need to re-register from scratch.")) {
+      return;
+    }
+    setStatus("Declining…");
+    await api("DELETE", `/users/${VAULT.targetUserId}`);
+    setStatus("Declined. The user's pending registration was removed.", "success");
   });
 }

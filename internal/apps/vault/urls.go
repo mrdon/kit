@@ -85,6 +85,9 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("GET /{slug}/apps/vault/grant/{user_id}", page(a.handleGrantPage))
 	mux.Handle("POST /{slug}/apps/vault/api/grants/{user_id}", wrap(a.handleGrant))
 	mux.Handle("DELETE /{slug}/apps/vault/api/grants/{user_id}", wrap(a.handleRevokeGrant))
+	// Decline a pending registration: deletes the vault_users row entirely
+	// (only valid while wrapped_vault_key IS NULL).
+	mux.Handle("DELETE /{slug}/apps/vault/api/users/{user_id}", wrap(a.handleDeclinePending))
 
 	// Static
 	mux.Handle("GET /{slug}/apps/vault/static/", static(a.handleStatic))

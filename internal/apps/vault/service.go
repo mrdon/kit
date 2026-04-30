@@ -42,6 +42,10 @@ type Service struct {
 	// package-level Configure func from main.go. nil-safe: cards just
 	// don't fire when the service isn't wired (e.g., in tests).
 	cards CardSurface
+
+	// notify is the user-facing DM surface for security tripwires
+	// (failed unlock, reset triggered, access granted). nil-safe.
+	notify NotifySurface
 }
 
 // NewService constructs a vault service backed by the given pool.
@@ -79,17 +83,65 @@ type EntryWithCiphertext struct {
 
 // ListEntries returns entries the caller is authorized to view.
 // Applies the central scope filter (mirrors skill_scopes / rule_scopes).
+// Each result carries a human-readable scope_summary derived from the
+// authz scope rows so the agent can tell the user "yours" / "tenant-wide"
+// / "shared" at a glance.
 func (s *Service) ListEntries(ctx context.Context, c *services.Caller, query, tag string, limit int) ([]EntryListItem, error) {
 	rows, err := models.ListVaultEntries(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query, tag, limit)
 	if err != nil {
 		return nil, err
 	}
 
+	tenantWide, err := s.tenantScopedEntryIDs(ctx, c.TenantID, rows)
+	if err != nil {
+		// Non-fatal: lose the "tenant-wide" label, keep the listing.
+		slog.Warn("vault: building scope summary failed", "error", err)
+		tenantWide = nil
+	}
+
 	out := make([]EntryListItem, 0, len(rows))
 	for _, e := range rows {
-		out = append(out, toListItem(e, c))
+		item := toListItem(e, c)
+		switch {
+		case item.IsOwner:
+			item.ScopeSummary = "yours"
+		case tenantWide[e.ID]:
+			item.ScopeSummary = "tenant-wide"
+		default:
+			item.ScopeSummary = "shared"
+		}
+		out = append(out, item)
 	}
 	return out, nil
+}
+
+// tenantScopedEntryIDs returns the set of entry IDs in the given list
+// that have a tenant-scope row. Used to label list_secrets results.
+func (s *Service) tenantScopedEntryIDs(ctx context.Context, tenantID uuid.UUID, entries []models.VaultEntry) (map[uuid.UUID]bool, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.ID)
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT entry_id FROM app_vault_entry_scopes
+		WHERE tenant_id = $1 AND scope_kind = 'tenant' AND entry_id = ANY($2)
+	`, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("loading tenant scopes: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]bool, len(entries))
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 // GetEntry returns one entry's metadata + ciphertext (caller-authz checked).
@@ -330,6 +382,11 @@ func (s *Service) Unlock(ctx context.Context, c *services.Caller, authHash []byt
 		}
 		if locked {
 			_ = models.SetVaultUserLockedUntil(ctx, s.pool, c.TenantID, c.UserID, time.Now().Add(lockoutDuration))
+			s.notifyUser(ctx, c.TenantID, c.UserID,
+				fmt.Sprintf(":lock: %d failed unlock attempts on your Kit vault — was this you? "+
+					"Your vault is locked for %s. If this wasn't you, your account may be compromised; "+
+					"rotate your Slack credentials and re-OAuth.", count, lockoutDuration),
+			)
 		}
 		audit.log(ctx, "vault.unlock_failed", "vault_user", &c.UserID, EvtUnlockFailed{FailedCount: count, Locked: locked})
 		return nil, ErrUnlockMismatch
@@ -448,6 +505,11 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 			OldPubKeyFingerprint: priorFP,
 			NewPubKeyFingerprint: newFP,
 		})
+		s.notifyUser(ctx, c.TenantID, c.UserID,
+			":warning: Your Kit vault password was reset. If this wasn't you, your Slack account "+
+				"may be compromised — rotate your Slack credentials immediately. Until you do, do not "+
+				"approve any incoming grant request for your account.",
+		)
 	} else {
 		audit.log(ctx, "vault.register", "vault_user", &c.UserID, EvtRegister{
 			Replace:           false,
@@ -469,16 +531,22 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 
 // fireGrantRequestCard creates an admin-scoped decision card asking a
 // teammate to grant (or re-grant after reset) vault access to the caller.
-// Body includes the fingerprint for out-of-band verification.
+// Body includes the user's display name + Slack handle + the fingerprint
+// for out-of-band verification.
 func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Caller, isReset bool, fingerprint string) error {
 	if s.cards == nil {
 		return nil // cards surface not wired; no-op (e.g. tests)
 	}
 	title := "Grant vault access"
-	body := buildGrantCardBody(target, isReset, fingerprint)
 	if isReset {
 		title = "Re-grant vault access (password reset)"
 	}
+
+	// Best-effort enrichment: pull the target's display name from the
+	// users table. Falls back to the bare slack handle / id if missing.
+	user, _ := models.GetUserByID(ctx, s.pool, target.TenantID, target.UserID)
+	body := buildGrantCardBody(target, user, isReset, fingerprint)
+
 	return s.cards.CreateDecision(ctx, target, CardCreateInput{
 		Title:      title,
 		Body:       body,
@@ -490,8 +558,8 @@ func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Cal
 				{
 					OptionID: "open_grant_page",
 					Label:    "Review and grant",
-					// No tool — the option's body links the admin to
-					// /vault/grant/<user_id> via the card UI.
+					// No tool — the card body links the admin to
+					// /vault/grant/<user_id> for the actual wrap.
 				},
 				{
 					OptionID: "decline",
@@ -502,19 +570,26 @@ func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Cal
 	})
 }
 
-func buildGrantCardBody(target *services.Caller, isReset bool, fingerprint string) string {
+func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool, fingerprint string) string {
+	displayName := target.Identity
+	slackID := target.Identity
+	if user != nil {
+		slackID = user.SlackUserID
+		if user.DisplayName != nil && *user.DisplayName != "" {
+			displayName = *user.DisplayName
+		}
+	}
+
 	var b strings.Builder
 	if isReset {
-		b.WriteString("**" + target.Identity + "** reset their vault password. ")
-		b.WriteString("Their public-key fingerprint has changed.\n\n")
+		fmt.Fprintf(&b, "**%s** (<@%s>) reset their vault password. Their public-key fingerprint has changed.\n\n", displayName, slackID)
 	} else {
-		b.WriteString("**" + target.Identity + "** registered for the vault and needs access.\n\n")
+		fmt.Fprintf(&b, "**%s** (<@%s>) registered for the vault and needs access.\n\n", displayName, slackID)
 	}
-	b.WriteString("Public-key fingerprint:\n\n")
-	b.WriteString("```\n")
+	b.WriteString("Public-key fingerprint:\n\n```\n")
 	b.WriteString(fingerprint)
 	b.WriteString("\n```\n\n")
-	b.WriteString("**Verify this fingerprint with them out-of-band** (e.g. ask them to read it back) before granting. ")
+	b.WriteString("**Verify this fingerprint with them out-of-band** (e.g. ask them to read it back over a separate channel) before granting. ")
 	b.WriteString("Open the grant page to complete the action.")
 	return b.String()
 }
@@ -575,7 +650,22 @@ func (s *Service) Grant(ctx context.Context, c *services.Caller, p GrantParams, 
 		TargetPubKeyFingerprint: pubkeyFingerprint(target.UserPublicKey),
 		DuringResetCooldown:     duringCooldown,
 	})
+	s.notifyUser(ctx, c.TenantID, p.TargetUserID,
+		":unlock: Your Kit vault access is now active. Open the vault to add or look up secrets.",
+	)
 	return nil
+}
+
+// notifyUser sends a single-line Slack DM to the user, best-effort. nil
+// notify surface = no-op (tests, misconfigured startup). Errors are
+// logged but never propagated.
+func (s *Service) notifyUser(ctx context.Context, tenantID, userID uuid.UUID, body string) {
+	if s.notify == nil {
+		return
+	}
+	if err := s.notify.NotifyUser(ctx, tenantID, userID, body); err != nil {
+		slog.Warn("vault: notifying user failed", "user_id", userID, "error", err)
+	}
 }
 
 // RevokeGrant nulls the target user's wrapped_vault_key. Forward secrecy
@@ -749,15 +839,26 @@ func sortScopeRefs(refs []ScopeRef) {
 	})
 }
 
-// pubkeyFingerprint returns a short hex fingerprint suitable for showing
-// next to a user's identity on the grant page. Caller should display it
-// grouped (e.g. 6 groups of 4 hex chars) for ease of comparison.
+// pubkeyFingerprint returns a Signal-style fingerprint of a public key:
+// 24 hex characters in 6 groups of 4 (XXXX XXXX XXXX XXXX XXXX XXXX).
+// The format is chosen for ease of out-of-band verification — short
+// enough to read aloud, long enough that an attacker can't brute-force a
+// collision under SHA-256.
 func pubkeyFingerprint(pub []byte) string {
 	if len(pub) == 0 {
 		return ""
 	}
 	sum := sha256.Sum256(pub)
-	return hex.EncodeToString(sum[:12]) // 24 hex chars; UI groups visually
+	hexStr := hex.EncodeToString(sum[:12])
+	// Group as XXXX XXXX XXXX XXXX XXXX XXXX (24 → 6 × 4).
+	var b strings.Builder
+	for i := 0; i < len(hexStr); i += 4 {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(hexStr[i : i+4])
+	}
+	return b.String()
 }
 
 // dummyHash returns 32 random bytes for the constant-time miss path.

@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -36,6 +37,7 @@ type App struct {
 	pool   *pgxpool.Pool
 	svc    *Service
 	cards  CardSurface
+	notify NotifySurface
 	signer *auth.SessionSigner
 }
 
@@ -43,6 +45,16 @@ type App struct {
 // as an interface so tests can swap in a no-op without pulling cards in.
 type CardSurface interface {
 	CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) error
+}
+
+// NotifySurface is the small slice of Messenger the vault uses to send
+// security-tripwire DMs to the user being acted on. v1 ships with Slack
+// DMs because cards don't support per-user scoping; v2's per-tenant
+// routing config can swap this for briefings if/when cards gain the
+// capability. nil-safe: vault still works without notifications wired
+// (the warnings just don't fire).
+type NotifySurface interface {
+	NotifyUser(ctx context.Context, tenantID, userID uuid.UUID, body string) error
 }
 
 // CardCreateInput is the projection of cards.CardCreateInput we use. The
@@ -75,19 +87,24 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.svc = NewService(pool)
 }
 
-// Configure wires the card-creation surface (so register / reset flows
-// emit admin-targeted decision cards) and the session signer (so HTTP
-// routes get a Caller injected from the Slack-OAuth cookie). Safe to omit
-// either; vault still works without cards (just doesn't fire) and refuses
-// HTTP requests without a signer.
-func Configure(cards CardSurface, signer *auth.SessionSigner) {
+// Configure wires the surfaces the vault uses at runtime:
+//   - cards: admin-targeted decision cards (register / reset → grant request)
+//   - notify: per-user Slack DMs (security tripwires)
+//   - signer: session cookie middleware on HTTP routes
+//
+// Each is independently nil-safe: cards or notify can be omitted in tests
+// (the corresponding events just don't fire); HTTP routes refuse to
+// register without a signer.
+func Configure(cards CardSurface, notify NotifySurface, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.cards = cards
+	instance.notify = notify
 	instance.signer = signer
 	if instance.svc != nil {
 		instance.svc.cards = cards
+		instance.svc.notify = notify
 	}
 }
 

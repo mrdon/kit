@@ -1,9 +1,7 @@
 package vault
 
 import (
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -313,21 +311,11 @@ func (a *App) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"public_key":  target.UserPublicKey,
-		"fingerprint": fingerprintHex(target.UserPublicKey),
+		"fingerprint": pubkeyFingerprint(target.UserPublicKey),
 		"pending":     target.Pending,
 		"granted":     target.WrappedVaultKey != nil,
 		"reset":       target.ResetPendingUntil != nil,
 	})
-}
-
-// fingerprintHex mirrors the server-side pubkeyFingerprint helper but
-// callable from the web layer without circling through service.go.
-func fingerprintHex(pub []byte) string {
-	if len(pub) == 0 {
-		return ""
-	}
-	sum := sha256.Sum256(pub)
-	return hex.EncodeToString(sum[:12])
 }
 
 // ===== entry CRUD =====
@@ -513,6 +501,48 @@ func (a *App) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleDeclinePending drops a vault_users row that hasn't been granted
+// yet. The "Decline" button on the admin's grant decision card calls
+// this; rejecting a registration is recoverable (the user can re-register).
+// Refuses to delete a row that already has a wrapped_vault_key — those
+// require RevokeGrant, which is a separate, more deliberate action.
+func (a *App) handleDeclinePending(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	if !caller.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
+	}
+	targetID, err := uuid.Parse(r.PathValue("user_id"))
+	if err != nil {
+		http.Error(w, "bad user id", http.StatusBadRequest)
+		return
+	}
+	target, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, targetID)
+	if err != nil {
+		slog.Error("vault: decline lookup", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if target == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if target.WrappedVaultKey != nil {
+		http.Error(w, "user already has access; use revoke instead", http.StatusConflict)
+		return
+	}
+	if _, err := a.pool.Exec(r.Context(),
+		`DELETE FROM app_vault_users WHERE tenant_id = $1 AND user_id = $2 AND wrapped_vault_key IS NULL`,
+		caller.TenantID, targetID,
+	); err != nil {
+		slog.Error("vault: decline delete", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	a.svc.AuditFromRequest(caller, r).log(r.Context(), "vault.revoke_grant", "vault_user", &targetID, EvtRevokeGrant{TargetUserID: targetID})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

@@ -188,10 +188,16 @@ func main() {
 	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Tasks)
 
 	// Vault uses the same CardService for admin grant-request decision
-	// cards, plus the session signer for HTTP routes. Wrapped in a thin
-	// adapter so the vault package doesn't import internal/apps/cards
+	// cards, plus Messenger for user-targeted security tripwires
+	// (failed unlock, reset triggered, access granted), plus the
+	// session signer for HTTP routes. Wrapped in thin adapters so the
+	// vault package doesn't import internal/apps/cards or messenger
 	// directly (keeps the dep graph one-way).
-	vault.Configure(newVaultCardAdapter(cards.ServiceForGating()), sessionSigner)
+	vault.Configure(
+		newVaultCardAdapter(cards.ServiceForGating()),
+		newVaultNotifier(pool, app.Messenger),
+		sessionSigner,
+	)
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)
