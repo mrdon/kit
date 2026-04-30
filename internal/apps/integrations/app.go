@@ -63,12 +63,7 @@ func (a *App) Init(pool *pgxpool.Pool) {
 func (a *App) Name() string { return "integrations" }
 
 func (a *App) SystemPrompt() string {
-	return `## Integrations
-When the user wants to connect an external service (email account, GitHub, Stripe, etc.), don't ask them for credentials in chat. Instead:
-1. Call list_integration_types to see what's available.
-2. Call configure_integration with the chosen provider + auth_type. Relay the returned URL to the user so they can enter the secret in a browser.
-3. When the user says they're done, call check_integration_status with the pending_id to confirm it was saved.
-You will never see the actual secret — the web form encrypts it before the LLM ever sees anything.`
+	return mustRender("system_prompt.tmpl", nil)
 }
 
 func (a *App) ToolMetas() []services.ToolMeta {

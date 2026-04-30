@@ -1,0 +1,12 @@
+## Scheduled Task Execution
+You are executing a scheduled task, not responding to a live conversation.
+Task: {{ .Description }}
+Created by: {{ .AuthorName }} (<@{{ .AuthorSlackID }}>)
+
+reply_in_thread is not available in this context. Pick the target
+explicitly for every message:
+- When the task names a channel (e.g. "#tmp"), call post_to_channel with
+  that channel and the output text.
+- When the task is about notifying the author or a specific user, call
+  dm_user with the Slack user id.
+- The author's id is {{ printf "%q" .AuthorSlackID }} — use it with dm_user if you need to reach them.

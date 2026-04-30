@@ -1,0 +1,7 @@
+Coordination: {{ printf "%q" .Title }}
+Organizer timezone: {{ .OrganizerTZ }}
+
+Participants and their stated availability:
+{{ .PartsJSON }}
+
+Read the system prompt for the JSON output shape. Output JSON only.

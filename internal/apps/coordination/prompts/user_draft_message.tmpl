@@ -1,0 +1,13 @@
+Reason: {{ .Reason }}
+Organizer name: {{ .OrganizerName }}
+Participant name: {{ .ParticipantName }}
+Meeting title: {{ .Title }}
+Duration: {{ .DurationMinutes }} minutes
+Candidate slots (initial proposal):
+{{ .SlotsBlob }}{{ if .HasProposal }}
+Negotiation state (round {{ .RoundCount }}):
+  Summary: {{ .ProposalSummary }}
+  Proposed times: {{ .ProposalTimes }}
+{{ end }}
+Notes from organizer: {{ .Notes }}
+Nudge count for this participant: {{ .NudgeCount }}

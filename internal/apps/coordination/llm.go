@@ -2,7 +2,7 @@ package coordination
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,18 +11,23 @@ import (
 
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/prompts"
 )
 
-//go:embed prompts/draft_message.txt
-var draftMessagePrompt string
+//go:embed prompts/*.tmpl
+var promptFS embed.FS
 
-//go:embed prompts/parse_meeting_reply.txt
-var parseReplyPrompt string
-
-//go:embed prompts/propose_times.txt
-var proposeTimesPrompt string
+var promptSet = prompts.MustParse(promptFS, "prompts/*.tmpl")
 
 const modelHaiku = "claude-haiku-4-5-20251001"
+
+func mustRender(name string, data any) string {
+	out, err := prompts.Render(promptSet, name, data)
+	if err != nil {
+		panic(fmt.Errorf("coordination: %w", err))
+	}
+	return out
+}
 
 // draftMessage produces an outbound message body for a coordination
 // participant. reason ∈ {"initial","nudge","reengage_invalidated"}.
@@ -54,28 +59,26 @@ func (a *CoordinationApp) draftMessage(ctx context.Context, coord *Coordination,
 	}
 
 	slotsBlob := slotsForPrompt(coord.Config.CandidateSlots, coord.Config.OrganizerTZ)
-	proposalBlock := ""
-	if len(coord.Config.LatestProposal.ProposedTimes) > 0 || coord.Config.LatestProposal.Summary != "" {
-		proposalBlock = fmt.Sprintf("\nNegotiation state (round %d):\n  Summary: %s\n  Proposed times: %v\n",
-			coord.RoundCount, coord.Config.LatestProposal.Summary, coord.Config.LatestProposal.ProposedTimes)
-	}
-	user := fmt.Sprintf(`
-Reason: %s
-Organizer name: %s
-Participant name: %s
-Meeting title: %s
-Duration: %d minutes
-Candidate slots (initial proposal):
-%s%s
-Notes from organizer: %s
-Nudge count for this participant: %d
-`, reason, organizerName, participantName, coord.Config.Title, coord.Config.DurationMinutes,
-		slotsBlob, proposalBlock, coord.Config.Notes, p.NudgeCount)
+	hasProposal := len(coord.Config.LatestProposal.ProposedTimes) > 0 || coord.Config.LatestProposal.Summary != ""
+	user := mustRender("user_draft_message.tmpl", map[string]any{
+		"Reason":          reason,
+		"OrganizerName":   organizerName,
+		"ParticipantName": participantName,
+		"Title":           coord.Config.Title,
+		"DurationMinutes": coord.Config.DurationMinutes,
+		"SlotsBlob":       slotsBlob,
+		"HasProposal":     hasProposal,
+		"RoundCount":      coord.RoundCount,
+		"ProposalSummary": coord.Config.LatestProposal.Summary,
+		"ProposalTimes":   fmt.Sprintf("%v", coord.Config.LatestProposal.ProposedTimes),
+		"Notes":           coord.Config.Notes,
+		"NudgeCount":      p.NudgeCount,
+	})
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
 		Model:     modelHaiku,
 		MaxTokens: 600,
-		System:    []anthropic.SystemBlock{{Type: "text", Text: draftMessagePrompt}},
+		System:    []anthropic.SystemBlock{{Type: "text", Text: mustRender("system_draft_message.tmpl", nil)}},
 		Messages: []anthropic.Message{
 			{Role: "user", Content: []anthropic.Content{{Type: "text", Text: user}}},
 		},
@@ -132,20 +135,15 @@ func (a *CoordinationApp) parseMeetingReply(ctx context.Context, log []MessageLo
 	logJSON, _ := json.Marshal(log)
 	slotsBlob := slotsForPrompt(slots, organizerTZ)
 
-	user := fmt.Sprintf(`
-Initial proposed slots (organizer's first pass):
-%s
-
-Conversation log (chronological):
-%s
-
-Read the system prompt for the JSON output shape.
-`, slotsBlob, string(logJSON))
+	user := mustRender("user_parse_meeting_reply.tmpl", map[string]any{
+		"SlotsBlob": slotsBlob,
+		"LogJSON":   string(logJSON),
+	})
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
 		Model:     modelHaiku,
 		MaxTokens: 800,
-		System:    []anthropic.SystemBlock{{Type: "text", Text: parseReplyPrompt}},
+		System:    []anthropic.SystemBlock{{Type: "text", Text: mustRender("system_parse_meeting_reply.tmpl", nil)}},
 		Messages: []anthropic.Message{
 			{Role: "user", Content: []anthropic.Content{{Type: "text", Text: user}}},
 		},
@@ -203,20 +201,16 @@ func (a *CoordinationApp) proposeRound(ctx context.Context, coord *Coordination,
 		return nil, errors.New("LLM not configured")
 	}
 	partsJSON, _ := json.Marshal(parts)
-	user := fmt.Sprintf(`
-Coordination: %q
-Organizer timezone: %s
-
-Participants and their stated availability:
-%s
-
-Read the system prompt for the JSON output shape. Output JSON only.
-`, coord.Config.Title, coord.Config.OrganizerTZ, string(partsJSON))
+	user := mustRender("user_propose_times.tmpl", map[string]any{
+		"Title":       coord.Config.Title,
+		"OrganizerTZ": coord.Config.OrganizerTZ,
+		"PartsJSON":   string(partsJSON),
+	})
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
 		Model:     modelHaiku,
 		MaxTokens: 800,
-		System:    []anthropic.SystemBlock{{Type: "text", Text: proposeTimesPrompt}},
+		System:    []anthropic.SystemBlock{{Type: "text", Text: mustRender("system_propose_times.tmpl", nil)}},
 		Messages: []anthropic.Message{
 			{Role: "user", Content: []anthropic.Content{{Type: "text", Text: user}}},
 		},

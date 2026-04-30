@@ -29,8 +29,7 @@ func (a *SlackApp) Init(pool *pgxpool.Pool) {
 func (a *SlackApp) Name() string { return "slack" }
 
 func (a *SlackApp) SystemPrompt() string {
-	return `## Slack Channel Search
-You can search and browse messages in configured Slack channels. Use list_slack_channels to see which channels are available, then get_slack_messages to read or search messages. You can filter by keyword, date, and page through results. When asked to find information in Slack (e.g. todos, action items, decisions), search relevant channels and analyze the messages.`
+	return mustRender("system_prompt.tmpl", nil)
 }
 
 func (a *SlackApp) ToolMetas() []services.ToolMeta {

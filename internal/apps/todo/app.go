@@ -55,8 +55,7 @@ func (a *TodoApp) Init(pool *pgxpool.Pool) {
 func (a *TodoApp) Name() string { return "todo" }
 
 func (a *TodoApp) SystemPrompt() string {
-	return `## Todo Tracking
-You manage a lightweight todo/ticket system for the team. When users mention work that needs doing, offer to create a todo. When they report progress or blockers, update the relevant todo and add a comment. Use add_todo_comment to record important context from conversations. When marking a todo as blocked, always include a blocked_reason explaining why. Proactively mention overdue todos when relevant.`
+	return mustRender("system_prompt.tmpl", nil)
 }
 
 func (a *TodoApp) ToolMetas() []services.ToolMeta {

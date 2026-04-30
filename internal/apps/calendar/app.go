@@ -31,8 +31,7 @@ func (a *CalendarApp) Init(pool *pgxpool.Pool) {
 func (a *CalendarApp) Name() string { return "calendar" }
 
 func (a *CalendarApp) SystemPrompt() string {
-	return `## Calendar
-You can answer questions about events on configured calendars (e.g. shift schedules, festival rosters, rehearsals). Use list_calendars to see what's available, then get_calendar_events to look up upcoming events, search by keyword, or filter by date range. When users ask "what's on tonight", "who's working Saturday", or "when is the next X", call get_calendar_events — don't guess. If a calendar's last sync failed, mention it so the user knows the data may be stale.`
+	return mustRender("system_prompt.tmpl", nil)
 }
 
 func (a *CalendarApp) ToolMetas() []services.ToolMeta {

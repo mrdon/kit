@@ -53,16 +53,7 @@ func (a *App) Init(pool *pgxpool.Pool) {
 func (a *App) Name() string { return "email" }
 
 func (a *App) SystemPrompt() string {
-	return `## Email
-You can read and send email for the current user when their email account is configured via the integrations flow.
-
-- search_emails supports ` + "`from:`, `to:`, `subject:`, `since:YYYY-MM-DD`, `is:unread`, `is:read`" + ` — anything else is a full-text body search. It does NOT understand Gmail operators like ` + "`newer_than:`, `has:attachment`, `in:sent`, `in:anywhere`" + `; those fall through to a useless literal body search. Use ` + "`since:YYYY-MM-DD`" + ` for date filters and the ` + "`folder`" + ` parameter to switch mailboxes.
-- search_emails defaults to INBOX. To find messages the user *sent* (e.g. "did I reply to X?"), pass ` + "`folder='[Gmail]/Sent Mail'`" + ` on Gmail accounts, or ` + "`folder='Sent'`" + ` elsewhere. Check both when unsure.
-- search_emails returns one line per message with ` + "`uid=N`" + `. To see the full body, call ` + "`read_email(uid=N)`" + ` — don't guess from the snippet.
-- send_email body is markdown. Prefer short paragraphs, bullet lists, and ` + "`**bold**`" + ` over ad-hoc HTML. The server renders to both plain text and sanitized HTML.
-- send_email ALWAYS creates a decision card first — when its result starts with HALTED: tell the user you've queued it for their review. Never claim the email was sent.
-- Threading: pass in_reply_to (and references) when replying so clients render a proper thread.
-- If search_emails returns "email account not configured", suggest they run ` + "`configure_integration(provider=\"email\", auth_type=\"imap_smtp\")`" + ` to set it up.`
+	return mustRender("system_prompt.tmpl", nil)
 }
 
 func (a *App) ToolMetas() []services.ToolMeta {
