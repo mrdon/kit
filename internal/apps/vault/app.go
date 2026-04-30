@@ -13,6 +13,9 @@ import (
 	"github.com/mrdon/kit/internal/tools"
 )
 
+// (CardSurface, CardCreateInput, etc. are defined below; the App struct
+// holds an optional CardSurface populated via Configure.)
+
 var instance *App
 
 func init() {
@@ -29,8 +32,38 @@ func init() {
 //   - Decision cards for tenant admins on grant requests / password resets.
 //   - Briefings for the user being acted on (security tripwires).
 type App struct {
-	pool *pgxpool.Pool
-	svc  *Service
+	pool  *pgxpool.Pool
+	svc   *Service
+	cards CardSurface
+}
+
+// CardSurface is the small slice of CardService the vault needs. Declared
+// as an interface so tests can swap in a no-op without pulling cards in.
+type CardSurface interface {
+	CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) error
+}
+
+// CardCreateInput is the projection of cards.CardCreateInput we use. The
+// real wiring in main.go converts this to a cards.CardCreateInput before
+// calling CardService.CreateDecision.
+type CardCreateInput struct {
+	Title      string
+	Body       string
+	RoleScopes []string
+	Decision   *CardDecisionCreateInput
+}
+
+type CardDecisionCreateInput struct {
+	Priority            string
+	RecommendedOptionID string
+	Options             []CardDecisionOption
+}
+
+type CardDecisionOption struct {
+	OptionID  string
+	Label     string
+	ToolName  string
+	Arguments []byte
 }
 
 // Init wires the service after the DB pool is available. Called by
@@ -38,6 +71,19 @@ type App struct {
 func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = NewService(pool)
+}
+
+// Configure wires the card-creation surface so register / reset flows can
+// emit admin-targeted decision cards. Safe to omit in tests; vault still
+// works without it (cards just don't fire).
+func Configure(cards CardSurface) {
+	if instance == nil {
+		return
+	}
+	instance.cards = cards
+	if instance.svc != nil {
+		instance.svc.cards = cards
+	}
 }
 
 // Service returns the live vault service, or nil before Init has run.

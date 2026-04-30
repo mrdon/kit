@@ -25,7 +25,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/todo"
-	_ "github.com/mrdon/kit/internal/apps/vault"
+	"github.com/mrdon/kit/internal/apps/vault"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"
@@ -186,6 +186,11 @@ func main() {
 	// (for surfacing decision cards), and the TaskService (for shepherd
 	// tasks). Wired here because Messenger lives on app.
 	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Tasks)
+
+	// Vault uses the same CardService for admin grant-request decision
+	// cards. Wrapped in a thin adapter so the vault package doesn't import
+	// internal/apps/cards directly (keeps the dep graph one-way).
+	vault.Configure(newVaultCardAdapter(cards.ServiceForGating()))
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)

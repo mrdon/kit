@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,11 @@ type Service struct {
 	// Redis/Postgres if Kit ever multi-hosts; sync.Map of token buckets
 	// is fine for v1.
 	rateLimit unlockLimiter
+
+	// cards is the vault's card-creation surface, populated via the
+	// package-level Configure func from main.go. nil-safe: cards just
+	// don't fire when the service isn't wired (e.g., in tests).
+	cards CardSurface
 }
 
 // NewService constructs a vault service backed by the given pool.
@@ -399,6 +405,7 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		return err
 	}
 
+	newFP := pubkeyFingerprint(p.UserPublicKey)
 	if p.Replace {
 		// Fingerprint diff for audit. Best-effort: missing prior key just
 		// elides the field.
@@ -408,16 +415,77 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		}
 		audit.log(ctx, "vault.master_password_reset", "vault_user", &c.UserID, EvtMasterPasswordReset{
 			OldPubKeyFingerprint: oldFP,
-			NewPubKeyFingerprint: pubkeyFingerprint(p.UserPublicKey),
+			NewPubKeyFingerprint: newFP,
 		})
 	} else {
 		audit.log(ctx, "vault.register", "vault_user", &c.UserID, EvtRegister{
 			Replace:           false,
 			IsTenantInitiator: isInitiator,
-			PubKeyFingerprint: pubkeyFingerprint(p.UserPublicKey),
+			PubKeyFingerprint: newFP,
 		})
 	}
+
+	// Fire an admin-targeted decision card unless this is the bootstrap
+	// initiator (who has self-granted; nobody else needs to act).
+	// Best-effort: card-creation failure does not roll back the registration.
+	if !isInitiator {
+		if err := s.fireGrantRequestCard(ctx, c, p.Replace, newFP); err != nil {
+			slog.Warn("vault: firing grant-request decision card failed", "error", err)
+		}
+	}
 	return nil
+}
+
+// fireGrantRequestCard creates an admin-scoped decision card asking a
+// teammate to grant (or re-grant after reset) vault access to the caller.
+// Body includes the fingerprint for out-of-band verification.
+func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Caller, isReset bool, fingerprint string) error {
+	if s.cards == nil {
+		return nil // cards surface not wired; no-op (e.g. tests)
+	}
+	title := "Grant vault access"
+	body := buildGrantCardBody(target, isReset, fingerprint)
+	if isReset {
+		title = "Re-grant vault access (password reset)"
+	}
+	return s.cards.CreateDecision(ctx, target, CardCreateInput{
+		Title:      title,
+		Body:       body,
+		RoleScopes: []string{"admin"},
+		Decision: &CardDecisionCreateInput{
+			Priority:            "high",
+			RecommendedOptionID: "open_grant_page",
+			Options: []CardDecisionOption{
+				{
+					OptionID: "open_grant_page",
+					Label:    "Review and grant",
+					// No tool — the option's body links the admin to
+					// /vault/grant/<user_id> via the card UI.
+				},
+				{
+					OptionID: "decline",
+					Label:    "Decline",
+				},
+			},
+		},
+	})
+}
+
+func buildGrantCardBody(target *services.Caller, isReset bool, fingerprint string) string {
+	var b strings.Builder
+	if isReset {
+		b.WriteString("**" + target.Identity + "** reset their vault password. ")
+		b.WriteString("Their public-key fingerprint has changed.\n\n")
+	} else {
+		b.WriteString("**" + target.Identity + "** registered for the vault and needs access.\n\n")
+	}
+	b.WriteString("Public-key fingerprint:\n\n")
+	b.WriteString("```\n")
+	b.WriteString(fingerprint)
+	b.WriteString("\n```\n\n")
+	b.WriteString("**Verify this fingerprint with them out-of-band** (e.g. ask them to read it back) before granting. ")
+	b.WriteString("Open the grant page to complete the action.")
+	return b.String()
 }
 
 // SelfUnlockTest flips pending=false after the browser has demonstrated the
