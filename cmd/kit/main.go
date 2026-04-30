@@ -25,6 +25,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/voting"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"
@@ -185,6 +186,10 @@ func main() {
 	// (for surfacing decision cards), and the TaskService (for shepherd
 	// tasks). Wired here because Messenger lives on app.
 	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Tasks)
+
+	// Voting only needs the CardService — the participant ask is the
+	// decision card itself, no Slack DMs go out.
+	voting.Configure(cards.ServiceForGating())
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)

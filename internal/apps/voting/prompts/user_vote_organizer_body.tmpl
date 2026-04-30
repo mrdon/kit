@@ -1,0 +1,12 @@
+**Proposal:** {{.ProposalText}}
+{{if .ContextNotes}}
+{{.ContextNotes}}
+{{end}}
+**Tally:** {{.Approve}} approve · {{.Object}} object · {{.Abstain}} abstain{{if gt .NoResponse 0}} · {{.NoResponse}} no response{{end}}
+
+**Responses:**
+{{range .Participants -}}
+- **{{.Name}}** — {{.Verdict}}{{if .Reason}}: {{.Reason}}{{end}}
+{{end}}
+
+Pick how to act: **Accept** or **Reject** records your decision silently. **Accept & share with team** or **Reject & announce** also drops a briefing card in each participant's feed (sanitized — verbatim reasons stay with you).

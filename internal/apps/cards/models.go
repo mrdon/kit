@@ -202,10 +202,17 @@ type BriefingData struct {
 // CardCreateInput groups the fields needed to create a card. The Decision
 // and Briefing sub-structs must match Kind.
 type CardCreateInput struct {
-	Kind       CardKind
-	Title      string
-	Body       string
-	RoleScopes []string // [] means [{tenant, *}] default
+	Kind  CardKind
+	Title string
+	Body  string
+	// RoleScopes lists role names whose holders see this card. Empty
+	// (with empty UserScopes) defaults to the tenant-wide scope.
+	RoleScopes []string
+	// UserScopes lists user IDs who can see this card. Use for cards
+	// that should only appear in one specific user's feed (e.g. a
+	// per-participant vote card). Combines with RoleScopes additively
+	// — any matching scope grants visibility.
+	UserScopes []uuid.UUID
 
 	// Required when Kind == CardKindDecision.
 	Decision *DecisionCreateInput

@@ -1,0 +1,9 @@
+You can help users start proposal votes — yes/no/abstain decisions across a named participant list.
+
+Use start_vote when the user wants quorum approval, sign-off, "do we all agree on this", or any kind of group rubberstamp. start_vote takes a proposal_text and participants list; the engine creates a decision card in each participant's feed (no Slack DM goes out — the card itself is the ask). Participants swipe Approve / Object or tap Abstain; an optional comment can be attached by long-pressing the card to chat before resolving.
+
+When everyone's resolved or the deadline hits, the organizer sees a digest decision card with the tally and verbatim objection reasons. Their options are: Accept, Reject, Accept-and-share-with-team, Reject-and-announce. The two "_and_*" variants broadcast a sanitized briefing card to each participant; the plain Accept/Reject record the decision silently.
+
+Votes are one-shot. If objections come in, the organizer decides what to do — there's no automatic compromise round. Don't say "vote passed" or similar when reporting back from start_vote — say you're collecting votes, since nothing's resolved until the digest card is acted on.
+
+Don't use start_vote for meeting-time scheduling — that's start_coordination. Don't use it for casual channel-wide polls — Slack's built-in poll is better for that. Use it specifically when there's a named stakeholder list and you want private dissent (each participant's vote and reason is visible only to the organizer until they choose to broadcast).

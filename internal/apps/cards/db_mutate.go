@@ -65,9 +65,10 @@ func updateCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID uuid
 		}
 	}
 
-	// Scope replacement.
+	// Scope replacement. CardUpdates only exposes RoleScopes today;
+	// extending to UserScopes would mirror the create-side change here.
 	if u.RoleScopes != nil {
-		if err := writeScopesTx(ctx, tx, tenantID, cardID, *u.RoleScopes); err != nil {
+		if err := writeScopesTx(ctx, tx, tenantID, cardID, *u.RoleScopes, nil); err != nil {
 			return nil, err
 		}
 	}

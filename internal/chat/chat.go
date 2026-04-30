@@ -203,7 +203,15 @@ func threadKey(card *shared.StackItem, userID uuid.UUID, clientSessionID string)
 	if card == nil {
 		return fmt.Sprintf("chat-quick-%s-%s", userID, clientSessionID)
 	}
-	return fmt.Sprintf("chat-%s-%s-%s-%s", card.SourceApp, card.Kind, card.ID, userID)
+	return CardThreadKey(card.SourceApp, card.Kind, card.ID, userID)
+}
+
+// CardThreadKey is the exported form of the card-chat thread key
+// builder. External packages (e.g. coordination's vote-card resolve
+// handler) need the same key when reading chat history for a (card,
+// user) pair.
+func CardThreadKey(sourceApp, kind, cardID string, userID uuid.UUID) string {
+	return fmt.Sprintf("chat-%s-%s-%s-%s", sourceApp, kind, cardID, userID)
 }
 
 // resolveSession looks up an existing chat session for this (card, user)
