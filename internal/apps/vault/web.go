@@ -1,7 +1,9 @@
 package vault
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -259,6 +261,73 @@ func (a *App) handleLock(w http.ResponseWriter, r *http.Request) {
 	// clear beyond the session cookie itself, which we leave intact
 	// (logging the user out of Kit is a separate flow).
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleMe returns the caller's vault_users metadata: kdf_params (so the
+// browser can derive auth_hash on a fresh device) plus state flags. Returns
+// 404 if the caller has no row yet (browser sends to /register).
+func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	v, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, caller.UserID)
+	if err != nil {
+		slog.Error("vault: GetVaultUser", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if v == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"kdf_params": v.KDFParams,
+		"pending":    v.Pending,
+		"granted":    v.WrappedVaultKey != nil,
+	})
+}
+
+// handleGetUser returns a teammate's pubkey + fingerprint for the grant page.
+// Caller must already have vault access (so they can wrap vault_key for the
+// target). Returns 404 if the target hasn't registered yet.
+func (a *App) handleGetUser(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	targetID, err := uuid.Parse(r.PathValue("user_id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Authz: caller must themselves be a granted vault member.
+	self, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, caller.UserID)
+	if err != nil || self == nil || self.WrappedVaultKey == nil {
+		http.Error(w, "vault access required", http.StatusForbidden)
+		return
+	}
+	target, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, targetID)
+	if err != nil {
+		slog.Error("vault: GetVaultUser target", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if target == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"public_key":  target.UserPublicKey,
+		"fingerprint": fingerprintHex(target.UserPublicKey),
+		"pending":     target.Pending,
+		"granted":     target.WrappedVaultKey != nil,
+		"reset":       target.ResetPendingUntil != nil,
+	})
+}
+
+// fingerprintHex mirrors the server-side pubkeyFingerprint helper but
+// callable from the web layer without circling through service.go.
+func fingerprintHex(pub []byte) string {
+	if len(pub) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:12])
 }
 
 // ===== entry CRUD =====

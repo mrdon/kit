@@ -27,6 +27,11 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("POST /{slug}/apps/vault/api/self_unlock_test", authed(a.handleSelfUnlockTest))
 	mux.Handle("POST /{slug}/apps/vault/api/unlock", authed(a.handleUnlock))
 	mux.Handle("POST /{slug}/apps/vault/lock", authed(a.handleLock))
+	// kdf_params + own-row metadata: lets the browser fetch its own salt
+	// on a fresh device so PBKDF2 can run before the unlock POST.
+	mux.Handle("GET /{slug}/apps/vault/api/me", authed(a.handleMe))
+	// Target user lookup for the grant page: pubkey + fingerprint.
+	mux.Handle("GET /{slug}/apps/vault/api/users/{user_id}", authed(a.handleGetUser))
 
 	// Capture
 	mux.Handle("GET /{slug}/apps/vault/add", authed(a.handleAddPage))
