@@ -93,24 +93,32 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("GET /{slug}/apps/vault/static/", static(a.handleStatic))
 }
 
-// requireJSON rejects non-JSON POSTs/PUTs/DELETEs. Identical behaviour to
-// cards.requireJSON — copied here so vault doesn't import a private
-// helper from another app.
+// requireJSON rejects state-changing requests that lack BOTH the
+// X-Kit-Vault header (custom-header CSRF defense) AND, for requests with
+// a body, application/json Content-Type. The combination guards against:
+//   - Cross-origin form POSTs (browsers force form-encoded, which fails
+//     the JSON check)
+//   - Cross-origin <img>/<script> GET-with-side-effects (none of our
+//     routes use GET to mutate)
+//   - Anything that can't set custom headers without a CORS preflight
+//     (custom headers are forbidden by simple-request rules; preflight
+//     fails because we don't allow other origins)
 func requireJSON(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost, http.MethodPut, http.MethodDelete:
-			ct := r.Header.Get("Content-Type")
-			// DELETE may have no body; in that case enforce only the
-			// custom CSRF header.
-			if r.Method == http.MethodDelete && r.ContentLength == 0 {
-				if r.Header.Get(csrfHeader) != "1" {
-					http.Error(w, "missing "+csrfHeader+" header", http.StatusUnsupportedMediaType)
+			if r.Header.Get(csrfHeader) != "1" {
+				http.Error(w, "missing "+csrfHeader+" header", http.StatusUnsupportedMediaType)
+				return
+			}
+			// Bodyless DELETE doesn't need a content type; everything
+			// else must be JSON.
+			if r.Method != http.MethodDelete || r.ContentLength != 0 {
+				ct := r.Header.Get("Content-Type")
+				if !strings.HasPrefix(ct, "application/json") {
+					http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 					return
 				}
-			} else if !strings.HasPrefix(ct, "application/json") {
-				http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-				return
 			}
 		}
 		next.ServeHTTP(w, r)

@@ -4,12 +4,16 @@
 // Threat model: all vault tabs from the same origin connect to this same
 // SharedWorker instance. The CryptoKey lives in the worker's scope only;
 // the page interacts via postMessage and the protocol exposes encrypt /
-// decrypt / wrap but **no export-raw operation**. An XSS that lands on a
-// vault page can ask the worker to encrypt / decrypt / wrap (the same
-// operations the legitimate page does), but cannot exfiltrate the raw key
-// bytes. That's the defense; `extractable=false` would be belt-and-
-// suspenders but breaks the wrapKey flow needed at grant time, so we
-// rely on the worker boundary.
+// decrypt / wrap but **no export-raw operation**. The worker also
+// **does not trust the page** for security-sensitive inputs:
+//
+//   - `wrap_for` takes only a target user_id; the worker fetches the
+//     target's pubkey *itself* via the same-origin API. This blocks the
+//     XSS-supplies-attacker-pubkey attack — even an XSS that hijacks
+//     `window.fetch` can't intercept the worker's own fetch context.
+//   - `set_key` is one-shot per worker instance: subsequent calls fail
+//     until an explicit `lock` clears the captive key. This blocks the
+//     chosen-key-oracle attack where XSS swaps the key mid-session.
 //
 // Cross-tab sync uses BroadcastChannel('kit-vault-lock'):
 //   - 'unlocked' when a tab successfully unlocks (other tabs ask the
@@ -77,7 +81,12 @@ async function handle(port, msg) {
         break;
       }
       case "wrap_for": {
-        const out = await wrapForRecipient(msg.rsaSpki);
+        // Page passes only the target user_id. Worker fetches the
+        // target's pubkey itself so an XSS-controlled page can't swap
+        // in an attacker-controlled key. msg.apiBase is allowed only
+        // because it varies by tenant slug; we sanity-check it
+        // matches the worker's own origin.
+        const out = await wrapForRecipient(msg.targetUserID, msg.apiBase);
         port.postMessage({ id: msg.id, ok: true, result: out });
         break;
       }
@@ -94,6 +103,13 @@ async function handle(port, msg) {
 }
 
 async function setKey(rawKey) {
+  // One-shot per worker lifetime. An attacker who lands on the page
+  // could otherwise call set_key with their own AES key after the
+  // legitimate unlock, turning subsequent encrypts into a chosen-key
+  // oracle. Refuse the swap; the page must call `lock` first.
+  if (STATE.vaultKey !== null) {
+    throw new Error("vault already unlocked; call lock first to re-key");
+  }
   // Extractable inside the worker so we can wrapKey at grant time. The
   // protocol does not expose any "export raw" message — extractability
   // is irrelevant outside the worker.
@@ -135,11 +151,39 @@ async function decrypt(ciphertext, nonce) {
   }
 }
 
-async function wrapForRecipient(rsaSpki) {
+async function wrapForRecipient(targetUserID, apiBase) {
   if (!STATE.vaultKey) throw new Error("vault locked");
+  if (typeof targetUserID !== "string" || targetUserID === "") {
+    throw new Error("target user id required");
+  }
+  if (typeof apiBase !== "string" || !apiBase.startsWith("/")) {
+    throw new Error("api base required");
+  }
+  // Sanity-check apiBase shape: tenant-prefixed relative path that ends
+  // with /apps/vault/api. Reject anything else so a hijacked page can't
+  // point us at attacker-controlled fetches.
+  if (!/^\/[A-Za-z0-9_-]+\/apps\/vault\/api$/.test(apiBase)) {
+    throw new Error("api base shape invalid");
+  }
+  // URL-encode the target id segment to defuse path-injection.
+  const url = `${apiBase}/users/${encodeURIComponent(targetUserID)}`;
   STATE.inFlight++;
   STATE.lastActivity = Date.now();
   try {
+    // Worker's own fetch — independent of any page-side fetch hooking.
+    // The session cookie rides along automatically (same-origin).
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: { "X-Kit-Vault": "1" },
+    });
+    if (!resp.ok) {
+      throw new Error(`fetch target user: HTTP ${resp.status}`);
+    }
+    const target = await resp.json();
+    if (!target || typeof target.public_key !== "string") {
+      throw new Error("target user has no public key");
+    }
+    const rsaSpki = b64ToBytes(target.public_key);
     const recipient = await crypto.subtle.importKey(
       "spki",
       rsaSpki,
@@ -152,6 +196,15 @@ async function wrapForRecipient(rsaSpki) {
   } finally {
     STATE.inFlight--;
   }
+}
+
+// b64ToBytes — local copy so the worker doesn't share code with the
+// page. Same implementation as vault.js.
+function b64ToBytes(s) {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 async function lockNow() {

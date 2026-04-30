@@ -18,6 +18,7 @@ import (
 
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 )
 
 //go:embed templates/*.html
@@ -492,10 +493,6 @@ func (a *App) handleGrant(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
-	if !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
 	targetID, err := uuid.Parse(r.PathValue("user_id"))
 	if err != nil {
 		http.Error(w, "bad user id", http.StatusBadRequest)
@@ -503,6 +500,10 @@ func (a *App) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
 	if err := a.svc.RevokeGrant(r.Context(), caller, targetID, audit); err != nil {
+		if errors.Is(err, services.ErrForbidden) {
+			http.Error(w, "admin only", http.StatusForbidden)
+			return
+		}
 		slog.Error("vault: revoke grant", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

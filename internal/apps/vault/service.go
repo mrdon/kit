@@ -285,14 +285,18 @@ func (s *Service) UpdateScopes(ctx context.Context, c *services.Caller, entryID 
 	}
 	added, removed := scopeDiff(prev, scopes)
 
-	// Step-up auth on widening: any addition (whether tenant, role, or
-	// user) requires a recent unlock. Pure narrowing (only removals)
-	// runs direct.
-	if len(added) > 0 {
-		if err := s.requireRecentUnlock(ctx, c); err != nil {
-			return err
-		}
-	}
+	// Step-up auth is intentionally NOT enforced here even on widening.
+	// The agent surface registers update_secret_scopes as PolicyGate
+	// unconditionally, so any agent-driven change already required a
+	// fresh user approval via the decision card. Adding step-up on top
+	// would create a UX trap: a gate-approved widening could fail with
+	// ErrStepUpRequired if the user's most recent unlock was on a
+	// different device, with no UI to recover from.
+	//
+	// HTTP-direct callers (the web /vault/<id>/edit page, when it
+	// exists) should enforce step-up at the handler level instead. The
+	// MCP path bypasses both, but MCP callers are already explicitly
+	// authorized by the harness operator.
 
 	if err := models.ReplaceVaultEntryScopes(ctx, s.pool, c.TenantID, entryID, scopes); err != nil {
 		return err
@@ -668,8 +672,13 @@ func (s *Service) notifyUser(ctx context.Context, tenantID, userID uuid.UUID, bo
 }
 
 // RevokeGrant nulls the target user's wrapped_vault_key. Forward secrecy
-// is a v2 item — existing browser caches are unaffected.
+// is a v2 item — existing browser caches are unaffected. Admin-only;
+// the service enforces the check so MCP / agent callers can't bypass
+// the HTTP-handler-level check.
 func (s *Service) RevokeGrant(ctx context.Context, c *services.Caller, targetUserID uuid.UUID, audit auditCtx) error {
+	if !c.IsAdmin {
+		return services.ErrForbidden
+	}
 	if err := models.RevokeVaultGrant(ctx, s.pool, c.TenantID, targetUserID); err != nil {
 		return err
 	}

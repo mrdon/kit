@@ -212,4 +212,58 @@ func TestPubkeyFingerprintStable(t *testing.T) {
 	if a != b || a == "" {
 		t.Fatalf("fingerprint should be stable + non-empty: a=%q b=%q", a, b)
 	}
+	// Signal-style: 6 groups of 4 hex chars, 5 separator spaces = 29 chars.
+	if len(a) != 29 {
+		t.Errorf("fingerprint should be 29 chars, got %d (%q)", len(a), a)
+	}
+}
+
+// TestRevokeGrantRequiresAdmin asserts that the service-level admin check
+// blocks non-admin RevokeGrant calls regardless of HTTP-handler logic.
+// Catches the case where an MCP path or test bypasses the HTTP layer.
+func TestRevokeGrantRequiresAdmin(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+
+	nonAdmin := &services.Caller{TenantID: tenantID, UserID: userID, IsAdmin: false}
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	err := svc.RevokeGrant(ctx, nonAdmin, uuid.New(), svc.AuditFromRequest(nonAdmin, r))
+	if !errors.Is(err, services.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for non-admin, got %v", err)
+	}
+}
+
+// TestStepUpRequiredOnGrantWithoutRecentUnlock asserts Grant rejects
+// callers who haven't unlocked recently. The plan calls for a 5-min
+// window; this exercises the no-prior-unlock path.
+func TestStepUpRequiredOnGrantWithoutRecentUnlock(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+	c := adminCaller(tenantID, userID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	err := svc.Grant(ctx, c, GrantParams{
+		TargetUserID:    uuid.New(),
+		WrappedVaultKey: []byte("wrapped"),
+	}, svc.AuditFromRequest(c, r))
+	if !errors.Is(err, ErrStepUpRequired) {
+		t.Fatalf("expected ErrStepUpRequired, got %v", err)
+	}
+}
+
+// TestValidateScopesRejectsDuplicates exercises the dedup check added
+// in service.go alongside scopeKey/scopeDiff.
+func TestValidateScopesRejectsDuplicates(t *testing.T) {
+	uid := uuid.New()
+	scopes := []models.VaultEntryScope{
+		{ScopeKind: "user", ScopeID: &uid},
+		{ScopeKind: "user", ScopeID: &uid},
+	}
+	if err := validateScopes(scopes); err == nil {
+		t.Fatal("expected duplicate scope rejection")
+	}
 }

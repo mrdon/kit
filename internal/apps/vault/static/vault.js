@@ -143,12 +143,16 @@ async function rsaUnwrapAesKey(rsaPrivKey, wrapped) {
 // ===== fetch + base64 =====
 
 async function api(method, path, body) {
+  // X-Kit-Vault on every state-changing request; Content-Type only when
+  // there's a body. Server enforces both as the CSRF gate.
+  const headers = {};
+  if (method !== "GET") headers["X-Kit-Vault"] = "1";
+  if (body) headers["Content-Type"] = "application/json";
+
   const res = await fetch(`${VAULT.apiBase}${path}`, {
     method,
     credentials: "same-origin",
-    headers: body
-      ? { "Content-Type": "application/json", "X-Kit-Vault": "1" }
-      : (method === "DELETE" ? { "X-Kit-Vault": "1" } : {}),
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -261,25 +265,26 @@ lockChannel.onmessage = (ev) => {
 };
 
 function onLockedExternally() {
-  // Worker locked (idle, manual, or from another tab). Wipe UI state and
-  // hide reveal areas; do not reload, so the user can re-enter password.
+  // Worker locked (idle, manual, or from another tab). Wipe UI state +
+  // IDB material so an XSS post-lock can't drain the wrapped private
+  // key + auth_hash for offline brute-force. Re-unlock will re-fetch
+  // the wrapped material from /api/me.
   hideSection("reveal-area");
   hideSection("add-form");
   hideSection("grant-area");
   showSection("unlock-prompt");
+  // Best-effort IDB wipe; ignore errors so a broken IDB doesn't block
+  // the UX clear.
+  dbWipe().catch(() => {});
   setStatus("Vault locked.", "");
 }
 
 async function lockNow() {
   try { await workerCall("lock"); } catch {}
-  // Don't wipe IndexedDB on a soft lock — the wrapped keys are useless
-  // without the master password and the user will want to re-unlock.
-  // wipeAllVaultState() is the explicit hard-wipe path.
-}
-
-async function wipeAllVaultState() {
-  try { await workerCall("lock"); } catch {}
-  await dbWipe();
+  // Lock = full wipe. Plan §"Lock / wipe" specifies IndexedDB cache
+  // wiped on every lock event; the marginal cost is one extra GET /me
+  // round-trip on next unlock, which is fine.
+  try { await dbWipe(); } catch {}
 }
 
 // ===== page-side lock hooks =====
@@ -446,7 +451,28 @@ async function wireRegister() {
       }
     }
 
-    // Self-unlock canary so the server flips pending=false.
+    // Real self-unlock canary: re-decrypt the wrapped private key using
+    // enc_key and round-trip a small plaintext through AES-GCM. If any
+    // part fails (corrupt ciphertext, wrong key, etc.) we abort *before*
+    // POSTing /self_unlock_test, so the server keeps pending=true and
+    // the user can re-register without a 24h reset cooldown.
+    {
+      const reReadPriv = await aesGcmDecrypt(encKey, wrappedPriv.ciphertext, wrappedPriv.nonce);
+      const reImported = await importPkcs8(reReadPriv);
+      if (wrappedVaultKey) {
+        // Bootstrap admin: the unwrap path is RSA-OAEP(wrapped, priv).
+        const unwrapped = await rsaUnwrapAesKey(reImported, wrappedVaultKey);
+        if (unwrapped.length !== 32) throw new Error("vault key length wrong");
+      }
+      // AES round-trip: encrypt + decrypt a known canary using enc_key.
+      const canary = new TextEncoder().encode("kit-vault-canary");
+      const encCanary = await aesGcmEncrypt(encKey, canary);
+      const decCanary = await aesGcmDecrypt(encKey, encCanary.ciphertext, encCanary.nonce);
+      if (new TextDecoder().decode(decCanary) !== "kit-vault-canary") {
+        throw new Error("canary round-trip mismatch");
+      }
+    }
+    // Server flips pending=false only after this final auth_hash check.
     await api("POST", "/self_unlock_test", { auth_hash: bytesField(authHash) });
 
     // Persist for next-device unlock (only the bootstrap admin has a
@@ -573,7 +599,12 @@ async function wireGrant() {
 
   document.getElementById("grant-button").addEventListener("click", async () => {
     setStatus("Wrapping vault key for target…");
-    const wrapped = await workerCall("wrap_for", { rsaSpki: b64ToBytes(target.public_key) });
+    // Pass only the target user id; the worker fetches the pubkey
+    // itself so an XSS on this page can't swap in an attacker key.
+    const wrapped = await workerCall("wrap_for", {
+      targetUserID: VAULT.targetUserId,
+      apiBase: VAULT.apiBase,
+    });
     await api("POST", `/grants/${VAULT.targetUserId}`, {
       wrapped_vault_key: bytesField(new Uint8Array(wrapped)),
     });
