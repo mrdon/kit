@@ -96,7 +96,7 @@ func (s *Service) StartVote(ctx context.Context, c *services.Caller, in StartVot
 			VoteID:     v.ID,
 			Identifier: slackID,
 		}
-		if u := ensureKitUser(ctx, s.pool, c.TenantID, slackID); u != nil {
+		if u, err := models.EnsureUserBySlackID(ctx, s.pool, c.TenantID, slackID); err == nil && u != nil {
 			p.UserID = &u.ID
 		}
 		if err := CreateParticipant(ctx, s.pool, p); err != nil {
@@ -166,18 +166,4 @@ func (s *Service) GetStatus(ctx context.Context, c *services.Caller, voteID uuid
 // ListForCaller returns recent votes the caller organized.
 func (s *Service) ListForCaller(ctx context.Context, c *services.Caller, limit int) ([]Vote, error) {
 	return listVotesForCaller(ctx, s.pool, c.TenantID, c.UserID, limit)
-}
-
-// ensureKitUser is voting's lightweight equivalent of coordination's
-// ensureParticipantUser. Voting doesn't fetch Slack profiles on
-// demand — display names fill in next time the participant DMs Kit.
-func ensureKitUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackID string) *models.User {
-	if u, err := models.GetUserBySlackID(ctx, pool, tenantID, slackID); err == nil && u != nil {
-		return u
-	}
-	u, err := models.GetOrCreateUser(ctx, pool, tenantID, slackID, "", "")
-	if err != nil {
-		return nil
-	}
-	return u
 }

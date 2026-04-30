@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/stdlib"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/redis/go-redis/v9"
@@ -33,6 +34,7 @@ import (
 	"github.com/mrdon/kit/internal/database"
 	"github.com/mrdon/kit/internal/logger"
 	kitmcp "github.com/mrdon/kit/internal/mcp"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
@@ -101,6 +103,28 @@ func main() {
 
 	// Shared services bundle, reused by the MCP server below.
 	svc := services.New(pool, enc)
+
+	// Lazy user-profile enrichment. models.GetUserByID /
+	// GetUserBySlackID / EnsureUserBySlackID call this enricher when a
+	// user row has empty display_name or timezone — once per user
+	// lifetime, persisted on success. Without it, participants added by
+	// start_vote/start_coordination who haven't DM'd Kit themselves
+	// would surface as raw Slack IDs in cards and digests.
+	models.RegisterUserEnricher(func(ctx context.Context, tenantID uuid.UUID, slackUserID string) (string, string, bool) {
+		tenant, err := models.GetTenantByID(ctx, pool, tenantID)
+		if err != nil || tenant == nil {
+			return "", "", false
+		}
+		botToken, err := enc.Decrypt(tenant.BotToken)
+		if err != nil {
+			return "", "", false
+		}
+		info, err := kitslack.NewClient(botToken).GetUserInfo(ctx, slackUserID)
+		if err != nil {
+			return "", "", false
+		}
+		return info.DisplayName, info.Timezone, true
+	})
 	// Anthropic client for the builder LLM builtins. internal.NewApp
 	// constructs its own client for the Slack agent; sharing isn't
 	// worthwhile since the client is a stateless HTTP wrapper.

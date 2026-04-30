@@ -25,6 +25,75 @@ type User struct {
 	CreatedAt   time.Time
 }
 
+// UserEnricher resolves missing profile fields (display_name, timezone)
+// from an external source — typically Slack via the bot token. Returns
+// ("", "", false) on any failure so callers fall back to the
+// unenriched row without erroring.
+//
+// Wired once at startup via RegisterUserEnricher. The package-level
+// hook keeps GetUserByID/GetUserBySlackID free of slack-client deps
+// while still letting them lazily hydrate users that were created as
+// skeletons (e.g. participants added by start_vote / start_coordination
+// who haven't DM'd Kit themselves).
+type UserEnricher func(ctx context.Context, tenantID uuid.UUID, slackUserID string) (displayName, timezone string, ok bool)
+
+var userEnricher UserEnricher
+
+// RegisterUserEnricher installs the user-profile enrichment hook.
+// Call once at startup — subsequent calls overwrite. Pass nil to
+// disable (useful for tests).
+func RegisterUserEnricher(e UserEnricher) {
+	userEnricher = e
+}
+
+// hydrateUser checks if u has empty DisplayName or Timezone and, if
+// so, asks the registered enricher and persists what comes back.
+// Best-effort: failures return u unchanged. After this runs once per
+// missing field, subsequent reads see the populated values and skip
+// enrichment entirely — so this is "fetch from Slack once ever per
+// user", not "every request."
+func hydrateUser(ctx context.Context, pool *pgxpool.Pool, u *User) *User {
+	if u == nil || userEnricher == nil {
+		return u
+	}
+	needName := u.DisplayName == nil || *u.DisplayName == ""
+	needTZ := u.Timezone == ""
+	if !needName && !needTZ {
+		return u
+	}
+	name, tz, ok := userEnricher(ctx, u.TenantID, u.SlackUserID)
+	if !ok {
+		return u
+	}
+	if !needName {
+		name = ""
+	}
+	if !needTZ {
+		tz = ""
+	}
+	if name == "" && tz == "" {
+		return u
+	}
+	// Only fill in the empty columns. COALESCE leaves a non-null
+	// display_name alone; the CASE keeps a non-empty timezone.
+	if _, err := pool.Exec(ctx, `
+		UPDATE users SET
+		    display_name = COALESCE(display_name, $3),
+		    timezone = CASE WHEN timezone = '' THEN $4 ELSE timezone END
+		WHERE tenant_id = $1 AND id = $2
+	`, u.TenantID, u.ID, nilIfEmpty(name), tz); err != nil {
+		return u
+	}
+	if name != "" {
+		n := name
+		u.DisplayName = &n
+	}
+	if tz != "" {
+		u.Timezone = tz
+	}
+	return u
+}
+
 // GetOrCreateUser finds a user by tenant + slack_user_id, creating if needed.
 //
 // timezone is the IANA TZ from Slack (users.info.tz). It populates the
@@ -53,7 +122,12 @@ func GetOrCreateUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	return user, nil
 }
 
-// GetUserBySlackID finds a user by tenant + slack_user_id.
+// GetUserBySlackID finds a user by tenant + slack_user_id. Returns
+// nil-nil when no row exists (callers who want auto-create should use
+// EnsureUserBySlackID instead — auth/messenger paths legitimately
+// distinguish "user not registered" from "user with empty fields"). If
+// a row is found with empty display_name or timezone, hydrates them
+// from Slack via the registered enricher (best-effort, persisted).
 func GetUserBySlackID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string) (*User, error) {
 	user := &User{}
 	err := pool.QueryRow(ctx, `
@@ -69,10 +143,12 @@ func GetUserBySlackID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUI
 	if err != nil {
 		return nil, fmt.Errorf("getting user: %w", err)
 	}
-	return user, nil
+	return hydrateUser(ctx, pool, user), nil
 }
 
-// GetUserByID finds a user by tenant + user ID.
+// GetUserByID finds a user by tenant + user ID. Hydrates display_name
+// + timezone from Slack via the registered enricher if either is
+// empty (best-effort, persisted).
 func GetUserByID(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) (*User, error) {
 	user := &User{}
 	err := pool.QueryRow(ctx, `
@@ -88,7 +164,30 @@ func GetUserByID(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.
 	if err != nil {
 		return nil, fmt.Errorf("getting user by id: %w", err)
 	}
-	return user, nil
+	return hydrateUser(ctx, pool, user), nil
+}
+
+// EnsureUserBySlackID is the canonical "give me a populated user for
+// this Slack ID" entry point. It:
+//   - Creates a skeleton row if none exists (idempotent via the unique
+//     index on tenant_id + slack_user_id)
+//   - Hydrates display_name and timezone from Slack via the registered
+//     enricher if either is empty (one fetch per missing field, ever —
+//     subsequent calls see populated columns and short-circuit)
+//   - Returns a User you can use without nil-checks on display name
+//     (still fall back gracefully if Slack was unreachable, but the
+//     fields will fill in next call)
+//
+// Use this from any path that adds a user to Kit's world based on a
+// Slack ID (vote participants, coordination invites, role assignments).
+// Auth and messenger paths that want to detect "not registered" should
+// keep using GetUserBySlackID (read-only, returns nil-nil if absent).
+func EnsureUserBySlackID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string) (*User, error) {
+	u, err := GetOrCreateUser(ctx, pool, tenantID, slackUserID, "", "")
+	if err != nil {
+		return nil, err
+	}
+	return hydrateUser(ctx, pool, u), nil
 }
 
 // SearchUsers finds users matching a query within a tenant.

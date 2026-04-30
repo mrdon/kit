@@ -381,7 +381,11 @@ func (a *VotingApp) buildOrganizerBody(ctx context.Context, v *Vote, parts []Par
 	}
 	views := make([]partView, 0, len(parts))
 	for _, p := range parts {
-		name := p.Identifier
+		// Never surface a raw Slack ID to the organizer's digest. The
+		// hydration baked into models.GetUserByID populates display
+		// names lazily; if that fails (Slack unreachable, etc.) fall
+		// back to a generic label rather than dumping U0B0H2SEYTC.
+		name := "(unknown participant)"
 		if p.UserID != nil {
 			if u, err := models.GetUserByID(ctx, a.pool, v.TenantID, *p.UserID); err == nil && u != nil && u.DisplayName != nil && *u.DisplayName != "" {
 				name = *u.DisplayName
