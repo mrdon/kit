@@ -25,6 +25,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/todo"
+	_ "github.com/mrdon/kit/internal/apps/vault"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"

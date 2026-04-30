@@ -1,0 +1,36 @@
+{{ define "grant.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="grant" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}" data-target-user-id="{{ .TargetUserID }}">
+<h1>Grant vault access</h1>
+<noscript>This page requires JavaScript.</noscript>
+<section id="unlock-prompt" hidden>
+  <h2>Unlock your vault first</h2>
+  <form id="unlock-form" autocomplete="off">
+    <label>Master password
+      <input type="password" name="master_password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Unlock</button>
+    <p id="unlock-status" role="status"></p>
+  </form>
+</section>
+<section id="grant-area" hidden>
+  <p>You are about to grant <strong id="target-name"></strong> access to the workspace vault.</p>
+  <p>Their public-key fingerprint is:</p>
+  <pre id="target-fingerprint" class="fingerprint"></pre>
+  <p class="warn"><strong>Verify this fingerprint with them out-of-band</strong> (e.g. ask them to read it back to you over a separate channel) before granting. The server cannot verify it for you.</p>
+  <p id="reset-banner" hidden class="warn">⚠ This user's keys changed since their last grant (master-password reset). Confirm with them out-of-band before re-granting.</p>
+  <button type="button" id="grant-button">Grant access</button>
+  <button type="button" id="decline-button">Decline</button>
+  <p id="status" role="status"></p>
+</section>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}

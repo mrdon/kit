@@ -1,0 +1,48 @@
+{{ define "add.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="add" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+<h1>Add a secret</h1>
+<noscript>This page requires JavaScript.</noscript>
+<section id="unlock-prompt" hidden>
+  <h2>Unlock your vault first</h2>
+  <form id="unlock-form" autocomplete="off">
+    <label>Master password
+      <input type="password" name="master_password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Unlock</button>
+    <p id="unlock-status" role="status"></p>
+  </form>
+</section>
+<form id="add-form" autocomplete="off" hidden>
+  <label>Title
+    <input type="text" name="title" required>
+  </label>
+  <label>Username
+    <input type="text" name="username" autocomplete="off">
+  </label>
+  <label>URL
+    <input type="url" name="url" autocomplete="off">
+  </label>
+  <label>Password
+    <input type="password" name="password" autocomplete="new-password" required>
+  </label>
+  <label>Notes
+    <textarea name="notes" rows="3"></textarea>
+  </label>
+  <label>Tags (comma-separated)
+    <input type="text" name="tags" autocomplete="off">
+  </label>
+  <button type="submit">Save</button>
+  <p id="status" role="status"></p>
+</form>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}
