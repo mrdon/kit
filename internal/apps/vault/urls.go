@@ -4,72 +4,125 @@ package vault
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/mrdon/kit/internal/auth"
 )
 
-// registerVaultRoutes wires all /{slug}/apps/vault/... routes onto the mux,
-// each gated by the session-cookie middleware (Slack OAuth-backed).
+// csrfHeader is the custom request header every state-changing vault
+// route requires. SameSite=Strict on the session cookie blocks most
+// cross-origin attacks; the header is belt-and-suspenders against any
+// flaw that lets a CORS preflight slip through.
+const csrfHeader = "X-Kit-Vault"
+
+// registerVaultRoutes wires all /{slug}/apps/vault/... routes onto the
+// mux. Each route runs through the same middleware chain as the cards
+// stack:
+//
+//	tenantMW (resolves slug → tenant)
+//	→ requireJSON or requireCSRFHeader (CSRF defense)
+//	→ signer.Middleware (resolves session cookie → Caller)
+//	→ AssertTenantMatch (rejects if cookie tenant ≠ path tenant)
+//	→ requireCaller (refuses if no Caller landed in ctx)
+//	→ handler
+//
+// HTML page routes (GET /vault/register etc.) skip the JSON / CSRF gate
+// since they're plain navigations.
 func registerVaultRoutes(mux *http.ServeMux, a *App) {
-	// All routes require an authenticated caller resolved from the
-	// session cookie + the tenant slug from the path. The session
-	// middleware is provided to RegisterRoutes wiring at startup; for
-	// now we use TenantFromPath + a thin auth-required wrapper that
-	// delegates session resolution to the existing helpers.
+	if a.signer == nil {
+		// Without a signer we can't authenticate anything; refuse to
+		// register routes so 404 is the user-visible behaviour rather
+		// than a permissive "no caller" 401 leak.
+		return
+	}
+
 	tenantMW := auth.TenantFromPath(a.pool)
-	authed := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(authRequired(http.HandlerFunc(h)))
+
+	// HTML pages: tenant + session, but no JSON / CSRF gate.
+	page := func(h http.HandlerFunc) http.Handler {
+		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
+	}
+
+	// JSON state-changing API: tenant + JSON content-type + session.
+	wrap := func(h http.HandlerFunc) http.Handler {
+		return tenantMW(requireJSON(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
+	}
+
+	// JSON GET API: tenant + session, no JSON gate (GETs have no body).
+	get := func(h http.HandlerFunc) http.Handler {
+		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
+	}
+
+	// Static asset GET: tenant + session (so we don't serve to anonymous
+	// browsers; refusing to leak our app shell unauthenticated).
+	static := func(h http.HandlerFunc) http.Handler {
+		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
 	}
 
 	// Register / unlock / lock
-	mux.Handle("GET /{slug}/apps/vault/register", authed(a.handleRegisterPage))
-	mux.Handle("POST /{slug}/apps/vault/api/register", authed(a.handleRegisterPost))
-	mux.Handle("POST /{slug}/apps/vault/api/self_unlock_test", authed(a.handleSelfUnlockTest))
-	mux.Handle("POST /{slug}/apps/vault/api/unlock", authed(a.handleUnlock))
-	mux.Handle("POST /{slug}/apps/vault/lock", authed(a.handleLock))
-	// kdf_params + own-row metadata: lets the browser fetch its own salt
-	// on a fresh device so PBKDF2 can run before the unlock POST.
-	mux.Handle("GET /{slug}/apps/vault/api/me", authed(a.handleMe))
-	// Target user lookup for the grant page: pubkey + fingerprint.
-	mux.Handle("GET /{slug}/apps/vault/api/users/{user_id}", authed(a.handleGetUser))
+	mux.Handle("GET /{slug}/apps/vault/register", page(a.handleRegisterPage))
+	mux.Handle("POST /{slug}/apps/vault/api/register", wrap(a.handleRegisterPost))
+	mux.Handle("POST /{slug}/apps/vault/api/self_unlock_test", wrap(a.handleSelfUnlockTest))
+	mux.Handle("POST /{slug}/apps/vault/api/unlock", wrap(a.handleUnlock))
+	mux.Handle("POST /{slug}/apps/vault/lock", wrap(a.handleLock))
+	mux.Handle("GET /{slug}/apps/vault/api/me", get(a.handleMe))
+	mux.Handle("GET /{slug}/apps/vault/api/users/{user_id}", get(a.handleGetUser))
 
 	// Capture
-	mux.Handle("GET /{slug}/apps/vault/add", authed(a.handleAddPage))
+	mux.Handle("GET /{slug}/apps/vault/add", page(a.handleAddPage))
 
 	// Reveal
-	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", authed(a.handleRevealPage))
+	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", page(a.handleRevealPage))
 
 	// Entries CRUD (browser-driven; ciphertext on the wire)
-	mux.Handle("GET /{slug}/apps/vault/api/entries", authed(a.handleListEntries))
-	mux.Handle("POST /{slug}/apps/vault/api/entries", authed(a.handleCreateEntry))
-	mux.Handle("GET /{slug}/apps/vault/api/entries/{entry_id}", authed(a.handleGetEntry))
-	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}", authed(a.handleUpdateEntry))
-	mux.Handle("DELETE /{slug}/apps/vault/api/entries/{entry_id}", authed(a.handleDeleteEntry))
+	mux.Handle("GET /{slug}/apps/vault/api/entries", get(a.handleListEntries))
+	mux.Handle("POST /{slug}/apps/vault/api/entries", wrap(a.handleCreateEntry))
+	mux.Handle("GET /{slug}/apps/vault/api/entries/{entry_id}", get(a.handleGetEntry))
+	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleUpdateEntry))
+	mux.Handle("DELETE /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleDeleteEntry))
 
 	// Grants
-	mux.Handle("GET /{slug}/apps/vault/grant/{user_id}", authed(a.handleGrantPage))
-	mux.Handle("POST /{slug}/apps/vault/api/grants/{user_id}", authed(a.handleGrant))
-	mux.Handle("DELETE /{slug}/apps/vault/api/grants/{user_id}", authed(a.handleRevokeGrant))
+	mux.Handle("GET /{slug}/apps/vault/grant/{user_id}", page(a.handleGrantPage))
+	mux.Handle("POST /{slug}/apps/vault/api/grants/{user_id}", wrap(a.handleGrant))
+	mux.Handle("DELETE /{slug}/apps/vault/api/grants/{user_id}", wrap(a.handleRevokeGrant))
 
-	// Static + the SharedWorker JS module
-	mux.Handle("GET /{slug}/apps/vault/static/", authed(a.handleStatic))
+	// Static
+	mux.Handle("GET /{slug}/apps/vault/static/", static(a.handleStatic))
 }
 
-// authRequired enforces that a Caller has been injected by an upstream
-// session/bearer middleware. Used to keep handlers from accidentally
-// running unauthenticated. This is a stop-gap — wired later when the
-// session signer is in scope at startup; for v1 it's a no-op pass-through
-// and the handler-level auth.CallerFromContext check is the single point
-// of enforcement.
-func authRequired(next http.Handler) http.Handler {
+// requireJSON rejects non-JSON POSTs/PUTs/DELETEs. Identical behaviour to
+// cards.requireJSON — copied here so vault doesn't import a private
+// helper from another app.
+func requireJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodDelete:
+			ct := r.Header.Get("Content-Type")
+			// DELETE may have no body; in that case enforce only the
+			// custom CSRF header.
+			if r.Method == http.MethodDelete && r.ContentLength == 0 {
+				if r.Header.Get(csrfHeader) != "1" {
+					http.Error(w, "missing "+csrfHeader+" header", http.StatusUnsupportedMediaType)
+					return
+				}
+			} else if !strings.HasPrefix(ct, "application/json") {
+				http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireCallerHandler refuses requests where the upstream session
+// middleware didn't land a Caller in ctx. Defence against ordering bugs
+// in the chain.
+func requireCallerHandler(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth.CallerFromContext(r.Context()) == nil {
-			// Bearer-only path will set this; session middleware is
-			// applied at the mux layer in cmd/kit/main.go (separate
-			// concern). If neither has run, refuse.
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		h(w, r)
 	})
 }

@@ -9,6 +9,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -32,9 +33,10 @@ func init() {
 //   - Decision cards for tenant admins on grant requests / password resets.
 //   - Briefings for the user being acted on (security tripwires).
 type App struct {
-	pool  *pgxpool.Pool
-	svc   *Service
-	cards CardSurface
+	pool   *pgxpool.Pool
+	svc    *Service
+	cards  CardSurface
+	signer *auth.SessionSigner
 }
 
 // CardSurface is the small slice of CardService the vault needs. Declared
@@ -73,14 +75,17 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.svc = NewService(pool)
 }
 
-// Configure wires the card-creation surface so register / reset flows can
-// emit admin-targeted decision cards. Safe to omit in tests; vault still
-// works without it (cards just don't fire).
-func Configure(cards CardSurface) {
+// Configure wires the card-creation surface (so register / reset flows
+// emit admin-targeted decision cards) and the session signer (so HTTP
+// routes get a Caller injected from the Slack-OAuth cookie). Safe to omit
+// either; vault still works without cards (just doesn't fire) and refuses
+// HTTP requests without a signer.
+func Configure(cards CardSurface, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.cards = cards
+	instance.signer = signer
 	if instance.svc != nil {
 		instance.svc.cards = cards
 	}

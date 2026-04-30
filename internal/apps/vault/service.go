@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -12,11 +13,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
@@ -228,10 +231,20 @@ func (s *Service) UpdateScopes(ctx context.Context, c *services.Caller, entryID 
 	if err != nil {
 		return err
 	}
+	added, removed := scopeDiff(prev, scopes)
+
+	// Step-up auth on widening: any addition (whether tenant, role, or
+	// user) requires a recent unlock. Pure narrowing (only removals)
+	// runs direct.
+	if len(added) > 0 {
+		if err := s.requireRecentUnlock(ctx, c); err != nil {
+			return err
+		}
+	}
+
 	if err := models.ReplaceVaultEntryScopes(ctx, s.pool, c.TenantID, entryID, scopes); err != nil {
 		return err
 	}
-	added, removed := scopeDiff(prev, scopes)
 	audit.log(ctx, "vault.scope_change", "vault_entry", &entryID, EvtScopeChange{
 		Added:   added,
 		Removed: removed,
@@ -264,6 +277,15 @@ var ErrUnlockNotGranted = errors.New("not granted")
 // in the self-unlock-test phase). They should retry the register flow.
 var ErrUnlockPending = errors.New("registration pending")
 
+// ErrStepUpRequired is returned by sensitive operations (grant,
+// scope-widening) when the caller hasn't unlocked their vault recently
+// enough. Plan §"Step-up auth on sensitive ops": 5-minute window.
+var ErrStepUpRequired = errors.New("recent unlock required")
+
+// stepUpWindow is how recently the caller must have completed a
+// successful unlock before a sensitive operation is allowed.
+const stepUpWindow = 5 * time.Minute
+
 // Unlock validates auth_hash against the caller's vault_users row.
 // Constant-time comparison is used; on miss, a dummy comparison is run
 // against random bytes so the response timing doesn't leak row-existence.
@@ -294,9 +316,20 @@ func (s *Service) Unlock(ctx context.Context, c *services.Caller, authHash []byt
 	if subtle.ConstantTimeCompare(authHash, v.AuthHash) != 1 {
 		count, _ := models.IncrementFailedUnlocks(ctx, s.pool, c.TenantID, c.UserID)
 		locked := false
-		if count >= unlockLockoutThreshold {
-			_ = models.SetVaultUserLockedUntil(ctx, s.pool, c.TenantID, c.UserID, time.Now().Add(unlockLockoutDuration))
+		var lockoutDuration time.Duration
+		switch {
+		case count >= unlockHardLockoutThreshold:
+			// Sustained attack: 24h lockout. Plan calls for forcing
+			// re-OAuth via Slack here too — for v1 the long lockout is
+			// the enforced bound; admins can clear it via the DB.
+			lockoutDuration = unlockHardLockoutDuration
 			locked = true
+		case count >= unlockLockoutThreshold:
+			lockoutDuration = unlockLockoutDuration
+			locked = true
+		}
+		if locked {
+			_ = models.SetVaultUserLockedUntil(ctx, s.pool, c.TenantID, c.UserID, time.Now().Add(lockoutDuration))
 		}
 		audit.log(ctx, "vault.unlock_failed", "vault_user", &c.UserID, EvtUnlockFailed{FailedCount: count, Locked: locked})
 		return nil, ErrUnlockMismatch
@@ -377,7 +410,10 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		return errors.New("only the initial admin may pre-set wrapped_vault_key; teammates wait for a grant")
 	}
 
-	// On replace, refuse if a reset is already in flight.
+	// On replace, refuse if a reset is already in flight, and capture
+	// the prior pubkey *before* the write so the audit row can record
+	// the diff (otherwise we read back the new key we just wrote).
+	priorFP := ""
 	if p.Replace {
 		existing, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
 		if err != nil {
@@ -389,6 +425,7 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		if existing.ResetPendingUntil != nil && time.Now().Before(*existing.ResetPendingUntil) {
 			return errors.New("a reset is already in flight; cancel via your DM first")
 		}
+		priorFP = pubkeyFingerprint(existing.UserPublicKey)
 	}
 
 	if err := models.RegisterVaultUser(ctx, s.pool, models.VaultRegisterParams{
@@ -407,14 +444,8 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 
 	newFP := pubkeyFingerprint(p.UserPublicKey)
 	if p.Replace {
-		// Fingerprint diff for audit. Best-effort: missing prior key just
-		// elides the field.
-		oldFP := ""
-		if prior, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID); err == nil && prior != nil {
-			oldFP = pubkeyFingerprint(prior.UserPublicKey)
-		}
 		audit.log(ctx, "vault.master_password_reset", "vault_user", &c.UserID, EvtMasterPasswordReset{
-			OldPubKeyFingerprint: oldFP,
+			OldPubKeyFingerprint: priorFP,
 			NewPubKeyFingerprint: newFP,
 		})
 	} else {
@@ -514,8 +545,12 @@ type GrantParams struct {
 }
 
 // Grant writes a wrapped_vault_key onto the target user's row. Re-validates
-// the target's stored pubkey before accepting the wrap.
+// the target's stored pubkey before accepting the wrap. Step-up auth: the
+// caller must have unlocked within stepUpWindow.
 func (s *Service) Grant(ctx context.Context, c *services.Caller, p GrantParams, audit auditCtx) error {
+	if err := s.requireRecentUnlock(ctx, c); err != nil {
+		return err
+	}
 	if len(p.WrappedVaultKey) == 0 {
 		return errors.New("wrapped_vault_key required")
 	}
@@ -557,15 +592,25 @@ func (s *Service) RevokeGrant(ctx context.Context, c *services.Caller, targetUse
 
 const (
 	// unlockLockoutThreshold is the failed-unlock count that triggers a
-	// temporary lockout.
+	// 15-minute lockout. Counter resets on a successful unlock.
 	unlockLockoutThreshold = 5
 
-	// unlockLockoutDuration is the time window the user is locked out
-	// after crossing the threshold.
+	// unlockLockoutDuration is the lockout after crossing the soft
+	// threshold (plan: 15 min).
 	unlockLockoutDuration = 15 * time.Minute
 
+	// unlockHardLockoutThreshold is the cumulative failure count that
+	// promotes a soft lockout into a 24-hour lockout (plan §"Unlock
+	// attack surface": "Sustained attacks → locked_until = now() + 24h").
+	unlockHardLockoutThreshold = 20
+
+	// unlockHardLockoutDuration is the long lockout after sustained
+	// brute-force attempts.
+	unlockHardLockoutDuration = 24 * time.Hour
+
 	// perIPCapacity / perIPRefillInterval define the in-process token
-	// bucket on /api/vault/unlock per remote IP.
+	// bucket on /api/vault/unlock per remote IP. Plan: secondary
+	// throttle to the per-user check.
 	perIPCapacity       = 20
 	perIPRefillInterval = time.Minute
 )
@@ -631,6 +676,7 @@ func validateCiphertext(ct, nonce []byte) error {
 }
 
 func validateScopes(scopes []models.VaultEntryScope) error {
+	seen := make(map[string]bool, len(scopes))
 	for i, s := range scopes {
 		switch s.ScopeKind {
 		case "tenant":
@@ -644,26 +690,33 @@ func validateScopes(scopes []models.VaultEntryScope) error {
 		default:
 			return fmt.Errorf("scope[%d]: unknown kind %q", i, s.ScopeKind)
 		}
+		key := scopeKey(s)
+		if seen[key] {
+			return fmt.Errorf("scope[%d]: duplicate %s", i, key)
+		}
+		seen[key] = true
 	}
 	return nil
 }
 
-// scopeDiff compares two scope-row sets and returns the (added, removed) lists
-// of (kind, id) pairs. Used by audit logging when scope rows change.
-func scopeDiff(before, after []models.VaultEntryScope) (added, removed []ScopeRef) {
-	key := func(s models.VaultEntryScope) string {
-		if s.ScopeID == nil {
-			return s.ScopeKind + ":-"
-		}
-		return s.ScopeKind + ":" + s.ScopeID.String()
+func scopeKey(s models.VaultEntryScope) string {
+	if s.ScopeID == nil {
+		return s.ScopeKind + ":-"
 	}
+	return s.ScopeKind + ":" + s.ScopeID.String()
+}
+
+// scopeDiff compares two scope-row sets and returns the (added, removed)
+// lists of (kind, id) pairs. Output is sorted by (kind, id) so audit
+// rows are deterministic across runs (Go map iteration is randomized).
+func scopeDiff(before, after []models.VaultEntryScope) (added, removed []ScopeRef) {
 	prev := map[string]models.VaultEntryScope{}
 	for _, s := range before {
-		prev[key(s)] = s
+		prev[scopeKey(s)] = s
 	}
 	now := map[string]models.VaultEntryScope{}
 	for _, s := range after {
-		now[key(s)] = s
+		now[scopeKey(s)] = s
 	}
 	for k, s := range now {
 		if _, ok := prev[k]; !ok {
@@ -675,7 +728,25 @@ func scopeDiff(before, after []models.VaultEntryScope) (added, removed []ScopeRe
 			removed = append(removed, ScopeRef{Kind: s.ScopeKind, ID: s.ScopeID})
 		}
 	}
+	sortScopeRefs(added)
+	sortScopeRefs(removed)
 	return added, removed
+}
+
+func sortScopeRefs(refs []ScopeRef) {
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Kind != refs[j].Kind {
+			return refs[i].Kind < refs[j].Kind
+		}
+		var li, lj string
+		if refs[i].ID != nil {
+			li = refs[i].ID.String()
+		}
+		if refs[j].ID != nil {
+			lj = refs[j].ID.String()
+		}
+		return li < lj
+	})
 }
 
 // pubkeyFingerprint returns a short hex fingerprint suitable for showing
@@ -689,10 +760,16 @@ func pubkeyFingerprint(pub []byte) string {
 	return hex.EncodeToString(sum[:12]) // 24 hex chars; UI groups visually
 }
 
-// dummyHash returns 32 fixed bytes for the constant-time miss path. The
-// actual contents are irrelevant — only the timing matters.
+// dummyHash returns 32 random bytes for the constant-time miss path.
+// Fresh per call so the comparison can't be distinguished from a real
+// auth_hash compare via any side channel — only the timing matters.
 func dummyHash() []byte {
-	return make([]byte, 32)
+	b := make([]byte, 32)
+	// crypto/rand failures here would be catastrophic for the host; if
+	// they happen, the all-zeros buffer is a safe fallback because the
+	// caller compares against an attacker-supplied 32 bytes either way.
+	_, _ = cryptorand.Read(b)
+	return b
 }
 
 // ===== unlock rate limiter =====
@@ -753,6 +830,31 @@ func (u *unlockLimiter) allow(key string) bool {
 }
 
 // ===== misc HTTP wiring helpers (re-exported for handlers) =====
+
+// requireRecentUnlock enforces step-up auth: the caller must have a
+// successful vault.unlock audit event within the last stepUpWindow.
+// Returns ErrStepUpRequired if not. Implemented as an audit_events
+// query so the unlock record is the source of truth — no extra column
+// to keep in sync.
+func (s *Service) requireRecentUnlock(ctx context.Context, c *services.Caller) error {
+	var lastUnlock time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT created_at FROM audit_events
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND action = 'vault.unlock'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, c.TenantID, c.UserID).Scan(&lastUnlock)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrStepUpRequired
+		}
+		return fmt.Errorf("step-up lookup: %w", err)
+	}
+	if time.Since(lastUnlock) > stepUpWindow {
+		return ErrStepUpRequired
+	}
+	return nil
+}
 
 // tenantSlug looks up a tenant's URL slug by id. Used by the MCP layer to
 // build reveal/add URLs since Caller doesn't carry the slug. Returns

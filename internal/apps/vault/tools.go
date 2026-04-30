@@ -95,12 +95,13 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 			AdminOnly:   meta.AdminOnly,
 			Handler:     vaultAgentHandler(meta.Name, svc),
 		}
-		// Gate scope-widening (decided at handler time per the input
-		// scopes diff). update_secret_scopes is registered as PolicyAllow
-		// at the registry level, but the handler itself returns a HALTED
-		// response when the diff is widening. The simpler approach for
-		// v1: classify update_secret_scopes as PolicyGate unconditionally
-		// — false-positives on pure-narrow are acceptable friction.
+		// update_secret_scopes is gated unconditionally for the agent
+		// surface. The plan distinguishes widening (must gate) from
+		// narrowing (may be agent-direct), but per-call gate decisions
+		// would need a registry-level extension; gating everything is
+		// strictly more restrictive than the plan and acceptable as v1.
+		// HTTP/MCP-direct callers still get widening protection via the
+		// service-level step-up auth check (recent unlock required).
 		if meta.Name == "update_secret_scopes" {
 			def.DefaultPolicy = tools.PolicyGate
 		}

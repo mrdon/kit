@@ -188,9 +188,10 @@ func main() {
 	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Tasks)
 
 	// Vault uses the same CardService for admin grant-request decision
-	// cards. Wrapped in a thin adapter so the vault package doesn't import
-	// internal/apps/cards directly (keeps the dep graph one-way).
-	vault.Configure(newVaultCardAdapter(cards.ServiceForGating()))
+	// cards, plus the session signer for HTTP routes. Wrapped in a thin
+	// adapter so the vault package doesn't import internal/apps/cards
+	// directly (keeps the dep graph one-way).
+	vault.Configure(newVaultCardAdapter(cards.ServiceForGating()), sessionSigner)
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)

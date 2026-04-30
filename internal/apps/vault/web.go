@@ -483,11 +483,14 @@ func (a *App) handleGrant(w http.ResponseWriter, r *http.Request) {
 		WrappedVaultKey: body.WrappedVaultKey,
 	}, audit)
 	if err != nil {
-		if errors.Is(err, models.ErrVaultUserNotFound) {
+		switch {
+		case errors.Is(err, models.ErrVaultUserNotFound):
 			http.NotFound(w, r)
-			return
+		case errors.Is(err, ErrStepUpRequired):
+			http.Error(w, "recent unlock required", http.StatusUnauthorized)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
