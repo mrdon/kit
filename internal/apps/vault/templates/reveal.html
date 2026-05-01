@@ -38,20 +38,12 @@
     <div id="visibility-display"></div>
     <button type="button" id="edit-visibility-button">Edit</button>
     <form id="visibility-form" hidden autocomplete="off">
-      <fieldset id="vis-scope-fieldset">
-        <legend>Update visibility</legend>
-        <label class="checkbox">
-          <input type="checkbox" name="vis_scope_tenant" value="1">
-          Everyone in the workspace
-        </label>
-        <fieldset id="vis-scope-roles">
-          <legend>Roles</legend>
-        </fieldset>
-        <fieldset id="vis-scope-users">
-          <legend>Specific people</legend>
-        </fieldset>
-      </fieldset>
-      <button type="submit">Save visibility</button>
+      <label>Owning role
+        <select name="role_id" id="visibility-role-selector" required>
+          <option value="" disabled selected>Loading roles…</option>
+        </select>
+      </label>
+      <button type="submit">Save</button>
       <button type="button" id="cancel-visibility-edit">Cancel</button>
       <p id="visibility-status" role="status"></p>
     </form>

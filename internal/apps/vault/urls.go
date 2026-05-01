@@ -104,7 +104,7 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("POST /{slug}/apps/vault/api/entries", wrap(a.handleCreateEntry))
 	mux.Handle("GET /{slug}/apps/vault/api/entries/{entry_id}", get(a.handleGetEntry))
 	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleUpdateEntry))
-	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}/scopes", wrap(a.handleUpdateEntryScopes))
+	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}/role", wrap(a.handleSetEntryRole))
 	mux.Handle("DELETE /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleDeleteEntry))
 
 	// Grants

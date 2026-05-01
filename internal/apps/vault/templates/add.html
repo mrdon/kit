@@ -39,22 +39,12 @@
     <input type="text" name="tags" autocomplete="off">
   </label>
 
-  <fieldset id="scope-fieldset">
-    <legend>Who can see this?</legend>
-    <p class="help">This is a team tool — every secret is visible to at least one role, person, or the whole workspace. Pick at least one option below.</p>
-    <label class="checkbox">
-      <input type="checkbox" name="scope_tenant" value="1">
-      Everyone in the workspace
-    </label>
-    <fieldset id="scope-roles">
-      <legend>Roles</legend>
-      <p id="scope-roles-loading" class="help">Loading…</p>
-    </fieldset>
-    <fieldset id="scope-users">
-      <legend>Specific people</legend>
-      <p id="scope-users-loading" class="help">Loading…</p>
-    </fieldset>
-  </fieldset>
+  <label>Who can see this?
+    <select name="role_id" id="role-selector" required>
+      <option value="" disabled selected>Loading roles…</option>
+    </select>
+  </label>
+  <p class="help">Pick the team that owns this secret, or "Everyone in the workspace" for shared infra.</p>
 
   <button type="submit">Save</button>
   <p id="status" role="status"></p>

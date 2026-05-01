@@ -68,9 +68,10 @@ func NewService(pool *pgxpool.Pool) *Service {
 	}
 }
 
-// toListItem renders one EntryListItem from a model row + the calling
-// caller. ScopeSummary is filled in by ListEntries (it needs a batch
-// lookup); IsOwner is derived directly.
+// toListItem renders one EntryListItem from a model row + the caller.
+// ScopeSummary is derived from RoleID: nil → "tenant-wide", set →
+// "shared". IsOwner is derived directly. RoleID is passed through so
+// the reveal page can prefill the role selector.
 func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
 	username := ""
 	if e.Username != nil {
@@ -80,6 +81,13 @@ func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
 	if e.URL != nil {
 		url = *e.URL
 	}
+	summary := "shared"
+	switch {
+	case e.OwnerUserID == c.UserID:
+		summary = "yours"
+	case e.RoleID == nil:
+		summary = "tenant-wide"
+	}
 	return EntryListItem{
 		ID:           e.ID,
 		Title:        e.Title,
@@ -88,51 +96,29 @@ func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
 		Tags:         e.Tags,
 		LastViewedAt: e.LastViewedAt,
 		IsOwner:      e.OwnerUserID == c.UserID,
+		ScopeSummary: summary,
+		RoleID:       e.RoleID,
 	}
 }
 
-// validateScopesAgainstTenant verifies every user/role principal id in
-// the scope set actually belongs to the caller's tenant. Without this,
-// a malicious caller could write scope rows referencing a uuid from a
-// different tenant — those rows would never match the scope filter
-// (which also checks tenant_id), but they pollute the table with dead
-// refs.
-func (s *Service) validateScopesAgainstTenant(ctx context.Context, tenantID uuid.UUID, scopes []models.VaultEntryScope) error {
-	var userIDs, roleIDs []uuid.UUID
-	for _, sc := range scopes {
-		if sc.ScopeID == nil {
-			continue
-		}
-		switch sc.ScopeKind {
-		case "user":
-			userIDs = append(userIDs, *sc.ScopeID)
-		case "role":
-			roleIDs = append(roleIDs, *sc.ScopeID)
-		}
+// validateRoleAgainstTenant verifies the role_id (when non-nil) belongs
+// to the caller's tenant. Without this a malicious caller could pass
+// a foreign-tenant role uuid that lands in app_vault_entries forever —
+// the visibility filter would never match it (joins on tenant_id) but
+// the row references a dead id.
+func (s *Service) validateRoleAgainstTenant(ctx context.Context, tenantID uuid.UUID, roleID *uuid.UUID) error {
+	if roleID == nil {
+		return nil
 	}
-	if len(userIDs) > 0 {
-		var found int
-		err := s.pool.QueryRow(ctx, `
-			SELECT count(*) FROM users WHERE tenant_id = $1 AND id = ANY($2)
-		`, tenantID, userIDs).Scan(&found)
-		if err != nil {
-			return fmt.Errorf("validate user scopes: %w", err)
-		}
-		if found != len(userIDs) {
-			return errors.New("scope references a user not in this tenant")
-		}
+	var found int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM roles WHERE tenant_id = $1 AND id = $2
+	`, tenantID, *roleID).Scan(&found)
+	if err != nil {
+		return fmt.Errorf("validate role id: %w", err)
 	}
-	if len(roleIDs) > 0 {
-		var found int
-		err := s.pool.QueryRow(ctx, `
-			SELECT count(*) FROM roles WHERE tenant_id = $1 AND id = ANY($2)
-		`, tenantID, roleIDs).Scan(&found)
-		if err != nil {
-			return fmt.Errorf("validate role scopes: %w", err)
-		}
-		if found != len(roleIDs) {
-			return errors.New("scope references a role not in this tenant")
-		}
+	if found == 0 {
+		return errors.New("role not in this tenant")
 	}
 	return nil
 }

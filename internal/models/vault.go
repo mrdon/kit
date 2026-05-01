@@ -37,10 +37,16 @@ type VaultUser struct {
 // VaultEntry is one stored secret. Title/username/url/tags are plaintext for
 // search; value_ciphertext + value_nonce are AES-GCM(JSON{password,notes},
 // vault_key) — encrypted in the browser, server never sees plaintext.
+//
+// Authz is a single role: RoleID NULL means "everyone in the tenant",
+// RoleID set means "members of that role plus the owner". Per-user
+// scoping was removed in v1.5; users who need fanout pick a role
+// or tenant-wide.
 type VaultEntry struct {
 	ID              uuid.UUID
 	TenantID        uuid.UUID
 	OwnerUserID     uuid.UUID
+	RoleID          *uuid.UUID
 	Title           string
 	Username        *string
 	URL             *string
@@ -50,18 +56,6 @@ type VaultEntry struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	LastViewedAt    *time.Time
-}
-
-// VaultEntryScope mirrors the existing skill_scopes / rule_scopes pattern —
-// default-deny, scope rows extend visibility from owner-only to named users
-// / role members / the whole tenant.
-type VaultEntryScope struct {
-	ID        uuid.UUID
-	TenantID  uuid.UUID
-	EntryID   uuid.UUID
-	ScopeKind string // "user" | "role" | "tenant"
-	ScopeID   *uuid.UUID
-	CreatedAt time.Time
 }
 
 // ===== vault_users =====
@@ -337,43 +331,26 @@ func SetVaultUserLockedUntil(ctx context.Context, pool *pgxpool.Pool, tenantID, 
 
 // ===== vault_entries =====
 
-// CreateVaultEntry inserts a new entry plus its scope rows in one transaction.
-// scopes may be empty (default-deny → owner-only).
-func CreateVaultEntry(ctx context.Context, pool *pgxpool.Pool, e VaultEntry, scopes []VaultEntryScope) (uuid.UUID, error) {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
+// CreateVaultEntry inserts a new entry. RoleID NULL means "visible to
+// everyone in the tenant"; set means "visible to that role's members
+// plus the owner". The owner is always implicitly visible regardless
+// of role.
+func CreateVaultEntry(ctx context.Context, pool *pgxpool.Pool, e VaultEntry) (uuid.UUID, error) {
 	tags := e.Tags
 	if tags == nil {
 		tags = []string{}
 	}
-
 	var id uuid.UUID
-	err = tx.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		INSERT INTO app_vault_entries
-			(tenant_id, owner_user_id, title, username, url, tags,
+			(tenant_id, owner_user_id, role_id, title, username, url, tags,
 			 value_ciphertext, value_nonce)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
-	`, e.TenantID, e.OwnerUserID, e.Title, e.Username, e.URL, tags,
+	`, e.TenantID, e.OwnerUserID, e.RoleID, e.Title, e.Username, e.URL, tags,
 		e.ValueCiphertext, e.ValueNonce).Scan(&id)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("inserting vault entry: %w", err)
-	}
-
-	for _, s := range scopes {
-		s.EntryID = id
-		s.TenantID = e.TenantID
-		if err := insertScopeTx(ctx, tx, s); err != nil {
-			return uuid.Nil, err
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return uuid.Nil, fmt.Errorf("commit: %w", err)
 	}
 	return id, nil
 }
@@ -382,19 +359,23 @@ func CreateVaultEntry(ctx context.Context, pool *pgxpool.Pool, e VaultEntry, sco
 // (nil, ErrNotFound) on miss-or-no-scope. Returning the same error for
 // "doesn't exist" and "no scope" prevents existence enumeration.
 func GetVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, callerID uuid.UUID, callerRoleIDs []uuid.UUID) (*VaultEntry, error) {
-	scopeFrag, args := vaultScopeFragment("e", 4, callerID, callerRoleIDs)
-	q := fmt.Sprintf(`
-		SELECT e.id, e.tenant_id, e.owner_user_id, e.title, e.username, e.url, e.tags,
+	roles := callerRoleIDs
+	if roles == nil {
+		roles = []uuid.UUID{}
+	}
+	row := pool.QueryRow(ctx, `
+		SELECT e.id, e.tenant_id, e.owner_user_id, e.role_id, e.title, e.username, e.url, e.tags,
 		       e.value_ciphertext, e.value_nonce, e.created_at, e.updated_at, e.last_viewed_at
 		FROM app_vault_entries e
 		WHERE e.tenant_id = $1 AND e.id = $2
-		  AND (e.owner_user_id = $3 OR EXISTS (%s))
-	`, scopeFrag)
-	row := pool.QueryRow(ctx, q, append([]any{tenantID, entryID, callerID}, args...)...)
+		  AND ( e.owner_user_id = $3
+		     OR e.role_id IS NULL
+		     OR e.role_id = ANY($4) )
+	`, tenantID, entryID, callerID, roles)
 
 	var e VaultEntry
 	if err := row.Scan(
-		&e.ID, &e.TenantID, &e.OwnerUserID, &e.Title, &e.Username, &e.URL, &e.Tags,
+		&e.ID, &e.TenantID, &e.OwnerUserID, &e.RoleID, &e.Title, &e.Username, &e.URL, &e.Tags,
 		&e.ValueCiphertext, &e.ValueNonce, &e.CreatedAt, &e.UpdatedAt, &e.LastViewedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -411,12 +392,12 @@ func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerI
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	scopeFrag, scopeArgs := vaultScopeFragment("e", 3, callerID, callerRoleIDs)
-
-	args := []any{tenantID, callerID}
-	args = append(args, scopeArgs...)
-
-	where := fmt.Sprintf("e.tenant_id = $1 AND (e.owner_user_id = $2 OR EXISTS (%s))", scopeFrag)
+	roles := callerRoleIDs
+	if roles == nil {
+		roles = []uuid.UUID{}
+	}
+	args := []any{tenantID, callerID, roles}
+	where := "e.tenant_id = $1 AND ( e.owner_user_id = $2 OR e.role_id IS NULL OR e.role_id = ANY($3) )"
 	orderBy := "e.last_viewed_at DESC NULLS LAST, e.created_at DESC"
 
 	if query != "" {
@@ -432,7 +413,7 @@ func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerI
 	args = append(args, limit)
 
 	q := fmt.Sprintf(`
-		SELECT e.id, e.tenant_id, e.owner_user_id, e.title, e.username, e.url, e.tags,
+		SELECT e.id, e.tenant_id, e.owner_user_id, e.role_id, e.title, e.username, e.url, e.tags,
 		       e.value_ciphertext, e.value_nonce, e.created_at, e.updated_at, e.last_viewed_at
 		FROM app_vault_entries e
 		WHERE %s
@@ -448,72 +429,76 @@ func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerI
 	return scanVaultEntries(rows)
 }
 
-// UpdateVaultEntry rewrites an entry's mutable fields. owner_user_id and
-// tenant_id are intentionally not updatable here — owner transfer would
-// require a separate gated endpoint.
-func UpdateVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, callerID uuid.UUID, callerRoleIDs []uuid.UUID, e VaultEntry, scopes []VaultEntryScope) error {
-	scopeFrag, scopeArgs := vaultScopeFragment("ent", 4, callerID, callerRoleIDs)
-
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+// UpdateVaultEntry rewrites an entry's mutable fields. owner_user_id,
+// tenant_id, and role_id are intentionally not updatable here — owner
+// transfer / scope changes have their own endpoints.
+func UpdateVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, callerID uuid.UUID, callerRoleIDs []uuid.UUID, e VaultEntry) error {
+	roles := callerRoleIDs
+	if roles == nil {
+		roles = []uuid.UUID{}
 	}
-	defer tx.Rollback(ctx)
-
 	tags := e.Tags
 	if tags == nil {
 		tags = []string{}
 	}
-	// scopeFrag consumes params starting at $4 (callerID, roleIDs);
-	// SET-clause params start at the next free index.
-	setStart := 3 + len(scopeArgs) + 1
-	q := fmt.Sprintf(`
+	tag, err := pool.Exec(ctx, `
 		UPDATE app_vault_entries ent
-		   SET title = $%d, username = $%d, url = $%d, tags = $%d,
-		       value_ciphertext = $%d, value_nonce = $%d, updated_at = now()
+		   SET title = $5, username = $6, url = $7, tags = $8,
+		       value_ciphertext = $9, value_nonce = $10, updated_at = now()
 		 WHERE ent.tenant_id = $1 AND ent.id = $2
-		   AND (ent.owner_user_id = $3 OR EXISTS (%s))
-	`, setStart, setStart+1, setStart+2, setStart+3, setStart+4, setStart+5, scopeFrag)
-	args := []any{tenantID, entryID, callerID}
-	args = append(args, scopeArgs...)
-	args = append(args, e.Title, e.Username, e.URL, tags, e.ValueCiphertext, e.ValueNonce)
-
-	tag, err := tx.Exec(ctx, q, args...)
+		   AND ( ent.owner_user_id = $3
+		      OR ent.role_id IS NULL
+		      OR ent.role_id = ANY($4) )
+	`, tenantID, entryID, callerID, roles,
+		e.Title, e.Username, e.URL, tags, e.ValueCiphertext, e.ValueNonce)
 	if err != nil {
 		return fmt.Errorf("updating vault entry: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	return nil
+}
 
-	if scopes != nil {
-		if _, err := tx.Exec(ctx, `DELETE FROM app_vault_entry_scopes WHERE tenant_id = $1 AND entry_id = $2`, tenantID, entryID); err != nil {
-			return fmt.Errorf("clearing scopes: %w", err)
-		}
-		for _, s := range scopes {
-			s.EntryID = entryID
-			s.TenantID = tenantID
-			if err := insertScopeTx(ctx, tx, s); err != nil {
-				return err
-			}
-		}
+// SetVaultEntryRole rewrites an entry's role_id. Pass nil to make the
+// entry visible to everyone in the tenant. Authz: same as visibility —
+// owner, role member, or tenant-wide can re-scope.
+func SetVaultEntryRole(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, callerID uuid.UUID, callerRoleIDs []uuid.UUID, roleID *uuid.UUID) error {
+	roles := callerRoleIDs
+	if roles == nil {
+		roles = []uuid.UUID{}
 	}
-
-	return tx.Commit(ctx)
+	tag, err := pool.Exec(ctx, `
+		UPDATE app_vault_entries ent
+		   SET role_id = $5, updated_at = now()
+		 WHERE ent.tenant_id = $1 AND ent.id = $2
+		   AND ( ent.owner_user_id = $3
+		      OR ent.role_id IS NULL
+		      OR ent.role_id = ANY($4) )
+	`, tenantID, entryID, callerID, roles, roleID)
+	if err != nil {
+		return fmt.Errorf("setting vault entry role: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteVaultEntry deletes an entry the caller is authorized to view.
 // (v1: anyone with view authz can delete; v2 may want stricter rules.)
 func DeleteVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, callerID uuid.UUID, callerRoleIDs []uuid.UUID) error {
-	scopeFrag, scopeArgs := vaultScopeFragment("ent", 4, callerID, callerRoleIDs)
-	q := fmt.Sprintf(`
+	roles := callerRoleIDs
+	if roles == nil {
+		roles = []uuid.UUID{}
+	}
+	tag, err := pool.Exec(ctx, `
 		DELETE FROM app_vault_entries ent
 		WHERE ent.tenant_id = $1 AND ent.id = $2
-		  AND (ent.owner_user_id = $3 OR EXISTS (%s))
-	`, scopeFrag)
-	args := []any{tenantID, entryID, callerID}
-	args = append(args, scopeArgs...)
-	tag, err := pool.Exec(ctx, q, args...)
+		  AND ( ent.owner_user_id = $3
+		     OR ent.role_id IS NULL
+		     OR ent.role_id = ANY($4) )
+	`, tenantID, entryID, callerID, roles)
 	if err != nil {
 		return fmt.Errorf("deleting vault entry: %w", err)
 	}
@@ -536,83 +521,6 @@ func TouchVaultEntryViewed(ctx context.Context, pool *pgxpool.Pool, tenantID, en
 	return nil
 }
 
-// ListVaultEntryScopes returns all scope rows for the entry. Caller must have
-// already authz-checked the parent entry.
-func ListVaultEntryScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID uuid.UUID) ([]VaultEntryScope, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, entry_id, scope_kind, scope_id, created_at
-		FROM app_vault_entry_scopes
-		WHERE tenant_id = $1 AND entry_id = $2
-		ORDER BY scope_kind, created_at
-	`, tenantID, entryID)
-	if err != nil {
-		return nil, fmt.Errorf("listing scopes: %w", err)
-	}
-	defer rows.Close()
-	var out []VaultEntryScope
-	for rows.Next() {
-		var s VaultEntryScope
-		if err := rows.Scan(&s.ID, &s.TenantID, &s.EntryID, &s.ScopeKind, &s.ScopeID, &s.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan scope: %w", err)
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
-// ReplaceVaultEntryScopes wipes & rewrites the scope rows for one entry,
-// inside a transaction. Caller must have already authz-checked the entry.
-func ReplaceVaultEntryScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID uuid.UUID, scopes []VaultEntryScope) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err := tx.Exec(ctx, `DELETE FROM app_vault_entry_scopes WHERE tenant_id = $1 AND entry_id = $2`, tenantID, entryID); err != nil {
-		return fmt.Errorf("clearing scopes: %w", err)
-	}
-	for _, s := range scopes {
-		s.EntryID = entryID
-		s.TenantID = tenantID
-		if err := insertScopeTx(ctx, tx, s); err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
-}
-
-// ===== authz scope filter =====
-
-// vaultScopeFragment builds the EXISTS-subquery body that matches an entry's
-// scope rows against the caller's principals (their user_id and role_ids).
-// alias is the parent table alias (e.g. "e" for app_vault_entries e); the
-// subquery joins app_vault_entry_scopes s ON s.entry_id = alias.id.
-//
-// startParam is the next $N parameter index after the caller's tenant_id and
-// caller user_id are already bound. The returned args list provides the
-// caller user_id (for scope_kind='user' match) and role_ids (for
-// scope_kind='role' match) in order.
-func vaultScopeFragment(alias string, startParam int, callerID uuid.UUID, callerRoleIDs []uuid.UUID) (string, []any) {
-	userParam := startParam
-	rolesParam := startParam + 1
-	frag := fmt.Sprintf(`
-		SELECT 1 FROM app_vault_entry_scopes s
-		 WHERE s.tenant_id = %s.tenant_id
-		   AND s.entry_id  = %s.id
-		   AND ( s.scope_kind = 'tenant'
-			  OR (s.scope_kind = 'user' AND s.scope_id = $%d)
-			  OR (s.scope_kind = 'role' AND s.scope_id = ANY($%d))
-			)
-	`, alias, alias, userParam, rolesParam)
-
-	roleIDs := callerRoleIDs
-	if roleIDs == nil {
-		roleIDs = []uuid.UUID{}
-	}
-	return frag, []any{callerID, roleIDs}
-}
-
 // ===== helpers =====
 
 // ErrVaultUserNotFound is returned by SetVaultGrant when the target user
@@ -623,23 +531,12 @@ var ErrVaultUserNotFound = errors.New("vault user not found")
 // vault read paths so callers can return uniform 404s.
 var ErrNotFound = errors.New("not found")
 
-func insertScopeTx(ctx context.Context, tx pgx.Tx, s VaultEntryScope) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO app_vault_entry_scopes (tenant_id, entry_id, scope_kind, scope_id)
-		VALUES ($1, $2, $3, $4)
-	`, s.TenantID, s.EntryID, s.ScopeKind, s.ScopeID)
-	if err != nil {
-		return fmt.Errorf("inserting scope: %w", err)
-	}
-	return nil
-}
-
 func scanVaultEntries(rows pgx.Rows) ([]VaultEntry, error) {
 	var out []VaultEntry
 	for rows.Next() {
 		var e VaultEntry
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.OwnerUserID, &e.Title, &e.Username, &e.URL, &e.Tags,
+			&e.ID, &e.TenantID, &e.OwnerUserID, &e.RoleID, &e.Title, &e.Username, &e.URL, &e.Tags,
 			&e.ValueCiphertext, &e.ValueNonce, &e.CreatedAt, &e.UpdatedAt, &e.LastViewedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan vault entry: %w", err)

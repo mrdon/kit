@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -210,28 +209,6 @@ func TestUnlockMismatchUniformResponse(t *testing.T) {
 	}
 }
 
-func TestScopeDiff(t *testing.T) {
-	a := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	b := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-
-	before := []models.VaultEntryScope{
-		{ScopeKind: "user", ScopeID: &a},
-		{ScopeKind: "tenant"},
-	}
-	after := []models.VaultEntryScope{
-		{ScopeKind: "user", ScopeID: &a},
-		{ScopeKind: "user", ScopeID: &b},
-	}
-
-	added, removed := scopeDiff(before, after)
-	if len(added) != 1 || added[0].Kind != "user" || added[0].ID == nil || *added[0].ID != b {
-		t.Errorf("added wrong: %+v", added)
-	}
-	if len(removed) != 1 || removed[0].Kind != "tenant" {
-		t.Errorf("removed wrong: %+v", removed)
-	}
-}
-
 func TestPubkeyFingerprintStable(t *testing.T) {
 	der := genRSAPubKey(t)
 	a := pubkeyFingerprint(der)
@@ -279,19 +256,6 @@ func TestStepUpRequiredOnGrantWithoutRecentUnlock(t *testing.T) {
 	}, svc.AuditFromRequest(c, r))
 	if !errors.Is(err, ErrStepUpRequired) {
 		t.Fatalf("expected ErrStepUpRequired, got %v", err)
-	}
-}
-
-// TestValidateScopesRejectsDuplicates exercises the dedup check added
-// in service.go alongside scopeKey/scopeDiff.
-func TestValidateScopesRejectsDuplicates(t *testing.T) {
-	uid := uuid.New()
-	scopes := []models.VaultEntryScope{
-		{ScopeKind: "user", ScopeID: &uid},
-		{ScopeKind: "user", ScopeID: &uid},
-	}
-	if err := validateScopes(scopes); err == nil {
-		t.Fatal("expected duplicate scope rejection")
 	}
 }
 
@@ -426,7 +390,7 @@ func TestPUTMassAssignmentIgnoresOwnerUserID(t *testing.T) {
 		Title:           "test",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      make([]byte, 12),
-		Scopes:          []models.VaultEntryScope{{ScopeKind: "tenant"}},
+		// Tenant-wide visibility: leave RoleID nil.
 	}, svc.AuditFromRequest(owner, r))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -472,7 +436,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 		Title:           "tenant A only",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      make([]byte, 12),
-		Scopes:          []models.VaultEntryScope{{ScopeKind: "tenant"}},
+		// Tenant-wide visibility: leave RoleID nil.
 	}, svc.AuditFromRequest(callerA, rA))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -563,7 +527,7 @@ func TestNonceUniquenessAcrossEntries(t *testing.T) {
 			Title:           fmt.Sprintf("e%d", i),
 			ValueCiphertext: []byte("ct"),
 			ValueNonce:      nonce,
-			Scopes:          []models.VaultEntryScope{{ScopeKind: "tenant"}},
+			// Tenant-wide visibility: leave RoleID nil.
 		}, svc.AuditFromRequest(owner, r))
 		if err != nil {
 			t.Fatalf("create %d: %v", i, err)
@@ -697,32 +661,6 @@ func TestSanitizeMarkdownInlineRemovesDangerousChars(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("sanitize(%q) = %q, want %q", tc.in, got, tc.want)
 		}
-	}
-}
-
-// TestCreateEntryRequiresScope ensures the API rejects an entry with no
-// scope rows. Personal-only is not a user-facing concept; every secret
-// must scope to at least one role, user, or tenant-wide. Plan §"Per-role
-// secrets in practice".
-func TestCreateEntryRequiresScope(t *testing.T) {
-	pool := testdb.Open(t)
-	ctx := context.Background()
-	svc := NewService(pool)
-	tenantID, ownerID := freshTenant(t, ctx, pool)
-	owner := adminCaller(tenantID, ownerID)
-	r := httptest.NewRequest(http.MethodPost, "/", nil)
-
-	_, err := svc.CreateEntry(ctx, owner, CreateEntryParams{
-		Title:           "no scope",
-		ValueCiphertext: []byte("ct"),
-		ValueNonce:      make([]byte, 12),
-		// Scopes intentionally empty.
-	}, svc.AuditFromRequest(owner, r))
-	if err == nil {
-		t.Fatal("expected rejection on empty scopes")
-	}
-	if !errors.Is(err, err) || !strings.Contains(err.Error(), "scope required") {
-		t.Errorf("expected 'scope required' error, got %v", err)
 	}
 }
 

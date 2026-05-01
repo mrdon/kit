@@ -615,22 +615,22 @@ async function wireAdd() {
   if (params.get("title")) form.elements.title.value = params.get("title");
   if (params.get("url")) form.elements.url.value = params.get("url");
 
-  // Populate the "who can see this" selector. Required: every secret
-  // must scope to at least one role, person, or tenant-wide. Plan
-  // §"Per-role secrets in practice".
-  await populateScopeSelector();
+  // Populate the role dropdown. The first option is "Everyone in the
+  // workspace" (NULL role_id); the rest are the caller's tenant roles.
+  // No implicit default for now — the user must pick.
+  await populateRoleSelector(document.getElementById("role-selector"), null);
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
 
-    const scopes = readScopeSelector();
-    if (scopes.length === 0) {
-      setStatus("Pick at least one role, person, or 'Everyone in the workspace'.", "error");
+    const fd = new FormData(form);
+    const roleID = fd.get("role_id");
+    if (roleID === null || roleID === undefined) {
+      setStatus("Pick a role or 'Everyone in the workspace'.", "error");
       return;
     }
 
     setStatus("Encrypting…");
-    const fd = new FormData(form);
     const valueJSON = JSON.stringify({
       password: fd.get("password") || "",
       notes: fd.get("notes") || "",
@@ -647,7 +647,9 @@ async function wireAdd() {
         tags,
         value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
         value_nonce: bytesField(new Uint8Array(enc.nonce)),
-        scopes,
+        // role_id is "" when "everyone" is chosen — server treats
+        // empty/missing as nil = tenant-wide.
+        role_id: roleID || null,
       });
     } catch (err) {
       setStatus(`Save failed: ${err.message || err}`, "error");
@@ -658,57 +660,30 @@ async function wireAdd() {
   });
 }
 
-// populateScopeSelector fetches the caller's tenant roles + users and
-// renders a checkbox per principal. The form intentionally has no
-// implicit default — the user must pick. (When Kit grows a "primary
-// role" concept, this is where we'd pre-check that role.)
-async function populateScopeSelector() {
+// populateRoleSelector fills a <select> element with the caller's
+// tenant roles, plus an "Everyone in the workspace" option that maps
+// to NULL role_id on the server. selectedID pre-selects a specific
+// role (pass null to leave the placeholder selected).
+async function populateRoleSelector(selectEl, selectedID) {
+  if (!selectEl) return;
   const principals = await api("GET", "/principals");
-  const rolesEl = document.getElementById("scope-roles");
-  const usersEl = document.getElementById("scope-users");
-  document.getElementById("scope-roles-loading")?.remove();
-  document.getElementById("scope-users-loading")?.remove();
-
+  // Reset to a known state (allow re-population on edit re-open).
+  selectEl.innerHTML = "";
+  const everyone = document.createElement("option");
+  everyone.value = "";
+  everyone.textContent = "Everyone in the workspace";
+  selectEl.appendChild(everyone);
   for (const role of principals.roles || []) {
-    const lbl = document.createElement("label");
-    lbl.className = "checkbox";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.name = "scope_role";
-    cb.value = role.id;
-    lbl.appendChild(cb);
-    lbl.appendChild(document.createTextNode(" " + role.name));
-    rolesEl.appendChild(lbl);
+    const opt = document.createElement("option");
+    opt.value = role.id;
+    opt.textContent = role.name;
+    selectEl.appendChild(opt);
   }
-  for (const user of principals.users || []) {
-    const lbl = document.createElement("label");
-    lbl.className = "checkbox";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.name = "scope_user";
-    cb.value = user.id;
-    lbl.appendChild(cb);
-    const display = user.display_name || user.slack_user_id;
-    lbl.appendChild(document.createTextNode(" " + display));
-    usersEl.appendChild(lbl);
+  if (selectedID === null || selectedID === undefined) {
+    selectEl.value = "";
+  } else {
+    selectEl.value = selectedID;
   }
-}
-
-// readScopeSelector returns the chosen scopes in the wire format the
-// server expects: an array of {kind, scope_id} (scope_id absent for
-// kind='tenant'). Returns [] if nothing is checked — the caller surfaces
-// the validation error.
-function readScopeSelector() {
-  const out = [];
-  const tenant = document.querySelector('input[name="scope_tenant"]:checked');
-  if (tenant) out.push({ kind: "tenant" });
-  for (const cb of document.querySelectorAll('input[name="scope_role"]:checked')) {
-    out.push({ kind: "role", id: cb.value });
-  }
-  for (const cb of document.querySelectorAll('input[name="scope_user"]:checked')) {
-    out.push({ kind: "user", id: cb.value });
-  }
-  return out;
 }
 
 async function wireReveal() {
@@ -759,50 +734,40 @@ async function wireReveal() {
     setStatus("Vault locked.", "");
   });
 
-  // Visibility (scope) edit affordance.
-  await wireVisibilityEdit(entry.scopes || []);
+  // Visibility (role) edit affordance.
+  await wireRoleEdit(entry.role_id || null);
 }
 
-// wireVisibilityEdit renders the current scope rows as friendly tags +
-// an Edit button that swaps in a checkbox selector pre-filled with
-// current selections. On Save, PUTs the new scopes; on
-// ErrStepUpRequired (401), surfaces a re-unlock prompt and retries.
-async function wireVisibilityEdit(currentScopes) {
+// wireRoleEdit renders the current owning role + an Edit button that
+// swaps in a single-select dropdown. On Save, PUTs role_id; on 401
+// (ErrStepUpRequired from server-side widening detection), prompts for
+// re-unlock and retries once.
+async function wireRoleEdit(currentRoleID) {
   const display = document.getElementById("visibility-display");
   const editBtn = document.getElementById("edit-visibility-button");
   const form = document.getElementById("visibility-form");
+  const select = document.getElementById("visibility-role-selector");
   const cancel = document.getElementById("cancel-visibility-edit");
   const status = document.getElementById("visibility-status");
+  let principalsCache = null;
 
-  // Lazy-load principals: only fetch when the user clicks Edit. Saves
-  // a network round trip on the common "I just want to see the password"
-  // path.
-  let principals = null;
-
-  const renderTags = (scopes) => {
-    if (scopes.length === 0) {
-      display.textContent = "Just you (legacy entry)";
+  const renderLabel = async (roleID) => {
+    if (!roleID) {
+      display.textContent = "Everyone in the workspace";
       return;
     }
-    const labels = scopes.map((s) => {
-      if (s.kind === "tenant") return "Everyone in the workspace";
-      if (s.kind === "role") return `Role: ${roleNameFor(principals, s.id) || s.id}`;
-      if (s.kind === "user") return `User: ${userLabelFor(principals, s.id) || s.id}`;
-      return s.kind;
-    });
-    display.textContent = labels.join(" · ");
+    if (!principalsCache) {
+      // Lazy fetch only if we need a friendly role name.
+      try { principalsCache = await api("GET", "/principals"); } catch {}
+    }
+    const name = (principalsCache?.roles || []).find((r) => r.id === roleID)?.name;
+    display.textContent = name ? `Role: ${name}` : `Role: ${roleID}`;
   };
 
-  // First render uses raw IDs since principals haven't been fetched.
-  renderTags(currentScopes);
+  await renderLabel(currentRoleID);
 
   editBtn.addEventListener("click", async () => {
-    if (!principals) {
-      principals = await api("GET", "/principals");
-      // Re-render the display with friendly names now that we have them.
-      renderTags(currentScopes);
-    }
-    populateVisibilitySelector(principals, currentScopes);
+    await populateRoleSelector(select, currentRoleID);
     form.hidden = false;
     editBtn.hidden = true;
   });
@@ -815,27 +780,18 @@ async function wireVisibilityEdit(currentScopes) {
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const next = readVisibilitySelector();
-    if (next.length === 0) {
-      status.textContent = "Pick at least one role, person, or 'Everyone in the workspace'.";
-      status.className = "error";
-      return;
-    }
+    const next = select.value || null; // "" → null → tenant-wide
     status.textContent = "Saving…";
     status.className = "";
+    const put = () => api("PUT", `/entries/${VAULT.entryId}/role`, { role_id: next });
     try {
-      await api("PUT", `/entries/${VAULT.entryId}/scopes`, { scopes: next });
+      await put();
     } catch (err) {
-      // 401 from the server means step-up auth required (widening
-      // without a recent unlock). Re-prompt for unlock and retry once.
       if ((err.message || "").includes("HTTP 401")) {
-        status.textContent = "Re-unlock to confirm widening…";
-        status.className = "";
+        status.textContent = "Re-unlock to confirm…";
         try { await workerCall("lock"); } catch {}
         await ensureUnlocked();
-        try {
-          await api("PUT", `/entries/${VAULT.entryId}/scopes`, { scopes: next });
-        } catch (retryErr) {
+        try { await put(); } catch (retryErr) {
           status.textContent = `Save failed: ${retryErr.message || retryErr}`;
           status.className = "error";
           return;
@@ -846,84 +802,13 @@ async function wireVisibilityEdit(currentScopes) {
         return;
       }
     }
-    // Mutate local state so display reflects the new visibility
-    // without a full reload.
-    currentScopes.length = 0;
-    for (const s of next) currentScopes.push(s);
-    renderTags(currentScopes);
+    currentRoleID = next;
+    await renderLabel(currentRoleID);
     form.hidden = true;
     editBtn.hidden = false;
     status.textContent = "Saved.";
     status.className = "success";
   });
-}
-
-function roleNameFor(principals, id) {
-  for (const r of (principals?.roles || [])) {
-    if (r.id === id) return r.name;
-  }
-  return null;
-}
-function userLabelFor(principals, id) {
-  for (const u of (principals?.users || [])) {
-    if (u.id === id) return u.display_name || u.slack_user_id;
-  }
-  return null;
-}
-
-function populateVisibilitySelector(principals, currentScopes) {
-  const tenantBox = document.querySelector('input[name="vis_scope_tenant"]');
-  tenantBox.checked = false;
-  const rolesEl = document.getElementById("vis-scope-roles");
-  const usersEl = document.getElementById("vis-scope-users");
-  // Reset existing options (safe to replace each time the dialog opens).
-  while (rolesEl.children.length > 1) rolesEl.removeChild(rolesEl.lastChild);
-  while (usersEl.children.length > 1) usersEl.removeChild(usersEl.lastChild);
-
-  const currentRoles = new Set(currentScopes.filter((s) => s.kind === "role").map((s) => s.id));
-  const currentUsers = new Set(currentScopes.filter((s) => s.kind === "user").map((s) => s.id));
-  const hasTenant = currentScopes.some((s) => s.kind === "tenant");
-  tenantBox.checked = hasTenant;
-
-  for (const role of principals.roles || []) {
-    const lbl = document.createElement("label");
-    lbl.className = "checkbox";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.name = "vis_scope_role";
-    cb.value = role.id;
-    cb.checked = currentRoles.has(role.id);
-    lbl.appendChild(cb);
-    lbl.appendChild(document.createTextNode(" " + role.name));
-    rolesEl.appendChild(lbl);
-  }
-  for (const user of principals.users || []) {
-    const lbl = document.createElement("label");
-    lbl.className = "checkbox";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.name = "vis_scope_user";
-    cb.value = user.id;
-    cb.checked = currentUsers.has(user.id);
-    lbl.appendChild(cb);
-    const display = user.display_name || user.slack_user_id;
-    lbl.appendChild(document.createTextNode(" " + display));
-    usersEl.appendChild(lbl);
-  }
-}
-
-function readVisibilitySelector() {
-  const out = [];
-  if (document.querySelector('input[name="vis_scope_tenant"]:checked')) {
-    out.push({ kind: "tenant" });
-  }
-  for (const cb of document.querySelectorAll('input[name="vis_scope_role"]:checked')) {
-    out.push({ kind: "role", id: cb.value });
-  }
-  for (const cb of document.querySelectorAll('input[name="vis_scope_user"]:checked')) {
-    out.push({ kind: "user", id: cb.value });
-  }
-  return out;
 }
 
 async function wireGrant() {

@@ -119,17 +119,11 @@ type EvtEntryView struct{}
 type EvtEntryUpdate struct{}
 type EvtEntryDelete struct{}
 
-// EvtScopeChange logs the diff (added/removed scope rows) by ID. Free-form
-// names are deliberately omitted — IDs are the canonical reference.
+// EvtScopeChange logs a role-scope change as the from/to role pair.
+// nil means "everyone in the tenant"; set means a specific role.
 type EvtScopeChange struct {
-	Added   []ScopeRef `json:"added"`
-	Removed []ScopeRef `json:"removed"`
-}
-
-// ScopeRef identifies one scope row by kind + id (id is nil for tenant scope).
-type ScopeRef struct {
-	Kind string     `json:"kind"` // "user" | "role" | "tenant"
-	ID   *uuid.UUID `json:"id,omitempty"`
+	FromRoleID *uuid.UUID `json:"from_role_id,omitempty"`
+	ToRoleID   *uuid.UUID `json:"to_role_id,omitempty"`
 }
 
 // EvtMasterPasswordReset is written when a user uses the replace=true path.

@@ -21,58 +21,43 @@ func randBytes(t *testing.T, n int) []byte {
 	return b
 }
 
-func TestVaultEntryCreateAndOwnerOnlyAuthz(t *testing.T) {
+func TestVaultEntryRoleScopeIsolation(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	tenantID, ownerID := testTenantUser(t, ctx, pool)
 	otherID := mustOtherUser(t, ctx, pool, tenantID)
 
+	// Create a role and assign only the owner to it. The entry scoped
+	// to that role should be visible to the owner, hidden from the
+	// non-member (otherID).
+	role, err := GetOrCreateRole(ctx, pool, tenantID, "engineering", "")
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	if err := AssignRole(ctx, pool, tenantID, ownerID, "engineering"); err != nil {
+		t.Fatalf("assign role: %v", err)
+	}
 	id, err := CreateVaultEntry(ctx, pool, VaultEntry{
 		TenantID:        tenantID,
 		OwnerUserID:     ownerID,
-		Title:           "GitHub work",
+		RoleID:          &role.ID,
+		Title:           "Eng AWS prod",
 		ValueCiphertext: []byte("ciphertext"),
 		ValueNonce:      randBytes(t, 12),
-	}, nil)
-	if err != nil {
-		t.Fatalf("create entry: %v", err)
-	}
-
-	// Owner can read.
-	got, err := GetVaultEntry(ctx, pool, tenantID, id, ownerID, nil)
-	if err != nil || got == nil {
-		t.Fatalf("owner read: got=%v err=%v", got, err)
-	}
-
-	// Default-deny: other user gets 404 (modeled as ErrNotFound).
-	if _, err := GetVaultEntry(ctx, pool, tenantID, id, otherID, nil); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("other user should be denied; got err=%v", err)
-	}
-}
-
-func TestVaultEntryUserScope(t *testing.T) {
-	pool := testdb.Open(t)
-	ctx := context.Background()
-	tenantID, ownerID := testTenantUser(t, ctx, pool)
-	otherID := mustOtherUser(t, ctx, pool, tenantID)
-
-	id, err := CreateVaultEntry(ctx, pool, VaultEntry{
-		TenantID:        tenantID,
-		OwnerUserID:     ownerID,
-		Title:           "Shared",
-		ValueCiphertext: []byte("ct"),
-		ValueNonce:      randBytes(t, 12),
-	}, []VaultEntryScope{
-		{ScopeKind: "user", ScopeID: &otherID},
 	})
 	if err != nil {
 		t.Fatalf("create entry: %v", err)
 	}
 
-	// Other user (named in scope) can now read.
-	got, err := GetVaultEntry(ctx, pool, tenantID, id, otherID, nil)
+	// Owner can read (member of role; also implicit owner).
+	got, err := GetVaultEntry(ctx, pool, tenantID, id, ownerID, []uuid.UUID{role.ID})
 	if err != nil || got == nil {
-		t.Fatalf("scoped user read: got=%v err=%v", got, err)
+		t.Fatalf("owner read: got=%v err=%v", got, err)
+	}
+
+	// Non-member of the role gets 404.
+	if _, err := GetVaultEntry(ctx, pool, tenantID, id, otherID, nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-member read should fail; got %v", err)
 	}
 }
 
@@ -82,14 +67,13 @@ func TestVaultEntryTenantScope(t *testing.T) {
 	tenantID, ownerID := testTenantUser(t, ctx, pool)
 	otherID := mustOtherUser(t, ctx, pool, tenantID)
 
+	// Tenant-wide visibility = RoleID nil (the whole-tenant default).
 	id, err := CreateVaultEntry(ctx, pool, VaultEntry{
 		TenantID:        tenantID,
 		OwnerUserID:     ownerID,
 		Title:           "Shop wifi",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      randBytes(t, 12),
-	}, []VaultEntryScope{
-		{ScopeKind: "tenant"},
 	})
 	if err != nil {
 		t.Fatalf("create entry: %v", err)
@@ -115,7 +99,7 @@ func TestVaultTenantIsolation(t *testing.T) {
 		Title:           "Tenant A only",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      randBytes(t, 12),
-	}, []VaultEntryScope{{ScopeKind: "tenant"}})
+	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -150,7 +134,7 @@ func TestVaultListSearch(t *testing.T) {
 			Title:           title,
 			ValueCiphertext: []byte("ct"),
 			ValueNonce:      randBytes(t, 12),
-		}, nil)
+		})
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}

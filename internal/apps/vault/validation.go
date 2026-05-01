@@ -8,10 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
-
-	"github.com/mrdon/kit/internal/models"
 )
 
 // validateRSAPubKey enforces RSA-2048 with e=65537 (defends against
@@ -45,80 +42,6 @@ func validateCiphertext(ct, nonce []byte) error {
 		return errors.New("value_nonce must be 12 bytes (AES-GCM)")
 	}
 	return nil
-}
-
-func validateScopes(scopes []models.VaultEntryScope) error {
-	seen := make(map[string]bool, len(scopes))
-	for i, s := range scopes {
-		switch s.ScopeKind {
-		case "tenant":
-			if s.ScopeID != nil {
-				return fmt.Errorf("scope[%d]: tenant kind must not have scope_id", i)
-			}
-		case "user", "role":
-			if s.ScopeID == nil {
-				return fmt.Errorf("scope[%d]: %s kind requires scope_id", i, s.ScopeKind)
-			}
-		default:
-			return fmt.Errorf("scope[%d]: unknown kind %q", i, s.ScopeKind)
-		}
-		key := scopeKey(s)
-		if seen[key] {
-			return fmt.Errorf("scope[%d]: duplicate %s", i, key)
-		}
-		seen[key] = true
-	}
-	return nil
-}
-
-func scopeKey(s models.VaultEntryScope) string {
-	if s.ScopeID == nil {
-		return s.ScopeKind + ":-"
-	}
-	return s.ScopeKind + ":" + s.ScopeID.String()
-}
-
-// scopeDiff compares two scope-row sets and returns the (added, removed)
-// lists of (kind, id) pairs. Output is sorted by (kind, id) so audit
-// rows are deterministic across runs (Go map iteration is randomized).
-func scopeDiff(before, after []models.VaultEntryScope) (added, removed []ScopeRef) {
-	prev := map[string]models.VaultEntryScope{}
-	for _, s := range before {
-		prev[scopeKey(s)] = s
-	}
-	now := map[string]models.VaultEntryScope{}
-	for _, s := range after {
-		now[scopeKey(s)] = s
-	}
-	for k, s := range now {
-		if _, ok := prev[k]; !ok {
-			added = append(added, ScopeRef{Kind: s.ScopeKind, ID: s.ScopeID})
-		}
-	}
-	for k, s := range prev {
-		if _, ok := now[k]; !ok {
-			removed = append(removed, ScopeRef{Kind: s.ScopeKind, ID: s.ScopeID})
-		}
-	}
-	sortScopeRefs(added)
-	sortScopeRefs(removed)
-	return added, removed
-}
-
-func sortScopeRefs(refs []ScopeRef) {
-	sort.Slice(refs, func(i, j int) bool {
-		if refs[i].Kind != refs[j].Kind {
-			return refs[i].Kind < refs[j].Kind
-		}
-		var li, lj string
-		if refs[i].ID != nil {
-			li = refs[i].ID.String()
-		}
-		if refs[j].ID != nil {
-			lj = refs[j].ID.String()
-		}
-		return li < lj
-	})
 }
 
 // pubkeyFingerprint returns a Signal-style fingerprint of a public key:

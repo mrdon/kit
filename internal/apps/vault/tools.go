@@ -52,23 +52,12 @@ var vaultToolMetas = []services.ToolMeta{
 		}),
 	},
 	{
-		Name:        "update_secret_scopes",
-		Description: "Change who can see a vault entry. Pass scopes as an array of {kind, id} objects: kind is 'user', 'role', or 'tenant' (id required for user/role; absent for tenant). Replaces the existing scope set entirely. Widening (adding 'tenant' or a new role) is gated — the user will see a confirmation card before it takes effect.",
+		Name:        "set_secret_role",
+		Description: "Change which role can see a vault entry. Pass role_id (UUID) to scope to that role's members, or omit / pass null to make it visible to everyone in the tenant. Widening — going from a specific role to tenant-wide, or moving across roles — is gated; the user will see a confirmation card before it takes effect.",
 		Schema: services.PropsReq(map[string]any{
-			"id": services.Field("string", "Vault entry UUID"),
-			"scopes": map[string]any{
-				"type":        "array",
-				"description": "New scope set; replaces existing rows.",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"kind": services.Field("string", "'user', 'role', or 'tenant'"),
-						"id":   services.Field("string", "user_id or role_id; omit for kind='tenant'"),
-					},
-					"required": []string{"kind"},
-				},
-			},
-		}, "id", "scopes"),
+			"id":      services.Field("string", "Vault entry UUID"),
+			"role_id": services.Field("string", "Role UUID; omit / null for everyone in the tenant"),
+		}, "id"),
 		// PolicyGate: see registerVaultAgentTools — only widening is gated;
 		// pure narrowing runs direct. The gate is enforced at the handler
 		// level so the schema stays the same on both surfaces.
@@ -104,7 +93,7 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 		// a "use the agent or web" error rather than calling svc
 		// directly.
 		switch meta.Name {
-		case "update_secret_scopes", "delete_secret":
+		case "set_secret_role", "delete_secret":
 			def.DefaultPolicy = tools.PolicyGate
 		}
 		r.Register(def)
@@ -121,8 +110,8 @@ func vaultAgentHandler(name string, svc *Service) tools.HandlerFunc {
 		return handleAgentViewSecret(svc)
 	case "start_add_secret":
 		return handleAgentStartAddSecret(svc)
-	case "update_secret_scopes":
-		return handleAgentUpdateSecretScopes(svc)
+	case "set_secret_role":
+		return handleAgentSetSecretRole(svc)
 	case "delete_secret":
 		return handleAgentDeleteSecret(svc)
 	}
@@ -229,11 +218,11 @@ func handleAgentStartAddSecret(svc *Service) tools.HandlerFunc {
 	}
 }
 
-func handleAgentUpdateSecretScopes(svc *Service) tools.HandlerFunc {
+func handleAgentSetSecretRole(svc *Service) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			ID     string       `json:"id"`
-			Scopes []scopeInput `json:"scopes"`
+			ID     string  `json:"id"`
+			RoleID *string `json:"role_id"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
@@ -242,20 +231,27 @@ func handleAgentUpdateSecretScopes(svc *Service) tools.HandlerFunc {
 		if err != nil {
 			return "Invalid id.", nil
 		}
-		scopes, err := scopesFromInput(inp.Scopes)
-		if err != nil {
-			return err.Error(), nil
+		var roleID *uuid.UUID
+		if inp.RoleID != nil && *inp.RoleID != "" {
+			rid, err := uuid.Parse(*inp.RoleID)
+			if err != nil {
+				return "Invalid role_id.", nil
+			}
+			roleID = &rid
 		}
 		caller := ec.Caller()
 		audit := auditFromExecContext(ec)
 		audit.userAgent = "agent"
-		if err := svc.UpdateScopes(ec.Ctx, caller, entryID, scopes, audit); err != nil {
+		if err := svc.SetEntryRole(ec.Ctx, caller, entryID, roleID, audit); err != nil {
 			if errors.Is(err, models.ErrNotFound) {
 				return "No entry with that id, or you don't have access.", nil
 			}
 			return "", err
 		}
-		return "Scopes updated.", nil
+		if roleID == nil {
+			return "Scope updated: visible to everyone in the workspace.", nil
+		}
+		return "Scope updated.", nil
 	}
 }
 
@@ -285,27 +281,6 @@ func handleAgentDeleteSecret(svc *Service) tools.HandlerFunc {
 }
 
 // ===== shared helpers =====
-
-type scopeInput struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-}
-
-func scopesFromInput(in []scopeInput) ([]models.VaultEntryScope, error) {
-	out := make([]models.VaultEntryScope, 0, len(in))
-	for i, s := range in {
-		row := models.VaultEntryScope{ScopeKind: s.Kind}
-		if s.Kind == "user" || s.Kind == "role" {
-			id, err := uuid.Parse(s.ID)
-			if err != nil {
-				return nil, fmt.Errorf("scope[%d]: bad id: %w", i, err)
-			}
-			row.ScopeID = &id
-		}
-		out = append(out, row)
-	}
-	return out, nil
-}
 
 // formatEntryList renders metadata-only rows for the agent's response.
 // scope_summary surfaces "yours" / "tenant-wide" / "shared" so the agent

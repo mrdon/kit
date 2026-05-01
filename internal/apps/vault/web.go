@@ -439,21 +439,23 @@ func (a *App) handleListEntries(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	var body struct {
-		Title           string       `json:"title"`
-		Username        string       `json:"username,omitempty"`
-		URL             string       `json:"url,omitempty"`
-		Tags            []string     `json:"tags,omitempty"`
-		ValueCiphertext []byte       `json:"value_ciphertext"`
-		ValueNonce      []byte       `json:"value_nonce"`
-		Scopes          []scopeInput `json:"scopes,omitempty"`
+		Title           string   `json:"title"`
+		Username        string   `json:"username,omitempty"`
+		URL             string   `json:"url,omitempty"`
+		Tags            []string `json:"tags,omitempty"`
+		ValueCiphertext []byte   `json:"value_ciphertext"`
+		ValueNonce      []byte   `json:"value_nonce"`
+		// RoleID is the owning role; null/omitted means "everyone in
+		// the tenant". Single-role authz model (v1.5).
+		RoleID *string `json:"role_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	scopes, err := scopesFromInput(body.Scopes)
+	roleID, err := parseOptionalUUID(body.RoleID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "bad role_id", http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
@@ -464,13 +466,27 @@ func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		Tags:            body.Tags,
 		ValueCiphertext: body.ValueCiphertext,
 		ValueNonce:      body.ValueNonce,
-		Scopes:          scopes,
+		RoleID:          roleID,
 	}, audit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
+}
+
+// parseOptionalUUID returns nil when the input pointer is nil or its
+// value is an empty string; otherwise parses the UUID. Used to thread
+// "role_id may be null/omitted" through the JSON body shapes.
+func parseOptionalUUID(s *string) (*uuid.UUID, error) {
+	if s == nil || *s == "" {
+		return nil, nil //nolint:nilnil // explicit "not provided" sentinel
+	}
+	id, err := uuid.Parse(*s)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func (a *App) handleGetEntry(w http.ResponseWriter, r *http.Request) {
@@ -502,22 +518,15 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Title           string       `json:"title"`
-		Username        string       `json:"username,omitempty"`
-		URL             string       `json:"url,omitempty"`
-		Tags            []string     `json:"tags,omitempty"`
-		ValueCiphertext []byte       `json:"value_ciphertext"`
-		ValueNonce      []byte       `json:"value_nonce"`
-		Scopes          []scopeInput `json:"scopes,omitempty"`
-		UpdateScopes    bool         `json:"update_scopes,omitempty"`
+		Title           string   `json:"title"`
+		Username        string   `json:"username,omitempty"`
+		URL             string   `json:"url,omitempty"`
+		Tags            []string `json:"tags,omitempty"`
+		ValueCiphertext []byte   `json:"value_ciphertext"`
+		ValueNonce      []byte   `json:"value_nonce"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	scopes, err := scopesFromInput(body.Scopes)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
@@ -528,8 +537,6 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		Tags:            body.Tags,
 		ValueCiphertext: body.ValueCiphertext,
 		ValueNonce:      body.ValueNonce,
-		Scopes:          scopes,
-		UpdateScopes:    body.UpdateScopes,
 	}, audit)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
@@ -542,12 +549,12 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleUpdateEntryScopes is the metadata-only "edit who can see this"
-// path used by the reveal page. Saves the trip through UpdateEntry's
+// handleSetEntryRole is the metadata-only "edit who can see this" path
+// used by the reveal page. Saves the trip through UpdateEntry's
 // re-encrypt pipeline since the value isn't changing. Service-level
 // step-up auth fires on widening; surface ErrStepUpRequired as 401 so
 // the JS can prompt for re-unlock.
-func (a *App) handleUpdateEntryScopes(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleSetEntryRole(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	entryID, err := uuid.Parse(r.PathValue("entry_id"))
 	if err != nil {
@@ -555,19 +562,19 @@ func (a *App) handleUpdateEntryScopes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Scopes []scopeInput `json:"scopes"`
+		RoleID *string `json:"role_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	scopes, err := scopesFromInput(body.Scopes)
+	roleID, err := parseOptionalUUID(body.RoleID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "bad role_id", http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
-	if err := a.svc.UpdateScopes(r.Context(), caller, entryID, scopes, audit); err != nil {
+	if err := a.svc.SetEntryRole(r.Context(), caller, entryID, roleID, audit); err != nil {
 		switch {
 		case errors.Is(err, models.ErrNotFound):
 			http.NotFound(w, r)
