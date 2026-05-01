@@ -32,6 +32,31 @@
     <summary>Notes</summary>
     <pre id="entry-notes"></pre>
   </details>
+
+  <section id="visibility-section">
+    <h3>Who can see this</h3>
+    <div id="visibility-display"></div>
+    <button type="button" id="edit-visibility-button">Edit</button>
+    <form id="visibility-form" hidden autocomplete="off">
+      <fieldset id="vis-scope-fieldset">
+        <legend>Update visibility</legend>
+        <label class="checkbox">
+          <input type="checkbox" name="vis_scope_tenant" value="1">
+          Everyone in the workspace
+        </label>
+        <fieldset id="vis-scope-roles">
+          <legend>Roles</legend>
+        </fieldset>
+        <fieldset id="vis-scope-users">
+          <legend>Specific people</legend>
+        </fieldset>
+      </fieldset>
+      <button type="submit">Save visibility</button>
+      <button type="button" id="cancel-visibility-edit">Cancel</button>
+      <p id="visibility-status" role="status"></p>
+    </form>
+  </section>
+
   <p><button type="button" id="lock-button">Lock vault</button></p>
 </section>
 <p id="status" role="status"></p>

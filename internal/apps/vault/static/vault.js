@@ -711,6 +711,172 @@ async function wireReveal() {
     await lockNow();
     setStatus("Vault locked.", "");
   });
+
+  // Visibility (scope) edit affordance.
+  await wireVisibilityEdit(entry.scopes || []);
+}
+
+// wireVisibilityEdit renders the current scope rows as friendly tags +
+// an Edit button that swaps in a checkbox selector pre-filled with
+// current selections. On Save, PUTs the new scopes; on
+// ErrStepUpRequired (401), surfaces a re-unlock prompt and retries.
+async function wireVisibilityEdit(currentScopes) {
+  const display = document.getElementById("visibility-display");
+  const editBtn = document.getElementById("edit-visibility-button");
+  const form = document.getElementById("visibility-form");
+  const cancel = document.getElementById("cancel-visibility-edit");
+  const status = document.getElementById("visibility-status");
+
+  // Lazy-load principals: only fetch when the user clicks Edit. Saves
+  // a network round trip on the common "I just want to see the password"
+  // path.
+  let principals = null;
+
+  const renderTags = (scopes) => {
+    if (scopes.length === 0) {
+      display.textContent = "Just you (legacy entry)";
+      return;
+    }
+    const labels = scopes.map((s) => {
+      if (s.kind === "tenant") return "Everyone in the workspace";
+      if (s.kind === "role") return `Role: ${roleNameFor(principals, s.id) || s.id}`;
+      if (s.kind === "user") return `User: ${userLabelFor(principals, s.id) || s.id}`;
+      return s.kind;
+    });
+    display.textContent = labels.join(" · ");
+  };
+
+  // First render uses raw IDs since principals haven't been fetched.
+  renderTags(currentScopes);
+
+  editBtn.addEventListener("click", async () => {
+    if (!principals) {
+      principals = await api("GET", "/principals");
+      // Re-render the display with friendly names now that we have them.
+      renderTags(currentScopes);
+    }
+    populateVisibilitySelector(principals, currentScopes);
+    form.hidden = false;
+    editBtn.hidden = true;
+  });
+
+  cancel.addEventListener("click", () => {
+    form.hidden = true;
+    editBtn.hidden = false;
+    status.textContent = "";
+  });
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const next = readVisibilitySelector();
+    if (next.length === 0) {
+      status.textContent = "Pick at least one role, person, or 'Everyone in the workspace'.";
+      status.className = "error";
+      return;
+    }
+    status.textContent = "Saving…";
+    status.className = "";
+    try {
+      await api("PUT", `/entries/${VAULT.entryId}/scopes`, { scopes: next });
+    } catch (err) {
+      // 401 from the server means step-up auth required (widening
+      // without a recent unlock). Re-prompt for unlock and retry once.
+      if ((err.message || "").includes("HTTP 401")) {
+        status.textContent = "Re-unlock to confirm widening…";
+        status.className = "";
+        try { await workerCall("lock"); } catch {}
+        await ensureUnlocked();
+        try {
+          await api("PUT", `/entries/${VAULT.entryId}/scopes`, { scopes: next });
+        } catch (retryErr) {
+          status.textContent = `Save failed: ${retryErr.message || retryErr}`;
+          status.className = "error";
+          return;
+        }
+      } else {
+        status.textContent = `Save failed: ${err.message || err}`;
+        status.className = "error";
+        return;
+      }
+    }
+    // Mutate local state so display reflects the new visibility
+    // without a full reload.
+    currentScopes.length = 0;
+    for (const s of next) currentScopes.push(s);
+    renderTags(currentScopes);
+    form.hidden = true;
+    editBtn.hidden = false;
+    status.textContent = "Saved.";
+    status.className = "success";
+  });
+}
+
+function roleNameFor(principals, id) {
+  for (const r of (principals?.roles || [])) {
+    if (r.id === id) return r.name;
+  }
+  return null;
+}
+function userLabelFor(principals, id) {
+  for (const u of (principals?.users || [])) {
+    if (u.id === id) return u.display_name || u.slack_user_id;
+  }
+  return null;
+}
+
+function populateVisibilitySelector(principals, currentScopes) {
+  const tenantBox = document.querySelector('input[name="vis_scope_tenant"]');
+  tenantBox.checked = false;
+  const rolesEl = document.getElementById("vis-scope-roles");
+  const usersEl = document.getElementById("vis-scope-users");
+  // Reset existing options (safe to replace each time the dialog opens).
+  while (rolesEl.children.length > 1) rolesEl.removeChild(rolesEl.lastChild);
+  while (usersEl.children.length > 1) usersEl.removeChild(usersEl.lastChild);
+
+  const currentRoles = new Set(currentScopes.filter((s) => s.kind === "role").map((s) => s.id));
+  const currentUsers = new Set(currentScopes.filter((s) => s.kind === "user").map((s) => s.id));
+  const hasTenant = currentScopes.some((s) => s.kind === "tenant");
+  tenantBox.checked = hasTenant;
+
+  for (const role of principals.roles || []) {
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "vis_scope_role";
+    cb.value = role.id;
+    cb.checked = currentRoles.has(role.id);
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(" " + role.name));
+    rolesEl.appendChild(lbl);
+  }
+  for (const user of principals.users || []) {
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "vis_scope_user";
+    cb.value = user.id;
+    cb.checked = currentUsers.has(user.id);
+    lbl.appendChild(cb);
+    const display = user.display_name || user.slack_user_id;
+    lbl.appendChild(document.createTextNode(" " + display));
+    usersEl.appendChild(lbl);
+  }
+}
+
+function readVisibilitySelector() {
+  const out = [];
+  if (document.querySelector('input[name="vis_scope_tenant"]:checked')) {
+    out.push({ kind: "tenant" });
+  }
+  for (const cb of document.querySelectorAll('input[name="vis_scope_role"]:checked')) {
+    out.push({ kind: "role", id: cb.value });
+  }
+  for (const cb of document.querySelectorAll('input[name="vis_scope_user"]:checked')) {
+    out.push({ kind: "user", id: cb.value });
+  }
+  return out;
 }
 
 async function wireGrant() {

@@ -502,6 +502,45 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// handleUpdateEntryScopes is the metadata-only "edit who can see this"
+// path used by the reveal page. Saves the trip through UpdateEntry's
+// re-encrypt pipeline since the value isn't changing. Service-level
+// step-up auth fires on widening; surface ErrStepUpRequired as 401 so
+// the JS can prompt for re-unlock.
+func (a *App) handleUpdateEntryScopes(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	entryID, err := uuid.Parse(r.PathValue("entry_id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body struct {
+		Scopes []scopeInput `json:"scopes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	scopes, err := scopesFromInput(body.Scopes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	audit := a.svc.AuditFromRequest(caller, r)
+	if err := a.svc.UpdateScopes(r.Context(), caller, entryID, scopes, audit); err != nil {
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			http.NotFound(w, r)
+		case errors.Is(err, ErrStepUpRequired):
+			http.Error(w, "recent unlock required", http.StatusUnauthorized)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (a *App) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	entryID, err := uuid.Parse(r.PathValue("entry_id"))

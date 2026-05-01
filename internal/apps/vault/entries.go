@@ -28,12 +28,15 @@ type EntryListItem struct {
 }
 
 // EntryWithCiphertext is what the browser receives on the reveal/edit
-// path: metadata + the encrypted value (browser decrypts client-side).
+// path: metadata + the encrypted value (browser decrypts client-side)
+// + the scope rows so the page can render the current visibility state
+// for editing.
 type EntryWithCiphertext struct {
 	EntryListItem
-	OwnerUserID     uuid.UUID `json:"owner_user_id"`
-	ValueCiphertext []byte    `json:"value_ciphertext"`
-	ValueNonce      []byte    `json:"value_nonce"`
+	OwnerUserID     uuid.UUID  `json:"owner_user_id"`
+	ValueCiphertext []byte     `json:"value_ciphertext"`
+	ValueNonce      []byte     `json:"value_nonce"`
+	Scopes          []ScopeRef `json:"scopes"`
 }
 
 // CreateEntryParams is the input shape for creating a new vault entry.
@@ -144,11 +147,23 @@ func (s *Service) GetEntry(ctx context.Context, c *services.Caller, entryID uuid
 	}
 	audit.log(ctx, "vault.entry_view", "vault_entry", &entryID, EvtEntryView{})
 
+	scopes, err := models.ListVaultEntryScopes(ctx, s.pool, c.TenantID, entryID)
+	if err != nil {
+		// Non-fatal: the reveal page falls back to no-edit-affordance.
+		slog.Warn("vault: loading scopes for reveal", "error", err)
+		scopes = nil
+	}
+	scopeRefs := make([]ScopeRef, 0, len(scopes))
+	for _, sc := range scopes {
+		scopeRefs = append(scopeRefs, ScopeRef{Kind: sc.ScopeKind, ID: sc.ScopeID})
+	}
+
 	return &EntryWithCiphertext{
 		EntryListItem:   toListItem(*e, c),
 		OwnerUserID:     e.OwnerUserID,
 		ValueCiphertext: e.ValueCiphertext,
 		ValueNonce:      e.ValueNonce,
+		Scopes:          scopeRefs,
 	}, nil
 }
 
