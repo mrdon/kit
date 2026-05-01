@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/mrdon/kit/internal/models"
 )
 
@@ -163,8 +161,3 @@ func nilIfEmpty(s string) *string {
 	}
 	return &s
 }
-
-// (Compile-time assertion that uuid.UUID is referenced — needed when
-// callers parse fingerprints elsewhere; the import block above keeps
-// validation.go self-contained.)
-var _ uuid.UUID

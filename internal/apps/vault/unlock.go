@@ -98,17 +98,38 @@ func (s *Service) Unlock(ctx context.Context, c *services.Caller, authHash []byt
 		count, _ := models.IncrementFailedUnlocks(ctx, s.pool, c.TenantID, c.UserID)
 		locked := false
 		var lockoutDuration time.Duration
-		switch {
-		case count >= unlockHardLockoutThreshold:
-			lockoutDuration = unlockHardLockoutDuration
-			locked = true
-		case count >= unlockLockoutThreshold:
+		// Fire the user-facing alarm card ONLY on threshold transitions
+		// (count == soft / hard threshold exactly), not on every miss
+		// past threshold. Otherwise an attacker who knows the lockout
+		// timing can spam the user's stack with a fresh card after each
+		// 15-minute cycle.
+		notifyUser := false
+		switch count {
+		case unlockLockoutThreshold:
 			lockoutDuration = unlockLockoutDuration
 			locked = true
+			notifyUser = true
+		case unlockHardLockoutThreshold:
+			lockoutDuration = unlockHardLockoutDuration
+			locked = true
+			notifyUser = true
+		default:
+			// Past either threshold but not on the boundary: still
+			// apply the appropriate lockout, just don't re-alarm.
+			switch {
+			case count > unlockHardLockoutThreshold:
+				lockoutDuration = unlockHardLockoutDuration
+				locked = true
+			case count > unlockLockoutThreshold:
+				lockoutDuration = unlockLockoutDuration
+				locked = true
+			}
 		}
 		if locked {
 			_ = models.SetVaultUserLockedUntil(ctx, s.pool, c.TenantID, c.UserID, time.Now().Add(lockoutDuration))
-			s.fireFailedUnlockDecision(ctx, c, count, lockoutDuration)
+			if notifyUser {
+				s.fireFailedUnlockDecision(ctx, c, count, lockoutDuration)
+			}
 		}
 		audit.log(ctx, "vault.unlock_failed", "vault_user", &c.UserID, EvtUnlockFailed{FailedCount: count, Locked: locked})
 		return nil, ErrUnlockMismatch
@@ -407,6 +428,12 @@ func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool
 			displayName = *user.DisplayName
 		}
 	}
+	// Display names come from Slack profiles; a malicious user could
+	// set theirs to inject Markdown / HTML into the admin's swipe card.
+	// Strip the syntactically dangerous characters before interpolation.
+	displayName = sanitizeMarkdownInline(displayName)
+	slackID = sanitizeMarkdownInline(slackID)
+
 	var b strings.Builder
 	if isReset {
 		fmt.Fprintf(&b, "**%s** (<@%s>) reset their vault password. Their public-key fingerprint has changed.\n\n", displayName, slackID)
@@ -419,6 +446,21 @@ func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool
 	b.WriteString("**Verify this fingerprint with them out-of-band** before granting. ")
 	b.WriteString("Open the grant page to complete the action.")
 	return b.String()
+}
+
+// sanitizeMarkdownInline removes characters that would terminate a code
+// fence, inline-code span, or HTML tag if interpolated into a Markdown
+// body. Keeps the content recognisable (no full HTML escape) — Slack
+// display names rarely use these characters legitimately.
+func sanitizeMarkdownInline(s string) string {
+	r := strings.NewReplacer(
+		"`", "ʼ",
+		"<", "‹",
+		">", "›",
+		"\n", " ",
+		"\r", " ",
+	)
+	return r.Replace(s)
 }
 
 // fireFailedUnlockDecision creates a high-priority decision card on the

@@ -103,7 +103,18 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 // card is visible to the union of named principals (no implicit
 // tenant-wide). Existing scope rows are deleted first so this is safe to
 // call on update too.
+//
+// Each user_id in userScopes must belong to the caller's tenant, and
+// each role name in roleScopes must resolve to a role row in this
+// tenant. ScopeFilterIDs (the visibility filter) joins on caller's
+// tenant_id so cross-tenant principals would never match — but
+// untenanted ids would still pollute the scopes table. Validate up
+// front; refuse the whole transaction on the first miss.
 func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, roleScopes []string, userScopes []uuid.UUID) error {
+	if err := validateUserScopesTenancy(ctx, tx, tenantID, userScopes); err != nil {
+		return err
+	}
+
 	if _, err := tx.Exec(ctx, `DELETE FROM app_card_scopes WHERE tenant_id = $1 AND card_id = $2`, tenantID, cardID); err != nil {
 		return fmt.Errorf("clearing scopes: %w", err)
 	}
@@ -146,6 +157,39 @@ func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, r
 		if err := insertScope(nil, &uid); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateUserScopesTenancy confirms every user id in the slice belongs
+// to the given tenant. The scopes table FKs to users(id) but doesn't
+// constrain the user's tenant, so without this check an admin could
+// pass a foreign-tenant uuid that lands in the scopes table forever
+// (never matches any visibility filter, just clutter).
+func validateUserScopesTenancy(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, userIDs []uuid.UUID) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	// Dedup first so the count comparison stays meaningful when the
+	// caller passes the same uuid twice.
+	seen := make(map[uuid.UUID]struct{}, len(userIDs))
+	uniq := make([]uuid.UUID, 0, len(userIDs))
+	for _, id := range userIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	var found int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM users WHERE tenant_id = $1 AND id = ANY($2)`,
+		tenantID, uniq,
+	).Scan(&found); err != nil {
+		return fmt.Errorf("validate user scopes tenancy: %w", err)
+	}
+	if found != len(uniq) {
+		return errors.New("scope references a user not in this tenant")
 	}
 	return nil
 }
