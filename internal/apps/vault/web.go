@@ -45,6 +45,12 @@ type pageData struct {
 // in the plan. Same set on every vault page.
 func applySecurityHeaders(w http.ResponseWriter) {
 	h := w.Header()
+	// Trusted Types (`require-trusted-types-for 'script'`) is plan-target
+	// hardening but blocks the SharedWorker constructor for plain string
+	// URLs — it expects a TrustedScriptURL. Re-enable in v1.5 alongside a
+	// default Trusted Types policy that wraps internal worker/script URLs.
+	// The remaining strict-CSP defenses (no inline, no eval, no CDN, COOP/
+	// COEP isolation) are still in force.
 	h.Set("Content-Security-Policy",
 		"default-src 'none'; "+
 			"script-src 'self'; "+
@@ -54,8 +60,7 @@ func applySecurityHeaders(w http.ResponseWriter) {
 			"worker-src 'self'; "+
 			"form-action 'self'; "+
 			"frame-ancestors 'none'; "+
-			"base-uri 'none'; "+
-			"require-trusted-types-for 'script'")
+			"base-uri 'none'")
 	h.Set("Cross-Origin-Opener-Policy", "same-origin")
 	h.Set("Cross-Origin-Embedder-Policy", "require-corp")
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
