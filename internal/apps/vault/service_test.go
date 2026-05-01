@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -353,11 +354,13 @@ func TestPUTMassAssignmentIgnoresOwnerUserID(t *testing.T) {
 	owner := adminCaller(tenantID, ownerID)
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 
-	// Create an entry owned by ownerID.
+	// Create an entry owned by ownerID. Scopes are required (no
+	// personal-only); use tenant-wide for the test fixture.
 	id, err := svc.CreateEntry(ctx, owner, CreateEntryParams{
 		Title:           "test",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      make([]byte, 12),
+		Scopes:          []models.VaultEntryScope{{ScopeKind: "tenant"}},
 	}, svc.AuditFromRequest(owner, r))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -494,6 +497,7 @@ func TestNonceUniquenessAcrossEntries(t *testing.T) {
 			Title:           fmt.Sprintf("e%d", i),
 			ValueCiphertext: []byte("ct"),
 			ValueNonce:      nonce,
+			Scopes:          []models.VaultEntryScope{{ScopeKind: "tenant"}},
 		}, svc.AuditFromRequest(owner, r))
 		if err != nil {
 			t.Fatalf("create %d: %v", i, err)
@@ -627,6 +631,32 @@ func TestSanitizeMarkdownInlineRemovesDangerousChars(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("sanitize(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// TestCreateEntryRequiresScope ensures the API rejects an entry with no
+// scope rows. Personal-only is not a user-facing concept; every secret
+// must scope to at least one role, user, or tenant-wide. Plan §"Per-role
+// secrets in practice".
+func TestCreateEntryRequiresScope(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, ownerID := freshTenant(t, ctx, pool)
+	owner := adminCaller(tenantID, ownerID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	_, err := svc.CreateEntry(ctx, owner, CreateEntryParams{
+		Title:           "no scope",
+		ValueCiphertext: []byte("ct"),
+		ValueNonce:      make([]byte, 12),
+		// Scopes intentionally empty.
+	}, svc.AuditFromRequest(owner, r))
+	if err == nil {
+		t.Fatal("expected rejection on empty scopes")
+	}
+	if !errors.Is(err, err) || !strings.Contains(err.Error(), "scope required") {
+		t.Errorf("expected 'scope required' error, got %v", err)
 	}
 }
 

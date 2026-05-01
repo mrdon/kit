@@ -568,10 +568,21 @@ async function wireAdd() {
   if (params.get("title")) form.elements.title.value = params.get("title");
   if (params.get("url")) form.elements.url.value = params.get("url");
 
+  // Populate the "who can see this" selector. Required: every secret
+  // must scope to at least one role, person, or tenant-wide. Plan
+  // §"Per-role secrets in practice".
+  await populateScopeSelector();
+
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    setStatus("Encrypting…");
 
+    const scopes = readScopeSelector();
+    if (scopes.length === 0) {
+      setStatus("Pick at least one role, person, or 'Everyone in the workspace'.", "error");
+      return;
+    }
+
+    setStatus("Encrypting…");
     const fd = new FormData(form);
     const valueJSON = JSON.stringify({
       password: fd.get("password") || "",
@@ -581,17 +592,76 @@ async function wireAdd() {
 
     const tags = (fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-    await api("POST", "/entries", {
-      title: fd.get("title") || "",
-      username: fd.get("username") || "",
-      url: fd.get("url") || "",
-      tags,
-      value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
-      value_nonce: bytesField(new Uint8Array(enc.nonce)),
-    });
+    try {
+      await api("POST", "/entries", {
+        title: fd.get("title") || "",
+        username: fd.get("username") || "",
+        url: fd.get("url") || "",
+        tags,
+        value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
+        value_nonce: bytesField(new Uint8Array(enc.nonce)),
+        scopes,
+      });
+    } catch (err) {
+      setStatus(`Save failed: ${err.message || err}`, "error");
+      return;
+    }
     setStatus("Saved.", "success");
     form.reset();
   });
+}
+
+// populateScopeSelector fetches the caller's tenant roles + users and
+// renders a checkbox per principal. The form intentionally has no
+// implicit default — the user must pick. (When Kit grows a "primary
+// role" concept, this is where we'd pre-check that role.)
+async function populateScopeSelector() {
+  const principals = await api("GET", "/principals");
+  const rolesEl = document.getElementById("scope-roles");
+  const usersEl = document.getElementById("scope-users");
+  document.getElementById("scope-roles-loading")?.remove();
+  document.getElementById("scope-users-loading")?.remove();
+
+  for (const role of principals.roles || []) {
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "scope_role";
+    cb.value = role.id;
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(" " + role.name));
+    rolesEl.appendChild(lbl);
+  }
+  for (const user of principals.users || []) {
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.name = "scope_user";
+    cb.value = user.id;
+    lbl.appendChild(cb);
+    const display = user.display_name || user.slack_user_id;
+    lbl.appendChild(document.createTextNode(" " + display));
+    usersEl.appendChild(lbl);
+  }
+}
+
+// readScopeSelector returns the chosen scopes in the wire format the
+// server expects: an array of {kind, scope_id} (scope_id absent for
+// kind='tenant'). Returns [] if nothing is checked — the caller surfaces
+// the validation error.
+function readScopeSelector() {
+  const out = [];
+  const tenant = document.querySelector('input[name="scope_tenant"]:checked');
+  if (tenant) out.push({ kind: "tenant" });
+  for (const cb of document.querySelectorAll('input[name="scope_role"]:checked')) {
+    out.push({ kind: "role", id: cb.value });
+  }
+  for (const cb of document.querySelectorAll('input[name="scope_user"]:checked')) {
+    out.push({ kind: "user", id: cb.value });
+  }
+  return out;
 }
 
 async function wireReveal() {

@@ -289,6 +289,57 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handlePrincipals lists the caller's tenant roles + users so the web
+// scope selector can populate its dropdowns. Authenticated; returns
+// only the caller's own tenant. Display data only — no secrets, no
+// crypto state.
+func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	roles, err := models.ListRoles(r.Context(), a.pool, caller.TenantID)
+	if err != nil {
+		slog.Error("vault: listing roles", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	users, err := models.ListUsersByTenant(r.Context(), a.pool, caller.TenantID)
+	if err != nil {
+		slog.Error("vault: listing users", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type roleOut struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	type userOut struct {
+		ID          string `json:"id"`
+		SlackUserID string `json:"slack_user_id"`
+		DisplayName string `json:"display_name,omitempty"`
+	}
+
+	roleList := make([]roleOut, 0, len(roles))
+	for _, role := range roles {
+		roleList = append(roleList, roleOut{ID: role.ID.String(), Name: role.Name})
+	}
+	userList := make([]userOut, 0, len(users))
+	for _, u := range users {
+		display := ""
+		if u.DisplayName != nil {
+			display = *u.DisplayName
+		}
+		userList = append(userList, userOut{
+			ID:          u.ID.String(),
+			SlackUserID: u.SlackUserID,
+			DisplayName: display,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"roles": roleList,
+		"users": userList,
+	})
+}
+
 // handleGetUser returns a teammate's pubkey + fingerprint for the grant page.
 // Caller must already have vault access (so they can wrap vault_key for the
 // target). Returns 404 if the target hasn't registered yet.
@@ -348,16 +399,21 @@ func (a *App) handleListEntries(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	var body struct {
-		Title           string                   `json:"title"`
-		Username        string                   `json:"username,omitempty"`
-		URL             string                   `json:"url,omitempty"`
-		Tags            []string                 `json:"tags,omitempty"`
-		ValueCiphertext []byte                   `json:"value_ciphertext"`
-		ValueNonce      []byte                   `json:"value_nonce"`
-		Scopes          []models.VaultEntryScope `json:"scopes,omitempty"`
+		Title           string       `json:"title"`
+		Username        string       `json:"username,omitempty"`
+		URL             string       `json:"url,omitempty"`
+		Tags            []string     `json:"tags,omitempty"`
+		ValueCiphertext []byte       `json:"value_ciphertext"`
+		ValueNonce      []byte       `json:"value_nonce"`
+		Scopes          []scopeInput `json:"scopes,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	scopes, err := scopesFromInput(body.Scopes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
@@ -368,7 +424,7 @@ func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		Tags:            body.Tags,
 		ValueCiphertext: body.ValueCiphertext,
 		ValueNonce:      body.ValueNonce,
-		Scopes:          body.Scopes,
+		Scopes:          scopes,
 	}, audit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -406,17 +462,22 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Title           string                   `json:"title"`
-		Username        string                   `json:"username,omitempty"`
-		URL             string                   `json:"url,omitempty"`
-		Tags            []string                 `json:"tags,omitempty"`
-		ValueCiphertext []byte                   `json:"value_ciphertext"`
-		ValueNonce      []byte                   `json:"value_nonce"`
-		Scopes          []models.VaultEntryScope `json:"scopes,omitempty"`
-		UpdateScopes    bool                     `json:"update_scopes,omitempty"`
+		Title           string       `json:"title"`
+		Username        string       `json:"username,omitempty"`
+		URL             string       `json:"url,omitempty"`
+		Tags            []string     `json:"tags,omitempty"`
+		ValueCiphertext []byte       `json:"value_ciphertext"`
+		ValueNonce      []byte       `json:"value_nonce"`
+		Scopes          []scopeInput `json:"scopes,omitempty"`
+		UpdateScopes    bool         `json:"update_scopes,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	scopes, err := scopesFromInput(body.Scopes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
@@ -427,7 +488,7 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		Tags:            body.Tags,
 		ValueCiphertext: body.ValueCiphertext,
 		ValueNonce:      body.ValueNonce,
-		Scopes:          body.Scopes,
+		Scopes:          scopes,
 		UpdateScopes:    body.UpdateScopes,
 	}, audit)
 	if err != nil {

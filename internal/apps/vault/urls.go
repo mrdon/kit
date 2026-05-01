@@ -67,6 +67,9 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("POST /{slug}/apps/vault/lock", wrap(a.handleLock))
 	mux.Handle("GET /{slug}/apps/vault/api/me", get(a.handleMe))
 	mux.Handle("GET /{slug}/apps/vault/api/users/{user_id}", get(a.handleGetUser))
+	// Principal listing — populates the "who can see this" selector
+	// on the add / reveal pages.
+	mux.Handle("GET /{slug}/apps/vault/api/principals", get(a.handlePrincipals))
 
 	// Capture
 	mux.Handle("GET /{slug}/apps/vault/add", page(a.handleAddPage))

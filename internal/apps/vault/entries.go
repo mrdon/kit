@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -152,9 +153,23 @@ func (s *Service) GetEntry(ctx context.Context, c *services.Caller, entryID uuid
 }
 
 // CreateEntry inserts a new entry plus its scope rows in one transaction.
+//
+// Scopes is required: this is a team tool, and "personal-only" entries
+// (no scope rows) are not a user-facing concept. The owner-implicit
+// visibility in the SQL filter remains so the creator can always read
+// their own row, but every new entry must carry at least one explicit
+// scope so it shows up for someone other than the creator.
+//
+// TODO(primary-role): when Kit grows a "primary role" concept, default
+// to the caller's primary role here when scopes is empty rather than
+// rejecting. Until then, the web form is responsible for ensuring the
+// user picks at least one scope before submit.
 func (s *Service) CreateEntry(ctx context.Context, c *services.Caller, p CreateEntryParams, audit auditCtx) (uuid.UUID, error) {
 	if err := validateCiphertext(p.ValueCiphertext, p.ValueNonce); err != nil {
 		return uuid.Nil, err
+	}
+	if len(p.Scopes) == 0 {
+		return uuid.Nil, errors.New("scope required: pick at least one role, user, or tenant-wide")
 	}
 	if err := validateScopes(p.Scopes); err != nil {
 		return uuid.Nil, err
