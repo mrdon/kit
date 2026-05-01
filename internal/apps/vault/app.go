@@ -62,6 +62,13 @@ type CardCreateInput struct {
 	RoleScopes []string
 	UserScopes []uuid.UUID
 
+	// Urgent triggers an out-of-band push (Slack DM via Messenger) on
+	// top of the swipe-stack landing. Used sparingly — currently only
+	// the failed-unlock alarm sets this so the user learns about a
+	// potential compromise even if they're not in Kit. Cards must have
+	// a non-empty UserScopes for the push to actually fire.
+	Urgent bool
+
 	Decision *CardDecisionCreateInput // populated for CreateDecision
 	Briefing *CardBriefingCreateInput // populated for CreateBriefing
 }

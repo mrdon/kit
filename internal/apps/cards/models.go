@@ -215,6 +215,13 @@ type CardCreateInput struct {
 	RoleScopes []string    // role names visible to scope members
 	UserScopes []uuid.UUID // explicit per-user visibility
 
+	// Urgent triggers an immediate out-of-band push (Slack DM) via the
+	// configured PushNotifier in addition to the swipe-stack landing.
+	// Use sparingly — for events the user shouldn't have to open Kit
+	// to learn about, e.g. failed-unlock alarms or session-takeover
+	// tripwires. Best-effort: missing notifier just skips the push.
+	Urgent bool
+
 	// Required when Kind == CardKindDecision.
 	Decision *DecisionCreateInput
 	// Required when Kind == CardKindBriefing.

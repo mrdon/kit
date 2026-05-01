@@ -478,6 +478,7 @@ func (s *Service) fireFailedUnlockDecision(ctx context.Context, c *services.Call
 		Title:      "Failed unlock attempts on your vault",
 		Body:       body,
 		UserScopes: []uuid.UUID{c.UserID},
+		Urgent:     true,
 		Decision: &CardDecisionCreateInput{
 			Priority:            "high",
 			RecommendedOptionID: "was_me",

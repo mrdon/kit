@@ -88,6 +88,19 @@ func ConfigureToolExecutor(exec ToolExecutor) {
 	instance.svc.ConfigureToolExecutor(exec)
 }
 
+// ConfigurePushNotifier wires the optional out-of-band notifier used
+// when a card is created with Urgent=true. The plan calls for an
+// immediate Slack DM on the failed-unlock alarm so the user learns
+// about a possible compromise even when they're not in Kit. Other apps
+// can opt in by passing Urgent on their CardCreateInput. Safe to omit;
+// urgent cards still land on the swipe stack, just without the push.
+func ConfigurePushNotifier(p PushNotifier) {
+	if instance == nil || instance.svc == nil {
+		return
+	}
+	instance.svc.ConfigurePushNotifier(p)
+}
+
 // ServiceForGating returns the CardService so main.go can register it
 // with tools.SetGateCreator. The CardService satisfies
 // tools.GateCreator via its CreateGateCard method.

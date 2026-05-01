@@ -48,6 +48,7 @@ func (a *vaultCardAdapter) CreateDecision(ctx context.Context, c *services.Calle
 		Body:       in.Body,
 		RoleScopes: in.RoleScopes,
 		UserScopes: in.UserScopes,
+		Urgent:     in.Urgent,
 		Decision: &cards.DecisionCreateInput{
 			Priority:            prio,
 			RecommendedOptionID: in.Decision.RecommendedOptionID,
@@ -74,6 +75,7 @@ func (a *vaultCardAdapter) CreateBriefing(ctx context.Context, c *services.Calle
 		Body:       in.Body,
 		RoleScopes: in.RoleScopes,
 		UserScopes: in.UserScopes,
+		Urgent:     in.Urgent,
 		Briefing:   &cards.BriefingCreateInput{Severity: sev},
 	})
 	return err

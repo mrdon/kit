@@ -198,6 +198,11 @@ func main() {
 		sessionSigner,
 	)
 
+	// Wire the urgent-card push surface so cards created with
+	// Urgent=true (today: vault's failed-unlock alarm) trigger an
+	// immediate Slack DM in addition to the swipe-stack landing.
+	cards.ConfigurePushNotifier(newCardsPushNotifier(pool, app.Messenger))
+
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)
 
