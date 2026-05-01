@@ -438,13 +438,16 @@ func UpdateVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID
 	if tags == nil {
 		tags = []string{}
 	}
+	// scopeFrag consumes params starting at $4 (callerID, roleIDs);
+	// SET-clause params start at the next free index.
+	setStart := 3 + len(scopeArgs) + 1
 	q := fmt.Sprintf(`
 		UPDATE app_vault_entries ent
-		   SET title = $5, username = $6, url = $7, tags = $8,
-		       value_ciphertext = $9, value_nonce = $10, updated_at = now()
+		   SET title = $%d, username = $%d, url = $%d, tags = $%d,
+		       value_ciphertext = $%d, value_nonce = $%d, updated_at = now()
 		 WHERE ent.tenant_id = $1 AND ent.id = $2
 		   AND (ent.owner_user_id = $3 OR EXISTS (%s))
-	`, scopeFrag)
+	`, setStart, setStart+1, setStart+2, setStart+3, setStart+4, setStart+5, scopeFrag)
 	args := []any{tenantID, entryID, callerID}
 	args = append(args, scopeArgs...)
 	args = append(args, e.Title, e.Username, e.URL, tags, e.ValueCiphertext, e.ValueNonce)

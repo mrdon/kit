@@ -370,10 +370,13 @@ func (s *Service) Unlock(ctx context.Context, c *services.Caller, authHash []byt
 	}
 
 	if v == nil {
-		// No row: do a dummy compare so timing matches the "wrong
-		// auth_hash" branch.
+		// No row: do a dummy compare so wall-clock timing matches the
+		// "wrong auth_hash" branch. Use a distinct action string so the
+		// audit row doesn't leak "user has no registration" via the
+		// FailedCount=0 vs N distinction (action+actor enumeration is
+		// admin-only but we keep the side-channel closed regardless).
 		_ = subtle.ConstantTimeCompare(authHash, dummyHash())
-		audit.log(ctx, "vault.unlock_failed", "vault_user", &c.UserID, EvtUnlockFailed{FailedCount: 0})
+		audit.log(ctx, "vault.unlock_failed_no_row", "vault_user", &c.UserID, struct{}{})
 		return nil, ErrUnlockMismatch
 	}
 
@@ -469,8 +472,20 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 	if len(p.KDFParams) == 0 {
 		return errors.New("kdf_params required")
 	}
-	if len(p.UserPrivateKeyCiphertext) == 0 || len(p.UserPrivateKeyNonce) != 12 {
-		return errors.New("private key ciphertext / nonce required (12-byte nonce)")
+	if len(p.UserPrivateKeyNonce) != 12 {
+		return errors.New("private key nonce must be 12 bytes")
+	}
+	// Sanity-check the ciphertext length. RSA-2048 PKCS#8-encoded
+	// private key is ~1218 bytes; AES-GCM ciphertext = plaintext + 16
+	// (tag). The valid band is tight (~1200–1300); anything outside is
+	// either truncated or attacker garbage. Plan §"Input validation at
+	// registration & grant".
+	const (
+		minPrivCT = 1200
+		maxPrivCT = 1400
+	)
+	if n := len(p.UserPrivateKeyCiphertext); n < minPrivCT || n > maxPrivCT {
+		return fmt.Errorf("private key ciphertext outside RSA-2048 PKCS#8 size range (got %d, want %d-%d)", n, minPrivCT, maxPrivCT)
 	}
 
 	tenantInitialized, err := models.AnyVaultUserExists(ctx, s.pool, c.TenantID)
