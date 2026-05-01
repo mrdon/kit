@@ -125,7 +125,7 @@ func mcpViewSecret(svc *Service) mcpserver.ToolHandlerFunc {
 		if err != nil || slug == "" {
 			return mcp.NewToolResultError("could not build reveal URL"), nil
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Reveal URL: /%s/apps/vault/reveal/%s", slug, entryID)), nil
+		return mcp.NewToolResultText("Reveal URL: " + svc.absURL(fmt.Sprintf("/%s/apps/vault/reveal/%s", slug, entryID))), nil
 	})
 }
 
@@ -148,6 +148,6 @@ func mcpStartAddSecret(svc *Service) mcpserver.ToolHandlerFunc {
 		if len(params) > 0 {
 			out += "?" + strings.Join(params, "&")
 		}
-		return mcp.NewToolResultText("Add URL: " + out), nil
+		return mcp.NewToolResultText("Add URL: " + svc.absURL(out)), nil
 	})
 }

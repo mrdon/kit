@@ -34,10 +34,11 @@ func init() {
 //   - Decision cards for tenant admins on grant requests / password resets.
 //   - Briefings for the user being acted on (security tripwires).
 type App struct {
-	pool   *pgxpool.Pool
-	svc    *Service
-	cards  CardSurface
-	signer *auth.SessionSigner
+	pool    *pgxpool.Pool
+	svc     *Service
+	cards   CardSurface
+	signer  *auth.SessionSigner
+	baseURL string
 }
 
 // CardSurface is the small slice of CardService the vault needs.
@@ -108,17 +109,21 @@ func (a *App) Init(pool *pgxpool.Pool) {
 //   - cards: card creation (admin-targeted grant decisions + user-
 //     targeted security-tripwire briefings + failed-unlock decision)
 //   - signer: session cookie middleware on HTTP routes
+//   - baseURL: Kit's external origin used by agent/MCP tools to return
+//     fully-qualified URLs (otherwise the LLM hallucinates a host)
 //
 // cards is nil-safe in tests (events just don't fire). HTTP routes
 // refuse to register without a signer.
-func Configure(cards CardSurface, signer *auth.SessionSigner) {
+func Configure(cards CardSurface, signer *auth.SessionSigner, baseURL string) {
 	if instance == nil {
 		return
 	}
 	instance.cards = cards
 	instance.signer = signer
+	instance.baseURL = baseURL
 	if instance.svc != nil {
 		instance.svc.cards = cards
+		instance.svc.baseURL = baseURL
 	}
 }
 

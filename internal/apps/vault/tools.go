@@ -201,7 +201,7 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 			}
 			return "", err
 		}
-		url := fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID)
+		url := svc.absURL(fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID))
 		return "Open in your browser to view: " + url, nil
 	}
 }
@@ -224,7 +224,7 @@ func handleAgentStartAddSecret(svc *Service) tools.HandlerFunc {
 			}
 			q = "?" + strings.Join(parts, "&")
 		}
-		url := fmt.Sprintf("/%s/apps/vault/add%s", tenantSlug(ec), q)
+		url := svc.absURL(fmt.Sprintf("/%s/apps/vault/add%s", tenantSlug(ec), q))
 		return "Open in your browser to capture the secret: " + url, nil
 	}
 }

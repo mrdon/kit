@@ -225,6 +225,7 @@ func main() {
 	vault.Configure(
 		newVaultCardAdapter(cards.ServiceForGating()),
 		sessionSigner,
+		cfg.BaseURL,
 	)
 
 	// Wire the urgent-card push surface so cards created with

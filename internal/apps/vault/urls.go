@@ -3,6 +3,7 @@
 package vault
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -38,9 +39,26 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 
 	tenantMW := auth.TenantFromPath(a.pool)
 
-	// HTML pages: tenant + session, but no JSON / CSRF gate.
+	// HTML pages: tenant + session, but no JSON / CSRF gate. If the
+	// session cookie is missing entirely, redirect to /{slug}/login
+	// (PWA's Slack-OpenID kickoff) instead of returning a bare 401 —
+	// the user landed here from an agent link and expects to "just log
+	// in". Tampered/invalid cookies still 401 via signer.Middleware so
+	// we don't paper over auth bugs.
 	page := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
+		inner := tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := r.Cookie(auth.SessionCookieName); errors.Is(err, http.ErrNoCookie) {
+				slug := r.PathValue("slug")
+				if slug == "" {
+					http.Error(w, "tenant not resolved", http.StatusBadRequest)
+					return
+				}
+				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+				return
+			}
+			inner.ServeHTTP(w, r)
+		})
 	}
 
 	// JSON state-changing API: tenant + JSON content-type + session.

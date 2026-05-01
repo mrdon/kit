@@ -52,6 +52,12 @@ type Service struct {
 	// decisions (grant requests, failed-unlock alarms) and user-
 	// targeted briefings (reset-triggered, access-granted). nil-safe.
 	cards CardSurface
+
+	// baseURL is Kit's external origin (e.g. "https://kit.twdata.org"),
+	// wired via Configure. Tool handlers prepend it to /{slug}/apps/vault/*
+	// paths so the agent's response includes a fully-qualified URL —
+	// without it the LLM may hallucinate a host when rendering the path.
+	baseURL string
 }
 
 // NewService constructs a vault service backed by the given pool.
@@ -170,6 +176,18 @@ func (s *Service) requireRecentUnlock(ctx context.Context, c *services.Caller) e
 		return ErrStepUpRequired
 	}
 	return nil
+}
+
+// absURL prefixes a path-only URL with the configured baseURL so the
+// agent's tool response includes a fully-qualified link. Slack only
+// auto-linkifies absolute URLs; without the host, the LLM tends to
+// hallucinate one (e.g. "<slug>.kit.com" instead of the real Kit host).
+// Falls through unchanged if baseURL is empty (tests / startup slips).
+func (s *Service) absURL(path string) string {
+	if s == nil || s.baseURL == "" {
+		return path
+	}
+	return s.baseURL + path
 }
 
 // tenantSlug looks up a tenant's URL slug by id. Used by the MCP layer
