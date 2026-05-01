@@ -201,11 +201,19 @@ type BriefingData struct {
 
 // CardCreateInput groups the fields needed to create a card. The Decision
 // and Briefing sub-structs must match Kind.
+//
+// Scope semantics:
+//   - Both RoleScopes and UserScopes empty → tenant-wide default.
+//   - Either non-empty → the union of named principals; tenant-wide is
+//     NOT added in that case. UserScopes lets a card target a single
+//     user (e.g. a security tripwire DM-replacement) without exposing it
+//     to their teammates.
 type CardCreateInput struct {
 	Kind       CardKind
 	Title      string
 	Body       string
-	RoleScopes []string // [] means [{tenant, *}] default
+	RoleScopes []string    // role names visible to scope members
+	UserScopes []uuid.UUID // explicit per-user visibility
 
 	// Required when Kind == CardKindDecision.
 	Decision *DecisionCreateInput
@@ -248,8 +256,12 @@ type CardUpdates struct {
 	Briefing *BriefingUpdates
 
 	// If non-nil, replaces the card's scope rows with these. Empty slice
-	// removes all scope rows (making the card invisible — caller beware).
+	// (or nil) removes all role-based rows. UserScopes follows the same
+	// nil-vs-empty convention. Caller passing only RoleScopes leaves
+	// UserScopes alone (and vice versa); to clear both, pass empty
+	// slices for both.
 	RoleScopes *[]string
+	UserScopes *[]uuid.UUID
 }
 
 // DecisionUpdates is the decision-specific slice of CardUpdates.

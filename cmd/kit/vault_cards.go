@@ -10,7 +10,7 @@ import (
 )
 
 // vaultCardAdapter wraps a CardService so the vault package can create
-// admin-targeted decision cards without importing internal/apps/cards
+// decision cards and briefings without importing internal/apps/cards
 // directly. Keeps the dep graph one-way (cards never imports vault, and
 // vault never imports cards).
 type vaultCardAdapter struct {
@@ -47,11 +47,34 @@ func (a *vaultCardAdapter) CreateDecision(ctx context.Context, c *services.Calle
 		Title:      in.Title,
 		Body:       in.Body,
 		RoleScopes: in.RoleScopes,
+		UserScopes: in.UserScopes,
 		Decision: &cards.DecisionCreateInput{
 			Priority:            prio,
 			RecommendedOptionID: in.Decision.RecommendedOptionID,
 			Options:             opts,
 		},
+	})
+	return err
+}
+
+func (a *vaultCardAdapter) CreateBriefing(ctx context.Context, c *services.Caller, in vault.CardCreateInput) error {
+	if a.svc == nil {
+		return nil
+	}
+	sev := cards.BriefingSeverityInfo
+	if in.Briefing != nil {
+		s := cards.BriefingSeverity(in.Briefing.Severity)
+		if s.Valid() {
+			sev = s
+		}
+	}
+	_, err := a.svc.CreateBriefing(ctx, c, cards.CardCreateInput{
+		Kind:       cards.CardKindBriefing,
+		Title:      in.Title,
+		Body:       in.Body,
+		RoleScopes: in.RoleScopes,
+		UserScopes: in.UserScopes,
+		Briefing:   &cards.BriefingCreateInput{Severity: sev},
 	})
 	return err
 }

@@ -37,34 +37,33 @@ type App struct {
 	pool   *pgxpool.Pool
 	svc    *Service
 	cards  CardSurface
-	notify NotifySurface
 	signer *auth.SessionSigner
 }
 
-// CardSurface is the small slice of CardService the vault needs. Declared
-// as an interface so tests can swap in a no-op without pulling cards in.
+// CardSurface is the small slice of CardService the vault needs.
+// Declared as an interface so tests can swap in a no-op without pulling
+// cards in. CreateDecision handles admin-targeted grant requests + the
+// failed-unlock alarm; CreateBriefing handles the user-targeted
+// security-tripwire notifications (reset triggered, access granted).
 type CardSurface interface {
 	CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) error
+	CreateBriefing(ctx context.Context, c *services.Caller, in CardCreateInput) error
 }
 
-// NotifySurface is the small slice of Messenger the vault uses to send
-// security-tripwire DMs to the user being acted on. v1 ships with Slack
-// DMs because cards don't support per-user scoping; v2's per-tenant
-// routing config can swap this for briefings if/when cards gain the
-// capability. nil-safe: vault still works without notifications wired
-// (the warnings just don't fire).
-type NotifySurface interface {
-	NotifyUser(ctx context.Context, tenantID, userID uuid.UUID, body string) error
-}
-
-// CardCreateInput is the projection of cards.CardCreateInput we use. The
-// real wiring in main.go converts this to a cards.CardCreateInput before
-// calling CardService.CreateDecision.
+// CardCreateInput is the projection of cards.CardCreateInput we use.
+// cmd/kit/vault_cards.go translates this into a cards.CardCreateInput.
+// RoleScopes targets a role pool (e.g. {"admin"} for grant requests);
+// UserScopes targets specific users (used for security tripwires —
+// reset-triggered briefings, access-granted briefings, failed-unlock
+// decisions).
 type CardCreateInput struct {
 	Title      string
 	Body       string
 	RoleScopes []string
-	Decision   *CardDecisionCreateInput
+	UserScopes []uuid.UUID
+
+	Decision *CardDecisionCreateInput // populated for CreateDecision
+	Briefing *CardBriefingCreateInput // populated for CreateBriefing
 }
 
 type CardDecisionCreateInput struct {
@@ -80,6 +79,10 @@ type CardDecisionOption struct {
 	Arguments []byte
 }
 
+type CardBriefingCreateInput struct {
+	Severity string // "info" | "notable" | "important"
+}
+
 // Init wires the service after the DB pool is available. Called by
 // apps.Init from cmd/kit/main.go after migrations succeed.
 func (a *App) Init(pool *pgxpool.Pool) {
@@ -88,23 +91,20 @@ func (a *App) Init(pool *pgxpool.Pool) {
 }
 
 // Configure wires the surfaces the vault uses at runtime:
-//   - cards: admin-targeted decision cards (register / reset → grant request)
-//   - notify: per-user Slack DMs (security tripwires)
+//   - cards: card creation (admin-targeted grant decisions + user-
+//     targeted security-tripwire briefings + failed-unlock decision)
 //   - signer: session cookie middleware on HTTP routes
 //
-// Each is independently nil-safe: cards or notify can be omitted in tests
-// (the corresponding events just don't fire); HTTP routes refuse to
-// register without a signer.
-func Configure(cards CardSurface, notify NotifySurface, signer *auth.SessionSigner) {
+// cards is nil-safe in tests (events just don't fire). HTTP routes
+// refuse to register without a signer.
+func Configure(cards CardSurface, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.cards = cards
-	instance.notify = notify
 	instance.signer = signer
 	if instance.svc != nil {
 		instance.svc.cards = cards
-		instance.svc.notify = notify
 	}
 }
 

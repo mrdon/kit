@@ -88,7 +88,7 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		return nil, fmt.Errorf("unknown card kind %q", in.Kind)
 	}
 
-	if err := writeScopesTx(ctx, tx, tenantID, cardID, in.RoleScopes); err != nil {
+	if err := writeScopesTx(ctx, tx, tenantID, cardID, in.RoleScopes, in.UserScopes); err != nil {
 		return nil, err
 	}
 
@@ -98,16 +98,18 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 	return card, nil
 }
 
-// writeScopesTx replaces the card's scope rows. Empty roleScopes defaults to
-// the tenant-wide scope — visible to everyone in the tenant. Existing scope
-// rows are deleted first so this is safe to call on update too.
-func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, roleScopes []string) error {
+// writeScopesTx replaces the card's scope rows. With both roleScopes and
+// userScopes empty, defaults to tenant-wide. With either populated, the
+// card is visible to the union of named principals (no implicit
+// tenant-wide). Existing scope rows are deleted first so this is safe to
+// call on update too.
+func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, roleScopes []string, userScopes []uuid.UUID) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM app_card_scopes WHERE tenant_id = $1 AND card_id = $2`, tenantID, cardID); err != nil {
 		return fmt.Errorf("clearing scopes: %w", err)
 	}
 
-	insertScope := func(roleID *uuid.UUID) error {
-		scopeID, err := models.GetOrCreateScopeTx(ctx, tx, tenantID, roleID, nil)
+	insertScope := func(roleID, userID *uuid.UUID) error {
+		scopeID, err := models.GetOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
 		if err != nil {
 			return fmt.Errorf("get-or-create scope: %w", err)
 		}
@@ -122,9 +124,11 @@ func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, r
 		return nil
 	}
 
-	if len(roleScopes) == 0 {
-		return insertScope(nil)
+	if len(roleScopes) == 0 && len(userScopes) == 0 {
+		// Default: tenant-wide.
+		return insertScope(nil, nil)
 	}
+
 	for _, role := range roleScopes {
 		var roleID uuid.UUID
 		err := tx.QueryRow(ctx,
@@ -133,7 +137,13 @@ func writeScopesTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID, r
 		if err != nil {
 			return fmt.Errorf("looking up role %q: %w", role, err)
 		}
-		if err := insertScope(&roleID); err != nil {
+		if err := insertScope(&roleID, nil); err != nil {
+			return err
+		}
+	}
+	for i := range userScopes {
+		uid := userScopes[i]
+		if err := insertScope(nil, &uid); err != nil {
 			return err
 		}
 	}

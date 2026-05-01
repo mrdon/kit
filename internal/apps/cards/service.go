@@ -114,7 +114,7 @@ func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in
 	if err := validateOptions(in.Decision.Options, in.Decision.RecommendedOptionID); err != nil {
 		return nil, err
 	}
-	if err := s.enforceScopeAccess(c, in.RoleScopes); err != nil {
+	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
 		return nil, err
 	}
 
@@ -150,7 +150,7 @@ func (s *CardService) CreateBriefing(ctx context.Context, c *services.Caller, in
 	if !in.Briefing.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", in.Briefing.Severity)
 	}
-	if err := s.enforceScopeAccess(c, in.RoleScopes); err != nil {
+	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
 		return nil, err
 	}
 	return createCardTx(ctx, s.pool, c.TenantID, in)
@@ -200,8 +200,16 @@ func (s *CardService) Update(ctx context.Context, c *services.Caller, cardID uui
 	if u.Briefing != nil && u.Briefing.Severity != nil && !u.Briefing.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", *u.Briefing.Severity)
 	}
-	if u.RoleScopes != nil {
-		if err := s.enforceScopeAccess(c, *u.RoleScopes); err != nil {
+	if u.RoleScopes != nil || u.UserScopes != nil {
+		var roles []string
+		var users []uuid.UUID
+		if u.RoleScopes != nil {
+			roles = *u.RoleScopes
+		}
+		if u.UserScopes != nil {
+			users = *u.UserScopes
+		}
+		if err := s.enforceScopeAccess(c, roles, users); err != nil {
 			return nil, err
 		}
 	}
@@ -817,14 +825,19 @@ func (s *CardService) callerCanSee(ctx context.Context, c *services.Caller, card
 	return true, nil
 }
 
-// enforceScopeAccess prevents non-admins from scoping a card to a role they
-// don't hold. Admins are trusted.
-func (s *CardService) enforceScopeAccess(c *services.Caller, roleScopes []string) error {
+// enforceScopeAccess prevents non-admins from scoping a card to a role
+// they don't hold or to a user other than themselves. Admins are trusted.
+func (s *CardService) enforceScopeAccess(c *services.Caller, roleScopes []string, userScopes []uuid.UUID) error {
 	if c.IsAdmin {
 		return nil
 	}
 	for _, role := range roleScopes {
 		if !slices.Contains(c.Roles, role) {
+			return services.ErrForbidden
+		}
+	}
+	for _, uid := range userScopes {
+		if uid != c.UserID {
 			return services.ErrForbidden
 		}
 	}
