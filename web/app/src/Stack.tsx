@@ -552,13 +552,6 @@ function QuickChatFab({
     try {
       sessionRef.current = await startAudioCapture();
       setRecording(true);
-      // Brief haptic so the user knows recording started — they may
-      // already be lifting their finger by the time the timer fires.
-      try {
-        navigator.vibrate?.(30);
-      } catch {
-        // ignore — vibrate is best-effort
-      }
     } catch {
       // Permission denied or device unavailable. Fall back to opening
       // the chat sheet so the user can type instead.
@@ -624,6 +617,16 @@ function QuickChatFab({
     e.preventDefault();
     armedThisPressRef.current = false;
     cancelArming();
+    // Queue a delayed buzz so it fires the moment the arm timer
+    // expires. vibrate() needs to be called from inside a real user
+    // gesture (pointerdown counts; setTimeout callbacks don't) — so we
+    // schedule the haptic here using a [silent-wait, vibrate] pattern
+    // and cancel it below if the user releases before the threshold.
+    try {
+      navigator.vibrate?.([0, LONG_PRESS_MS, 35]);
+    } catch {
+      // ignore — vibrate is best-effort, unsupported on iOS
+    }
     armTimerRef.current = window.setTimeout(() => {
       armTimerRef.current = null;
       armedThisPressRef.current = true;
@@ -645,6 +648,13 @@ function QuickChatFab({
     if (armTimerRef.current !== null) {
       // Released before arming threshold → quick tap, open chat.
       cancelArming();
+      // Cancel the queued long-press buzz so it doesn't fire after a
+      // short tap.
+      try {
+        navigator.vibrate?.(0);
+      } catch {
+        // ignore
+      }
       if (!armedThisPressRef.current) onTap();
     }
   };
@@ -658,7 +668,14 @@ function QuickChatFab({
     // pointercancel can fire even with pointer capture (e.g. an OS-level
     // interruption like a system alert). Cancel arming so a stale timer
     // doesn't surprise-record later, but don't kill an active recording.
-    if (!recording) cancelArming();
+    if (!recording) {
+      cancelArming();
+      try {
+        navigator.vibrate?.(0);
+      } catch {
+        // ignore
+      }
+    }
   };
 
   return (
