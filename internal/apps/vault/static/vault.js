@@ -65,7 +65,23 @@ async function main() {
 }
 
 // ===== KDF + key derivation =====
-
+//
+// v1 ships PBKDF2-SHA256 / 600k iterations: OWASP 2024 floor for
+// acceptable. The plan's pinned target is Argon2id (m=64MiB, t=3, p=1)
+// for memory-hardness against GPU/ASIC offline brute force; PBKDF2 is
+// GPU-friendly. Upgrade trigger: real-tenant rollout, compliance ask,
+// or any DB-leak incident in the Kit stack.
+//
+// kdf_params is per-user jsonb so the upgrade is non-disruptive: new
+// users get Argon2id once shipped; existing users rotate via a future
+// "change KDF" flow (enter master password → derive both old + new →
+// server checks old auth_hash → accepts new auth_hash + re-wrapped
+// private key, no teammate re-grant required because vault_key
+// wrapping doesn't change). See plan §"Crypto primitives" for the
+// full transition plan.
+//
+// TODO(v1.5): vendor @noble/hashes argon2id, switch this constant to
+// the Argon2id params block, add /api/rotate_kdf endpoint.
 const KDF_ITERATIONS = 600_000;
 const KDF_HASH = "SHA-256";
 
