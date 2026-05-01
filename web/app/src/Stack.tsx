@@ -623,7 +623,7 @@ function QuickChatFab({
     // schedule the haptic here using a [silent-wait, vibrate] pattern
     // and cancel it below if the user releases before the threshold.
     try {
-      navigator.vibrate?.([0, LONG_PRESS_MS, 35]);
+      navigator.vibrate?.([0, LONG_PRESS_MS, 80]);
     } catch {
       // ignore — vibrate is best-effort, unsupported on iOS
     }
