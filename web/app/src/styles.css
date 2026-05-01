@@ -1107,6 +1107,20 @@ a { color: var(--link); }
   0%, 100% { box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 0 rgba(220, 38, 38, 0.6); }
   50%      { box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 14px rgba(220, 38, 38, 0); }
 }
+/* Brief confirm state shown after tap-to-stop and before the chat
+   sheet opens. Green check that scales up then settles, so the user
+   sees a clear "got it" beat instead of a colour-flip. */
+.quick-chat-fab.disarming {
+  background: var(--tier-positive-accent, #16a34a);
+  color: var(--card-bg);
+  font-size: 24px;
+  animation: quick-chat-fab-disarm 320ms ease-out;
+}
+@keyframes quick-chat-fab-disarm {
+  0%   { transform: scale(1.15); box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 0 rgba(22, 163, 74, 0.55); }
+  60%  { transform: scale(1);    box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 12px rgba(22, 163, 74, 0); }
+  100% { transform: scale(1);    box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 12px rgba(22, 163, 74, 0); }
+}
 
 /* Auto-dismiss hold affordance. Appears between the transcript and the
    composer while the dismiss countdown is running; any pointer tap on

@@ -509,6 +509,13 @@ const LONG_PRESS_MS = 600;
 //
 // Audio capture is shared with the chat composer's mic via
 // audioCapture.ts so MIME selection and stream cleanup don't drift.
+// DISARM_ANIM_MS — how long the post-tap "stopping" pulse plays before
+// the chat sheet opens. Without this beat, the FAB switches color and
+// the sheet appears in the same frame, which reads as glitchy / "did
+// I miss the tap?". A short check-mark flash makes the stop feel
+// deliberate.
+const DISARM_ANIM_MS = 320;
+
 function QuickChatFab({
   onTap,
   onRecordingStop,
@@ -517,6 +524,7 @@ function QuickChatFab({
   onRecordingStop: (blob: Blob) => void;
 }) {
   const [recording, setRecording] = useState(false);
+  const [disarming, setDisarming] = useState(false);
   const sessionRef = useRef<AudioCaptureSession | null>(null);
   const armTimerRef = useRef<number | null>(null);
   // True once the long-press timer fires within a single press; lets
@@ -563,14 +571,29 @@ function QuickChatFab({
     const session = sessionRef.current;
     sessionRef.current = null;
     setRecording(false);
+    setDisarming(true);
+    // Confirm haptic — best-effort, no-op on iOS.
+    try {
+      navigator.vibrate?.(20);
+    } catch {
+      // ignore
+    }
     if (!session) {
-      onTap();
+      window.setTimeout(() => {
+        setDisarming(false);
+        onTap();
+      }, DISARM_ANIM_MS);
       return;
     }
-    const blob = await session.stop();
+    // Run the stop and the pulse animation in parallel; whichever takes
+    // longer drives the open. The animation gives the user a beat of
+    // feedback even when stop() resolves nearly instantly.
+    const [blob] = await Promise.all([
+      session.stop(),
+      new Promise((r) => window.setTimeout(r, DISARM_ANIM_MS)),
+    ]);
+    setDisarming(false);
     if (blob.size === 0) {
-      // Too brief to capture anything; open empty so the user can try
-      // again with the in-sheet mic.
       onTap();
       return;
     }
@@ -641,7 +664,7 @@ function QuickChatFab({
   return (
     <button
       type="button"
-      className={`quick-chat-fab${recording ? ' recording' : ''}`}
+      className={`quick-chat-fab${recording ? ' recording' : ''}${disarming ? ' disarming' : ''}`}
       aria-label={
         recording
           ? 'Tap to stop recording'
@@ -661,7 +684,7 @@ function QuickChatFab({
         if (!supported && !recording) onTap();
       }}
     >
-      {recording ? '●' : '+'}
+      {disarming ? '✓' : recording ? '●' : '+'}
     </button>
   );
 }
