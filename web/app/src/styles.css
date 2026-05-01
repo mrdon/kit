@@ -848,9 +848,11 @@ a { color: var(--link); }
   background: transparent;
   border: none;
   color: var(--card-muted);
-  font-size: 24px;
+  font-size: 28px;
   line-height: 1;
-  padding: 0 6px;
+  padding: 6px 12px;
+  min-width: 44px;
+  min-height: 44px;
   cursor: pointer;
 }
 .chat-sheet-close:hover { color: var(--card-heading); }
@@ -946,10 +948,11 @@ a { color: var(--link); }
   background: transparent;
   border: 1px solid var(--tier-critical-accent);
   color: var(--tier-critical-accent);
-  border-radius: 10px;
-  padding: 2px 10px;
-  font-size: 0.85em;
+  border-radius: 12px;
+  padding: 6px 14px;
+  font-size: 0.9em;
   cursor: pointer;
+  min-height: 32px;
 }
 .chat-stop:hover { background: var(--tier-critical-bg); }
 
@@ -969,10 +972,10 @@ a { color: var(--link); }
   background: var(--card-code-bg);
   color: var(--card-fg);
   border: 1px solid var(--card-border);
-  border-radius: 18px;
-  padding: 10px 14px;
+  border-radius: 22px;
+  padding: 12px 16px;
   font: inherit;
-  min-height: 40px;
+  min-height: 48px;
   max-height: 160px;
 }
 .chat-input:focus {
@@ -981,8 +984,8 @@ a { color: var(--link); }
 }
 .chat-mic,
 .chat-send {
-  height: 40px;
-  min-width: 40px;
+  height: 48px;
+  min-width: 48px;
   border-radius: 50%;
   border: 1px solid var(--card-border);
   background: var(--card-code-bg);
@@ -991,7 +994,7 @@ a { color: var(--link); }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1em;
+  font-size: 1.2em;
 }
 .chat-mic.recording {
   background: var(--tier-critical-bg);
