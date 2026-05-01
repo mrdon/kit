@@ -19,7 +19,7 @@
 // source works for every workspace.
 const SCOPE_URL = new URL(self.registration.scope);
 const SCOPE = SCOPE_URL.pathname; // trailing slash included
-const CACHE = 'kit' + SCOPE + 'v4';
+const CACHE = 'kit' + SCOPE + 'v5';
 // Shell is intentionally minimal — manifest and icons are fetched
 // straight from the network so install-time icon changes aren't
 // masked by a stale cached shell.
@@ -59,6 +59,12 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.endsWith('/icon-192.png')) return;
   if (url.pathname.endsWith('/icon-512.png')) return;
   if (url.pathname.endsWith('/icon.svg')) return;
+  // Never cache per-app static assets (e.g. /{slug}/apps/vault/static/
+  // *.js). These are server-side rendered/embedded and use server-set
+  // Cache-Control: no-store; the SW's cache-first under SCOPE would
+  // otherwise pin a stale version across deploys until the cache
+  // version is bumped, breaking the dev/iteration loop for app code.
+  if (url.pathname.includes('/apps/') && url.pathname.includes('/static/')) return;
 
   if (e.request.method !== 'GET') return;
 
