@@ -41,12 +41,29 @@ func mcpHandlerFor(name string, svc *Service) mcpserver.ToolHandlerFunc {
 		return mcpViewSecret(svc)
 	case "start_add_secret":
 		return mcpStartAddSecret(svc)
-	case "update_secret_scopes":
-		return mcpUpdateSecretScopes(svc)
-	case "delete_secret":
-		return mcpDeleteSecret(svc)
+	case "update_secret_scopes", "delete_secret":
+		// Agent path runs these through PolicyGate, which mints a
+		// decision card a human approves in the swipe stack before the
+		// tool executes. The MCP path has no equivalent enforced gate
+		// today (the require_approval flag is opt-in, not mandatory),
+		// so an MCP harness operator could otherwise wholesale delete
+		// or rescope entries in one call. Until MCP gets a forced-gate
+		// wrapper, refuse here and point the caller at the surfaces
+		// that do enforce approval. CLAUDE.md gated-tool rule: "tool
+		// handler [is] the only entry point to the underlying
+		// dangerous operation."
+		return mcpRefuseGated(name)
 	}
 	return nil
+}
+
+func mcpRefuseGated(name string) mcpserver.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"%s is not available via MCP — it requires human approval through a decision card. "+
+				"Ask Kit (the chat agent) to run it, or use the web UI.", name,
+		)), nil
+	}
 }
 
 func mcpAudit(svc *Service, caller *services.Caller) auditCtx {
@@ -133,62 +150,4 @@ func mcpStartAddSecret(svc *Service) mcpserver.ToolHandlerFunc {
 		}
 		return mcp.NewToolResultText("Add URL: " + out), nil
 	})
-}
-
-func mcpUpdateSecretScopes(svc *Service) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("id")
-		entryID, err := uuid.Parse(idStr)
-		if err != nil {
-			return mcp.NewToolResultError("invalid id"), nil
-		}
-		raw := req.GetArguments()
-		scopesAny, _ := raw["scopes"].([]any)
-		var scopes []scopeInput
-		for _, s := range scopesAny {
-			m, ok := s.(map[string]any)
-			if !ok {
-				continue
-			}
-			si := scopeInput{Kind: stringField(m, "kind"), ID: stringField(m, "id")}
-			scopes = append(scopes, si)
-		}
-		parsed, err := scopesFromInput(scopes)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		if err := svc.UpdateScopes(ctx, caller, entryID, parsed, mcpAudit(svc, caller)); err != nil {
-			if errors.Is(err, models.ErrNotFound) {
-				return mcp.NewToolResultError("not found or no access"), nil
-			}
-			return nil, err
-		}
-		return mcp.NewToolResultText("Scopes updated."), nil
-	})
-}
-
-func mcpDeleteSecret(svc *Service) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("id")
-		entryID, err := uuid.Parse(idStr)
-		if err != nil {
-			return mcp.NewToolResultError("invalid id"), nil
-		}
-		if err := svc.DeleteEntry(ctx, caller, entryID, mcpAudit(svc, caller)); err != nil {
-			if errors.Is(err, models.ErrNotFound) {
-				return mcp.NewToolResultError("not found or no access"), nil
-			}
-			return nil, err
-		}
-		return mcp.NewToolResultText("Deleted."), nil
-	})
-}
-
-// stringField extracts a string-typed field from a JSON object decoded into
-// map[string]any; returns "" on miss.
-func stringField(m map[string]any, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
-	}
-	return ""
 }

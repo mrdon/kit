@@ -97,9 +97,12 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 			Handler:     vaultAgentHandler(meta.Name, svc),
 		}
 		// Gated agent tools per the plan + CLAUDE.md "gated tools must
-		// have one entry point" rule. Service-level checks (step-up
-		// auth on widening, IsAdmin on revoke) catch the MCP path,
-		// which doesn't run through tools.Registry.
+		// have one entry point" rule. The agent path runs through the
+		// registry's PolicyGate interceptor (decision card → human
+		// approval → svc call). The MCP path does not have an enforced
+		// gate today, so mcp.go refuses these two tools outright with
+		// a "use the agent or web" error rather than calling svc
+		// directly.
 		switch meta.Name {
 		case "update_secret_scopes", "delete_secret":
 			def.DefaultPolicy = tools.PolicyGate
