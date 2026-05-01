@@ -218,7 +218,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		// tool fan-out) — well past nginx's proxy_read_timeout and the MCP
 		// transport's tolerance. Spawn it on a background ctx so the HTTP
 		// request can return immediately with a run_id; the caller polls
-		// get_task_status to read progress and dry-run captures off the
+		// get_job_status to read progress and dry-run captures off the
 		// session_events log.
 		runIn := agent.RunInput{
 			Slack:    slack,
@@ -248,7 +248,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			mode = "dry-run"
 		}
 		return mcp.NewToolResultText(fmt.Sprintf(
-			"Job %q started (%s, run_id=%s).\n\nCall get_task_status with run_id=%s to check progress and read results.",
+			"Job %q started (%s, run_id=%s).\n\nCall get_job_status with run_id=%s to check progress and read results.",
 			job.Description, mode, session.ID, session.ID,
 		)), nil
 	})
@@ -256,15 +256,15 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 	return mcpserver.ServerTool{Tool: tool, Handler: handler}
 }
 
-// buildGetTaskStatusTool creates the get_task_status MCP tool, which reads
+// buildGetJobStatusTool creates the get_job_status MCP tool, which reads
 // the session log for a run started by run_task and renders status,
 // tool calls so far, errors, and dry-run captured messages.
-func buildGetTaskStatusTool(pool *pgxpool.Pool, svc *services.Services) mcpserver.ServerTool {
+func buildGetJobStatusTool(pool *pgxpool.Pool, svc *services.Services) mcpserver.ServerTool {
 	schema := services.PropsReq(map[string]any{
 		"run_id": services.Field("string", "The run_id returned by run_task (a session UUID)."),
 	}, "run_id")
 	schemaJSON, _ := json.Marshal(schema)
-	tool := mcp.NewToolWithRawSchema("get_task_status", "Check the status of a job run started via run_task. Returns whether the run is still going, tool calls executed, dry-run captured messages, and any errors.", schemaJSON)
+	tool := mcp.NewToolWithRawSchema("get_job_status", "Check the status of a job run started via run_job. Returns whether the run is still going, tool calls executed, dry-run captured messages, and any errors.", schemaJSON)
 
 	handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("run_id")
@@ -286,7 +286,7 @@ func buildGetTaskStatusTool(pool *pgxpool.Pool, svc *services.Services) mcpserve
 }
 
 // formatTaskRunStatus renders a session's events as a job-run status
-// report. Designed for the get_task_status tool — concise enough that the
+// report. Designed for the get_job_status tool — concise enough that the
 // caller doesn't drown in raw event JSON, but complete enough to debug a
 // failed run without reaching for get_session_events.
 func formatTaskRunStatus(sessionID uuid.UUID, events []models.SessionEvent) string {
