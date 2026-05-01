@@ -25,7 +25,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
-	"github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/apps/vault"
 	"github.com/mrdon/kit/internal/apps/voting"
 	"github.com/mrdon/kit/internal/auth"
@@ -161,7 +161,7 @@ func main() {
 	// Haiku suggester, the JobService for spawning jobs when the user
 	// taps a resolution chip, and the encryptor for decrypting the
 	// tenant bot token at DM-open time.
-	todo.Configure(builderLLM, svc.Jobs, enc)
+	task.Configure(builderLLM, svc.Jobs, enc)
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)

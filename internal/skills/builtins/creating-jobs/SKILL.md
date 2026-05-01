@@ -31,7 +31,7 @@ Who can see and run the job:
 - `"tenant"` — visible tenant-wide. **Admin only.**
 - A role name (e.g. `"founders"`) — visible to members of that role. Caller must hold the role or be admin.
 
-Scope also controls what the job's agent can read from todos, decisions, memories, etc. at fire time — the agent runs with the creator's identity, so it sees only what the creator sees.
+Scope also controls what the job's agent can read from tasks, decisions, memories, etc. at fire time — the agent runs with the creator's identity, so it sees only what the creator sees.
 
 ## channel_id
 
@@ -41,10 +41,10 @@ Where the job's agent posts by default if its description says "post" without na
 
 The description is the prompt at fire time. Write it like briefing a teammate with amnesia:
 
-- **Concrete data sources.** Not "summarise recent activity" — "list open todos (via `list_todos`), decisions resolved in the last 7 days (via `list_decisions`), and active briefings (via `list_briefings`)."
+- **Concrete data sources.** Not "summarise recent activity" — "list open tasks (via `list_tasks`), decisions resolved in the last 7 days (via `list_decisions`), and active briefings (via `list_briefings`)."
 - **Name the output tool.** "Post a Slack mrkdwn message to the channel via `post_to_channel`." This nudges the agent toward the right terminal.
 - **Specify shape.** "4–8 bullet points, Slack mrkdwn, no headers."
-- **Guardrails.** "Do not include ticket numbers." "If no todos are open, post nothing."
+- **Guardrails.** "Do not include ticket numbers." "If no tasks are open, post nothing."
 
 **Don't rely on the description for safety.** If the job must not post to the wrong channel, that goes in the policy — not in the description. LLMs can and will skip "require approval" instructions on a bad run.
 
@@ -54,7 +54,7 @@ Three independent fields; set any combination:
 
 ```json
 {
-  "allowed_tools": ["list_todos", "list_decisions", "post_to_channel"],
+  "allowed_tools": ["list_tasks", "list_decisions", "post_to_channel"],
   "force_gate":    ["post_to_channel"],
   "pinned_args":   { "post_to_channel": { "channel": "C09FOUNDERS" } }
 }
@@ -101,11 +101,11 @@ Pinning **silently overrides** — the handler doesn't error if the agent suppli
 
 ```json
 {
-  "description": "Draft a weekly state-of-the-company post. Pull signal from open todos (list_todos), decisions resolved in the last 7 days (list_decisions), active briefings (list_briefings). 4–8 bullets, Slack mrkdwn, no headers. Post via post_to_channel.",
+  "description": "Draft a weekly state-of-the-company post. Pull signal from open tasks (list_tasks), decisions resolved in the last 7 days (list_decisions), active briefings (list_briefings). 4–8 bullets, Slack mrkdwn, no headers. Post via post_to_channel.",
   "cron_expr": "0 9 * * MON",
   "channel_id": "C09FOUNDERS",
   "policy": {
-    "allowed_tools": ["list_todos", "list_decisions", "list_briefings", "search_memories", "post_to_channel"],
+    "allowed_tools": ["list_tasks", "list_decisions", "list_briefings", "search_memories", "post_to_channel"],
     "force_gate": ["post_to_channel"],
     "pinned_args": { "post_to_channel": { "channel": "C09FOUNDERS" } }
   }
@@ -118,7 +118,7 @@ Rationale: allow-list shrinks the surface to just the read tools + one terminal;
 
 ```json
 {
-  "description": "Summarise yesterday's completed todos and today's scheduled briefings. Return the summary as your final message; do not post to any channel.",
+  "description": "Summarise yesterday's completed tasks and today's scheduled briefings. Return the summary as your final message; do not post to any channel.",
   "cron_expr": "0 8 * * MON-FRI",
   "policy": {
     "allowed_tools": []
@@ -132,10 +132,10 @@ Rationale: `allowed_tools: []` means only infrastructure runs — no posts, no s
 
 ```json
 {
-  "description": "Check open todos assigned to the recipient. If any are overdue, DM a polite nudge listing them.",
+  "description": "Check open tasks assigned to the recipient. If any are overdue, DM a polite nudge listing them.",
   "cron_expr": "0 10 * * TUE",
   "policy": {
-    "allowed_tools": ["list_todos", "dm_user"],
+    "allowed_tools": ["list_tasks", "dm_user"],
     "pinned_args": { "dm_user": { "user_id": "U0ABCDEF" } }
   }
 }

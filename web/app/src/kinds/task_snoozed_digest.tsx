@@ -21,7 +21,7 @@ function digestMeta(item: StackItem): DigestMetadata | undefined {
 function Face({ item }: { item: StackItem }) {
   const rows = digestMeta(item)?.items ?? [];
   return (
-    <div className="todo-face snoozed-face">
+    <div className="task-face snoozed-face">
       <ul className="snoozed-face-list">
         {rows.map((r) => (
           <li key={r.id}>
@@ -41,7 +41,7 @@ function Detail({ item }: { item: StackItem }) {
   const rows = digestMeta(item)?.items ?? [];
   if (rows.length === 0) {
     return (
-      <div className="todo-meta">
+      <div className="task-meta">
         <div>Nothing snoozed.</div>
       </div>
     );
@@ -50,7 +50,7 @@ function Detail({ item }: { item: StackItem }) {
     <ul className="snoozed-digest">
       {rows.map((r) => (
         <li key={r.id}>
-          <Link to={`/stack/todo/todo/${r.id}`} className="snoozed-row">
+          <Link to={`/stack/task/task/${r.id}`} className="snoozed-row">
             <span className="snoozed-row-title">{r.title}</span>
             <span className="snoozed-row-meta">
               <span className={`priority-chip priority-${r.priority}`}>
@@ -90,4 +90,4 @@ function formatRelative(iso: string): string {
   return `in ${days}d`;
 }
 
-export const todoSnoozedDigest: KindRenderer = { Face, Detail };
+export const taskSnoozedDigest: KindRenderer = { Face, Detail };

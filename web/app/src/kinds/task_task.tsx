@@ -1,27 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { KindRenderer } from '.';
-import type { StackItem, TodoEvent, TodoMetadata } from '../types';
+import type { StackItem, TaskEvent, TaskMetadata } from '../types';
 
-function meta(item: StackItem): TodoMetadata | undefined {
-  return item.metadata as TodoMetadata | undefined;
+function meta(item: StackItem): TaskMetadata | undefined {
+  return item.metadata as TaskMetadata | undefined;
 }
 
 function Face({ item }: { item: StackItem }) {
   const m = meta(item);
   return (
-    <div className="todo-face">
+    <div className="task-face">
       {m && (
-        <div className="todo-face-meta">
+        <div className="task-face-meta">
           <span className={`priority-chip priority-${m.priority}`}>
             {m.priority}
           </span>
-          {m.assigned_to_name && (
-            <span className="assignee">👤 {m.assigned_to_name}</span>
-          )}
           {m.role_scope && <span className="role-scope">#{m.role_scope}</span>}
-          {m.visibility === 'public' && (
-            <span className="visibility-public">🌐 public</span>
+          {m.assignee_name ? (
+            <span className="assignee">👤 {m.assignee_name}</span>
+          ) : (
+            <span className="assignee unassigned">Unassigned</span>
           )}
         </div>
       )}
@@ -44,10 +43,11 @@ function Detail({
   busy: boolean;
 }) {
   const m = meta(item);
-  const events = (extras?.events as TodoEvent[] | null) ?? [];
+  const events = (extras?.events as TaskEvent[] | null) ?? [];
   const isSnoozed = !!(
     m?.snoozed_until && new Date(m.snoozed_until).getTime() > Date.now()
   );
+  const isUnassigned = !m?.assignee_user_id;
 
   // Regenerate state. Baseline is a fingerprint of the resolution chips
   // and recommended step taken at the moment we fire the action; the
@@ -108,19 +108,32 @@ function Detail({
   return (
     <>
       {m && (
-        <div className="todo-meta">
+        <div className="task-meta">
           {m.due_date && <div>Due: {formatDate(m.due_date)}</div>}
           <div>Priority: {m.priority}</div>
           <div>Status: {m.status}</div>
-          <div>Visibility: {m.visibility === 'public' ? '🌐 Public' : 'Scoped'}</div>
-          {m.assigned_to_name && <div>Assigned: {m.assigned_to_name}</div>}
           {m.role_scope && <div>Role: {m.role_scope}</div>}
+          <div>
+            Assignee:{' '}
+            {m.assignee_name ? m.assignee_name : <em>Unassigned</em>}
+          </div>
         </div>
       )}
       <div className="acks">
         <button disabled={busy} onClick={() => onAction('complete')}>
           ✅ Complete
         </button>
+        {isUnassigned && (
+          <button
+            disabled={busy}
+            onClick={() => {
+              onAction('assign_to_me');
+              onRefresh();
+            }}
+          >
+            🙋 Assign to me
+          </button>
+        )}
         {isSnoozed && (
           <button disabled={busy} onClick={() => onAction('wake')}>
             ⏰ Wake now
@@ -143,7 +156,7 @@ function Detail({
         <button
           disabled={busy}
           onClick={() => {
-            if (window.confirm('Delete this todo?')) onAction('delete');
+            if (window.confirm('Delete this task?')) onAction('delete');
           }}
         >
           🗑️ Delete
@@ -176,14 +189,16 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { timeZone: 'UTC' });
 }
 
-function describeEvent(e: TodoEvent): string {
+function describeEvent(e: TaskEvent): string {
   switch (e.event_type) {
     case 'comment':
       return e.content ?? '';
     case 'status_change':
       return `Status: ${e.old_value} → ${e.new_value}${e.content ? ` (${e.content})` : ''}`;
     case 'assignment':
-      return `Assigned: ${e.old_value || '—'} → ${e.new_value}`;
+      return `Re-scoped: ${e.old_value || '—'} → ${e.new_value}`;
+    case 'assignee_change':
+      return `Assignee: ${e.old_value || '—'} → ${e.new_value || '—'}`;
     case 'priority_change':
       return `Priority: ${e.old_value} → ${e.new_value}`;
     default:
@@ -191,4 +206,4 @@ function describeEvent(e: TodoEvent): string {
   }
 }
 
-export const todoTodo: KindRenderer = { Face, Detail };
+export const taskTask: KindRenderer = { Face, Detail };

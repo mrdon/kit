@@ -10,7 +10,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from './api';
-import type { DetailResponse, StackItem, TaskStatus } from './types';
+import type { DetailResponse, StackItem, JobStatus } from './types';
 import { itemKey } from './types';
 import { rendererFor } from './kinds';
 import ErrorBoundary from './ErrorBoundary';
@@ -47,7 +47,7 @@ export default function StackItemDetail() {
 
   // Poll the linked agent task (decision cards) while it's still running.
   useEffect(() => {
-    const task = extras?.task as TaskStatus | undefined;
+    const task = extras?.task as JobStatus | undefined;
     if (!task) return;
     if (task.status !== 'active' && task.status !== 'running') return;
     const t = setInterval(load, 4000);

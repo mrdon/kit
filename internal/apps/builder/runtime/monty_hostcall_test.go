@@ -70,9 +70,9 @@ func TestHostCallKwargs(t *testing.T) {
 	}
 
 	// Pass as kwargs — monty maps both positional and kwargs into Args.
-	code := `create_todo(title="x", priority="high")`
+	code := `create_task(title="x", priority="high")`
 	result, err := runner.Execute(ctx, code, nil,
-		WithExternalFunc(handler, Func("create_todo", "title", "priority")))
+		WithExternalFunc(handler, Func("create_task", "title", "priority")))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestHostCallMultipleFunctions(t *testing.T) {
 }
 
 // TestHostCallChained: Python calls find_user, uses the result to call
-// create_todo. This is the real pattern skills will follow — one tool's
+// create_task. This is the real pattern skills will follow — one tool's
 // output feeds the next.
 func TestHostCallChained(t *testing.T) {
 	runner := testRunner
@@ -247,7 +247,7 @@ func TestHostCallChained(t *testing.T) {
 				return nil, fmt.Errorf("unexpected name %q", name)
 			}
 			return map[string]any{"id": "u_42", "name": name}, nil
-		case "create_todo":
+		case "create_task":
 			createdFor, _ = call.Args["assignee_id"].(string)
 			title, _ := call.Args["title"].(string)
 			return map[string]any{"id": "todo_1", "title": title, "assignee_id": createdFor}, nil
@@ -258,13 +258,13 @@ func TestHostCallChained(t *testing.T) {
 
 	code := `
 user = find_user(name="alice")
-todo = create_todo(title="ship it", assignee_id=user["id"])
-{"todo_id": todo["id"], "assignee_id": todo["assignee_id"]}
+todo = create_task(title="ship it", assignee_id=user["id"])
+{"task_id": todo["id"], "assignee_id": todo["assignee_id"]}
 `
 	result, err := runner.Execute(ctx, code, nil,
 		WithExternalFunc(handler,
 			Func("find_user", "name"),
-			Func("create_todo", "title", "assignee_id"),
+			Func("create_task", "title", "assignee_id"),
 		))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -273,8 +273,8 @@ todo = create_todo(title="ship it", assignee_id=user["id"])
 	if !ok {
 		t.Fatalf("result not a map: %T %v", result, result)
 	}
-	if m["todo_id"] != "todo_1" {
-		t.Fatalf("todo_id = %v", m["todo_id"])
+	if m["task_id"] != "todo_1" {
+		t.Fatalf("task_id = %v", m["task_id"])
 	}
 	if m["assignee_id"] != "u_42" {
 		t.Fatalf("assignee_id = %v", m["assignee_id"])

@@ -4,7 +4,9 @@ Role-aware knowledge base agent for small businesses, delivered as SaaS via Slac
 
 ## Product Shape
 
-Kit is the **ambient surface** for quick interactions — todos, decisions, briefings, and workflows consumed via Slack, voice, and the swipe web UI. For **deep/long-running work**, users point a harness (Claude Code, Cowork) at Kit's MCP to pull todos, skills, memories, and decisions as context; Kit is not trying to be the workbench. Workflows (tasks + skills) can surface one or more decisions over time, resolved asynchronously in the swipe feed.
+Kit is the **ambient surface** for quick interactions — tasks, decisions, briefings, and workflows consumed via Slack, voice, and the swipe web UI. For **deep/long-running work**, users point a harness (Claude Code, Cowork) at Kit's MCP to pull tasks, skills, memories, and decisions as context; Kit is not trying to be the workbench. Workflows (jobs + skills) can surface one or more decisions over time, resolved asynchronously in the swipe feed.
+
+Tasks are role-owned and optionally assignable. Every task lives inside exactly one role — the team or project that owns it (Engineering, Marketing, Operations, etc.); only role members can see it. Assignee is orthogonal and optional — anyone in the role can see and edit regardless. There's no "private" or "public" task; if you want cross-team visibility, join the other role.
 
 ## Quick Commands
 

@@ -167,6 +167,35 @@ func GetUserByID(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.
 	return hydrateUser(ctx, pool, user), nil
 }
 
+// GetUserPrimaryRoleID returns the user's primary_role_id, or nil if unset.
+// Used by the task resolver as a default when role_scope is omitted.
+func GetUserPrimaryRoleID(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) (*uuid.UUID, error) {
+	var primary *uuid.UUID
+	err := pool.QueryRow(ctx,
+		`SELECT primary_role_id FROM users WHERE tenant_id = $1 AND id = $2`,
+		tenantID, userID,
+	).Scan(&primary)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting primary role: %w", err)
+	}
+	return primary, nil
+}
+
+// SetUserPrimaryRoleID writes the user's primary_role_id. Pass nil to clear.
+// Caller is responsible for verifying the user holds the role.
+func SetUserPrimaryRoleID(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleID *uuid.UUID) error {
+	if _, err := pool.Exec(ctx,
+		`UPDATE users SET primary_role_id = $3 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, userID, roleID,
+	); err != nil {
+		return fmt.Errorf("setting primary role: %w", err)
+	}
+	return nil
+}
+
 // EnsureUserBySlackID is the canonical "give me a populated user for
 // this Slack ID" entry point. It:
 //   - Creates a skeleton row if none exists (idempotent via the unique

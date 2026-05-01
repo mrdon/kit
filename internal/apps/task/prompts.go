@@ -1,4 +1,4 @@
-package todo
+package task
 
 import (
 	"embed"
@@ -15,7 +15,7 @@ var promptSet = prompts.MustParse(promptFS, "prompts/*.tmpl")
 func mustRender(name string, data any) string {
 	out, err := prompts.Render(promptSet, name, data)
 	if err != nil {
-		panic(fmt.Errorf("todo: %w", err))
+		panic(fmt.Errorf("task: %w", err))
 	}
 	return out
 }

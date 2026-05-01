@@ -84,14 +84,14 @@ Kit remembers important facts from conversations. These are short-lived, context
 
 Use `search_memories` to find previously saved facts, or `forget_memory` to remove one.
 
-## Todos
+## Tasks
 
-Kit tracks todos for your team. Create them from conversation or explicitly:
+Kit tracks tasks for your team. Create them from conversation or explicitly:
 
 > "Create a todo to restock the paper towels, assign it to me."
-> "What todos are overdue?"
+> "What tasks are overdue?"
 
-Todos support priorities, due dates, role scoping, and an activity log. Use `list_todos` to see open items or `complete_todo` to mark one done. Use `snooze_todo` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active. To delete, set `status` to `cancelled` via `update_todo` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
+Tasks support priorities, due dates, role scoping, and an activity log. Use `list_tasks` to see open items or `complete_task` to mark one done. Use `snooze_task` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active. To delete, set `status` to `cancelled` via `update_task` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
 
 ## Slack Channel Search
 

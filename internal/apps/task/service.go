@@ -1,4 +1,4 @@
-package todo
+package task
 
 import (
 	"context"
@@ -16,34 +16,34 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// TodoService handles todo operations with authorization.
-type TodoService struct {
+// TaskService handles task operations with authorization.
+type TaskService struct {
 	pool *pgxpool.Pool
-	// app is the owning TodoApp; used to reach Configure-wired
+	// app is the owning TaskApp; used to reach Configure-wired
 	// dependencies (llm) at call time. May be nil in tests that
 	// construct a service via NewService(pool).
-	app *TodoApp
+	app *TaskApp
 }
 
-// ErrInvalidRole is returned when a todo is created/updated with a role name
+// ErrInvalidRole is returned when a task is created/updated with a role name
 // that does not exist in the tenant's roles table.
 var ErrInvalidRole = errors.New("role does not exist")
 
-// ClearRoleScope is the sentinel string callers pass to update_todo to clear
-// the role_scope back to the default (caller user-scope). Kept for tool
-// backwards-compat.
-const ClearRoleScope = "none"
+// ErrPrimaryRoleNotSet is returned when the resolver can't pick a default
+// role for the caller — they hold multiple roles and no primary is set.
+// The agent surfaces this as "set a primary role or pass role_scope".
+var ErrPrimaryRoleNotSet = errors.New("primary role not set")
 
-// NewService returns a TodoService bound to pool. Exported so builder-app
+// NewService returns a TaskService bound to pool. Exported so builder-app
 // bridges (and other external wiring) can construct a service without going
 // through the app init path.
-func NewService(pool *pgxpool.Pool) *TodoService {
-	return &TodoService{pool: pool}
+func NewService(pool *pgxpool.Pool) *TaskService {
+	return &TaskService{pool: pool}
 }
 
 // CreateInput is the high-level shape callers (agent, MCP) supply for a new
-// todo. Exactly one of AssignedTo / RoleName may be set; both omitted means
-// "scope to caller". Visibility defaults to "scoped".
+// task. RoleName is optional (falls back to caller's primary role); assignee
+// is orthogonal — anyone in the role can see and edit regardless.
 type CreateInput struct {
 	Title         string
 	Description   string
@@ -52,14 +52,12 @@ type CreateInput struct {
 	BlockedReason string
 	DueDate       *time.Time
 
-	AssignedTo *uuid.UUID // user UUID (already resolved)
-	RoleName   string     // role name (translated to role_id at create time)
-	Visibility string     // "scoped" (default) or "public"
+	AssigneeUserID *uuid.UUID // optional; orthogonal to RoleName
+	RoleName       string     // optional; resolver fills in caller's primary if empty
 }
 
 // UpdateInput mirrors CreateInput but is sparse — set only the fields you
-// want to change. ScopeChange/Visibility are mutually independent of each
-// other but each is optional.
+// want to change.
 type UpdateInput struct {
 	Title         *string
 	Description   *string
@@ -71,14 +69,14 @@ type UpdateInput struct {
 	SnoozedUntil  *time.Time
 	ClearSnooze   bool
 
-	NewAssignee *uuid.UUID // re-scope to this user
-	NewRoleName *string    // re-scope to this role; "" or ClearRoleScope to fall back to caller
-	Visibility  *string    // "scoped" or "public"
+	NewAssigneeUserID *uuid.UUID // set/replace assignee
+	ClearAssignee     bool       // unset assignee
+	NewRoleName       *string    // re-scope to this role; "" or "none" rejected
 }
 
 // ResolveAssignee turns a flexible user reference (UUID, Slack user ID, or
 // display-name fragment) into a kit user UUID.
-func (s *TodoService) ResolveAssignee(ctx context.Context, c *services.Caller, ref string) (*uuid.UUID, string) {
+func (s *TaskService) ResolveAssignee(ctx context.Context, c *services.Caller, ref string) (*uuid.UUID, string) {
 	u, err := models.ResolveUserRef(ctx, s.pool, c.TenantID, ref)
 	if err != nil {
 		return nil, services.FormatUserRefError(ref, err)
@@ -89,29 +87,25 @@ func (s *TodoService) ResolveAssignee(ctx context.Context, c *services.Caller, r
 	return &u.ID, ""
 }
 
-// Create creates a new todo. Non-admins can only assign-to-self or scope to
-// roles they hold; the resolved scope is stored as scope_id on the row.
-func (s *TodoService) Create(ctx context.Context, c *services.Caller, in CreateInput) (*Todo, error) {
-	scopeID, err := s.resolveScope(ctx, c, in.AssignedTo, in.RoleName)
+// Create creates a new task. Every task lives in a role; if RoleName is
+// empty the resolver falls back to the caller's primary role (or their
+// only role if they hold exactly one).
+func (s *TaskService) Create(ctx context.Context, c *services.Caller, in CreateInput) (*Task, error) {
+	scopeID, err := s.resolveTaskRole(ctx, c, in.RoleName)
 	if err != nil {
 		return nil, err
 	}
 
-	visibility := in.Visibility
-	if visibility == "" {
-		visibility = "scoped"
-	}
-
-	t := &Todo{
-		TenantID:      c.TenantID,
-		Title:         in.Title,
-		Description:   in.Description,
-		Status:        in.Status,
-		Priority:      in.Priority,
-		BlockedReason: in.BlockedReason,
-		ScopeID:       scopeID,
-		Visibility:    visibility,
-		DueDate:       in.DueDate,
+	t := &Task{
+		TenantID:       c.TenantID,
+		Title:          in.Title,
+		Description:    in.Description,
+		Status:         in.Status,
+		Priority:       in.Priority,
+		BlockedReason:  in.BlockedReason,
+		ScopeID:        scopeID,
+		AssigneeUserID: in.AssigneeUserID,
+		DueDate:        in.DueDate,
 	}
 	if t.Status == "" {
 		t.Status = "open"
@@ -120,15 +114,15 @@ func (s *TodoService) Create(ctx context.Context, c *services.Caller, in CreateI
 		t.Priority = "medium"
 	}
 
-	if err := createTodo(ctx, s.pool, t); err != nil {
-		return nil, fmt.Errorf("creating todo: %w", err)
+	if err := createTask(ctx, s.pool, t); err != nil {
+		return nil, fmt.Errorf("creating task: %w", err)
 	}
 
-	_ = appendEvent(ctx, s.pool, c.TenantID, t.ID, &c.UserID, "comment", "Created todo", "", "")
+	_ = appendEvent(ctx, s.pool, c.TenantID, t.ID, &c.UserID, "comment", "Created task", "", "")
 
 	// Fire the resolution suggester asynchronously. Detached context
 	// because the request context may cancel before Haiku finishes; the
-	// goroutine has its own semaphore + logging. Caller/todo passed by
+	// goroutine has its own semaphore + logging. Caller/task passed by
 	// value so a later mutation by the request path can't observe them.
 	if s.app != nil && s.app.llm != nil {
 		go runResolutionSuggester(s.pool, s.app.llm, *c, *t)
@@ -137,22 +131,14 @@ func (s *TodoService) Create(ctx context.Context, c *services.Caller, in CreateI
 	return t, nil
 }
 
-// resolveScope translates the (assignee, roleName) pair into a single
-// scope_id, honoring non-admin restrictions and creating the canonical scope
-// row if necessary. Defaults to caller's user-scope.
-func (s *TodoService) resolveScope(ctx context.Context, c *services.Caller, assignedTo *uuid.UUID, roleName string) (uuid.UUID, error) {
-	if assignedTo != nil && roleName != "" && roleName != ClearRoleScope {
-		return uuid.Nil, errors.New("specify either assigned_to or role_scope, not both")
-	}
-
-	if assignedTo != nil {
-		if !c.IsAdmin && *assignedTo != c.UserID {
-			return uuid.Nil, services.ErrForbidden
-		}
-		return models.GetOrCreateScope(ctx, s.pool, c.TenantID, nil, assignedTo)
-	}
-
-	if roleName != "" && roleName != ClearRoleScope {
+// resolveTaskRole turns an optional role name into a role-scope_id, falling
+// back through user.primary_role_id and the caller's only role. Never
+// returns a non-role scope. The user-level primary takes precedence over
+// any tenant default — a person's tasks shouldn't get sucked into whatever
+// the tenant's most-common role is.
+func (s *TaskService) resolveTaskRole(ctx context.Context, c *services.Caller, roleName string) (uuid.UUID, error) {
+	roleName = strings.TrimSpace(roleName)
+	if roleName != "" && roleName != "none" {
 		if !c.IsAdmin && !callerHasRole(c, roleName) {
 			return uuid.Nil, services.ErrForbidden
 		}
@@ -166,25 +152,39 @@ func (s *TodoService) resolveScope(ctx context.Context, c *services.Caller, assi
 		return models.GetOrCreateScope(ctx, s.pool, c.TenantID, &roleID, nil)
 	}
 
-	// Default: caller's own user-scope.
-	return models.GetOrCreateScope(ctx, s.pool, c.TenantID, nil, &c.UserID)
+	// Empty role name: fall back to user primary_role_id.
+	primaryID, err := models.GetUserPrimaryRoleID(ctx, s.pool, c.TenantID, c.UserID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("looking up primary role: %w", err)
+	}
+	if primaryID != nil {
+		return models.GetOrCreateScope(ctx, s.pool, c.TenantID, primaryID, nil)
+	}
+
+	// No primary set. If caller holds exactly one role, use it.
+	if len(c.RoleIDs) == 1 {
+		return models.GetOrCreateScope(ctx, s.pool, c.TenantID, &c.RoleIDs[0], nil)
+	}
+
+	// Multiple roles + no primary: agent must ask.
+	return uuid.Nil, ErrPrimaryRoleNotSet
 }
 
 func callerHasRole(c *services.Caller, name string) bool {
 	return slices.Contains(c.Roles, name)
 }
 
-// List returns todos visible to the caller, with optional filters.
-func (s *TodoService) List(ctx context.Context, c *services.Caller, f TodoFilters) ([]Todo, error) {
+// List returns tasks visible to the caller, with optional filters.
+func (s *TaskService) List(ctx context.Context, c *services.Caller, f TaskFilters) ([]Task, error) {
 	if c.IsAdmin {
-		return listTodos(ctx, s.pool, c.TenantID, nil, nil, f)
+		return listTasks(ctx, s.pool, c.TenantID, nil, nil, f)
 	}
-	return listTodos(ctx, s.pool, c.TenantID, &c.UserID, c.RoleIDs, f)
+	return listTasks(ctx, s.pool, c.TenantID, &c.UserID, c.RoleIDs, f)
 }
 
-// Get returns a single todo if the caller can read it.
-func (s *TodoService) Get(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, []TodoEvent, error) {
-	t, err := getTodo(ctx, s.pool, c.TenantID, todoID)
+// Get returns a single task if the caller can read it.
+func (s *TaskService) Get(ctx context.Context, c *services.Caller, taskID uuid.UUID) (*Task, []TaskEvent, error) {
+	t, err := getTask(ctx, s.pool, c.TenantID, taskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil, services.ErrNotFound
@@ -194,16 +194,16 @@ func (s *TodoService) Get(ctx context.Context, c *services.Caller, todoID uuid.U
 	if !s.canRead(ctx, c, t) {
 		return nil, nil, services.ErrNotFound // don't leak existence
 	}
-	events, err := getRecentEvents(ctx, s.pool, c.TenantID, todoID, 10)
+	events, err := getRecentEvents(ctx, s.pool, c.TenantID, taskID, 10)
 	if err != nil {
 		return nil, nil, err
 	}
 	return t, events, nil
 }
 
-// Update updates a todo. Checks both read and write access.
-func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uuid.UUID, u UpdateInput) (*Todo, error) {
-	t, err := getTodo(ctx, s.pool, c.TenantID, todoID)
+// Update updates a task. Checks both read and write access.
+func (s *TaskService) Update(ctx context.Context, c *services.Caller, taskID uuid.UUID, u UpdateInput) (*Task, error) {
+	t, err := getTask(ctx, s.pool, c.TenantID, taskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, services.ErrNotFound
@@ -217,15 +217,15 @@ func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uui
 		return nil, services.ErrForbidden
 	}
 
-	// Translate any re-scope request into a new scope_id (with non-admin
-	// guards in resolveScope).
+	// Re-scope to a different role if requested. "" / "none" are explicit
+	// errors — every task must belong to a role.
 	var newScope *uuid.UUID
-	if u.NewAssignee != nil || u.NewRoleName != nil {
-		var roleName string
-		if u.NewRoleName != nil {
-			roleName = *u.NewRoleName
+	if u.NewRoleName != nil {
+		name := strings.TrimSpace(*u.NewRoleName)
+		if name == "" || name == "none" {
+			return nil, errors.New("role_scope cannot be empty — every task must belong to a role")
 		}
-		sid, err := s.resolveScope(ctx, c, u.NewAssignee, roleName)
+		sid, err := s.resolveTaskRole(ctx, c, name)
 		if err != nil {
 			return nil, err
 		}
@@ -238,18 +238,19 @@ func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uui
 		}
 	}
 
-	dbUpdates := TodoUpdates{
-		Title:         u.Title,
-		Description:   u.Description,
-		Status:        u.Status,
-		Priority:      u.Priority,
-		BlockedReason: u.BlockedReason,
-		ScopeID:       newScope,
-		Visibility:    u.Visibility,
-		DueDate:       u.DueDate,
-		ClearDueDate:  u.ClearDueDate,
-		SnoozedUntil:  u.SnoozedUntil,
-		ClearSnooze:   u.ClearSnooze,
+	dbUpdates := TaskUpdates{
+		Title:          u.Title,
+		Description:    u.Description,
+		Status:         u.Status,
+		Priority:       u.Priority,
+		BlockedReason:  u.BlockedReason,
+		ScopeID:        newScope,
+		AssigneeUserID: u.NewAssigneeUserID,
+		ClearAssignee:  u.ClearAssignee,
+		DueDate:        u.DueDate,
+		ClearDueDate:   u.ClearDueDate,
+		SnoozedUntil:   u.SnoozedUntil,
+		ClearSnooze:    u.ClearSnooze,
 	}
 
 	if u.Status != nil && *u.Status != t.Status {
@@ -257,38 +258,51 @@ func (s *TodoService) Update(ctx context.Context, c *services.Caller, todoID uui
 		if u.BlockedReason != nil {
 			content = *u.BlockedReason
 		}
-		_ = appendEvent(ctx, s.pool, c.TenantID, todoID, &c.UserID, "status_change", content, t.Status, *u.Status)
+		_ = appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "status_change", content, t.Status, *u.Status)
 	}
 	if newScope != nil && *newScope != t.ScopeID {
-		_ = appendEvent(ctx, s.pool, c.TenantID, todoID, &c.UserID, "assignment", "", t.ScopeID.String(), newScope.String())
+		_ = appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "assignment", "", t.ScopeID.String(), newScope.String())
+	}
+	if u.NewAssigneeUserID != nil || u.ClearAssignee {
+		oldVal := ""
+		newVal := ""
+		if t.AssigneeUserID != nil {
+			oldVal = t.AssigneeUserID.String()
+		}
+		if u.NewAssigneeUserID != nil {
+			newVal = u.NewAssigneeUserID.String()
+		}
+		if oldVal != newVal {
+			_ = appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "assignee_change", "", oldVal, newVal)
+		}
 	}
 	if u.Priority != nil && *u.Priority != t.Priority {
-		_ = appendEvent(ctx, s.pool, c.TenantID, todoID, &c.UserID, "priority_change", "", t.Priority, *u.Priority)
+		_ = appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "priority_change", "", t.Priority, *u.Priority)
 	}
 
-	if err := updateTodo(ctx, s.pool, c.TenantID, todoID, dbUpdates); err != nil {
+	if err := updateTask(ctx, s.pool, c.TenantID, taskID, dbUpdates); err != nil {
 		return nil, err
 	}
 
-	return getTodo(ctx, s.pool, c.TenantID, todoID)
+	return getTask(ctx, s.pool, c.TenantID, taskID)
 }
 
-// Complete is a shortcut to mark a todo as done.
-func (s *TodoService) Complete(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, error) {
+// Complete is a shortcut to mark a task as done.
+func (s *TaskService) Complete(ctx context.Context, c *services.Caller, taskID uuid.UUID) (*Task, error) {
 	done := "done"
-	return s.Update(ctx, c, todoID, UpdateInput{Status: &done})
+	return s.Update(ctx, c, taskID, UpdateInput{Status: &done})
 }
 
-// Cancel is a shortcut to soft-delete a todo via the 'cancelled' status. The
+// Cancel is a shortcut to soft-delete a task via the 'cancelled' status. The
 // row stays in the DB so an admin can recover it with an UPDATE; it just
 // drops off the swipe feed.
-func (s *TodoService) Cancel(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, error) {
+func (s *TaskService) Cancel(ctx context.Context, c *services.Caller, taskID uuid.UUID) (*Task, error) {
 	cancelled := "cancelled"
-	return s.Update(ctx, c, todoID, UpdateInput{Status: &cancelled})
+	return s.Update(ctx, c, taskID, UpdateInput{Status: &cancelled})
 }
 
 // snoozeHourLocal is the clock hour (local to the tenant's timezone) a
-// snoozed todo reappears at. 03:00 keeps the todo off the feed through
+// snoozed task reappears at. 03:00 keeps the task off the feed through
 // the overnight window regardless of how late the user is working;
 // anything on the snoozer's desk for the next morning shows up before
 // they wake up, not in the middle of the night.
@@ -324,11 +338,11 @@ func snoozeUntilAt(now time.Time, days int, tz string) (time.Time, error) {
 	return advanced.UTC(), nil
 }
 
-// SnoozeDays looks up the tenant timezone and snoozes the todo until
+// SnoozeDays looks up the tenant timezone and snoozes the task until
 // snoozeHourLocal (03:00) local time N days from today. Thin wrapper
 // around Snooze so callers don't have to fetch the tenant row
 // themselves.
-func (s *TodoService) SnoozeDays(ctx context.Context, c *services.Caller, todoID uuid.UUID, days int) (*Todo, error) {
+func (s *TaskService) SnoozeDays(ctx context.Context, c *services.Caller, taskID uuid.UUID, days int) (*Task, error) {
 	tz, err := s.tenantTimezone(ctx, c.TenantID)
 	if err != nil {
 		return nil, err
@@ -337,14 +351,14 @@ func (s *TodoService) SnoozeDays(ctx context.Context, c *services.Caller, todoID
 	if err != nil {
 		return nil, err
 	}
-	return s.Snooze(ctx, c, todoID, until)
+	return s.Snooze(ctx, c, taskID, until)
 }
 
-// SnoozeUntilNextMonday snoozes the todo until the upcoming Monday at
+// SnoozeUntilNextMonday snoozes the task until the upcoming Monday at
 // snoozeHourLocal (03:00) in the tenant timezone. If today is Monday,
 // "next" means a full week out — the user tapped "Monday" knowing today
 // is Monday, so they mean the one after this.
-func (s *TodoService) SnoozeUntilNextMonday(ctx context.Context, c *services.Caller, todoID uuid.UUID) (*Todo, error) {
+func (s *TaskService) SnoozeUntilNextMonday(ctx context.Context, c *services.Caller, taskID uuid.UUID) (*Task, error) {
 	tz, err := s.tenantTimezone(ctx, c.TenantID)
 	if err != nil {
 		return nil, err
@@ -353,10 +367,10 @@ func (s *TodoService) SnoozeUntilNextMonday(ctx context.Context, c *services.Cal
 	if err != nil {
 		return nil, err
 	}
-	return s.Snooze(ctx, c, todoID, until)
+	return s.Snooze(ctx, c, taskID, until)
 }
 
-func (s *TodoService) tenantTimezone(ctx context.Context, tenantID uuid.UUID) (string, error) {
+func (s *TaskService) tenantTimezone(ctx context.Context, tenantID uuid.UUID) (string, error) {
 	tenant, err := models.GetTenantByID(ctx, s.pool, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("looking up tenant: %w", err)
@@ -392,12 +406,12 @@ func snoozeUntilNextMondayAt(now time.Time, tz string) (time.Time, error) {
 	return advanced.UTC(), nil
 }
 
-// Snooze hides the todo from the caller's swipe feed until `until`. Re-snooze
+// Snooze hides the task from the caller's swipe feed until `until`. Re-snooze
 // overwrites the timestamp. A comment event records the action for the audit
 // log — we reuse the existing comment type rather than a new event_type so
 // the CHECK constraint stays narrow.
-func (s *TodoService) Snooze(ctx context.Context, c *services.Caller, todoID uuid.UUID, until time.Time) (*Todo, error) {
-	t, err := getTodo(ctx, s.pool, c.TenantID, todoID)
+func (s *TaskService) Snooze(ctx context.Context, c *services.Caller, taskID uuid.UUID, until time.Time) (*Task, error) {
+	t, err := getTask(ctx, s.pool, c.TenantID, taskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, services.ErrNotFound
@@ -410,17 +424,17 @@ func (s *TodoService) Snooze(ctx context.Context, c *services.Caller, todoID uui
 	if !s.canWrite(ctx, c, t) {
 		return nil, services.ErrForbidden
 	}
-	if err := updateTodo(ctx, s.pool, c.TenantID, todoID, TodoUpdates{SnoozedUntil: &until}); err != nil {
+	if err := updateTask(ctx, s.pool, c.TenantID, taskID, TaskUpdates{SnoozedUntil: &until}); err != nil {
 		return nil, err
 	}
-	_ = appendEvent(ctx, s.pool, c.TenantID, todoID, &c.UserID, "comment",
+	_ = appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "comment",
 		"Snoozed until "+until.Format(time.RFC3339), "", "")
-	return getTodo(ctx, s.pool, c.TenantID, todoID)
+	return getTask(ctx, s.pool, c.TenantID, taskID)
 }
 
 // AddComment appends a comment to the activity log.
-func (s *TodoService) AddComment(ctx context.Context, c *services.Caller, todoID uuid.UUID, content string) error {
-	t, err := getTodo(ctx, s.pool, c.TenantID, todoID)
+func (s *TaskService) AddComment(ctx context.Context, c *services.Caller, taskID uuid.UUID, content string) error {
+	t, err := getTask(ctx, s.pool, c.TenantID, taskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return services.ErrNotFound
@@ -430,28 +444,13 @@ func (s *TodoService) AddComment(ctx context.Context, c *services.Caller, todoID
 	if !s.canRead(ctx, c, t) {
 		return services.ErrNotFound
 	}
-	return appendEvent(ctx, s.pool, c.TenantID, todoID, &c.UserID, "comment", content, "", "")
+	return appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "comment", content, "", "")
 }
 
-// canRead: public todos visible to all; otherwise the caller must be in
-// the todo's scope (assignee or role member). Admin always wins.
-func (s *TodoService) canRead(ctx context.Context, c *services.Caller, t *Todo) bool {
-	if c.IsAdmin {
-		return true
-	}
-	if t.Visibility == "public" {
-		return true
-	}
-	scope, err := getScopeRow(ctx, s.pool, c.TenantID, t.ScopeID)
-	if err != nil {
-		return false
-	}
-	return c.CanSee([]services.ScopeRef{scope})
-}
-
-// canWrite: must be in the scope (assignee or role member). Admin wins.
-// Note: public todos still require scope membership to write.
-func (s *TodoService) canWrite(ctx context.Context, c *services.Caller, t *Todo) bool {
+// canRead and canWrite collapse to the same check now that visibility is
+// purely role-membership. Admin always wins; otherwise the caller must be
+// in the role that owns this task.
+func (s *TaskService) canRead(ctx context.Context, c *services.Caller, t *Task) bool {
 	if c.IsAdmin {
 		return true
 	}
@@ -462,8 +461,12 @@ func (s *TodoService) canWrite(ctx context.Context, c *services.Caller, t *Todo)
 	return c.CanSee([]services.ScopeRef{scope})
 }
 
-// FormatTodo formats a todo for display.
-func FormatTodo(t *Todo) string {
+func (s *TaskService) canWrite(ctx context.Context, c *services.Caller, t *Task) bool {
+	return s.canRead(ctx, c, t)
+}
+
+// FormatTask formats a task for display.
+func FormatTask(t *Task) string {
 	var status string
 	switch t.Status {
 	case "open":
@@ -483,8 +486,8 @@ func FormatTodo(t *Todo) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s] %s — %s (priority: %s)", t.ID, t.Title, status, t.Priority)
 
-	if t.Visibility == "public" {
-		b.WriteString(" [public]")
+	if t.AssigneeUserID == nil {
+		b.WriteString(" [unassigned]")
 	}
 	if t.DueDate != nil {
 		fmt.Fprintf(&b, " [due: %s]", t.DueDate.Format("2006-01-02"))
@@ -504,10 +507,10 @@ func FormatTodo(t *Todo) string {
 	return b.String()
 }
 
-// FormatTodoDetailed formats a todo with its events for display.
-func FormatTodoDetailed(t *Todo, events []TodoEvent) string {
+// FormatTaskDetailed formats a task with its events for display.
+func FormatTaskDetailed(t *Task, events []TaskEvent) string {
 	var b strings.Builder
-	b.WriteString(FormatTodo(t))
+	b.WriteString(FormatTask(t))
 	if t.ClosedAt != nil {
 		b.WriteString("\n  Closed: ")
 		b.WriteString(t.ClosedAt.Format(time.RFC3339))
@@ -526,6 +529,8 @@ func FormatTodoDetailed(t *Todo, events []TodoEvent) string {
 				}
 			case "assignment":
 				fmt.Fprintf(&b, "\n  [%s] Re-scoped: %s → %s", ts, e.OldValue, e.NewValue)
+			case "assignee_change":
+				fmt.Fprintf(&b, "\n  [%s] Assignee: %s → %s", ts, e.OldValue, e.NewValue)
 			case "priority_change":
 				fmt.Fprintf(&b, "\n  [%s] Priority: %s → %s", ts, e.OldValue, e.NewValue)
 			}

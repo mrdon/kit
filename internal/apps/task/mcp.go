@@ -1,4 +1,4 @@
-package todo
+package task
 
 import (
 	"context"
@@ -16,10 +16,10 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-func buildTodoMCPTools(svc *TodoService) []mcpserver.ServerTool {
+func buildTaskMCPTools(svc *TaskService) []mcpserver.ServerTool {
 	var result []mcpserver.ServerTool
-	for _, meta := range todoTools {
-		handler := todoMCPHandler(meta.Name, svc)
+	for _, meta := range taskTools {
+		handler := taskMCPHandler(meta.Name, svc)
 		if handler == nil {
 			continue
 		}
@@ -28,31 +28,31 @@ func buildTodoMCPTools(svc *TodoService) []mcpserver.ServerTool {
 	return result
 }
 
-func todoMCPHandler(name string, svc *TodoService) mcpserver.ToolHandlerFunc {
+func taskMCPHandler(name string, svc *TaskService) mcpserver.ToolHandlerFunc {
 	switch name {
-	case "create_todo":
-		return mcpCreateTodo(svc)
-	case "list_todos":
-		return mcpListTodos(svc)
-	case "get_todo":
-		return mcpGetTodo(svc)
-	case "update_todo":
-		return mcpUpdateTodo(svc)
-	case "add_todo_comment":
-		return mcpAddTodoComment(svc)
-	case "complete_todo":
-		return mcpCompleteTodo(svc)
-	case "snooze_todo":
-		return mcpSnoozeTodo(svc)
+	case "create_task":
+		return mcpCreateTask(svc)
+	case "list_tasks":
+		return mcpListTasks(svc)
+	case "get_task":
+		return mcpGetTask(svc)
+	case "update_task":
+		return mcpUpdateTask(svc)
+	case "add_task_comment":
+		return mcpAddTaskComment(svc)
+	case "complete_task":
+		return mcpCompleteTask(svc)
+	case "snooze_task":
+		return mcpSnoozeTask(svc)
 	default:
 		return nil
 	}
 }
 
-func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpCreateTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		title, _ := req.RequireString("title")
-		assignedToStr := req.GetString("assigned_to", "")
+		assigneeRef := req.GetString("assignee", "")
 		dueDateStr := req.GetString("due_date", "")
 
 		in := CreateInput{
@@ -60,15 +60,14 @@ func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			Description: req.GetString("description", ""),
 			Priority:    req.GetString("priority", ""),
 			RoleName:    req.GetString("role_scope", ""),
-			Visibility:  req.GetString("visibility", ""),
 		}
 
-		if assignedToStr != "" {
-			id, msg := svc.ResolveAssignee(ctx, caller, assignedToStr)
+		if assigneeRef != "" {
+			id, msg := svc.ResolveAssignee(ctx, caller, assigneeRef)
 			if msg != "" {
 				return mcp.NewToolResultError(msg), nil
 			}
-			in.AssignedTo = id
+			in.AssigneeUserID = id
 		}
 
 		if dueDateStr != "" {
@@ -81,6 +80,9 @@ func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 
 		t, err := svc.Create(ctx, caller, in)
 		if err != nil {
+			if errors.Is(err, ErrPrimaryRoleNotSet) {
+				return mcp.NewToolResultError(primaryRoleNotSetMessage(caller)), nil
+			}
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
 			}
@@ -90,15 +92,15 @@ func mcpCreateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			return nil, err
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("Created todo [%s]: %s", t.ID, t.Title)), nil
+		return mcp.NewToolResultText(fmt.Sprintf("Created task [%s]: %s", t.ID, t.Title)), nil
 	})
 }
 
-func mcpListTodos(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpListTasks(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 
-		f := TodoFilters{
+		f := TaskFilters{
 			Status:   req.GetString("status", ""),
 			Priority: req.GetString("priority", ""),
 			RoleName: req.GetString("role_scope", ""),
@@ -108,8 +110,18 @@ func mcpListTodos(svc *TodoService) mcpserver.ToolHandlerFunc {
 		if b, ok := args["assigned_to_me"].(bool); ok {
 			f.AssignedToMe = b
 		}
+		if b, ok := args["unassigned"].(bool); ok {
+			f.Unassigned = b
+		}
 		if b, ok := args["overdue"].(bool); ok {
 			f.Overdue = b
+		}
+		if v := req.GetString("assignee", ""); v != "" {
+			id, msg := svc.ResolveAssignee(ctx, caller, v)
+			if msg != "" {
+				return mcp.NewToolResultError(msg), nil
+			}
+			f.AssigneeUserID = id
 		}
 
 		if cs := req.GetString("closed_since", ""); cs != "" {
@@ -120,51 +132,51 @@ func mcpListTodos(svc *TodoService) mcpserver.ToolHandlerFunc {
 			f.ClosedSince = &t
 		}
 
-		todos, err := svc.List(ctx, caller, f)
+		tasks, err := svc.List(ctx, caller, f)
 		if err != nil {
 			return nil, err
 		}
 
-		if len(todos) == 0 {
-			return mcp.NewToolResultText("No todos found matching your filters."), nil
+		if len(tasks) == 0 {
+			return mcp.NewToolResultText("No tasks found matching your filters."), nil
 		}
 
 		var b strings.Builder
-		fmt.Fprintf(&b, "Found %d todo(s):\n\n", len(todos))
-		for _, t := range todos {
-			b.WriteString(FormatTodo(&t))
+		fmt.Fprintf(&b, "Found %d task(s):\n\n", len(tasks))
+		for _, t := range tasks {
+			b.WriteString(FormatTask(&t))
 			b.WriteString("\n\n")
 		}
 		return mcp.NewToolResultText(b.String()), nil
 	})
 }
 
-func mcpGetTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpGetTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("todo_id")
-		todoID, err := uuid.Parse(idStr)
+		idStr, _ := req.RequireString("task_id")
+		taskID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid todo_id UUID."), nil
+			return mcp.NewToolResultError("Invalid task_id UUID."), nil
 		}
 
-		t, events, err := svc.Get(ctx, caller, todoID)
+		t, events, err := svc.Get(ctx, caller, taskID)
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Todo not found."), nil
+				return mcp.NewToolResultError("Task not found."), nil
 			}
 			return nil, err
 		}
 
-		return mcp.NewToolResultText(FormatTodoDetailed(t, events)), nil
+		return mcp.NewToolResultText(FormatTaskDetailed(t, events)), nil
 	})
 }
 
-func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpUpdateTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("todo_id")
-		todoID, err := uuid.Parse(idStr)
+		idStr, _ := req.RequireString("task_id")
+		taskID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid todo_id UUID."), nil
+			return mcp.NewToolResultError("Invalid task_id UUID."), nil
 		}
 
 		args := req.GetArguments()
@@ -185,12 +197,15 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 		if v := req.GetString("blocked_reason", ""); v != "" {
 			u.BlockedReason = &v
 		}
-		if v := req.GetString("assigned_to", ""); v != "" {
+		if v := req.GetString("assignee", ""); v != "" {
 			id, msg := svc.ResolveAssignee(ctx, caller, v)
 			if msg != "" {
 				return mcp.NewToolResultError(msg), nil
 			}
-			u.NewAssignee = id
+			u.NewAssigneeUserID = id
+		}
+		if b, ok := args["clear_assignee"].(bool); ok && b {
+			u.ClearAssignee = true
 		}
 		if _, present := args["role_scope"]; present {
 			v := req.GetString("role_scope", "")
@@ -203,14 +218,14 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			}
 			u.DueDate = &d
 		}
-		if v := req.GetString("visibility", ""); v != "" {
-			u.Visibility = &v
+		if b, ok := args["clear_due_date"].(bool); ok && b {
+			u.ClearDueDate = true
 		}
 
-		t, err := svc.Update(ctx, caller, todoID, u)
+		t, err := svc.Update(ctx, caller, taskID, u)
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Todo not found."), nil
+				return mcp.NewToolResultError("Task not found."), nil
 			}
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
@@ -221,23 +236,23 @@ func mcpUpdateTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 			return nil, err
 		}
 
-		return mcp.NewToolResultText("Updated todo:\n" + FormatTodo(t)), nil
+		return mcp.NewToolResultText("Updated task:\n" + FormatTask(t)), nil
 	})
 }
 
-func mcpAddTodoComment(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpAddTaskComment(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("todo_id")
+		idStr, _ := req.RequireString("task_id")
 		content, _ := req.RequireString("content")
 
-		todoID, err := uuid.Parse(idStr)
+		taskID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid todo_id UUID."), nil
+			return mcp.NewToolResultError("Invalid task_id UUID."), nil
 		}
 
-		if err := svc.AddComment(ctx, caller, todoID, content); err != nil {
+		if err := svc.AddComment(ctx, caller, taskID, content); err != nil {
 			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Todo not found."), nil
+				return mcp.NewToolResultError("Task not found."), nil
 			}
 			return nil, err
 		}
@@ -246,18 +261,18 @@ func mcpAddTodoComment(svc *TodoService) mcpserver.ToolHandlerFunc {
 	})
 }
 
-func mcpCompleteTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpCompleteTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("todo_id")
-		todoID, err := uuid.Parse(idStr)
+		idStr, _ := req.RequireString("task_id")
+		taskID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid todo_id UUID."), nil
+			return mcp.NewToolResultError("Invalid task_id UUID."), nil
 		}
 
-		t, err := svc.Complete(ctx, caller, todoID)
+		t, err := svc.Complete(ctx, caller, taskID)
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Todo not found."), nil
+				return mcp.NewToolResultError("Task not found."), nil
 			}
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil
@@ -269,12 +284,12 @@ func mcpCompleteTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 	})
 }
 
-func mcpSnoozeTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
+func mcpSnoozeTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("todo_id")
-		todoID, err := uuid.Parse(idStr)
+		idStr, _ := req.RequireString("task_id")
+		taskID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid todo_id UUID."), nil
+			return mcp.NewToolResultError("Invalid task_id UUID."), nil
 		}
 
 		args := req.GetArguments()
@@ -285,10 +300,10 @@ func mcpSnoozeTodo(svc *TodoService) mcpserver.ToolHandlerFunc {
 		case int:
 			days = v
 		}
-		t, err := svc.SnoozeDays(ctx, caller, todoID, days)
+		t, err := svc.SnoozeDays(ctx, caller, taskID, days)
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Todo not found."), nil
+				return mcp.NewToolResultError("Task not found."), nil
 			}
 			if errors.Is(err, services.ErrForbidden) {
 				return mcp.NewToolResultError("Permission denied."), nil

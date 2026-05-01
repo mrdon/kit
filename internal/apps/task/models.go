@@ -1,4 +1,4 @@
-package todo
+package task
 
 import (
 	"context"
@@ -13,30 +13,30 @@ import (
 	"github.com/mrdon/kit/internal/models"
 )
 
-// Todo represents a todo item.
-type Todo struct {
-	ID            uuid.UUID    `json:"id"`
-	TenantID      uuid.UUID    `json:"tenant_id"`
-	Title         string       `json:"title"`
-	Description   string       `json:"description,omitempty"`
-	Status        string       `json:"status"`
-	Priority      string       `json:"priority"`
-	BlockedReason string       `json:"blocked_reason,omitempty"`
-	ScopeID       uuid.UUID    `json:"scope_id"`
-	Visibility    string       `json:"visibility"` // "scoped" or "public"
-	DueDate       *time.Time   `json:"due_date,omitempty"`
-	SnoozedUntil  *time.Time   `json:"snoozed_until,omitempty"`
-	Resolutions   []Resolution `json:"resolutions,omitempty"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-	ClosedAt      *time.Time   `json:"closed_at,omitempty"`
+// Task represents a task item.
+type Task struct {
+	ID             uuid.UUID    `json:"id"`
+	TenantID       uuid.UUID    `json:"tenant_id"`
+	Title          string       `json:"title"`
+	Description    string       `json:"description,omitempty"`
+	Status         string       `json:"status"`
+	Priority       string       `json:"priority"`
+	BlockedReason  string       `json:"blocked_reason,omitempty"`
+	ScopeID        uuid.UUID    `json:"scope_id"`
+	AssigneeUserID *uuid.UUID   `json:"assignee_user_id,omitempty"`
+	DueDate        *time.Time   `json:"due_date,omitempty"`
+	SnoozedUntil   *time.Time   `json:"snoozed_until,omitempty"`
+	Resolutions    []Resolution `json:"resolutions,omitempty"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	ClosedAt       *time.Time   `json:"closed_at,omitempty"`
 }
 
-// TodoEvent represents an entry in the activity log.
-type TodoEvent struct {
+// TaskEvent represents an entry in the activity log.
+type TaskEvent struct {
 	ID        uuid.UUID  `json:"id"`
 	TenantID  uuid.UUID  `json:"tenant_id"`
-	TodoID    uuid.UUID  `json:"todo_id"`
+	TaskID    uuid.UUID  `json:"task_id"`
 	AuthorID  *uuid.UUID `json:"author_id,omitempty"`
 	EventType string     `json:"event_type"`
 	Content   string     `json:"content,omitempty"`
@@ -45,46 +45,49 @@ type TodoEvent struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
-// TodoFilters holds optional filters for listing todos.
-type TodoFilters struct {
-	Status       string
-	Priority     string
-	AssignedToMe bool   // alias for "scoped to caller's user-scope"
-	RoleName     string // human-friendly role name; resolved to role_id at query time
-	Search       string
-	Overdue      bool
-	ClosedSince  *time.Time
+// TaskFilters holds optional filters for listing tasks.
+type TaskFilters struct {
+	Status         string
+	Priority       string
+	AssignedToMe   bool       // sugar for AssigneeUserID = caller
+	AssigneeUserID *uuid.UUID // filter by exact assignee
+	Unassigned     bool       // filter to assignee_user_id IS NULL
+	RoleName       string     // human-friendly role name; resolved at query time
+	Search         string
+	Overdue        bool
+	ClosedSince    *time.Time
 }
 
-// TodoUpdates holds optional fields for updating a todo.
-type TodoUpdates struct {
-	Title         *string
-	Description   *string
-	Status        *string
-	Priority      *string
-	BlockedReason *string
-	ScopeID       *uuid.UUID
-	Visibility    *string
-	DueDate       *time.Time
-	ClearDueDate  bool
-	SnoozedUntil  *time.Time
-	ClearSnooze   bool
+// TaskUpdates holds optional fields for updating a task.
+type TaskUpdates struct {
+	Title          *string
+	Description    *string
+	Status         *string
+	Priority       *string
+	BlockedReason  *string
+	ScopeID        *uuid.UUID
+	AssigneeUserID *uuid.UUID
+	ClearAssignee  bool
+	DueDate        *time.Time
+	ClearDueDate   bool
+	SnoozedUntil   *time.Time
+	ClearSnooze    bool
 }
 
-// todoColumns is the SELECT list for app_todos, always aliased as t. in the
+// taskColumns is the SELECT list for app_tasks, always aliased as t. in the
 // query — the alias is required because list queries JOIN scopes which has
 // its own id/tenant_id columns.
-const todoColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at`
+const taskColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.assignee_user_id, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at`
 
-func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
-	var t Todo
+func scanTask(row interface{ Scan(...any) error }) (*Task, error) {
+	var t Task
 	var description, blockedReason *string
 	var dueDate, snoozedUntil *time.Time
 	var resolutionsJSON []byte
 	err := row.Scan(
 		&t.ID, &t.TenantID, &t.Title, &description,
 		&t.Status, &t.Priority, &blockedReason,
-		&t.ScopeID, &t.Visibility, &dueDate, &snoozedUntil,
+		&t.ScopeID, &t.AssigneeUserID, &dueDate, &snoozedUntil,
 		&resolutionsJSON,
 		&t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
 	)
@@ -107,64 +110,59 @@ func scanTodo(row interface{ Scan(...any) error }) (*Todo, error) {
 	return &t, nil
 }
 
-func createTodo(ctx context.Context, pool *pgxpool.Pool, t *Todo) error {
+func createTask(ctx context.Context, pool *pgxpool.Pool, t *Task) error {
 	return pool.QueryRow(ctx, `
-		INSERT INTO app_todos (tenant_id, title, description, status, priority, scope_id, visibility, due_date)
+		INSERT INTO app_tasks (tenant_id, title, description, status, priority, scope_id, assignee_user_id, due_date)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at`,
 		t.TenantID, t.Title, nilIfEmpty(t.Description), t.Status, t.Priority,
-		t.ScopeID, t.Visibility, t.DueDate,
+		t.ScopeID, t.AssigneeUserID, t.DueDate,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 }
 
-func getTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID) (*Todo, error) {
+func getTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) (*Task, error) {
 	row := pool.QueryRow(ctx,
-		`SELECT `+todoColumns+` FROM app_todos t WHERE t.tenant_id = $1 AND t.id = $2`,
-		tenantID, todoID,
+		`SELECT `+taskColumns+` FROM app_tasks t WHERE t.tenant_id = $1 AND t.id = $2`,
+		tenantID, taskID,
 	)
-	t, err := scanTodo(row)
+	t, err := scanTask(row)
 	if err != nil {
-		return nil, fmt.Errorf("getting todo: %w", err)
+		return nil, fmt.Errorf("getting task: %w", err)
 	}
 	return t, nil
 }
 
-// listTodos returns todos visible to the caller. When userID is nil, no
-// visibility filter is applied (admin path). Otherwise: visibility='public' OR
-// the caller's scope_id matches.
-func listTodos(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f TodoFilters) ([]Todo, error) {
+// listTasks returns tasks visible to the caller. Visibility is now purely
+// role membership: a non-admin caller sees a task iff they're in the role
+// the task is scoped to. Admin (userID == nil) bypasses the scope filter.
+func listTasks(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f TaskFilters) ([]Task, error) {
 	query, args := buildListQuery(tenantID, userID, roleIDs, f)
-	return queryTodos(ctx, pool, query, args)
+	return queryTasks(ctx, pool, query, args)
 }
 
-func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f TodoFilters) (string, []any) {
+func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f TaskFilters) (string, []any) {
 	var b strings.Builder
 	args := []any{tenantID}
 	argN := 1
 
-	b.WriteString(`SELECT ` + todoColumns + ` FROM app_todos t`)
+	b.WriteString(`SELECT ` + taskColumns + ` FROM app_tasks t`)
 
-	// We only need to JOIN scopes when we have to filter by it. For admin
-	// (no userID) we still might need the join if the caller filters by role.
-	needScopeJoin := userID != nil || f.AssignedToMe || f.RoleName != ""
+	needScopeJoin := userID != nil || f.RoleName != ""
 	if needScopeJoin {
 		b.WriteString(` JOIN scopes sc ON sc.id = t.scope_id`)
 	}
 	b.WriteString(` WHERE t.tenant_id = $1`)
 
 	if userID != nil {
-		// Public todos are visible to everyone in the tenant; otherwise the
-		// caller's scope must match.
-		argN++
-		userParam := argN
-		args = append(args, *userID)
-		b.WriteString(fmt.Sprintf(` AND (t.visibility = 'public' OR sc.user_id = $%d`, userParam))
+		// Role membership = visibility. Without any roles the caller sees
+		// nothing scoped (default deny).
 		if len(roleIDs) > 0 {
 			argN++
-			b.WriteString(fmt.Sprintf(` OR sc.role_id = ANY($%d)`, argN))
+			b.WriteString(fmt.Sprintf(` AND sc.role_id = ANY($%d)`, argN))
 			args = append(args, roleIDs)
+		} else {
+			b.WriteString(` AND FALSE`)
 		}
-		b.WriteString(`)`)
 	}
 
 	if f.Status != "" {
@@ -181,8 +179,15 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 
 	if f.AssignedToMe && userID != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND sc.user_id = $%d`, argN))
+		b.WriteString(fmt.Sprintf(` AND t.assignee_user_id = $%d`, argN))
 		args = append(args, *userID)
+	} else if f.AssigneeUserID != nil {
+		argN++
+		b.WriteString(fmt.Sprintf(` AND t.assignee_user_id = $%d`, argN))
+		args = append(args, *f.AssigneeUserID)
+	}
+	if f.Unassigned {
+		b.WriteString(` AND t.assignee_user_id IS NULL`)
 	}
 
 	if f.RoleName != "" {
@@ -214,29 +219,29 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 	return b.String(), args
 }
 
-func queryTodos(ctx context.Context, pool *pgxpool.Pool, query string, args []any) ([]Todo, error) {
+func queryTasks(ctx context.Context, pool *pgxpool.Pool, query string, args []any) ([]Task, error) {
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listing todos: %w", err)
+		return nil, fmt.Errorf("listing tasks: %w", err)
 	}
 	defer rows.Close()
 
-	var todos []Todo
+	var tasks []Task
 	for rows.Next() {
-		t, err := scanTodo(rows)
+		t, err := scanTask(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scanning todo: %w", err)
+			return nil, fmt.Errorf("scanning task: %w", err)
 		}
-		todos = append(todos, *t)
+		tasks = append(tasks, *t)
 	}
-	return todos, rows.Err()
+	return tasks, rows.Err()
 }
 
-func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, u TodoUpdates) error {
+func updateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, u TaskUpdates) error {
 	var sets []string
 	var args []any
 	argN := 2
-	args = append(args, tenantID, todoID)
+	args = append(args, tenantID, taskID)
 
 	if u.Title != nil {
 		argN++
@@ -275,10 +280,12 @@ func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.U
 		sets = append(sets, fmt.Sprintf("scope_id = $%d", argN))
 		args = append(args, *u.ScopeID)
 	}
-	if u.Visibility != nil {
+	if u.AssigneeUserID != nil {
 		argN++
-		sets = append(sets, fmt.Sprintf("visibility = $%d", argN))
-		args = append(args, *u.Visibility)
+		sets = append(sets, fmt.Sprintf("assignee_user_id = $%d", argN))
+		args = append(args, *u.AssigneeUserID)
+	} else if u.ClearAssignee {
+		sets = append(sets, "assignee_user_id = NULL")
 	}
 	if u.DueDate != nil {
 		argN++
@@ -302,47 +309,47 @@ func updateTodo(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.U
 	}
 
 	sets = append(sets, "updated_at = now()")
-	query := fmt.Sprintf(`UPDATE app_todos SET %s WHERE tenant_id = $1 AND id = $2`, strings.Join(sets, ", "))
+	query := fmt.Sprintf(`UPDATE app_tasks SET %s WHERE tenant_id = $1 AND id = $2`, strings.Join(sets, ", "))
 	_, err := pool.Exec(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("updating todo: %w", err)
+		return fmt.Errorf("updating task: %w", err)
 	}
 	return nil
 }
 
-func appendEvent(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, authorID *uuid.UUID, eventType, content, oldValue, newValue string) error {
+func appendEvent(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, authorID *uuid.UUID, eventType, content, oldValue, newValue string) error {
 	_, err := pool.Exec(ctx, `
-		INSERT INTO app_todo_events (tenant_id, todo_id, author_id, event_type, content, old_value, new_value)
+		INSERT INTO app_task_events (tenant_id, task_id, author_id, event_type, content, old_value, new_value)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		tenantID, todoID, authorID, eventType,
+		tenantID, taskID, authorID, eventType,
 		nilIfEmpty(content), nilIfEmpty(oldValue), nilIfEmpty(newValue),
 	)
 	if err != nil {
-		return fmt.Errorf("appending todo event: %w", err)
+		return fmt.Errorf("appending task event: %w", err)
 	}
 	return nil
 }
 
-func getRecentEvents(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, limit int) ([]TodoEvent, error) {
+func getRecentEvents(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, limit int) ([]TaskEvent, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, todo_id, author_id, event_type, content, old_value, new_value, created_at
-		FROM app_todo_events
-		WHERE tenant_id = $1 AND todo_id = $2
+		SELECT id, tenant_id, task_id, author_id, event_type, content, old_value, new_value, created_at
+		FROM app_task_events
+		WHERE tenant_id = $1 AND task_id = $2
 		ORDER BY created_at DESC
 		LIMIT $3`,
-		tenantID, todoID, limit,
+		tenantID, taskID, limit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("getting todo events: %w", err)
+		return nil, fmt.Errorf("getting task events: %w", err)
 	}
 	defer rows.Close()
 
-	var events []TodoEvent
+	var events []TaskEvent
 	for rows.Next() {
-		var e TodoEvent
+		var e TaskEvent
 		var content, oldValue, newValue *string
-		if err := rows.Scan(&e.ID, &e.TenantID, &e.TodoID, &e.AuthorID, &e.EventType, &content, &oldValue, &newValue, &e.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning todo event: %w", err)
+		if err := rows.Scan(&e.ID, &e.TenantID, &e.TaskID, &e.AuthorID, &e.EventType, &content, &oldValue, &newValue, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning task event: %w", err)
 		}
 		if content != nil {
 			e.Content = *content
@@ -379,11 +386,11 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
-// setTodoResolutions writes the full resolutions array for a todo, replacing
+// setTaskResolutions writes the full resolutions array for a task, replacing
 // whatever was there. Writing an empty slice stores JSON [] (not NULL) so
 // callers can distinguish "Haiku ran and nothing fit" from "not yet run".
-// A no-op (zero rows affected) when the todo has been deleted.
-func setTodoResolutions(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, resolutions []Resolution) error {
+// A no-op (zero rows affected) when the task has been deleted.
+func setTaskResolutions(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, resolutions []Resolution) error {
 	if resolutions == nil {
 		resolutions = []Resolution{}
 	}
@@ -392,20 +399,20 @@ func setTodoResolutions(ctx context.Context, pool *pgxpool.Pool, tenantID, todoI
 		return fmt.Errorf("encoding resolutions: %w", err)
 	}
 	if _, err := pool.Exec(ctx,
-		`UPDATE app_todos SET resolutions = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-		tenantID, todoID, payload,
+		`UPDATE app_tasks SET resolutions = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, taskID, payload,
 	); err != nil {
 		return fmt.Errorf("writing resolutions: %w", err)
 	}
 	return nil
 }
 
-// removeTodoResolution drops the resolution with the matching id from the
+// removeTaskResolution drops the resolution with the matching id from the
 // stored array. Uses a jsonb subselect so concurrent removes of different
 // ids don't race on array indices.
-func removeTodoResolution(ctx context.Context, pool *pgxpool.Pool, tenantID, todoID uuid.UUID, resolutionID string) error {
+func removeTaskResolution(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, resolutionID string) error {
 	if _, err := pool.Exec(ctx, `
-		UPDATE app_todos
+		UPDATE app_tasks
 		SET resolutions = COALESCE(
 			(SELECT jsonb_agg(elem)
 			 FROM jsonb_array_elements(resolutions) AS elem
@@ -413,7 +420,7 @@ func removeTodoResolution(ctx context.Context, pool *pgxpool.Pool, tenantID, tod
 			'[]'::jsonb),
 		    updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`,
-		tenantID, todoID, resolutionID,
+		tenantID, taskID, resolutionID,
 	); err != nil {
 		return fmt.Errorf("removing resolution: %w", err)
 	}

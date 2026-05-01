@@ -2,13 +2,13 @@ import type { ComponentType } from 'react';
 import type { StackItem } from '../types';
 import { cardsDecision } from './cards_decision';
 import { cardsBriefing } from './cards_briefing';
-import { todoTodo } from './todo_todo';
-import { todoSnoozedDigest } from './todo_snoozed_digest';
+import { taskTask } from './task_task';
+import { taskSnoozedDigest } from './task_snoozed_digest';
 
 // A KindRenderer is a pair of components: one small strip of chrome shown
 // on the card face (below the title/body) and one block shown in the
 // detail view. Each is keyed by "source_app:kind" so two apps can share
-// the word "todo" without colliding.
+// the word "task" without colliding.
 export type KindRenderer = {
   Face?: ComponentType<{ item: StackItem }>;
   Detail?: ComponentType<{
@@ -23,8 +23,8 @@ export type KindRenderer = {
 const registry: Record<string, KindRenderer> = {
   'cards:decision': cardsDecision,
   'cards:briefing': cardsBriefing,
-  'todo:todo': todoTodo,
-  'todo:snoozed_digest': todoSnoozedDigest,
+  'task:task': taskTask,
+  'task:snoozed_digest': taskSnoozedDigest,
 };
 
 export function rendererFor(item: Pick<StackItem, 'source_app' | 'kind'>): KindRenderer {

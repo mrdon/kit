@@ -121,7 +121,7 @@ func dispatchCreateBriefing(ctx context.Context, a *ActionBuiltins, deps *action
 	return cardToMap(card), nil
 }
 
-// dispatchCreateTask handles create_task(description, cron,
+// dispatchCreateJob handles create_task(description, cron,
 // timezone="UTC", channel=None, run_once=False) → job dict.
 //
 // For v0.1 the Phase-3 signature exposes one-shot jobs via run_once=True
@@ -129,7 +129,7 @@ func dispatchCreateBriefing(ctx context.Context, a *ActionBuiltins, deps *action
 // future time can add their own timestamp builder later. cron is passed
 // through verbatim so admins who already think in cron (the agent surface
 // also uses cron_expr) don't need to re-learn a shape.
-func dispatchCreateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
+func dispatchCreateJob(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
 	description, err := argString(call.Args, "description")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)

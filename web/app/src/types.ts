@@ -79,7 +79,7 @@ export type DecisionOption = {
   tool_name?: string;
   // JSON arguments passed to the tool handler on approval. Shape
   // matches the tool's registered schema; the PWA renders a preview
-  // for known tool_names (send_email, create_todo, …) or falls back
+  // for known tool_names (send_email, create_task, …) or falls back
   // to a JSON view.
   tool_arguments?: unknown;
 };
@@ -88,7 +88,7 @@ export type DecisionMetadata = {
   priority: 'low' | 'medium' | 'high';
   recommended_option_id?: string;
   resolved_option_id?: string;
-  resolved_task_id?: string;
+  resolved_job_id?: string;
   // True when this card was minted as an approval gate for a
   // PolicyGate tool. The Detail view surfaces stronger framing for
   // gate artifacts (explicit "Kit wants to ..." language) so users
@@ -105,31 +105,30 @@ export type BriefingMetadata = {
   severity: 'info' | 'notable' | 'important';
 };
 
-export type TodoMetadata = {
+export type TaskMetadata = {
   due_date?: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   status: 'open' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
-  visibility: 'scoped' | 'public';
-  assigned_to?: string;
-  assigned_to_name?: string;
+  assignee_user_id?: string;
+  assignee_name?: string;
   role_scope?: string;
   snoozed_until?: string;
 };
 
-export type TodoEvent = {
+export type TaskEvent = {
   id: string;
   tenant_id: string;
-  todo_id: string;
+  task_id: string;
   author_id?: string;
-  event_type: 'comment' | 'status_change' | 'assignment' | 'priority_change';
+  event_type: 'comment' | 'status_change' | 'assignment' | 'priority_change' | 'assignee_change';
   content?: string;
   old_value?: string;
   new_value?: string;
   created_at: string;
 };
 
-// Task sidecar attached to resolved decision cards.
-export type TaskStatus = {
+// Job sidecar attached to resolved decision cards (cron job that ran).
+export type JobStatus = {
   id: string;
   status: string;
   description: string;

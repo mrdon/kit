@@ -1,4 +1,4 @@
-package todo
+package task
 
 import (
 	"context"
@@ -17,20 +17,20 @@ import (
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
-// cardProvider surfaces todos as stack items. Scope is explicit — only
-// todos the user is the assignee of, or holds the role_scope for. Tenant-
-// wide rows are excluded so the stack doesn't flood with public todos
+// cardProvider surfaces tasks as stack items. Scope is explicit — only
+// tasks the user is the assignee of, or holds the role_scope for. Tenant-
+// wide rows are excluded so the stack doesn't flood with public tasks
 // belonging to unrelated parts of the org.
 type cardProvider struct {
-	app *TodoApp
+	app *TaskApp
 }
 
-func (p *cardProvider) SourceApp() string { return "todo" }
+func (p *cardProvider) SourceApp() string { return "task" }
 
-// stackTodo bundles a Todo with the human-readable scope info needed to
+// stackTask bundles a Task with the human-readable scope info needed to
 // render the swipe stack metadata (assignee name, role name).
-type stackTodo struct {
-	Todo
+type stackTask struct {
+	Task
 	AssigneeID    *uuid.UUID
 	AssigneeName  string
 	RoleScopeName string
@@ -41,13 +41,13 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 	if limit <= 0 {
 		limit = 50
 	}
-	todos, err := listStackTodos(ctx, p.app.svc.pool, caller, limit, false)
+	tasks, err := listStackTasks(ctx, p.app.svc.pool, caller, limit, false)
 	if err != nil {
 		return shared.StackPage{}, err
 	}
-	items := make([]shared.StackItem, 0, len(todos))
-	for i := range todos {
-		it, err := todoToStackItem(&todos[i])
+	items := make([]shared.StackItem, 0, len(tasks))
+	for i := range tasks {
+		it, err := taskToStackItem(&tasks[i])
 		if err != nil {
 			return shared.StackPage{}, err
 		}
@@ -58,7 +58,7 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 	// pile so users have a way to see what they've deferred. Only
 	// emitted when there's at least one snoozed row; otherwise the
 	// feed ends cleanly on active cards (or the empty state).
-	snoozed, err := listStackTodos(ctx, p.app.svc.pool, caller, limit, true)
+	snoozed, err := listStackTasks(ctx, p.app.svc.pool, caller, limit, true)
 	if err != nil {
 		return shared.StackPage{}, err
 	}
@@ -75,10 +75,10 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kind, id string) (*shared.DetailResponse, error) {
 	if kind == "snoozed_digest" {
 		// Back-nav or deep-link to the digest after the pile has
-		// changed (user woke the last todo, etc.) — re-run the
+		// changed (user woke the last task, etc.) — re-run the
 		// query and return a fresh item. A 0-row digest is
 		// friendlier than 404ing the user mid-navigation.
-		snoozed, err := listStackTodos(ctx, p.app.svc.pool, caller, 100, true)
+		snoozed, err := listStackTasks(ctx, p.app.svc.pool, caller, 100, true)
 		if err != nil {
 			return nil, err
 		}
@@ -88,14 +88,14 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 		}
 		return &shared.DetailResponse{Item: item}, nil
 	}
-	if kind != "todo" {
+	if kind != "task" {
 		return nil, services.ErrNotFound
 	}
-	todoID, err := uuid.Parse(id)
+	taskID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, services.ErrNotFound
 	}
-	t, events, err := p.app.svc.Get(ctx, caller, todoID)
+	t, events, err := p.app.svc.Get(ctx, caller, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 	if err != nil {
 		return nil, err
 	}
-	item, err := todoToStackItem(enriched)
+	item, err := taskToStackItem(enriched)
 	if err != nil {
 		return nil, err
 	}
@@ -117,24 +117,25 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 	}, nil
 }
 
-// enrichOne joins a single todo with scope/role/user info to populate the
+// enrichOne joins a single task with role/assignee info to populate the
 // human-readable metadata fields. Used by GetItem (single-row path).
-func enrichOne(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, t *Todo) (*stackTodo, error) {
-	st := &stackTodo{Todo: *t}
-	var assigneeID *uuid.UUID
+// AssigneeID lives on the task row directly; the role comes from the
+// scope. Anyone in the role can see the task regardless of assignee.
+func enrichOne(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, t *Task) (*stackTask, error) {
+	st := &stackTask{Task: *t}
+	st.AssigneeID = t.AssigneeUserID
 	var assigneeName, roleName *string
 	err := pool.QueryRow(ctx, `
-		SELECT s.user_id, u.display_name, r.name
+		SELECT u.display_name, r.name
 		FROM scopes s
-		LEFT JOIN users u ON u.id = s.user_id
 		LEFT JOIN roles r ON r.id = s.role_id
+		LEFT JOIN users u ON u.id = $3
 		WHERE s.id = $1 AND s.tenant_id = $2`,
-		t.ScopeID, tenantID,
-	).Scan(&assigneeID, &assigneeName, &roleName)
+		t.ScopeID, tenantID, t.AssigneeUserID,
+	).Scan(&assigneeName, &roleName)
 	if err != nil {
 		return nil, fmt.Errorf("loading scope info: %w", err)
 	}
-	st.AssigneeID = assigneeID
 	if assigneeName != nil {
 		st.AssigneeName = *assigneeName
 	}
@@ -145,25 +146,25 @@ func enrichOne(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, t *T
 }
 
 func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, params json.RawMessage) (*shared.ActionResult, error) {
-	if kind != "todo" {
+	if kind != "task" {
 		return nil, services.ErrNotFound
 	}
-	todoID, err := uuid.Parse(id)
+	taskID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, services.ErrNotFound
 	}
 	switch actionID {
 	case "complete":
-		t, err := p.app.svc.Complete(ctx, caller, todoID)
+		t, err := p.app.svc.Complete(ctx, caller, taskID)
 		if err != nil {
-			// Idempotent: a second complete on an already-done todo still
+			// Idempotent: a second complete on an already-done task still
 			// removes it from the client's stack without an error.
 			if errors.Is(err, services.ErrNotFound) {
 				return nil, err
 			}
 		}
 		_ = t
-		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("task", "task", id)}}, nil
 	case "snooze":
 		var body struct {
 			Days int `json:"days"`
@@ -173,31 +174,41 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 				return nil, fmt.Errorf("invalid snooze params: %w", err)
 			}
 		}
-		if _, err := p.app.svc.SnoozeDays(ctx, caller, todoID, body.Days); err != nil {
+		if _, err := p.app.svc.SnoozeDays(ctx, caller, taskID, body.Days); err != nil {
 			return nil, err
 		}
-		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("task", "task", id)}}, nil
 	case "snooze_until_monday":
-		if _, err := p.app.svc.SnoozeUntilNextMonday(ctx, caller, todoID); err != nil {
+		if _, err := p.app.svc.SnoozeUntilNextMonday(ctx, caller, taskID); err != nil {
 			return nil, err
 		}
-		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("task", "task", id)}}, nil
 	case "wake":
-		// Clear the snooze so the todo reappears in the active feed.
+		// Clear the snooze so the task reappears in the active feed.
 		// Surface affordance: only shown on cards whose snoozed_until
 		// is in the future, so the client never fires this on an
-		// already-active todo. No RemovedIDs — the client navigates
+		// already-active task. No RemovedIDs — the client navigates
 		// back to / and refetches, which surfaces the now-awake row.
 		clear := UpdateInput{ClearSnooze: true}
-		if _, err := p.app.svc.Update(ctx, caller, todoID, clear); err != nil {
+		if _, err := p.app.svc.Update(ctx, caller, taskID, clear); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{}, nil
+	case "assign_to_me":
+		// Quick action from the unassigned-in-my-roles feed branch:
+		// claim a task so it becomes "on my desk" without leaving the
+		// stack. The card stays — the client refetches to update the
+		// assignee chip.
+		me := caller.UserID
+		if _, err := p.app.svc.Update(ctx, caller, taskID, UpdateInput{NewAssigneeUserID: &me}); err != nil {
 			return nil, err
 		}
 		return &shared.ActionResult{}, nil
 	case "delete":
-		if _, err := p.app.svc.Cancel(ctx, caller, todoID); err != nil {
+		if _, err := p.app.svc.Cancel(ctx, caller, taskID); err != nil {
 			return nil, err
 		}
-		return &shared.ActionResult{RemovedIDs: []string{shared.Key("todo", "todo", id)}}, nil
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("task", "task", id)}}, nil
 	case "resolve":
 		var body struct {
 			ResolutionID string `json:"resolution_id"`
@@ -210,12 +221,12 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 		if body.ResolutionID == "" {
 			return nil, errors.New("resolution_id is required")
 		}
-		return p.acceptResolution(ctx, caller, todoID, body.ResolutionID)
+		return p.acceptResolution(ctx, caller, taskID, body.ResolutionID)
 	case "regenerate_resolutions":
 		if p.app.llm == nil {
-			return nil, errors.New("todo app not configured with an LLM client")
+			return nil, errors.New("task app not configured with an LLM client")
 		}
-		todo, _, err := p.app.svc.Get(ctx, caller, todoID)
+		task, _, err := p.app.svc.Get(ctx, caller, taskID)
 		if err != nil {
 			return nil, err
 		}
@@ -223,10 +234,10 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 		// resolutions to the row when Haiku returns. The client polls
 		// getItem until it sees a change (new resolution ids) and
 		// swaps the UI out of the spinning state.
-		go runResolutionSuggester(p.app.svc.pool, p.app.llm, *caller, *todo)
+		go runResolutionSuggester(p.app.svc.pool, p.app.llm, *caller, *task)
 		return &shared.ActionResult{}, nil
 	}
-	return nil, fmt.Errorf("unknown todo action %q", actionID)
+	return nil, fmt.Errorf("unknown task action %q", actionID)
 }
 
 // acceptResolution turns a tapped resolution chip into a run-once or
@@ -234,20 +245,20 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 // how card decisions resolve. Removes the accepted chip from the stored
 // array and returns the patched item so the client drops the chip
 // without refetching.
-func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Caller, todoID uuid.UUID, resolutionID string) (*shared.ActionResult, error) {
+func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Caller, taskID uuid.UUID, resolutionID string) (*shared.ActionResult, error) {
 	if p.app.taskSvc == nil || p.app.enc == nil {
-		return nil, errors.New("todo app not fully configured (missing job service or encryptor)")
+		return nil, errors.New("task app not fully configured (missing job service or encryptor)")
 	}
 
-	todo, _, err := p.app.svc.Get(ctx, caller, todoID)
+	task, _, err := p.app.svc.Get(ctx, caller, taskID)
 	if err != nil {
 		return nil, err
 	}
 
 	var chosen *Resolution
-	for i := range todo.Resolutions {
-		if todo.Resolutions[i].ID == resolutionID {
-			chosen = &todo.Resolutions[i]
+	for i := range task.Resolutions {
+		if task.Resolutions[i].ID == resolutionID {
+			chosen = &task.Resolutions[i]
 			break
 		}
 	}
@@ -277,13 +288,13 @@ func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Ca
 		return nil, fmt.Errorf("creating job: %w", err)
 	}
 
-	if err := removeTodoResolution(ctx, p.app.svc.pool, caller.TenantID, todoID, resolutionID); err != nil {
+	if err := removeTaskResolution(ctx, p.app.svc.pool, caller.TenantID, taskID, resolutionID); err != nil {
 		return nil, err
 	}
 
 	// Rebuild the patched stack item so the client drops the accepted
 	// chip without a refetch.
-	updated, _, err := p.app.svc.Get(ctx, caller, todoID)
+	updated, _, err := p.app.svc.Get(ctx, caller, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +302,7 @@ func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Ca
 	if err != nil {
 		return nil, err
 	}
-	item, err := todoToStackItem(enriched)
+	item, err := taskToStackItem(enriched)
 	if err != nil {
 		return nil, err
 	}
@@ -324,26 +335,26 @@ type cryptoDecryptor interface {
 	Decrypt(ciphertext string) (string, error)
 }
 
-// listStackTodos restricts to the caller's personal surface (scopes that
-// belong to them, by user or role membership) — tenant-wide public todos are
-// excluded so the stack stays personal. JOINs roles/users for display fields.
+// listStackTasks restricts to the caller's personal feed: tasks assigned
+// to them, plus unassigned tasks in roles they hold. Without this filter
+// every team member's stack would balloon with every team task. Admins
+// still hit this filter — the swipe feed is personal even for admins; for
+// auditing across users, list_tasks via MCP is the path.
 //
 // snoozedOnly=false returns the active feed (currently visible); snoozedOnly=
 // true returns the snoozed pile (hidden from the feed, surfaced via the
-// digest card). Single function because the WHERE scaffolding — tenant,
-// status, personal-scope filter — is identical; only the snooze predicate
-// and ORDER BY differ. Keeps the PersonalScopeFilter paren-wrap in one place.
-func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int, snoozedOnly bool) ([]stackTodo, error) {
+// digest card).
+func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int, snoozedOnly bool) ([]stackTask, error) {
 	var b strings.Builder
 	args := []any{c.TenantID}
 
 	b.WriteString(`SELECT t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason,
-		t.scope_id, t.visibility, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at,
-		s.user_id, u.display_name, r.name
-		FROM app_todos t
+		t.scope_id, t.assignee_user_id, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at,
+		u.display_name, r.name
+		FROM app_tasks t
 		JOIN scopes s ON s.id = t.scope_id
-		LEFT JOIN users u ON u.id = s.user_id
 		LEFT JOIN roles r ON r.id = s.role_id
+		LEFT JOIN users u ON u.id = t.assignee_user_id
 		WHERE t.tenant_id = $1
 		  AND t.status NOT IN ('done','cancelled')`)
 	if snoozedOnly {
@@ -354,15 +365,15 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		  AND (t.snoozed_until IS NULL OR t.snoozed_until <= now())`)
 	}
 
-	// Personal surface: caller is the assignee or holds the role.
-	// Tenant-wide (s.user_id IS NULL AND s.role_id IS NULL) is excluded.
-	// Applies to admins too — the swipe feed is inherently personal, so
-	// admins don't get flooded with every user's todos. Admins who need to
-	// audit other users' todos still have list_todos via MCP.
-	scopeFrag, scopeArgs := c.PersonalScopeFilter("s", 2)
-	args = append(args, scopeArgs...)
-	b.WriteString(` AND (`)
-	b.WriteString(scopeFrag)
+	// Personal feed: assigned to me OR unassigned in a role I hold.
+	args = append(args, c.UserID)
+	userParam := len(args)
+	b.WriteString(fmt.Sprintf(` AND (t.assignee_user_id = $%d`, userParam))
+	if len(c.RoleIDs) > 0 {
+		args = append(args, c.RoleIDs)
+		roleParam := len(args)
+		b.WriteString(fmt.Sprintf(` OR (t.assignee_user_id IS NULL AND s.role_id = ANY($%d))`, roleParam))
+	}
 	b.WriteString(`)`)
 
 	if snoozedOnly {
@@ -401,26 +412,27 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 
 	rows, err := pool.Query(ctx, b.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("listing stack todos: %w", err)
+		return nil, fmt.Errorf("listing stack tasks: %w", err)
 	}
 	defer rows.Close()
 
-	var out []stackTodo
+	var out []stackTask
 	for rows.Next() {
-		var st stackTodo
+		var st stackTask
 		var description, blockedReason, assigneeName, roleName *string
 		var dueDate, snoozedUntil *time.Time
 		var resolutionsJSON []byte
 		if err := rows.Scan(
 			&st.ID, &st.TenantID, &st.Title, &description,
 			&st.Status, &st.Priority, &blockedReason,
-			&st.ScopeID, &st.Visibility, &dueDate, &snoozedUntil,
+			&st.ScopeID, &st.AssigneeUserID, &dueDate, &snoozedUntil,
 			&resolutionsJSON,
 			&st.CreatedAt, &st.UpdatedAt, &st.ClosedAt,
-			&st.AssigneeID, &assigneeName, &roleName,
+			&assigneeName, &roleName,
 		); err != nil {
-			return nil, fmt.Errorf("scanning stack todo: %w", err)
+			return nil, fmt.Errorf("scanning stack task: %w", err)
 		}
+		st.AssigneeID = st.AssigneeUserID
 		if description != nil {
 			st.Description = *description
 		}
@@ -431,7 +443,7 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		st.SnoozedUntil = snoozedUntil
 		if len(resolutionsJSON) > 0 {
 			if err := json.Unmarshal(resolutionsJSON, &st.Resolutions); err != nil {
-				return nil, fmt.Errorf("decoding stack todo resolutions: %w", err)
+				return nil, fmt.Errorf("decoding stack task resolutions: %w", err)
 			}
 		}
 		if assigneeName != nil {
@@ -445,17 +457,17 @@ func listStackTodos(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	return out, rows.Err()
 }
 
-func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
+func taskToStackItem(t *stackTask) (shared.StackItem, error) {
 	it := shared.StackItem{
-		SourceApp:    "todo",
-		Kind:         "todo",
-		KindLabel:    "Todo",
+		SourceApp:    "task",
+		Kind:         "task",
+		KindLabel:    "Task",
 		Icon:         "📋",
 		ID:           t.ID.String(),
 		Title:        t.Title,
 		Body:         t.Description,
 		KindWeight:   2,
-		PriorityTier: todoTier(&t.Todo),
+		PriorityTier: taskTier(&t.Task),
 		CreatedAt:    t.CreatedAt,
 		Actions: []shared.StackAction{
 			{ID: "complete", Direction: "right", Label: "Complete", Emoji: "✅"},
@@ -490,7 +502,7 @@ func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 		it.Badges = append(it.Badges, badge)
 	}
 	// Wake action is only reachable from the digest-linked detail,
-	// where the todo is always snoozed. Gate server-side too so the
+	// where the task is always snoozed. Gate server-side too so the
 	// action never appears on an already-active card.
 	if t.SnoozedUntil != nil && t.SnoozedUntil.After(time.Now()) {
 		it.Actions = append(it.Actions, shared.StackAction{
@@ -504,23 +516,22 @@ func todoToStackItem(t *stackTodo) (shared.StackItem, error) {
 		"due_date":         t.DueDate,
 		"priority":         t.Priority,
 		"status":           t.Status,
-		"visibility":       t.Visibility,
-		"assigned_to":      t.AssigneeID,
-		"assigned_to_name": t.AssigneeName,
+		"assignee_user_id": t.AssigneeID,
+		"assignee_name":    t.AssigneeName,
 		"role_scope":       t.RoleScopeName,
 		"snoozed_until":    t.SnoozedUntil,
 	})
 	if err != nil {
-		return it, fmt.Errorf("encoding todo metadata: %w", err)
+		return it, fmt.Errorf("encoding task metadata: %w", err)
 	}
 	it.Metadata = meta
 	return it, nil
 }
 
 // buildSnoozedDigest assembles the footer card that lists the caller's
-// snoozed todos. Not paginated — the pile is small and users want to
+// snoozed tasks. Not paginated — the pile is small and users want to
 // scan it at a glance; limit is set at the query layer.
-func buildSnoozedDigest(c *services.Caller, snoozed []stackTodo) (shared.StackItem, error) {
+func buildSnoozedDigest(c *services.Caller, snoozed []stackTask) (shared.StackItem, error) {
 	type digestRow struct {
 		ID           string     `json:"id"`
 		Title        string     `json:"title"`
@@ -544,7 +555,7 @@ func buildSnoozedDigest(c *services.Caller, snoozed []stackTodo) (shared.StackIt
 	}
 	title := fmt.Sprintf("Snoozed (%d)", len(rows))
 	return shared.StackItem{
-		SourceApp: "todo",
+		SourceApp: "task",
 		Kind:      "snoozed_digest",
 		KindLabel: "Snoozed",
 		Icon:      "😴",
@@ -561,10 +572,10 @@ func buildSnoozedDigest(c *services.Caller, snoozed []stackTodo) (shared.StackIt
 	}, nil
 }
 
-// todoTier maps a todo to one of the shared priority tiers. Due today or
+// taskTier maps a task to one of the shared priority tiers. Due today or
 // earlier goes to critical; due within 3 days OR priority=urgent goes to
 // high; priority=high or due within 7 days goes to medium; else low.
-func todoTier(t *Todo) shared.PriorityTier {
+func taskTier(t *Task) shared.PriorityTier {
 	if days, ok := daysUntilDue(t.DueDate); ok {
 		switch {
 		case days <= 0:

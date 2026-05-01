@@ -395,10 +395,10 @@ Know these before you write code the sandbox will reject.
 
 | Function | Purpose |
 |---|---|
-| `create_todo(title, description=, priority=, due_date=, role_scope=, assigned_to=, private=)` | Create a Kit todo. |
-| `update_todo(todo_id, status=, priority=, due_date=, role_scope=, blocked_reason=, assigned_to=)` | Update one. |
-| `complete_todo(todo_id, note=)` | Mark done. |
-| `add_todo_comment(todo_id, content)` | Comment on a todo. |
+| `create_task(title, description=, priority=, due_date=, role_scope=, assigned_to=, private=)` | Create a Kit todo. |
+| `update_task(task_id, status=, priority=, due_date=, role_scope=, blocked_reason=, assigned_to=)` | Update one. |
+| `complete_task(task_id, note=)` | Mark done. |
+| `add_task_comment(task_id, content)` | Comment on a todo. |
 | `create_decision(title, body, options, priority=, role_scopes=)` | Emit a decision card. |
 | `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of role names that must exist in the tenant — every tenant has the builtin `admin` and `member` roles, so `role_scopes=["admin"]` restricts to admins. For tenant-wide visibility leave `role_scopes=[]` (admins also see everything at the agent surface via the superuser bypass). For per-user delivery use `dm_user`. |
 | `create_job(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-jobs` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |

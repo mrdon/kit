@@ -160,7 +160,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		// todos/briefings there's no parallel-card concern and the
 		// registry-level gate still enforces approval, so gated tools
 		// stay available — the user needs to be able to say "email X"
-		// from a todo without switching surfaces.
+		// from a task without switching surfaces.
 		if in.Card.Kind == "decision" {
 			runInput.DropGatedTools = true
 			// Use Sonnet for decision-card chat. Same reasoning as
@@ -175,8 +175,8 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		runInput.SystemSuffix = buildQuickSystemSuffix()
 		runInput.HistoryWindow = QuickHistoryWindow
 		// Use Sonnet for the quick-capture surface. Haiku was
-		// frequently hallucinating — replying "Created todo X" without
-		// actually calling create_todo — which defeats the whole point
+		// frequently hallucinating — replying "Created task X" without
+		// actually calling create_task — which defeats the whole point
 		// of a capture tool. Sonnet follows tool-use instructions much
 		// more reliably at the cost of a few extra cents per turn, a
 		// fair trade for a surface where "it said it did but didn't"
@@ -318,7 +318,7 @@ func renderDecisionOptionsBlock(card *shared.StackItem) string {
 // terse.
 //
 // The examples matter: without them the LLM will cheerfully say
-// "Created todo X" without actually calling create_todo. Concrete
+// "Created task X" without actually calling create_task. Concrete
 // input→tool mappings make it pattern-match to the tool call instead.
 func buildQuickSystemSuffix() string {
 	return mustRender("system_quick_suffix.tmpl", nil)

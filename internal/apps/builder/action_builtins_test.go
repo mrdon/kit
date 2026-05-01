@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/apps/builder/runtime"
-	"github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
@@ -64,8 +64,22 @@ func newActionFixture(t *testing.T) *actionFixture {
 	if _, err := models.GetOrCreateRole(ctx, pool, tenant.ID, models.RoleAdmin, "admin"); err != nil {
 		t.Fatalf("creating admin role: %v", err)
 	}
+	memberRole, err := models.GetOrCreateRole(ctx, pool, tenant.ID, models.RoleMember, "member")
+	if err != nil {
+		t.Fatalf("creating member role: %v", err)
+	}
 	if err := models.AssignRole(ctx, pool, tenant.ID, user.ID, models.RoleAdmin); err != nil {
 		t.Fatalf("assigning admin role: %v", err)
+	}
+	if err := models.AssignRole(ctx, pool, tenant.ID, user.ID, models.RoleMember); err != nil {
+		t.Fatalf("assigning member role: %v", err)
+	}
+	// Set the user's primary role to member so create_task without
+	// role_scope routes there. The legacy tests pre-date the role-only
+	// model and didn't pass role_scope; adding a primary keeps them
+	// working without sprinkling role_scope through every assertion.
+	if err := models.SetUserPrimaryRoleID(ctx, pool, tenant.ID, user.ID, &memberRole.ID); err != nil {
+		t.Fatalf("setting primary role: %v", err)
 	}
 
 	var appID uuid.UUID
@@ -124,12 +138,12 @@ func TestActionBuiltins_CreateTodo_HappyPath(t *testing.T) {
 	f := newActionFixture(t)
 	before := f.actions.MutationSummary()["inserts"]
 
-	result, err := f.dispatchCall(t, FnCreateTodo, map[string]any{
+	result, err := f.dispatchCall(t, FnCreateTask, map[string]any{
 		"title":    "Prep garnishes",
 		"priority": "high",
 	})
 	if err != nil {
-		t.Fatalf("create_todo: %v", err)
+		t.Fatalf("create_task: %v", err)
 	}
 	m, ok := result.(map[string]any)
 	if !ok {
@@ -154,19 +168,19 @@ func TestActionBuiltins_CreateTodo_HappyPath(t *testing.T) {
 func TestActionBuiltins_UpdateTodo_BumpsUpdateCounter(t *testing.T) {
 	f := newActionFixture(t)
 
-	created, err := f.dispatchCall(t, FnCreateTodo, map[string]any{"title": "Old"})
+	created, err := f.dispatchCall(t, FnCreateTask, map[string]any{"title": "Old"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	todoID := created.(map[string]any)["id"].(string)
 
 	beforeUpdates := f.actions.MutationSummary()["updates"]
-	_, err = f.dispatchCall(t, FnUpdateTodo, map[string]any{
-		"todo_id":  todoID,
+	_, err = f.dispatchCall(t, FnUpdateTask, map[string]any{
+		"task_id":  todoID,
 		"priority": "urgent",
 	})
 	if err != nil {
-		t.Fatalf("update_todo: %v", err)
+		t.Fatalf("update_task: %v", err)
 	}
 	afterUpdates := f.actions.MutationSummary()["updates"]
 	if afterUpdates != beforeUpdates+1 {
@@ -175,7 +189,7 @@ func TestActionBuiltins_UpdateTodo_BumpsUpdateCounter(t *testing.T) {
 
 	// Verify it actually landed.
 	parsed, _ := uuid.Parse(todoID)
-	tv, _, err := todo.NewService(f.pool).Get(context.Background(), f.callerCb(), parsed)
+	tv, _, err := task.NewService(f.pool).Get(context.Background(), f.callerCb(), parsed)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -187,18 +201,18 @@ func TestActionBuiltins_UpdateTodo_BumpsUpdateCounter(t *testing.T) {
 func TestActionBuiltins_CompleteTodo_StatusDone(t *testing.T) {
 	f := newActionFixture(t)
 
-	created, err := f.dispatchCall(t, FnCreateTodo, map[string]any{"title": "Finish dishes"})
+	created, err := f.dispatchCall(t, FnCreateTask, map[string]any{"title": "Finish dishes"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	todoID := created.(map[string]any)["id"].(string)
 
-	result, err := f.dispatchCall(t, FnCompleteTodo, map[string]any{
-		"todo_id": todoID,
+	result, err := f.dispatchCall(t, FnCompleteTask, map[string]any{
+		"task_id": todoID,
 		"note":    "all clean",
 	})
 	if err != nil {
-		t.Fatalf("complete_todo: %v", err)
+		t.Fatalf("complete_task: %v", err)
 	}
 	m := result.(map[string]any)
 	if m["status"] != "done" {
@@ -212,28 +226,28 @@ func TestActionBuiltins_CompleteTodo_StatusDone(t *testing.T) {
 func TestActionBuiltins_AddTodoComment(t *testing.T) {
 	f := newActionFixture(t)
 
-	created, err := f.dispatchCall(t, FnCreateTodo, map[string]any{"title": "Do stuff"})
+	created, err := f.dispatchCall(t, FnCreateTask, map[string]any{"title": "Do stuff"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	todoID := created.(map[string]any)["id"].(string)
 
-	result, err := f.dispatchCall(t, FnAddTodoComment, map[string]any{
-		"todo_id": todoID,
+	result, err := f.dispatchCall(t, FnAddTaskComment, map[string]any{
+		"task_id": todoID,
 		"content": "Working on it now",
 	})
 	if err != nil {
 		t.Fatalf("add_comment: %v", err)
 	}
 	if result.(map[string]any)["id"] != todoID {
-		t.Errorf("comment id didn't echo todo_id")
+		t.Errorf("comment id didn't echo task_id")
 	}
 
 	// Confirm a comment row landed in the activity log.
 	parsedTodoID, _ := uuid.Parse(todoID)
 	var n int
 	err = f.pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM app_todo_events WHERE tenant_id = $1 AND todo_id = $2 AND event_type = 'comment' AND content = 'Working on it now'`,
+		`SELECT COUNT(*) FROM app_task_events WHERE tenant_id = $1 AND task_id = $2 AND event_type = 'comment' AND content = 'Working on it now'`,
 		f.tenant.ID, parsedTodoID).Scan(&n)
 	if err != nil {
 		t.Fatalf("count events: %v", err)
@@ -394,15 +408,15 @@ func TestActionBuiltins_TenantIsolation(t *testing.T) {
 	fB := newActionFixture(t)
 
 	// A creates a todo.
-	createdA, err := fA.dispatchCall(t, FnCreateTodo, map[string]any{"title": "A's todo"})
+	createdA, err := fA.dispatchCall(t, FnCreateTask, map[string]any{"title": "A's todo"})
 	if err != nil {
 		t.Fatalf("A create: %v", err)
 	}
 	todoAID, _ := uuid.Parse(createdA.(map[string]any)["id"].(string))
 
 	// B's caller should not be able to see / update A's todo.
-	_, err = fB.dispatchCall(t, FnUpdateTodo, map[string]any{
-		"todo_id":  todoAID.String(),
+	_, err = fB.dispatchCall(t, FnUpdateTask, map[string]any{
+		"task_id":  todoAID.String(),
 		"priority": "urgent",
 	})
 	if err == nil {
@@ -426,7 +440,7 @@ def main():
     uid = find_user("Jane E2E")
     if uid is None:
         raise Exception("find_user returned None")
-    todo = create_todo(title="Hand-off to Jane", assigned_to=uid["id"])
+    todo = create_task(title="Hand-off to Jane", assignee=uid["id"])
     return todo["id"]
 `
 	mod, err := testEngine.Compile(src)

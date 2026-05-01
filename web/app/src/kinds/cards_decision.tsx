@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { KindRenderer } from '.';
-import type { DecisionMetadata, StackItem, TaskStatus } from '../types';
+import type { DecisionMetadata, StackItem, JobStatus } from '../types';
 import { renderToolPreview } from './tool_previews';
 
 // The client treats "resolving" as a transient state while Kit is
@@ -52,7 +52,7 @@ function Detail({
   busy: boolean;
 }) {
   const m = meta(item);
-  const task = extras?.task as TaskStatus | undefined;
+  const task = extras?.task as JobStatus | undefined;
 
   // Brief optimistic disable so double-taps before the server's
   // FOR UPDATE lock completes don't stack approval attempts.

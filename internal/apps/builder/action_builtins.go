@@ -30,7 +30,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps/builder/runtime"
 	"github.com/mrdon/kit/internal/apps/cards"
-	"github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
@@ -39,10 +39,10 @@ import (
 // Canonical action-builtin names. Exported so tests and other wiring can
 // reference them without hard-coding strings.
 const (
-	FnCreateTodo       = "create_todo"
-	FnUpdateTodo       = "update_todo"
-	FnCompleteTodo     = "complete_todo"
-	FnAddTodoComment   = "add_todo_comment"
+	FnCreateTask       = "create_task"
+	FnUpdateTask       = "update_task"
+	FnCompleteTask     = "complete_task"
+	FnAddTaskComment   = "add_task_comment"
 	FnCreateDecision   = "create_decision"
 	FnCreateBriefing   = "create_briefing"
 	FnCreateJob        = "create_job"
@@ -89,7 +89,7 @@ func (a *ActionBuiltins) MutationSummary() map[string]int {
 type actionDeps struct {
 	pool     *pgxpool.Pool
 	svc      *services.Services
-	todoSvc  *todo.TodoService
+	todoSvc  *task.TaskService
 	cardsSvc *cards.CardService
 	slack    *kitslack.Client
 
@@ -165,7 +165,7 @@ func BuildActionBuiltins(
 	deps := &actionDeps{
 		pool:         pool,
 		svc:          svc,
-		todoSvc:      todo.NewService(pool),
+		todoSvc:      task.NewService(pool),
 		cardsSvc:     cards.NewService(pool),
 		slack:        slack,
 		tenantID:     tenantID,
@@ -176,20 +176,20 @@ func BuildActionBuiltins(
 
 	handler := func(ctx context.Context, call *runtime.FunctionCall) (any, error) {
 		switch call.Name {
-		case FnCreateTodo:
-			return dispatchCreateTodo(ctx, a, deps, call)
-		case FnUpdateTodo:
-			return dispatchUpdateTodo(ctx, a, deps, call)
-		case FnCompleteTodo:
-			return dispatchCompleteTodo(ctx, a, deps, call)
-		case FnAddTodoComment:
-			return dispatchAddTodoComment(ctx, a, deps, call)
+		case FnCreateTask:
+			return dispatchCreateTask(ctx, a, deps, call)
+		case FnUpdateTask:
+			return dispatchUpdateTask(ctx, a, deps, call)
+		case FnCompleteTask:
+			return dispatchCompleteTask(ctx, a, deps, call)
+		case FnAddTaskComment:
+			return dispatchAddTaskComment(ctx, a, deps, call)
 		case FnCreateDecision:
 			return dispatchCreateDecision(ctx, a, deps, call)
 		case FnCreateBriefing:
 			return dispatchCreateBriefing(ctx, a, deps, call)
 		case FnCreateJob:
-			return dispatchCreateTask(ctx, a, deps, call)
+			return dispatchCreateJob(ctx, a, deps, call)
 		case FnAddMemory:
 			return dispatchAddMemory(ctx, a, deps, call)
 		case FnSendSlackMessage, FnPostToChannel:
@@ -204,10 +204,10 @@ func BuildActionBuiltins(
 	}
 
 	params := map[string][]string{
-		FnCreateTodo:       {"title", "description", "priority", "due_date", "role_scope", "assigned_to", "private"},
-		FnUpdateTodo:       {"todo_id", "status", "priority", "due_date", "role_scope", "blocked_reason", "assigned_to"},
-		FnCompleteTodo:     {"todo_id", "note"},
-		FnAddTodoComment:   {"todo_id", "content"},
+		FnCreateTask:       {"title", "description", "priority", "due_date", "role_scope", "assigned_to", "private"},
+		FnUpdateTask:       {"todo_id", "status", "priority", "due_date", "role_scope", "blocked_reason", "assigned_to"},
+		FnCompleteTask:     {"todo_id", "note"},
+		FnAddTaskComment:   {"todo_id", "content"},
 		FnCreateDecision:   {"title", "body", "options", "priority", "role_scopes"},
 		FnCreateBriefing:   {"title", "body", "severity", "role_scopes"},
 		FnCreateJob:        {"description", "cron", "timezone", "channel", "run_once"},
@@ -221,17 +221,17 @@ func BuildActionBuiltins(
 	// FuncDefs in stable (alphabetical) order for deterministic logs.
 	funcs := []runtime.FuncDef{
 		runtime.Func(FnAddMemory, params[FnAddMemory]...),
-		runtime.Func(FnAddTodoComment, params[FnAddTodoComment]...),
-		runtime.Func(FnCompleteTodo, params[FnCompleteTodo]...),
+		runtime.Func(FnAddTaskComment, params[FnAddTaskComment]...),
+		runtime.Func(FnCompleteTask, params[FnCompleteTask]...),
 		runtime.Func(FnCreateBriefing, params[FnCreateBriefing]...),
 		runtime.Func(FnCreateDecision, params[FnCreateDecision]...),
 		runtime.Func(FnCreateJob, params[FnCreateJob]...),
-		runtime.Func(FnCreateTodo, params[FnCreateTodo]...),
+		runtime.Func(FnCreateTask, params[FnCreateTask]...),
 		runtime.Func(FnDMUser, params[FnDMUser]...),
 		runtime.Func(FnFindUser, params[FnFindUser]...),
 		runtime.Func(FnPostToChannel, params[FnPostToChannel]...),
 		runtime.Func(FnSendSlackMessage, params[FnSendSlackMessage]...),
-		runtime.Func(FnUpdateTodo, params[FnUpdateTodo]...),
+		runtime.Func(FnUpdateTask, params[FnUpdateTask]...),
 	}
 
 	builtIns := map[string]runtime.GoFunc{}

@@ -1,9 +1,9 @@
-// Package builder: action_builtins_todo.go dispatches create_todo /
-// update_todo / complete_todo / add_todo_comment into TodoService.
+// Package builder: action_builtins_task.go dispatches create_task /
+// update_task / complete_task / add_task_comment into TaskService.
 //
 // Each dispatcher mirrors the shape of the agent-tool handler in
-// internal/apps/todo/agent.go but returns a dict the script can inspect
-// instead of the human-readable "Created todo […]" string.
+// internal/apps/task/agent.go but returns a dict the script can inspect
+// instead of the human-readable "Created task […]" string.
 package builder
 
 import (
@@ -14,19 +14,19 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/apps/builder/runtime"
-	"github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/services"
 )
 
-// dispatchCreateTodo handles create_todo(title, description="",
-// priority="medium", due_date=None, role_scope=None, assigned_to=None,
-// private=None) → todo dict.
+// dispatchCreateTask handles create_task(title, description="",
+// priority="medium", due_date=None, role_scope=None, assignee=None) →
+// task dict.
 //
-// The `private` kwarg maps onto the new Visibility field as follows:
-//   - private=True  → Visibility="scoped" (default; scope-only visibility)
-//   - private=False → Visibility="public" (everyone in tenant can read)
-//   - omitted       → Visibility="" (service applies "scoped" default)
-func dispatchCreateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
+// The legacy `private` and `visibility` kwargs are silently ignored — the
+// new model is role-only. Scripts that previously created private todos
+// will land in the caller's primary role and see them via the assignee
+// branch of the feed.
+func dispatchCreateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
 	title, err := argString(call.Args, "title")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
@@ -50,25 +50,9 @@ func dispatchCreateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
-	assignedTo, err := argOptionalString(call.Args, "assigned_to")
+	assigneeRef, err := argOptionalString(call.Args, "assignee")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
-	}
-
-	// Visibility: translate the legacy `private` bool. Only set it when
-	// the script passed the kwarg explicitly — otherwise leave empty so
-	// the service picks its own default ("scoped").
-	var visibility string
-	if _, present := call.Args["private"]; present {
-		private, err := argOptionalBool(call.Args, "private")
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", call.Name, err)
-		}
-		if private {
-			visibility = "scoped"
-		} else {
-			visibility = "public"
-		}
 	}
 
 	c, err := deps.caller(ctx)
@@ -76,21 +60,20 @@ func dispatchCreateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 
-	in := todo.CreateInput{
+	in := task.CreateInput{
 		Title:       title,
 		Description: description,
 		Priority:    priority,
 		RoleName:    roleScope,
-		Visibility:  visibility,
 		DueDate:     dueDate,
 	}
 
-	if assignedTo != "" {
-		id, msg := deps.todoSvc.ResolveAssignee(ctx, c, assignedTo)
+	if assigneeRef != "" {
+		id, msg := deps.todoSvc.ResolveAssignee(ctx, c, assigneeRef)
 		if msg != "" {
 			return nil, fmt.Errorf("%s: %s", call.Name, msg)
 		}
-		in.AssignedTo = id
+		in.AssigneeUserID = id
 	}
 
 	t, err := deps.todoSvc.Create(ctx, c, in)
@@ -98,26 +81,23 @@ func dispatchCreateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 	a.insertCount++
-	return todoToMap(t), nil
+	return taskToMap(t), nil
 }
 
-// dispatchUpdateTodo handles update_todo(todo_id, status=None,
+// dispatchUpdateTask handles update_task(task_id, status=None,
 // priority=None, due_date=None, role_scope=None, blocked_reason=None,
-// assigned_to=None) → updated todo dict.
-//
-// `role_scope="none"` is forwarded as todo.ClearRoleScope so the service
-// falls back to the caller's user-scope.
-func dispatchUpdateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
-	todoIDStr, err := argString(call.Args, "todo_id")
+// assignee=None, clear_assignee=False) → updated task dict.
+func dispatchUpdateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
+	taskIDStr, err := argString(call.Args, "task_id")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
-	todoID, err := uuid.Parse(todoIDStr)
+	taskID, err := uuid.Parse(taskIDStr)
 	if err != nil {
-		return nil, fmt.Errorf("%s: invalid todo_id: %w", call.Name, err)
+		return nil, fmt.Errorf("%s: invalid task_id: %w", call.Name, err)
 	}
 
-	u := todo.UpdateInput{}
+	u := task.UpdateInput{}
 	if s, err := argOptionalString(call.Args, "status"); err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	} else if s != "" {
@@ -131,8 +111,6 @@ func dispatchUpdateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 	if s, err := argOptionalString(call.Args, "role_scope"); err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	} else if s != "" {
-		// "none" is the sentinel for clearing back to caller's user-scope.
-		// The service recognizes todo.ClearRoleScope for the same purpose.
 		u.NewRoleName = &s
 	}
 	if s, err := argOptionalString(call.Args, "blocked_reason"); err != nil {
@@ -151,38 +129,43 @@ func dispatchUpdateTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 
-	if ref, err := argOptionalString(call.Args, "assigned_to"); err != nil {
+	if ref, err := argOptionalString(call.Args, "assignee"); err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	} else if ref != "" {
 		id, msg := deps.todoSvc.ResolveAssignee(ctx, c, ref)
 		if msg != "" {
 			return nil, fmt.Errorf("%s: %s", call.Name, msg)
 		}
-		u.NewAssignee = id
+		u.NewAssigneeUserID = id
+	}
+	if clear, err := argOptionalBool(call.Args, "clear_assignee"); err != nil {
+		return nil, fmt.Errorf("%s: %w", call.Name, err)
+	} else if clear {
+		u.ClearAssignee = true
 	}
 
-	t, err := deps.todoSvc.Update(ctx, c, todoID, u)
+	t, err := deps.todoSvc.Update(ctx, c, taskID, u)
 	if err != nil {
 		if errors.Is(err, services.ErrNotFound) {
-			return nil, fmt.Errorf("%s: todo %s not found", call.Name, todoID)
+			return nil, fmt.Errorf("%s: task %s not found", call.Name, taskID)
 		}
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 	a.updateCount++
-	return todoToMap(t), nil
+	return taskToMap(t), nil
 }
 
-// dispatchCompleteTodo handles complete_todo(todo_id, note="") →
+// dispatchCompleteTask handles complete_task(task_id, note="") →
 // {id, status}. note is recorded as a comment before the status flip so
 // the activity log captures the reason alongside the close event.
-func dispatchCompleteTodo(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
-	todoIDStr, err := argString(call.Args, "todo_id")
+func dispatchCompleteTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
+	taskIDStr, err := argString(call.Args, "task_id")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
-	todoID, err := uuid.Parse(todoIDStr)
+	taskID, err := uuid.Parse(taskIDStr)
 	if err != nil {
-		return nil, fmt.Errorf("%s: invalid todo_id: %w", call.Name, err)
+		return nil, fmt.Errorf("%s: invalid task_id: %w", call.Name, err)
 	}
 	note, err := argOptionalString(call.Args, "note")
 	if err != nil {
@@ -195,18 +178,18 @@ func dispatchCompleteTodo(ctx context.Context, a *ActionBuiltins, deps *actionDe
 	}
 
 	if note != "" {
-		if err := deps.todoSvc.AddComment(ctx, c, todoID, note); err != nil {
+		if err := deps.todoSvc.AddComment(ctx, c, taskID, note); err != nil {
 			if errors.Is(err, services.ErrNotFound) {
-				return nil, fmt.Errorf("%s: todo %s not found", call.Name, todoID)
+				return nil, fmt.Errorf("%s: task %s not found", call.Name, taskID)
 			}
 			return nil, fmt.Errorf("%s: recording note: %w", call.Name, err)
 		}
 	}
 
-	t, err := deps.todoSvc.Complete(ctx, c, todoID)
+	t, err := deps.todoSvc.Complete(ctx, c, taskID)
 	if err != nil {
 		if errors.Is(err, services.ErrNotFound) {
-			return nil, fmt.Errorf("%s: todo %s not found", call.Name, todoID)
+			return nil, fmt.Errorf("%s: task %s not found", call.Name, taskID)
 		}
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
@@ -217,18 +200,18 @@ func dispatchCompleteTodo(ctx context.Context, a *ActionBuiltins, deps *actionDe
 	}, nil
 }
 
-// dispatchAddTodoComment handles add_todo_comment(todo_id, content) →
+// dispatchAddTaskComment handles add_task_comment(task_id, content) →
 // {id}. The service layer doesn't return the event row, so we synthesize
-// a pseudo-id from the todo and timestamp for scripts that want to echo
-// something back to the user.
-func dispatchAddTodoComment(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
-	todoIDStr, err := argString(call.Args, "todo_id")
+// a pseudo-id from the task for scripts that want to echo something back
+// to the user.
+func dispatchAddTaskComment(ctx context.Context, a *ActionBuiltins, deps *actionDeps, call *runtime.FunctionCall) (any, error) {
+	taskIDStr, err := argString(call.Args, "task_id")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
-	todoID, err := uuid.Parse(todoIDStr)
+	taskID, err := uuid.Parse(taskIDStr)
 	if err != nil {
-		return nil, fmt.Errorf("%s: invalid todo_id: %w", call.Name, err)
+		return nil, fmt.Errorf("%s: invalid task_id: %w", call.Name, err)
 	}
 	content, err := argString(call.Args, "content")
 	if err != nil {
@@ -240,29 +223,22 @@ func dispatchAddTodoComment(ctx context.Context, a *ActionBuiltins, deps *action
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 
-	if err := deps.todoSvc.AddComment(ctx, c, todoID, content); err != nil {
+	if err := deps.todoSvc.AddComment(ctx, c, taskID, content); err != nil {
 		if errors.Is(err, services.ErrNotFound) {
-			return nil, fmt.Errorf("%s: todo %s not found", call.Name, todoID)
+			return nil, fmt.Errorf("%s: task %s not found", call.Name, taskID)
 		}
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 	a.insertCount++
-	// Comment row ids aren't returned by the service. Use a deterministic
-	// synthetic id (todo_id) so callers can still dedupe against the todo.
 	return map[string]any{
-		"id": todoID.String(),
+		"id": taskID.String(),
 	}, nil
 }
 
-// todoToMap flattens a *todo.Todo into a script-friendly map. UUIDs go
+// taskToMap flattens a *task.Task into a script-friendly map. UUIDs go
 // out as strings; times as RFC3339 strings; nil pointers collapse to
 // absent keys / empty strings so the Python side sees consistent shapes.
-//
-// The new scope model carries assignee/role-scope indirectly via
-// scope_id; scripts that need the specific role/user can resolve it via
-// a scope lookup. We expose scope_id + visibility here and drop the old
-// assigned_to / role_scope / private / created_by keys.
-func todoToMap(t *todo.Todo) map[string]any {
+func taskToMap(t *task.Task) map[string]any {
 	if t == nil {
 		return nil
 	}
@@ -274,7 +250,9 @@ func todoToMap(t *todo.Todo) map[string]any {
 		"status":      t.Status,
 		"priority":    t.Priority,
 		"scope_id":    t.ScopeID.String(),
-		"visibility":  t.Visibility,
+	}
+	if t.AssigneeUserID != nil {
+		out["assignee_user_id"] = t.AssigneeUserID.String()
 	}
 	if t.DueDate != nil {
 		out["due_date"] = t.DueDate.Format("2006-01-02")
