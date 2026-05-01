@@ -1,0 +1,21 @@
+{{ define "cancel_reset.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="cancel-reset" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+<h1>Cancel vault password reset</h1>
+<noscript>This page requires JavaScript.</noscript>
+<p>A vault password reset is pending on your account. If you didn't initiate this, your Slack account may be compromised.</p>
+<p class="warn">Cancelling will <strong>delete your pending vault keys</strong>. You will need to re-register and ask a teammate to grant access again.</p>
+<button type="button" id="cancel-button">Cancel the reset</button>
+<button type="button" id="dismiss-button">No, it was me</button>
+<p id="status" role="status"></p>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}

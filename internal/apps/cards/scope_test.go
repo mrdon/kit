@@ -114,3 +114,46 @@ func TestUserScopeWithinTenantAccepted(t *testing.T) {
 		t.Fatal("expected card, got nil")
 	}
 }
+
+// TestCreateSystemDecisionBypassesScopeAccess regression-tests the
+// system-caller path. The vault's grant-request card scopes to the
+// admin role on behalf of a non-admin registering user, which would
+// fail enforceScopeAccess on the regular CreateDecision path. The
+// system path must accept this (no caller, no scope-membership check).
+func TestCreateSystemDecisionBypassesScopeAccess(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+
+	teamID := "T_sys_" + uuid.NewString()
+	slug := models.SanitizeSlug("sys-"+uuid.NewString(), teamID)
+	tenant, err := models.UpsertTenant(ctx, pool, teamID, "t", "encrypted", slug, nil, nil)
+	if err != nil {
+		t.Fatalf("tenant: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
+
+	if _, err := models.GetOrCreateRole(ctx, pool, tenant.ID, "admin", "tenant admin"); err != nil {
+		t.Fatalf("creating admin role: %v", err)
+	}
+
+	svc := cards.NewService(pool)
+	card, err := svc.CreateSystemDecision(ctx, tenant.ID, cards.CardCreateInput{
+		Kind:       cards.CardKindDecision,
+		Title:      "Grant vault access",
+		Body:       "Admin must grant this user access.",
+		RoleScopes: []string{"admin"},
+		Decision: &cards.DecisionCreateInput{
+			Priority: cards.DecisionPriorityHigh,
+			Options: []cards.DecisionOption{
+				{OptionID: "grant", Label: "Grant"},
+				{OptionID: "decline", Label: "Decline"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("system create: %v", err)
+	}
+	if card == nil {
+		t.Fatal("expected card, got nil")
+	}
+}

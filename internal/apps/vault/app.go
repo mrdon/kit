@@ -45,9 +45,16 @@ type App struct {
 // cards in. CreateDecision handles admin-targeted grant requests + the
 // failed-unlock alarm; CreateBriefing handles the user-targeted
 // security-tripwire notifications (reset triggered, access granted).
+//
+// All four call sites are SYSTEM-GENERATED cards — Kit emitting a
+// security signal on behalf of a tenant — not user-authored content.
+// Hence the tenant-only signature: there is no caller whose scope
+// membership to enforce against (e.g. a registering non-admin
+// legitimately needs to scope a grant-request card to admin even
+// though they themselves don't hold that role).
 type CardSurface interface {
-	CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) error
-	CreateBriefing(ctx context.Context, c *services.Caller, in CardCreateInput) error
+	CreateDecision(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) error
+	CreateBriefing(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) error
 }
 
 // CardCreateInput is the projection of cards.CardCreateInput we use.

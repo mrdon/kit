@@ -65,6 +65,10 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("POST /{slug}/apps/vault/api/self_unlock_test", wrap(a.handleSelfUnlockTest))
 	mux.Handle("POST /{slug}/apps/vault/api/unlock", wrap(a.handleUnlock))
 	mux.Handle("POST /{slug}/apps/vault/lock", wrap(a.handleLock))
+	// Reset cancel — wipes a row in 24h cooldown before a teammate can
+	// re-grant. Page renders confirmation; POST does the wipe.
+	mux.Handle("GET /{slug}/apps/vault/cancel_reset", page(a.handleCancelResetPage))
+	mux.Handle("POST /{slug}/apps/vault/api/cancel_reset", wrap(a.handleCancelReset))
 	mux.Handle("GET /{slug}/apps/vault/api/me", get(a.handleMe))
 	mux.Handle("GET /{slug}/apps/vault/api/users/{user_id}", get(a.handleGetUser))
 	// Principal listing — populates the "who can see this" selector

@@ -224,6 +224,32 @@ func MarkVaultUserActive(ctx context.Context, pool *pgxpool.Pool, tenantID, user
 	return nil
 }
 
+// CancelVaultReset deletes a vault_users row that's currently in the
+// 24h reset cooldown. Used when the legitimate user spots a reset they
+// didn't initiate (Slack-account-takeover defense): wiping the row
+// invalidates the attacker-supplied keys before any teammate can grant
+// against them. The user is left in a "not registered" state and must
+// re-register normally — same path as a fresh user joining the vault.
+//
+// Refuses if the row exists but isn't in cooldown (no reset to cancel)
+// or if the row is missing (no row, no reset). Returns ErrNotFound in
+// either case so callers can surface a uniform "nothing to do" error.
+func CancelVaultReset(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) error {
+	tag, err := pool.Exec(ctx, `
+		DELETE FROM app_vault_users
+		 WHERE tenant_id = $1 AND user_id = $2
+		   AND reset_pending_until IS NOT NULL
+		   AND reset_pending_until > now()
+	`, tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("cancelling vault reset: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetVaultGrant writes a wrapped_vault_key onto the target user's row,
 // granted by granterID. Returns ErrNotFound if the target row doesn't exist.
 func SetVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID, granterID uuid.UUID, wrapped []byte) error {

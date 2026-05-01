@@ -346,6 +346,27 @@ func (s *Service) Grant(ctx context.Context, c *services.Caller, p GrantParams, 
 	return nil
 }
 
+// CancelReset wipes the caller's vault_users row when it's currently in
+// the 24h post-reset cooldown. This is the legitimate user's escape
+// hatch for the Slack-account-takeover-then-trigger-reset attack: an
+// attacker briefly hijacks Slack, resets the vault password, and waits
+// for an admin to re-grant. The legitimate user — still logged in
+// elsewhere — sees the reset-triggered briefing in their swipe stack
+// and clicks Cancel; this endpoint nukes the attacker's keys before
+// any teammate can wrap a vault key for them.
+//
+// Auth: session cookie only (no step-up — by definition the legitimate
+// user can't unlock right now since the attacker just changed the
+// master password). Idempotent: returns ErrNotFound if there's no row
+// in cooldown to cancel.
+func (s *Service) CancelReset(ctx context.Context, c *services.Caller, audit auditCtx) error {
+	if err := models.CancelVaultReset(ctx, s.pool, c.TenantID, c.UserID); err != nil {
+		return err
+	}
+	audit.log(ctx, "vault.master_password_reset_cancelled", "vault_user", &c.UserID, EvtMasterPasswordResetCancelled{})
+	return nil
+}
+
 // DeclinePending deletes a vault_users row that hasn't been granted yet.
 // Admin-only; refuses if the user already has access (those go through
 // RevokeGrant).
@@ -404,7 +425,7 @@ func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Cal
 	user, _ := models.GetUserByID(ctx, s.pool, target.TenantID, target.UserID)
 	body := buildGrantCardBody(target, user, isReset, fingerprint)
 
-	return s.cards.CreateDecision(ctx, target, CardCreateInput{
+	return s.cards.CreateDecision(ctx, target.TenantID, CardCreateInput{
 		Title:      title,
 		Body:       body,
 		RoleScopes: []string{"admin"},
@@ -474,7 +495,7 @@ func (s *Service) fireFailedUnlockDecision(ctx context.Context, c *services.Call
 	body := fmt.Sprintf("**%d failed unlock attempts on your Kit vault.** Your vault is locked for %s.\n\n"+
 		"If this wasn't you, your Slack account may be compromised — rotate your Slack credentials and re-OAuth before approving any vault grant.",
 		count, lockoutDuration)
-	err := s.cards.CreateDecision(ctx, c, CardCreateInput{
+	err := s.cards.CreateDecision(ctx, c.TenantID, CardCreateInput{
 		Title:      "Failed unlock attempts on your vault",
 		Body:       body,
 		UserScopes: []uuid.UUID{c.UserID},
@@ -500,14 +521,21 @@ func (s *Service) fireResetTriggeredBriefing(ctx context.Context, c *services.Ca
 	if s.cards == nil {
 		return
 	}
+	cancelURL := ""
+	if tenant, err := models.GetTenantByID(ctx, s.pool, c.TenantID); err == nil && tenant != nil {
+		cancelURL = fmt.Sprintf("/%s/apps/vault/cancel_reset", tenant.Slug)
+	}
 	body := "**Your Kit vault password was just reset.** If this wasn't you, your Slack account " +
 		"may be compromised — rotate your Slack credentials immediately. Until you do, do not " +
-		"approve any incoming grant request for your account.\n\n" +
-		"Cancel this reset by re-OAuthing through Slack within the 24h cooldown."
-	err := s.cards.CreateBriefing(ctx, c, CardCreateInput{
+		"approve any incoming grant request for your account."
+	if cancelURL != "" {
+		body += fmt.Sprintf("\n\n[**Cancel the reset**](%s) to wipe the pending keys before a teammate grants access. You will need to re-register afterward.", cancelURL)
+	}
+	err := s.cards.CreateBriefing(ctx, c.TenantID, CardCreateInput{
 		Title:      "Vault password reset",
 		Body:       body,
 		UserScopes: []uuid.UUID{c.UserID},
+		Urgent:     true,
 		Briefing:   &CardBriefingCreateInput{Severity: "important"},
 	})
 	if err != nil {
@@ -522,7 +550,7 @@ func (s *Service) fireAccessGrantedBriefing(ctx context.Context, c *services.Cal
 		return
 	}
 	body := "Your Kit vault access is now active. Open the vault to add or look up secrets."
-	err := s.cards.CreateBriefing(ctx, c, CardCreateInput{
+	err := s.cards.CreateBriefing(ctx, c.TenantID, CardCreateInput{
 		Title:      "Vault access granted",
 		Body:       body,
 		UserScopes: []uuid.UUID{targetUserID},

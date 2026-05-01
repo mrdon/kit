@@ -132,17 +132,32 @@ func (s *Service) validateScopesAgainstTenant(ctx context.Context, tenantID uuid
 }
 
 // requireRecentUnlock enforces step-up auth: the caller must have a
-// successful vault.unlock audit event within the last stepUpWindow.
-// Returns ErrStepUpRequired if not. Implemented as an audit_events
-// query so the unlock record is the source of truth — no extra column
-// to keep in sync. The vault.unlock event is fail-closed-written by
-// Unlock so a transient audit-write failure doesn't lock out a user.
+// successful vault.unlock audit event within the last stepUpWindow AND
+// must currently be a live, unlocked vault member. The membership join
+// matters because a master-password reset (or a teammate revoking the
+// caller's grant) leaves stale audit_events behind that would otherwise
+// satisfy the step-up window for ~5 minutes after the row was wiped or
+// re-pended. Without the join, a recently-unlocked-but-now-reset user
+// could still grant or scope-widen during the cooldown.
+//
+// Returns ErrStepUpRequired on miss. The unlock-event row is the
+// source-of-truth timestamp; vault_users gates that the caller can
+// actually decrypt anything right now.
 func (s *Service) requireRecentUnlock(ctx context.Context, c *services.Caller) error {
 	var lastUnlock time.Time
 	err := s.pool.QueryRow(ctx, `
-		SELECT created_at FROM audit_events
-		WHERE tenant_id = $1 AND actor_user_id = $2 AND action = 'vault.unlock'
-		ORDER BY created_at DESC
+		SELECT a.created_at
+		FROM audit_events a
+		JOIN app_vault_users v
+		  ON v.tenant_id = a.tenant_id AND v.user_id = a.actor_user_id
+		WHERE a.tenant_id = $1
+		  AND a.actor_user_id = $2
+		  AND a.action = 'vault.unlock'
+		  AND v.pending = FALSE
+		  AND v.wrapped_vault_key IS NOT NULL
+		  AND v.reset_pending_until IS NULL
+		  AND (v.locked_until IS NULL OR v.locked_until <= now())
+		ORDER BY a.created_at DESC
 		LIMIT 1
 	`, c.TenantID, c.UserID).Scan(&lastUnlock)
 	if err != nil {

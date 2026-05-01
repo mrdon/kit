@@ -114,6 +114,29 @@ func (s *CardService) policyOf(toolName string) tools.Policy {
 // is_gate_artifact=true so ResolveDecision will let the gate pass at
 // approval time (see §4a and §5 of the plan).
 func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) (*Card, error) {
+	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
+		return nil, err
+	}
+	return s.createDecisionImpl(ctx, c.TenantID, in)
+}
+
+// CreateSystemDecision creates a decision card as Kit itself, with no
+// user-attributable actor. Used by trusted internal code paths that
+// generate cards on behalf of the system — e.g. the vault's
+// grant-request card targeting the admin role on behalf of a registering
+// non-admin user. Bypasses enforceScopeAccess (since there is no caller
+// whose scope membership to enforce against) but otherwise behaves
+// identically to CreateDecision. NEVER expose this to user-facing
+// surfaces (agent, MCP, web).
+func (s *CardService) CreateSystemDecision(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
+	return s.createDecisionImpl(ctx, tenantID, in)
+}
+
+// createDecisionImpl is the shared body of CreateDecision and
+// CreateSystemDecision: validation + gate-stamping + insert + urgent
+// push. Caller-scope enforcement (if any) is the caller's
+// responsibility.
+func (s *CardService) createDecisionImpl(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
 	if in.Kind != "" && in.Kind != CardKindDecision {
 		return nil, fmt.Errorf("CreateDecision: kind mismatch (%s)", in.Kind)
 	}
@@ -133,9 +156,6 @@ func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in
 	if err := validateOptions(in.Decision.Options, in.Decision.RecommendedOptionID); err != nil {
 		return nil, err
 	}
-	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
-		return nil, err
-	}
 
 	// Stamp is_gate_artifact for any option that invokes a PolicyGate
 	// tool. ResolveDecision re-checks this before running the tool; a
@@ -151,7 +171,7 @@ func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in
 		}
 	}
 
-	card, err := createCardTx(ctx, s.pool, c.TenantID, in)
+	card, err := createCardTx(ctx, s.pool, tenantID, in)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +181,19 @@ func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in
 
 // CreateBriefing creates a new briefing card.
 func (s *CardService) CreateBriefing(ctx context.Context, c *services.Caller, in CardCreateInput) (*Card, error) {
+	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
+		return nil, err
+	}
+	return s.createBriefingImpl(ctx, c.TenantID, in)
+}
+
+// CreateSystemBriefing is the system-caller counterpart to
+// CreateBriefing — see CreateSystemDecision for the caveats.
+func (s *CardService) CreateSystemBriefing(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
+	return s.createBriefingImpl(ctx, tenantID, in)
+}
+
+func (s *CardService) createBriefingImpl(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
 	if in.Kind != "" && in.Kind != CardKindBriefing {
 		return nil, fmt.Errorf("CreateBriefing: kind mismatch (%s)", in.Kind)
 	}
@@ -174,10 +207,7 @@ func (s *CardService) CreateBriefing(ctx context.Context, c *services.Caller, in
 	if !in.Briefing.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", in.Briefing.Severity)
 	}
-	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
-		return nil, err
-	}
-	card, err := createCardTx(ctx, s.pool, c.TenantID, in)
+	card, err := createCardTx(ctx, s.pool, tenantID, in)
 	if err != nil {
 		return nil, err
 	}

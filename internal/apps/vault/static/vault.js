@@ -55,10 +55,11 @@ async function main() {
   await connectWorker();
   installLockHooks();
   switch (VAULT.page) {
-    case "register": return wireRegister();
-    case "add":      return wireAdd();
-    case "reveal":   return wireReveal();
-    case "grant":    return wireGrant();
+    case "register":     return wireRegister();
+    case "add":          return wireAdd();
+    case "reveal":       return wireReveal();
+    case "grant":        return wireGrant();
+    case "cancel-reset": return wireCancelReset();
     default: setStatus(`Unknown vault page: ${VAULT.page}`, "error");
   }
 }
@@ -913,6 +914,30 @@ async function wireGrant() {
     setStatus("Declining…");
     await api("DELETE", `/users/${VAULT.targetUserId}`);
     setStatus("Declined. The user's pending registration was removed.", "success");
+  });
+}
+
+// wireCancelReset wires the small confirmation page linked from the
+// reset-triggered briefing. POSTs /cancel_reset on confirm; that endpoint
+// wipes the row server-side. No master-password unlock required — by
+// definition the legitimate user can't unlock right now (the attacker
+// just changed the master password). Authentication is the session cookie.
+async function wireCancelReset() {
+  document.getElementById("cancel-button").addEventListener("click", async () => {
+    if (!confirm("Cancel the reset and wipe the pending vault keys for your account?")) return;
+    setStatus("Cancelling…");
+    try {
+      await api("POST", "/cancel_reset", {});
+    } catch (err) {
+      setStatus(`Cancel failed: ${err.message || err}`, "error");
+      return;
+    }
+    setStatus("Reset cancelled. Your vault account is wiped — re-register when you're ready.", "success");
+    document.getElementById("cancel-button").disabled = true;
+    document.getElementById("dismiss-button").disabled = true;
+  });
+  document.getElementById("dismiss-button").addEventListener("click", () => {
+    setStatus("Dismissed. Your reset stays active.", "");
   });
 }
 

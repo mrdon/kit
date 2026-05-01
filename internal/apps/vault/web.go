@@ -267,6 +267,41 @@ func (a *App) handleLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// handleCancelResetPage renders the confirmation screen linked from the
+// reset-triggered briefing's body. Submitting the form POSTs to
+// /api/cancel_reset which wipes the row.
+func (a *App) handleCancelResetPage(w http.ResponseWriter, r *http.Request) {
+	applySecurityHeaders(w)
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	renderPage(w, "cancel_reset.html", pageData{
+		TenantSlug: tenant.Slug,
+		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
+		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
+		Title:      "Cancel vault password reset",
+	})
+}
+
+// handleCancelReset wipes the caller's vault_users row when it's in the
+// 24h post-reset cooldown. See Service.CancelReset for the threat model.
+func (a *App) handleCancelReset(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	audit := a.svc.AuditFromRequest(caller, r)
+	if err := a.svc.CancelReset(r.Context(), caller, audit); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			http.Error(w, "no pending reset to cancel", http.StatusNotFound)
+			return
+		}
+		slog.Error("vault: cancel reset", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // handleMe returns the caller's vault_users metadata: kdf_params (so the
 // browser can derive auth_hash on a fresh device) plus state flags. Returns
 // 404 if the caller has no row yet (browser sends to /register).

@@ -4,15 +4,23 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
+
 	"github.com/mrdon/kit/internal/apps/cards"
 	"github.com/mrdon/kit/internal/apps/vault"
-	"github.com/mrdon/kit/internal/services"
 )
 
 // vaultCardAdapter wraps a CardService so the vault package can create
 // decision cards and briefings without importing internal/apps/cards
 // directly. Keeps the dep graph one-way (cards never imports vault, and
 // vault never imports cards).
+//
+// All vault card-creation paths are system-generated security signals
+// (grant requests, reset alerts, failed-unlock alarms, access-granted
+// briefings) — not user-authored content. Hence we route them through
+// CreateSystem{Decision,Briefing} which skips the per-caller scope-
+// access check (a registering non-admin legitimately scopes a card to
+// the admin role).
 type vaultCardAdapter struct {
 	svc *cards.CardService
 }
@@ -21,7 +29,7 @@ func newVaultCardAdapter(svc *cards.CardService) *vaultCardAdapter {
 	return &vaultCardAdapter{svc: svc}
 }
 
-func (a *vaultCardAdapter) CreateDecision(ctx context.Context, c *services.Caller, in vault.CardCreateInput) error {
+func (a *vaultCardAdapter) CreateDecision(ctx context.Context, tenantID uuid.UUID, in vault.CardCreateInput) error {
 	if a.svc == nil || in.Decision == nil {
 		return nil
 	}
@@ -42,7 +50,7 @@ func (a *vaultCardAdapter) CreateDecision(ctx context.Context, c *services.Calle
 		prio = cards.DecisionPriorityMedium
 	}
 
-	_, err := a.svc.CreateDecision(ctx, c, cards.CardCreateInput{
+	_, err := a.svc.CreateSystemDecision(ctx, tenantID, cards.CardCreateInput{
 		Kind:       cards.CardKindDecision,
 		Title:      in.Title,
 		Body:       in.Body,
@@ -58,7 +66,7 @@ func (a *vaultCardAdapter) CreateDecision(ctx context.Context, c *services.Calle
 	return err
 }
 
-func (a *vaultCardAdapter) CreateBriefing(ctx context.Context, c *services.Caller, in vault.CardCreateInput) error {
+func (a *vaultCardAdapter) CreateBriefing(ctx context.Context, tenantID uuid.UUID, in vault.CardCreateInput) error {
 	if a.svc == nil {
 		return nil
 	}
@@ -69,7 +77,7 @@ func (a *vaultCardAdapter) CreateBriefing(ctx context.Context, c *services.Calle
 			sev = s
 		}
 	}
-	_, err := a.svc.CreateBriefing(ctx, c, cards.CardCreateInput{
+	_, err := a.svc.CreateSystemBriefing(ctx, tenantID, cards.CardCreateInput{
 		Kind:       cards.CardKindBriefing,
 		Title:      in.Title,
 		Body:       in.Body,

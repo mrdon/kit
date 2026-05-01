@@ -138,6 +138,10 @@ type EvtMasterPasswordReset struct {
 	NewPubKeyFingerprint string `json:"new_pubkey_fingerprint"`
 }
 
+// EvtMasterPasswordResetCancelled is written when the reset target wipes
+// their pending-reset row (Slack-account-takeover defense path).
+type EvtMasterPasswordResetCancelled struct{}
+
 // ===== HTTP helpers =====
 
 // clientIP returns the request's remote IP as a netip.Addr, preferring the

@@ -47,6 +47,25 @@ func adminCaller(tenantID, userID uuid.UUID) *services.Caller {
 	}
 }
 
+// activeVaultMember inserts a vault_users row in the post-grant state
+// (pending=false, wrapped_vault_key set, no reset cooldown, no lockout)
+// so requireRecentUnlock's membership join succeeds. Used by step-up
+// tests that don't go through the full Register/Unlock flow.
+func activeVaultMember(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) {
+	t.Helper()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO app_vault_users
+			(tenant_id, user_id, kdf_params, auth_hash, user_public_key,
+			 user_private_key_ciphertext, user_private_key_nonce,
+			 wrapped_vault_key, granted_at, pending)
+		VALUES ($1, $2, '{}'::jsonb, $3, $4, $5, $6, $7, now(), FALSE)
+	`, tenantID, userID, make([]byte, 32), make([]byte, 32),
+		make([]byte, 1250), make([]byte, 12), make([]byte, 256))
+	if err != nil {
+		t.Fatalf("seeding active vault user: %v", err)
+	}
+}
+
 // genRSAPubKey returns a valid 2048-bit RSA-OAEP public key DER.
 func genRSAPubKey(t *testing.T) []byte {
 	t.Helper()
@@ -285,6 +304,7 @@ func TestStepUpSucceedsWithRecentUnlock(t *testing.T) {
 	svc := NewService(pool)
 	tenantID, userID := freshTenant(t, ctx, pool)
 	c := adminCaller(tenantID, userID)
+	activeVaultMember(t, ctx, pool, tenantID, userID)
 
 	// Seed an unlock event 30s ago.
 	if err := models.AppendAudit(ctx, pool, models.AuditEvent{
@@ -300,6 +320,52 @@ func TestStepUpSucceedsWithRecentUnlock(t *testing.T) {
 
 	if err := svc.requireRecentUnlock(ctx, c); err != nil {
 		t.Fatalf("expected step-up to pass with fresh unlock, got %v", err)
+	}
+}
+
+// TestStepUpRefusesAfterReset is the security regression test: the
+// step-up window must close immediately when a vault_users row is
+// re-pended via master-password reset, even if the prior vault.unlock
+// audit row is still within the 5-minute window. Without the membership
+// join the attacker who triggered the reset could grant or scope-widen
+// for ~5 minutes.
+func TestStepUpRefusesAfterReset(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+	c := adminCaller(tenantID, userID)
+	activeVaultMember(t, ctx, pool, tenantID, userID)
+
+	// Fresh unlock event satisfies the time window.
+	if err := models.AppendAudit(ctx, pool, models.AuditEvent{
+		TenantID: tenantID, ActorUserID: &userID,
+		Action: "vault.unlock", TargetKind: "vault_user", TargetID: &userID,
+		Metadata: EvtUnlock{},
+	}); err != nil {
+		t.Fatalf("seeding audit row: %v", err)
+	}
+
+	// Sanity: step-up passes with both audit row + active membership.
+	if err := svc.requireRecentUnlock(ctx, c); err != nil {
+		t.Fatalf("baseline step-up: %v", err)
+	}
+
+	// Simulate a master-password reset by setting reset_pending_until +
+	// nulling wrapped_vault_key + flipping pending=true. This is what
+	// RegisterVaultUser does on the Replace=true path.
+	if _, err := pool.Exec(ctx, `
+		UPDATE app_vault_users
+		   SET pending = TRUE,
+		       wrapped_vault_key = NULL,
+		       reset_pending_until = now() + interval '24 hours'
+		 WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID); err != nil {
+		t.Fatalf("simulating reset: %v", err)
+	}
+
+	if err := svc.requireRecentUnlock(ctx, c); err == nil {
+		t.Fatal("step-up must refuse after reset even with a fresh audit row")
 	}
 }
 
@@ -605,11 +671,11 @@ type recordingCardSurface struct {
 	briefings int
 }
 
-func (r *recordingCardSurface) CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) error {
+func (r *recordingCardSurface) CreateDecision(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) error {
 	r.decisions++
 	return nil
 }
-func (r *recordingCardSurface) CreateBriefing(ctx context.Context, c *services.Caller, in CardCreateInput) error {
+func (r *recordingCardSurface) CreateBriefing(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) error {
 	r.briefings++
 	return nil
 }
@@ -713,5 +779,72 @@ func TestRegisterUpsertOnPendingRetry(t *testing.T) {
 	}, svc.AuditFromRequest(admin, r))
 	if err == nil {
 		t.Fatal("register against an active row should fail without Replace=true")
+	}
+}
+
+// TestCancelResetWipesRowDuringCooldown asserts that the reset-cancel
+// service method deletes a row that is currently in the 24h
+// reset_pending_until cooldown, and refuses to delete a row that isn't
+// in cooldown.
+func TestCancelResetWipesRowDuringCooldown(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+	admin := adminCaller(tenantID, userID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	// Register + activate so we have an active vault user.
+	if err := svc.Register(ctx, admin, RegisterParams{
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: fakePrivCT(),
+		UserPrivateKeyNonce:      make([]byte, 12),
+		WrappedVaultKey:          []byte("wrapped1"),
+	}, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := models.MarkVaultUserActive(ctx, pool, tenantID, userID); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	// CancelReset should refuse — no reset is pending.
+	err := svc.CancelReset(ctx, admin, svc.AuditFromRequest(admin, r))
+	if err == nil {
+		t.Fatal("CancelReset on a non-cooldown row should return an error")
+	}
+
+	// Trigger the reset-cooldown branch by issuing Replace=true.
+	if err := svc.Register(ctx, admin, RegisterParams{
+		Replace:                  true,
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: fakePrivCT(),
+		UserPrivateKeyNonce:      make([]byte, 12),
+	}, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("register replace: %v", err)
+	}
+
+	// Confirm the row is in cooldown (reset_pending_until set).
+	v, err := models.GetVaultUser(ctx, pool, tenantID, userID)
+	if err != nil || v == nil {
+		t.Fatalf("get after reset: %v %v", v, err)
+	}
+	if v.ResetPendingUntil == nil {
+		t.Fatal("expected reset_pending_until to be set after Replace=true")
+	}
+
+	// CancelReset succeeds and wipes the row entirely.
+	if err := svc.CancelReset(ctx, admin, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("CancelReset during cooldown: %v", err)
+	}
+	v, err = models.GetVaultUser(ctx, pool, tenantID, userID)
+	if err != nil {
+		t.Fatalf("get after cancel: %v", err)
+	}
+	if v != nil {
+		t.Fatal("expected row to be wiped after CancelReset")
 	}
 }
