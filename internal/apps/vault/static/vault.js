@@ -40,13 +40,6 @@ const VAULT = (() => {
   };
 })();
 
-if (VAULT) {
-  main().catch((err) => {
-    console.error("vault: unhandled error", err);
-    setStatus(`Error: ${err.message || err}`, "error");
-  });
-}
-
 async function main() {
   if (!window.isSecureContext) {
     setStatus("This page requires HTTPS (or localhost).", "error");
@@ -54,6 +47,12 @@ async function main() {
   }
   await connectWorker();
   installLockHooks();
+  // Pages that require a registered vault user redirect to /register
+  // when /api/me 404s (no vault_users row). Skip on /register itself
+  // to avoid a redirect loop.
+  if (VAULT.page !== "register" && VAULT.page !== "cancel-reset") {
+    if (!(await ensureRegistered())) return;
+  }
   switch (VAULT.page) {
     case "register":     return wireRegister();
     case "add":          return wireAdd();
@@ -62,6 +61,26 @@ async function main() {
     case "cancel-reset": return wireCancelReset();
     default: setStatus(`Unknown vault page: ${VAULT.page}`, "error");
   }
+}
+
+// ensureRegistered redirects to /{slug}/apps/vault/register when the
+// caller has no vault_users row yet. Returns false (caller should
+// stop) when redirecting; true when registered. Preserves the
+// current URL as ?return_to so register can bounce back.
+async function ensureRegistered() {
+  try {
+    const me = await api("GET", "/me");
+    if (me) return true;
+  } catch (err) {
+    if (!String(err.message || err).includes("HTTP 404")) {
+      setStatus(`Error: ${err.message || err}`, "error");
+      return false;
+    }
+    // 404 means no vault_users row — fall through to redirect.
+  }
+  const returnTo = encodeURIComponent(location.pathname + location.search);
+  location.replace(`/${VAULT.tenantSlug}/apps/vault/register?return_to=${returnTo}`);
+  return false;
 }
 
 // ===== KDF + key derivation =====
@@ -573,6 +592,17 @@ async function wireRegister() {
         : "Registered. Waiting for an admin to grant you access.",
       "success",
     );
+
+    // If the user landed on /register from a deep link to /add or
+    // /reveal (ensureRegistered redirected them), bounce back so they
+    // can complete what they came for. Bootstrap admins go back to
+    // their original page; non-bootstrap users get the same redirect
+    // but will see the unlock prompt fail until granted.
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = params.get("return_to");
+    if (returnTo && returnTo.startsWith("/" + VAULT.tenantSlug + "/")) {
+      setTimeout(() => location.replace(returnTo), 800);
+    }
   });
 }
 
@@ -966,4 +996,14 @@ function setStatus(text, kind) {
   el.className = kind || "";
 }
 function showSection(id) { const el = document.getElementById(id); if (el) el.hidden = false; }
+
+// Entry point. MUST be at the end of the file: top-level `let`
+// declarations (workerPort, dbBusy, …) are in TDZ until reached in
+// source order, so calling main() before them threw a ReferenceError.
+if (VAULT) {
+  main().catch((err) => {
+    console.error("vault: unhandled error", err);
+    setStatus(`Error: ${err.message || err}`, "error");
+  });
+}
 function hideSection(id) { const el = document.getElementById(id); if (el) el.hidden = true; }
