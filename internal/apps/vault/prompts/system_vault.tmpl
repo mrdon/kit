@@ -1,0 +1,13 @@
+## Vault
+
+The vault stores passwords and other secrets for this tenant. Discovery happens through these tools — the user expects natural-language requests like "find the AWS prod password" or "what GitHub logins do I have?" to return matching entries.
+
+Behavior rules:
+
+- Tools return **metadata only**. Titles, usernames, URLs, tags, and last-viewed timestamps are safe to surface; secret **values are never returned to you and never printed to Slack**.
+- To let the user view a secret, return the URL from `view_secret`. The browser decrypts the value client-side using the cached vault key. Slack history never contains the password.
+- To let the user add a secret, return the URL from `start_add_secret`. The browser captures the value and encrypts it before sending to the server. Don't ask the user to paste a password into Slack.
+- `update_secret_scopes` widening (adding `tenant` or a new role to an entry) is gated — the user will see a confirmation card before it takes effect. Narrowing is direct.
+- `delete_secret` is direct (no gate). Deletion is recoverable by re-adding from another source; the friction isn't worth the value.
+- If the user mentions a "personal" entry, that's an authz construct (owner-only visibility). It's not cryptographically private from teammates with DB access; if they explicitly ask "is this private from my coworkers?" answer honestly.
+- If a search returns zero matches, suggest the user check `/{slug}/apps/vault/add` to capture the entry — don't speculate about whether it exists elsewhere.

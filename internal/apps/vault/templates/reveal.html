@@ -1,0 +1,67 @@
+{{ define "reveal.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="reveal" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}" data-entry-id="{{ .EntryID }}">
+<h1>Reveal secret</h1>
+<noscript>This page requires JavaScript.</noscript>
+<section id="unlock-prompt" hidden>
+  <h2>Unlock your vault first</h2>
+  <form id="unlock-form" autocomplete="off">
+    <label>Master password
+      <input type="password" name="master_password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Unlock</button>
+    <p id="unlock-status" role="status"></p>
+  </form>
+</section>
+<section id="reveal-area" hidden>
+  <h2 id="entry-title"></h2>
+  <p><strong>Username:</strong> <span id="entry-username"></span></p>
+  <p><strong>URL:</strong> <a id="entry-url" target="_blank" rel="noopener"></a></p>
+  <p><strong>Password:</strong> <code id="entry-password" class="hidden">•••••</code>
+    <button type="button" id="show-password">Show</button>
+    <button type="button" id="copy-password">Copy</button>
+    <span id="copy-status" role="status"></span>
+  </p>
+  <details>
+    <summary>Notes</summary>
+    <pre id="entry-notes"></pre>
+  </details>
+
+  <section id="visibility-section">
+    <h3>Who can see this</h3>
+    <div id="visibility-display"></div>
+    <button type="button" id="edit-visibility-button">Edit</button>
+    <form id="visibility-form" hidden autocomplete="off">
+      <fieldset id="vis-scope-fieldset">
+        <legend>Update visibility</legend>
+        <label class="checkbox">
+          <input type="checkbox" name="vis_scope_tenant" value="1">
+          Everyone in the workspace
+        </label>
+        <fieldset id="vis-scope-roles">
+          <legend>Roles</legend>
+        </fieldset>
+        <fieldset id="vis-scope-users">
+          <legend>Specific people</legend>
+        </fieldset>
+      </fieldset>
+      <button type="submit">Save visibility</button>
+      <button type="button" id="cancel-visibility-edit">Cancel</button>
+      <p id="visibility-status" role="status"></p>
+    </form>
+  </section>
+
+  <p><button type="button" id="lock-button">Lock vault</button></p>
+</section>
+<p id="status" role="status"></p>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}

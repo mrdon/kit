@@ -26,6 +26,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/integrations"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/todo"
+	"github.com/mrdon/kit/internal/apps/vault"
 	"github.com/mrdon/kit/internal/apps/voting"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
@@ -214,6 +215,22 @@ func main() {
 	// Voting only needs the CardService — the participant ask is the
 	// decision card itself, no Slack DMs go out.
 	voting.Configure(cards.ServiceForGating())
+
+	// Vault uses the same CardService for both admin grant-request
+	// decision cards and user-targeted security-tripwire briefings
+	// (reset triggered, access granted, failed-unlock alarm). Plus
+	// the session signer for HTTP routes. Wrapped in a thin adapter
+	// so the vault package doesn't import internal/apps/cards directly
+	// (keeps the dep graph one-way).
+	vault.Configure(
+		newVaultCardAdapter(cards.ServiceForGating()),
+		sessionSigner,
+	)
+
+	// Wire the urgent-card push surface so cards created with
+	// Urgent=true (today: vault's failed-unlock alarm) trigger an
+	// immediate Slack DM in addition to the swipe-stack landing.
+	cards.ConfigurePushNotifier(newCardsPushNotifier(pool, app.Messenger))
 
 	// Task scheduler
 	sched := scheduler.New(pool, enc, app.Agent)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -57,6 +58,24 @@ type CardService struct {
 	policyLookup PolicyLookup      // set by CardsApp.ConfigurePolicyLookup; nil = all-allow
 	toolExec     ToolExecutor      // set by CardsApp.ConfigureToolExecutor; required for resolve-with-tool
 	baseURL      string            // set by CardsApp.Configure; used to build HALTED card URLs
+	pushNotifier PushNotifier      // set by CardsApp.ConfigurePushNotifier; optional out-of-band alerting
+}
+
+// PushNotifier is the small slice of Messenger CardService uses to send
+// an immediate Slack DM when a card is created with Urgent=true. Apps
+// opt in by setting Urgent on their CardCreateInput. Defined as an
+// interface so the cards package doesn't import Messenger directly.
+type PushNotifier interface {
+	// PushUrgent sends a one-line out-of-band notification to user
+	// userID about the card with the given title + URL. Implementations
+	// MUST be best-effort: errors are logged and swallowed so a
+	// transient Slack outage doesn't block card creation.
+	PushUrgent(ctx context.Context, tenantID, userID uuid.UUID, title, body, cardURL string) error
+}
+
+// ConfigurePushNotifier wires the urgent-card push surface. Idempotent.
+func (s *CardService) ConfigurePushNotifier(p PushNotifier) {
+	s.pushNotifier = p
 }
 
 // NewService returns a CardService bound to pool. Exported so Phase 3
@@ -95,6 +114,29 @@ func (s *CardService) policyOf(toolName string) tools.Policy {
 // is_gate_artifact=true so ResolveDecision will let the gate pass at
 // approval time (see §4a and §5 of the plan).
 func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in CardCreateInput) (*Card, error) {
+	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
+		return nil, err
+	}
+	return s.createDecisionImpl(ctx, c.TenantID, in)
+}
+
+// CreateSystemDecision creates a decision card as Kit itself, with no
+// user-attributable actor. Used by trusted internal code paths that
+// generate cards on behalf of the system — e.g. the vault's
+// grant-request card targeting the admin role on behalf of a registering
+// non-admin user. Bypasses enforceScopeAccess (since there is no caller
+// whose scope membership to enforce against) but otherwise behaves
+// identically to CreateDecision. NEVER expose this to user-facing
+// surfaces (agent, MCP, web).
+func (s *CardService) CreateSystemDecision(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
+	return s.createDecisionImpl(ctx, tenantID, in)
+}
+
+// createDecisionImpl is the shared body of CreateDecision and
+// CreateSystemDecision: validation + gate-stamping + insert + urgent
+// push. Caller-scope enforcement (if any) is the caller's
+// responsibility.
+func (s *CardService) createDecisionImpl(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
 	if in.Kind != "" && in.Kind != CardKindDecision {
 		return nil, fmt.Errorf("CreateDecision: kind mismatch (%s)", in.Kind)
 	}
@@ -114,9 +156,6 @@ func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in
 	if err := validateOptions(in.Decision.Options, in.Decision.RecommendedOptionID); err != nil {
 		return nil, err
 	}
-	if err := s.enforceScopeAccess(c, in.RoleScopes); err != nil {
-		return nil, err
-	}
 
 	// Stamp is_gate_artifact for any option that invokes a PolicyGate
 	// tool. ResolveDecision re-checks this before running the tool; a
@@ -132,11 +171,29 @@ func (s *CardService) CreateDecision(ctx context.Context, c *services.Caller, in
 		}
 	}
 
-	return createCardTx(ctx, s.pool, c.TenantID, in)
+	card, err := createCardTx(ctx, s.pool, tenantID, in)
+	if err != nil {
+		return nil, err
+	}
+	s.maybePushUrgent(ctx, card, in)
+	return card, nil
 }
 
 // CreateBriefing creates a new briefing card.
 func (s *CardService) CreateBriefing(ctx context.Context, c *services.Caller, in CardCreateInput) (*Card, error) {
+	if err := s.enforceScopeAccess(c, in.RoleScopes, in.UserScopes); err != nil {
+		return nil, err
+	}
+	return s.createBriefingImpl(ctx, c.TenantID, in)
+}
+
+// CreateSystemBriefing is the system-caller counterpart to
+// CreateBriefing — see CreateSystemDecision for the caveats.
+func (s *CardService) CreateSystemBriefing(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
+	return s.createBriefingImpl(ctx, tenantID, in)
+}
+
+func (s *CardService) createBriefingImpl(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) (*Card, error) {
 	if in.Kind != "" && in.Kind != CardKindBriefing {
 		return nil, fmt.Errorf("CreateBriefing: kind mismatch (%s)", in.Kind)
 	}
@@ -150,10 +207,43 @@ func (s *CardService) CreateBriefing(ctx context.Context, c *services.Caller, in
 	if !in.Briefing.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", in.Briefing.Severity)
 	}
-	if err := s.enforceScopeAccess(c, in.RoleScopes); err != nil {
+	card, err := createCardTx(ctx, s.pool, tenantID, in)
+	if err != nil {
 		return nil, err
 	}
-	return createCardTx(ctx, s.pool, c.TenantID, in)
+	s.maybePushUrgent(ctx, card, in)
+	return card, nil
+}
+
+// maybePushUrgent fires an out-of-band push (Slack DM) for cards created
+// with Urgent=true and at least one user scope. Best-effort: a missing
+// notifier, slug lookup failure, or per-user push error all just log and
+// move on so card creation never fails because of the push side-channel.
+func (s *CardService) maybePushUrgent(ctx context.Context, card *Card, in CardCreateInput) {
+	if !in.Urgent || s.pushNotifier == nil || card == nil {
+		return
+	}
+	if len(in.UserScopes) == 0 {
+		// Urgent only makes sense for explicitly-targeted cards. A
+		// tenant- or role-scoped urgent would DM half the workspace.
+		return
+	}
+	tenant, err := models.GetTenantByID(ctx, s.pool, card.TenantID)
+	if err != nil || tenant == nil {
+		slog.WarnContext(ctx, "urgent push skipped: tenant lookup failed",
+			"card_id", card.ID, "err", err)
+		return
+	}
+	cardURL := ""
+	if s.baseURL != "" && tenant.Slug != "" {
+		cardURL = fmt.Sprintf("%s/%s/#cards:%s:%s", s.baseURL, tenant.Slug, card.Kind, card.ID)
+	}
+	for _, uid := range in.UserScopes {
+		if err := s.pushNotifier.PushUrgent(ctx, card.TenantID, uid, in.Title, in.Body, cardURL); err != nil {
+			slog.WarnContext(ctx, "urgent push failed",
+				"card_id", card.ID, "user_id", uid, "err", err)
+		}
+	}
 }
 
 // Update applies a CardUpdates. Caller must have write access on the card.
@@ -200,8 +290,16 @@ func (s *CardService) Update(ctx context.Context, c *services.Caller, cardID uui
 	if u.Briefing != nil && u.Briefing.Severity != nil && !u.Briefing.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", *u.Briefing.Severity)
 	}
-	if u.RoleScopes != nil {
-		if err := s.enforceScopeAccess(c, *u.RoleScopes); err != nil {
+	if u.RoleScopes != nil || u.UserScopes != nil {
+		var roles []string
+		var users []uuid.UUID
+		if u.RoleScopes != nil {
+			roles = *u.RoleScopes
+		}
+		if u.UserScopes != nil {
+			users = *u.UserScopes
+		}
+		if err := s.enforceScopeAccess(c, roles, users); err != nil {
 			return nil, err
 		}
 	}
@@ -817,14 +915,19 @@ func (s *CardService) callerCanSee(ctx context.Context, c *services.Caller, card
 	return true, nil
 }
 
-// enforceScopeAccess prevents non-admins from scoping a card to a role they
-// don't hold. Admins are trusted.
-func (s *CardService) enforceScopeAccess(c *services.Caller, roleScopes []string) error {
+// enforceScopeAccess prevents non-admins from scoping a card to a role
+// they don't hold or to a user other than themselves. Admins are trusted.
+func (s *CardService) enforceScopeAccess(c *services.Caller, roleScopes []string, userScopes []uuid.UUID) error {
 	if c.IsAdmin {
 		return nil
 	}
 	for _, role := range roleScopes {
 		if !slices.Contains(c.Roles, role) {
+			return services.ErrForbidden
+		}
+	}
+	for _, uid := range userScopes {
+		if uid != c.UserID {
 			return services.ErrForbidden
 		}
 	}

@@ -65,10 +65,19 @@ func updateCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID uuid
 		}
 	}
 
-	// Scope replacement. CardUpdates only exposes RoleScopes today;
-	// extending to UserScopes would mirror the create-side change here.
-	if u.RoleScopes != nil {
-		if err := writeScopesTx(ctx, tx, tenantID, cardID, *u.RoleScopes, nil); err != nil {
+	// Scope replacement. Both fields are independent; passing one
+	// without the other clears that dimension. To leave scopes
+	// untouched, leave both pointers nil.
+	if u.RoleScopes != nil || u.UserScopes != nil {
+		var roles []string
+		var users []uuid.UUID
+		if u.RoleScopes != nil {
+			roles = *u.RoleScopes
+		}
+		if u.UserScopes != nil {
+			users = *u.UserScopes
+		}
+		if err := writeScopesTx(ctx, tx, tenantID, cardID, roles, users); err != nil {
 			return nil, err
 		}
 	}

@@ -201,6 +201,13 @@ type BriefingData struct {
 
 // CardCreateInput groups the fields needed to create a card. The Decision
 // and Briefing sub-structs must match Kind.
+//
+// Scope semantics:
+//   - Both RoleScopes and UserScopes empty → tenant-wide default.
+//   - Either non-empty → the union of named principals; tenant-wide is
+//     NOT added in that case. UserScopes lets a card target a single
+//     user (e.g. a security tripwire DM-replacement) without exposing it
+//     to their teammates.
 type CardCreateInput struct {
 	Kind  CardKind
 	Title string
@@ -213,6 +220,13 @@ type CardCreateInput struct {
 	// per-participant vote card). Combines with RoleScopes additively
 	// — any matching scope grants visibility.
 	UserScopes []uuid.UUID
+
+	// Urgent triggers an immediate out-of-band push (Slack DM) via the
+	// configured PushNotifier in addition to the swipe-stack landing.
+	// Use sparingly — for events the user shouldn't have to open Kit
+	// to learn about, e.g. failed-unlock alarms or session-takeover
+	// tripwires. Best-effort: missing notifier just skips the push.
+	Urgent bool
 
 	// Required when Kind == CardKindDecision.
 	Decision *DecisionCreateInput
@@ -255,8 +269,12 @@ type CardUpdates struct {
 	Briefing *BriefingUpdates
 
 	// If non-nil, replaces the card's scope rows with these. Empty slice
-	// removes all scope rows (making the card invisible — caller beware).
+	// (or nil) removes all role-based rows. UserScopes follows the same
+	// nil-vs-empty convention. Caller passing only RoleScopes leaves
+	// UserScopes alone (and vice versa); to clear both, pass empty
+	// slices for both.
 	RoleScopes *[]string
+	UserScopes *[]uuid.UUID
 }
 
 // DecisionUpdates is the decision-specific slice of CardUpdates.

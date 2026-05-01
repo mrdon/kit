@@ -1,0 +1,29 @@
+{{ define "register.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="register" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+<h1>Set up your vault</h1>
+<noscript>This page requires JavaScript.</noscript>
+<form id="register-form" autocomplete="off">
+  <label>
+    Master password
+    <input type="password" name="master_password" autocomplete="new-password" minlength="14" required>
+  </label>
+  <label>
+    Confirm
+    <input type="password" name="master_password_confirm" autocomplete="new-password" minlength="14" required>
+  </label>
+  <p class="help">Pick something at least 14 characters. <strong>Kit cannot recover it</strong> — only your teammates can re-grant access if you forget.</p>
+  <button type="submit">Set up vault</button>
+  <p id="status" role="status"></p>
+</form>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}
