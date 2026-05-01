@@ -173,14 +173,12 @@ func (s *Service) DeleteEntry(ctx context.Context, c *services.Caller, entryID u
 	return nil
 }
 
-// SetEntryRole rewrites an entry's owning role. Pass nil to mean
-// "everyone in the tenant"; pass a role id to scope to that role's
-// members. Step-up auth required for widening (going from a specific
-// role to nil/tenant-wide, or to a role with strictly more members);
-// pure narrowing runs direct. We approximate "widening" as "any change
-// where the new role is nil and the old wasn't" — the membership-count
-// comparison is more defensible but more code; the simple rule catches
-// the most-impactful change (any-role → everyone).
+// SetEntryRole rewrites an entry's owning role. roleID is required;
+// to make the entry visible to every tenant member, pass the tenant's
+// 'member' role id (the default_role_id). Step-up auth required for
+// any cross-role change (we don't know membership counts here, so we
+// treat any move to a different role as widening and err on the side
+// of step-up). No-op same-role calls bypass step-up.
 func (s *Service) SetEntryRole(ctx context.Context, c *services.Caller, entryID uuid.UUID, roleID *uuid.UUID, audit auditCtx) error {
 	existing, err := models.GetVaultEntry(ctx, s.pool, c.TenantID, entryID, c.UserID, c.RoleIDs)
 	if err != nil {
@@ -192,7 +190,8 @@ func (s *Service) SetEntryRole(ctx context.Context, c *services.Caller, entryID 
 	if err := s.validateRoleAgainstTenant(ctx, c.TenantID, roleID); err != nil {
 		return err
 	}
-	if isWideningRoleChange(existing.RoleID, roleID) {
+	sameRole := existing.RoleID != nil && *existing.RoleID == *roleID
+	if !sameRole {
 		if err := s.requireRecentUnlock(ctx, c); err != nil {
 			return err
 		}
@@ -205,23 +204,4 @@ func (s *Service) SetEntryRole(ctx context.Context, c *services.Caller, entryID 
 		ToRoleID:   roleID,
 	})
 	return nil
-}
-
-// isWideningRoleChange returns true when the role change makes the
-// entry visible to MORE principals: going to nil (tenant-wide) from
-// any specific role, or — conservatively — any non-identity change to
-// a different role (we don't know membership counts here, so we treat
-// any cross-role move as widening to err on the side of step-up).
-func isWideningRoleChange(from, to *uuid.UUID) bool {
-	if from == nil && to == nil {
-		return false
-	}
-	if to == nil {
-		return true // any-role → everyone
-	}
-	if from != nil && *from == *to {
-		return false
-	}
-	// from!=to (including nil→specific). Conservative: require step-up.
-	return true
 }

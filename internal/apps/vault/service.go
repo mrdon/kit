@@ -101,14 +101,14 @@ func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
 	}
 }
 
-// validateRoleAgainstTenant verifies the role_id (when non-nil) belongs
-// to the caller's tenant. Without this a malicious caller could pass
-// a foreign-tenant role uuid that lands in app_vault_entries forever —
-// the visibility filter would never match it (joins on tenant_id) but
-// the row references a dead id.
+// validateRoleAgainstTenant verifies role_id is set and belongs to the
+// caller's tenant. role_id is required: every entry must own to a
+// real role. To make an entry visible to every tenant member, scope
+// to the tenant's default_role_id (the 'member' role; see migration
+// 002_default_role.sql).
 func (s *Service) validateRoleAgainstTenant(ctx context.Context, tenantID uuid.UUID, roleID *uuid.UUID) error {
 	if roleID == nil {
-		return nil
+		return errors.New("role_id required: pick a role (use the tenant's 'member' role for everyone)")
 	}
 	var found int
 	err := s.pool.QueryRow(ctx, `

@@ -53,14 +53,13 @@ var vaultToolMetas = []services.ToolMeta{
 	},
 	{
 		Name:        "set_secret_role",
-		Description: "Change which role can see a vault entry. Pass role_id (UUID) to scope to that role's members, or omit / pass null to make it visible to everyone in the tenant. Widening — going from a specific role to tenant-wide, or moving across roles — is gated; the user will see a confirmation card before it takes effect.",
+		Description: "Change which role owns a vault entry. role_id is required; pass the tenant's 'member' role (everyone is implicitly a member) to make the entry visible to the whole workspace, or any other role to scope to that team. Cross-role changes are gated; the user will see a confirmation card before it takes effect.",
 		Schema: services.PropsReq(map[string]any{
 			"id":      services.Field("string", "Vault entry UUID"),
-			"role_id": services.Field("string", "Role UUID; omit / null for everyone in the tenant"),
-		}, "id"),
-		// PolicyGate: see registerVaultAgentTools — only widening is gated;
-		// pure narrowing runs direct. The gate is enforced at the handler
-		// level so the schema stays the same on both surfaces.
+			"role_id": services.Field("string", "Role UUID — required. Use the tenant's 'member' role for everyone."),
+		}, "id", "role_id"),
+		// PolicyGate: see registerVaultAgentTools — cross-role changes are
+		// gated. Same-role no-ops bypass the gate at service level.
 	},
 	{
 		Name:        "delete_secret",
@@ -221,8 +220,8 @@ func handleAgentStartAddSecret(svc *Service) tools.HandlerFunc {
 func handleAgentSetSecretRole(svc *Service) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			ID     string  `json:"id"`
-			RoleID *string `json:"role_id"`
+			ID     string `json:"id"`
+			RoleID string `json:"role_id"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
@@ -231,25 +230,21 @@ func handleAgentSetSecretRole(svc *Service) tools.HandlerFunc {
 		if err != nil {
 			return "Invalid id.", nil
 		}
-		var roleID *uuid.UUID
-		if inp.RoleID != nil && *inp.RoleID != "" {
-			rid, err := uuid.Parse(*inp.RoleID)
-			if err != nil {
-				return "Invalid role_id.", nil
-			}
-			roleID = &rid
+		if inp.RoleID == "" {
+			return "role_id is required (use the tenant's 'member' role for everyone).", nil
+		}
+		rid, err := uuid.Parse(inp.RoleID)
+		if err != nil {
+			return "Invalid role_id.", nil
 		}
 		caller := ec.Caller()
 		audit := auditFromExecContext(ec)
 		audit.userAgent = "agent"
-		if err := svc.SetEntryRole(ec.Ctx, caller, entryID, roleID, audit); err != nil {
+		if err := svc.SetEntryRole(ec.Ctx, caller, entryID, &rid, audit); err != nil {
 			if errors.Is(err, models.ErrNotFound) {
 				return "No entry with that id, or you don't have access.", nil
 			}
 			return "", err
-		}
-		if roleID == nil {
-			return "Scope updated: visible to everyone in the workspace.", nil
 		}
 		return "Scope updated.", nil
 	}

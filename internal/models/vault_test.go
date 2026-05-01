@@ -67,10 +67,19 @@ func TestVaultEntryTenantScope(t *testing.T) {
 	tenantID, ownerID := testTenantUser(t, ctx, pool)
 	otherID := mustOtherUser(t, ctx, pool, tenantID)
 
-	// Tenant-wide visibility = RoleID nil (the whole-tenant default).
+	// Tenant-wide visibility = scope to the tenant's default ('member')
+	// role. Every user is implicitly a member, so the otherID below
+	// should pass authz when we pass that role in their RoleIDs.
+	tenant, err := GetTenantByID(ctx, pool, tenantID)
+	if err != nil || tenant == nil || tenant.DefaultRoleID == nil {
+		t.Fatalf("loading default role: %v", err)
+	}
+	memberID := *tenant.DefaultRoleID
+
 	id, err := CreateVaultEntry(ctx, pool, VaultEntry{
 		TenantID:        tenantID,
 		OwnerUserID:     ownerID,
+		RoleID:          &memberID,
 		Title:           "Shop wifi",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      randBytes(t, 12),
@@ -79,7 +88,7 @@ func TestVaultEntryTenantScope(t *testing.T) {
 		t.Fatalf("create entry: %v", err)
 	}
 
-	got, err := GetVaultEntry(ctx, pool, tenantID, id, otherID, nil)
+	got, err := GetVaultEntry(ctx, pool, tenantID, id, otherID, []uuid.UUID{memberID})
 	if err != nil || got == nil {
 		t.Fatalf("tenant-scoped read: got=%v err=%v", got, err)
 	}
@@ -92,10 +101,16 @@ func TestVaultTenantIsolation(t *testing.T) {
 	tenantA, ownerA := testTenantUser(t, ctx, pool)
 	tenantB, ownerB := testTenantUser(t, ctx, pool)
 
-	// Create an entry in A scoped to tenant — visible to all of A.
+	// Create an entry in A scoped to A's member role — visible to all of A.
+	tenantAObj, err := GetTenantByID(ctx, pool, tenantA)
+	if err != nil || tenantAObj == nil || tenantAObj.DefaultRoleID == nil {
+		t.Fatalf("loading tenant A default role: %v", err)
+	}
+	memberA := *tenantAObj.DefaultRoleID
 	id, err := CreateVaultEntry(ctx, pool, VaultEntry{
 		TenantID:        tenantA,
 		OwnerUserID:     ownerA,
+		RoleID:          &memberA,
 		Title:           "Tenant A only",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      randBytes(t, 12),
@@ -127,10 +142,16 @@ func TestVaultListSearch(t *testing.T) {
 	ctx := context.Background()
 	tenantID, ownerID := testTenantUser(t, ctx, pool)
 
+	tenant, err := GetTenantByID(ctx, pool, tenantID)
+	if err != nil || tenant == nil || tenant.DefaultRoleID == nil {
+		t.Fatalf("loading default role: %v", err)
+	}
+	memberID := *tenant.DefaultRoleID
 	for _, title := range []string{"GitHub work", "GitHub personal", "AWS prod"} {
 		_, err := CreateVaultEntry(ctx, pool, VaultEntry{
 			TenantID:        tenantID,
 			OwnerUserID:     ownerID,
+			RoleID:          &memberID,
 			Title:           title,
 			ValueCiphertext: []byte("ct"),
 			ValueNonce:      randBytes(t, 12),

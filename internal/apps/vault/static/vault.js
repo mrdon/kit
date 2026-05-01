@@ -625,8 +625,8 @@ async function wireAdd() {
 
     const fd = new FormData(form);
     const roleID = fd.get("role_id");
-    if (roleID === null || roleID === undefined) {
-      setStatus("Pick a role or 'Everyone in the workspace'.", "error");
+    if (!roleID) {
+      setStatus("Pick a role.", "error");
       return;
     }
 
@@ -647,9 +647,7 @@ async function wireAdd() {
         tags,
         value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
         value_nonce: bytesField(new Uint8Array(enc.nonce)),
-        // role_id is "" when "everyone" is chosen — server treats
-        // empty/missing as nil = tenant-wide.
-        role_id: roleID || null,
+        role_id: roleID,
       });
     } catch (err) {
       setStatus(`Save failed: ${err.message || err}`, "error");
@@ -661,28 +659,39 @@ async function wireAdd() {
 }
 
 // populateRoleSelector fills a <select> element with the caller's
-// tenant roles, plus an "Everyone in the workspace" option that maps
-// to NULL role_id on the server. selectedID pre-selects a specific
-// role (pass null to leave the placeholder selected).
+// tenant roles. The tenant's default_role_id (the auto-managed
+// 'member' role) is rendered first as "Members (everyone)" since
+// every workspace user is implicitly assigned to it; scoping a
+// secret there is the way to share with everyone. selectedID
+// pre-selects a specific role (pass null to default to the member
+// role).
 async function populateRoleSelector(selectEl, selectedID) {
   if (!selectEl) return;
   const principals = await api("GET", "/principals");
-  // Reset to a known state (allow re-population on edit re-open).
   selectEl.innerHTML = "";
-  const everyone = document.createElement("option");
-  everyone.value = "";
-  everyone.textContent = "Everyone in the workspace";
-  selectEl.appendChild(everyone);
-  for (const role of principals.roles || []) {
+  const defaultID = principals.default_role_id || null;
+  const roles = principals.roles || [];
+  // Render the default-role option first with the friendlier label.
+  for (const role of roles) {
+    if (role.id === defaultID) {
+      const opt = document.createElement("option");
+      opt.value = role.id;
+      opt.textContent = `Members (everyone in the workspace)`;
+      selectEl.appendChild(opt);
+      break;
+    }
+  }
+  for (const role of roles) {
+    if (role.id === defaultID) continue;
     const opt = document.createElement("option");
     opt.value = role.id;
     opt.textContent = role.name;
     selectEl.appendChild(opt);
   }
-  if (selectedID === null || selectedID === undefined) {
-    selectEl.value = "";
-  } else {
+  if (selectedID) {
     selectEl.value = selectedID;
+  } else if (defaultID) {
+    selectEl.value = defaultID;
   }
 }
 
@@ -752,13 +761,12 @@ async function wireRoleEdit(currentRoleID) {
   let principalsCache = null;
 
   const renderLabel = async (roleID) => {
-    if (!roleID) {
-      display.textContent = "Everyone in the workspace";
-      return;
-    }
     if (!principalsCache) {
-      // Lazy fetch only if we need a friendly role name.
       try { principalsCache = await api("GET", "/principals"); } catch {}
+    }
+    if (roleID && roleID === principalsCache?.default_role_id) {
+      display.textContent = "Members (everyone in the workspace)";
+      return;
     }
     const name = (principalsCache?.roles || []).find((r) => r.id === roleID)?.name;
     display.textContent = name ? `Role: ${name}` : `Role: ${roleID}`;
@@ -780,7 +788,12 @@ async function wireRoleEdit(currentRoleID) {
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const next = select.value || null; // "" → null → tenant-wide
+    const next = select.value;
+    if (!next) {
+      status.textContent = "Pick a role.";
+      status.className = "error";
+      return;
+    }
     status.textContent = "Saving…";
     status.className = "";
     const put = () => api("PUT", `/entries/${VAULT.entryId}/role`, { role_id: next });

@@ -13,7 +13,10 @@ import (
 )
 
 // testTenantUser creates a throwaway tenant + user for an integration test.
-// The tenant is cleaned up via t.Cleanup (cascades wipe the user).
+// The tenant is cleaned up via t.Cleanup (cascades wipe the user). Also
+// seeds the tenant's default ('member') role to mirror what the OAuth
+// flow does at install time, so callers that depend on
+// tenants.default_role_id (e.g. vault scope tests) get a real id.
 func testTenantUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (tenantID, userID uuid.UUID) {
 	t.Helper()
 	teamID := "T_int_" + uuid.NewString()
@@ -25,6 +28,13 @@ func testTenantUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (tena
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
 	})
+	memberRole, err := GetOrCreateRole(ctx, pool, tenant.ID, RoleMember, "")
+	if err != nil {
+		t.Fatalf("creating member role: %v", err)
+	}
+	if err := SetDefaultRole(ctx, pool, tenant.ID, &memberRole.ID); err != nil {
+		t.Fatalf("setting default role: %v", err)
+	}
 	user, err := GetOrCreateUser(ctx, pool, tenant.ID, "U_"+uuid.NewString()[:8], "Int Tester", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)

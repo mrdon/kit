@@ -21,6 +21,9 @@ import (
 )
 
 // freshTenant creates a tenant + admin user and returns their IDs.
+// Also seeds the tenant's default ('member') role so vault tests that
+// scope to "everyone in tenant" can resolve a real role uuid — the
+// production OAuth path does this in slack/oauth.go.
 func freshTenant(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (tenantID, userID uuid.UUID) {
 	t.Helper()
 	teamID := "T_vault_" + uuid.NewString()
@@ -30,6 +33,13 @@ func freshTenant(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (tenantI
 		t.Fatalf("creating tenant: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
+	memberRole, err := models.GetOrCreateRole(ctx, pool, tenant.ID, models.RoleMember, "")
+	if err != nil {
+		t.Fatalf("creating member role: %v", err)
+	}
+	if err := models.SetDefaultRole(ctx, pool, tenant.ID, &memberRole.ID); err != nil {
+		t.Fatalf("setting default role: %v", err)
+	}
 	user, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_"+uuid.NewString()[:8], "Admin", "")
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
@@ -44,6 +54,18 @@ func adminCaller(tenantID, userID uuid.UUID) *services.Caller {
 		IsAdmin:  true,
 		Roles:    []string{"admin"},
 	}
+}
+
+// memberRoleID returns the tenant's default ('member') role uuid —
+// the canonical "everyone in tenant" target for vault-entry scoping.
+// Every tenant gets one created by migration 002_default_role.sql.
+func memberRoleID(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) uuid.UUID {
+	t.Helper()
+	tenant, err := models.GetTenantByID(ctx, pool, tenantID)
+	if err != nil || tenant == nil || tenant.DefaultRoleID == nil {
+		t.Fatalf("loading tenant default role: %v", err)
+	}
+	return *tenant.DefaultRoleID
 }
 
 // activeVaultMember inserts a vault_users row in the post-grant state
@@ -384,13 +406,14 @@ func TestPUTMassAssignmentIgnoresOwnerUserID(t *testing.T) {
 	owner := adminCaller(tenantID, ownerID)
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 
-	// Create an entry owned by ownerID. Scopes are required (no
-	// personal-only); use tenant-wide for the test fixture.
+	// Create an entry owned by ownerID, scoped to the tenant's member
+	// role (= everyone in the tenant).
+	memberID := memberRoleID(t, ctx, pool, tenantID)
 	id, err := svc.CreateEntry(ctx, owner, CreateEntryParams{
 		Title:           "test",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      make([]byte, 12),
-		// Tenant-wide visibility: leave RoleID nil.
+		RoleID:          &memberID,
 	}, svc.AuditFromRequest(owner, r))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -431,12 +454,13 @@ func TestCrossTenantIsolation(t *testing.T) {
 	callerA := adminCaller(tenantA, ownerA)
 	callerB := adminCaller(tenantB, ownerB)
 
-	// Create an entry in A scoped to tenant (so any A-member can see).
+	// Create an entry in A scoped to A's member role (any A-member can see).
+	memberA := memberRoleID(t, ctx, pool, tenantA)
 	idA, err := svc.CreateEntry(ctx, callerA, CreateEntryParams{
 		Title:           "tenant A only",
 		ValueCiphertext: []byte("ct"),
 		ValueNonce:      make([]byte, 12),
-		// Tenant-wide visibility: leave RoleID nil.
+		RoleID:          &memberA,
 	}, svc.AuditFromRequest(callerA, rA))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -517,6 +541,7 @@ func TestNonceUniquenessAcrossEntries(t *testing.T) {
 	owner := adminCaller(tenantID, ownerID)
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 
+	memberID := memberRoleID(t, ctx, pool, tenantID)
 	for i := range 10 {
 		nonce := make([]byte, 12)
 		// Use crypto/rand so each call is independent.
@@ -527,7 +552,7 @@ func TestNonceUniquenessAcrossEntries(t *testing.T) {
 			Title:           fmt.Sprintf("e%d", i),
 			ValueCiphertext: []byte("ct"),
 			ValueNonce:      nonce,
-			// Tenant-wide visibility: leave RoleID nil.
+			RoleID:          &memberID,
 		}, svc.AuditFromRequest(owner, r))
 		if err != nil {
 			t.Fatalf("create %d: %v", i, err)

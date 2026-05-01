@@ -329,21 +329,22 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePrincipals lists the caller's tenant roles + users so the web
-// scope selector can populate its dropdowns. Authenticated; returns
-// only the caller's own tenant. Display data only — no secrets, no
-// crypto state.
+// handlePrincipals lists the caller's tenant roles + the tenant's
+// default_role_id (the 'member' role that includes everyone). The web
+// dropdown labels the default role as "Members (everyone)" so the
+// scope-everyone affordance maps to a real UUID rather than NULL.
+// Authenticated; returns only the caller's own tenant.
 func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
-	roles, err := models.ListRoles(r.Context(), a.pool, caller.TenantID)
-	if err != nil {
-		slog.Error("vault: listing roles", "error", err)
+	tenant, err := models.GetTenantByID(r.Context(), a.pool, caller.TenantID)
+	if err != nil || tenant == nil {
+		slog.Error("vault: loading tenant", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	users, err := models.ListUsersByTenant(r.Context(), a.pool, caller.TenantID)
+	roles, err := models.ListRoles(r.Context(), a.pool, caller.TenantID)
 	if err != nil {
-		slog.Error("vault: listing users", "error", err)
+		slog.Error("vault: listing roles", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -352,32 +353,17 @@ func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
-	type userOut struct {
-		ID          string `json:"id"`
-		SlackUserID string `json:"slack_user_id"`
-		DisplayName string `json:"display_name,omitempty"`
-	}
-
 	roleList := make([]roleOut, 0, len(roles))
 	for _, role := range roles {
 		roleList = append(roleList, roleOut{ID: role.ID.String(), Name: role.Name})
 	}
-	userList := make([]userOut, 0, len(users))
-	for _, u := range users {
-		display := ""
-		if u.DisplayName != nil {
-			display = *u.DisplayName
-		}
-		userList = append(userList, userOut{
-			ID:          u.ID.String(),
-			SlackUserID: u.SlackUserID,
-			DisplayName: display,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"roles": roleList,
-		"users": userList,
-	})
+	}
+	if tenant.DefaultRoleID != nil {
+		out["default_role_id"] = tenant.DefaultRoleID.String()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleGetUser returns a teammate's pubkey + fingerprint for the grant page.
@@ -456,6 +442,10 @@ func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 	roleID, err := parseOptionalUUID(body.RoleID)
 	if err != nil {
 		http.Error(w, "bad role_id", http.StatusBadRequest)
+		return
+	}
+	if roleID == nil {
+		http.Error(w, "role_id required", http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
@@ -571,6 +561,10 @@ func (a *App) handleSetEntryRole(w http.ResponseWriter, r *http.Request) {
 	roleID, err := parseOptionalUUID(body.RoleID)
 	if err != nil {
 		http.Error(w, "bad role_id", http.StatusBadRequest)
+		return
+	}
+	if roleID == nil {
+		http.Error(w, "role_id required", http.StatusBadRequest)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
