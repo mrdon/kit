@@ -1069,9 +1069,15 @@ a { color: var(--link); }
   cursor: pointer;
   box-shadow: 0 6px 18px var(--shadow-card);
   z-index: 15;
-  touch-action: manipulation;
+  /* `none` (not `manipulation`) so the browser can't reclaim the
+     pointer for its own long-press gestures (text selection, context
+     menu, drag) — that was firing pointercancel mid-arm and killing
+     the long-press-to-record flow. */
+  touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
   user-select: none;
   display: flex;
   align-items: center;

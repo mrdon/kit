@@ -589,6 +589,16 @@ function QuickChatFab({
       // for plain tap-to-open behavior.
       return;
     }
+    // Capture the pointer so subsequent events (incl. pointerup) come
+    // to us regardless of where the user's finger has drifted, and so
+    // the browser doesn't later fire pointercancel to take over for
+    // its own long-press gestures (text selection, context menu).
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // older browsers — pointer events still flow, just without capture
+    }
+    e.preventDefault();
     armedThisPressRef.current = false;
     cancelArming();
     armTimerRef.current = window.setTimeout(() => {
@@ -598,7 +608,12 @@ function QuickChatFab({
     }, LONG_PRESS_MS);
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // fine — capture may not have been set
+    }
     if (recording) {
       // The long-press fired and we're now recording; finger release
       // does NOT stop. The user must tap again to stop.
@@ -611,11 +626,16 @@ function QuickChatFab({
     }
   };
 
-  const onPointerCancel = () => {
-    cancelArming();
-    // Don't stop a live recording on pointercancel — pointercancel
-    // fires on scroll/gesture takeover, and the user expects recording
-    // to keep running until they tap.
+  const onPointerCancel = (e: React.PointerEvent) => {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // fine
+    }
+    // pointercancel can fire even with pointer capture (e.g. an OS-level
+    // interruption like a system alert). Cancel arming so a stale timer
+    // doesn't surprise-record later, but don't kill an active recording.
+    if (!recording) cancelArming();
   };
 
   return (
@@ -632,6 +652,7 @@ function QuickChatFab({
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onContextMenu={(e) => e.preventDefault()}
       onClick={() => {
         // Click fires only when the browser doesn't synthesize pointer
         // events (very rare) or when recording isn't supported and
