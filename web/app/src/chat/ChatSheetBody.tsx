@@ -25,6 +25,9 @@ type Props = {
   // non-terminal tool (i.e. the agent did something). Any pointer
   // interaction on the sheet during the countdown cancels it.
   autoDismissOnAction?: boolean;
+  // Pre-captured audio handed to the composer to transcribe on open.
+  // Used by the quick-chat FAB's long-press flow.
+  seedAudioBlob?: Blob | null;
 };
 
 // DISMISS_HOLD_MS — how long to wait after an action-successful turn
@@ -48,6 +51,7 @@ export default function ChatSheetBody({
   onClose,
   onTurnDone,
   autoDismissOnAction,
+  seedAudioBlob,
 }: Props) {
   const [dismissing, setDismissing] = useState(false);
   const dismissTimerRef = useRef<number | null>(null);
@@ -133,6 +137,7 @@ export default function ChatSheetBody({
           busy={busy}
           onSubmit={send}
           placeholder={placeholder}
+          seedAudioBlob={seedAudioBlob}
         />
       </div>
     </div>

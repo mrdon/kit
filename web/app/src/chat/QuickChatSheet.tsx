@@ -9,6 +9,10 @@ type Props = {
   // Called when a turn completes so the parent can refresh the stack
   // (the agent may have captured a todo that surfaces in the next page).
   onTurnDone?: () => void;
+  // Optional pre-captured audio blob to transcribe on open. Used by
+  // the FAB's long-press-to-record flow: the FAB records while the
+  // sheet is closed, then opens the sheet and hands off the blob.
+  seedAudioBlob?: Blob | null;
 };
 
 /**
@@ -20,7 +24,7 @@ type Props = {
  * every turn, so multi-turn within one open attaches but a close+reopen
  * starts clean.
  */
-export default function QuickChatSheet({ onClose, onTurnDone }: Props) {
+export default function QuickChatSheet({ onClose, onTurnDone, seedAudioBlob }: Props) {
   // Fresh client session id per mount. useMemo[] is intentional — we
   // want one id for the lifetime of this sheet, regardless of re-renders.
   const clientSessionID = useMemo(() => crypto.randomUUID(), []);
@@ -35,6 +39,7 @@ export default function QuickChatSheet({ onClose, onTurnDone }: Props) {
       onClose={onClose}
       onTurnDone={onTurnDone}
       autoDismissOnAction
+      seedAudioBlob={seedAudioBlob}
     />
   );
 }

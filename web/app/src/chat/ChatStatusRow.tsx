@@ -6,6 +6,10 @@ type Props = {
   status: string;
   // True while a request is in flight; controls whether Stop is shown.
   inFlight: boolean;
+  // Running count of tool calls fired on this turn so far. Shown as a
+  // small "· N tools" suffix instead of a raw tool name — keeps the
+  // indicator non-technical and avoids flashing names for instant tools.
+  toolCount: number;
   onStop: () => void;
 };
 
@@ -18,14 +22,14 @@ type Props = {
  *     doesn't force transcript re-renders every tick
  *   - Stop button to abort the fetch
  */
-export default function ChatStatusRow({ status, inFlight, onStop }: Props) {
+export default function ChatStatusRow({ status, inFlight, toolCount, onStop }: Props) {
   const elapsed = useRafSeconds(inFlight);
   if (!inFlight && status !== 'error') return null;
 
   let label: string;
-  if (status === ChatStatus.Thinking || status === '') label = 'Thinking…';
-  else if (status === ChatStatus.Cancelled) label = 'Stopped.';
-  else label = describeTool(status);
+  if (status === ChatStatus.Cancelled) label = 'Stopped.';
+  else if (toolCount > 0) label = 'Working…';
+  else label = 'Thinking…';
 
   const showCounter = inFlight && elapsed >= 2;
 
@@ -39,6 +43,11 @@ export default function ChatStatusRow({ status, inFlight, onStop }: Props) {
         </span>
       )}
       <span className="chat-status-label">{label}</span>
+      {toolCount > 0 && (
+        <span className="chat-status-tools">
+          · {toolCount} tool {toolCount === 1 ? 'call' : 'calls'}
+        </span>
+      )}
       {showCounter && <span className="chat-status-elapsed">· {elapsed}s</span>}
       {inFlight && (
         <button type="button" className="chat-stop" onClick={onStop}>
@@ -47,12 +56,6 @@ export default function ChatStatusRow({ status, inFlight, onStop }: Props) {
       )}
     </div>
   );
-}
-
-function describeTool(name: string): string {
-  // The plan defers per-tool friendly labels. For now, format the raw
-  // tool name: "complete_todo" -> "Running complete_todo…".
-  return `Running ${name}…`;
 }
 
 // useRafSeconds returns integer seconds elapsed since `active` flipped

@@ -6,6 +6,11 @@ import type { StackAction, StackItem, StackResponse } from './types';
 import { itemKey } from './types';
 import CardChatSheet from './chat/CardChatSheet';
 import QuickChatSheet from './chat/QuickChatSheet';
+import {
+  isAudioCaptureSupported,
+  startAudioCapture,
+  type AudioCaptureSession,
+} from './chat/audioCapture';
 import SwipeCard, { type SwipeCardHandle } from './stack/SwipeCard';
 import { showToast } from './toast/bus';
 
@@ -42,6 +47,9 @@ export default function Stack() {
   const [progress, setProgress] = useState(0);
   const [chatItem, setChatItem] = useState<StackItem | null>(null);
   const [quickChatOpen, setQuickChatOpen] = useState(false);
+  // Audio captured by a long-press on the FAB. Handed to QuickChatSheet
+  // on open so its composer transcribes it into the textarea.
+  const [quickChatSeedBlob, setQuickChatSeedBlob] = useState<Blob | null>(null);
   const feedRef = useRef<HTMLElement | null>(null);
 
   // itemsRef mirrors items so onScroll can read the current list
@@ -395,7 +403,16 @@ export default function Stack() {
         </>
       )}
       <DegradedFooter degraded={degraded} />
-      <QuickChatFab onClick={() => setQuickChatOpen(true)} />
+      <QuickChatFab
+        onTap={() => {
+          setQuickChatSeedBlob(null);
+          setQuickChatOpen(true);
+        }}
+        onRecordingStop={(blob) => {
+          setQuickChatSeedBlob(blob);
+          setQuickChatOpen(true);
+        }}
+      />
       {chatItem && (
         <CardChatSheet
           sourceApp={chatItem.source_app}
@@ -413,9 +430,11 @@ export default function Stack() {
         <QuickChatSheet
           onClose={() => {
             setQuickChatOpen(false);
+            setQuickChatSeedBlob(null);
             load();
           }}
           onTurnDone={load}
+          seedAudioBlob={quickChatSeedBlob}
         />
       )}
     </main>
@@ -474,20 +493,154 @@ function Burst({ emoji }: { emoji: string }) {
   );
 }
 
-// Floating action button anchored bottom-right of the feed. Tap opens
-// the QuickChatSheet for fast capture (todos, decisions, notes) or a
-// quick question. Sits above the card swipe area and uses
-// touch-action: manipulation to keep taps snappy without stealing
-// horizontal drags from the top card.
-function QuickChatFab({ onClick }: { onClick: () => void }) {
+// LONG_PRESS_MS — how long the FAB must be held before it switches
+// from "open chat on release" to "arm voice recording". Long enough
+// that an accidental finger-rest doesn't start recording, short enough
+// that an intentional press feels responsive.
+const LONG_PRESS_MS = 600;
+
+// Floating action button anchored bottom-right of the feed.
+//   - Quick tap: opens QuickChatSheet for typed/mic capture.
+//   - Long press (held past LONG_PRESS_MS): arms and starts recording
+//     in place, FAB turns red. Releasing the finger keeps recording.
+//   - Tap while recording: stops, opens QuickChatSheet seeded with the
+//     captured audio blob so the composer transcribes it into the
+//     textarea.
+//
+// Audio capture is shared with the chat composer's mic via
+// audioCapture.ts so MIME selection and stream cleanup don't drift.
+function QuickChatFab({
+  onTap,
+  onRecordingStop,
+}: {
+  onTap: () => void;
+  onRecordingStop: (blob: Blob) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const sessionRef = useRef<AudioCaptureSession | null>(null);
+  const armTimerRef = useRef<number | null>(null);
+  // True once the long-press timer fires within a single press; lets
+  // pointerup distinguish "quick tap → open chat" from "long press →
+  // started recording, leave it running".
+  const armedThisPressRef = useRef(false);
+  const supported = isAudioCaptureSupported();
+
+  const cancelArming = () => {
+    if (armTimerRef.current !== null) {
+      window.clearTimeout(armTimerRef.current);
+      armTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      cancelArming();
+      sessionRef.current?.cancel();
+      sessionRef.current = null;
+    };
+  }, []);
+
+  const startRecording = async () => {
+    try {
+      sessionRef.current = await startAudioCapture();
+      setRecording(true);
+      // Brief haptic so the user knows recording started — they may
+      // already be lifting their finger by the time the timer fires.
+      try {
+        navigator.vibrate?.(30);
+      } catch {
+        // ignore — vibrate is best-effort
+      }
+    } catch {
+      // Permission denied or device unavailable. Fall back to opening
+      // the chat sheet so the user can type instead.
+      sessionRef.current = null;
+      onTap();
+    }
+  };
+
+  const stopRecordingAndOpen = async () => {
+    const session = sessionRef.current;
+    sessionRef.current = null;
+    setRecording(false);
+    if (!session) {
+      onTap();
+      return;
+    }
+    const blob = await session.stop();
+    if (blob.size === 0) {
+      // Too brief to capture anything; open empty so the user can try
+      // again with the in-sheet mic.
+      onTap();
+      return;
+    }
+    onRecordingStop(blob);
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (recording) {
+      // Tap-to-stop: a fresh press while recording stops and opens.
+      e.preventDefault();
+      void stopRecordingAndOpen();
+      return;
+    }
+    if (!supported) {
+      // No MediaRecorder support — fall through to the click handler
+      // for plain tap-to-open behavior.
+      return;
+    }
+    armedThisPressRef.current = false;
+    cancelArming();
+    armTimerRef.current = window.setTimeout(() => {
+      armTimerRef.current = null;
+      armedThisPressRef.current = true;
+      void startRecording();
+    }, LONG_PRESS_MS);
+  };
+
+  const onPointerUp = () => {
+    if (recording) {
+      // The long-press fired and we're now recording; finger release
+      // does NOT stop. The user must tap again to stop.
+      return;
+    }
+    if (armTimerRef.current !== null) {
+      // Released before arming threshold → quick tap, open chat.
+      cancelArming();
+      if (!armedThisPressRef.current) onTap();
+    }
+  };
+
+  const onPointerCancel = () => {
+    cancelArming();
+    // Don't stop a live recording on pointercancel — pointercancel
+    // fires on scroll/gesture takeover, and the user expects recording
+    // to keep running until they tap.
+  };
+
   return (
     <button
       type="button"
-      className="quick-chat-fab"
-      aria-label="Quick chat"
-      onClick={onClick}
+      className={`quick-chat-fab${recording ? ' recording' : ''}`}
+      aria-label={
+        recording
+          ? 'Tap to stop recording'
+          : supported
+            ? 'Quick chat (hold to record)'
+            : 'Quick chat'
+      }
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onClick={() => {
+        // Click fires only when the browser doesn't synthesize pointer
+        // events (very rare) or when recording isn't supported and
+        // pointerdown is a no-op. In the supported path, onTap is
+        // already triggered via pointerup.
+        if (!supported && !recording) onTap();
+      }}
     >
-      +
+      {recording ? '●' : '+'}
     </button>
   );
 }

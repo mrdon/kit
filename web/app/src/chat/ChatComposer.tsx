@@ -11,6 +11,11 @@ type Props = {
   // Override for the textarea placeholder. Falls back to the voice-aware
   // default when omitted.
   placeholder?: string;
+  // When set, the composer immediately runs transcription on this blob
+  // (skipping the recording phase) and fills the textarea with the
+  // result. Used by the quick-chat FAB, which captures audio while the
+  // sheet is closed and hands the blob to the composer on open.
+  seedAudioBlob?: Blob | null;
 };
 
 /**
@@ -27,7 +32,7 @@ type Props = {
  * If MediaRecorder/getUserMedia aren't available the mic is hidden and
  * the UI remains fully usable for typing.
  */
-export default function ChatComposer({ transcribeUrl, busy, onSubmit, placeholder }: Props) {
+export default function ChatComposer({ transcribeUrl, busy, onSubmit, placeholder, seedAudioBlob }: Props) {
   const [text, setText] = useState('');
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const recorder = useVoiceRecorder(transcribeUrl);
@@ -39,6 +44,20 @@ export default function ChatComposer({ transcribeUrl, busy, onSubmit, placeholde
   useEffect(() => {
     taRef.current?.focus();
   }, []);
+
+  // When the FAB hands us a pre-captured audio blob, transcribe it on
+  // mount. Guarded with a ref so a re-render with the same blob doesn't
+  // re-trigger transcription.
+  const seedHandledRef = useRef<Blob | null>(null);
+  useEffect(() => {
+    if (!seedAudioBlob || seedHandledRef.current === seedAudioBlob) return;
+    seedHandledRef.current = seedAudioBlob;
+    preRecordRef.current = '';
+    void recorder.transcribeBlob(seedAudioBlob).then((finalText) => {
+      if (finalText) setText(finalText);
+      taRef.current?.focus();
+    });
+  }, [seedAudioBlob, recorder]);
 
   // Auto-grow the textarea to fit its content up to CSS max-height.
   // Reset to auto first so shrinking works too.

@@ -27,10 +27,20 @@ export default function ChatTranscript({ turns, onStop, onRetry }: Props) {
       {turns.map((t) => (
         <div key={t.key} className="chat-turn">
           <div className="chat-bubble chat-bubble-user">{t.userText}</div>
-          <ChatStatusRow status={t.status} inFlight={t.inFlight} onStop={onStop} />
+          <ChatStatusRow
+            status={t.status}
+            inFlight={t.inFlight}
+            toolCount={t.toolCount}
+            onStop={onStop}
+          />
           {t.response && (
             <div className="chat-bubble chat-bubble-assistant markdown">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.response}</ReactMarkdown>
+            </div>
+          )}
+          {!t.inFlight && t.toolCount > 0 && t.response && (
+            <div className="chat-tool-count" aria-label={`${t.toolCount} tool ${t.toolCount === 1 ? 'call' : 'calls'}`}>
+              {t.toolCount} tool {t.toolCount === 1 ? 'call' : 'calls'}
             </div>
           )}
           {t.errorMessage && (

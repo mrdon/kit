@@ -17,6 +17,12 @@ export type ChatTurn = {
   status: string;
   // When true, a request is in flight and Stop should be shown.
   inFlight: boolean;
+  // Count of tool calls fired during this turn (incl. terminal reply
+  // tools like reply_in_thread). Surfaced as a small badge alongside
+  // the assistant bubble so the user has a persistent indicator that
+  // the agent did something — the per-tool status flashes too briefly
+  // to register on instant tools.
+  toolCount: number;
   // On transport/server error, the message text so the UI can show retry.
   errorMessage?: string;
 };
@@ -113,8 +119,14 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
             case ChatEvent.Tool: {
               const d = parseEventData(frame.data) as { name?: string };
               if (d.name) {
-                updateTurn(turnKey, { status: d.name });
                 if (!TERMINAL_TOOLS.has(d.name)) actionTaken = true;
+                setTurns((ts) =>
+                  ts.map((t) =>
+                    t.key === turnKey
+                      ? { ...t, status: d.name ?? t.status, toolCount: t.toolCount + 1 }
+                      : t,
+                  ),
+                );
               }
               break;
             }
@@ -166,7 +178,14 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
       const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setTurns((ts) => [
         ...ts,
-        { key, userText, response: '', status: ChatStatus.Thinking, inFlight: true },
+        {
+          key,
+          userText,
+          response: '',
+          status: ChatStatus.Thinking,
+          inFlight: true,
+          toolCount: 0,
+        },
       ]);
       runExecute(key, userText);
     },
@@ -186,6 +205,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
         status: ChatStatus.Thinking,
         errorMessage: undefined,
         response: '',
+        toolCount: 0,
       });
       runExecute(turnKey, t.userText);
     },
