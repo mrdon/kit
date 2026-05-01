@@ -158,10 +158,10 @@ func main() {
 	integrations.Configure(enc, cfg.BaseURL, sessionSecret)
 	email.Configure(enc)
 	// Wire the todo app's resolution-suggester deps: the LLM for the
-	// Haiku suggester, the TaskService for spawning tasks when the user
+	// Haiku suggester, the JobService for spawning jobs when the user
 	// taps a resolution chip, and the encryptor for decrypting the
 	// tenant bot token at DM-open time.
-	todo.Configure(builderLLM, svc.Tasks, enc)
+	todo.Configure(builderLLM, svc.Jobs, enc)
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
@@ -208,9 +208,9 @@ func main() {
 	cards.ConfigureChat(app.Agent, enc, transcriber)
 
 	// Coordination needs builderLLM, the Messenger from app, the CardService
-	// (for surfacing decision cards), and the TaskService (for shepherd
-	// tasks). Wired here because Messenger lives on app.
-	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Tasks)
+	// (for surfacing decision cards), and the JobService (for shepherd
+	// jobs). Wired here because Messenger lives on app.
+	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Jobs)
 
 	// Voting only needs the CardService — the participant ask is the
 	// decision card itself, no Slack DMs go out.
@@ -233,7 +233,7 @@ func main() {
 	// immediate Slack DM in addition to the swipe-stack landing.
 	cards.ConfigurePushNotifier(newCardsPushNotifier(pool, app.Messenger))
 
-	// Task scheduler
+	// Job scheduler
 	sched := scheduler.New(pool, enc, app.Agent)
 
 	// Gated-tool wiring (§11 of decision-cards-as-gated-tool-calls plan).

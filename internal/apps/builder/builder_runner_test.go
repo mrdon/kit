@@ -1,5 +1,5 @@
 // Package builder: builder_runner_test.go exercises the scheduler bridge
-// end-to-end: given a task_type='builder_script' row with next_run_at in
+// end-to-end: given a job_type='builder_script' row with next_run_at in
 // the past, running one scheduler tick must claim the row, call the
 // builder runner's Run, mutate app_items, write a script_runs audit row
 // tagged triggered_by='schedule', and advance next_run_at past now().
@@ -46,9 +46,9 @@ def beat():
 
 	// Push next_run_at into the past so our simulated tick claims it.
 	if _, err := f.pool.Exec(ctx, `
-		UPDATE tasks SET next_run_at = now() - interval '1 minute'
-		WHERE tenant_id = $1 AND task_type = $2
-	`, f.tenant.ID, models.TaskTypeBuilderScript); err != nil {
+		UPDATE jobs SET next_run_at = now() - interval '1 minute'
+		WHERE tenant_id = $1 AND job_type = $2
+	`, f.tenant.ID, models.JobTypeBuilderScript); err != nil {
 		t.Fatalf("backdate next_run_at: %v", err)
 	}
 
@@ -83,27 +83,27 @@ def beat():
 		t.Errorf("triggered_by = %q, want %q", triggeredBy, TriggerSchedule)
 	}
 
-	// next_run_at advanced past now(), and the task is back to status='active'
+	// next_run_at advanced past now(), and the job is back to status='active'
 	// so the next tick can pick it up again.
 	var nextRunAt time.Time
 	var status string
 	if err := f.pool.QueryRow(ctx, `
-		SELECT next_run_at, status FROM tasks
-		WHERE tenant_id = $1 AND task_type = $2
-	`, f.tenant.ID, models.TaskTypeBuilderScript).Scan(&nextRunAt, &status); err != nil {
-		t.Fatalf("query task: %v", err)
+		SELECT next_run_at, status FROM jobs
+		WHERE tenant_id = $1 AND job_type = $2
+	`, f.tenant.ID, models.JobTypeBuilderScript).Scan(&nextRunAt, &status); err != nil {
+		t.Fatalf("query job: %v", err)
 	}
 	if !nextRunAt.After(time.Now()) {
 		t.Errorf("next_run_at = %v, want after now", nextRunAt)
 	}
-	if status != string(models.TaskStatusActive) {
+	if status != string(models.JobStatusActive) {
 		t.Errorf("status = %q, want active", status)
 	}
 }
 
 // TestBuilderRunner_DemotedAdmin verifies the claim-time admin check.
 // Unassigning the creator's admin role between schedule time and tick
-// time must deactivate the builder_script task row and skip execution.
+// time must deactivate the builder_script job row and skip execution.
 func TestBuilderRunner_DemotedAdmin(t *testing.T) {
 	f := newScriptFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -122,9 +122,9 @@ func TestBuilderRunner_DemotedAdmin(t *testing.T) {
 		t.Fatalf("schedule: %v", err)
 	}
 	if _, err := f.pool.Exec(ctx, `
-		UPDATE tasks SET next_run_at = now() - interval '1 minute'
-		WHERE tenant_id = $1 AND task_type = $2
-	`, f.tenant.ID, models.TaskTypeBuilderScript); err != nil {
+		UPDATE jobs SET next_run_at = now() - interval '1 minute'
+		WHERE tenant_id = $1 AND job_type = $2
+	`, f.tenant.ID, models.JobTypeBuilderScript); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 
@@ -145,20 +145,20 @@ func TestBuilderRunner_DemotedAdmin(t *testing.T) {
 		t.Errorf("pings written despite demotion: %d rows", itemCount)
 	}
 
-	// Task row marked inactive.
+	// Job row marked inactive.
 	var status string
 	if err := f.pool.QueryRow(ctx, `
-		SELECT status FROM tasks WHERE tenant_id = $1 AND task_type = $2
-	`, f.tenant.ID, models.TaskTypeBuilderScript).Scan(&status); err != nil {
-		t.Fatalf("query task: %v", err)
+		SELECT status FROM jobs WHERE tenant_id = $1 AND job_type = $2
+	`, f.tenant.ID, models.JobTypeBuilderScript).Scan(&status); err != nil {
+		t.Fatalf("query job: %v", err)
 	}
-	if status != string(models.TaskStatusInactive) {
+	if status != string(models.JobStatusInactive) {
 		t.Errorf("status = %q, want inactive", status)
 	}
 }
 
 // TestBuilderRunner_NoRunnerSkipsWork confirms the scheduler returns the
-// claimed task to 'active' when no runner is registered. This matters for
+// claimed job to 'active' when no runner is registered. This matters for
 // the bootstrap window during a rolling deploy where the new binary has
 // started but the builder's Init hasn't wired the hook yet.
 func TestBuilderRunner_NoRunnerSkipsWork(t *testing.T) {
@@ -179,17 +179,17 @@ func TestBuilderRunner_NoRunnerSkipsWork(t *testing.T) {
 
 	// Push into the past, but DO NOT register a runner.
 	if _, err := f.pool.Exec(ctx, `
-		UPDATE tasks SET next_run_at = now() - interval '1 minute'
-		WHERE tenant_id = $1 AND task_type = $2
-	`, f.tenant.ID, models.TaskTypeBuilderScript); err != nil {
+		UPDATE jobs SET next_run_at = now() - interval '1 minute'
+		WHERE tenant_id = $1 AND job_type = $2
+	`, f.tenant.ID, models.JobTypeBuilderScript); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 
-	scheduler.ClearTaskRunnerForTest(string(models.TaskTypeBuilderScript))
+	scheduler.ClearJobRunnerForTest(string(models.JobTypeBuilderScript))
 	s := scheduler.New(f.pool, nil, nil)
 	// scheduler.New re-registers agent+builtin runners but we only want
 	// to prove the claim loop handles a missing builder runner gracefully.
-	scheduler.ClearTaskRunnerForTest(string(models.TaskTypeBuilderScript))
+	scheduler.ClearJobRunnerForTest(string(models.JobTypeBuilderScript))
 	s.ProcessDueTasksForTenantForTest(ctx, f.tenant.ID)
 
 	// No script_runs row should exist for this tenant.
@@ -198,13 +198,13 @@ func TestBuilderRunner_NoRunnerSkipsWork(t *testing.T) {
 	if runCount != 0 {
 		t.Errorf("script_runs = %d, want 0 (no runner)", runCount)
 	}
-	// The claimed task should have been returned to active status for a
+	// The claimed job should have been returned to active status for a
 	// retry once the runner is wired (not wedged in running).
 	var status string
 	_ = f.pool.QueryRow(ctx, `
-		SELECT status FROM tasks WHERE tenant_id = $1 AND task_type = $2
-	`, f.tenant.ID, models.TaskTypeBuilderScript).Scan(&status)
-	if status != string(models.TaskStatusActive) {
+		SELECT status FROM jobs WHERE tenant_id = $1 AND job_type = $2
+	`, f.tenant.ID, models.JobTypeBuilderScript).Scan(&status)
+	if status != string(models.JobStatusActive) {
 		t.Errorf("status = %q, want active (returned to claimable)", status)
 	}
 }
@@ -219,8 +219,8 @@ func runOneSchedulerTick(t *testing.T, ctx context.Context, f *scriptFixture, ru
 
 	// Register the runner globally for this tick. Restore afterward so
 	// parallel tests don't cross-contaminate.
-	scheduler.RegisterTaskRunner(runner)
-	t.Cleanup(func() { scheduler.ClearTaskRunnerForTest(string(models.TaskTypeBuilderScript)) })
+	scheduler.RegisterJobRunner(runner)
+	t.Cleanup(func() { scheduler.ClearJobRunnerForTest(string(models.JobTypeBuilderScript)) })
 
 	s := scheduler.New(f.pool, nil, nil)
 	s.ProcessDueTasksForTenantForTest(ctx, f.tenant.ID)

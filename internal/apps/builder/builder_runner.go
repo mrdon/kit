@@ -1,6 +1,6 @@
-// Package builder: builder_runner.go is the TaskRunner implementation for
-// task_type='builder_script'. The unified scheduler claim loop (see
-// internal/scheduler/scheduler.go + runner.go) hands us a claimed tasks
+// Package builder: builder_runner.go is the JobRunner implementation for
+// job_type='builder_script'. The unified scheduler claim loop (see
+// internal/scheduler/scheduler.go + runner.go) hands us a claimed jobs
 // row whose config JSONB carries {"script_id","fn_name"}; we resolve the
 // owning app, re-check the creator's admin status (demoted admins have
 // their schedules deactivated rather than running under stale privilege),
@@ -13,7 +13,7 @@
 //     scheduler at all.
 //   - Tests can construct a builderRunner directly with a stub deps
 //     bundle to exercise the full run flow without going through the
-//     process-global scheduler.RegisterTaskRunner path.
+//     process-global scheduler.RegisterJobRunner path.
 package builder
 
 import (
@@ -35,7 +35,7 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// builderRunner implements scheduler.TaskRunner for task_type='builder_script'.
+// builderRunner implements scheduler.JobRunner for job_type='builder_script'.
 // It holds the same scriptRunDeps that the manual app_run_script handler uses,
 // so a scheduled run sees identical engine behaviour — a scheduled tick
 // is literally "someone invoking app_run_script on your behalf."
@@ -44,64 +44,64 @@ type builderRunner struct {
 	deps *scriptRunDeps
 }
 
-// WireTaskRunners installs the builder's TaskRunner into the scheduler.
+// WireJobRunners installs the builder's JobRunner into the scheduler.
 // Idempotent — calling twice just replaces the previous registration.
 // Passing a nil pool/deps clears the registration so the scheduler stops
 // claiming builder_script rows (useful in tests).
-func WireTaskRunners(pool *pgxpool.Pool, deps *scriptRunDeps) {
+func WireJobRunners(pool *pgxpool.Pool, deps *scriptRunDeps) {
 	if pool == nil || deps == nil || deps.Engine == nil {
-		scheduler.ClearTaskRunnerForTest(string(models.TaskTypeBuilderScript))
+		scheduler.ClearJobRunnerForTest(string(models.JobTypeBuilderScript))
 		return
 	}
-	scheduler.RegisterTaskRunner(&builderRunner{pool: pool, deps: deps})
+	scheduler.RegisterJobRunner(&builderRunner{pool: pool, deps: deps})
 }
 
-func (r *builderRunner) TaskType() string {
-	return string(models.TaskTypeBuilderScript)
+func (r *builderRunner) JobType() string {
+	return string(models.JobTypeBuilderScript)
 }
 
 // Run is the entry point the scheduler calls for each claimed
-// task_type='builder_script' row. Re-checks the creator's admin status,
+// job_type='builder_script' row. Re-checks the creator's admin status,
 // resolves the script, invokes the same keystone as app_run_script, and
 // advances next_run_at from the cron expression.
-func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
+func (r *builderRunner) Run(ctx context.Context, job *models.Job) error {
 	if r.deps == nil || r.deps.Engine == nil {
 		return errors.New("builder runner: engine not wired")
 	}
 
-	scriptID, fnName, err := parseBuilderScriptTaskConfig(task)
+	scriptID, fnName, err := parseBuilderScriptTaskConfig(job)
 	if err != nil {
-		slog.Error("builder_script task has malformed config — deactivating",
-			"task_id", task.ID, "error", err)
-		r.deactivate(ctx, task, "malformed config")
+		slog.Error("builder_script job has malformed config — deactivating",
+			"job_id", job.ID, "error", err)
+		r.deactivate(ctx, job, "malformed config")
 		return nil
 	}
 
 	// Re-check creator admin status at claim time. Demoted admins have
 	// their schedules deactivated — we don't want a paused admin's
 	// script to keep running forever.
-	user, err := models.GetUserByID(ctx, r.pool, task.TenantID, task.CreatedBy)
+	user, err := models.GetUserByID(ctx, r.pool, job.TenantID, job.CreatedBy)
 	if err != nil {
-		slog.Error("loading builder_script creator", "task_id", task.ID, "error", err)
-		r.advanceNextRun(ctx, task)
+		slog.Error("loading builder_script creator", "job_id", job.ID, "error", err)
+		r.advanceNextRun(ctx, job)
 		return nil
 	}
 	if user == nil {
 		slog.Warn("builder_script creator no longer exists — deactivating",
-			"task_id", task.ID, "creator_id", task.CreatedBy)
-		r.deactivate(ctx, task, "creator no longer exists")
+			"job_id", job.ID, "creator_id", job.CreatedBy)
+		r.deactivate(ctx, job, "creator no longer exists")
 		return nil
 	}
-	roles, err := models.GetUserRoleNames(ctx, r.pool, task.TenantID, user.ID, nil)
+	roles, err := models.GetUserRoleNames(ctx, r.pool, job.TenantID, user.ID, nil)
 	if err != nil {
-		slog.Error("loading builder_script creator roles", "task_id", task.ID, "error", err)
-		r.advanceNextRun(ctx, task)
+		slog.Error("loading builder_script creator roles", "job_id", job.ID, "error", err)
+		r.advanceNextRun(ctx, job)
 		return nil
 	}
 	if !slices.Contains(roles, models.RoleAdmin) {
 		slog.Warn("builder_script creator is no longer admin — deactivating",
-			"task_id", task.ID, "creator_id", task.CreatedBy)
-		r.deactivate(ctx, task, "creator no longer admin")
+			"job_id", job.ID, "creator_id", job.CreatedBy)
+		r.deactivate(ctx, job, "creator no longer admin")
 		return nil
 	}
 
@@ -114,16 +114,16 @@ func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 		FROM scripts s
 		JOIN builder_apps ba ON ba.id = s.builder_app_id
 		WHERE s.tenant_id = $1 AND s.id = $2
-	`, task.TenantID, scriptID).Scan(&builderAppID, &appName, &scriptName)
+	`, job.TenantID, scriptID).Scan(&builderAppID, &appName, &scriptName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("builder_script task references missing script — deactivating",
-				"task_id", task.ID, "script_id", scriptID)
-			r.deactivate(ctx, task, "script no longer exists")
+			slog.Warn("builder_script job references missing script — deactivating",
+				"job_id", job.ID, "script_id", scriptID)
+			r.deactivate(ctx, job, "script no longer exists")
 			return nil
 		}
-		slog.Error("loading script for scheduled run", "task_id", task.ID, "error", err)
-		r.advanceNextRun(ctx, task)
+		slog.Error("loading script for scheduled run", "job_id", job.ID, "error", err)
+		r.advanceNextRun(ctx, job)
 		return fmt.Errorf("loading script: %w", err)
 	}
 
@@ -133,7 +133,7 @@ func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 	}
 
 	caller := &services.Caller{
-		TenantID: task.TenantID,
+		TenantID: job.TenantID,
 		UserID:   user.ID,
 		Roles:    roles,
 		IsAdmin:  true, // already re-checked above via roles
@@ -146,37 +146,37 @@ func (r *builderRunner) Run(ctx context.Context, task *models.Task) error {
 	// after the run completes so the row exists to UPDATE.
 	resp, runErr := invokeRunScript(ctx, r.pool, caller, r.deps, appName, scriptName, fnName, map[string]any{}, nil)
 	if runErr != nil {
-		slog.Error("builder_script run failed", "task_id", task.ID, "error", runErr)
+		slog.Error("builder_script run failed", "job_id", job.ID, "error", runErr)
 	}
 	if resp != nil {
 		_, upErr := r.pool.Exec(ctx, `
 			UPDATE script_runs
 			SET triggered_by = $1
 			WHERE tenant_id = $2 AND id = $3
-		`, TriggerSchedule, task.TenantID, resp.RunID)
+		`, TriggerSchedule, job.TenantID, resp.RunID)
 		if upErr != nil {
 			slog.Warn("tagging script_run as scheduled", "run_id", resp.RunID, "error", upErr)
 		}
 	}
 
-	r.advanceNextRun(ctx, task)
+	r.advanceNextRun(ctx, job)
 	return nil
 }
 
 // parseBuilderScriptTaskConfig extracts (script_id, fn_name) from a
-// task.Config JSONB payload. The app_schedule_script meta-tool writes this
+// job.Config JSONB payload. The app_schedule_script meta-tool writes this
 // exact shape; a parse error means the row was tampered with (not a
 // pre-existing row left by an older binary, since this column was added
-// in the same migration that introduced task_type='builder_script').
-func parseBuilderScriptTaskConfig(task *models.Task) (uuid.UUID, string, error) {
-	if len(task.Config) == 0 {
+// in the same migration that introduced job_type='builder_script').
+func parseBuilderScriptTaskConfig(job *models.Job) (uuid.UUID, string, error) {
+	if len(job.Config) == 0 {
 		return uuid.Nil, "", errors.New("config is empty")
 	}
 	var cfg struct {
 		ScriptID string `json:"script_id"`
 		FnName   string `json:"fn_name"`
 	}
-	if err := json.Unmarshal(task.Config, &cfg); err != nil {
+	if err := json.Unmarshal(job.Config, &cfg); err != nil {
 		return uuid.Nil, "", fmt.Errorf("parsing config: %w", err)
 	}
 	id, err := uuid.Parse(cfg.ScriptID)
@@ -189,53 +189,53 @@ func parseBuilderScriptTaskConfig(task *models.Task) (uuid.UUID, string, error) 
 	return id, cfg.FnName, nil
 }
 
-// advanceNextRun computes the next cron tick and flips the task back to
+// advanceNextRun computes the next cron tick and flips the job back to
 // status='active' so the scheduler picks it up again. A bad cron (data
 // corruption, since we validated at app_schedule_script time) deactivates
 // the row rather than looping forever.
-func (r *builderRunner) advanceNextRun(ctx context.Context, task *models.Task) {
-	loc, err := time.LoadLocation(task.Timezone)
+func (r *builderRunner) advanceNextRun(ctx context.Context, job *models.Job) {
+	loc, err := time.LoadLocation(job.Timezone)
 	if err != nil {
 		slog.Error("builder_script bad timezone — deactivating",
-			"task_id", task.ID, "timezone", task.Timezone, "error", err)
-		r.deactivate(ctx, task, "invalid timezone")
+			"job_id", job.ID, "timezone", job.Timezone, "error", err)
+		r.deactivate(ctx, job, "invalid timezone")
 		return
 	}
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	sched, err := parser.Parse(task.CronExpr)
+	sched, err := parser.Parse(job.CronExpr)
 	if err != nil {
 		slog.Error("builder_script bad cron — deactivating",
-			"task_id", task.ID, "cron", task.CronExpr, "error", err)
-		r.deactivate(ctx, task, "invalid cron")
+			"job_id", job.ID, "cron", job.CronExpr, "error", err)
+		r.deactivate(ctx, job, "invalid cron")
 		return
 	}
 	nextRun := sched.Next(time.Now().In(loc)).UTC()
 
 	_, err = r.pool.Exec(ctx, `
-		UPDATE tasks
+		UPDATE jobs
 		SET status = $3, next_run_at = $4, last_run_at = now()
 		WHERE tenant_id = $1 AND id = $2
-	`, task.TenantID, task.ID, models.TaskStatusActive, nextRun)
+	`, job.TenantID, job.ID, models.JobStatusActive, nextRun)
 	if err != nil {
-		slog.Error("updating builder_script next_run_at", "task_id", task.ID, "error", err)
+		slog.Error("updating builder_script next_run_at", "job_id", job.ID, "error", err)
 	}
 }
 
-// deactivate flips a task_type='builder_script' row to status='inactive'.
+// deactivate flips a job_type='builder_script' row to status='inactive'.
 // The row survives (admins see it in app_list_schedules with active=false)
 // so they can understand what was paused and why. The reason is logged,
 // not persisted — a last_error column could surface it in v0.2.
-func (r *builderRunner) deactivate(ctx context.Context, task *models.Task, reason string) {
+func (r *builderRunner) deactivate(ctx context.Context, job *models.Job, reason string) {
 	_, err := r.pool.Exec(ctx, `
-		UPDATE tasks
+		UPDATE jobs
 		SET status = $3
 		WHERE tenant_id = $1 AND id = $2
-	`, task.TenantID, task.ID, models.TaskStatusInactive)
+	`, job.TenantID, job.ID, models.JobStatusInactive)
 	if err != nil {
-		slog.Error("deactivating builder_script task", "task_id", task.ID, "error", err)
+		slog.Error("deactivating builder_script job", "job_id", job.ID, "error", err)
 		return
 	}
-	slog.Info("builder_script task deactivated", "task_id", task.ID, "reason", reason)
+	slog.Info("builder_script job deactivated", "job_id", job.ID, "reason", reason)
 }
 
 // builderRunnerForTest exposes the runner constructor for integration

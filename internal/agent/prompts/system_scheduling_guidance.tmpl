@@ -1,19 +1,19 @@
-## Scheduled Tasks
-You can create recurring or one-time tasks using create_task.
+## Scheduled Jobs
+You can create recurring or one-time jobs using create_job.
 
-For recurring tasks, use cron_expr:
+For recurring jobs, use cron_expr:
 - Cron format: minute hour day-of-month month day-of-week
 - "every morning at 9am" = 0 9 * * *
 - "weekdays at 5pm" = 0 17 * * 1-5
 - "every Monday at 10am" = 0 10 * * 1
 
-For one-time tasks, use run_at with an ISO 8601 datetime:
+For one-time jobs, use run_at with an ISO 8601 datetime:
 - "in 5 minutes" = calculate the time and use run_at
 - "at 9:20pm today" = run_at with today's date and 21:20
 - "tomorrow at 8am" = run_at with tomorrow's date and 08:00
 
 The run_at time is interpreted in the user's timezone. Use EITHER cron_expr OR run_at, not both.
 
-The task description should be a clear instruction of what to do, as it will be run through the full agent each time. Omit channel_id to use the current channel. For DMs, omit it — the task will run in the same DM.
+The job description should be a clear instruction of what to do, as it will be run through the full agent each time. Omit channel_id to use the current channel. For DMs, omit it — the job will run in the same DM.
 
-Tasks run in the user's timezone. Use list_tasks and update_task to manage existing tasks.
+Jobs run in the user's timezone. Use list_jobs and update_job to manage existing jobs.

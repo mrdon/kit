@@ -1,6 +1,6 @@
 // Package builder: meta_schedules.go implements the three schedule-CRUD
 // meta-tools admins use to hook a script function onto a cron expression.
-// Schedules live on the generic `tasks` table as task_type='builder_script'
+// Schedules live on the generic `jobs` table as job_type='builder_script'
 // rows; the scheduler's unified claim loop dispatches them through
 // builder_runner.go. This file only owns the DB shape + validation so
 // schedule mistakes (bad cron, unknown script) are caught at admin time,
@@ -184,7 +184,7 @@ func handleListSchedules(ec *execContextLike, input json.RawMessage) (string, er
 }
 
 // parseScheduleCron validates a cron expression using the same 5-field
-// parser the tasks table uses (so app_schedule_script ↔ CreateTask stay
+// parser the jobs table uses (so app_schedule_script ↔ CreateJob stay
 // consistent). Returns a cron.Schedule the caller can use to compute
 // next_run_at.
 func parseScheduleCron(expr, tz string) (cron.Schedule, *time.Location, error) {
@@ -210,13 +210,13 @@ func parseScheduleCron(expr, tz string) (cron.Schedule, *time.Location, error) {
 }
 
 // scheduleDescription is the human-readable label we persist in
-// tasks.description for a builder_script row. Kept short so it fits in
+// jobs.description for a builder_script row. Kept short so it fits in
 // log lines without blowing up the output.
 func scheduleDescription(appName, scriptName, fn string) string {
 	return fmt.Sprintf("builder: %s/%s.%s", appName, scriptName, fn)
 }
 
-// scheduleScript inserts (or revives) a task_type='builder_script' row.
+// scheduleScript inserts (or revives) a job_type='builder_script' row.
 // The flow:
 //
 //  1. Resolve (tenant, app, script) to script.ID.
@@ -259,14 +259,14 @@ func scheduleScript(
 	var existingActive bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS(
-			SELECT 1 FROM tasks
+			SELECT 1 FROM jobs
 			WHERE tenant_id = $1
-			  AND task_type = $2
+			  AND job_type = $2
 			  AND status = $3
 			  AND config->>'script_id' = $4
 			  AND config->>'fn_name'   = $5
 		)
-	`, caller.TenantID, models.TaskTypeBuilderScript, models.TaskStatusActive,
+	`, caller.TenantID, models.JobTypeBuilderScript, models.JobStatusActive,
 		script.ID.String(), fn).Scan(&existingActive)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("checking existing schedule: %w", err)
@@ -330,7 +330,7 @@ func unscheduleScript(
 	return nil
 }
 
-// listSchedules returns all builder_script tasks for a tenant, optionally
+// listSchedules returns all builder_script jobs for a tenant, optionally
 // filtered by builder app. Orders by (app, script, fn) so output is
 // stable across calls.
 func listSchedules(
@@ -347,12 +347,12 @@ func listSchedules(
 		SELECT t.id, ba.name, s.name, t.config->>'fn_name',
 		       t.cron_expr, t.timezone, t.next_run_at,
 		       (t.status = $2) AS active
-		FROM tasks t
+		FROM jobs t
 		JOIN scripts s       ON s.id  = (t.config->>'script_id')::uuid
 		                       AND s.tenant_id = t.tenant_id
 		JOIN builder_apps ba ON ba.id = s.builder_app_id
 		                       AND ba.tenant_id = t.tenant_id
-		WHERE t.tenant_id = $1 AND t.task_type = $3
+		WHERE t.tenant_id = $1 AND t.job_type = $3
 	`
 
 	var (
@@ -362,7 +362,7 @@ func listSchedules(
 	if appName == "" {
 		rows, err = pool.Query(ctx, baseSQL+`
 			ORDER BY ba.name, s.name, t.config->>'fn_name'
-		`, caller.TenantID, models.TaskStatusActive, models.TaskTypeBuilderScript)
+		`, caller.TenantID, models.JobStatusActive, models.JobTypeBuilderScript)
 	} else {
 		app, ferr := loadBuilderAppByName(ctx, pool, caller.TenantID, appName)
 		if ferr != nil {
@@ -371,7 +371,7 @@ func listSchedules(
 		rows, err = pool.Query(ctx, baseSQL+`
 			  AND s.builder_app_id = $4
 			ORDER BY ba.name, s.name, t.config->>'fn_name'
-		`, caller.TenantID, models.TaskStatusActive, models.TaskTypeBuilderScript, app.ID)
+		`, caller.TenantID, models.JobStatusActive, models.JobTypeBuilderScript, app.ID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("listing schedules: %w", err)

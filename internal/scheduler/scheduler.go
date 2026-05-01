@@ -36,7 +36,7 @@ func RegisterPeriodicSweep(s PeriodicSweep) {
 	periodicSweeps = append(periodicSweeps, s)
 }
 
-// Scheduler runs due tasks and syncs user profiles on a schedule.
+// Scheduler runs due jobs and syncs user profiles on a schedule.
 type Scheduler struct {
 	pool   *pgxpool.Pool
 	enc    *crypto.Encryptor
@@ -53,12 +53,12 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 	// wraps Scheduler methods, so s must exist before registration.
 	// Idempotent: repeat constructions in tests replace the runner
 	// pointers but preserve the map keys.
-	RegisterTaskRunner(&agentRunner{s: s})
-	RegisterTaskRunner(&builtinRunner{s: s})
+	RegisterJobRunner(&agentRunner{s: s})
+	RegisterJobRunner(&builtinRunner{s: s})
 	return s
 }
 
-// Kick wakes the task loop immediately instead of waiting for the next
+// Kick wakes the job loop immediately instead of waiting for the next
 // poll tick. Used by decision-resolution so a resumed workflow advances
 // within a second of the user tapping, not up to 60s later. Non-blocking
 // — concurrent kicks coalesce into a single extra claim cycle.
@@ -69,22 +69,22 @@ func (s *Scheduler) Kick() {
 	}
 }
 
-// Start launches the task runner. Builtin tasks (like profile sync) are ensured
-// on startup and run via the same task loop as user-created tasks.
+// Start launches the job runner. Builtin jobs (like profile sync) are ensured
+// on startup and run via the same job loop as user-created jobs.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.ensureBuiltinTasks(ctx)
-	// Tasks left in 'running' by a previous crash get reclaimed. Use a
+	// Jobs left in 'running' by a previous crash get reclaimed. Use a
 	// generous cutoff so we don't race a sibling scheduler that is still
-	// running the task in a rolling-deploy window.
+	// running the job in a rolling-deploy window.
 	if n, err := models.RecoverStuckTasks(ctx, s.pool, 15*time.Minute); err != nil {
-		slog.Warn("recovering stuck tasks", "error", err)
+		slog.Warn("recovering stuck jobs", "error", err)
 	} else if n > 0 {
-		slog.Info("recovered stuck tasks", "count", n)
+		slog.Info("recovered stuck jobs", "count", n)
 	}
-	go s.runTaskLoop(ctx)
+	go s.runJobLoop(ctx)
 }
 
-func (s *Scheduler) runTaskLoop(ctx context.Context) {
+func (s *Scheduler) runJobLoop(ctx context.Context) {
 	const pollInterval = 60 * time.Second
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -114,7 +114,7 @@ func (s *Scheduler) runTaskLoop(ctx context.Context) {
 
 // runPeriodicSweeps invokes every registered periodic sweep, logging
 // errors and continuing. Isolated from processDueTasks so a sweep
-// failure can't poison task execution. Called once per tick.
+// failure can't poison job execution. Called once per tick.
 func (s *Scheduler) runPeriodicSweeps(ctx context.Context) {
 	periodicSweepsMu.Lock()
 	sweeps := append([]PeriodicSweep(nil), periodicSweeps...)
@@ -149,42 +149,42 @@ func (s *Scheduler) ProcessDueTasksForTenantForTest(ctx context.Context, tenantI
 func (s *Scheduler) processDueTasks(ctx context.Context) {
 	// ClaimDueTasks atomically flips status to 'running' under SKIP LOCKED,
 	// so concurrent schedulers (e.g. during a rolling deploy) never run the
-	// same task twice.
-	tasks, err := models.ClaimDueTasks(ctx, s.pool, maxConcurrentTasks*2)
+	// same job twice.
+	jobs, err := models.ClaimDueTasks(ctx, s.pool, maxConcurrentTasks*2)
 	if err != nil {
-		slog.Error("claiming due tasks", "error", err)
+		slog.Error("claiming due jobs", "error", err)
 		return
 	}
-	s.fanOutClaimed(ctx, tasks)
+	s.fanOutClaimed(ctx, jobs)
 }
 
 // processDueTasksForTenant is the tenant-scoped claim variant used by
 // tests. Production code always calls processDueTasks.
 func (s *Scheduler) processDueTasksForTenant(ctx context.Context, tenantID uuid.UUID) {
-	tasks, err := models.ClaimDueTasksForTenant(ctx, s.pool, tenantID, maxConcurrentTasks*2)
+	jobs, err := models.ClaimDueTasksForTenant(ctx, s.pool, tenantID, maxConcurrentTasks*2)
 	if err != nil {
-		slog.Error("claiming due tasks for tenant", "error", err)
+		slog.Error("claiming due jobs for tenant", "error", err)
 		return
 	}
-	s.fanOutClaimed(ctx, tasks)
+	s.fanOutClaimed(ctx, jobs)
 }
 
-// fanOutClaimed dispatches each claimed task through the runner registry,
+// fanOutClaimed dispatches each claimed job through the runner registry,
 // bounded by maxConcurrentTasks.
-func (s *Scheduler) fanOutClaimed(ctx context.Context, tasks []models.Task) {
-	if len(tasks) == 0 {
+func (s *Scheduler) fanOutClaimed(ctx context.Context, jobs []models.Job) {
+	if len(jobs) == 0 {
 		return
 	}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxConcurrentTasks)
-	for i := range tasks {
+	for i := range jobs {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(t models.Task) {
+		go func(t models.Job) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			s.dispatchTask(ctx, &t)
-		}(tasks[i])
+		}(jobs[i])
 	}
 	wg.Wait()
 }

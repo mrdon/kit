@@ -207,9 +207,9 @@ func TestGetApp_WithInventory(t *testing.T) {
 		t.Fatalf("update current_rev: %v", err)
 	}
 	if _, err := f.pool.Exec(ctx, `
-		INSERT INTO tasks (
+		INSERT INTO jobs (
 			id, tenant_id, created_by, description, cron_expr, timezone, channel_id,
-			task_type, status, next_run_at, config
+			job_type, status, next_run_at, config
 		) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'UTC', '',
 		          'builder_script', 'active', now() + interval '1 hour',
 		          jsonb_build_object('script_id', $5::text, 'fn_name', $6::text))

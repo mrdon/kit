@@ -1,18 +1,18 @@
 ---
-name: creating-tasks
-description: "How to create a scheduled task: picking cron_expr vs run_at, timezone handling, scope and channel_id, writing a description the scheduled agent can execute, and designing the optional `policy` block (allow-list, force-gate, pinned args) so the agent cannot go off-script. Use whenever creating, editing, or advising on a task."
+name: creating-jobs
+description: "How to create a scheduled job: picking cron_expr vs run_at, timezone handling, scope and channel_id, writing a description the scheduled agent can execute, and designing the optional `policy` block (allow-list, force-gate, pinned args) so the agent cannot go off-script. Use whenever creating, editing, or advising on a job."
 ---
 
-# Creating Tasks
+# Creating Jobs
 
-Read this before calling `create_task` (or advising on one). A scheduled task is **a prompt that fires without you in the loop** — you won't see the conversation, so the description must stand on its own and any safety rails must be structural, not persuasive.
+Read this before calling `create_job` (or advising on one). A scheduled job is **a prompt that fires without you in the loop** — you won't see the conversation, so the description must stand on its own and any safety rails must be structural, not persuasive.
 
 ## The two moving parts
 
-Every `create_task` call has two independent concerns. Get both right:
+Every `create_job` call has two independent concerns. Get both right:
 
 1. **The description** — the prompt the scheduled agent runs. Plain text. Be concrete about data sources, name tools explicitly, specify output shape. The agent has no conversation context when this fires.
-2. **The policy** (optional) — a capability manifest the registry enforces. Use when the task touches outbound channels, has a sensitive argument (which channel, which recipient), or needs to stay inside a narrow toolset. **Prompts can be ignored; policies cannot.**
+2. **The policy** (optional) — a capability manifest the registry enforces. Use when the job touches outbound channels, has a sensitive argument (which channel, which recipient), or needs to stay inside a narrow toolset. **Prompts can be ignored; policies cannot.**
 
 ## Schedule
 
@@ -25,17 +25,17 @@ Timezone resolution order: user's profile → Slack user profile → tenant → 
 
 ## Scope
 
-Who can see and run the task:
+Who can see and run the job:
 
-- `"user"` (default) — personal to the caller. Tasks show up in their `list_tasks` only.
+- `"user"` (default) — personal to the caller. Jobs show up in their `list_jobs` only.
 - `"tenant"` — visible tenant-wide. **Admin only.**
 - A role name (e.g. `"founders"`) — visible to members of that role. Caller must hold the role or be admin.
 
-Scope also controls what the task's agent can read from todos, decisions, memories, etc. at fire time — the agent runs with the creator's identity, so it sees only what the creator sees.
+Scope also controls what the job's agent can read from todos, decisions, memories, etc. at fire time — the agent runs with the creator's identity, so it sees only what the creator sees.
 
 ## channel_id
 
-Where the task's agent posts by default if its description says "post" without naming a channel. For tasks using `post_to_channel` explicitly with a pinned argument, `channel_id` can be omitted.
+Where the job's agent posts by default if its description says "post" without naming a channel. For tasks using `post_to_channel` explicitly with a pinned argument, `channel_id` can be omitted.
 
 ## Writing the description
 
@@ -46,7 +46,7 @@ The description is the prompt at fire time. Write it like briefing a teammate wi
 - **Specify shape.** "4–8 bullet points, Slack mrkdwn, no headers."
 - **Guardrails.** "Do not include ticket numbers." "If no todos are open, post nothing."
 
-**Don't rely on the description for safety.** If the task must not post to the wrong channel, that goes in the policy — not in the description. LLMs can and will skip "require approval" instructions on a bad run.
+**Don't rely on the description for safety.** If the job must not post to the wrong channel, that goes in the policy — not in the description. LLMs can and will skip "require approval" instructions on a bad run.
 
 ## The policy block
 
@@ -74,7 +74,7 @@ Infrastructure tools always allowed regardless: `load_skill`, `load_skill_file`,
 
 ### force_gate
 
-Tool names that always route through an approval card at fire time, even if the agent omitted `require_approval: true`. The approval card is identical to the one the agent could have requested voluntarily — same chat-revise, same approve/skip. The difference: **the task creator guarantees the gate, not the LLM.**
+Tool names that always route through an approval card at fire time, even if the agent omitted `require_approval: true`. The approval card is identical to the one the agent could have requested voluntarily — same chat-revise, same approve/skip. The difference: **the job creator guarantees the gate, not the LLM.**
 
 Reach for this whenever a silent post would be bad: public-channel announcements, customer-facing DMs, any content whose phrasing the creator wants to preview.
 
@@ -126,7 +126,7 @@ Rationale: allow-list shrinks the surface to just the read tools + one terminal;
 }
 ```
 
-Rationale: `allowed_tools: []` means only infrastructure runs — no posts, no side effects. The agent's "final message" lives in the task's session log for manual review via `get_session_events`.
+Rationale: `allowed_tools: []` means only infrastructure runs — no posts, no side effects. The agent's "final message" lives in the job's session log for manual review via `get_session_events`.
 
 ### Single-recipient nag
 
@@ -145,13 +145,13 @@ Rationale: no `force_gate` (the creator is OK with the DM going out automaticall
 
 ## Testing
 
-- **`run_task` with `dry_run: true`** — runs the agent end-to-end without real side effects. Use after creating a task to verify the description produces sensible tool calls.
-- **Private test channel first** — if the task posts, point it at a channel only you see, run it once with `run_task`, verify the approval card / message, then point it at production.
+- **`run_job` with `dry_run: true`** — runs the agent end-to-end without real side effects. Use after creating a job to verify the description produces sensible tool calls.
+- **Private test channel first** — if the job posts, point it at a channel only you see, run it once with `run_job`, verify the approval card / message, then point it at production.
 - **Tighten iteratively** — if the agent skips the pinned channel or calls an unlisted tool, watch the `policy_enforced` events in `get_session_events` to confirm enforcement fired.
 
 ## Gotchas
 
-- **Policies don't elevate privileges.** A policy can't grant access to a tool the creator couldn't already call. A non-admin listing an admin-only tool in `allowed_tools` errors at `create_task`.
-- **Pinned args are frozen into pending cards.** If you edit a task's policy (via `update_task`) while a gate card is pending, the card still carries the *old* pinned value — the user already saw and approved that shape. Next firing uses the new policy.
+- **Policies don't elevate privileges.** A policy can't grant access to a tool the creator couldn't already call. A non-admin listing an admin-only tool in `allowed_tools` errors at `create_job`.
+- **Pinned args are frozen into pending cards.** If you edit a job's policy (via `update_job`) while a gate card is pending, the card still carries the *old* pinned value — the user already saw and approved that shape. Next firing uses the new policy.
 - **Empty description = no-op safeguard.** A task with a description the agent can't meaningfully act on will spin, error, and eventually DM you the failure. Prefer specifying a graceful "do nothing" terminal ("if X is empty, end without posting").
-- **`update_task` replaces the policy wholesale.** A non-nil `policy` argument overwrites all three fields. To tweak one, read the current policy via `list_tasks` and re-send the full shape.
+- **`update_job` replaces the policy wholesale.** A non-nil `policy` argument overwrites all three fields. To tweak one, read the current policy via `list_jobs` and re-send the full shape.

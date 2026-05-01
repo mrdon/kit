@@ -270,17 +270,17 @@ func flipCardToResolvingTx(
 func completeResolvingCardTx(
 	ctx context.Context, tx pgx.Tx,
 	tenantID, cardID uuid.UUID,
-	toolResult string, taskID *uuid.UUID,
+	toolResult string, jobID *uuid.UUID,
 ) error {
 	now := time.Now()
 	if _, err := tx.Exec(ctx, `
 		UPDATE app_card_decisions
 		SET resolved_tool_result = $1,
 		    resolved_at          = $2,
-		    resolved_task_id     = $3,
+		    resolved_job_id     = $3,
 		    resolving_deadline   = NULL
 		WHERE tenant_id = $4 AND card_id = $5`,
-		nilIfEmpty(toolResult), now, taskID, tenantID, cardID,
+		nilIfEmpty(toolResult), now, jobID, tenantID, cardID,
 	); err != nil {
 		return fmt.Errorf("writing resolved fields: %w", err)
 	}
@@ -421,8 +421,8 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 		SELECT
 			c.id, c.tenant_id, c.kind, c.title, c.body, c.state,
 			c.created_at, c.updated_at,
-			d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id,
-			d.origin_task_id, d.origin_session_id,
+			d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_job_id,
+			d.origin_job_id, d.origin_session_id,
 			d.is_gate_artifact, d.resolve_token
 		FROM app_cards c
 		JOIN app_card_decisions d ON d.card_id = c.id AND d.tenant_id = c.tenant_id
@@ -447,7 +447,7 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 	}
 	c.Decision = &DecisionData{
 		Priority:        priority,
-		OriginTaskID:    originTaskID,
+		OriginJobID:     originTaskID,
 		OriginSessionID: originSessionID,
 		IsGateArtifact:  isGateArtifact,
 		ResolveToken:    resolveToken,
@@ -476,12 +476,12 @@ func beginResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.
 
 // finishResolveDecision writes the resolved_option_id, optional task link,
 // and flips state to resolved. Runs inside the caller's tx.
-func finishResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID, resolvedBy uuid.UUID, optionID string, taskID *uuid.UUID) error {
+func finishResolveDecision(ctx context.Context, tx pgx.Tx, tenantID, cardID, resolvedBy uuid.UUID, optionID string, jobID *uuid.UUID) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE app_card_decisions
-		SET resolved_option_id = $1, resolved_task_id = $2
+		SET resolved_option_id = $1, resolved_job_id = $2
 		WHERE tenant_id = $3 AND card_id = $4`,
-		optionID, taskID, tenantID, cardID,
+		optionID, jobID, tenantID, cardID,
 	); err != nil {
 		return fmt.Errorf("writing resolved decision fields: %w", err)
 	}

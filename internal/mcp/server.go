@@ -93,7 +93,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler, llm *anthropic.Client) []mcpserver.ServerTool {
 	type handlerFn func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
 	// Uniform shim so every handler can be invoked with the same arg set,
-	// regardless of whether it uses llm. Special-cased groups (TaskTools)
+	// regardless of whether it uses llm. Special-cased groups (JobTools)
 	// register their handler directly below.
 	wrap := func(h handlerFn) func(string, *pgxpool.Pool, *services.Services, *anthropic.Client) mcpserver.ToolHandlerFunc {
 		return func(name string, pool *pgxpool.Pool, svc *services.Services, _ *anthropic.Client) mcpserver.ToolHandlerFunc {
@@ -108,7 +108,7 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 		{services.RuleTools, wrap(ruleMCPHandler)},
 		{services.MemoryTools, wrap(memoryMCPHandler)},
 		{services.RoleTools, wrap(roleMCPHandler)},
-		{services.TaskTools, taskMCPHandler},
+		{services.JobTools, jobMCPHandler},
 		{services.TenantTools, wrap(tenantMCPHandler)},
 		{services.UserTools, wrap(userMCPHandler)},
 		{services.SessionTools, wrap(sessionMCPHandler)},
@@ -184,7 +184,7 @@ func collectToolVisibility() (adminOnly map[string]bool, roleGated map[string][]
 	roleGated = map[string][]string{}
 	groups := [][]services.ToolMeta{
 		services.SkillTools, services.RuleTools, services.MemoryTools,
-		services.RoleTools, services.TaskTools, services.TenantTools,
+		services.RoleTools, services.JobTools, services.TenantTools,
 		services.UserTools, services.SessionTools,
 	}
 	record := func(m services.ToolMeta) {

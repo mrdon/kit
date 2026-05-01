@@ -230,13 +230,13 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 }
 
 // acceptResolution turns a tapped resolution chip into a run-once or
-// recurring task. The task posts its output to the caller's DM, mirroring
+// recurring job. The job posts its output to the caller's DM, mirroring
 // how card decisions resolve. Removes the accepted chip from the stored
 // array and returns the patched item so the client drops the chip
 // without refetching.
 func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Caller, todoID uuid.UUID, resolutionID string) (*shared.ActionResult, error) {
 	if p.app.taskSvc == nil || p.app.enc == nil {
-		return nil, errors.New("todo app not fully configured (missing task service or encryptor)")
+		return nil, errors.New("todo app not fully configured (missing job service or encryptor)")
 	}
 
 	todo, _, err := p.app.svc.Get(ctx, caller, todoID)
@@ -274,7 +274,7 @@ func (p *cardProvider) acceptResolution(ctx context.Context, caller *services.Ca
 		in.CronExpr = chosen.Cron
 	}
 	if _, err := p.app.taskSvc.Create(ctx, caller, in); err != nil {
-		return nil, fmt.Errorf("creating task: %w", err)
+		return nil, fmt.Errorf("creating job: %w", err)
 	}
 
 	if err := removeTodoResolution(ctx, p.app.svc.pool, caller.TenantID, todoID, resolutionID); err != nil {

@@ -307,7 +307,7 @@ func deleteScript(
 	if err = pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM tasks
 		WHERE tenant_id = $1
-		  AND task_type = 'builder_script'
+		  AND job_type = 'builder_script'
 		  AND status = 'active'
 		  AND (config->>'script_id')::uuid = $2
 	`, caller.TenantID, scriptID).Scan(&scheduleCount); err != nil {

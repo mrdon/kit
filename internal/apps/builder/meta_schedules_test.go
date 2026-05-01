@@ -69,8 +69,8 @@ func TestScheduleScript_HappyPath(t *testing.T) {
 		createdBy uuid.UUID
 	)
 	if err := f.pool.QueryRow(ctx, `
-		SELECT COUNT(*)::int FROM tasks
-		WHERE tenant_id = $1 AND task_type = 'builder_script' AND status = 'active'
+		SELECT COUNT(*)::int FROM jobs
+		WHERE tenant_id = $1 AND job_type = 'builder_script' AND status = 'active'
 	`, f.tenant.ID).Scan(&rowCount); err != nil {
 		t.Fatalf("count row: %v", err)
 	}
@@ -78,8 +78,8 @@ func TestScheduleScript_HappyPath(t *testing.T) {
 		t.Errorf("row count = %d, want 1", rowCount)
 	}
 	if err := f.pool.QueryRow(ctx, `
-		SELECT created_by FROM tasks
-		WHERE tenant_id = $1 AND task_type = 'builder_script' AND status = 'active'
+		SELECT created_by FROM jobs
+		WHERE tenant_id = $1 AND job_type = 'builder_script' AND status = 'active'
 	`, f.tenant.ID).Scan(&createdBy); err != nil {
 		t.Fatalf("fetch created_by: %v", err)
 	}
@@ -111,8 +111,8 @@ func TestScheduleScript_InvalidCron(t *testing.T) {
 	// No row should have been inserted.
 	var n int
 	_ = f.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM tasks
-		WHERE tenant_id = $1 AND task_type = 'builder_script'
+		SELECT COUNT(*) FROM jobs
+		WHERE tenant_id = $1 AND job_type = 'builder_script'
 	`, f.tenant.ID).Scan(&n)
 	if n != 0 {
 		t.Errorf("row leaked despite parse error: %d rows", n)
@@ -144,8 +144,8 @@ func TestScheduleScript_SubHourlyRejected(t *testing.T) {
 
 	var n int
 	_ = f.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM tasks
-		WHERE tenant_id = $1 AND task_type = 'builder_script'
+		SELECT COUNT(*) FROM jobs
+		WHERE tenant_id = $1 AND job_type = 'builder_script'
 	`, f.tenant.ID).Scan(&n)
 	if n != 0 {
 		t.Errorf("row leaked despite sub-hourly rejection: %d rows", n)
@@ -284,8 +284,8 @@ func TestUnscheduleScript_FlipsActive(t *testing.T) {
 
 	var status string
 	if err := f.pool.QueryRow(ctx, `
-		SELECT status FROM tasks
-		WHERE tenant_id = $1 AND task_type = 'builder_script'
+		SELECT status FROM jobs
+		WHERE tenant_id = $1 AND job_type = 'builder_script'
 	`, f.tenant.ID).Scan(&status); err != nil {
 		t.Fatalf("query: %v", err)
 	}

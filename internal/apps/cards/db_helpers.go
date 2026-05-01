@@ -15,8 +15,8 @@ const baseCardQuery = `
 SELECT
 	c.id, c.tenant_id, c.kind, c.title, c.body, c.state,
 	c.terminal_at, c.terminal_by, c.created_at, c.updated_at,
-	d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_task_id,
-	d.origin_task_id, d.origin_session_id,
+	d.priority, d.recommended_option_id, d.resolved_option_id, d.resolved_job_id,
+	d.origin_job_id, d.origin_session_id,
 	d.is_gate_artifact, d.resolved_tool_result, d.resolved_at,
 	d.resolving_deadline, d.resolve_token, d.last_error,
 	b.severity
@@ -59,8 +59,8 @@ func scanCardRow(row pgx.Row) (*Card, error) {
 		if resolvedOptionID != nil {
 			d.ResolvedOptionID = *resolvedOptionID
 		}
-		d.ResolvedTaskID = resolvedTaskID
-		d.OriginTaskID = originTaskID
+		d.ResolvedJobID = resolvedTaskID
+		d.OriginJobID = originTaskID
 		d.OriginSessionID = originSessionID
 		if isGateArtifact != nil {
 			d.IsGateArtifact = *isGateArtifact

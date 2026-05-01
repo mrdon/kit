@@ -10,12 +10,12 @@ import (
 )
 
 // classifyTaskModelSystem is the fixed system prompt for the one-shot
-// Haiku pass that decides which tier a scheduled task runs under. The
+// Haiku pass that decides which tier a scheduled job runs under. The
 // prompt gives examples from both poles so Haiku has concrete anchors
 // instead of classifying from the criteria alone.
-const classifyTaskModelSystem = `You are classifying a scheduled-task prompt for a work assistant. The user's prompt will run unattended on a cron. Decide which model tier should execute it and respond with exactly one lowercase word: ` + "`haiku`" + ` or ` + "`sonnet`" + `. No punctuation, no explanation.
+const classifyTaskModelSystem = `You are classifying a scheduled-job prompt for a work assistant. The user's prompt will run unattended on a cron. Decide which model tier should execute it and respond with exactly one lowercase word: ` + "`haiku`" + ` or ` + "`sonnet`" + `. No punctuation, no explanation.
 
-Return ` + "`sonnet`" + ` when the task involves nuanced judgment, personalized writing, creative drafting, multi-step reasoning over unstructured content, or matching a human's voice. Examples:
+Return ` + "`sonnet`" + ` when the job involves nuanced judgment, personalized writing, creative drafting, multi-step reasoning over unstructured content, or matching a human's voice. Examples:
 - "Every morning review my open todos and draft a reply for anything I could start."
 - "Summarize customer feedback from Slack and propose three changes worth making."
 - "Read my inbox and write personalised follow-ups for anything that looks like a warm lead."
@@ -27,17 +27,17 @@ Return ` + "`haiku`" + ` for reminders, lookups, summaries with no judgment call
 
 When in doubt, choose ` + "`haiku`" + ` — it's cheaper and fine for most schedules.`
 
-// ClassifyTaskModel runs one Haiku call against the task description and
-// returns the chosen tier name (models.TaskModelHaiku or
-// models.TaskModelSonnet). A nil client, API error, or unparseable reply
-// all fall back to Haiku — classification failure must never block task
+// ClassifyTaskModel runs one Haiku call against the job description and
+// returns the chosen tier name (models.JobModelHaiku or
+// models.JobModelSonnet). A nil client, API error, or unparseable reply
+// all fall back to Haiku — classification failure must never block job
 // creation.
 func ClassifyTaskModel(ctx context.Context, llm *anthropic.Client, description string) string {
 	if llm == nil || strings.TrimSpace(description) == "" {
-		return models.TaskModelHaiku
+		return models.JobModelHaiku
 	}
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     models.ModelIDFor(models.TaskModelHaiku),
+		Model:     models.ModelIDFor(models.JobModelHaiku),
 		MaxTokens: 8,
 		System: []anthropic.SystemBlock{{
 			Type: "text",
@@ -52,16 +52,16 @@ func ClassifyTaskModel(ctx context.Context, llm *anthropic.Client, description s
 		}},
 	})
 	if err != nil {
-		slog.Warn("classify task model failed, defaulting to haiku", "error", err)
-		return models.TaskModelHaiku
+		slog.Warn("classify job model failed, defaulting to haiku", "error", err)
+		return models.JobModelHaiku
 	}
 	raw := strings.ToLower(strings.TrimSpace(resp.TextContent()))
 	raw = strings.Trim(raw, ".,;:!?\"'` \t\n")
-	if raw == models.TaskModelSonnet {
-		slog.Info("task classified as sonnet", "description_preview", previewDescription(description))
-		return models.TaskModelSonnet
+	if raw == models.JobModelSonnet {
+		slog.Info("job classified as sonnet", "description_preview", previewDescription(description))
+		return models.JobModelSonnet
 	}
-	return models.TaskModelHaiku
+	return models.JobModelHaiku
 }
 
 func previewDescription(s string) string {

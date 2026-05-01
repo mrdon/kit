@@ -14,14 +14,14 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// TaskContext provides metadata when the agent is running a scheduled task.
-type TaskContext struct {
+// JobContext provides metadata when the agent is running a scheduled job.
+type JobContext struct {
 	ID            uuid.UUID
 	Description   string
 	AuthorSlackID string
 	AuthorName    string
 
-	// Policy, when non-nil, is the task's capability manifest. The agent
+	// Policy, when non-nil, is the job's capability manifest. The agent
 	// copies it onto the ExecContext at build time so the registry
 	// enforces allow-list / force-gate / pinned_args on every tool call
 	// in this run. Nil means "no restrictions" — today's behaviour.
@@ -30,7 +30,7 @@ type TaskContext struct {
 
 // BuildSystemPrompt assembles the system prompt from platform rules, tenant info,
 // user context, matching rules, skill catalog, and relevant memories.
-func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, user *models.User, taskCtx *TaskContext) string {
+func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, user *models.User, taskCtx *JobContext) string {
 	parts := []string{
 		mustRender("system_platform_identity.tmpl", map[string]any{"TenantName": tenant.Name}),
 		mustRender("system_slack_output.tmpl", nil),
@@ -75,7 +75,7 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.T
 	}
 	parts = append(parts, services.BuildKnowledgeContext(ctx, pool, caller, tenant))
 
-	// Task scheduling guidance (Slack-specific)
+	// Job scheduling guidance (Slack-specific)
 	parts = append(parts, mustRender("system_scheduling_guidance.tmpl", nil))
 
 	// App system prompts
@@ -83,7 +83,7 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.T
 		parts = append(parts, appPrompts)
 	}
 
-	// Scheduled task context
+	// Scheduled job context
 	if taskCtx != nil {
 		parts = append(parts, mustRender("system_task_execution.tmpl", map[string]any{
 			"Description":   taskCtx.Description,

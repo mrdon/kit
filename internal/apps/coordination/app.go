@@ -59,7 +59,7 @@ type CoordinationApp struct {
 	llm     *anthropic.Client
 	msg     *messenger.Default
 	cards   *cards.CardService
-	taskSvc *services.TaskService
+	taskSvc *services.JobService
 	svc     *Service
 	engine  *Engine
 }
@@ -69,7 +69,7 @@ type CoordinationApp struct {
 // inbound DMs from active participants route to coordination — has to
 // happen here (not in Init) because msg is set by Configure but Init
 // may have already run with msg == nil.
-func Configure(llm *anthropic.Client, msg *messenger.Default, cardSvc *cards.CardService, taskSvc *services.TaskService) {
+func Configure(llm *anthropic.Client, msg *messenger.Default, cardSvc *cards.CardService, taskSvc *services.JobService) {
 	if instance == nil {
 		return
 	}

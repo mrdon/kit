@@ -45,7 +45,7 @@ const (
 	FnAddTodoComment   = "add_todo_comment"
 	FnCreateDecision   = "create_decision"
 	FnCreateBriefing   = "create_briefing"
-	FnCreateTask       = "create_task"
+	FnCreateJob        = "create_job"
 	FnAddMemory        = "add_memory"
 	FnSendSlackMessage = "send_slack_message"
 	FnPostToChannel    = "post_to_channel"
@@ -188,7 +188,7 @@ func BuildActionBuiltins(
 			return dispatchCreateDecision(ctx, a, deps, call)
 		case FnCreateBriefing:
 			return dispatchCreateBriefing(ctx, a, deps, call)
-		case FnCreateTask:
+		case FnCreateJob:
 			return dispatchCreateTask(ctx, a, deps, call)
 		case FnAddMemory:
 			return dispatchAddMemory(ctx, a, deps, call)
@@ -210,7 +210,7 @@ func BuildActionBuiltins(
 		FnAddTodoComment:   {"todo_id", "content"},
 		FnCreateDecision:   {"title", "body", "options", "priority", "role_scopes"},
 		FnCreateBriefing:   {"title", "body", "severity", "role_scopes"},
-		FnCreateTask:       {"description", "cron", "timezone", "channel", "run_once"},
+		FnCreateJob:        {"description", "cron", "timezone", "channel", "run_once"},
 		FnAddMemory:        {"content", "scope_type", "scope_value"},
 		FnSendSlackMessage: {"channel", "text", "thread_ts"},
 		FnPostToChannel:    {"channel", "text", "thread_ts"},
@@ -225,7 +225,7 @@ func BuildActionBuiltins(
 		runtime.Func(FnCompleteTodo, params[FnCompleteTodo]...),
 		runtime.Func(FnCreateBriefing, params[FnCreateBriefing]...),
 		runtime.Func(FnCreateDecision, params[FnCreateDecision]...),
-		runtime.Func(FnCreateTask, params[FnCreateTask]...),
+		runtime.Func(FnCreateJob, params[FnCreateJob]...),
 		runtime.Func(FnCreateTodo, params[FnCreateTodo]...),
 		runtime.Func(FnDMUser, params[FnDMUser]...),
 		runtime.Func(FnFindUser, params[FnFindUser]...),

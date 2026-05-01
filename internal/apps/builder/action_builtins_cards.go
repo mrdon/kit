@@ -1,5 +1,5 @@
 // Package builder: action_builtins_cards.go dispatches create_decision /
-// create_briefing into CardService, and create_task into TaskService.
+// create_briefing into CardService, and create_task into JobService.
 //
 // The tool schema the LLM sees uses "context" as the decision body field;
 // for scripts we normalise to "body" across both decision and briefing
@@ -122,9 +122,9 @@ func dispatchCreateBriefing(ctx context.Context, a *ActionBuiltins, deps *action
 }
 
 // dispatchCreateTask handles create_task(description, cron,
-// timezone="UTC", channel=None, run_once=False) → task dict.
+// timezone="UTC", channel=None, run_once=False) → job dict.
 //
-// For v0.1 the Phase-3 signature exposes one-shot tasks via run_once=True
+// For v0.1 the Phase-3 signature exposes one-shot jobs via run_once=True
 // paired with a run_at implied from "now" — scripts that need a specific
 // future time can add their own timestamp builder later. cron is passed
 // through verbatim so admins who already think in cron (the agent surface
@@ -169,7 +169,7 @@ func dispatchCreateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 		runAt = &now
 	}
 
-	task, err := deps.svc.Tasks.Create(ctx, c, services.CreateInput{
+	job, err := deps.svc.Jobs.Create(ctx, c, services.CreateInput{
 		Description: description,
 		CronExpr:    cron,
 		Timezone:    tz,
@@ -182,12 +182,12 @@ func dispatchCreateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 	}
 	a.insertCount++
 	return map[string]any{
-		"id":          task.ID.String(),
-		"description": task.Description,
-		"cron_expr":   task.CronExpr,
-		"timezone":    task.Timezone,
-		"run_once":    task.RunOnce,
-		"channel_id":  task.ChannelID,
+		"id":          job.ID.String(),
+		"description": job.Description,
+		"cron_expr":   job.CronExpr,
+		"timezone":    job.Timezone,
+		"run_once":    job.RunOnce,
+		"channel_id":  job.ChannelID,
 	}, nil
 }
 

@@ -262,8 +262,8 @@ func mcpResolveDecision(svc *CardService) mcpserver.ToolHandlerFunc {
 			return mcpErrResult(err)
 		}
 		msg := fmt.Sprintf("Decision [%s] resolved with option %q.", card.ID, card.Decision.ResolvedOptionID)
-		if card.Decision.ResolvedTaskID != nil {
-			msg += fmt.Sprintf(" Kit queued task %s.", *card.Decision.ResolvedTaskID)
+		if card.Decision.ResolvedJobID != nil {
+			msg += fmt.Sprintf(" Kit queued task %s.", *card.Decision.ResolvedJobID)
 		}
 		return mcp.NewToolResultText(msg), nil
 	})

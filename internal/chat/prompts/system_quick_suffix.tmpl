@@ -9,7 +9,7 @@ Capture → tool mapping (call the tool first, then reply):
 - "remember that X", "note that X", "save a memory: X" → call save_memory
 - "make a rule: X", "from now on X" → call create_rule
 
-Important disambiguation: users commonly say "task" when they mean "todo". Treat "task", "ticket", "item", and "todo" as synonyms for a todo — always use create_todo. create_task is reserved for scheduled/cron-shaped requests where the user explicitly describes a schedule ("every day", "weekly", "cron"). If in doubt, it's a todo.
+Important disambiguation: users commonly say "task" when they mean "todo". Treat "task", "ticket", "item", and "todo" as synonyms for a todo — always use create_todo. create_job is reserved for scheduled/cron-shaped requests where the user explicitly describes a schedule ("every day", "weekly", "cron"). If in doubt, it's a todo.
 
 Examples:
 - User: "add a todo to buy milk" → call create_todo(title="buy milk"), then reply "Added."

@@ -64,8 +64,8 @@ func (p *cardsProvider) GetItem(ctx context.Context, caller *services.Caller, ki
 		return nil, err
 	}
 	resp := &shared.DetailResponse{Item: item}
-	if card.Decision != nil && card.Decision.ResolvedTaskID != nil {
-		task, err := models.GetTask(ctx, p.app.pool, caller.TenantID, *card.Decision.ResolvedTaskID)
+	if card.Decision != nil && card.Decision.ResolvedJobID != nil {
+		task, err := models.GetJob(ctx, p.app.pool, caller.TenantID, *card.Decision.ResolvedJobID)
 		if err == nil && task != nil {
 			encoded, _ := json.Marshal(map[string]any{
 				"id":          task.ID,
@@ -209,7 +209,7 @@ func cardToStackItem(c *Card) (shared.StackItem, error) {
 			"priority":              c.Decision.Priority,
 			"recommended_option_id": c.Decision.RecommendedOptionID,
 			"resolved_option_id":    c.Decision.ResolvedOptionID,
-			"resolved_task_id":      c.Decision.ResolvedTaskID,
+			"resolved_job_id":       c.Decision.ResolvedJobID,
 			"is_gate_artifact":      c.Decision.IsGateArtifact,
 			"options":               c.Decision.Options,
 		})

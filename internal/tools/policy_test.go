@@ -39,7 +39,7 @@ func TestPolicy_AllowListBlocks(t *testing.T) {
 	r.Register(stubHandlerDef("list_todos", &called, nil, false))
 
 	allowed := []string{"list_todos"}
-	ec := &ExecContext{Ctx: context.Background(), TaskPolicy: &models.Policy{AllowedTools: &allowed}}
+	ec := &ExecContext{Ctx: context.Background(), JobPolicy: &models.Policy{AllowedTools: &allowed}}
 
 	_, err := r.ExecuteWithResult(ec, "post_to_channel", json.RawMessage(`{"channel":"C1","text":"hi"}`))
 	if err == nil {
@@ -59,7 +59,7 @@ func TestPolicy_AllowListPermits(t *testing.T) {
 	r.Register(stubHandlerDef("list_todos", &called, nil, false))
 
 	allowed := []string{"list_todos"}
-	ec := &ExecContext{Ctx: context.Background(), TaskPolicy: &models.Policy{AllowedTools: &allowed}}
+	ec := &ExecContext{Ctx: context.Background(), JobPolicy: &models.Policy{AllowedTools: &allowed}}
 
 	res, err := r.ExecuteWithResult(ec, "list_todos", json.RawMessage(`{}`))
 	if err != nil {
@@ -81,7 +81,7 @@ func TestPolicy_AllowListEmptyBlocksNonInfra(t *testing.T) {
 	r.Register(stubHandlerDef("load_skill", &called, nil, false))
 
 	empty := []string{}
-	ec := &ExecContext{Ctx: context.Background(), TaskPolicy: &models.Policy{AllowedTools: &empty}}
+	ec := &ExecContext{Ctx: context.Background(), JobPolicy: &models.Policy{AllowedTools: &empty}}
 
 	// Non-infra tool is blocked.
 	_, err := r.ExecuteWithResult(ec, "post_to_channel", json.RawMessage(`{}`))
@@ -107,7 +107,7 @@ func TestPolicy_ForceGateCreatesCard(t *testing.T) {
 	r := &Registry{handlers: map[string]HandlerFunc{}}
 	r.Register(stubHandlerDef("post_to_channel", &called, nil, false))
 
-	ec := &ExecContext{Ctx: context.Background(), TaskPolicy: &models.Policy{ForceGate: []string{"post_to_channel"}}}
+	ec := &ExecContext{Ctx: context.Background(), JobPolicy: &models.Policy{ForceGate: []string{"post_to_channel"}}}
 
 	res, err := r.ExecuteWithResult(ec, "post_to_channel", json.RawMessage(`{"channel":"C1","text":"hi"}`))
 	if err != nil {
@@ -125,7 +125,7 @@ func TestPolicy_ForceGateCreatesCard(t *testing.T) {
 }
 
 // TestPolicy_ForceGateOverridesDenyCallerGate verifies that a
-// task-level force_gate wins over DenyCallerGate (which only suppresses
+// job-level force_gate wins over DenyCallerGate (which only suppresses
 // the agent's own opt-in).
 func TestPolicy_ForceGateOverridesDenyCallerGate(t *testing.T) {
 	stub := withGateCreator(t, nil)
@@ -133,7 +133,7 @@ func TestPolicy_ForceGateOverridesDenyCallerGate(t *testing.T) {
 	r := &Registry{handlers: map[string]HandlerFunc{}}
 	r.Register(stubHandlerDef("locked", &called, nil, true))
 
-	ec := &ExecContext{Ctx: context.Background(), TaskPolicy: &models.Policy{ForceGate: []string{"locked"}}}
+	ec := &ExecContext{Ctx: context.Background(), JobPolicy: &models.Policy{ForceGate: []string{"locked"}}}
 
 	res, err := r.ExecuteWithResult(ec, "locked", json.RawMessage(`{}`))
 	if err != nil {
@@ -158,7 +158,7 @@ func TestPolicy_PinnedArgsOverrideAgentInput(t *testing.T) {
 
 	ec := &ExecContext{
 		Ctx: context.Background(),
-		TaskPolicy: &models.Policy{
+		JobPolicy: &models.Policy{
 			PinnedArgs: map[string]map[string]any{
 				"post_to_channel": {"channel": "C09PINNED"},
 			},
@@ -195,7 +195,7 @@ func TestPolicy_PinnedArgsVisibleOnCard(t *testing.T) {
 
 	ec := &ExecContext{
 		Ctx: context.Background(),
-		TaskPolicy: &models.Policy{
+		JobPolicy: &models.Policy{
 			ForceGate: []string{"post_to_channel"},
 			PinnedArgs: map[string]map[string]any{
 				"post_to_channel": {"channel": "C09PINNED"},
@@ -233,7 +233,7 @@ func TestPolicy_ApprovalTokenRunsPinnedArgs(t *testing.T) {
 	ctx := approval.WithToken(context.Background(), approval.Mint(uuid.New(), uuid.New()))
 	ec := &ExecContext{
 		Ctx: ctx,
-		TaskPolicy: &models.Policy{
+		JobPolicy: &models.Policy{
 			ForceGate: []string{"post_to_channel"},
 			PinnedArgs: map[string]map[string]any{
 				"post_to_channel": {"channel": "C09PINNED"},
@@ -263,7 +263,7 @@ func TestPolicy_NilPolicyUnchanged(t *testing.T) {
 	r := &Registry{handlers: map[string]HandlerFunc{}}
 	r.Register(stubHandlerDef("post_to_channel", &called, nil, false))
 
-	ec := &ExecContext{Ctx: context.Background()} // TaskPolicy is nil
+	ec := &ExecContext{Ctx: context.Background()} // JobPolicy is nil
 
 	res, err := r.ExecuteWithResult(ec, "post_to_channel", json.RawMessage(`{"channel":"C1","text":"hi"}`))
 	if err != nil {

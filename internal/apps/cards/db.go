@@ -48,9 +48,9 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		}
 		d := in.Decision
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app_card_decisions (tenant_id, card_id, priority, recommended_option_id, origin_task_id, origin_session_id, is_gate_artifact)
+			INSERT INTO app_card_decisions (tenant_id, card_id, priority, recommended_option_id, origin_job_id, origin_session_id, is_gate_artifact)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			tenantID, cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginTaskID, d.OriginSessionID, d.IsGateArtifact,
+			tenantID, cardID, d.Priority, nilIfEmpty(d.RecommendedOptionID), d.OriginJobID, d.OriginSessionID, d.IsGateArtifact,
 		); err != nil {
 			return nil, fmt.Errorf("inserting decision: %w", err)
 		}
@@ -66,7 +66,7 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 		card.Decision = &DecisionData{
 			Priority:            d.Priority,
 			RecommendedOptionID: d.RecommendedOptionID,
-			OriginTaskID:        d.OriginTaskID,
+			OriginJobID:         d.OriginJobID,
 			OriginSessionID:     d.OriginSessionID,
 			IsGateArtifact:      d.IsGateArtifact,
 			Options:             append([]DecisionOption(nil), d.Options...),

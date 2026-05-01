@@ -11,13 +11,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Policy is a scheduled task's capability manifest: what the agent running
+// Policy is a scheduled job's capability manifest: what the agent running
 // inside it is allowed to do. It is persisted under the "policy" key of
-// Task.Config (JSONB). See the creating-tasks builtin skill for design
+// Job.Config (JSONB). See the creating-jobs builtin skill for design
 // guidance.
 //
 // A nil *Policy means "no restrictions" — interactive Slack callers and
-// existing tasks without a policy keep today's behaviour.
+// existing jobs without a policy keep today's behaviour.
 type Policy struct {
 	// AllowedTools narrows the registry to this set (plus the always-allowed
 	// infrastructure tools in InfrastructureTools). Uses a pointer to a
@@ -30,7 +30,7 @@ type Policy struct {
 	// ForceGate names tools that always route through an approval card,
 	// even if the agent did not set require_approval: true. Wins over
 	// Def.DenyCallerGate — that flag suppresses the agent's own opt-in,
-	// not a task-level contract.
+	// not a job-level contract.
 	ForceGate []string `json:"force_gate,omitempty"`
 
 	// PinnedArgs pins per-tool argument keys to fixed values. The merge
@@ -41,7 +41,7 @@ type Policy struct {
 }
 
 // InfrastructureTools are agent-infrastructure tools that the allow-list
-// never filters out. Excluding them would deadlock task runs (e.g. the
+// never filters out. Excluding them would deadlock job runs (e.g. the
 // agent can't load a skill it needs to answer correctly). Keep this set
 // tight — it grants implicit capability to every policy-constrained run.
 var InfrastructureTools = map[string]bool{
@@ -82,7 +82,7 @@ func (p *Policy) PinnedFor(toolName string) map[string]any {
 	return p.PinnedArgs[toolName]
 }
 
-// ParseConfigPolicy extracts the Policy (if any) from a task's Config
+// ParseConfigPolicy extracts the Policy (if any) from a job's Config
 // JSONB payload. Returns (nil, nil) for empty config or missing policy
 // key so callers can treat "no policy" uniformly.
 func ParseConfigPolicy(cfg []byte) (*Policy, error) {
@@ -93,7 +93,7 @@ func ParseConfigPolicy(cfg []byte) (*Policy, error) {
 		Policy *Policy `json:"policy"`
 	}
 	if err := json.Unmarshal(cfg, &wrapper); err != nil {
-		return nil, fmt.Errorf("parsing task config: %w", err)
+		return nil, fmt.Errorf("parsing job config: %w", err)
 	}
 	return wrapper.Policy, nil
 }
@@ -105,7 +105,7 @@ func SetConfigPolicy(cfg []byte, p *Policy) ([]byte, error) {
 	m := map[string]json.RawMessage{}
 	if len(cfg) > 0 {
 		if err := json.Unmarshal(cfg, &m); err != nil {
-			return nil, fmt.Errorf("parsing existing task config: %w", err)
+			return nil, fmt.Errorf("parsing existing job config: %w", err)
 		}
 	}
 	if p == nil {
@@ -123,30 +123,30 @@ func SetConfigPolicy(cfg []byte, p *Policy) ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// UpdateTaskPolicy writes a task's policy in-place by replacing the
+// UpdateJobPolicy writes a job's policy in-place by replacing the
 // "policy" key in its Config JSONB. Other keys (e.g. builder_script
-// fields) are preserved. Builtin tasks cannot be updated — matches
-// the constraint on UpdateTaskDescription.
-func UpdateTaskPolicy(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, p *Policy) error {
-	t, err := GetTask(ctx, pool, tenantID, taskID)
+// fields) are preserved. Builtin jobs cannot be updated — matches
+// the constraint on UpdateJobDescription.
+func UpdateJobPolicy(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID, p *Policy) error {
+	t, err := GetJob(ctx, pool, tenantID, jobID)
 	if err != nil {
 		return err
 	}
 	if t == nil {
-		return errors.New("task not found")
+		return errors.New("job not found")
 	}
-	if t.TaskType == TaskTypeBuiltin {
-		return errors.New("builtin tasks cannot be updated")
+	if t.JobType == JobTypeBuiltin {
+		return errors.New("builtin jobs cannot be updated")
 	}
 	newConfig, err := SetConfigPolicy(t.Config, p)
 	if err != nil {
 		return err
 	}
 	_, err = pool.Exec(ctx, `
-		UPDATE tasks SET config = $3 WHERE tenant_id = $1 AND id = $2
-	`, tenantID, taskID, newConfig)
+		UPDATE jobs SET config = $3 WHERE tenant_id = $1 AND id = $2
+	`, tenantID, jobID, newConfig)
 	if err != nil {
-		return fmt.Errorf("updating task policy: %w", err)
+		return fmt.Errorf("updating job policy: %w", err)
 	}
 	return nil
 }

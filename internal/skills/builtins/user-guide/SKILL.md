@@ -5,7 +5,7 @@ description: "How to use Kit — adding skills, creating rules, scheduling tasks
 
 # Kit User Guide
 
-Kit is your team's knowledge base and automation assistant. It stores skills (knowledge articles), enforces rules (agent behavior), runs scheduled tasks, and answers questions — all accessible from Slack or any MCP-compatible AI tool.
+Kit is your team's knowledge base and automation assistant. It stores skills (knowledge articles), enforces rules (agent behavior), runs scheduled jobs, and answers questions — all accessible from Slack or any MCP-compatible AI tool.
 
 ## Adding a Skill
 
@@ -45,9 +45,9 @@ Tasks let Kit do things on a schedule — daily summaries, weekly reminders, rec
 > "Every Monday at 8am, remind the team about the weekly standup."
 > "Tomorrow at 3pm, send me the sales report."
 
-**Via MCP**, use `create_task` with a description and schedule.
+**Via MCP**, use `create_job` with a description and schedule.
 
-For non-trivial tasks — especially those posting to public channels, pinning a specific argument, or needing forced approval gates before the agent can act — consult the `creating-tasks` skill. It covers cron vs one-time schedules, scope, writing a description the scheduled agent can execute, and designing the optional `policy` block that constrains the agent at fire time.
+For non-trivial tasks — especially those posting to public channels, pinning a specific argument, or needing forced approval gates before the agent can act — consult the `creating-jobs` skill. It covers cron vs one-time schedules, scope, writing a description the scheduled agent can execute, and designing the optional `policy` block that constrains the agent at fire time.
 
 ## Managing Roles and Access
 

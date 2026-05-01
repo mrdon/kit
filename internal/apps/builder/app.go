@@ -47,10 +47,10 @@ func InstallScriptRunDeps(pool *pgxpool.Pool, svc *services.Services, enc *crypt
 		BuildSlack: tenantSlackFactory(pool, enc),
 	}
 	SetScriptRunDeps(deps)
-	WireTaskRunners(pool, deps)
+	WireJobRunners(pool, deps)
 	return func() error {
 		SetScriptRunDeps(nil)
-		WireTaskRunners(nil, nil)
+		WireJobRunners(nil, nil)
 		return engine.Close()
 	}, nil
 }

@@ -12,37 +12,37 @@ import (
 	"github.com/mrdon/kit/internal/models"
 )
 
-// TaskTools defines the shared tool metadata for task operations.
-var TaskTools = []ToolMeta{
-	{Name: "create_task", Description: "Schedule a recurring or one-time task. Kit runs the description through the full agent at the scheduled time. To run a specific skill instead of a free-form prompt, pass skill_name — the scheduled agent will load and execute that skill. For non-trivial tasks — especially those needing argument pinning, tool allow-lists, or forced approval gates — load the `creating-tasks` builtin skill before calling.", Schema: propsReq(map[string]any{
-		"description": field("string", "Short human-readable label for the task. When skill_name is omitted, this text is also the agent prompt."),
+// JobTools defines the shared tool metadata for job operations.
+var JobTools = []ToolMeta{
+	{Name: "create_job", Description: "Schedule a recurring or one-time job. Kit runs the description through the full agent at the scheduled time. To run a specific skill instead of a free-form prompt, pass skill_name — the scheduled agent will load and execute that skill. For non-trivial jobs — especially those needing argument pinning, tool allow-lists, or forced approval gates — load the `creating-jobs` builtin skill before calling.", Schema: propsReq(map[string]any{
+		"description": field("string", "Short human-readable label for the job. When skill_name is omitted, this text is also the agent prompt."),
 		"skill_name":  field("string", "Slug name of the skill to load and execute at fire time (e.g. 'daily-standup'). Omit to run description as a free-form prompt."),
-		"cron_expr":   field("string", "Cron expression for recurring tasks: minute hour day-of-month month day-of-week"),
-		"run_at":      field("string", "ISO 8601 datetime for one-time tasks (e.g. '2026-04-05T21:20:00'). Use this OR cron_expr, not both."),
+		"cron_expr":   field("string", "Cron expression for recurring jobs: minute hour day-of-month month day-of-week"),
+		"run_at":      field("string", "ISO 8601 datetime for one-time jobs (e.g. '2026-04-05T21:20:00'). Use this OR cron_expr, not both."),
 		"channel_id":  field("string", "Slack channel ID where output should be posted"),
 		"scope":       field("string", "Scope: 'user' (default), 'tenant' (admin only), or a role name"),
 		"policy":      policyField(),
 	}, "description")},
-	{Name: "list_tasks", Description: "List scheduled tasks visible to the current user.", Schema: props(map[string]any{})},
-	{Name: "update_task", Description: "Update or delete a scheduled task. Provide description to change it, skill_name to change which skill runs (empty string to clear and fall back to the description prompt), policy to replace its capability manifest, or set delete=true to remove the task. See the `creating-tasks` skill for policy shape.", Schema: propsReq(map[string]any{
-		"id":          field("string", "The task UUID"),
-		"description": field("string", "New task description (optional)"),
+	{Name: "list_jobs", Description: "List scheduled jobs visible to the current user.", Schema: props(map[string]any{})},
+	{Name: "update_job", Description: "Update or delete a scheduled job. Provide description to change it, skill_name to change which skill runs (empty string to clear and fall back to the description prompt), policy to replace its capability manifest, or set delete=true to remove the job. See the `creating-jobs` skill for policy shape.", Schema: propsReq(map[string]any{
+		"id":          field("string", "The job UUID"),
+		"description": field("string", "New job description (optional)"),
 		"skill_name":  field("string", "New skill slug to run, or empty string to clear (optional)"),
 		"policy":      policyField(),
-		"delete":      field("boolean", "Set to true to delete the task (optional)"),
+		"delete":      field("boolean", "Set to true to delete the job (optional)"),
 	}, "id")},
 }
 
 // policyField returns the JSON-schema fragment describing the optional
-// task policy object. Kept as a nested object schema so MCP clients and
+// job policy object. Kept as a nested object schema so MCP clients and
 // the agent's tool catalogue see the field exists, but the full
 // design guidance (when to allow-list vs force-gate vs pin) lives in
-// the `creating-tasks` builtin skill to avoid bloating every agent
+// the `creating-jobs` builtin skill to avoid bloating every agent
 // turn's system prompt.
 func policyField() map[string]any {
 	return map[string]any{
 		"type":        "object",
-		"description": "Optional capability manifest constraining the scheduled agent. See the `creating-tasks` skill for full design guidance, examples, and gotchas.",
+		"description": "Optional capability manifest constraining the scheduled agent. See the `creating-jobs` skill for full design guidance, examples, and gotchas.",
 		"properties": map[string]any{
 			"allowed_tools": map[string]any{
 				"type":        "array",
@@ -63,14 +63,14 @@ func policyField() map[string]any {
 	}
 }
 
-// TaskService handles task operations with authorization.
-type TaskService struct {
+// JobService handles job operations with authorization.
+type JobService struct {
 	pool *pgxpool.Pool
 }
 
-// CreateInput bundles the arguments for TaskService.Create. Policy is
+// CreateInput bundles the arguments for JobService.Create. Policy is
 // optional; nil means "no capability restrictions," matching today's
-// behaviour for every task that predates the policy feature.
+// behaviour for every job that predates the policy feature.
 type CreateInput struct {
 	Description string
 	CronExpr    string
@@ -88,11 +88,11 @@ type CreateInput struct {
 	Policy    *models.Policy
 }
 
-// Create creates a scheduled task with scope resolution.
+// Create creates a scheduled job with scope resolution.
 // in.Scope: "user" (default), "tenant" (admin only), or a role name.
 // in.Model is the tier name ("haiku" | "sonnet") picked by the
 // classifier in the tool layer; empty defaults to Haiku at the DB level.
-func (s *TaskService) Create(ctx context.Context, c *Caller, in CreateInput) (*models.Task, error) {
+func (s *JobService) Create(ctx context.Context, c *Caller, in CreateInput) (*models.Job, error) {
 	scope := in.Scope
 	if scope == "" {
 		scope = string(models.ScopeTypeUser)
@@ -128,34 +128,34 @@ func (s *TaskService) Create(ctx context.Context, c *Caller, in CreateInput) (*m
 		id := skill.ID
 		skillID = &id
 	}
-	task, err := models.CreateTask(ctx, s.pool, c.TenantID, c.UserID, in.Description, in.CronExpr, in.Timezone, in.ChannelID, in.Model, skillID, in.RunOnce, in.RunAt, roleID, userID)
+	job, err := models.CreateJob(ctx, s.pool, c.TenantID, c.UserID, in.Description, in.CronExpr, in.Timezone, in.ChannelID, in.Model, skillID, in.RunOnce, in.RunAt, roleID, userID)
 	if err != nil {
 		return nil, err
 	}
 	if in.Policy != nil {
-		if err := models.UpdateTaskPolicy(ctx, s.pool, c.TenantID, task.ID, in.Policy); err != nil {
-			return nil, fmt.Errorf("writing task policy: %w", err)
+		if err := models.UpdateJobPolicy(ctx, s.pool, c.TenantID, job.ID, in.Policy); err != nil {
+			return nil, fmt.Errorf("writing job policy: %w", err)
 		}
-		task.Config, _ = models.SetConfigPolicy(task.Config, in.Policy)
+		job.Config, _ = models.SetConfigPolicy(job.Config, in.Policy)
 	}
-	return task, nil
+	return job, nil
 }
 
-// List returns tasks visible to the caller through normal scope filtering:
-// tasks scoped to them personally, to roles they hold, or to the tenant.
-// Admins are not granted extra visibility into other users' personal tasks —
+// List returns jobs visible to the caller through normal scope filtering:
+// jobs scoped to them personally, to roles they hold, or to the tenant.
+// Admins are not granted extra visibility into other users' personal jobs —
 // those run with the creator's identity (email, memories) and the admin is
 // not that user.
-func (s *TaskService) List(ctx context.Context, c *Caller) ([]models.Task, error) {
-	return models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+func (s *JobService) List(ctx context.Context, c *Caller) ([]models.Job, error) {
+	return models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 }
 
-// UpdateInput bundles the optional fields a task update can change. Nil
+// UpdateInput bundles the optional fields a job update can change. Nil
 // means "don't touch." Policy is replace-wholesale — a non-nil pointer
-// overwrites the task's policy; callers that want to tweak a single
+// overwrites the job's policy; callers that want to tweak a single
 // sub-field must read the current policy and re-write the full shape.
 // SkillName follows the same nil-means-no-change rule; a non-nil pointer
-// to the empty string clears skill_id (task falls back to
+// to the empty string clears skill_id (job falls back to
 // description-as-prompt), any other value re-resolves to a skill ID.
 type UpdateInput struct {
 	Description *string
@@ -163,18 +163,18 @@ type UpdateInput struct {
 	Policy      *models.Policy
 }
 
-// Update updates a task's description and/or policy. The caller must
-// have the task in their visible scope; admins don't bypass this for
-// other users' personal tasks. Fields with nil pointers are left
-// untouched. A non-nil Policy replaces the task's policy wholesale.
-func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, in UpdateInput) error {
-	visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+// Update updates a job's description and/or policy. The caller must
+// have the job in their visible scope; admins don't bypass this for
+// other users' personal jobs. Fields with nil pointers are left
+// untouched. A non-nil Policy replaces the job's policy wholesale.
+func (s *JobService) Update(ctx context.Context, c *Caller, jobID uuid.UUID, in UpdateInput) error {
+	visible, err := models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 	if err != nil {
-		return fmt.Errorf("listing visible tasks: %w", err)
+		return fmt.Errorf("listing visible jobs: %w", err)
 	}
 	found := false
 	for _, t := range visible {
-		if t.ID == taskID {
+		if t.ID == jobID {
 			found = true
 			break
 		}
@@ -183,7 +183,7 @@ func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, i
 		return ErrNotFound
 	}
 	if in.Description != nil {
-		if err := models.UpdateTaskDescription(ctx, s.pool, c.TenantID, taskID, *in.Description); err != nil {
+		if err := models.UpdateJobDescription(ctx, s.pool, c.TenantID, jobID, *in.Description); err != nil {
 			return err
 		}
 	}
@@ -200,37 +200,37 @@ func (s *TaskService) Update(ctx context.Context, c *Caller, taskID uuid.UUID, i
 			id := skill.ID
 			skillID = &id
 		}
-		if err := models.UpdateTaskSkillID(ctx, s.pool, c.TenantID, taskID, skillID); err != nil {
+		if err := models.UpdateJobSkillID(ctx, s.pool, c.TenantID, jobID, skillID); err != nil {
 			return err
 		}
 	}
 	if in.Policy != nil {
-		if err := models.UpdateTaskPolicy(ctx, s.pool, c.TenantID, taskID, in.Policy); err != nil {
+		if err := models.UpdateJobPolicy(ctx, s.pool, c.TenantID, jobID, in.Policy); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Delete deletes a task in the caller's visible scope. Admins don't bypass
-// this for other users' personal tasks.
-func (s *TaskService) Delete(ctx context.Context, c *Caller, taskID uuid.UUID) error {
-	visible, err := models.ListTasksForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+// Delete deletes a job in the caller's visible scope. Admins don't bypass
+// this for other users' personal jobs.
+func (s *JobService) Delete(ctx context.Context, c *Caller, jobID uuid.UUID) error {
+	visible, err := models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 	if err != nil {
-		return fmt.Errorf("listing visible tasks: %w", err)
+		return fmt.Errorf("listing visible jobs: %w", err)
 	}
 	for _, t := range visible {
-		if t.ID == taskID {
-			return models.DeleteTask(ctx, s.pool, c.TenantID, taskID)
+		if t.ID == jobID {
+			return models.DeleteJob(ctx, s.pool, c.TenantID, jobID)
 		}
 	}
 	return ErrNotFound
 }
 
-// FormatTaskPolicySummary renders a compact description of a task's
-// policy (as persisted in task.config JSONB) for list_tasks output,
+// FormatTaskPolicySummary renders a compact description of a job's
+// policy (as persisted in job.config JSONB) for list_tasks output,
 // e.g. "policy: allow-list(4), force-gate(post_to_channel), pinned(channel)".
-// Returns "" when the task has no policy. Lives here so both agent-side
+// Returns "" when the job has no policy. Lives here so both agent-side
 // and MCP-side list_tasks formatters render identically — per
 // CLAUDE.md's shared-tool-parity rule.
 func FormatTaskPolicySummary(cfg []byte) string {

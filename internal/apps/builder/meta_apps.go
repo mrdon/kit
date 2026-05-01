@@ -268,7 +268,7 @@ func loadAppScripts(ctx context.Context, pool *pgxpool.Pool, tenantID, appID uui
 	return out, rows.Err()
 }
 
-// loadAppSchedules reads builder_script tasks for the given app,
+// loadAppSchedules reads builder_script jobs for the given app,
 // surfacing the script name instead of the raw config UUID (admins read
 // schedules by script name, not UUID). Only returns active entries —
 // get_app is a "what's live right now?" read-out; history lives in
@@ -276,15 +276,15 @@ func loadAppScripts(ctx context.Context, pool *pgxpool.Pool, tenantID, appID uui
 func loadAppSchedules(ctx context.Context, pool *pgxpool.Pool, tenantID, appID uuid.UUID) ([]scheduleSummary, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT t.id, s.name, t.config->>'fn_name', t.cron_expr
-		FROM tasks t
+		FROM jobs t
 		JOIN scripts s ON s.id = (t.config->>'script_id')::uuid
 		               AND s.tenant_id = t.tenant_id
 		WHERE t.tenant_id = $1
-		  AND t.task_type = $3
+		  AND t.job_type = $3
 		  AND t.status = $4
 		  AND s.builder_app_id = $2
 		ORDER BY s.name, t.config->>'fn_name'
-	`, tenantID, appID, models.TaskTypeBuilderScript, models.TaskStatusActive)
+	`, tenantID, appID, models.JobTypeBuilderScript, models.JobStatusActive)
 	if err != nil {
 		return nil, fmt.Errorf("loading schedules: %w", err)
 	}

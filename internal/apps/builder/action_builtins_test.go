@@ -301,7 +301,7 @@ func TestActionBuiltins_CreateBriefing_Severity(t *testing.T) {
 func TestActionBuiltins_CreateTask(t *testing.T) {
 	f := newActionFixture(t)
 
-	result, err := f.dispatchCall(t, FnCreateTask, map[string]any{
+	result, err := f.dispatchCall(t, FnCreateJob, map[string]any{
 		"description": "Remind me to restock",
 		"cron":        "0 9 * * 1",
 	})

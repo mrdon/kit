@@ -19,7 +19,7 @@ import (
 )
 
 // TaskKicker is the minimal scheduler surface CardService needs to nudge
-// the task loop after a resume. Decoupled interface (instead of importing
+// the job loop after a resume. Decoupled interface (instead of importing
 // scheduler) keeps the cards package dependency-light.
 type TaskKicker interface {
 	Kick()
@@ -49,7 +49,7 @@ type ToolExecutor func(
 
 // CardService bundles card create/update/list + scope enforcement for both
 // decision and briefing kinds. Terminal transitions (resolve, ack) live in
-// this same service but have extra moving parts (agent task creation, Slack
+// this same service but have extra moving parts (agent job creation, Slack
 // DM lookup) wired up by the caller.
 type CardService struct {
 	pool         *pgxpool.Pool
@@ -318,7 +318,7 @@ func (s *CardService) Update(ctx context.Context, c *services.Caller, cardID uui
 // calls this to mint the decision card the user will approve. The
 // card has two options: an Approve option carrying the intercepted
 // tool_name + tool_arguments, and a Skip option that cancels.
-// OriginTaskID/OriginSessionID are stamped from the ExecContext so
+// OriginJobID/OriginSessionID are stamped from the ExecContext so
 // the authoring session resumes on approve. is_gate_artifact is
 // explicitly true so ResolveDecision's re-check passes.
 //
@@ -365,7 +365,7 @@ func (s *CardService) CreateGateCard(
 			Priority:            DecisionPriorityHigh,
 			RecommendedOptionID: "approve",
 			IsGateArtifact:      true,
-			OriginTaskID:        ec.TaskID,
+			OriginJobID:         ec.TaskID,
 			OriginSessionID:     originSessionID,
 			Options: []DecisionOption{
 				{
@@ -530,7 +530,7 @@ func (s *CardService) Stack(ctx context.Context, c *services.Caller) ([]*Card, e
 }
 
 // DMOpener is the minimal Slack surface required to resolve a decision
-// with a chosen option that triggers an agent task. kitslack.Client satisfies
+// with a chosen option that triggers an agent job. kitslack.Client satisfies
 // this interface.
 type DMOpener interface {
 	OpenConversation(ctx context.Context, userID string) (string, error)
@@ -542,10 +542,10 @@ type DMOpener interface {
 //   - Branch A (tool only): option has ToolName but no Prompt. The tool
 //     executes synchronously via the injected ToolExecutor with an
 //     approval token; the result is stored on the card. No follow-up
-//     task.
+//     job.
 //
 //   - Branch B (tool + prompt): option has both. The tool runs first,
-//     then a follow-up agent task is queued (or the origin task is
+//     then a follow-up agent job is queued (or the origin job is
 //     resumed) with the tool_result as context + the prompt.
 //
 //   - Branch C (prompt only): today's behavior. Queue / resume with
@@ -610,7 +610,7 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 		// Flip to resolving and commit before invoking the tool. This
 		// path handles both Branch A (tool only) and Branch B (tool +
 		// prompt) up through the tool execution; the prompt's follow-up
-		// task is queued inside Transaction 2 after the tool succeeds.
+		// job is queued inside Transaction 2 after the tool succeeds.
 		if err := flipCardToResolvingTx(ctx, tx, c.TenantID, cardID, c.UserID, opt.OptionID, resolveToken, resolvingDeadline); err != nil {
 			return nil, err
 		}
@@ -621,12 +621,12 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 	}
 
 	// Branch C (prompt-only) keeps today's single-tx behavior: we queue
-	// the follow-up task (or resume the origin) and finish the resolve
+	// the follow-up job (or resume the origin) and finish the resolve
 	// in one go, no intermediate resolving state.
-	var taskID *uuid.UUID
+	var jobID *uuid.UUID
 	resumed := false
-	if hasPrompt && locked.Decision != nil && locked.Decision.OriginTaskID != nil && locked.Decision.OriginSessionID != nil {
-		originTaskID := *locked.Decision.OriginTaskID
+	if hasPrompt && locked.Decision != nil && locked.Decision.OriginJobID != nil && locked.Decision.OriginSessionID != nil {
+		originTaskID := *locked.Decision.OriginJobID
 		originSessionID := *locked.Decision.OriginSessionID
 		if err := models.AppendSessionEventTx(ctx, tx, c.TenantID, originSessionID, models.EventTypeDecisionResolved, map[string]any{
 			"card_id":      cardID,
@@ -637,10 +637,10 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 		}); err != nil {
 			return nil, fmt.Errorf("appending decision_resolved event: %w", err)
 		}
-		if err := models.RequeueTaskForResumeTx(ctx, tx, c.TenantID, originTaskID, originSessionID); err != nil {
-			return nil, fmt.Errorf("waking origin task: %w", err)
+		if err := models.RequeueJobForResumeTx(ctx, tx, c.TenantID, originTaskID, originSessionID); err != nil {
+			return nil, fmt.Errorf("waking origin job: %w", err)
 		}
-		taskID = &originTaskID
+		jobID = &originTaskID
 		resumed = true
 	}
 	if hasPrompt && !resumed {
@@ -650,7 +650,7 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 		}
 		now := time.Now()
 		roleID, userID := pickTaskScope(c)
-		task, err := models.CreateTaskTx(
+		job, err := models.CreateJobTx(
 			ctx, tx,
 			c.TenantID, c.UserID,
 			opt.Prompt, "", "UTC", dmChannel, "", nil,
@@ -658,12 +658,12 @@ func (s *CardService) ResolveDecision(ctx context.Context, c *services.Caller, c
 			roleID, userID,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("queuing agent task: %w", err)
+			return nil, fmt.Errorf("queuing agent job: %w", err)
 		}
-		taskID = &task.ID
+		jobID = &job.ID
 	}
 
-	if err := finishResolveDecision(ctx, tx, c.TenantID, cardID, c.UserID, opt.OptionID, taskID); err != nil {
+	if err := finishResolveDecision(ctx, tx, c.TenantID, cardID, c.UserID, opt.OptionID, jobID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -720,7 +720,7 @@ func (s *CardService) ResolveDecisionFromAgent(ctx context.Context, c *services.
 // runResolveTool executes the gated tool for Branch A/B (after the
 // first tx has flipped the card to 'resolving'). On success, writes a
 // second tx that either just completes the resolve (A) or queues the
-// follow-up task with the tool result (B). On tool error, aborts the
+// follow-up job with the tool result (B). On tool error, aborts the
 // resolving state back to 'pending' with last_error set and returns
 // the error to the caller.
 //
@@ -741,17 +741,17 @@ func (s *CardService) runResolveTool(
 		return nil, fmt.Errorf("tool executor not configured; cannot run %q", opt.ToolName)
 	}
 
-	// Resume-path policy re-check. If the card's origin task has a
+	// Resume-path policy re-check. If the card's origin job has a
 	// policy whose allowed_tools list no longer includes this tool
 	// (edited between card creation and approval), refuse the resolve
 	// with a clear error rather than silently running. Pinned args are
 	// frozen at card-create — opt.ToolArguments already reflects the
 	// pinned values the user approved on the card face.
-	if locked.Decision != nil && locked.Decision.OriginTaskID != nil {
-		task, err := models.GetTask(ctx, s.pool, c.TenantID, *locked.Decision.OriginTaskID)
-		if err == nil && task != nil {
-			if policy, perr := models.ParseConfigPolicy(task.Config); perr == nil && !policy.IsAllowed(opt.ToolName) {
-				msg := fmt.Sprintf("task policy no longer permits %q", opt.ToolName)
+	if locked.Decision != nil && locked.Decision.OriginJobID != nil {
+		job, err := models.GetJob(ctx, s.pool, c.TenantID, *locked.Decision.OriginJobID)
+		if err == nil && job != nil {
+			if policy, perr := models.ParseConfigPolicy(job.Config); perr == nil && !policy.IsAllowed(opt.ToolName) {
+				msg := fmt.Sprintf("job policy no longer permits %q", opt.ToolName)
 				s.abortResolving(ctx, c.TenantID, cardID, msg)
 				return nil, errors.New(msg)
 			}
@@ -768,7 +768,7 @@ func (s *CardService) runResolveTool(
 		return nil, fmt.Errorf("tool %q refused approval at resolve time", opt.ToolName)
 	}
 
-	// Transaction 2: write the tool result, queue follow-up task
+	// Transaction 2: write the tool result, queue follow-up job
 	// (Branch B), mark resolved.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -776,12 +776,12 @@ func (s *CardService) runResolveTool(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var taskID *uuid.UUID
+	var jobID *uuid.UUID
 	resumed := false
-	// Resume path: origin task is waiting — append the decision_resolved
+	// Resume path: origin job is waiting — append the decision_resolved
 	// event (truncated tool_result so replay stays bounded) and requeue.
-	if locked.Decision != nil && locked.Decision.OriginTaskID != nil && locked.Decision.OriginSessionID != nil {
-		originTaskID := *locked.Decision.OriginTaskID
+	if locked.Decision != nil && locked.Decision.OriginJobID != nil && locked.Decision.OriginSessionID != nil {
+		originTaskID := *locked.Decision.OriginJobID
 		originSessionID := *locked.Decision.OriginSessionID
 		if err := models.AppendSessionEventTx(ctx, tx, c.TenantID, originSessionID, models.EventTypeDecisionResolved, map[string]any{
 			"card_id":        cardID,
@@ -797,14 +797,14 @@ func (s *CardService) runResolveTool(
 		}); err != nil {
 			return nil, fmt.Errorf("appending decision_resolved event: %w", err)
 		}
-		if err := models.RequeueTaskForResumeTx(ctx, tx, c.TenantID, originTaskID, originSessionID); err != nil {
-			return nil, fmt.Errorf("waking origin task: %w", err)
+		if err := models.RequeueJobForResumeTx(ctx, tx, c.TenantID, originTaskID, originSessionID); err != nil {
+			return nil, fmt.Errorf("waking origin job: %w", err)
 		}
-		taskID = &originTaskID
+		jobID = &originTaskID
 		resumed = true
 	}
 
-	// Branch B (prompt set, non-resume): queue an ad-hoc follow-up task
+	// Branch B (prompt set, non-resume): queue an ad-hoc follow-up job
 	// whose description contains the prompt + tool result.
 	if hasPrompt && !resumed {
 		dmChannel, err := dm.OpenConversation(ctx, c.Identity)
@@ -817,7 +817,7 @@ func (s *CardService) runResolveTool(
 			"%s\n\nTool `%s` returned:\n%s",
 			opt.Prompt, opt.ToolName, truncateForReplay(output, 2048),
 		)
-		task, err := models.CreateTaskTx(
+		job, err := models.CreateJobTx(
 			ctx, tx,
 			c.TenantID, c.UserID,
 			description, "", "UTC", dmChannel, "", nil,
@@ -825,12 +825,12 @@ func (s *CardService) runResolveTool(
 			roleID, userID,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("queuing follow-up task: %w", err)
+			return nil, fmt.Errorf("queuing follow-up job: %w", err)
 		}
-		taskID = &task.ID
+		jobID = &job.ID
 	}
 
-	if err := completeResolvingCardTx(ctx, tx, c.TenantID, cardID, output, taskID); err != nil {
+	if err := completeResolvingCardTx(ctx, tx, c.TenantID, cardID, output, jobID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -867,8 +867,8 @@ func truncateForReplay(s string, maxBytes int) string {
 	return s[:maxBytes] + fmt.Sprintf("\n… [truncated at %d bytes of %d total; call get_decision_tool_result for full output]", maxBytes, len(s))
 }
 
-// pickTaskScope chooses the scope row attached to the agent task. A
-// user-scoped task matches the caller's UserID — the task is only
+// pickTaskScope chooses the scope row attached to the agent job. A
+// user-scoped job matches the caller's UserID — the job is only
 // visible/listable to them. Good enough for MVP; could later mirror the
 // card's scope rows.
 func pickTaskScope(c *services.Caller) (roleID, userID *uuid.UUID) {

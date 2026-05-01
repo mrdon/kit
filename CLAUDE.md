@@ -64,11 +64,11 @@ make db-reset    # Wipe and restart Postgres
 - `internal/crypto/` — AES-256-GCM for sensitive data
 - `internal/database/` — pgxpool connection, goose migrations (embedded in `database/migrations/`)
 - `internal/ingest/` — File upload processing (PDF via pdftotext, DOCX, markdown, ZIP)
-- `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, task, session, session_event, scope)
+- `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, job, session, session_event, scope)
 - `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, routes, and cron jobs.
 - `internal/apps/builder/` — Scriptable app substrate. Admins use admin-only meta-tools (via MCP) to create "builder apps" — named bundles of scripts, schedules, and exposed tools. Scripts run as sandboxed Python via Monty (vendored WASM at `internal/apps/builder/runtime/monty.wasm`, Rust source under `third_party/monty-wasm/`, rebuilt via `make monty-wasm`). Data lives in `app_items` (MongoDB-shaped jsonb, tenant + builder_app scoped, with a temporal `app_items_history` trigger for rollback).
 - `third_party/monty-wasm/` — Forked Rust shim for pydantic's Monty interpreter. Regenerate `monty.wasm` via `make monty-wasm` when bumping the Monty version pinned in `crates/monty-wasm/Cargo.toml` (Docker-isolated Rust toolchain — host doesn't need Rust).
-- `internal/scheduler/` — Background task runner (cron + builtin tasks like profile sync)
+- `internal/scheduler/` — Background job runner (cron + builtin jobs like profile sync)
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 - `internal/sse/` — Server-Sent Events writer (used by card chat today; reusable for future ambient-feed pushes)
 - `internal/transcribe/` — Voice transcription via local whisper.cpp (optional; gated on `WHISPER_BIN`/`WHISPER_MODEL`)
@@ -76,7 +76,7 @@ make db-reset    # Wipe and restart Postgres
 
 ## Data Model
 
-14 core tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, tasks, task_scopes, sessions, session_events. Apps add their own tables prefixed with `app_`. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
+14 core tables: tenants, users, roles, user_roles, skills, skill_references, skill_scopes, rules, rule_scopes, memories, jobs, job_scopes, sessions, session_events. Apps add their own tables prefixed with `app_`. FTS indexes on skills.content, skills.description, skill_references.content, memories.content.
 
 ## Production Debugging
 
@@ -108,12 +108,12 @@ go through `postgres:connect`.
 
 ### MCP tools for debugging
 - `list_sessions` / `get_session_events` — inspect your own agent session history. For debugging another user's sessions, query the DB directly (`dokku postgres:connect kit-db`) — the MCP surface is scoped to the caller so admins can't read other users' email/memory traces.
-- `run_task` — run a task you created; `dry_run: true` captures messages without posting. Admins cannot run another user's task via MCP (the scheduled agent would act as that user's identity); for SRE-style one-off triggers on someone else's task, go through the DB or operator CLI.
+- `run_job` — run a scheduled job you created; `dry_run: true` captures messages without posting. Admins cannot run another user's job via MCP (the scheduled agent would act as that user's identity); for SRE-style one-off triggers on someone else's job, go through the DB or operator CLI.
 - `find_user` — verify user display names and IDs
 
 ### Common checks
-- **User has no display name?** Ask them to send a Slack message, or trigger the "Sync user profiles from Slack" builtin task yourself (you'll need to own that task — builtins belong to whoever installed them).
-- **Task misbehaving?** After the task posts its first message, its session's `slack_thread_ts` is the real Slack message ts (not a synthetic `task-*` value). If the task is yours, use `list_sessions` → `get_session_events`. If it belongs to another user, query `sessions` + `session_events` in the DB.
+- **User has no display name?** Ask them to send a Slack message, or trigger the "Sync user profiles from Slack" builtin job yourself (you'll need to own that job — builtins belong to whoever installed them).
+- **Job misbehaving?** After the job posts its first message, its session's `slack_thread_ts` is the real Slack message ts (not a synthetic `task-*` value — note the legacy prefix in the code). If the job is yours, use `list_sessions` → `get_session_events`. If it belongs to another user, query `sessions` + `session_events` in the DB.
 - **Tenant confusion?** Query `tenants` table to see all workspaces and their `slack_team_id`.
 
 ### Voice transcription (optional)

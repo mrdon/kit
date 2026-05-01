@@ -169,7 +169,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 			// tool. The pick-vs-edit distinction (resolve_decision vs
 			// revise_decision_option) is exactly the kind of tool-use
 			// nuance Sonnet handles reliably and Haiku doesn't.
-			runInput.Model = models.TaskModelSonnet
+			runInput.Model = models.JobModelSonnet
 		}
 	} else {
 		runInput.SystemSuffix = buildQuickSystemSuffix()
@@ -181,7 +181,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		// more reliably at the cost of a few extra cents per turn, a
 		// fair trade for a surface where "it said it did but didn't"
 		// is the worst failure mode.
-		runInput.Model = models.TaskModelSonnet
+		runInput.Model = models.JobModelSonnet
 	}
 
 	if err := in.Agent.Run(ctx, runInput); err != nil {

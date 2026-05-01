@@ -95,18 +95,18 @@ type CoordinationResult struct {
 
 // Coordination is one workflow instance.
 type Coordination struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	OrganizerID    uuid.UUID
-	Kind           string
-	Status         string
-	Config         CoordinationConfig
-	Result         *CoordinationResult
-	DeadlineAt     *time.Time
-	ShepherdTaskID *uuid.UUID
-	RoundCount     int
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID            uuid.UUID
+	TenantID      uuid.UUID
+	OrganizerID   uuid.UUID
+	Kind          string
+	Status        string
+	Config        CoordinationConfig
+	Result        *CoordinationResult
+	DeadlineAt    *time.Time
+	ShepherdJobID *uuid.UUID
+	RoundCount    int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // MaxRounds is the negotiation cap. After this many rounds without
@@ -179,10 +179,10 @@ func CreateCoordination(ctx context.Context, pool *pgxpool.Pool, c *Coordination
 	}
 	row := pool.QueryRow(ctx, `
 		INSERT INTO app_coordinations
-		    (tenant_id, organizer_id, kind, status, config, deadline_at, shepherd_task_id)
+		    (tenant_id, organizer_id, kind, status, config, deadline_at, shepherd_job_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at
-	`, c.TenantID, c.OrganizerID, c.Kind, c.Status, configJSON, c.DeadlineAt, c.ShepherdTaskID)
+	`, c.TenantID, c.OrganizerID, c.Kind, c.Status, configJSON, c.DeadlineAt, c.ShepherdJobID)
 	return row.Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
 }
 
@@ -190,7 +190,7 @@ func CreateCoordination(ctx context.Context, pool *pgxpool.Pool, c *Coordination
 func GetCoordination(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) (*Coordination, error) {
 	row := pool.QueryRow(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, round_count, created_at, updated_at
+		       deadline_at, shepherd_job_id, round_count, created_at, updated_at
 		FROM app_coordinations
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
@@ -202,7 +202,7 @@ func GetCoordination(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.
 func ListActiveCoordinations(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Coordination, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, round_count, created_at, updated_at
+		       deadline_at, shepherd_job_id, round_count, created_at, updated_at
 		FROM app_coordinations
 		WHERE tenant_id = $1 AND status = 'active'
 		ORDER BY created_at
@@ -228,7 +228,7 @@ func ListActiveCoordinations(ctx context.Context, pool *pgxpool.Pool, tenantID u
 func ListAllActiveCoordinations(ctx context.Context, pool *pgxpool.Pool) ([]Coordination, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, round_count, created_at, updated_at
+		       deadline_at, shepherd_job_id, round_count, created_at, updated_at
 		FROM app_coordinations
 		WHERE status = 'active'
 		ORDER BY tenant_id, created_at
@@ -414,7 +414,7 @@ func scanCoordination(s scannable) (*Coordination, error) {
 	var resultJSON sql.NullString
 	if err := s.Scan(
 		&c.ID, &c.TenantID, &c.OrganizerID, &c.Kind, &c.Status, &configJSON,
-		&resultJSON, &c.DeadlineAt, &c.ShepherdTaskID, &c.RoundCount, &c.CreatedAt, &c.UpdatedAt,
+		&resultJSON, &c.DeadlineAt, &c.ShepherdJobID, &c.RoundCount, &c.CreatedAt, &c.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}

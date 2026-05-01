@@ -178,7 +178,7 @@ func CountRoleDeletionImpact(ctx context.Context, pool *pgxpool.Pool, tenantID u
 			(SELECT count(*) FROM memories       WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
 			(SELECT count(*) FROM skill_scopes   WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
 			(SELECT count(*) FROM rule_scopes    WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
-			(SELECT count(*) FROM task_scopes    WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
+			(SELECT count(*) FROM job_scopes    WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
 			(SELECT count(*) FROM app_card_scopes WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
 			(SELECT count(*) FROM app_slack_channel_scopes WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s)),
 			(SELECT count(*) FROM app_calendar_scopes      WHERE tenant_id = $1 AND scope_id IN (SELECT id FROM s))

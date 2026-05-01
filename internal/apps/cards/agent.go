@@ -84,7 +84,7 @@ func handleCreateDecision(svc *CardService) tools.HandlerFunc {
 				Priority:            DecisionPriority(inp.Priority),
 				RecommendedOptionID: inp.RecommendedOptionID,
 				Options:             inp.Options,
-				OriginTaskID:        ec.TaskID,
+				OriginJobID:         ec.TaskID,
 				OriginSessionID:     originSessionID,
 			},
 		})
@@ -292,8 +292,8 @@ func handleResolveDecision(svc *CardService) tools.HandlerFunc {
 			return handleServiceErr(err, "resolving decision")
 		}
 		msg := fmt.Sprintf("Decision [%s] resolved with option %q.", card.ID, card.Decision.ResolvedOptionID)
-		if card.Decision.ResolvedTaskID != nil {
-			msg += fmt.Sprintf(" Kit queued task %s to act on it.", *card.Decision.ResolvedTaskID)
+		if card.Decision.ResolvedJobID != nil {
+			msg += fmt.Sprintf(" Kit queued job %s to act on it.", *card.Decision.ResolvedJobID)
 		}
 		return msg, nil
 	}

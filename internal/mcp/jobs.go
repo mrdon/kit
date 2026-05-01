@@ -24,24 +24,24 @@ import (
 	"github.com/mrdon/kit/internal/tools"
 )
 
-func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *anthropic.Client) mcpserver.ToolHandlerFunc {
+func jobMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *anthropic.Client) mcpserver.ToolHandlerFunc {
 	switch name {
-	case "create_task":
+	case "create_job":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			return handleMCPCreateTask(ctx, req, caller, svc, llm)
 		})
-	case "list_tasks":
+	case "list_jobs":
 		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-			tasks, err := svc.Tasks.List(ctx, caller)
+			jobs, err := svc.Jobs.List(ctx, caller)
 			if err != nil {
 				return nil, err
 			}
-			if len(tasks) == 0 {
-				return mcp.NewToolResultText("No scheduled tasks."), nil
+			if len(jobs) == 0 {
+				return mcp.NewToolResultText("No scheduled jobs."), nil
 			}
 			var b strings.Builder
-			b.WriteString("Scheduled tasks:\n")
-			for _, t := range tasks {
+			b.WriteString("Scheduled jobs:\n")
+			for _, t := range jobs {
 				status := string(t.Status)
 				if t.LastError != nil {
 					status += " (error: " + *t.LastError + ")"
@@ -59,22 +59,22 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 			}
 			return mcp.NewToolResultText(b.String()), nil
 		})
-	case "update_task":
+	case "update_job":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			idStr, _ := req.RequireString("id")
-			taskID, err := uuid.Parse(idStr)
+			jobID, err := uuid.Parse(idStr)
 			if err != nil {
-				return mcp.NewToolResultError("Invalid task id."), nil
+				return mcp.NewToolResultError("Invalid job id."), nil
 			}
 			if req.GetBool("delete", false) {
-				err = svc.Tasks.Delete(ctx, caller, taskID)
+				err = svc.Jobs.Delete(ctx, caller, jobID)
 				if errors.Is(err, services.ErrNotFound) {
-					return mcp.NewToolResultError("Task not found."), nil
+					return mcp.NewToolResultError("Job not found."), nil
 				}
 				if err != nil {
 					return nil, err
 				}
-				return mcp.NewToolResultText("Task deleted."), nil
+				return mcp.NewToolResultText("Job deleted."), nil
 			}
 			desc := req.GetString("description", "")
 			policy, perr := policyFromMCP(req)
@@ -96,17 +96,17 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 			if update.Description == nil && update.SkillName == nil && update.Policy == nil {
 				return mcp.NewToolResultError("Provide description, skill_name, policy, or delete=true."), nil
 			}
-			err = svc.Tasks.Update(ctx, caller, taskID, update)
+			err = svc.Jobs.Update(ctx, caller, jobID, update)
 			if errors.Is(err, services.ErrNotFound) {
 				if update.SkillName != nil && *update.SkillName != "" {
-					return mcp.NewToolResultError(fmt.Sprintf("Task not found, or skill %q not found.", *update.SkillName)), nil
+					return mcp.NewToolResultError(fmt.Sprintf("Job not found, or skill %q not found.", *update.SkillName)), nil
 				}
-				return mcp.NewToolResultError("Task not found."), nil
+				return mcp.NewToolResultError("Job not found."), nil
 			}
 			if err != nil {
 				return nil, err
 			}
-			return mcp.NewToolResultText("Task updated."), nil
+			return mcp.NewToolResultText("Job updated."), nil
 		})
 	default:
 		return nil
@@ -117,46 +117,46 @@ func taskMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *a
 // beyond the standard handler signature.
 func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler) mcpserver.ServerTool {
 	schema := services.PropsReq(map[string]any{
-		"id":      services.Field("string", "The task UUID to run"),
+		"id":      services.Field("string", "The job UUID to run"),
 		"dry_run": services.Field("boolean", "If true, capture messages instead of posting to Slack"),
 	}, "id")
 	schemaJSON, _ := json.Marshal(schema)
-	tool := mcp.NewToolWithRawSchema("run_task", "Run a task immediately for testing. In dry_run mode, messages are captured and returned instead of posted to Slack. You can only run tasks you created.", schemaJSON)
+	tool := mcp.NewToolWithRawSchema("run_job", "Run a job immediately for testing. In dry_run mode, messages are captured and returned instead of posted to Slack. You can only run jobs you created.", schemaJSON)
 
 	handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("id")
-		taskID, err := uuid.Parse(idStr)
+		jobID, err := uuid.Parse(idStr)
 		if err != nil {
-			return mcp.NewToolResultError("Invalid task id."), nil
+			return mcp.NewToolResultError("Invalid job id."), nil
 		}
 		dryRun := req.GetBool("dry_run", false)
 
-		task, err := models.GetTask(ctx, pool, caller.TenantID, taskID)
+		job, err := models.GetJob(ctx, pool, caller.TenantID, jobID)
 		if err != nil {
-			return nil, fmt.Errorf("getting task: %w", err)
+			return nil, fmt.Errorf("getting job: %w", err)
 		}
-		if task == nil {
-			return mcp.NewToolResultError("Task not found."), nil
+		if job == nil {
+			return mcp.NewToolResultError("Job not found."), nil
 		}
 
-		// run_task acts as the task's creator — the scheduled agent loads
+		// run_task acts as the job's creator — the scheduled agent loads
 		// their integrations, memories, and email credentials. Admins don't
 		// get to stand in for another user; cross-user debugging is an
 		// operator/SRE concern, handled via DB/CLI, not the customer MCP.
-		if task.CreatedBy != caller.UserID {
-			return mcp.NewToolResultError("You can only run tasks you created."), nil
+		if job.CreatedBy != caller.UserID {
+			return mcp.NewToolResultError("You can only run jobs you created."), nil
 		}
 
-		// Builtin tasks run native code, not the LLM agent
-		if task.TaskType == models.TaskTypeBuiltin {
+		// Builtin jobs run native code, not the LLM agent
+		if job.JobType == models.JobTypeBuiltin {
 			if dryRun {
-				return mcp.NewToolResultText(fmt.Sprintf("Dry run: builtin task %q would execute native handler.", task.Description)), nil
+				return mcp.NewToolResultText(fmt.Sprintf("Dry run: builtin job %q would execute native handler.", job.Description)), nil
 			}
-			sched.ExecuteBuiltinTask(ctx, *task)
-			return mcp.NewToolResultText(fmt.Sprintf("Builtin task %q executed.", task.Description)), nil
+			sched.ExecuteBuiltinTask(ctx, *job)
+			return mcp.NewToolResultText(fmt.Sprintf("Builtin job %q executed.", job.Description)), nil
 		}
 
-		tenant, err := models.GetTenantByID(ctx, pool, task.TenantID)
+		tenant, err := models.GetTenantByID(ctx, pool, job.TenantID)
 		if err != nil || tenant == nil {
 			return mcp.NewToolResultError("Tenant not found."), nil
 		}
@@ -173,41 +173,41 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			slack = kitslack.NewClient(botToken)
 		}
 
-		user, err := models.GetUserByID(ctx, pool, tenant.ID, task.CreatedBy)
+		user, err := models.GetUserByID(ctx, pool, tenant.ID, job.CreatedBy)
 		if err != nil || user == nil {
-			return mcp.NewToolResultError("Task author not found."), nil
+			return mcp.NewToolResultError("Job author not found."), nil
 		}
 
 		authorName := user.SlackUserID
 		if user.DisplayName != nil && *user.DisplayName != "" {
 			authorName = *user.DisplayName
 		}
-		policy, perr := models.ParseConfigPolicy(task.Config)
+		policy, perr := models.ParseConfigPolicy(job.Config)
 		if perr != nil {
-			return nil, fmt.Errorf("parsing task policy: %w", perr)
+			return nil, fmt.Errorf("parsing job policy: %w", perr)
 		}
-		tc := &agent.TaskContext{
-			ID:            task.ID,
-			Description:   task.Description,
+		tc := &agent.JobContext{
+			ID:            job.ID,
+			Description:   job.Description,
 			AuthorSlackID: user.SlackUserID,
 			AuthorName:    authorName,
 			Policy:        policy,
 		}
 
-		threadTS := fmt.Sprintf("task-%s-%d", task.ID, time.Now().UnixMilli())
-		session, err := models.CreateSession(ctx, pool, tenant.ID, task.ChannelID, threadTS, user.ID, true)
+		threadTS := fmt.Sprintf("job-%s-%d", job.ID, time.Now().UnixMilli())
+		session, err := models.CreateSession(ctx, pool, tenant.ID, job.ChannelID, threadTS, user.ID, true)
 		if err != nil {
 			return nil, fmt.Errorf("creating session: %w", err)
 		}
 
-		userText := task.Description
-		if task.SkillID != nil {
-			skill, serr := models.GetSkill(ctx, pool, tenant.ID, *task.SkillID)
+		userText := job.Description
+		if job.SkillID != nil {
+			skill, serr := models.GetSkill(ctx, pool, tenant.ID, *job.SkillID)
 			if serr != nil {
-				return nil, fmt.Errorf("loading skill %s: %w", *task.SkillID, serr)
+				return nil, fmt.Errorf("loading skill %s: %w", *job.SkillID, serr)
 			}
 			if skill == nil {
-				return mcp.NewToolResultError("Task's skill no longer exists."), nil
+				return mcp.NewToolResultError("Job's skill no longer exists."), nil
 			}
 			userText = fmt.Sprintf(
 				"Load the skill named %q (call load_skill with skill_id=%q) and follow its instructions.",
@@ -225,10 +225,10 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			Tenant:   tenant,
 			User:     user,
 			Session:  session,
-			Channel:  task.ChannelID,
+			Channel:  job.ChannelID,
 			UserText: userText,
-			Task:     tc,
-			Model:    task.Model,
+			Job:      tc,
+			Model:    job.Model,
 		}
 		go func() {
 			runCtx := context.Background()
@@ -248,8 +248,8 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			mode = "dry-run"
 		}
 		return mcp.NewToolResultText(fmt.Sprintf(
-			"Task %q started (%s, run_id=%s).\n\nCall get_task_status with run_id=%s to check progress and read results.",
-			task.Description, mode, session.ID, session.ID,
+			"Job %q started (%s, run_id=%s).\n\nCall get_task_status with run_id=%s to check progress and read results.",
+			job.Description, mode, session.ID, session.ID,
 		)), nil
 	})
 
@@ -264,7 +264,7 @@ func buildGetTaskStatusTool(pool *pgxpool.Pool, svc *services.Services) mcpserve
 		"run_id": services.Field("string", "The run_id returned by run_task (a session UUID)."),
 	}, "run_id")
 	schemaJSON, _ := json.Marshal(schema)
-	tool := mcp.NewToolWithRawSchema("get_task_status", "Check the status of a task run started via run_task. Returns whether the run is still going, tool calls executed, dry-run captured messages, and any errors.", schemaJSON)
+	tool := mcp.NewToolWithRawSchema("get_task_status", "Check the status of a job run started via run_task. Returns whether the run is still going, tool calls executed, dry-run captured messages, and any errors.", schemaJSON)
 
 	handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		idStr, _ := req.RequireString("run_id")
@@ -285,7 +285,7 @@ func buildGetTaskStatusTool(pool *pgxpool.Pool, svc *services.Services) mcpserve
 	return mcpserver.ServerTool{Tool: tool, Handler: handler}
 }
 
-// formatTaskRunStatus renders a session's events as a task-run status
+// formatTaskRunStatus renders a session's events as a job-run status
 // report. Designed for the get_task_status tool — concise enough that the
 // caller doesn't drown in raw event JSON, but complete enough to debug a
 // failed run without reaching for get_session_events.
@@ -396,9 +396,9 @@ func extractToolNames(data json.RawMessage) []string {
 	return names
 }
 
-// handleMCPCreateTask factors the create_task body out of taskMCPHandler
+// handleMCPCreateTask factors the create_task body out of jobMCPHandler
 // to keep the dispatcher's cyclomatic complexity in check. Mirrors
-// internal/tools/tasks.go's handleCreateTask — per the CLAUDE.md
+// internal/tools/jobs.go's handleCreateTask — per the CLAUDE.md
 // shared-tool-parity rule, validation and return shape must match.
 func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller, svc *services.Services, llm *anthropic.Client) (*mcp.CallToolResult, error) {
 	desc, _ := req.RequireString("description")
@@ -431,7 +431,7 @@ func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *s
 	}
 
 	model := tools.ClassifyTaskModel(ctx, llm, desc)
-	task, err := svc.Tasks.Create(ctx, caller, services.CreateInput{
+	job, err := svc.Jobs.Create(ctx, caller, services.CreateInput{
 		Description: desc,
 		SkillName:   skillName,
 		CronExpr:    cronExpr,
@@ -456,8 +456,8 @@ func handleMCPCreateTask(ctx context.Context, req mcp.CallToolRequest, caller *s
 	if runOnce {
 		label = "Runs at"
 	}
-	return mcp.NewToolResultText(fmt.Sprintf("Task created (ID: %s, model: %s). %s: %s",
-		task.ID, task.Model, label, task.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Job created (ID: %s, model: %s). %s: %s",
+		job.ID, job.Model, label, job.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"))), nil
 }
 
 // parseMCPRunAt parses the run_at string in the caller's timezone.

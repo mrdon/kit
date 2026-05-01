@@ -53,7 +53,7 @@ const HaltedPrefix = "HALTED: "
 // ExecContext holds everything a tool needs to execute.
 //
 // Responder, OnToolCall, and OnIteration are observability/redirection
-// seams used by the chat SSE path. Slack and scheduled-task callers
+// seams used by the chat SSE path. Slack and scheduled-job callers
 // leave them unset; agent.go treats nil values as no-op so there is one
 // code path through the loop regardless of caller.
 type ExecContext struct {
@@ -71,26 +71,26 @@ type ExecContext struct {
 	// LLM is the shared Anthropic client. Populated by agent.buildExecContext
 	// and the gated-tool resolve executor; tool tests leave it nil. Handlers
 	// that need a one-off Claude call (e.g. create_task's Haiku triage over
-	// task.description) read it. A nil value means "this ExecContext was
+	// job.description) read it. A nil value means "this ExecContext was
 	// built by a test / path that doesn't supply an LLM" — handlers should
 	// fall back to a safe default rather than panicking.
 	LLM *anthropic.Client
 
-	// TaskID is set when this run is executing a scheduled task. Tools
-	// that want to link artifacts back to the originating task (e.g.
-	// create_decision stamping origin_task_id) read this. Nil for
+	// TaskID is set when this run is executing a scheduled job. Tools
+	// that want to link artifacts back to the originating job (e.g.
+	// create_decision stamping origin_job_id) read this. Nil for
 	// user-initiated Slack or chat runs.
 	TaskID *uuid.UUID
 
-	// TaskPolicy, when non-nil, is the capability manifest the scheduler
-	// injected for this task run. The registry consults it inside
+	// JobPolicy, when non-nil, is the capability manifest the scheduler
+	// injected for this job run. The registry consults it inside
 	// ExecuteWithResult to enforce allow-list, argument pinning, and
 	// force-gate independently of what the LLM put in the tool input.
-	// Nil for interactive Slack / chat runs and for tasks without a
+	// Nil for interactive Slack / chat runs and for jobs without a
 	// policy — enforcement short-circuits and today's behaviour is
 	// unchanged. ExecContext is treated as single-goroutine; callers
-	// must not mutate TaskPolicy mid-run.
-	TaskPolicy *models.Policy
+	// must not mutate JobPolicy mid-run.
+	JobPolicy *models.Policy
 
 	// Responder is where reply_in_thread sends its output. When nil, the
 	// handler constructs a SlackResponder on demand (default behavior).
@@ -277,7 +277,7 @@ func SetGateCreator(c GateCreator) {
 // NewRegistry creates a registry and runs all register functions for the
 // given caller. botInitiated toggles which messaging tools are registered:
 // live Slack conversations get reply_in_thread; bot-initiated runs
-// (scheduled tasks, decision resolves) do not — the agent must pick a
+// (scheduled jobs, decision resolves) do not — the agent must pick a
 // named channel or user explicitly.
 //
 // The caller determines two things: admin gating for admin-only static
@@ -299,7 +299,7 @@ func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool
 	registerMemoryTools(r, isAdmin)
 	registerTenantTools(r, isAdmin)
 	registerWebTools(r)
-	registerTaskTools(r, isAdmin)
+	registerJobTools(r, isAdmin)
 	registerUserTools(r)
 
 	// App tools
@@ -549,18 +549,18 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 		callerRequested, input = services.ReadRequireApproval(input)
 	}
 
-	// Task-policy enforcement runs before the gate decision. Allow-list
-	// and pinned-args are no-ops when ec.TaskPolicy is nil (interactive
+	// Job-policy enforcement runs before the gate decision. Allow-list
+	// and pinned-args are no-ops when ec.JobPolicy is nil (interactive
 	// paths); force_gate is OR'd into shouldGate below.
-	if !ec.TaskPolicy.IsAllowed(name) {
+	if !ec.JobPolicy.IsAllowed(name) {
 		recordPolicyEvent(ec, models.PolicyEnforcedData{
 			Action:   models.PolicyActionAllowListReject,
 			ToolName: name,
 			Reason:   "tool not in allowed_tools",
 		})
-		return ExecResult{}, fmt.Errorf("tool %q not permitted by task policy", name)
+		return ExecResult{}, fmt.Errorf("tool %q not permitted by job policy", name)
 	}
-	if pinned := ec.TaskPolicy.PinnedFor(name); len(pinned) > 0 {
+	if pinned := ec.JobPolicy.PinnedFor(name); len(pinned) > 0 {
 		merged, changed, err := models.MergePinnedArgs(input, pinned)
 		if err != nil {
 			return ExecResult{}, fmt.Errorf("applying pinned args for %q: %w", name, err)
@@ -578,7 +578,7 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 		input = merged
 	}
 
-	forcedGate := ec.TaskPolicy.ForcesGate(name)
+	forcedGate := ec.JobPolicy.ForcesGate(name)
 	shouldGate := def.DefaultPolicy == PolicyGate || callerRequested || forcedGate
 	if shouldGate {
 		_, _, approved := approval.FromCtx(ec.Ctx)
@@ -587,7 +587,7 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 				recordPolicyEvent(ec, models.PolicyEnforcedData{
 					Action:   models.PolicyActionForceGateApplied,
 					ToolName: name,
-					Reason:   "force_gate on task policy",
+					Reason:   "force_gate on job policy",
 				})
 			}
 			out, err := r.createGateCard(ec, def, input)
@@ -782,7 +782,7 @@ func defaultGateCardPreview(toolName string) GateCardPreview {
 
 // IsTerminal returns true if calling this tool should end the agent loop.
 // All three messaging tools are terminal — any single post is the agent's
-// output for that run. A task that needs to fan out to multiple targets
+// output for that run. A job that needs to fan out to multiple targets
 // can emit parallel tool calls in one turn, or be split into separate
 // decision options.
 func (r *Registry) IsTerminal(name string, _ json.RawMessage, _ string) bool {

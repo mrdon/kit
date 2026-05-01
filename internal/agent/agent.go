@@ -50,7 +50,7 @@ func (a *Agent) LLM() *anthropic.Client { return a.llm }
 // RunInput is everything the agent loop needs for a single turn.
 // Required fields (Slack through UserText) identify the conversation;
 // optional fields configure one run's observer hooks, system-prompt
-// additions, and task-context metadata. Pointer-to-struct isn't used
+// additions, and job-context metadata. Pointer-to-struct isn't used
 // because every callsite has all the required fields on hand.
 type RunInput struct {
 	// Slack client, tenant/user/session, and the three conversation
@@ -63,10 +63,10 @@ type RunInput struct {
 	ThreadTS string
 	UserText string
 
-	// Task, when non-nil, marks this run as a scheduled-task execution
+	// Job, when non-nil, marks this run as a scheduled-job execution
 	// and adds author metadata to the system prompt. Slack-live and chat
 	// runs leave it nil.
-	Task *TaskContext
+	Job *JobContext
 
 	// Responder overrides where reply_in_thread sends its output. When
 	// nil the handler defaults to a Slack responder.
@@ -87,7 +87,7 @@ type RunInput struct {
 	// assistant_turn pairs from session history at the last N, and
 	// drops tool_results blocks entirely from replay. Used by the
 	// card-chat path (HistoryWindow=6) to keep per-card conversations
-	// bounded; Slack and task runs leave it 0 (full replay, today's
+	// bounded; Slack and job runs leave it 0 (full replay, today's
 	// behavior).
 	HistoryWindow int
 
@@ -101,7 +101,7 @@ type RunInput struct {
 
 	// Model is the tier name ("haiku" or "sonnet") to run this turn
 	// under. Empty → Haiku (matches pre-change behaviour for interactive
-	// callers). The scheduler sets this from task.Model so each
+	// callers). The scheduler sets this from job.Model so each
 	// scheduled run honours the classifier's decision.
 	Model string
 }
@@ -119,7 +119,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	}
 
 	var status *statusTracker
-	if in.Task == nil && !strings.HasPrefix(in.Channel, "web:") {
+	if in.Job == nil && !strings.HasPrefix(in.Channel, "web:") {
 		status = newStatusTracker(in.Slack, in.Channel, in.ThreadTS)
 		status.update(ctx, "Thinking...")
 		defer status.cleanup(ctx)
@@ -228,12 +228,12 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 		OnToolCall:  in.OnToolCall,
 		OnIteration: in.OnIteration,
 	}
-	if in.Task != nil && in.Task.ID != (uuid.UUID{}) {
-		taskID := in.Task.ID
-		ec.TaskID = &taskID
+	if in.Job != nil && in.Job.ID != (uuid.UUID{}) {
+		jobID := in.Job.ID
+		ec.TaskID = &jobID
 	}
-	if in.Task != nil && in.Task.Policy != nil {
-		ec.TaskPolicy = in.Task.Policy
+	if in.Job != nil && in.Job.Policy != nil {
+		ec.JobPolicy = in.Job.Policy
 	}
 	return ec
 }
@@ -251,7 +251,7 @@ func (a *Agent) buildInitialMessages(ctx context.Context, in RunInput) []anthrop
 }
 
 func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.SystemBlock {
-	systemText := BuildSystemPrompt(ctx, a.pool, in.Tenant, in.User, in.Task)
+	systemText := BuildSystemPrompt(ctx, a.pool, in.Tenant, in.User, in.Job)
 	if in.SystemSuffix != "" {
 		systemText += "\n\n" + in.SystemSuffix
 	}
@@ -322,7 +322,7 @@ func (a *Agent) callLLM(ctx context.Context, tenantID, sessionID uuid.UUID, mode
 }
 
 // handleEndTurn emits any trailing assistant text. Bot-initiated runs
-// (scheduled tasks, decision resolves) post via explicit tools, so any
+// (scheduled jobs, decision resolves) post via explicit tools, so any
 // stray final text is a terse "Done." and is dropped. Returns true if a
 // message was sent to the user.
 func (a *Agent) handleEndTurn(ctx context.Context, ec *tools.ExecContext, in RunInput, resp *anthropic.Response) bool {
@@ -438,7 +438,7 @@ func (a *Agent) sendRateLimitNotice(ctx context.Context, ec *tools.ExecContext, 
 }
 
 // historyOptions tunes replay behavior per caller. The defaults (zero
-// values) preserve today's full-replay behavior for Slack and task
+// values) preserve today's full-replay behavior for Slack and job
 // callers; the card-chat path sets both to bound memory growth.
 type historyOptions struct {
 	// windowPairs > 0 caps replayed user/assistant message pairs at the

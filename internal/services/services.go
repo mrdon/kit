@@ -76,7 +76,7 @@ type Services struct {
 	Rules    *RuleService
 	Memories *MemoryService
 	Roles    *RoleService
-	Tasks    *TaskService
+	Jobs     *JobService
 	Tenants  *TenantService
 	Users    *UserService
 	Sessions *SessionService
@@ -90,7 +90,7 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor) *Services {
 		Rules:    &RuleService{pool: pool},
 		Memories: &MemoryService{pool: pool},
 		Roles:    &RoleService{pool: pool},
-		Tasks:    &TaskService{pool: pool},
+		Jobs:     &JobService{pool: pool},
 		Tenants:  &TenantService{pool: pool},
 		Users:    &UserService{pool: pool},
 		Sessions: &SessionService{pool: pool},

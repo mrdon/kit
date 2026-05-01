@@ -26,17 +26,17 @@ func init() {
 type TodoApp struct {
 	svc     *TodoService
 	llm     *anthropic.Client
-	taskSvc *services.TaskService
+	taskSvc *services.JobService
 	enc     *crypto.Encryptor
 }
 
 // Configure wires the anthropic client (for the resolution suggester),
-// the TaskService (for spawning tasks when a user taps a resolution
+// the JobService (for spawning jobs when a user taps a resolution
 // chip), and the encryptor (for decrypting the tenant bot token to open
 // a DM at resolve time). Call once from main.go after services.New.
 // Safe to omit in tests: missing llm silently skips the suggester;
 // missing taskSvc/enc fails any chip tap with a clear error.
-func Configure(llm *anthropic.Client, taskSvc *services.TaskService, enc *crypto.Encryptor) {
+func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.Encryptor) {
 	if instance == nil {
 		return
 	}

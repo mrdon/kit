@@ -13,8 +13,8 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-func registerTaskTools(r *Registry, isAdmin bool) {
-	for _, meta := range services.TaskTools {
+func registerJobTools(r *Registry, isAdmin bool) {
+	for _, meta := range services.JobTools {
 		if meta.AdminOnly && !isAdmin {
 			continue
 		}
@@ -23,31 +23,31 @@ func registerTaskTools(r *Registry, isAdmin bool) {
 			Description: meta.Description,
 			Schema:      meta.Schema,
 			AdminOnly:   meta.AdminOnly,
-			Handler:     taskHandler(meta.Name, r),
+			Handler:     jobHandler(meta.Name, r),
 		}
-		if meta.Name == "create_task" {
-			def.GateCardPreview = createTaskGatePreview
+		if meta.Name == "create_job" {
+			def.GateCardPreview = createJobGatePreview
 		}
 		r.Register(def)
 	}
 }
 
-// createTaskGatePreview customises the approval card when the agent sets
+// createJobGatePreview customises the approval card when the agent sets
 // require_approval on create_task. The description + schedule are what
 // the user mostly wants to review; the card body preview component
 // renders the full arguments.
-func createTaskGatePreview(_ *ExecContext, input json.RawMessage) GateCardPreview {
+func createJobGatePreview(_ *ExecContext, input json.RawMessage) GateCardPreview {
 	var args struct {
 		Description string `json:"description"`
 	}
 	_ = json.Unmarshal(input, &args)
-	title := "Schedule task?"
+	title := "Schedule job?"
 	if args.Description != "" {
 		title = "Schedule: " + truncateRunes(args.Description, 70)
 	}
 	return GateCardPreview{
 		Title:        title,
-		ApproveLabel: "Create task",
+		ApproveLabel: "Create job",
 		SkipLabel:    "Don't create",
 	}
 }
@@ -60,28 +60,28 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-func taskHandler(name string, r *Registry) HandlerFunc {
+func jobHandler(name string, r *Registry) HandlerFunc {
 	switch name {
-	case "create_task":
+	case "create_job":
 		return func(ec *ExecContext, input json.RawMessage) (string, error) {
 			return handleCreateTask(ec, input, r)
 		}
-	case "list_tasks":
+	case "list_jobs":
 		return handleListTasks
-	case "update_task":
+	case "update_job":
 		return func(ec *ExecContext, input json.RawMessage) (string, error) {
 			return handleUpdateTask(ec, input, r)
 		}
 	default:
 		return func(_ *ExecContext, _ json.RawMessage) (string, error) {
-			return "", fmt.Errorf("unknown task tool: %s", name)
+			return "", fmt.Errorf("unknown job tool: %s", name)
 		}
 	}
 }
 
 // parseAndValidatePolicy extracts the optional "policy" field from the
 // tool input and validates it against the caller's registry. Returns
-// (nil, "", nil) when no policy was supplied — the task gets today's
+// (nil, "", nil) when no policy was supplied — the job gets today's
 // behaviour. Returns (nil, userMessage, nil) on a user-correctable error
 // (unknown key, unknown tool, wrong type). Only returns (nil, "", err)
 // on internal failures.
@@ -190,7 +190,7 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	}
 
 	model := ClassifyTaskModel(ec.Ctx, ec.LLM, inp.Description)
-	task, err := ec.Svc.Tasks.Create(ec.Ctx, ec.Caller(), services.CreateInput{
+	job, err := ec.Svc.Jobs.Create(ec.Ctx, ec.Caller(), services.CreateInput{
 		Description: inp.Description,
 		SkillName:   inp.SkillName,
 		CronExpr:    inp.CronExpr,
@@ -203,7 +203,7 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 		Policy:      policy,
 	})
 	if errors.Is(err, services.ErrForbidden) {
-		return "Only admins can create tenant-scoped tasks.", nil
+		return "Only admins can create tenant-scoped jobs.", nil
 	}
 	if errors.Is(err, services.ErrNotFound) {
 		return fmt.Sprintf("Skill %q not found.", inp.SkillName), nil
@@ -216,8 +216,8 @@ func handleCreateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	if runOnce {
 		label = "Runs at"
 	}
-	return fmt.Sprintf("Task created (ID: %s, model: %s). %s: %s (%s)",
-		task.ID, task.Model, label, task.NextRunAt.Format("Mon Jan 2 3:04 PM"), tz), nil
+	return fmt.Sprintf("Job created (ID: %s, model: %s). %s: %s (%s)",
+		job.ID, job.Model, label, job.NextRunAt.Format("Mon Jan 2 3:04 PM"), tz), nil
 }
 
 func resolveTimezone(ec *ExecContext) string {
@@ -235,17 +235,17 @@ func resolveTimezone(ec *ExecContext) string {
 }
 
 func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
-	tasks, err := ec.Svc.Tasks.List(ec.Ctx, ec.Caller())
+	jobs, err := ec.Svc.Jobs.List(ec.Ctx, ec.Caller())
 	if err != nil {
 		return "", err
 	}
-	if len(tasks) == 0 {
-		return "No scheduled tasks.", nil
+	if len(jobs) == 0 {
+		return "No scheduled jobs.", nil
 	}
 
 	var b strings.Builder
-	b.WriteString("Scheduled tasks:\n")
-	for _, t := range tasks {
+	b.WriteString("Scheduled jobs:\n")
+	for _, t := range jobs {
 		status := string(t.Status)
 		if t.LastError != nil {
 			status += " (last error: " + *t.LastError + ")"
@@ -278,20 +278,20 @@ func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	taskID, err := uuid.Parse(inp.ID)
+	jobID, err := uuid.Parse(inp.ID)
 	if err != nil {
-		return "Invalid task id.", nil
+		return "Invalid job id.", nil
 	}
 
 	if inp.Delete {
-		err = ec.Svc.Tasks.Delete(ec.Ctx, ec.Caller(), taskID)
+		err = ec.Svc.Jobs.Delete(ec.Ctx, ec.Caller(), jobID)
 		if errors.Is(err, services.ErrNotFound) {
-			return "Task not found or you don't have permission to delete it.", nil
+			return "Job not found or you don't have permission to delete it.", nil
 		}
 		if err != nil {
 			return "", err
 		}
-		return "Task deleted.", nil
+		return "Job deleted.", nil
 	}
 
 	policy, msg, err := parseAndValidatePolicy(inp.Policy, reg)
@@ -316,15 +316,15 @@ func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (st
 		return "Provide description, skill_name, policy, or delete=true.", nil
 	}
 
-	err = ec.Svc.Tasks.Update(ec.Ctx, ec.Caller(), taskID, update)
+	err = ec.Svc.Jobs.Update(ec.Ctx, ec.Caller(), jobID, update)
 	if errors.Is(err, services.ErrNotFound) {
 		if inp.SkillName != nil && *inp.SkillName != "" {
-			return fmt.Sprintf("Task not found, or skill %q not found, or you don't have permission to update it.", *inp.SkillName), nil
+			return fmt.Sprintf("Job not found, or skill %q not found, or you don't have permission to update it.", *inp.SkillName), nil
 		}
-		return "Task not found or you don't have permission to update it.", nil
+		return "Job not found or you don't have permission to update it.", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	return "Task updated.", nil
+	return "Job updated.", nil
 }

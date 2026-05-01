@@ -87,7 +87,7 @@ When an admin says "build me an app for X", work through these steps in order. M
 
 7. **Expose each function as a tool** with a crisp `description` and a complete `args_schema`. Set `visible_to_roles` explicitly — never leave it empty unless the tool is truly open to everyone. When in doubt about the JSON-Schema shape, copy the `args_schema` from the closest entry in `builder_examples` and adapt — hand-writing schemas from scratch is the easiest place for subtle drift to creep in.
 
-8. **Schedule anything recurring** via `app_schedule_script`. A scheduled builder script creates a task under the hood; for scheduled work that touches channels, DMs, or admin-gated actions you should pass a `policy` block — see the `creating-tasks` skill for how to design `allowed_tools` / `force_gate` / `pinned_args`. Policies cannot be ignored by prompt drift; function bodies can.
+8. **Schedule anything recurring** via `app_schedule_script`. A scheduled builder script creates a task under the hood; for scheduled work that touches channels, DMs, or admin-gated actions you should pass a `policy` block — see the `creating-jobs` skill for how to design `allowed_tools` / `force_gate` / `pinned_args`. Policies cannot be ignored by prompt drift; function bodies can.
 
 9. **Sanity-check** with `app_list_tools`, `app_list_schedules`, `app_script_stats`. If the admin will use this tomorrow, plan to check `app_script_stats` after the first day of real traffic.
 
@@ -409,7 +409,7 @@ Know these before you write code the sandbox will reject.
 | `add_todo_comment(todo_id, content)` | Comment on a todo. |
 | `create_decision(title, body, options, priority=, role_scopes=)` | Emit a decision card. |
 | `create_briefing(title, body, severity=, role_scopes=)` | Emit a briefing card. `role_scopes` is a list of role names that must exist in the tenant — every tenant has the builtin `admin` and `member` roles, so `role_scopes=["admin"]` restricts to admins. For tenant-wide visibility leave `role_scopes=[]` (admins also see everything at the agent surface via the superuser bypass). For per-user delivery use `dm_user`. |
-| `create_task(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-tasks` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |
+| `create_job(description, cron=, timezone=, channel=, run_once=, policy=)` | Kit task (scheduled prompt). **See the `creating-jobs` skill** for description + `policy` design — scheduled prompts fire with no human in the loop, so structural rails matter more than wording. |
 | `add_memory(content, scope_type=, scope_value=)` | Save a memory. |
 | `send_slack_message(channel, text, thread_ts=)` | Post to Slack. |
 | `post_to_channel(channel, text, thread_ts=)` | Alias for `send_slack_message`. |

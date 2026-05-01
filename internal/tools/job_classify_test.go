@@ -9,14 +9,14 @@ import (
 
 func TestClassifyTaskModel_NilClientFallsBackToHaiku(t *testing.T) {
 	got := ClassifyTaskModel(context.Background(), nil, "draft personalized emails for every open todo")
-	if got != models.TaskModelHaiku {
+	if got != models.JobModelHaiku {
 		t.Fatalf("nil client should fall back to haiku, got %q", got)
 	}
 }
 
 func TestClassifyTaskModel_EmptyDescriptionFallsBackToHaiku(t *testing.T) {
 	got := ClassifyTaskModel(context.Background(), nil, "   ")
-	if got != models.TaskModelHaiku {
+	if got != models.JobModelHaiku {
 		t.Fatalf("empty description should fall back to haiku, got %q", got)
 	}
 }

@@ -291,7 +291,7 @@ func (s *Service) ListForCaller(ctx context.Context, c *services.Caller, limit i
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, organizer_id, kind, status, config, result,
-		       deadline_at, shepherd_task_id, created_at, updated_at
+		       deadline_at, shepherd_job_id, created_at, updated_at
 		FROM app_coordinations
 		WHERE tenant_id = $1 AND organizer_id = $2
 		ORDER BY created_at DESC
