@@ -303,13 +303,19 @@ func listStack(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UU
 	b.WriteString(baseCardQuery)
 	args := []any{tenantID, userID}
 	b.WriteString(` LEFT JOIN app_card_user_acks ua ON ua.card_id = c.id AND ua.user_id = $2`)
+	// Per-user snooze: hides a card from this user's feed until snoozed_until
+	// passes. Lives in app_user_card_snoozes (not on the kind-specific child
+	// tables) so the same shape covers decisions and briefings, and so the
+	// future Slack-DM / email-digest dispatchers can consult the same
+	// surface-agnostic state.
+	b.WriteString(` LEFT JOIN app_user_card_snoozes us ON us.card_id = c.id AND us.user_id = $2 AND us.snoozed_until > now()`)
 
 	scopeSQL, scopeArgs := models.ScopeFilterIDs("sc", 3, userID, roleIDs)
 	b.WriteString(` JOIN app_card_scopes s ON s.card_id = c.id JOIN scopes sc ON sc.id = s.scope_id WHERE c.tenant_id = $1 AND (`)
 	b.WriteString(scopeSQL)
 	b.WriteString(`) AND c.state = $`)
 	fmt.Fprintf(&b, "%d", 3+len(scopeArgs))
-	b.WriteString(` AND ua.card_id IS NULL`)
+	b.WriteString(` AND ua.card_id IS NULL AND us.card_id IS NULL`)
 	args = append(args, scopeArgs...)
 	args = append(args, CardStatePending)
 	b.WriteString(`

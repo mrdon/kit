@@ -160,6 +160,35 @@ func updateDecisionTx(ctx context.Context, tx pgx.Tx, tenantID, cardID uuid.UUID
 	return nil
 }
 
+// upsertUserCardSnooze writes a per-user snooze row for the given card.
+// Refuses non-pending cards so a resolved/cancelled card can't be hidden.
+// Idempotent: re-snoozing the same card overwrites snoozed_until.
+func upsertUserCardSnooze(ctx context.Context, pool *pgxpool.Pool, tenantID, cardID, userID uuid.UUID, until time.Time) error {
+	var state CardState
+	if err := pool.QueryRow(ctx,
+		`SELECT state FROM app_cards WHERE tenant_id = $1 AND id = $2`,
+		tenantID, cardID,
+	).Scan(&state); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrCardNotFound
+		}
+		return fmt.Errorf("loading card: %w", err)
+	}
+	if state != CardStatePending {
+		return ErrAlreadyTerminal
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO app_user_card_snoozes (tenant_id, card_id, user_id, snoozed_until)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (card_id, user_id)
+		DO UPDATE SET snoozed_until = EXCLUDED.snoozed_until, created_at = now()`,
+		tenantID, cardID, userID, until,
+	); err != nil {
+		return fmt.Errorf("upserting user card snooze: %w", err)
+	}
+	return nil
+}
+
 // reviseDecisionOptionTx updates tool_arguments and/or prompt on a single
 // option of a pending card. Preserves tool_name, label, sort_order,
 // option_id. Takes FOR UPDATE on the parent card and refuses if not

@@ -86,6 +86,11 @@ func (p *cardsProvider) DoAction(ctx context.Context, caller *services.Caller, k
 		return nil, services.ErrNotFound
 	}
 	switch {
+	case actionID == "snooze_month":
+		if err := p.app.svc.SnoozeForUserOneMonth(ctx, caller, cardID); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("cards", kind, id)}}, nil
 	case kind == string(CardKindDecision) && actionID == "resolve":
 		var body struct {
 			OptionID string `json:"option_id"`

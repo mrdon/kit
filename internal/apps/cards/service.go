@@ -875,6 +875,73 @@ func pickTaskScope(c *services.Caller) (roleID, userID *uuid.UUID) {
 	return nil, &c.UserID
 }
 
+// cardSnoozeHourLocal is the clock hour (in tenant timezone) a snoozed
+// card reappears at. 7am puts the card back on the user's morning feed —
+// cards are deliberative, so unlike tasks (3am) we want them to land
+// during the workday, not pile up overnight.
+const cardSnoozeHourLocal = 7
+
+// SnoozeForUser hides a card from this user's swipe feed (and any future
+// notification surface — Slack DMs, email digests) until `until`. Per-user
+// state, not per-card: another user sharing the role-scope still sees it.
+// The card itself stays pending and reachable via list_decisions / direct
+// link / MCP; this only filters it out of the personal feeds.
+func (s *CardService) SnoozeForUser(ctx context.Context, c *services.Caller, cardID uuid.UUID, until time.Time) error {
+	card, err := s.Get(ctx, c, cardID)
+	if err != nil {
+		return err
+	}
+	if !canWrite(c, card) {
+		return services.ErrForbidden
+	}
+	return upsertUserCardSnooze(ctx, s.pool, c.TenantID, cardID, c.UserID, until)
+}
+
+// SnoozeForUserOneMonth is the convenience the swipe-UI's "Sleep 1 month"
+// action calls: 30 calendar days from now at cardSnoozeHourLocal local in
+// the tenant timezone. Email-link and Slack-button handlers (when those
+// ship) can use the same helper to compute the timestamp consistently.
+func (s *CardService) SnoozeForUserOneMonth(ctx context.Context, c *services.Caller, cardID uuid.UUID) error {
+	tz, err := s.tenantTimezone(ctx, c.TenantID)
+	if err != nil {
+		return err
+	}
+	until, err := cardSnoozeOneMonthAt(time.Now(), tz)
+	if err != nil {
+		return err
+	}
+	return s.SnoozeForUser(ctx, c, cardID, until)
+}
+
+func (s *CardService) tenantTimezone(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	tenant, err := models.GetTenantByID(ctx, s.pool, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("looking up tenant: %w", err)
+	}
+	if tenant == nil || tenant.Timezone == "" {
+		return "UTC", nil
+	}
+	return tenant.Timezone, nil
+}
+
+// cardSnoozeOneMonthAt returns the snoozed_until timestamp for the "Sleep
+// 1 month" action: 30 calendar days from `now`, clock set to
+// cardSnoozeHourLocal (07:00) in tz, converted to UTC. Pure function so
+// tests can pin wall time.
+func cardSnoozeOneMonthAt(now time.Time, tz string) (time.Time, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("loading timezone %q: %w", tz, err)
+	}
+	local := now.In(loc)
+	advanced := time.Date(local.Year(), local.Month(), local.Day()+30,
+		cardSnoozeHourLocal, 0, 0, 0, loc)
+	return advanced.UTC(), nil
+}
+
 // AckBriefing transitions a briefing card to a terminal state. Caller must
 // have write access.
 func (s *CardService) AckBriefing(ctx context.Context, c *services.Caller, cardID uuid.UUID, kind BriefingAckKind) (*Card, error) {

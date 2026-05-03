@@ -109,6 +109,11 @@ function Detail({
           )}
         </div>
       )}
+      <div className="acks" style={{ marginTop: '1rem' }}>
+        <button disabled={disabled} onClick={() => onAction('snooze_month')}>
+          😴 Sleep 1 month
+        </button>
+      </div>
     </>
   );
 }
