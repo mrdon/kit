@@ -82,28 +82,29 @@ make db-reset    # Wipe and restart Postgres
 
 ## Production Debugging
 
-> The dokku user's SSH login IS the dokku CLI — pass subcommands directly,
-> NOT prefixed with `dokku`. So `ssh dokku@host 'logs kit'`, not
-> `ssh dokku@host 'dokku logs kit'`. Same for `postgres:connect`, `config:get`, etc.
+> The `dokku` user's login shell on apps.twdata.org is `/bin/bash`, not the
+> dokku-via-sshcommand wrapper. So SSH commands run as bash, and you must
+> invoke the `dokku` binary explicitly: `ssh dokku@host 'dokku logs kit'`,
+> not `ssh dokku@host 'logs kit'`. Same for `dokku postgres:connect`, etc.
 
 ### Logs
 ```bash
 # Recent logs (adjust --num as needed)
-ssh dokku@apps.twdata.org 'logs kit --num 200'
+ssh dokku@apps.twdata.org 'dokku logs kit --num 200'
 
 # Filter for specific topics
-ssh dokku@apps.twdata.org 'logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
+ssh dokku@apps.twdata.org 'dokku logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
 ```
 
 ### Database queries
 ```bash
 # One-shot query (heredoc piped to postgres:connect)
-ssh dokku@apps.twdata.org 'postgres:connect kit-db' <<'SQL'
+ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db' <<'SQL'
 SELECT id, slack_team_id, name FROM tenants ORDER BY created_at;
 SQL
 
 # List postgres services
-ssh dokku@apps.twdata.org 'postgres:list'
+ssh dokku@apps.twdata.org 'dokku postgres:list'
 ```
 The container has no shell (`dokku enter` fails with no /bin/bash); always
 go through `postgres:connect`.
