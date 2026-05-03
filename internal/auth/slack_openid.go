@@ -27,15 +27,21 @@ type SlackIdentity struct {
 }
 
 // SlackAuthorizeURL builds the Slack OpenID authorization URL to redirect
-// the browser to. state is echoed back through the callback.
-func SlackAuthorizeURL(cfg SlackOpenIDConfig, redirectURI, state string) string {
-	return fmt.Sprintf(
+// the browser to. state is echoed back through the callback. If teamID is
+// non-empty, Slack pre-selects that workspace in the sign-in UI so the
+// user doesn't have to remember (or type) their workspace slug.
+func SlackAuthorizeURL(cfg SlackOpenIDConfig, redirectURI, state, teamID string) string {
+	u := fmt.Sprintf(
 		"https://slack.com/openid/connect/authorize?response_type=code&client_id=%s&scope=openid,profile&redirect_uri=%s&state=%s&nonce=%s",
 		url.QueryEscape(cfg.ClientID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape(state),
 		url.QueryEscape(randomString(16)),
 	)
+	if teamID != "" {
+		u += "&team=" + url.QueryEscape(teamID)
+	}
+	return u
 }
 
 // ExchangeSlackCode calls Slack's openid.connect.token + userInfo endpoints

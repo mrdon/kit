@@ -1,7 +1,9 @@
 package cards
 
 import (
+	"embed"
 	"encoding/json"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,6 +12,11 @@ import (
 	"github.com/mrdon/kit/internal/models"
 	webapp "github.com/mrdon/kit/web/app"
 )
+
+//go:embed templates/*.html
+var cardsTemplatesFS embed.FS
+
+var cardsPageTmpl = template.Must(template.ParseFS(cardsTemplatesFS, "templates/*.html"))
 
 // registerCardsRoutes wires all PWA HTTP routes. Workspace-scoped routes
 // under /{slug}/... require TenantFromPath to resolve the tenant first;
@@ -160,17 +167,42 @@ func (a *CardsApp) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, cookiePath+"login", http.StatusSeeOther)
 }
 
-// handleLogin starts the PWA Slack OpenID flow. A short-lived
-// __Host-kit_pwa_oauth cookie binds this browser to the state nonce so
-// the /oauth/callback handler can reject injected codes.
+// handleLogin renders an interstitial that names the workspace and
+// explains why we redirect to Slack. The interstitial's Continue link
+// hits the same URL with ?continue=1, which mints the state nonce
+// cookie and 302s to Slack's OpenID authorize endpoint. Without the
+// page, a 401-driven SPA redirect would just bounce the user to
+// slack.com with no context — first-time users especially had no idea
+// why they were leaving Kit.
 func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	if r.URL.Query().Get("continue") != "1" {
+		name := tenant.Name
+		if name == "" {
+			name = tenant.Slug
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		if err := cardsPageTmpl.ExecuteTemplate(w, "login.html", map[string]any{
+			"TenantSlug":    tenant.Slug,
+			"WorkspaceName": name,
+			"HasIcon":       len(tenant.Icon192) > 0,
+		}); err != nil {
+			slog.Error("cards: rendering login page", "error", err)
+		}
+		return
+	}
 	nonce, _, err := models.GenerateToken()
 	if err != nil {
 		http.Error(w, "nonce error", http.StatusInternalServerError)
 		return
 	}
 	auth.SetPWAOAuthNonce(w, nonce)
-	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce)
+	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce, tenant.SlackTeamID)
 	http.Redirect(w, r, slackURL, http.StatusFound)
 }
 

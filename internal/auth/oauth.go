@@ -173,6 +173,9 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		url.QueryEscape(slackState),
 		url.QueryEscape(randomString(16)),
 	)
+	if tenant.SlackTeamID != "" {
+		slackURL += "&team=" + url.QueryEscape(tenant.SlackTeamID)
+	}
 	http.Redirect(w, r, slackURL, http.StatusFound)
 }
 

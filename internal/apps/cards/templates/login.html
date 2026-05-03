@@ -1,0 +1,30 @@
+{{ define "login.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in to {{ .WorkspaceName }} on Kit</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1a1a2e; background: #fafafa; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06); padding: 40px 32px; max-width: 420px; width: 100%; text-align: center; }
+  .icon { width: 56px; height: 56px; border-radius: 12px; margin: 0 auto 20px; display: block; background: #4A154B; }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; }
+  .workspace { font-weight: 600; }
+  p { line-height: 1.55; color: #4b5563; margin-bottom: 16px; font-size: 0.95rem; }
+  .btn { display: inline-block; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1rem; background: #4A154B; color: #fff; margin-top: 12px; }
+  .btn:hover { background: #611f69; }
+  .hint { font-size: 0.85rem; color: #6b7280; margin-top: 20px; margin-bottom: 0; }
+</style>
+</head>
+<body>
+<main class="card">
+  {{ if .HasIcon }}<img class="icon" src="/{{ .TenantSlug }}/icon-192.png" alt="">{{ else }}<div class="icon"></div>{{ end }}
+  <h1>Sign in to <span class="workspace">{{ .WorkspaceName }}</span></h1>
+  <p>Kit uses your Slack identity to sign you in — same account, no extra password to remember.</p>
+  <a class="btn" href="/{{ .TenantSlug }}/login?continue=1">Continue with Slack</a>
+  <p class="hint">You'll bounce to slack.com to confirm, then come right back.</p>
+</main>
+</body>
+</html>
+{{ end }}
