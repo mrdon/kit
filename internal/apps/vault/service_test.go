@@ -655,19 +655,23 @@ func TestFailedUnlockCardOnlyOnTransition(t *testing.T) {
 }
 
 // recordingCardSurface is a no-op CardSurface that counts each kind
-// of card created. Used for testing the transition-only alarm logic
-// without actually wiring a CardService.
+// of card created and remembers their inputs. Used for testing card-
+// emission logic without wiring a real CardService.
 type recordingCardSurface struct {
-	decisions int
-	briefings int
+	decisions      int
+	briefings      int
+	decisionInputs []CardCreateInput
+	briefingInputs []CardCreateInput
 }
 
 func (r *recordingCardSurface) CreateDecision(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) error {
 	r.decisions++
+	r.decisionInputs = append(r.decisionInputs, in)
 	return nil
 }
 func (r *recordingCardSurface) CreateBriefing(ctx context.Context, tenantID uuid.UUID, in CardCreateInput) error {
 	r.briefings++
+	r.briefingInputs = append(r.briefingInputs, in)
 	return nil
 }
 

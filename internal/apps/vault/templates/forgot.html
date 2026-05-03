@@ -1,0 +1,30 @@
+{{ define "forgot.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="forgot" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+<h1>Forgot your master password?</h1>
+<noscript>This page requires JavaScript.</noscript>
+<section id="forgot-intro">
+  <p>Kit can't recover your master password — by design, only you ever knew it. An admin in your workspace can reset your vault so you can pick a new one.</p>
+  <p>Your stored secrets are not lost. They're protected by a workspace key admins can re-share with you after the reset.</p>
+  <p><strong>What happens next:</strong></p>
+  <ol>
+    <li>You send the reset request below.</li>
+    <li>Every workspace admin sees a card asking them to approve.</li>
+    <li>An admin verifies it's really you (Slack DM, in person, etc.) and clicks Approve.</li>
+    <li>Your old vault registration is wiped. You'll see a card on your stack with a link to set a new master password.</li>
+    <li>After you save, an admin re-grants your access.</li>
+  </ol>
+  <button type="button" id="forgot-submit">Send reset request</button>
+  <p id="status" role="status"></p>
+</section>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}

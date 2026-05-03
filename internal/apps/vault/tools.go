@@ -69,6 +69,18 @@ var vaultToolMetas = []services.ToolMeta{
 			"id": services.Field("string", "Vault entry UUID"),
 		}, "id"),
 	},
+	{
+		Name: "reset_vault_user",
+		// Description framed for the LLM but rarely invoked by it: this
+		// tool is fired from the "Forgot your master password?" web flow
+		// (POST /apps/vault/api/forgot creates an admin-scoped decision
+		// card whose approve option carries this tool name; resolution
+		// runs the handler as the approving admin).
+		Description: "Wipe a user's vault registration so they can register with a new master password. Used when the user has forgotten their master password. Requires admin approval through a decision card. After the wipe the user must re-register and an admin must re-grant access — existing stored secrets are not lost (vault key unchanged).",
+		Schema: services.PropsReq(map[string]any{
+			"user_id": services.Field("string", "UUID of the user whose vault registration should be wiped."),
+		}, "user_id"),
+	},
 }
 
 // ===== agent registration =====
@@ -88,12 +100,15 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 		// Gated agent tools per the plan + CLAUDE.md "gated tools must
 		// have one entry point" rule. The agent path runs through the
 		// registry's PolicyGate interceptor (decision card → human
-		// approval → svc call). The MCP path does not have an enforced
-		// gate today, so mcp.go refuses these two tools outright with
-		// a "use the agent or web" error rather than calling svc
-		// directly.
+		// approval → svc call). reset_vault_user is also gated because
+		// approval of the request card *is* the reset action; the card
+		// minted by RequestVaultReset carries this tool name on its
+		// approve option, and ResolveDecision runs it as the approver.
+		// The MCP path does not have an enforced gate today, so mcp.go
+		// refuses these tools outright with a "use the agent or web"
+		// error rather than calling svc directly.
 		switch meta.Name {
-		case "set_secret_role", "delete_secret":
+		case "set_secret_role", "delete_secret", "reset_vault_user":
 			def.DefaultPolicy = tools.PolicyGate
 		}
 		r.Register(def)
@@ -114,6 +129,8 @@ func vaultAgentHandler(name string, svc *Service) tools.HandlerFunc {
 		return handleAgentSetSecretRole(svc)
 	case "delete_secret":
 		return handleAgentDeleteSecret(svc)
+	case "reset_vault_user":
+		return handleAgentResetVaultUser(svc)
 	}
 	return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 		return "", fmt.Errorf("unknown vault tool: %s", name)
@@ -260,6 +277,34 @@ func handleAgentSetSecretRole(svc *Service) tools.HandlerFunc {
 			return "", err
 		}
 		return "Scope updated.", nil
+	}
+}
+
+func handleAgentResetVaultUser(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
+		var inp struct {
+			UserID string `json:"user_id"`
+		}
+		if err := json.Unmarshal(input, &inp); err != nil {
+			return "", fmt.Errorf("parsing input: %w", err)
+		}
+		targetID, err := uuid.Parse(inp.UserID)
+		if err != nil {
+			return "Invalid user_id.", nil
+		}
+		caller := ec.Caller()
+		audit := auditFromExecContext(ec)
+		audit.userAgent = "agent"
+		if err := svc.AdminResetVaultUser(ec.Ctx, caller, targetID, audit); err != nil {
+			if errors.Is(err, models.ErrNotFound) {
+				return "That user has no vault registration to reset.", nil
+			}
+			if errors.Is(err, services.ErrForbidden) {
+				return "Only admins can reset another user's vault.", nil
+			}
+			return "", err
+		}
+		return "Vault reset. The user can now register a new master password; once they do, an admin will need to re-grant access.", nil
 	}
 }
 

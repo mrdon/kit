@@ -41,7 +41,7 @@ func mcpHandlerFor(name string, svc *Service) mcpserver.ToolHandlerFunc {
 		return mcpViewSecret(svc)
 	case "start_add_secret":
 		return mcpStartAddSecret(svc)
-	case "set_secret_role", "delete_secret":
+	case "set_secret_role", "delete_secret", "reset_vault_user":
 		// Agent path runs these through PolicyGate, which mints a
 		// decision card a human approves in the swipe stack before the
 		// tool executes. The MCP path has no equivalent enforced gate

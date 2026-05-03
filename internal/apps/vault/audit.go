@@ -136,6 +136,21 @@ type EvtMasterPasswordReset struct {
 // their pending-reset row (Slack-account-takeover defense path).
 type EvtMasterPasswordResetCancelled struct{}
 
+// EvtAdminReset is written when an admin approves the "wipe a user's
+// vault registration so they can re-register from scratch" flow. Actor
+// is the approving admin; target_kind=vault_user, target_id is the
+// user being reset (also kept here so audit-log readers don't have to
+// re-derive it from the target_id column).
+type EvtAdminReset struct {
+	TargetUserID uuid.UUID `json:"target_user_id"`
+}
+
+// EvtVaultResetRequested is written when a user clicks "Forgot your
+// master password?" and the request card lands on the admin role's
+// stack. Actor is the requesting user; target is the same user (the
+// row whose vault would be wiped on approval).
+type EvtVaultResetRequested struct{}
+
 // ===== HTTP helpers =====
 
 // clientIP returns the request's remote IP as a netip.Addr, preferring the

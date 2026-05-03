@@ -93,6 +93,10 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	// on the add / reveal pages.
 	mux.Handle("GET /{slug}/apps/vault/api/principals", get(a.handlePrincipals))
 
+	// Forgot master password — admin-approved reset request flow.
+	mux.Handle("GET /{slug}/apps/vault/forgot", page(a.handleForgotPage))
+	mux.Handle("POST /{slug}/apps/vault/api/forgot", wrap(a.handleForgotPost))
+
 	// Capture
 	mux.Handle("GET /{slug}/apps/vault/add", page(a.handleAddPage))
 

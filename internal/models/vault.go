@@ -245,6 +245,31 @@ func CancelVaultReset(ctx context.Context, pool *pgxpool.Pool, tenantID, userID 
 	return nil
 }
 
+// AdminDeleteVaultUser unconditionally removes a user's vault_users row.
+// Used by the admin-driven master-password reset path: the admin approves
+// a decision card requesting reset for a user who forgot theirs; that
+// approval calls this and the user re-registers from scratch via the
+// existing register flow.
+//
+// Unlike CancelVaultReset (legitimate-user escape hatch during the 24h
+// reset cooldown) and DeclinePending (admin rejecting an unwrapped row),
+// this works regardless of the row's pending/granted/cooldown state.
+// Returns ErrNotFound if no row exists so callers can surface a clean
+// "user has no vault registration" message.
+func AdminDeleteVaultUser(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID uuid.UUID) error {
+	tag, err := pool.Exec(ctx, `
+		DELETE FROM app_vault_users
+		 WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, targetUserID)
+	if err != nil {
+		return fmt.Errorf("admin-deleting vault user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetVaultGrant writes a wrapped_vault_key onto the target user's row,
 // granted by granterID. Returns ErrNotFound if the target row doesn't exist.
 func SetVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID, granterID uuid.UUID, wrapped []byte) error {

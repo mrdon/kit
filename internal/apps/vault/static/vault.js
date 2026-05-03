@@ -71,9 +71,10 @@ async function main() {
   await connectWorker();
   installLockHooks();
   // Pages that require a registered vault user redirect to /register
-  // when /api/me 404s (no vault_users row). Skip on /register itself
-  // to avoid a redirect loop.
-  if (VAULT.page !== "register" && VAULT.page !== "cancel-reset") {
+  // when /api/me 404s (no vault_users row). Skip on register / cancel-
+  // reset / forgot — those pages are valid regardless of registration
+  // state (forgot exists precisely because the user can't unlock).
+  if (VAULT.page !== "register" && VAULT.page !== "cancel-reset" && VAULT.page !== "forgot") {
     if (!(await ensureRegistered())) return;
   }
   switch (VAULT.page) {
@@ -82,6 +83,7 @@ async function main() {
     case "reveal":       return wireReveal();
     case "grant":        return wireGrant();
     case "cancel-reset": return wireCancelReset();
+    case "forgot":       return wireForgot();
     default: setStatus(`Unknown vault page: ${VAULT.page}`, "error");
   }
 }
@@ -640,10 +642,8 @@ async function wireAdd() {
   if (params.get("title")) form.elements.title.value = params.get("title");
   if (params.get("url")) form.elements.url.value = params.get("url");
 
-  // Populate the role dropdown. The first option is "Everyone in the
-  // workspace" (NULL role_id); the rest are the caller's tenant roles.
-  // No implicit default for now — the user must pick.
   await populateRoleSelector(document.getElementById("role-selector"), null);
+  wirePasswordHelpers(form);
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -665,14 +665,11 @@ async function wireAdd() {
     const valueJSON = JSON.stringify(value);
     const enc = await workerCall("encrypt", { plaintext: new TextEncoder().encode(valueJSON) });
 
-    const tags = (fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean);
-
     try {
       await api("POST", "/entries", {
         title: fd.get("title") || "",
         username: fd.get("username") || "",
-        url: fd.get("url") || "",
-        tags,
+        url: normalizeURL(fd.get("url") || ""),
         value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
         value_nonce: bytesField(new Uint8Array(enc.nonce)),
         role_id: roleID,
@@ -686,6 +683,54 @@ async function wireAdd() {
     hideSection("add-form");
     showSection("saved-message");
   });
+}
+
+// normalizeURL prepends https:// when the user typed a bare hostname so
+// the saved URL is a clickable link on the reveal page. Empty stays empty;
+// anything with an explicit scheme is left alone.
+function normalizeURL(raw) {
+  const v = raw.trim();
+  if (!v) return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v;
+  return "https://" + v;
+}
+
+// wirePasswordHelpers wires the Show/Hide toggle and the Suggest button
+// for the password input. Generated passwords use crypto.getRandomValues
+// over a 70-char alphabet (~6.13 bits/char) → 20 chars ≈ 122 bits, well
+// past the brute-force threshold for any realistic offline attack.
+function wirePasswordHelpers(form) {
+  const input = form.elements.password;
+  const toggle = document.getElementById("toggle-password");
+  const suggest = document.getElementById("generate-password");
+  if (!input || !toggle || !suggest) return;
+
+  toggle.addEventListener("click", () => {
+    if (input.type === "password") {
+      input.type = "text";
+      toggle.textContent = "Hide";
+    } else {
+      input.type = "password";
+      toggle.textContent = "Show";
+    }
+  });
+
+  suggest.addEventListener("click", () => {
+    input.value = generatePassword(20);
+    input.type = "text";
+    toggle.textContent = "Hide";
+  });
+}
+
+function generatePassword(length) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+  const out = new Array(length);
+  const buf = new Uint32Array(length);
+  crypto.getRandomValues(buf);
+  for (let i = 0; i < length; i++) {
+    out[i] = alphabet[buf[i] % alphabet.length];
+  }
+  return out.join("");
 }
 
 // populateRoleSelector fills a <select> element with the caller's
@@ -935,6 +980,26 @@ async function wireGrant() {
     setStatus("Declining…");
     await api("DELETE", `/users/${VAULT.targetUserId}`);
     setStatus("Declined. The user's pending registration was removed.", "success");
+  });
+}
+
+// wireForgot wires the "Send reset request" button on /apps/vault/forgot.
+// POSTs /api/forgot which mints the admin-scoped decision card. No
+// master-password unlock required — by definition the user can't unlock.
+async function wireForgot() {
+  const btn = document.getElementById("forgot-submit");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    setStatus("Sending request…");
+    try {
+      await api("POST", "/forgot", {});
+    } catch (err) {
+      btn.disabled = false;
+      setStatus(`Request failed: ${err.message || err}`, "error");
+      return;
+    }
+    setStatus("Request sent. An admin will review it on their swipe stack. You'll get a card here when the reset is approved.", "success");
   });
 }
 

@@ -408,6 +408,150 @@ func (s *Service) RevokeGrant(ctx context.Context, c *services.Caller, targetUse
 	return nil
 }
 
+// AdminResetVaultUser wipes a user's vault_users row so they can register
+// from scratch with a new master password. Called from the gated tool
+// handler after an admin approves the reset request decision card.
+//
+// Defense-in-depth admin check — the gate's resolve path already runs
+// with the approver's caller, but this method must be safe regardless
+// of who calls it. Refuses self-reset to protect admins from locking
+// themselves out (they would then have nobody to grant them back in).
+//
+// On success the caller's identity goes onto the audit row as actor;
+// the row's actor + target_id pair is the source of truth for "who
+// reset whom and when". A best-effort briefing fires on the target's
+// stack with a register link.
+func (s *Service) AdminResetVaultUser(ctx context.Context, c *services.Caller, targetUserID uuid.UUID, audit auditCtx) error {
+	if !c.IsAdmin {
+		return services.ErrForbidden
+	}
+	if c.UserID == targetUserID {
+		return errors.New("admin cannot reset their own vault — ask another admin")
+	}
+	if err := models.AdminDeleteVaultUser(ctx, s.pool, c.TenantID, targetUserID); err != nil {
+		return err
+	}
+	audit.log(ctx, "vault.admin_reset", "vault_user", &targetUserID, EvtAdminReset{
+		TargetUserID: targetUserID,
+	})
+	s.fireAdminResetBriefing(ctx, c, targetUserID)
+	return nil
+}
+
+// RequestVaultReset creates a decision card on the admin role's stack
+// asking them to approve wiping the caller's vault registration. The
+// approve option carries the gated `reset_vault_user` tool; admin
+// approval routes through the existing decision-resolve flow which
+// runs the tool as the approver and lands in AdminResetVaultUser.
+//
+// System-scoped (CardSurface.CreateDecision routes through
+// CreateSystemDecision in cmd/kit/vault_cards.go) so the requesting
+// non-admin user can scope the card to the admin role even though
+// they don't hold it themselves.
+func (s *Service) RequestVaultReset(ctx context.Context, c *services.Caller, audit auditCtx) error {
+	if s.cards == nil {
+		return errors.New("card surface not configured")
+	}
+	v, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
+	if err != nil {
+		return err
+	}
+	if v == nil {
+		return errors.New("you have no vault registration to reset — open the vault to set one up")
+	}
+	user, _ := models.GetUserByID(ctx, s.pool, c.TenantID, c.UserID)
+
+	args, err := json.Marshal(map[string]string{"user_id": c.UserID.String()})
+	if err != nil {
+		return fmt.Errorf("marshalling reset args: %w", err)
+	}
+
+	if err := s.cards.CreateDecision(ctx, c.TenantID, CardCreateInput{
+		Title:      "Reset " + resetRequesterDisplay(c, user) + "'s vault?",
+		Body:       buildResetRequestBody(c, user),
+		RoleScopes: []string{"admin"},
+		Decision: &CardDecisionCreateInput{
+			Priority:            "high",
+			RecommendedOptionID: "approve",
+			Options: []CardDecisionOption{
+				{
+					OptionID:  "approve",
+					Label:     "Reset their vault",
+					ToolName:  "reset_vault_user",
+					Arguments: args,
+				},
+				{OptionID: "skip", Label: "Cancel"},
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("creating reset request card: %w", err)
+	}
+
+	audit.log(ctx, "vault.reset_requested", "vault_user", &c.UserID, EvtVaultResetRequested{})
+	return nil
+}
+
+func resetRequesterDisplay(c *services.Caller, user *models.User) string {
+	if user != nil && user.DisplayName != nil && *user.DisplayName != "" {
+		return sanitizeMarkdownInline(*user.DisplayName)
+	}
+	return sanitizeMarkdownInline(c.Identity)
+}
+
+func buildResetRequestBody(c *services.Caller, user *models.User) string {
+	displayName := resetRequesterDisplay(c, user)
+	slackID := c.Identity
+	if user != nil && user.SlackUserID != "" {
+		slackID = user.SlackUserID
+	}
+	slackID = sanitizeMarkdownInline(slackID)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**%s** (<@%s>) forgot their vault master password and is asking for a reset.\n\n", displayName, slackID)
+	b.WriteString("Approving wipes their vault registration. They'll then set a new master password and need their access re-granted — their stored secrets are not lost.\n\n")
+	b.WriteString("**Verify out-of-band that this request is really from them** before approving. A compromised Slack account could trigger this to seed an attacker-controlled key for the next grant step.")
+	return b.String()
+}
+
+// fireAdminResetBriefing posts an urgent briefing on the target's stack
+// telling them their vault was reset and pointing them at /register.
+// Urgent because they cannot use any stored secret until they re-register.
+// Severity 'important' matches fireResetTriggeredBriefing for consistency.
+func (s *Service) fireAdminResetBriefing(ctx context.Context, approver *services.Caller, targetUserID uuid.UUID) {
+	if s.cards == nil {
+		return
+	}
+	tenant, err := models.GetTenantByID(ctx, s.pool, approver.TenantID)
+	if err != nil || tenant == nil {
+		slog.Warn("vault: loading tenant for admin-reset briefing", "error", err)
+		return
+	}
+	approverUser, _ := models.GetUserByID(ctx, s.pool, approver.TenantID, approver.UserID)
+	approverName := approver.Identity
+	if approverUser != nil && approverUser.DisplayName != nil && *approverUser.DisplayName != "" {
+		approverName = *approverUser.DisplayName
+	}
+	approverName = sanitizeMarkdownInline(approverName)
+
+	registerURL := fmt.Sprintf("/%s/apps/vault/register", tenant.Slug)
+	body := fmt.Sprintf(
+		"**Your vault was reset by %s.** Set a new master password to continue using the vault. "+
+			"After you save, an admin will re-grant your access. Your stored secrets are not lost.\n\n"+
+			"[Set a new master password →](%s)",
+		approverName, registerURL,
+	)
+	err = s.cards.CreateBriefing(ctx, approver.TenantID, CardCreateInput{
+		Title:      "Vault reset — set a new master password",
+		Body:       body,
+		UserScopes: []uuid.UUID{targetUserID},
+		Urgent:     true,
+		Briefing:   &CardBriefingCreateInput{Severity: "important"},
+	})
+	if err != nil {
+		slog.Warn("vault: firing admin-reset briefing failed", "user_id", targetUserID, "error", err)
+	}
+}
+
 // ===== card / briefing helpers =====
 
 // fireGrantRequestCard creates an admin-scoped decision card asking a

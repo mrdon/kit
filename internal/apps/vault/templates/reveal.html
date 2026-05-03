@@ -15,9 +15,11 @@
     <label>Master password
       <input type="password" name="master_password" autocomplete="current-password" required>
     </label>
+    <p class="help">This is the password you created when you set up your vault. Kit can't recover it.</p>
     <button type="submit">Unlock</button>
     <p id="unlock-status" role="status"></p>
   </form>
+  <p class="help"><a href="/{{ .TenantSlug }}/apps/vault/forgot">Forgot your master password?</a></p>
 </section>
 <section id="reveal-area" hidden>
   <h2 id="entry-title"></h2>

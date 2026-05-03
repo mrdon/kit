@@ -15,40 +15,43 @@
     <label>Master password
       <input type="password" name="master_password" autocomplete="current-password" required>
     </label>
+    <p class="help">This is the password you created when you set up your vault. Kit can't recover it.</p>
     <button type="submit">Unlock</button>
     <p id="unlock-status" role="status"></p>
   </form>
+  <p class="help"><a href="/{{ .TenantSlug }}/apps/vault/forgot">Forgot your master password?</a></p>
 </section>
 <form id="add-form" autocomplete="off" hidden>
-  <label>Title
-    <input type="text" name="title" required>
+  <label>Name
+    <input type="text" name="title" placeholder="e.g. Stripe — Marketing dashboard" required>
   </label>
   <label>Username
-    <input type="text" name="username" autocomplete="off">
+    <input type="text" name="username" autocomplete="off" placeholder="e.g. you@example.com">
   </label>
-  <label>URL
-    <input type="url" name="url" autocomplete="off">
+  <label>Website
+    <input type="text" name="url" autocomplete="off" placeholder="e.g. mail.google.com">
   </label>
   <label>Password
-    <input type="password" name="password" autocomplete="new-password" required>
+    <input type="password" name="password" id="password-input" autocomplete="new-password" required>
   </label>
+  <p class="row-actions">
+    <button type="button" id="toggle-password">Show</button>
+    <button type="button" id="generate-password">Suggest a strong one</button>
+  </p>
   <label>Notes
     <textarea name="notes" rows="3"></textarea>
   </label>
-  <label>2FA secret (optional)
-    <input type="text" name="totp" autocomplete="off" placeholder="otpauth://… or base32 secret">
+  <label>Authenticator setup code (optional)
+    <input type="text" name="totp" autocomplete="off">
   </label>
-  <p class="help">Paste the otpauth URI from the service's QR code, or the base32 secret it shows under "manual entry".</p>
-  <label>Tags (comma-separated)
-    <input type="text" name="tags" autocomplete="off">
-  </label>
+  <p class="help">If this account uses a 6-digit sign-in code from an app like Google Authenticator or Authy, paste the long setup code from the site's "Can't scan QR code?" or "Enter manually" link here. Skip if you don't use one.</p>
 
   <label>Who can see this?
     <select name="role_id" id="role-selector" required>
       <option value="" disabled selected>Loading roles…</option>
     </select>
   </label>
-  <p class="help">Pick the team that owns this secret, or "Everyone in the workspace" for shared infra.</p>
+  <p class="help">Pick the team that owns this. Use "Members (everyone in the workspace)" for things shared with everyone, like a company Wi-Fi password.</p>
 
   <button type="submit">Save</button>
   <p id="status" role="status"></p>
