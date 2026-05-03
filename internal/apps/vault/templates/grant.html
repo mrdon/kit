@@ -9,8 +9,13 @@
 <main id="vault-app" data-page="grant" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}" data-target-user-id="{{ .TargetUserID }}">
 <h1>Grant vault access</h1>
 <noscript>This page requires JavaScript.</noscript>
+<section class="explainer">
+  <p>This teammate has registered for the vault and is asking for access. Approving uses your unlocked vault key to wrap a copy of the workspace key with their public key — after that, they can read and add secrets.</p>
+  <p>Kit shows you their public-key fingerprint below. <strong>Confirm it with them on a different channel</strong> (DM, in person, video call) before granting — that's the one step Kit can't do for you.</p>
+</section>
 <section id="unlock-prompt" hidden>
   <h2>Unlock your vault first</h2>
+  <p class="help">Enter the master password you set when you registered for the vault.</p>
   <form id="unlock-form" autocomplete="off">
     <label>Master password
       <input type="password" name="master_password" autocomplete="current-password" required>

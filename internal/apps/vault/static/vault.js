@@ -613,12 +613,30 @@ async function wireRegister() {
       });
     }
 
-    setStatus(
-      wrappedVaultKey
-        ? "Vault initialized. You're now the workspace's first vault member."
-        : "Registered. Waiting for an admin to grant you access.",
-      "success",
-    );
+    if (wrappedVaultKey) {
+      showChecklist({
+        paneId: "success-pane",
+        title: "Vault ready",
+        intro: "You're the workspace's first vault member, so you set up the master key. Future teammates register, then you (or another admin) grant them access.",
+        hideIds: ["register-form"],
+        steps: [
+          { label: "Workspace vault initialized", state: "done" },
+          { label: "Add your first secret", sublabel: "Use the \"Add a secret\" page or ask Kit in Slack.", state: "current" },
+        ],
+      });
+    } else {
+      showChecklist({
+        paneId: "success-pane",
+        title: "You're registered — almost there",
+        intro: "Your keys are set up. An admin still needs to grant your account access to the workspace vault key before you can read or add secrets.",
+        hideIds: ["register-form"],
+        steps: [
+          { label: "Vault registered", sublabel: "Master password saved on this device only.", state: "done" },
+          { label: "An admin grants you access", sublabel: "They'll see a card on their swipe stack. Ping someone if it's urgent.", state: "current" },
+          { label: "Read and add secrets", state: "pending" },
+        ],
+      });
+    }
 
     // If the user landed on /register from a deep link to /add or
     // /reveal (ensureRegistered redirected them), bounce back so they
@@ -628,7 +646,7 @@ async function wireRegister() {
     const params = new URLSearchParams(window.location.search);
     const returnTo = params.get("return_to");
     if (returnTo && returnTo.startsWith("/" + VAULT.tenantSlug + "/")) {
-      setTimeout(() => location.replace(returnTo), 800);
+      setTimeout(() => location.replace(returnTo), 1500);
     }
   });
 }
@@ -999,7 +1017,19 @@ async function wireForgot() {
       setStatus(`Request failed: ${err.message || err}`, "error");
       return;
     }
-    setStatus("Request sent. An admin will review it on their swipe stack. You'll get a card here when the reset is approved.", "success");
+    showChecklist({
+      paneId: "success-pane",
+      title: "Reset request sent",
+      intro: "Every workspace admin now sees a card on their swipe stack asking them to approve. Ping one of them on Slack if it's urgent.",
+      hideIds: ["forgot-intro"],
+      steps: [
+        { label: "Reset request sent", state: "done" },
+        { label: "An admin verifies and approves", sublabel: "They'll confirm it's really you (Slack DM, in person, etc.) before clicking Approve.", state: "current" },
+        { label: "Set a new master password", sublabel: "You'll see a card on your stack with the link.", state: "pending" },
+        { label: "An admin re-grants your access", state: "pending" },
+        { label: "Read and add secrets", state: "pending" },
+      ],
+    });
   });
 }
 
@@ -1034,6 +1064,37 @@ function setStatus(text, kind) {
   if (!el) return;
   el.textContent = text || "";
   el.className = kind || "";
+}
+// showChecklist swaps a form/section out for a "what just happened, what
+// happens next" pane. steps is an array of { label, sublabel?, state }
+// where state is "done" | "current" | "pending". hideIds is a list of
+// element IDs to hide while the pane is shown (typically the form).
+function showChecklist({ paneId, title, intro, steps, hideIds }) {
+  const pane = document.getElementById(paneId);
+  if (!pane) return;
+  if (Array.isArray(hideIds)) {
+    for (const id of hideIds) hideSection(id);
+  }
+  const parts = [];
+  if (title) parts.push(`<h2>${escHTML(title)}</h2>`);
+  if (intro) parts.push(`<p>${escHTML(intro)}</p>`);
+  parts.push('<ul class="checklist">');
+  for (const s of steps) {
+    const sub = s.sublabel ? `<div class="sublabel">${escHTML(s.sublabel)}</div>` : "";
+    parts.push(
+      `<li class="${s.state}"><span class="marker" aria-hidden="true"></span>` +
+      `<span class="label">${escHTML(s.label)}${sub}</span></li>`,
+    );
+  }
+  parts.push("</ul>");
+  pane.innerHTML = parts.join("");
+  pane.hidden = false;
+  pane.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function escHTML(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+  );
 }
 function showSection(id) { const el = document.getElementById(id); if (el) el.hidden = false; }
 

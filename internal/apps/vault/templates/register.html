@@ -9,6 +9,11 @@
 <main id="vault-app" data-page="register" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
 <h1>Set up your vault</h1>
 <noscript>This page requires JavaScript.</noscript>
+<section class="explainer">
+  <p>The <strong>vault</strong> is where your team stores shared secrets — API keys, service credentials, anything you'd otherwise paste into a wiki or DM.</p>
+  <p>It's end-to-end encrypted: even Kit can't read what's inside. That's why you're picking a <strong>master password</strong> here, separate from your Slack login. It only ever lives in your head and on this device — Kit never sees it.</p>
+  <p>If you lose it, Kit can't recover it. But your teammates can: an admin resets your registration, you pick a new password, and they re-grant your access. Stored secrets are never lost.</p>
+</section>
 <form id="register-form" autocomplete="off">
   <label>
     Master password
@@ -18,10 +23,11 @@
     Confirm
     <input type="password" name="master_password_confirm" autocomplete="new-password" minlength="14" required>
   </label>
-  <p class="help">Pick something at least 14 characters. <strong>Kit cannot recover it</strong> — only your teammates can re-grant access if you forget.</p>
+  <p class="help">At least 14 characters. <strong>Kit cannot recover it</strong> — only your teammates can re-grant access if you forget.</p>
   <button type="submit">Set up vault</button>
   <p id="status" role="status"></p>
 </form>
+<div id="success-pane" class="success-pane" hidden></div>
 </main>
 <script type="module" src="{{ .StaticBase }}/vault.js"></script>
 </body>
