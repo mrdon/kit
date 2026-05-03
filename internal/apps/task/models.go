@@ -56,6 +56,12 @@ type TaskFilters struct {
 	Search         string
 	Overdue        bool
 	ClosedSince    *time.Time
+	// IncludeClosed admits done/cancelled rows when Status is empty. Default
+	// (false) excludes them so a generic list_tasks call doesn't drag the
+	// full history into agent context. An explicit Status filter or a
+	// ClosedSince window already implies the caller wants closed rows, so
+	// this flag is only consulted for the unfiltered case.
+	IncludeClosed bool
 }
 
 // TaskUpdates holds optional fields for updating a task.
@@ -169,6 +175,8 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 		argN++
 		b.WriteString(fmt.Sprintf(` AND t.status = $%d`, argN))
 		args = append(args, f.Status)
+	} else if !f.IncludeClosed && f.ClosedSince == nil {
+		b.WriteString(` AND t.status NOT IN ('done','cancelled')`)
 	}
 
 	if f.Priority != "" {

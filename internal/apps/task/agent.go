@@ -110,28 +110,30 @@ func handleCreateTask(svc *TaskService) tools.HandlerFunc {
 func handleListTasks(svc *TaskService) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			Status       string `json:"status"`
-			Priority     string `json:"priority"`
-			AssignedToMe bool   `json:"assigned_to_me"`
-			Assignee     string `json:"assignee"`
-			Unassigned   bool   `json:"unassigned"`
-			RoleScope    string `json:"role_scope"`
-			Search       string `json:"search"`
-			Overdue      bool   `json:"overdue"`
-			ClosedSince  string `json:"closed_since"`
+			Status        string `json:"status"`
+			Priority      string `json:"priority"`
+			AssignedToMe  bool   `json:"assigned_to_me"`
+			Assignee      string `json:"assignee"`
+			Unassigned    bool   `json:"unassigned"`
+			RoleScope     string `json:"role_scope"`
+			Search        string `json:"search"`
+			Overdue       bool   `json:"overdue"`
+			ClosedSince   string `json:"closed_since"`
+			IncludeClosed bool   `json:"include_closed"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
 
 		f := TaskFilters{
-			Status:       inp.Status,
-			Priority:     inp.Priority,
-			AssignedToMe: inp.AssignedToMe,
-			Unassigned:   inp.Unassigned,
-			RoleName:     inp.RoleScope,
-			Search:       inp.Search,
-			Overdue:      inp.Overdue,
+			Status:        inp.Status,
+			Priority:      inp.Priority,
+			AssignedToMe:  inp.AssignedToMe,
+			Unassigned:    inp.Unassigned,
+			RoleName:      inp.RoleScope,
+			Search:        inp.Search,
+			Overdue:       inp.Overdue,
+			IncludeClosed: inp.IncludeClosed,
 		}
 
 		if inp.Assignee != "" {

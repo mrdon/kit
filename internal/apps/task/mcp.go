@@ -116,6 +116,9 @@ func mcpListTasks(svc *TaskService) mcpserver.ToolHandlerFunc {
 		if b, ok := args["overdue"].(bool); ok {
 			f.Overdue = b
 		}
+		if b, ok := args["include_closed"].(bool); ok {
+			f.IncludeClosed = b
+		}
 		if v := req.GetString("assignee", ""); v != "" {
 			id, msg := svc.ResolveAssignee(ctx, caller, v)
 			if msg != "" {

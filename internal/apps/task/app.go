@@ -93,7 +93,7 @@ var taskTools = []services.ToolMeta{
 	},
 	{
 		Name:        "list_tasks",
-		Description: "List tasks with optional filters. Returns tasks visible to you (in your roles). Includes cancelled tasks (soft-deleted) — filter by status to exclude.",
+		Description: "List tasks visible to you (in your roles). By default returns only active tasks (open, in_progress, blocked) — done and cancelled are hidden to keep results small. To see closed tasks, pass `status` (e.g. 'done') or `include_closed: true`, or use `closed_since` for a date window.",
 		Schema: services.Props(map[string]any{
 			"status":         services.Field("string", "Filter by status: open, in_progress, blocked, done, cancelled"),
 			"priority":       services.Field("string", "Filter by priority: low, medium, high, urgent"),
@@ -104,6 +104,7 @@ var taskTools = []services.ToolMeta{
 			"search":         services.Field("string", "Full-text search on title and description"),
 			"overdue":        map[string]any{"type": "boolean", "description": "Only show overdue tasks (past due date, not done or cancelled)"},
 			"closed_since":   services.Field("string", "Show tasks closed since this date (YYYY-MM-DD)"),
+			"include_closed": map[string]any{"type": "boolean", "description": "Include done/cancelled tasks alongside active ones. Default false. Only needed when no `status` is specified — an explicit status (or `closed_since`) already controls inclusion."},
 		}),
 	},
 	{

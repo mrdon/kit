@@ -401,3 +401,72 @@ func containsStackTask(tasks []stackTask, id uuid.UUID) bool {
 	}
 	return false
 }
+
+// TestListExcludesClosedByDefault: an unfiltered list_tasks omits done and
+// cancelled rows so agent context isn't bloated with handled history. An
+// explicit status, IncludeClosed, or ClosedSince brings them back.
+func TestListExcludesClosedByDefault(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	caller := f.caller(t, f.bob)
+
+	open, err := f.svc.Create(ctx, caller, CreateInput{Title: "open task", RoleName: "founders"})
+	if err != nil {
+		t.Fatalf("create open: %v", err)
+	}
+	doneTask, err := f.svc.Create(ctx, caller, CreateInput{Title: "done task", RoleName: "founders"})
+	if err != nil {
+		t.Fatalf("create done: %v", err)
+	}
+	if _, err := f.svc.Complete(ctx, caller, doneTask.ID); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	cancelled, err := f.svc.Create(ctx, caller, CreateInput{Title: "cancelled task", RoleName: "founders"})
+	if err != nil {
+		t.Fatalf("create cancelled: %v", err)
+	}
+	cancelledStatus := "cancelled"
+	if _, err := f.svc.Update(ctx, caller, cancelled.ID, UpdateInput{Status: &cancelledStatus}); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	// Default: only the open task is visible.
+	got, err := f.svc.List(ctx, caller, TaskFilters{})
+	if err != nil {
+		t.Fatalf("list default: %v", err)
+	}
+	if !containsTask(got, open.ID) {
+		t.Errorf("default list should include open task")
+	}
+	if containsTask(got, doneTask.ID) || containsTask(got, cancelled.ID) {
+		t.Errorf("default list must not include done/cancelled tasks")
+	}
+
+	// IncludeClosed=true brings them back.
+	got, err = f.svc.List(ctx, caller, TaskFilters{IncludeClosed: true})
+	if err != nil {
+		t.Fatalf("list include_closed: %v", err)
+	}
+	if !containsTask(got, open.ID) || !containsTask(got, doneTask.ID) || !containsTask(got, cancelled.ID) {
+		t.Errorf("include_closed should return all three; got %d rows", len(got))
+	}
+
+	// Explicit status=done returns only the done row even with the new default.
+	got, err = f.svc.List(ctx, caller, TaskFilters{Status: "done"})
+	if err != nil {
+		t.Fatalf("list status=done: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != doneTask.ID {
+		t.Errorf("status=done should return only the done task; got %d rows", len(got))
+	}
+}
+
+func containsTask(tasks []Task, id uuid.UUID) bool {
+	for _, t := range tasks {
+		if t.ID == id {
+			return true
+		}
+	}
+	return false
+}
