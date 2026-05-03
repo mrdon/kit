@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +13,24 @@ import (
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/testdb"
 )
+
+// countFrontmatterOpens counts leading `---\n` delimiters in a SKILL.md
+// rendering. A correctly-stored skill produces exactly one block; the
+// pre-fix bug produced two when content already started with frontmatter.
+func countFrontmatterOpens(s string) int {
+	n := 0
+	for _, line := range strings.SplitAfter(s, "\n") {
+		if strings.TrimRight(line, "\n") == "---" {
+			n++
+		}
+	}
+	// One block has an opening and a closing `---`; halve to count blocks.
+	return n / 2
+}
+
+func isDuplicateRole(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate")
+}
 
 func lookupRoleID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (uuid.UUID, error) {
 	var id uuid.UUID
@@ -143,6 +162,47 @@ func TestSkillRoleScoping(t *testing.T) {
 			if s.ID == founderSkill.ID {
 				t.Fatalf("founder skill leaked into member catalog: %+v", s)
 			}
+		}
+	})
+
+	t.Run("Create strips embedded SKILL.md frontmatter", func(t *testing.T) {
+		adminUser, err := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin_strip", "Admin", "")
+		if err != nil {
+			t.Fatalf("admin user: %v", err)
+		}
+		if _, err := models.CreateRole(ctx, pool, tenant.ID, models.RoleAdmin, "admin"); err != nil &&
+			!isDuplicateRole(err) {
+			t.Fatalf("admin role: %v", err)
+		}
+		if err := models.AssignRole(ctx, pool, tenant.ID, adminUser.ID, models.RoleAdmin); err != nil {
+			t.Fatalf("assign admin: %v", err)
+		}
+		adminRoleID, err := lookupRoleID(ctx, pool, tenant.ID, models.RoleAdmin)
+		if err != nil {
+			t.Fatalf("admin role id: %v", err)
+		}
+		adminCaller := &Caller{
+			TenantID: tenant.ID,
+			UserID:   adminUser.ID,
+			Identity: adminUser.SlackUserID,
+			Roles:    []string{models.RoleAdmin},
+			RoleIDs:  []uuid.UUID{adminRoleID},
+			IsAdmin:  true,
+		}
+
+		raw := "---\nname: with-frontmatter\ndescription: desc-from-frontmatter\n---\n\n# Body\n\nReal content."
+		created, err := svc.Create(ctx, adminCaller, "with-frontmatter", "desc-explicit", raw, "test", "tenant")
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if created.Content != "# Body\n\nReal content." {
+			t.Errorf("Content not stripped of frontmatter; got:\n%q", created.Content)
+		}
+
+		// ToSKILLMD should now produce frontmatter exactly once.
+		md := created.ToSKILLMD()
+		if got := countFrontmatterOpens(md); got != 1 {
+			t.Errorf("ToSKILLMD has %d frontmatter blocks, want 1; output:\n%s", got, md)
 		}
 	})
 

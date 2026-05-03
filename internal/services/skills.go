@@ -154,6 +154,7 @@ func (s *SkillService) Create(ctx context.Context, c *Caller, name, description,
 	if scope == "" {
 		scope = string(models.ScopeTypeTenant)
 	}
+	content = stripSkillFrontmatter(content)
 	return models.CreateSkill(ctx, s.pool, c.TenantID, name, description, content, source, scope)
 }
 
@@ -162,7 +163,24 @@ func (s *SkillService) Update(ctx context.Context, c *Caller, skillID uuid.UUID,
 	if !c.IsAdmin {
 		return ErrForbidden
 	}
+	if content != nil {
+		stripped := stripSkillFrontmatter(*content)
+		content = &stripped
+	}
 	return models.UpdateSkill(ctx, s.pool, c.TenantID, skillID, name, description, content)
+}
+
+// stripSkillFrontmatter removes a leading SKILL.md `---`-delimited block
+// from content so it isn't stored alongside the explicit name/description
+// columns. ToSKILLMD prepends a fresh frontmatter block on read; without
+// this, callers that pass a full SKILL.md as `content` end up with the
+// frontmatter rendered twice in load_skill output.
+func stripSkillFrontmatter(content string) string {
+	_, _, body, err := models.ParseSKILLMD(content)
+	if err != nil || body == "" {
+		return content
+	}
+	return body
 }
 
 // Delete deletes a skill. Admin only.
