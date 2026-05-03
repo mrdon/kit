@@ -15,7 +15,13 @@ import (
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
-const maxConcurrentTasks = 5
+// maxConcurrentTasks caps how many scheduled jobs the scheduler runs in
+// parallel per tick. Held at 1 because every tenant's agent shares the
+// same Anthropic org-wide rate limit (input tokens per minute), so two
+// jobs racing in the same minute can mutually 429 each other on requests
+// that would individually fit. Bump if/when a higher per-org tier or
+// per-tenant API keys make parallel safe again.
+const maxConcurrentTasks = 1
 
 // PeriodicSweep is a background job invoked on every poll tick.
 // Intended for housekeeping like the stuck-resolving card recovery in
@@ -150,7 +156,7 @@ func (s *Scheduler) processDueTasks(ctx context.Context) {
 	// ClaimDueTasks atomically flips status to 'running' under SKIP LOCKED,
 	// so concurrent schedulers (e.g. during a rolling deploy) never run the
 	// same job twice.
-	jobs, err := models.ClaimDueTasks(ctx, s.pool, maxConcurrentTasks*2)
+	jobs, err := models.ClaimDueTasks(ctx, s.pool, maxConcurrentTasks)
 	if err != nil {
 		slog.Error("claiming due jobs", "error", err)
 		return
@@ -161,7 +167,7 @@ func (s *Scheduler) processDueTasks(ctx context.Context) {
 // processDueTasksForTenant is the tenant-scoped claim variant used by
 // tests. Production code always calls processDueTasks.
 func (s *Scheduler) processDueTasksForTenant(ctx context.Context, tenantID uuid.UUID) {
-	jobs, err := models.ClaimDueTasksForTenant(ctx, s.pool, tenantID, maxConcurrentTasks*2)
+	jobs, err := models.ClaimDueTasksForTenant(ctx, s.pool, tenantID, maxConcurrentTasks)
 	if err != nil {
 		slog.Error("claiming due jobs for tenant", "error", err)
 		return
