@@ -1,5 +1,14 @@
 .PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean monty-wasm
 
+# Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
+# both Make recipes and child processes (go test reads DATABASE_URL).
+# Each worktree pins its own ports here to avoid colliding with sibling
+# checkouts (e.g. ../kit2).
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 # Default target
 help: ## Show this help message
 	@echo "Available targets:"
