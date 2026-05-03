@@ -47,12 +47,13 @@ func freshTenant(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (tenantI
 	return tenant.ID, user.ID
 }
 
-func adminCaller(tenantID, userID uuid.UUID) *services.Caller {
+func adminCaller(tenantID, userID uuid.UUID, roleIDs ...uuid.UUID) *services.Caller {
 	return &services.Caller{
 		TenantID: tenantID,
 		UserID:   userID,
 		IsAdmin:  true,
 		Roles:    []string{"admin"},
+		RoleIDs:  roleIDs,
 	}
 }
 
@@ -403,12 +404,12 @@ func TestPUTMassAssignmentIgnoresOwnerUserID(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(pool)
 	tenantID, ownerID := freshTenant(t, ctx, pool)
-	owner := adminCaller(tenantID, ownerID)
+	memberID := memberRoleID(t, ctx, pool, tenantID)
+	owner := adminCaller(tenantID, ownerID, memberID)
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 
 	// Create an entry owned by ownerID, scoped to the tenant's member
 	// role (= everyone in the tenant).
-	memberID := memberRoleID(t, ctx, pool, tenantID)
 	id, err := svc.CreateEntry(ctx, owner, CreateEntryParams{
 		Title:           "test",
 		ValueCiphertext: []byte("ct"),
@@ -451,11 +452,12 @@ func TestCrossTenantIsolation(t *testing.T) {
 	rA := httptest.NewRequest(http.MethodPost, "/", nil)
 	rB := httptest.NewRequest(http.MethodPost, "/", nil)
 
-	callerA := adminCaller(tenantA, ownerA)
-	callerB := adminCaller(tenantB, ownerB)
+	memberA := memberRoleID(t, ctx, pool, tenantA)
+	memberB := memberRoleID(t, ctx, pool, tenantB)
+	callerA := adminCaller(tenantA, ownerA, memberA)
+	callerB := adminCaller(tenantB, ownerB, memberB)
 
 	// Create an entry in A scoped to A's member role (any A-member can see).
-	memberA := memberRoleID(t, ctx, pool, tenantA)
 	idA, err := svc.CreateEntry(ctx, callerA, CreateEntryParams{
 		Title:           "tenant A only",
 		ValueCiphertext: []byte("ct"),
@@ -538,10 +540,10 @@ func TestNonceUniquenessAcrossEntries(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(pool)
 	tenantID, ownerID := freshTenant(t, ctx, pool)
-	owner := adminCaller(tenantID, ownerID)
+	memberID := memberRoleID(t, ctx, pool, tenantID)
+	owner := adminCaller(tenantID, ownerID, memberID)
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 
-	memberID := memberRoleID(t, ctx, pool, tenantID)
 	for i := range 10 {
 		nonce := make([]byte, 12)
 		// Use crypto/rand so each call is independent.

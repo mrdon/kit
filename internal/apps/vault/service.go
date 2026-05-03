@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +36,12 @@ import (
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
+
+// ErrCallerNotInRole is returned by validateRoleForCaller when a user
+// tries to scope a secret to a role they aren't a member of. Surfaces
+// as a 403 on the web path and a friendly tool-result string for
+// agent/MCP callers.
+var ErrCallerNotInRole = errors.New("you must be a member of the target role to scope a secret to it")
 
 // Service is the vault's behavior layer. Tools (agent + MCP) and HTTP
 // handlers both go through Service so authz, audit, and rate-limiting
@@ -97,24 +104,28 @@ func toListItem(e models.VaultEntry, _ *services.Caller) EntryListItem {
 	}
 }
 
-// validateRoleAgainstTenant verifies role_id is set and belongs to the
-// caller's tenant. role_id is required: every entry must own to a
-// real role. To make an entry visible to every tenant member, scope
-// to the tenant's default_role_id (the 'member' role; see migration
-// 002_default_role.sql).
-func (s *Service) validateRoleAgainstTenant(ctx context.Context, tenantID uuid.UUID, roleID *uuid.UUID) error {
+// validateRoleForCaller verifies role_id is set, belongs to the caller's
+// tenant, AND that the caller is a member of it. Sharing rule: you can
+// only scope a secret to a team you're on. The tenant's auto-managed
+// 'member' role is implicitly held by every user (GetUserRoleIDs
+// appends DefaultRoleID), so "everyone in the workspace" is reachable
+// without joining anything explicitly.
+func (s *Service) validateRoleForCaller(ctx context.Context, c *services.Caller, roleID *uuid.UUID) error {
 	if roleID == nil {
 		return errors.New("role_id required: pick a role (use the tenant's 'member' role for everyone)")
 	}
 	var found int
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FROM roles WHERE tenant_id = $1 AND id = $2
-	`, tenantID, *roleID).Scan(&found)
+	`, c.TenantID, *roleID).Scan(&found)
 	if err != nil {
 		return fmt.Errorf("validate role id: %w", err)
 	}
 	if found == 0 {
 		return errors.New("role not in this tenant")
+	}
+	if !slices.Contains(c.RoleIDs, *roleID) {
+		return ErrCallerNotInRole
 	}
 	return nil
 }

@@ -329,11 +329,13 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePrincipals lists the caller's tenant roles + the tenant's
-// default_role_id (the 'member' role that includes everyone). The web
+// handlePrincipals lists the roles the caller is a member of, plus the
+// tenant's default_role_id (the 'member' role that includes everyone —
+// always in caller.RoleIDs since GetUserRoleIDs appends it). The web
 // dropdown labels the default role as "Members (everyone)" so the
 // scope-everyone affordance maps to a real UUID rather than NULL.
-// Authenticated; returns only the caller's own tenant.
+// Filtered to caller's roles because vault scoping is restricted to
+// teams the caller is on (matching ErrCallerNotInRole on Save).
 func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	tenant, err := models.GetTenantByID(r.Context(), a.pool, caller.TenantID)
@@ -349,12 +351,19 @@ func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberOf := make(map[uuid.UUID]bool, len(caller.RoleIDs))
+	for _, id := range caller.RoleIDs {
+		memberOf[id] = true
+	}
 	type roleOut struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 	roleList := make([]roleOut, 0, len(roles))
 	for _, role := range roles {
+		if !memberOf[role.ID] {
+			continue
+		}
 		roleList = append(roleList, roleOut{ID: role.ID.String(), Name: role.Name})
 	}
 	out := map[string]any{
@@ -468,6 +477,10 @@ func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		RoleID:          roleID,
 	}, audit)
 	if err != nil {
+		if errors.Is(err, ErrCallerNotInRole) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -583,6 +596,8 @@ func (a *App) handleSetEntryRole(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		case errors.Is(err, ErrStepUpRequired):
 			http.Error(w, "recent unlock required", http.StatusUnauthorized)
+		case errors.Is(err, ErrCallerNotInRole):
+			http.Error(w, err.Error(), http.StatusForbidden)
 		default:
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}

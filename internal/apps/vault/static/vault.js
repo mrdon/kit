@@ -777,7 +777,7 @@ async function wireReveal() {
   }
 
   // Visibility (role) edit affordance.
-  await wireRoleEdit(entry.role_id || null);
+  await wireRoleEdit(entry.role_id || null, entry.role_name || null);
 }
 
 // Module-scope timer so onLockedExternally and the lock-button handler
@@ -824,8 +824,11 @@ function stopTOTPRender() {
 // wireRoleEdit renders the current owning role + an Edit button that
 // swaps in a single-select dropdown. On Save, PUTs role_id; on 401
 // (ErrStepUpRequired from server-side widening detection), prompts for
-// re-unlock and retries once.
-async function wireRoleEdit(currentRoleID) {
+// re-unlock and retries once. The dropdown is filtered to roles the
+// caller is a member of (server enforces the same rule), so an owner
+// viewing a secret scoped to a role they aren't on can SEE it but can't
+// switch the scope to another non-member role.
+async function wireRoleEdit(currentRoleID, currentRoleName) {
   const display = document.getElementById("visibility-display");
   const editBtn = document.getElementById("edit-visibility-button");
   const form = document.getElementById("visibility-form");
@@ -834,7 +837,7 @@ async function wireRoleEdit(currentRoleID) {
   const status = document.getElementById("visibility-status");
   let principalsCache = null;
 
-  const renderLabel = async (roleID) => {
+  const renderLabel = async (roleID, fallbackName) => {
     if (!principalsCache) {
       try { principalsCache = await api("GET", "/principals"); } catch {}
     }
@@ -842,11 +845,11 @@ async function wireRoleEdit(currentRoleID) {
       display.textContent = "Members (everyone in the workspace)";
       return;
     }
-    const name = (principalsCache?.roles || []).find((r) => r.id === roleID)?.name;
+    const name = (principalsCache?.roles || []).find((r) => r.id === roleID)?.name || fallbackName;
     display.textContent = name ? `Role: ${name}` : `Role: ${roleID}`;
   };
 
-  await renderLabel(currentRoleID);
+  await renderLabel(currentRoleID, currentRoleName);
 
   editBtn.addEventListener("click", async () => {
     await populateRoleSelector(select, currentRoleID);
@@ -890,7 +893,7 @@ async function wireRoleEdit(currentRoleID) {
       }
     }
     currentRoleID = next;
-    await renderLabel(currentRoleID);
+    await renderLabel(currentRoleID, null);
     form.hidden = true;
     editBtn.hidden = false;
     status.textContent = "Saved.";

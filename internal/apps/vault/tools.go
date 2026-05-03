@@ -254,6 +254,9 @@ func handleAgentSetSecretRole(svc *Service) tools.HandlerFunc {
 			if errors.Is(err, models.ErrNotFound) {
 				return "No entry with that id, or you don't have access.", nil
 			}
+			if errors.Is(err, ErrCallerNotInRole) {
+				return "You can only scope a secret to a role you're a member of.", nil
+			}
 			return "", err
 		}
 		return "Scope updated.", nil

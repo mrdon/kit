@@ -125,7 +125,7 @@ func (s *Service) CreateEntry(ctx context.Context, c *services.Caller, p CreateE
 	if err := validateCiphertext(p.ValueCiphertext, p.ValueNonce); err != nil {
 		return uuid.Nil, err
 	}
-	if err := s.validateRoleAgainstTenant(ctx, c.TenantID, p.RoleID); err != nil {
+	if err := s.validateRoleForCaller(ctx, c, p.RoleID); err != nil {
 		return uuid.Nil, err
 	}
 	id, err := models.CreateVaultEntry(ctx, s.pool, models.VaultEntry{
@@ -190,7 +190,7 @@ func (s *Service) SetEntryRole(ctx context.Context, c *services.Caller, entryID 
 	if existing == nil {
 		return models.ErrNotFound
 	}
-	if err := s.validateRoleAgainstTenant(ctx, c.TenantID, roleID); err != nil {
+	if err := s.validateRoleForCaller(ctx, c, roleID); err != nil {
 		return err
 	}
 	sameRole := existing.RoleID != nil && *existing.RoleID == *roleID
