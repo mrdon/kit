@@ -35,6 +35,10 @@
   <label>Notes
     <textarea name="notes" rows="3"></textarea>
   </label>
+  <label>2FA secret (optional)
+    <input type="text" name="totp" autocomplete="off" placeholder="otpauth://… or base32 secret">
+  </label>
+  <p class="help">Paste the otpauth URI from the service's QR code, or the base32 secret it shows under "manual entry".</p>
   <label>Tags (comma-separated)
     <input type="text" name="tags" autocomplete="off">
   </label>

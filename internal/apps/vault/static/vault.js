@@ -27,6 +27,29 @@
 // authorized by the user. Tracked in vault_test (and in the plan's
 // Out-of-scope section).
 
+import { parseOtpauthURI, generateTOTP } from "./vault-totp.js";
+
+const TOTP_DEFAULTS = { algorithm: "SHA1", digits: 6, period: 30 };
+
+// Persist only non-default optional fields so the encrypted blob stays
+// small for the common case (SHA1 / 6 digits / 30s).
+function compactTOTP(t) {
+  const out = { secret: t.secret };
+  if (t.algorithm !== TOTP_DEFAULTS.algorithm) out.algorithm = t.algorithm;
+  if (t.digits !== TOTP_DEFAULTS.digits) out.digits = t.digits;
+  if (t.period !== TOTP_DEFAULTS.period) out.period = t.period;
+  return out;
+}
+
+function expandTOTP(t) {
+  return {
+    secret: t.secret,
+    algorithm: t.algorithm || TOTP_DEFAULTS.algorithm,
+    digits: t.digits || TOTP_DEFAULTS.digits,
+    period: t.period || TOTP_DEFAULTS.period,
+  };
+}
+
 const VAULT = (() => {
   const root = document.getElementById("vault-app");
   if (!root) return null;
@@ -347,6 +370,7 @@ function onLockedExternally() {
   // IDB material so an XSS post-lock can't drain the wrapped private
   // key + auth_hash for offline brute-force. Re-unlock will re-fetch
   // the wrapped material from /api/me.
+  stopTOTPRender();
   hideSection("reveal-area");
   hideSection("add-form");
   hideSection("grant-area");
@@ -385,6 +409,7 @@ function installLockHooks() {
   // its own in-flight ops, and we kick off an IDB wipe even though the
   // tab may close before it completes.
   const onClose = () => {
+    stopTOTPRender();
     if (workerPort) workerPort.postMessage({ id: nextMsgID++, type: "lock" });
     // Best-effort sync wipe trigger — browsers limit work in unload
     // handlers but this gives the wipe its first event-loop tick before
@@ -631,10 +656,13 @@ async function wireAdd() {
     }
 
     setStatus("Encrypting…");
-    const valueJSON = JSON.stringify({
+    const value = {
       password: fd.get("password") || "",
       notes: fd.get("notes") || "",
-    });
+    };
+    const totp = parseOtpauthURI(fd.get("totp") || "");
+    if (totp) value.totp = compactTOTP(totp);
+    const valueJSON = JSON.stringify(value);
     const enc = await workerCall("encrypt", { plaintext: new TextEncoder().encode(valueJSON) });
 
     const tags = (fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -738,13 +766,59 @@ async function wireReveal() {
     }
   });
 
+  if (decoded.totp?.secret) {
+    await startTOTPRender(expandTOTP(decoded.totp));
+  }
+
   document.getElementById("lock-button").addEventListener("click", async () => {
+    stopTOTPRender();
     await lockNow();
     setStatus("Vault locked.", "");
   });
 
   // Visibility (role) edit affordance.
   await wireRoleEdit(entry.role_id || null);
+}
+
+// Module-scope timer so onLockedExternally and the lock-button handler
+// can both clear it. There's only ever one TOTP timer per page.
+let totpTimer = null;
+
+async function startTOTPRender(params) {
+  const section = document.getElementById("entry-totp");
+  const codeEl = document.getElementById("totp-code");
+  const countdownEl = document.getElementById("totp-countdown");
+  const copyBtn = document.getElementById("copy-totp");
+  if (!section || !codeEl || !countdownEl || !copyBtn) return;
+  section.hidden = false;
+
+  let lastCode = "";
+  const tick = async () => {
+    const { code, remainingMs } = await generateTOTP(params, Date.now());
+    if (code !== lastCode) {
+      codeEl.textContent = `${code.slice(0, 3)} ${code.slice(3)}`;
+      lastCode = code;
+    }
+    countdownEl.textContent = `refreshes in ${Math.ceil(remainingMs / 1000)}s`;
+  };
+  await tick();
+  totpTimer = setInterval(tick, 1000);
+
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(lastCode);
+      countdownEl.textContent = "copied";
+    } catch (err) {
+      setStatus(`Copy failed: ${err.message || err}`, "error");
+    }
+  });
+}
+
+function stopTOTPRender() {
+  if (totpTimer) {
+    clearInterval(totpTimer);
+    totpTimer = null;
+  }
 }
 
 // wireRoleEdit renders the current owning role + an Edit button that
