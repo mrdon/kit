@@ -567,24 +567,34 @@ func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Cal
 		title = "Re-grant vault access (password reset)"
 	}
 	user, _ := models.GetUserByID(ctx, s.pool, target.TenantID, target.UserID)
-	body := buildGrantCardBody(target, user, isReset, fingerprint)
+	// Look up the slug for the grant URL; without it the admin sees a
+	// card telling them to "open the grant page" with no link, clicks
+	// the no-op resolve button instead, and the user stays at 403.
+	grantURL := ""
+	if tenant, err := models.GetTenantByID(ctx, s.pool, target.TenantID); err == nil && tenant != nil {
+		grantURL = fmt.Sprintf("/%s/apps/vault/grant/%s", tenant.Slug, target.UserID)
+	}
+	body := buildGrantCardBody(target, user, isReset, fingerprint, grantURL)
 
 	return s.cards.CreateDecision(ctx, target.TenantID, CardCreateInput{
 		Title:      title,
 		Body:       body,
 		RoleScopes: []string{"admin"},
 		Decision: &CardDecisionCreateInput{
-			Priority:            "high",
-			RecommendedOptionID: "open_grant_page",
+			Priority: "high",
+			// Recommended action is the body-link path; the buttons just
+			// dismiss the card metadata-only since the actual grant
+			// requires browser-side RSA wrap on the grant page.
+			RecommendedOptionID: "handled",
 			Options: []CardDecisionOption{
-				{OptionID: "open_grant_page", Label: "Review and grant"},
+				{OptionID: "handled", Label: "I've granted them"},
 				{OptionID: "decline", Label: "Decline"},
 			},
 		},
 	})
 }
 
-func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool, fingerprint string) string {
+func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool, fingerprint, grantURL string) string {
 	displayName := target.Identity
 	slackID := target.Identity
 	if user != nil {
@@ -608,8 +618,17 @@ func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool
 	b.WriteString("Public-key fingerprint:\n\n```\n")
 	b.WriteString(fingerprint)
 	b.WriteString("\n```\n\n")
-	b.WriteString("**Verify this fingerprint with them out-of-band** before granting. ")
-	b.WriteString("Open the grant page to complete the action.")
+	b.WriteString("**Verify this fingerprint with them out-of-band** before granting.\n\n")
+	if grantURL != "" {
+		// The grant requires browser-side RSA-OAEP wrap of the vault_key
+		// using the target's public key, which only an unlocked admin
+		// browser can do — the server can't grant. The link below is
+		// where the action actually happens; the buttons on this card
+		// only mark it as handled / declined.
+		fmt.Fprintf(&b, "[**Open grant page →**](%s)", grantURL)
+	} else {
+		b.WriteString("Open the grant page to complete the action.")
+	}
 	return b.String()
 }
 
