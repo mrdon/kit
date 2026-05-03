@@ -28,7 +28,7 @@ make db-reset    # Wipe and restart Postgres
 - `git push origin main` — push to GitHub
 - `git push dokku main` — deploy to Dokku (apps.twdata.org)
 - Always push to both origin and dokku when deploying.
-- Logs: `ssh dokku@apps.twdata.org 'dokku logs kit --num 100'`
+- Logs: `ssh dokku@apps.twdata.org 'logs kit --num 100'`
 
 ## Tech Stack
 
@@ -82,35 +82,38 @@ make db-reset    # Wipe and restart Postgres
 
 ## Production Debugging
 
-> The `dokku` user's login shell on apps.twdata.org is `/bin/bash`, not the
-> dokku-via-sshcommand wrapper. So SSH commands run as bash, and you must
-> invoke the `dokku` binary explicitly: `ssh dokku@host 'dokku logs kit'`,
-> not `ssh dokku@host 'logs kit'`. Same for `dokku postgres:connect`, etc.
+> SSH access uses Dokku's `sshcommand` wrapper: each key in
+> `/home/dokku/.ssh/authorized_keys` has a `command="..."` force-command that
+> injects `/usr/bin/dokku`. Pass subcommands directly — no `dokku` prefix.
+> So `ssh dokku@host 'logs kit'`, not `ssh dokku@host 'dokku logs kit'`.
+> Same for `postgres:connect`, `config:get`, etc. If a command unexpectedly
+> drops you into bash or fails with "command not found", your key was added
+> by hand instead of via `dokku ssh-keys:add` / `sshcommand acl-add dokku <name>`.
 
 ### Logs
 ```bash
 # Recent logs (adjust --num as needed)
-ssh dokku@apps.twdata.org 'dokku logs kit --num 200'
+ssh dokku@apps.twdata.org 'logs kit --num 200'
 
 # Filter for specific topics
-ssh dokku@apps.twdata.org 'dokku logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
+ssh dokku@apps.twdata.org 'logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
 ```
 
 ### Database queries
 ```bash
 # One-shot query (heredoc piped to postgres:connect)
-ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db' <<'SQL'
+ssh dokku@apps.twdata.org 'postgres:connect kit-db' <<'SQL'
 SELECT id, slack_team_id, name FROM tenants ORDER BY created_at;
 SQL
 
 # List postgres services
-ssh dokku@apps.twdata.org 'dokku postgres:list'
+ssh dokku@apps.twdata.org 'postgres:list'
 ```
 The container has no shell (`dokku enter` fails with no /bin/bash); always
 go through `postgres:connect`.
 
 ### MCP tools for debugging
-- `list_sessions` / `get_session_events` — inspect your own agent session history. For debugging another user's sessions, query the DB directly (`dokku postgres:connect kit-db`) — the MCP surface is scoped to the caller so admins can't read other users' email/memory traces.
+- `list_sessions` / `get_session_events` — inspect your own agent session history. For debugging another user's sessions, query the DB directly (`postgres:connect kit-db` via SSH) — the MCP surface is scoped to the caller so admins can't read other users' email/memory traces.
 - `run_job` — run a scheduled job you created; `dry_run: true` captures messages without posting. Admins cannot run another user's job via MCP (the scheduled agent would act as that user's identity); for SRE-style one-off triggers on someone else's job, go through the DB or operator CLI.
 - `find_user` — verify user display names and IDs
 
