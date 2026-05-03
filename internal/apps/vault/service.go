@@ -68,11 +68,10 @@ func NewService(pool *pgxpool.Pool) *Service {
 	}
 }
 
-// toListItem renders one EntryListItem from a model row + the caller.
-// ScopeSummary is derived from RoleID: nil → "tenant-wide", set →
-// "shared". IsOwner is derived directly. RoleID is passed through so
-// the reveal page can prefill the role selector.
-func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
+// toListItem renders one EntryListItem from a model row. ScopeSummary
+// is the role name (post-migration 047 every entry owns to exactly one
+// role; visibility flows from role membership, not creator identity).
+func toListItem(e models.VaultEntry, _ *services.Caller) EntryListItem {
 	username := ""
 	if e.Username != nil {
 		username = *e.Username
@@ -81,12 +80,9 @@ func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
 	if e.URL != nil {
 		url = *e.URL
 	}
-	summary := "shared"
-	switch {
-	case e.OwnerUserID == c.UserID:
-		summary = "yours"
-	case e.RoleID == nil:
-		summary = "tenant-wide"
+	summary := ""
+	if e.RoleName != nil {
+		summary = *e.RoleName
 	}
 	return EntryListItem{
 		ID:           e.ID,
@@ -95,9 +91,9 @@ func toListItem(e models.VaultEntry, c *services.Caller) EntryListItem {
 		URL:          url,
 		Tags:         e.Tags,
 		LastViewedAt: e.LastViewedAt,
-		IsOwner:      e.OwnerUserID == c.UserID,
 		ScopeSummary: summary,
 		RoleID:       e.RoleID,
+		RoleName:     e.RoleName,
 	}
 }
 

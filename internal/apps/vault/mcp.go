@@ -81,7 +81,15 @@ func mcpListSecrets(svc *Service) mcpserver.ToolHandlerFunc {
 		q := req.GetString("q", "")
 		tag := req.GetString("tag", "")
 		limit := req.GetInt("limit", 50)
-		rows, err := svc.ListEntries(ctx, caller, q, tag, limit)
+		var roleID *uuid.UUID
+		if rs := req.GetString("role_id", ""); rs != "" {
+			rid, err := uuid.Parse(rs)
+			if err != nil {
+				return mcp.NewToolResultError("invalid role_id"), nil
+			}
+			roleID = &rid
+		}
+		rows, err := svc.ListEntries(ctx, caller, q, tag, roleID, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +103,7 @@ func mcpFindSecret(svc *Service) mcpserver.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("q is required"), nil
 		}
-		rows, err := svc.ListEntries(ctx, caller, q, "", 5)
+		rows, err := svc.ListEntries(ctx, caller, q, "", nil, 5)
 		if err != nil {
 			return nil, err
 		}

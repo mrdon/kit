@@ -126,7 +126,7 @@ func TestVaultTenantIsolation(t *testing.T) {
 	}
 
 	// List from tenant B must not include tenant A entries.
-	rows, err := ListVaultEntries(ctx, pool, tenantB, ownerB, nil, "", "", 100)
+	rows, err := ListVaultEntries(ctx, pool, tenantB, ownerB, nil, "", "", nil, 100)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestVaultListSearch(t *testing.T) {
 		}
 	}
 
-	rows, err := ListVaultEntries(ctx, pool, tenantID, ownerID, nil, "github", "", 100)
+	rows, err := ListVaultEntries(ctx, pool, tenantID, ownerID, nil, "github", "", nil, 100)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

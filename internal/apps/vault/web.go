@@ -413,7 +413,16 @@ func (a *App) handleListEntries(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	rows, err := a.svc.ListEntries(r.Context(), caller, q, tag, limit)
+	var roleID *uuid.UUID
+	if rs := r.URL.Query().Get("role_id"); rs != "" {
+		rid, err := uuid.Parse(rs)
+		if err != nil {
+			http.Error(w, "bad role_id", http.StatusBadRequest)
+			return
+		}
+		roleID = &rid
+	}
+	rows, err := a.svc.ListEntries(r.Context(), caller, q, tag, roleID, limit)
 	if err != nil {
 		slog.Error("vault: list entries", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

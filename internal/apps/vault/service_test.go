@@ -487,7 +487,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 	}
 
 	// B's list does not include A's entry.
-	rows, err := svc.ListEntries(ctx, callerB, "", "", 100)
+	rows, err := svc.ListEntries(ctx, callerB, "", "", nil, 100)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

@@ -681,8 +681,10 @@ async function wireAdd() {
       setStatus(`Save failed: ${err.message || err}`, "error");
       return;
     }
-    setStatus("Saved.", "success");
+    setStatus("", "");
     form.reset();
+    hideSection("add-form");
+    showSection("saved-message");
   });
 }
 
@@ -742,7 +744,11 @@ async function wireReveal() {
   const decoded = JSON.parse(new TextDecoder().decode(new Uint8Array(plain)));
 
   const pwEl = document.getElementById("entry-password");
-  document.getElementById("entry-notes").textContent = decoded.notes || "";
+  const notes = (decoded.notes || "").trim();
+  if (notes) {
+    document.getElementById("entry-notes").textContent = notes;
+    document.getElementById("entry-notes-section").hidden = false;
+  }
 
   document.getElementById("show-password").addEventListener("click", () => {
     pwEl.textContent = decoded.password || "";
@@ -769,12 +775,6 @@ async function wireReveal() {
   if (decoded.totp?.secret) {
     await startTOTPRender(expandTOTP(decoded.totp));
   }
-
-  document.getElementById("lock-button").addEventListener("click", async () => {
-    stopTOTPRender();
-    await lockNow();
-    setStatus("Vault locked.", "");
-  });
 
   // Visibility (role) edit affordance.
   await wireRoleEdit(entry.role_id || null);

@@ -47,6 +47,7 @@ type VaultEntry struct {
 	TenantID        uuid.UUID
 	OwnerUserID     uuid.UUID
 	RoleID          *uuid.UUID
+	RoleName        *string // populated by read paths via LEFT JOIN roles; nil for legacy/orphaned scopes
 	Title           string
 	Username        *string
 	URL             *string
@@ -364,18 +365,20 @@ func GetVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, c
 		roles = []uuid.UUID{}
 	}
 	row := pool.QueryRow(ctx, `
-		SELECT e.id, e.tenant_id, e.owner_user_id, e.role_id, e.title, e.username, e.url, e.tags,
+		SELECT e.id, e.tenant_id, e.owner_user_id, e.role_id, r.name,
+		       e.title, e.username, e.url, e.tags,
 		       e.value_ciphertext, e.value_nonce, e.created_at, e.updated_at, e.last_viewed_at
 		FROM app_vault_entries e
+		LEFT JOIN roles r ON r.id = e.role_id AND r.tenant_id = e.tenant_id
 		WHERE e.tenant_id = $1 AND e.id = $2
 		  AND ( e.owner_user_id = $3
-		     OR e.role_id IS NULL
 		     OR e.role_id = ANY($4) )
 	`, tenantID, entryID, callerID, roles)
 
 	var e VaultEntry
 	if err := row.Scan(
-		&e.ID, &e.TenantID, &e.OwnerUserID, &e.RoleID, &e.Title, &e.Username, &e.URL, &e.Tags,
+		&e.ID, &e.TenantID, &e.OwnerUserID, &e.RoleID, &e.RoleName,
+		&e.Title, &e.Username, &e.URL, &e.Tags,
 		&e.ValueCiphertext, &e.ValueNonce, &e.CreatedAt, &e.UpdatedAt, &e.LastViewedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -387,8 +390,10 @@ func GetVaultEntry(ctx context.Context, pool *pgxpool.Pool, tenantID, entryID, c
 }
 
 // ListVaultEntries returns entries the caller is authorized to view, optionally
-// filtered by FTS query and tag.
-func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerID uuid.UUID, callerRoleIDs []uuid.UUID, query, tag string, limit int) ([]VaultEntry, error) {
+// filtered by FTS query, tag, and owning role. roleID is an optional filter:
+// when set, only entries scoped to that exact role are returned (and the
+// existing authz filter still applies, so callers can't widen visibility).
+func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerID uuid.UUID, callerRoleIDs []uuid.UUID, query, tag string, roleID *uuid.UUID, limit int) ([]VaultEntry, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -397,7 +402,7 @@ func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerI
 		roles = []uuid.UUID{}
 	}
 	args := []any{tenantID, callerID, roles}
-	where := "e.tenant_id = $1 AND ( e.owner_user_id = $2 OR e.role_id IS NULL OR e.role_id = ANY($3) )"
+	where := "e.tenant_id = $1 AND ( e.owner_user_id = $2 OR e.role_id = ANY($3) )"
 	orderBy := "e.last_viewed_at DESC NULLS LAST, e.created_at DESC"
 
 	if query != "" {
@@ -410,12 +415,18 @@ func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerI
 		args = append(args, tag)
 		where += fmt.Sprintf(" AND $%d = ANY(e.tags)", len(args))
 	}
+	if roleID != nil {
+		args = append(args, *roleID)
+		where += fmt.Sprintf(" AND e.role_id = $%d", len(args))
+	}
 	args = append(args, limit)
 
 	q := fmt.Sprintf(`
-		SELECT e.id, e.tenant_id, e.owner_user_id, e.role_id, e.title, e.username, e.url, e.tags,
+		SELECT e.id, e.tenant_id, e.owner_user_id, e.role_id, r.name,
+		       e.title, e.username, e.url, e.tags,
 		       e.value_ciphertext, e.value_nonce, e.created_at, e.updated_at, e.last_viewed_at
 		FROM app_vault_entries e
+		LEFT JOIN roles r ON r.id = e.role_id AND r.tenant_id = e.tenant_id
 		WHERE %s
 		ORDER BY %s
 		LIMIT $%d
@@ -536,7 +547,8 @@ func scanVaultEntries(rows pgx.Rows) ([]VaultEntry, error) {
 	for rows.Next() {
 		var e VaultEntry
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.OwnerUserID, &e.RoleID, &e.Title, &e.Username, &e.URL, &e.Tags,
+			&e.ID, &e.TenantID, &e.OwnerUserID, &e.RoleID, &e.RoleName,
+			&e.Title, &e.Username, &e.URL, &e.Tags,
 			&e.ValueCiphertext, &e.ValueNonce, &e.CreatedAt, &e.UpdatedAt, &e.LastViewedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan vault entry: %w", err)

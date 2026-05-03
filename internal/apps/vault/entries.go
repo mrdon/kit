@@ -22,10 +22,13 @@ type EntryListItem struct {
 	Tags         []string   `json:"tags,omitempty"`
 	LastViewedAt *time.Time `json:"last_viewed_at,omitempty"`
 	ScopeSummary string     `json:"scope_summary"`
-	IsOwner      bool       `json:"is_owner"`
-	// RoleID is the entry's owning role; nil means "everyone in the
-	// tenant". Used by the reveal page to prefill the role selector.
+	// RoleID is the entry's owning role. Used by the reveal page to
+	// prefill the role selector. After migration 047 this is always set.
 	RoleID *uuid.UUID `json:"role_id,omitempty"`
+	// RoleName is the resolved name of RoleID, or nil if the role row
+	// is missing (orphaned scope — shouldn't happen, but the LEFT JOIN
+	// keeps the entry visible if it does).
+	RoleName *string `json:"role_name,omitempty"`
 }
 
 // EntryWithCiphertext is what the browser receives on the reveal/edit
@@ -72,8 +75,8 @@ type UpdateEntryParams struct {
 // result carries a human-readable scope_summary derived from the role
 // so the agent can tell the user "yours" / "tenant-wide" / "shared" at
 // a glance.
-func (s *Service) ListEntries(ctx context.Context, c *services.Caller, query, tag string, limit int) ([]EntryListItem, error) {
-	rows, err := models.ListVaultEntries(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query, tag, limit)
+func (s *Service) ListEntries(ctx context.Context, c *services.Caller, query, tag string, roleID *uuid.UUID, limit int) ([]EntryListItem, error) {
+	rows, err := models.ListVaultEntries(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query, tag, roleID, limit)
 	if err != nil {
 		return nil, err
 	}

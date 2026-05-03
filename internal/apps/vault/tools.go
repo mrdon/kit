@@ -22,16 +22,17 @@ import (
 var vaultToolMetas = []services.ToolMeta{
 	{
 		Name:        "list_secrets",
-		Description: "List vault entries the caller is authorized to view. Returns metadata only (id, title, username, url, tags) — never the secret value. Use this for natural-language requests like 'what passwords do I have?'.",
+		Description: "List the caller's stored passwords / accounts / logins / vault entries. Use this for ANY 'list/show/what are my passwords/accounts/logins/secrets' request — do not invent a tool name like list_vault. Returns metadata only (id, title, username, url, tags, role_name) — never the secret value itself. Pass role_id to scope to one role; omit it to get every entry the caller can see.",
 		Schema: services.Props(map[string]any{
-			"q":     services.Field("string", "Optional full-text search query (matches title, url, username)"),
-			"tag":   services.Field("string", "Optional tag filter"),
-			"limit": services.Field("integer", "Max results (default 50, capped at 200)"),
+			"q":       services.Field("string", "Optional full-text search query (matches title, url, username)"),
+			"tag":     services.Field("string", "Optional tag filter"),
+			"role_id": services.Field("string", "Optional role UUID to filter by — only return entries owned by this role. Caller must be a member or owner to see anything."),
+			"limit":   services.Field("integer", "Max results (default 50, capped at 200)"),
 		}),
 	},
 	{
 		Name:        "find_secret",
-		Description: "Convenience wrapper for 'find the password for foo' intents. Same shape as list_secrets but defaults to a single best match. Use when the user names a service or system.",
+		Description: "Find a specific stored password / account / login by name — wrapper around list_secrets that returns the best matches for a user-named service. Use when the user says 'find the password for X' or 'what's my Y login'.",
 		Schema: services.PropsReq(map[string]any{
 			"q": services.Field("string", "What the user is looking for, e.g. 'aws prod' or 'github work'"),
 		}, "q"),
@@ -135,13 +136,22 @@ func auditFromExecContext(ec *tools.ExecContext) auditCtx {
 func handleAgentListSecrets(svc *Service) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			Q     string `json:"q"`
-			Tag   string `json:"tag"`
-			Limit int    `json:"limit"`
+			Q      string `json:"q"`
+			Tag    string `json:"tag"`
+			RoleID string `json:"role_id"`
+			Limit  int    `json:"limit"`
 		}
 		_ = json.Unmarshal(input, &inp)
+		var roleID *uuid.UUID
+		if inp.RoleID != "" {
+			rid, err := uuid.Parse(inp.RoleID)
+			if err != nil {
+				return "Invalid role_id.", nil
+			}
+			roleID = &rid
+		}
 		caller := ec.Caller()
-		rows, err := svc.ListEntries(ec.Ctx, caller, inp.Q, inp.Tag, inp.Limit)
+		rows, err := svc.ListEntries(ec.Ctx, caller, inp.Q, inp.Tag, roleID, inp.Limit)
 		if err != nil {
 			return "", err
 		}
@@ -158,7 +168,7 @@ func handleAgentFindSecret(svc *Service) tools.HandlerFunc {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
 		caller := ec.Caller()
-		rows, err := svc.ListEntries(ec.Ctx, caller, inp.Q, "", 5)
+		rows, err := svc.ListEntries(ec.Ctx, caller, inp.Q, "", nil, 5)
 		if err != nil {
 			return "", err
 		}
@@ -278,9 +288,9 @@ func handleAgentDeleteSecret(svc *Service) tools.HandlerFunc {
 // ===== shared helpers =====
 
 // formatEntryList renders metadata-only rows for the agent's response.
-// scope_summary surfaces "yours" / "tenant-wide" / "shared" so the agent
-// can answer "is this entry private to me?" questions without a second
-// round-trip.
+// scope_summary is the owning role's name (post-migration 047 every entry
+// is role-scoped, so creator identity is irrelevant — visibility flows
+// from role membership, not ownership).
 func formatEntryList(_ *services.Caller, rows []EntryListItem) string {
 	if len(rows) == 0 {
 		return "No vault entries match."
@@ -296,7 +306,7 @@ func formatEntryList(_ *services.Caller, rows []EntryListItem) string {
 			fmt.Fprintf(&b, " — %s", e.URL)
 		}
 		if e.ScopeSummary != "" {
-			fmt.Fprintf(&b, " • %s", e.ScopeSummary)
+			fmt.Fprintf(&b, " • role: %s", e.ScopeSummary)
 		}
 		b.WriteString("\n")
 	}
