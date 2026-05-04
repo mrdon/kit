@@ -850,9 +850,10 @@ async function wireReveal() {
 
 // wireDetailsEdit swaps the read-only display for an editable form
 // pre-filled with current values, encrypts the updated value via the
-// shared worker, PUTs /entries/{id}, and reloads on success so the
-// page reflects the new ciphertext (and so the cache-friendly GET
-// returns the fresh row).
+// shared worker, PUTs /entries/{id}, and updates the in-page display
+// without a reload (a reload would fire beforeunload, which our
+// installLockHooks intercepts to lock the worker — landing the user
+// back on the master-password prompt).
 function wireDetailsEdit(entry, decoded) {
   const display = document.getElementById("entry-display");
   const editBtn = document.getElementById("edit-details-button");
@@ -891,13 +892,13 @@ function wireDetailsEdit(entry, decoded) {
     status.textContent = "Encrypting…";
     status.className = "";
 
-    const value = {
+    const newValue = {
       password: fd.get("password") || "",
       notes: fd.get("notes") || "",
     };
     const totp = parseOtpauthURI(fd.get("totp") || "");
-    if (totp) value.totp = compactTOTP(totp);
-    const valueJSON = JSON.stringify(value);
+    if (totp) newValue.totp = compactTOTP(totp);
+    const valueJSON = JSON.stringify(newValue);
     let enc;
     try {
       enc = await workerCall("encrypt", { plaintext: new TextEncoder().encode(valueJSON) });
@@ -907,11 +908,15 @@ function wireDetailsEdit(entry, decoded) {
       return;
     }
 
+    const newTitle = fd.get("title") || "";
+    const newUsername = fd.get("username") || "";
+    const newURL = normalizeURL(fd.get("url") || "");
+
     try {
       await api("PUT", `/entries/${VAULT.entryId}`, {
-        title: fd.get("title") || "",
-        username: fd.get("username") || "",
-        url: normalizeURL(fd.get("url") || ""),
+        title: newTitle,
+        username: newUsername,
+        url: newURL,
         value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
         value_nonce: bytesField(new Uint8Array(enc.nonce)),
       });
@@ -921,11 +926,53 @@ function wireDetailsEdit(entry, decoded) {
       return;
     }
 
+    // Mutate the locally-held copies so subsequent edits / Show /
+    // Copy / TOTP render from the just-saved state.
+    entry.title = newTitle;
+    entry.username = newUsername;
+    entry.url = newURL;
+    decoded.password = newValue.password;
+    decoded.notes = newValue.notes;
+    decoded.totp = newValue.totp || undefined;
+
+    // Re-render the display section in place — no reload, so the
+    // SharedWorker stays unlocked.
+    document.getElementById("entry-title").textContent = newTitle;
+    document.getElementById("entry-username").textContent = newUsername;
+    const urlEl = document.getElementById("entry-url");
+    if (newURL) {
+      urlEl.href = newURL;
+      urlEl.textContent = newURL;
+    } else {
+      urlEl.removeAttribute("href");
+      urlEl.textContent = "";
+    }
+    // Reset the password reveal — user must click Show again to see
+    // the new value, matching first-load behaviour.
+    const pwEl = document.getElementById("entry-password");
+    pwEl.textContent = "•••••";
+    pwEl.classList.add("hidden");
+    // Notes section: show or hide depending on new content.
+    const notesText = (decoded.notes || "").trim();
+    const notesSection = document.getElementById("entry-notes-section");
+    if (notesText) {
+      document.getElementById("entry-notes").textContent = notesText;
+      notesSection.hidden = false;
+    } else {
+      notesSection.hidden = true;
+    }
+    // TOTP: restart with new params, or hide the section if cleared.
+    const totpSection = document.getElementById("entry-totp");
+    if (decoded.totp?.secret) {
+      await startTOTPRender(expandTOTP(decoded.totp));
+    } else {
+      totpSection.hidden = true;
+    }
+
+    form.hidden = true;
+    display.hidden = false;
     status.textContent = "Saved.";
     status.className = "success";
-    // Reload so the fresh ciphertext + decoded fields render from
-    // server state — avoids drift if the server normalised anything.
-    setTimeout(() => location.reload(), 500);
   });
 }
 
