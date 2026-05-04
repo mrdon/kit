@@ -8,8 +8,8 @@
 <link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
 </head>
 <body>
-<main id="vault-app" data-page="list" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
 {{ template "chrome_header" .Header }}
+<main id="vault-app" data-page="list" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
 <h1>Your secrets</h1>
 <noscript>This page requires JavaScript.</noscript>
 <section id="unlock-prompt" hidden>
@@ -25,12 +25,13 @@
   <p class="help"><a href="/{{ .TenantSlug }}/apps/vault/forgot">Forgot your master password?</a></p>
 </section>
 <section id="list-area" hidden>
-  <p class="row-actions">
+  <div class="list-toolbar">
+    <label class="list-filter">
+      <span class="list-filter-label">Filter</span>
+      <input type="search" id="list-filter" autocomplete="off" placeholder="Title, username, URL…">
+    </label>
     <a class="button-link" href="/{{ .TenantSlug }}/apps/vault/add">Add a secret</a>
-  </p>
-  <p><label>Filter
-    <input type="search" id="list-filter" autocomplete="off" placeholder="Title, username, URL…">
-  </label></p>
+  </div>
   <ul id="list-entries" class="entry-list"></ul>
   <p id="list-empty" hidden>No secrets you can view yet. <a href="/{{ .TenantSlug }}/apps/vault/add">Add your first one.</a></p>
 </section>

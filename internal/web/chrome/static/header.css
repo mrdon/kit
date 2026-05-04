@@ -8,30 +8,32 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  padding: 0.625rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background: white;
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(180deg, #1e1b4b 0%, #312e81 100%);
+  color: #e0e7ff;
   font-size: 0.875rem;
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
 }
 
 .chrome-header-brand {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #111827;
+  color: #ffffff;
   text-decoration: none;
   font-weight: 600;
   min-width: 0;
 }
 
-.chrome-header-brand:hover { text-decoration: underline; }
+.chrome-header-brand:hover { color: #c7d2fe; }
 
 .chrome-header-icon {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 0.25rem;
   flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .chrome-header-name {
@@ -43,8 +45,8 @@
 .chrome-header-user {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  color: #4b5563;
+  gap: 0.75rem;
+  color: #c7d2fe;
   min-width: 0;
 }
 
@@ -56,13 +58,14 @@
 }
 
 .chrome-header-logout {
-  color: #2563eb;
+  color: #ffffff;
   text-decoration: none;
+  opacity: 0.85;
 }
 
-.chrome-header-logout:hover { text-decoration: underline; }
+.chrome-header-logout:hover { opacity: 1; text-decoration: underline; }
 
 @media (max-width: 30rem) {
-  .chrome-header { padding: 0.5rem 0.75rem; }
+  .chrome-header { padding: 0.5rem 0.875rem; }
   .chrome-header-username { max-width: 7rem; }
 }
