@@ -19,7 +19,7 @@
 // source works for every workspace.
 const SCOPE_URL = new URL(self.registration.scope);
 const SCOPE = SCOPE_URL.pathname; // trailing slash included
-const CACHE = 'kit' + SCOPE + 'v5';
+const CACHE = 'kit' + SCOPE + 'v6';
 // Shell is intentionally minimal — manifest and icons are fetched
 // straight from the network so install-time icon changes aren't
 // masked by a stale cached shell.
@@ -42,10 +42,13 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // Never cache authenticated API routes. After the /{slug}/ migration
-  // these live under /{slug}/api/v1/... — the literal "/api/v1/"
-  // substring match catches them regardless of workspace prefix.
-  if (url.pathname.includes('/api/v1/')) return;
+  // Never cache authenticated API routes. The SPA backend lives under
+  // /{slug}/api/v1/...; per-app APIs (vault, etc.) live under
+  // /{slug}/apps/<name>/api/.... A bare "/api/" substring catches both
+  // patterns regardless of workspace prefix. Caching either would leak
+  // across users (or, worse, mask just-saved changes behind a stale
+  // cache-first hit until the SW cache version is bumped).
+  if (url.pathname.includes('/api/')) return;
   // Never cache login / OAuth handoffs.
   if (url.pathname.endsWith('/login')) return;
   if (url.pathname.endsWith('/dev-login')) return;
