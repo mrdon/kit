@@ -751,6 +751,12 @@ func (a *App) handleDeclinePending(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
+	// Vault JSON responses depend on the caller's role membership (e.g.
+	// /principals) and contain ciphertext we never want sitting in a
+	// shared/disk cache. Without an explicit directive browsers apply
+	// heuristic caching to GETs, which made role changes look like they
+	// hadn't taken effect after a page refresh.
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }
