@@ -22,25 +22,56 @@
   <p class="help"><a href="/{{ .TenantSlug }}/apps/vault/forgot">Forgot your master password?</a></p>
 </section>
 <section id="reveal-area" hidden>
-  <h2 id="entry-title"></h2>
-  <p><strong>Username:</strong> <span id="entry-username"></span></p>
-  <p><strong>URL:</strong> <a id="entry-url" target="_blank" rel="noopener"></a></p>
-  <p><strong>Password:</strong> <code id="entry-password" class="hidden">•••••</code>
-    <button type="button" id="show-password">Show</button>
-    <button type="button" id="copy-password">Copy</button>
-    <span id="copy-status" role="status"></span>
-  </p>
-  <section id="entry-totp" hidden>
-    <p><strong>2FA code:</strong>
-      <code id="totp-code">••• •••</code>
-      <button type="button" id="copy-totp">Copy</button>
-      <small id="totp-countdown" aria-live="polite"></small>
+  <div id="entry-display">
+    <h2 id="entry-title"></h2>
+    <p><strong>Username:</strong> <span id="entry-username"></span></p>
+    <p><strong>URL:</strong> <a id="entry-url" target="_blank" rel="noopener"></a></p>
+    <p><strong>Password:</strong> <code id="entry-password" class="hidden">•••••</code>
+      <button type="button" id="show-password">Show</button>
+      <button type="button" id="copy-password">Copy</button>
+      <span id="copy-status" role="status"></span>
     </p>
-  </section>
-  <details id="entry-notes-section" hidden>
-    <summary>Notes</summary>
-    <pre id="entry-notes"></pre>
-  </details>
+    <section id="entry-totp" hidden>
+      <p><strong>2FA code:</strong>
+        <code id="totp-code">••• •••</code>
+        <button type="button" id="copy-totp">Copy</button>
+        <small id="totp-countdown" aria-live="polite"></small>
+      </p>
+    </section>
+    <details id="entry-notes-section" hidden>
+      <summary>Notes</summary>
+      <pre id="entry-notes"></pre>
+    </details>
+    <p><button type="button" id="edit-details-button">Edit details</button></p>
+  </div>
+  <form id="details-form" hidden autocomplete="off">
+    <label>Name
+      <input type="text" name="title" required>
+    </label>
+    <label>Username
+      <input type="text" name="username" autocomplete="off">
+    </label>
+    <label>Website
+      <input type="text" name="url" autocomplete="off">
+    </label>
+    <label>Password
+      <input type="password" name="password" id="edit-password-input" autocomplete="new-password" required>
+    </label>
+    <p class="row-actions">
+      <button type="button" id="edit-toggle-password">Show</button>
+      <button type="button" id="edit-generate-password">Suggest a strong one</button>
+    </p>
+    <label>Notes
+      <textarea name="notes" rows="3"></textarea>
+    </label>
+    <label>Authenticator setup code (optional)
+      <input type="text" name="totp" autocomplete="off">
+    </label>
+    <p class="help">Paste a new otpauth URI or base32 secret to replace; clear to remove.</p>
+    <button type="submit">Save</button>
+    <button type="button" id="cancel-details-edit">Cancel</button>
+    <p id="details-status" role="status"></p>
+  </form>
 
   <section id="visibility-section">
     <h3>Who can see this</h3>

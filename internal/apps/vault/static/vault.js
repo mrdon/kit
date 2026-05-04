@@ -661,7 +661,7 @@ async function wireAdd() {
   if (params.get("url")) form.elements.url.value = params.get("url");
 
   await populateRoleSelector(document.getElementById("role-selector"), null);
-  wirePasswordHelpers(form);
+  wirePasswordHelpers(form, "toggle-password", "generate-password");
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -717,10 +717,10 @@ function normalizeURL(raw) {
 // for the password input. Generated passwords use crypto.getRandomValues
 // over a 70-char alphabet (~6.13 bits/char) → 20 chars ≈ 122 bits, well
 // past the brute-force threshold for any realistic offline attack.
-function wirePasswordHelpers(form) {
+function wirePasswordHelpers(form, toggleID, suggestID) {
   const input = form.elements.password;
-  const toggle = document.getElementById("toggle-password");
-  const suggest = document.getElementById("generate-password");
+  const toggle = document.getElementById(toggleID);
+  const suggest = document.getElementById(suggestID);
   if (!input || !toggle || !suggest) return;
 
   toggle.addEventListener("click", () => {
@@ -839,8 +839,94 @@ async function wireReveal() {
     await startTOTPRender(expandTOTP(decoded.totp));
   }
 
+  // Edit-details affordance (title / username / url / password / notes /
+  // totp). Re-encrypts client-side and PUTs the new ciphertext; the
+  // server records a vault.entry_update audit row tied to the caller.
+  wireDetailsEdit(entry, decoded);
+
   // Visibility (role) edit affordance.
   await wireRoleEdit(entry.role_id || null, entry.role_name || null);
+}
+
+// wireDetailsEdit swaps the read-only display for an editable form
+// pre-filled with current values, encrypts the updated value via the
+// shared worker, PUTs /entries/{id}, and reloads on success so the
+// page reflects the new ciphertext (and so the cache-friendly GET
+// returns the fresh row).
+function wireDetailsEdit(entry, decoded) {
+  const display = document.getElementById("entry-display");
+  const editBtn = document.getElementById("edit-details-button");
+  const form = document.getElementById("details-form");
+  const cancel = document.getElementById("cancel-details-edit");
+  const status = document.getElementById("details-status");
+  if (!display || !editBtn || !form || !cancel || !status) return;
+
+  wirePasswordHelpers(form, "edit-toggle-password", "edit-generate-password");
+
+  editBtn.addEventListener("click", () => {
+    form.elements.title.value = entry.title || "";
+    form.elements.username.value = entry.username || "";
+    form.elements.url.value = entry.url || "";
+    form.elements.password.value = decoded.password || "";
+    form.elements.notes.value = decoded.notes || "";
+    form.elements.totp.value = decoded.totp?.secret || "";
+    // Stop the live TOTP timer while the display is hidden.
+    stopTOTPRender();
+    display.hidden = true;
+    form.hidden = false;
+  });
+
+  cancel.addEventListener("click", () => {
+    form.hidden = true;
+    display.hidden = false;
+    status.textContent = "";
+    if (decoded.totp?.secret) {
+      startTOTPRender(expandTOTP(decoded.totp));
+    }
+  });
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    status.textContent = "Encrypting…";
+    status.className = "";
+
+    const value = {
+      password: fd.get("password") || "",
+      notes: fd.get("notes") || "",
+    };
+    const totp = parseOtpauthURI(fd.get("totp") || "");
+    if (totp) value.totp = compactTOTP(totp);
+    const valueJSON = JSON.stringify(value);
+    let enc;
+    try {
+      enc = await workerCall("encrypt", { plaintext: new TextEncoder().encode(valueJSON) });
+    } catch (err) {
+      status.textContent = `Encrypt failed: ${err.message || err}`;
+      status.className = "error";
+      return;
+    }
+
+    try {
+      await api("PUT", `/entries/${VAULT.entryId}`, {
+        title: fd.get("title") || "",
+        username: fd.get("username") || "",
+        url: normalizeURL(fd.get("url") || ""),
+        value_ciphertext: bytesField(new Uint8Array(enc.ciphertext)),
+        value_nonce: bytesField(new Uint8Array(enc.nonce)),
+      });
+    } catch (err) {
+      status.textContent = `Save failed: ${err.message || err}`;
+      status.className = "error";
+      return;
+    }
+
+    status.textContent = "Saved.";
+    status.className = "success";
+    // Reload so the fresh ciphertext + decoded fields render from
+    // server state — avoids drift if the server normalised anything.
+    setTimeout(() => location.reload(), 500);
+  });
 }
 
 // Module-scope timer so onLockedExternally and the lock-button handler
