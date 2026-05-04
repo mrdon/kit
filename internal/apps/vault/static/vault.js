@@ -394,32 +394,26 @@ async function lockNow() {
 // ===== page-side lock hooks =====
 
 function installLockHooks() {
-  // Lock when the tab is hidden long enough or on tab close — defense
-  // against a stale tab leaking the cached key.
+  // Lock when the tab has been hidden for more than 5 minutes — covers
+  // the "user backgrounded a vault tab and forgot about it" case
+  // without forcing a re-unlock on quick tab switches.
+  //
+  // Tab close / reload is intentionally NOT a lock trigger: the
+  // SharedWorker terminates naturally when the last vault tab closes
+  // (so its captive key dies with it), and on a reload we want the
+  // user to land back in their already-unlocked session. The worker
+  // also self-locks on its own idle (10 min) / absolute (30 min)
+  // timers, so a tab left open + walked-away-from still drops the key
+  // on its own.
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       hiddenAt = Date.now();
     } else if (hiddenAt && Date.now() - hiddenAt > 5 * 60_000) {
-      // Returning after 5+ min hidden: lock.
       lockNow();
       hiddenAt = 0;
     }
   });
-  // pagehide fires reliably on mobile + bfcache navigations where
-  // beforeunload is unreliable. Both fire the lock; the worker drains
-  // its own in-flight ops, and we kick off an IDB wipe even though the
-  // tab may close before it completes.
-  const onClose = () => {
-    stopTOTPRender();
-    if (workerPort) workerPort.postMessage({ id: nextMsgID++, type: "lock" });
-    // Best-effort sync wipe trigger — browsers limit work in unload
-    // handlers but this gives the wipe its first event-loop tick before
-    // the page dies.
-    dbWipe().catch(() => {});
-  };
-  window.addEventListener("pagehide", onClose);
-  window.addEventListener("beforeunload", onClose);
 }
 
 // ===== unlock flow =====
