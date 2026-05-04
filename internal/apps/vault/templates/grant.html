@@ -2,11 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
 <link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
 </head>
 <body>
 <main id="vault-app" data-page="grant" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}" data-target-user-id="{{ .TargetUserID }}">
+{{ template "chrome_header" .Header }}
 <h1>Grant vault access</h1>
 <noscript>This page requires JavaScript.</noscript>
 <section class="explainer">

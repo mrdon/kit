@@ -1,0 +1,16 @@
+{{ define "chrome_header" -}}
+<header class="chrome-header">
+  {{ if .HomeURL -}}
+  <a class="chrome-header-brand" href="{{ .HomeURL }}">
+  {{- else -}}
+  <span class="chrome-header-brand">
+  {{- end }}
+    {{ if .WorkspaceIconURL }}<img class="chrome-header-icon" src="{{ .WorkspaceIconURL }}" alt="" width="24" height="24">{{ end }}
+    <span class="chrome-header-name">{{ if .WorkspaceName }}{{ .WorkspaceName }}{{ else }}Workspace{{ end }}</span>
+  {{ if .HomeURL }}</a>{{ else }}</span>{{ end }}
+  <span class="chrome-header-user">
+    {{ if .UserDisplayName }}<span class="chrome-header-username">{{ .UserDisplayName }}</span>{{ end }}
+    {{ if .LogoutURL }}<a class="chrome-header-logout" href="{{ .LogoutURL }}">Sign out</a>{{ end }}
+  </span>
+</header>
+{{- end }}

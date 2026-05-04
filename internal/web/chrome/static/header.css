@@ -1,0 +1,68 @@
+/* Shared header for Kit's non-card-UI pages — see internal/web/chrome.
+ * Class names are chrome-* so consuming apps can layer their own
+ * page-specific CSS without colliding. */
+
+.chrome-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: white;
+  font-size: 0.875rem;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.chrome-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #111827;
+  text-decoration: none;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.chrome-header-brand:hover { text-decoration: underline; }
+
+.chrome-header-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  flex: 0 0 auto;
+}
+
+.chrome-header-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chrome-header-user {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: #4b5563;
+  min-width: 0;
+}
+
+.chrome-header-username {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+
+.chrome-header-logout {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.chrome-header-logout:hover { text-decoration: underline; }
+
+@media (max-width: 30rem) {
+  .chrome-header { padding: 0.5rem 0.75rem; }
+  .chrome-header-username { max-width: 7rem; }
+}

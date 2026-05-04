@@ -79,6 +79,7 @@ async function main() {
   }
   switch (VAULT.page) {
     case "register":     return wireRegister();
+    case "list":         return wireList();
     case "add":          return wireAdd();
     case "reveal":       return wireReveal();
     case "grant":        return wireGrant();
@@ -394,9 +395,10 @@ async function lockNow() {
 // ===== page-side lock hooks =====
 
 function installLockHooks() {
-  // Lock when the tab has been hidden for more than 5 minutes — covers
+  // Lock when the tab has been hidden for more than 10 minutes — covers
   // the "user backgrounded a vault tab and forgot about it" case
-  // without forcing a re-unlock on quick tab switches.
+  // without forcing a re-unlock on quick tab switches (e.g. flipping to
+  // a password manager mid-edit).
   //
   // Tab close / reload is intentionally NOT a lock trigger: the
   // SharedWorker terminates naturally when the last vault tab closes
@@ -409,7 +411,7 @@ function installLockHooks() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       hiddenAt = Date.now();
-    } else if (hiddenAt && Date.now() - hiddenAt > 5 * 60_000) {
+    } else if (hiddenAt && Date.now() - hiddenAt > 10 * 60_000) {
       lockNow();
       hiddenAt = 0;
     }
@@ -645,6 +647,63 @@ async function wireRegister() {
   });
 }
 
+async function wireList() {
+  // The list page shows metadata only (titles, usernames, scope) — no
+  // ciphertext is involved, so we don't gate on master-password unlock.
+  // /api/entries is already session+tenant gated server-side, and any
+  // crypto-protected fields (passwords, notes, TOTP) are revealed only
+  // on /reveal, which does require unlock.
+  showSection("list-area");
+  const ul = document.getElementById("list-entries");
+  const empty = document.getElementById("list-empty");
+  const filter = document.getElementById("list-filter");
+  if (!ul || !empty || !filter) return;
+
+  let rows = [];
+  try {
+    rows = await api("GET", "/entries?limit=500");
+  } catch (err) {
+    setStatus(`Couldn't load secrets: ${err.message || err}`, "error");
+    return;
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    empty.hidden = false;
+    return;
+  }
+  rows.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+
+  const render = (q) => {
+    ul.innerHTML = "";
+    const needle = (q || "").trim().toLowerCase();
+    let shown = 0;
+    for (const r of rows) {
+      const hay = `${r.title || ""} ${r.username || ""} ${r.url || ""} ${r.scope_summary || ""}`.toLowerCase();
+      if (needle && !hay.includes(needle)) continue;
+      const li = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = `/${VAULT.tenantSlug}/apps/vault/reveal/${r.id}`;
+      link.className = "entry-link";
+      const title = document.createElement("span");
+      title.className = "entry-title";
+      title.textContent = r.title || "(untitled)";
+      link.appendChild(title);
+      const meta = document.createElement("span");
+      meta.className = "entry-meta";
+      const parts = [];
+      if (r.username) parts.push(r.username);
+      if (r.scope_summary) parts.push(r.scope_summary);
+      meta.textContent = parts.join(" — ");
+      link.appendChild(meta);
+      li.appendChild(link);
+      ul.appendChild(li);
+      shown++;
+    }
+    empty.hidden = shown !== 0;
+  };
+  render("");
+  filter.addEventListener("input", () => render(filter.value));
+}
+
 async function wireAdd() {
   await ensureUnlocked();
   const form = document.getElementById("add-form");
@@ -677,8 +736,9 @@ async function wireAdd() {
     const valueJSON = JSON.stringify(value);
     const enc = await workerCall("encrypt", { plaintext: new TextEncoder().encode(valueJSON) });
 
+    let created;
     try {
-      await api("POST", "/entries", {
+      created = await api("POST", "/entries", {
         title: fd.get("title") || "",
         username: fd.get("username") || "",
         url: normalizeURL(fd.get("url") || ""),
@@ -693,6 +753,16 @@ async function wireAdd() {
     setStatus("", "");
     form.reset();
     hideSection("add-form");
+    const revealLink = document.getElementById("saved-reveal-link");
+    if (revealLink && created && created.id) {
+      const revealURL = `/${VAULT.tenantSlug}/apps/vault/reveal/${created.id}`;
+      revealLink.href = revealURL;
+      revealLink.textContent = revealURL;
+    }
+    const listLink = document.getElementById("saved-list-link");
+    if (listLink) {
+      listLink.href = `/${VAULT.tenantSlug}/apps/vault/list`;
+    }
     showSection("saved-message");
   });
 }

@@ -240,7 +240,9 @@ func handleAgentStartAddSecret(svc *Service) tools.HandlerFunc {
 			q = "?" + strings.Join(parts, "&")
 		}
 		url := svc.absURL(fmt.Sprintf("/%s/apps/vault/add%s", tenantSlug(ec), q))
-		return "Open in your browser to capture the secret: " + url, nil
+		// URL on its own line so the LLM is more likely to keep it
+		// verbatim in the reply instead of paraphrasing it away.
+		return url + "\n\nOpen this in your browser to capture the secret. The browser encrypts the value before sending it to Kit.", nil
 	}
 }
 

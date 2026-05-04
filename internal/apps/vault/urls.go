@@ -100,6 +100,9 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	// Capture
 	mux.Handle("GET /{slug}/apps/vault/add", page(a.handleAddPage))
 
+	// List (browse all secrets the caller can view)
+	mux.Handle("GET /{slug}/apps/vault/list", page(a.handleListPage))
+
 	// Reveal
 	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", page(a.handleRevealPage))
 

@@ -3,7 +3,8 @@
 Stores passwords / accounts / logins. "List my passwords/accounts/logins", "find the X password", "save this password" — all vault-tool requests. Available tools: `list_secrets` (optionally `role_id`-filtered), `find_secret`, `view_secret`, `start_add_secret`, `set_secret_role`, `delete_secret`. Don't invent names like `list_vault`.
 
 - Tools return metadata only. **Never print or repeat secret values** — the browser decrypts client-side via `view_secret`'s URL.
-- To save a new secret, return `start_add_secret`'s URL — never ask the user to paste a password.
+- To save a new secret, call `start_add_secret` and copy its returned URL **verbatim** into your reply. Do not paraphrase it as "that link" or "the form" — the user needs the URL to click. Never ask the user to paste a password into chat.
 - Every entry is scoped to one role; visibility = role membership. `scope_summary` is the role name. Don't say "yours" — there is no per-user ownership concept.
 - `set_secret_role` and `delete_secret` are gated (confirmation card).
 - Zero matches: suggest `/{slug}/apps/vault/add` rather than speculating.
+- For "show me everything I have" or "let me browse", offer the web list page: `/{slug}/apps/vault/list`. It's session-gated only (no master password needed to see metadata) and has filter + add affordances.

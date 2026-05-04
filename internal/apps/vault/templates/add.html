@@ -2,11 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
 <link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
 </head>
 <body>
 <main id="vault-app" data-page="add" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+{{ template "chrome_header" .Header }}
+<p class="breadcrumb"><a href="/{{ .TenantSlug }}/apps/vault/list">← All secrets</a></p>
 <h1>Add a secret</h1>
 <noscript>This page requires JavaScript.</noscript>
 <section id="unlock-prompt" hidden>
@@ -59,6 +63,8 @@
 <section id="saved-message" hidden>
   <h2>Saved</h2>
   <p>Your secret is stored. You can close this window.</p>
+  <p>Verify it: <a id="saved-reveal-link" href="#"></a></p>
+  <p>Or <a id="saved-list-link" href="#">browse all your secrets</a>.</p>
 </section>
 </main>
 <script type="module" src="{{ .StaticBase }}/vault.js"></script>

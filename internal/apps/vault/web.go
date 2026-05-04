@@ -19,6 +19,7 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/web/chrome"
 )
 
 //go:embed templates/*.html
@@ -27,16 +28,44 @@ var templatesFS embed.FS
 //go:embed static/*
 var staticFS embed.FS
 
-var pageTmpl = template.Must(template.ParseFS(templatesFS, "templates/*.html"))
+// pageTmpl is the vault template set with the shared chrome header
+// partial mixed in. We clone chrome.Tmpl() (don't ParseFS into it
+// directly — Clone is the documented way to extend a parsed template
+// with another file set) so the {{ template "chrome_header" . }} call
+// inside each vault template resolves.
+var pageTmpl = template.Must(chrome.Tmpl().ParseFS(templatesFS, "templates/*.html"))
 
-// pageData is the render struct for vault HTML pages.
+// pageData is the render struct for vault HTML pages. Header is the
+// shared chrome shell (workspace icon + name + signed-in user); the
+// rest are vault-route-specific fields.
 type pageData struct {
 	TenantSlug   string
 	EntryID      string
 	TargetUserID string
 	StaticBase   string
 	APIBase      string
+	ChromeCSS    string
 	Title        string
+	Header       chrome.Header
+}
+
+// basePageData returns common page-render fields populated from the
+// request context, including the shared chrome header. Each page
+// handler then layers on Title and any route-specific fields (EntryID,
+// TargetUserID).
+func (a *App) basePageData(r *http.Request) pageData {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		return pageData{}
+	}
+	homeURL := fmt.Sprintf("/%s/apps/vault/list", tenant.Slug)
+	return pageData{
+		TenantSlug: tenant.Slug,
+		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
+		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
+		ChromeCSS:  chrome.HeaderCSSPath,
+		Header:     chrome.For(r, a.pool, homeURL),
+	}
 }
 
 // ===== headers =====
@@ -74,17 +103,13 @@ func applySecurityHeaders(w http.ResponseWriter) {
 
 func (a *App) handleRegisterPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	renderPage(w, "register.html", pageData{
-		TenantSlug: tenant.Slug,
-		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		Title:      "Set up vault",
-	})
+	pd.Title = "Set up vault"
+	renderPage(w, "register.html", pd)
 }
 
 // handleForgotPage renders the "Forgot your master password?" page that
@@ -94,17 +119,13 @@ func (a *App) handleRegisterPage(w http.ResponseWriter, r *http.Request) {
 // gets a redirect to /login like any other vault page.
 func (a *App) handleForgotPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	renderPage(w, "forgot.html", pageData{
-		TenantSlug: tenant.Slug,
-		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		Title:      "Forgot your master password?",
-	})
+	pd.Title = "Forgot your master password?"
+	renderPage(w, "forgot.html", pd)
 }
 
 // handleForgotPost mints an admin-scoped decision card asking an admin
@@ -128,25 +149,32 @@ func (a *App) handleForgotPost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *App) handleAddPage(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleListPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	renderPage(w, "add.html", pageData{
-		TenantSlug: tenant.Slug,
-		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		Title:      "Add a secret",
-	})
+	pd.Title = "Your secrets"
+	renderPage(w, "list.html", pd)
+}
+
+func (a *App) handleAddPage(w http.ResponseWriter, r *http.Request) {
+	applySecurityHeaders(w)
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	pd.Title = "Add a secret"
+	renderPage(w, "add.html", pd)
 }
 
 func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
@@ -155,19 +183,15 @@ func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad entry id", http.StatusBadRequest)
 		return
 	}
-	renderPage(w, "reveal.html", pageData{
-		TenantSlug: tenant.Slug,
-		EntryID:    entryID,
-		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		Title:      "Reveal secret",
-	})
+	pd.EntryID = entryID
+	pd.Title = "Reveal secret"
+	renderPage(w, "reveal.html", pd)
 }
 
 func (a *App) handleGrantPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
@@ -176,13 +200,9 @@ func (a *App) handleGrantPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad user id", http.StatusBadRequest)
 		return
 	}
-	renderPage(w, "grant.html", pageData{
-		TenantSlug:   tenant.Slug,
-		TargetUserID: targetID,
-		StaticBase:   fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:      fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		Title:        "Grant vault access",
-	})
+	pd.TargetUserID = targetID
+	pd.Title = "Grant vault access"
+	renderPage(w, "grant.html", pd)
 }
 
 func renderPage(w http.ResponseWriter, name string, data pageData) {
@@ -318,17 +338,13 @@ func (a *App) handleLock(w http.ResponseWriter, r *http.Request) {
 // /api/cancel_reset which wipes the row.
 func (a *App) handleCancelResetPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	renderPage(w, "cancel_reset.html", pageData{
-		TenantSlug: tenant.Slug,
-		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		Title:      "Cancel vault password reset",
-	})
+	pd.Title = "Cancel vault password reset"
+	renderPage(w, "cancel_reset.html", pd)
 }
 
 // handleCancelReset wipes the caller's vault_users row when it's in the

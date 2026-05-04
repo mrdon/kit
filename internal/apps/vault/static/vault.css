@@ -51,3 +51,15 @@ button[type="button"]:hover { background: #4b5563; }
 [role="status"].success { color: #047857; }
 code { background: #f3f4f6; padding: 0.125rem 0.375rem; border-radius: 0.25rem; }
 pre { background: #f3f4f6; padding: 0.5rem; border-radius: 0.375rem; white-space: pre-wrap; }
+.breadcrumb { font-size: 0.875rem; margin: 0 0 0.5rem; }
+.breadcrumb a { color: #4b5563; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.button-link { display: inline-block; padding: 0.5rem 1rem; border-radius: 0.375rem; background: #2563eb; color: white; text-decoration: none; font: inherit; }
+.button-link:hover { background: #1d4ed8; }
+.entry-list { list-style: none; margin: 0.75rem 0; padding: 0; }
+.entry-list li { margin: 0; border-top: 1px solid #e5e7eb; }
+.entry-list li:last-child { border-bottom: 1px solid #e5e7eb; }
+.entry-link { display: block; padding: 0.625rem 0.5rem; text-decoration: none; color: inherit; }
+.entry-link:hover { background: #f3f4f6; }
+.entry-title { display: block; font-weight: 500; color: #111827; }
+.entry-meta { display: block; font-size: 0.85rem; color: #6b7280; margin-top: 0.125rem; }

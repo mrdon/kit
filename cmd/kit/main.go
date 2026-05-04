@@ -42,6 +42,7 @@ import (
 	"github.com/mrdon/kit/internal/tools"
 	"github.com/mrdon/kit/internal/transcribe"
 	"github.com/mrdon/kit/internal/web"
+	"github.com/mrdon/kit/internal/web/chrome"
 )
 
 func main() {
@@ -364,6 +365,9 @@ func main() {
 
 	// App routes
 	apps.RegisterAllRoutes(mux)
+
+	// Shared chrome (header CSS) for non-card-UI HTML pages
+	chrome.RegisterRoutes(mux)
 
 	// Landing page
 	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL))

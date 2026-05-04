@@ -1,0 +1,42 @@
+{{ define "list.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+<main id="vault-app" data-page="list" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+{{ template "chrome_header" .Header }}
+<h1>Your secrets</h1>
+<noscript>This page requires JavaScript.</noscript>
+<section id="unlock-prompt" hidden>
+  <h2>Unlock your vault first</h2>
+  <form id="unlock-form" autocomplete="off">
+    <label>Master password
+      <input type="password" name="master_password" autocomplete="current-password" required>
+    </label>
+    <p class="help">This is the password you created when you set up your vault. Kit can't recover it.</p>
+    <button type="submit">Unlock</button>
+    <p id="unlock-status" role="status"></p>
+  </form>
+  <p class="help"><a href="/{{ .TenantSlug }}/apps/vault/forgot">Forgot your master password?</a></p>
+</section>
+<section id="list-area" hidden>
+  <p class="row-actions">
+    <a class="button-link" href="/{{ .TenantSlug }}/apps/vault/add">Add a secret</a>
+  </p>
+  <p><label>Filter
+    <input type="search" id="list-filter" autocomplete="off" placeholder="Title, username, URL…">
+  </label></p>
+  <ul id="list-entries" class="entry-list"></ul>
+  <p id="list-empty" hidden>No secrets you can view yet. <a href="/{{ .TenantSlug }}/apps/vault/add">Add your first one.</a></p>
+</section>
+<p id="status" role="status"></p>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}

@@ -14,12 +14,13 @@ import (
 
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/web/chrome"
 )
 
 //go:embed templates/integration_setup.html
 var templatesFS embed.FS
 
-var setupTmpl = template.Must(template.ParseFS(templatesFS, "templates/integration_setup.html"))
+var setupTmpl = template.Must(chrome.Tmpl().ParseFS(templatesFS, "templates/integration_setup.html"))
 
 // formField is the render model for one input on the setup form.
 type formField struct {
@@ -51,6 +52,17 @@ type formModel struct {
 	// integration row. The form shows a banner and relaxes the required
 	// flag on secret fields.
 	UpdateMode bool
+	// Header + ChromeCSS render the shared workspace header.
+	Header    chrome.Header
+	ChromeCSS string
+}
+
+// fillChrome populates the shared header fields on a formModel. Caller
+// is typically nil here (token-authed page), so chrome.For omits the
+// "Sign out" link automatically.
+func (a *App) fillChrome(r *http.Request, m *formModel) {
+	m.ChromeCSS = chrome.HeaderCSSPath
+	m.Header = chrome.For(r, a.pool, "")
 }
 
 func (a *App) registerRoutes(mux *http.ServeMux) {
@@ -76,7 +88,7 @@ func (a *App) handleSetupGet(w http.ResponseWriter, r *http.Request) {
 	}
 	p, spec, err := a.verifyAndLoad(r.Context(), tenant.ID, token)
 	if err != nil {
-		a.renderError(w, err)
+		a.renderError(w, r, err)
 		return
 	}
 
@@ -101,7 +113,7 @@ func (a *App) handleSetupGet(w http.ResponseWriter, r *http.Request) {
 	if p.Status != models.PendingStatusPending {
 		model.Error = "This setup link has already been used or is no longer valid."
 	}
-	renderForm(w, model)
+	a.renderForm(w, r, model)
 }
 
 func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +133,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	}
 	p, spec, err := a.verifyAndLoad(r.Context(), tenant.ID, token)
 	if err != nil {
-		a.renderError(w, err)
+		a.renderError(w, r, err)
 		return
 	}
 
@@ -131,7 +143,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 
 	if p.Status != models.PendingStatusPending {
 		primary, advanced := splitFormFields(spec, defCtx, existing)
-		renderForm(w, formModel{
+		a.renderForm(w, r, formModel{
 			Title:          "Configure " + spec.DisplayName,
 			DisplayName:    spec.DisplayName,
 			Description:    spec.Description,
@@ -200,7 +212,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 
 	if validationError != "" {
 		primary, advanced := splitFormFields(spec, defCtx, existing)
-		renderForm(w, formModel{
+		a.renderForm(w, r, formModel{
 			Title:          "Configure " + spec.DisplayName,
 			DisplayName:    spec.DisplayName,
 			Description:    spec.Description,
@@ -221,7 +233,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		if errors.Is(err, models.ErrPendingNotPending) {
-			renderForm(w, formModel{
+			a.renderForm(w, r, formModel{
 				Title:       "Configure " + spec.DisplayName,
 				DisplayName: spec.DisplayName,
 				Scope:       string(spec.Scope),
@@ -235,7 +247,7 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	renderForm(w, formModel{
+	a.renderForm(w, r, formModel{
 		Title:       "Configured " + spec.DisplayName,
 		DisplayName: spec.DisplayName,
 		Scope:       string(spec.Scope),
@@ -343,7 +355,7 @@ func (a *App) verifyAndLoad(ctx context.Context, tenantID uuid.UUID, token strin
 	return p, spec, nil
 }
 
-func (a *App) renderError(w http.ResponseWriter, err error) {
+func (a *App) renderError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusBadRequest
 	msg := err.Error()
 	if isServerErr(err) {
@@ -352,7 +364,7 @@ func (a *App) renderError(w http.ResponseWriter, err error) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	renderForm(w, formModel{
+	a.renderForm(w, r, formModel{
 		Title: "Setup link error",
 		Error: msg,
 	})
@@ -456,7 +468,8 @@ func displayFieldLabel(f FieldSpec) string {
 	return f.Name
 }
 
-func renderForm(w http.ResponseWriter, m formModel) {
+func (a *App) renderForm(w http.ResponseWriter, r *http.Request, m formModel) {
+	a.fillChrome(r, &m)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := setupTmpl.Execute(w, m); err != nil {
 		slog.Error("rendering integration_setup template", "error", err)

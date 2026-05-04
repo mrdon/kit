@@ -2,11 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
 <link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
 </head>
 <body>
 <main id="vault-app" data-page="reveal" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}" data-entry-id="{{ .EntryID }}">
+{{ template "chrome_header" .Header }}
+<p class="breadcrumb"><a href="/{{ .TenantSlug }}/apps/vault/list">← All secrets</a></p>
 <h1>Reveal secret</h1>
 <noscript>This page requires JavaScript.</noscript>
 <section id="unlock-prompt" hidden>
