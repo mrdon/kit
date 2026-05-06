@@ -308,6 +308,12 @@ func (s *TaskService) Cancel(ctx context.Context, c *services.Caller, taskID uui
 // they wake up, not in the middle of the night.
 const snoozeHourLocal = 3
 
+// snoozeMonthHourLocal is the wake hour for the "1 month" option. We use
+// 07:00 (not 03:00) because a month-out snooze is closer to "I'll think
+// about this next month" than "wake me before the workday" — landing at
+// the start of business is the right rhythm for that intent.
+const snoozeMonthHourLocal = 7
+
 // SnoozeDaysToUntil validates a snooze duration (between 1 and 365 days)
 // and returns the snoozed_until timestamp: N calendar days from today
 // (in tz), clock set to snoozeHourLocal local, converted to UTC. Shared
@@ -379,6 +385,41 @@ func (s *TaskService) tenantTimezone(ctx context.Context, tenantID uuid.UUID) (s
 		return "UTC", nil
 	}
 	return tenant.Timezone, nil
+}
+
+// SnoozeOneMonth snoozes the task until 30 calendar days from now,
+// snapped forward to the first Monday at or after that date, at
+// snoozeMonthHourLocal (07:00) in the tenant timezone. The "month then
+// Monday" rhythm matches the cards-side action so all surfaces wake on
+// the same beat.
+func (s *TaskService) SnoozeOneMonth(ctx context.Context, c *services.Caller, taskID uuid.UUID) (*Task, error) {
+	tz, err := s.tenantTimezone(ctx, c.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	until, err := snoozeMonthThenMondayAt(time.Now(), tz)
+	if err != nil {
+		return nil, err
+	}
+	return s.Snooze(ctx, c, taskID, until)
+}
+
+// snoozeMonthThenMondayAt is the pure computation behind SnoozeOneMonth.
+// Advance 30 days, then advance further to land on a Monday (offset 0 if
+// already a Monday).
+func snoozeMonthThenMondayAt(now time.Time, tz string) (time.Time, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("loading timezone %q: %w", tz, err)
+	}
+	local := now.In(loc)
+	plus30 := time.Date(local.Year(), local.Month(), local.Day()+30,
+		snoozeMonthHourLocal, 0, 0, 0, loc)
+	offset := (int(time.Monday) - int(plus30.Weekday()) + 7) % 7
+	return plus30.AddDate(0, 0, offset).UTC(), nil
 }
 
 // snoozeUntilNextMondayAt is the pure computation behind

@@ -148,6 +148,9 @@ function Detail({
         <button disabled={busy} onClick={() => onAction('snooze_until_monday')}>
           😴 Monday
         </button>
+        <button disabled={busy} onClick={() => onAction('snooze_month')}>
+          😴 1 month
+        </button>
       </div>
       <div className="acks" style={{ marginTop: '1rem' }}>
         <button disabled={busy || regenerating} onClick={handleRegenerate}>

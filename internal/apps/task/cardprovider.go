@@ -183,6 +183,11 @@ func (p *cardProvider) DoAction(ctx context.Context, caller *services.Caller, ki
 			return nil, err
 		}
 		return &shared.ActionResult{RemovedIDs: []string{shared.Key("task", "task", id)}}, nil
+	case "snooze_month":
+		if _, err := p.app.svc.SnoozeOneMonth(ctx, caller, taskID); err != nil {
+			return nil, err
+		}
+		return &shared.ActionResult{RemovedIDs: []string{shared.Key("task", "task", id)}}, nil
 	case "wake":
 		// Clear the snooze so the task reappears in the active feed.
 		// Surface affordance: only shown on cards whose snoozed_until

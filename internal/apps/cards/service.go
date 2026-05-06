@@ -898,9 +898,10 @@ func (s *CardService) SnoozeForUser(ctx context.Context, c *services.Caller, car
 }
 
 // SnoozeForUserOneMonth is the convenience the swipe-UI's "Sleep 1 month"
-// action calls: 30 calendar days from now at cardSnoozeHourLocal local in
-// the tenant timezone. Email-link and Slack-button handlers (when those
-// ship) can use the same helper to compute the timestamp consistently.
+// action calls. Advances 30 calendar days from now and then snaps forward
+// to the first Monday at or after that date, clock 07:00 local in the
+// tenant timezone. Landing on a Monday keeps the snooze on a predictable
+// weekly rhythm so the user isn't surprised mid-week.
 func (s *CardService) SnoozeForUserOneMonth(ctx context.Context, c *services.Caller, cardID uuid.UUID) error {
 	tz, err := s.tenantTimezone(ctx, c.TenantID)
 	if err != nil {
@@ -925,7 +926,8 @@ func (s *CardService) tenantTimezone(ctx context.Context, tenantID uuid.UUID) (s
 }
 
 // cardSnoozeOneMonthAt returns the snoozed_until timestamp for the "Sleep
-// 1 month" action: 30 calendar days from `now`, clock set to
+// 1 month" action: advance 30 calendar days from `now`, then snap forward
+// to the first Monday at or after that date, clock set to
 // cardSnoozeHourLocal (07:00) in tz, converted to UTC. Pure function so
 // tests can pin wall time.
 func cardSnoozeOneMonthAt(now time.Time, tz string) (time.Time, error) {
@@ -937,9 +939,12 @@ func cardSnoozeOneMonthAt(now time.Time, tz string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("loading timezone %q: %w", tz, err)
 	}
 	local := now.In(loc)
-	advanced := time.Date(local.Year(), local.Month(), local.Day()+30,
+	plus30 := time.Date(local.Year(), local.Month(), local.Day()+30,
 		cardSnoozeHourLocal, 0, 0, 0, loc)
-	return advanced.UTC(), nil
+	// Snap to the first Monday at or after plus30. If plus30 already lands
+	// on a Monday, keep it (offset 0).
+	offset := (int(time.Monday) - int(plus30.Weekday()) + 7) % 7
+	return plus30.AddDate(0, 0, offset).UTC(), nil
 }
 
 // AckBriefing transitions a briefing card to a terminal state. Caller must
