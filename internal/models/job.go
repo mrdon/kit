@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robfig/cron/v3"
+
+	"github.com/mrdon/kit/internal/anthropic"
 )
 
 // JobStatus is the lifecycle state of a job row.
@@ -47,9 +49,9 @@ const (
 func ModelIDFor(tier string) string {
 	switch tier {
 	case JobModelSonnet:
-		return "claude-sonnet-4-6"
+		return anthropic.ModelSonnet
 	default:
-		return "claude-haiku-4-5-20251001"
+		return anthropic.ModelHaiku
 	}
 }
 

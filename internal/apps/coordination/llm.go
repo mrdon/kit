@@ -19,8 +19,6 @@ var promptFS embed.FS
 
 var promptSet = prompts.MustParse(promptFS, "prompts/*.tmpl")
 
-const modelHaiku = "claude-haiku-4-5-20251001"
-
 func mustRender(name string, data any) string {
 	out, err := prompts.Render(promptSet, name, data)
 	if err != nil {
@@ -76,7 +74,7 @@ func (a *CoordinationApp) draftMessage(ctx context.Context, coord *Coordination,
 	})
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     modelHaiku,
+		Model:     anthropic.ModelHaiku,
 		MaxTokens: 600,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: mustRender("system_draft_message.tmpl", nil)}},
 		Messages: []anthropic.Message{
@@ -141,7 +139,7 @@ func (a *CoordinationApp) parseMeetingReply(ctx context.Context, log []MessageLo
 	})
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     modelHaiku,
+		Model:     anthropic.ModelHaiku,
 		MaxTokens: 800,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: mustRender("system_parse_meeting_reply.tmpl", nil)}},
 		Messages: []anthropic.Message{
@@ -208,7 +206,7 @@ func (a *CoordinationApp) proposeRound(ctx context.Context, coord *Coordination,
 	})
 
 	resp, err := a.llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     modelHaiku,
+		Model:     anthropic.ModelHaiku,
 		MaxTokens: 800,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: mustRender("system_propose_times.tmpl", nil)}},
 		Messages: []anthropic.Message{

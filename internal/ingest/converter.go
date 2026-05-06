@@ -8,8 +8,6 @@ import (
 	"github.com/mrdon/kit/internal/anthropic"
 )
 
-const modelSonnet = "claude-sonnet-4-5-20241022"
-
 // ConvertToSkill uses Claude Sonnet to structure raw text into a skill.
 func ConvertToSkill(ctx context.Context, llm *anthropic.Client, filename, rawText string) (name, description, content string, err error) {
 	prompt := fmt.Sprintf(`You are converting an uploaded document into a structured knowledge article for an AI assistant.
@@ -29,7 +27,7 @@ CONTENT:
 <The full content, cleaned up and formatted as markdown. Preserve all important information. Organize with headers where appropriate.>`, filename, rawText)
 
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     modelSonnet,
+		Model:     anthropic.ModelSonnet,
 		MaxTokens: 8192,
 		Messages: []anthropic.Message{
 			{Role: "user", Content: []anthropic.Content{{Type: "text", Text: prompt}}},

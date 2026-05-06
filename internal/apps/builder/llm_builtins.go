@@ -46,17 +46,12 @@ const (
 	FnLLMGenerate  = "llm_generate"
 )
 
-// Model tier keys admins pass via the `model` kwarg. Values are the actual
-// Claude model IDs from Anthropic. Kept in sync with
-// internal/agent/agent.go and internal/ingest/converter.go.
+// Model tier keys admins pass via the `model` kwarg. Actual Claude model
+// IDs live in internal/anthropic/models.go.
 const (
 	tierHaiku  = "haiku"
 	tierSonnet = "sonnet"
 	tierOpus   = "opus"
-
-	modelIDHaiku  = "claude-haiku-4-5-20251001"
-	modelIDSonnet = "claude-sonnet-4-5-20241022"
-	modelIDOpus   = "claude-opus-4-1-20250805"
 )
 
 // Sender is the slice of the Anthropic client this package needs.

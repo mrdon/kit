@@ -41,10 +41,6 @@ const ResolutionKindTask = "task"
 // act on themselves. No chip, not tappable.
 const ResolutionKindAdvice = "advice"
 
-// modelHaiku is the model used for the one-shot suggester call. Same id
-// the scheduler picks for Haiku-tier tasks (see internal/models/task.go).
-const modelHaiku = "claude-haiku-4-5-20251001"
-
 // maxResolutions caps how many chips we render per task.
 const maxResolutions = 3
 
@@ -88,7 +84,7 @@ Respond with a JSON array of objects like {"kind": "task"|"advice", "label": "..
 		task.Title, task.Description, toolList.String())
 
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     modelHaiku,
+		Model:     anthropic.ModelHaiku,
 		MaxTokens: 1024,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: system}},
 		Messages: []anthropic.Message{

@@ -44,11 +44,11 @@ func resolveTier(args map[string]any, fallback string) string {
 func modelIDFor(tier string) string {
 	switch tier {
 	case tierSonnet:
-		return modelIDSonnet
+		return anthropic.ModelSonnet
 	case tierOpus:
-		return modelIDOpus
+		return anthropic.ModelOpus
 	default:
-		return modelIDHaiku
+		return anthropic.ModelHaiku
 	}
 }
 
