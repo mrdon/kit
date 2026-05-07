@@ -137,6 +137,39 @@ Once configured, ask:
 
 Tools: `search_emails`, `read_email`, `mark_read`, `send_email` (agent-side only — `send_email` is not exposed via MCP because it's gated).
 
+## Meeting scheduling
+
+When you need to find a time that works for several people, ask Kit to set up the meeting. Kit DMs each participant on Slack, asks for availability in plain language, negotiates across rounds if there's no immediate overlap, and surfaces a confirmation card once everyone aligns.
+
+> "Set up a 30-minute meeting with @alice and @bob next week. Tue or Wed afternoon work for me."
+
+The organizer's availability is implicit (it's expressed via the candidate slots Kit generates from your message); the participants list is "who to DM". For a 1:1 between you and Alice, the participants list is just `["@alice"]`.
+
+**What happens after you start it:**
+
+- Kit drafts each outbound DM and shows you an approval card per draft so you can edit or skip before it sends. Flip on `auto_approve` to bypass the cards if you trust the drafts.
+- Kit nudges non-responders on its own schedule (24h, then 24h, then times them out).
+- Each reply runs through a parser that extracts free-form availability ("Wed 4pm only", "anytime after Tuesday", "Fri or Sat morning"). Kit re-proposes times to anyone whose answer doesn't intersect cleanly.
+- When everyone agrees on a time, Kit surfaces a confirmation card. Tap to confirm — Kit notifies everyone (you still send the calendar invite yourself for now).
+- If the deadline lapses or rounds run out without convergence, Kit surfaces an abandonment card with options to extend by 7 days or abandon.
+
+Tools: `start_coordination`, `list_coordinations`, `get_coordination`, `cancel_coordination`. Don't hand-DM participants for scheduling — `start_coordination` is the only path that wires up approvals, parsing, and convergence.
+
+## Group votes
+
+When you need quorum approval from a named stakeholder list — board sign-off, partner agreement, "do we all agree on this" — use a vote. Unlike meeting scheduling, no Slack DMs go out: each participant sees a decision card in their card stack and swipes Approve / Object or taps Abstain. Long-press the card to attach a private comment ("happy to approve if we drop the per-seat clause").
+
+> "Start a vote on the new vendor agreement with @alice, @bob, and @carol."
+
+Once everyone resolves or the deadline hits, the organizer sees a digest card with the tally and verbatim objection reasons. Options:
+
+- **Accept** / **Reject** — record the decision silently.
+- **Accept-and-share-with-team** / **Reject-and-announce** — broadcast a sanitized briefing card to each participant so the group sees the outcome.
+
+Votes are one-shot. If objections come in, you decide what to do — there's no automatic compromise round. Don't use this for meeting times (use `start_coordination`) or casual channel polls (Slack's built-in poll is better).
+
+Tools: `start_vote`, `list_votes`, `get_vote`, `cancel_vote`.
+
 ## Vault (shared passwords)
 
 Kit's vault stores team logins — POS accounts, SaaS dashboards, Mailchimp, Squarespace, anything where a small group needs to share one set of credentials. Values are encrypted in the browser before they leave the user's device; Kit and the LLM never see plaintext.

@@ -13,6 +13,8 @@ Kit manages knowledge and tasks, all scoped by role so people see what's relevan
 - **Memories** — Persistent facts Kit remembers across conversations
 - **Tasks** — Scheduled and one-time automation via cron expressions
 - **Cards** — Decisions and briefings Kit surfaces in a swipeable mobile stack (see below)
+- **Meetings** — Multi-party meeting scheduling: Kit DMs each participant, negotiates rounds, surfaces a confirmation when everyone aligns
+- **Votes** — Yes/no/abstain proposals across a named participant list with private dissent and an organizer digest when results come in
 - **Vault** — Shared passwords and logins, encrypted in the browser and scoped to roles (Kit and the LLM never see the values)
 - **Roles** — Scope any content to specific team roles (bartender, manager, etc.)
 
