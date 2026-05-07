@@ -1213,38 +1213,6 @@ async function wireGrant() {
   });
 }
 
-// wireForgot wires the "Send reset request" button on /apps/vault/forgot.
-// POSTs /api/forgot which mints the admin-scoped decision card. No
-// master-password unlock required — by definition the user can't unlock.
-async function wireForgot() {
-  const btn = document.getElementById("forgot-submit");
-  if (!btn) return;
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    setStatus("Sending request…");
-    try {
-      await api("POST", "/forgot", {});
-    } catch (err) {
-      btn.disabled = false;
-      setStatus(`Request failed: ${err.message || err}`, "error");
-      return;
-    }
-    showChecklist({
-      paneId: "success-pane",
-      title: "Reset request sent",
-      intro: "Every workspace admin now sees a card on their swipe stack asking them to approve. Ping one of them on Slack if it's urgent.",
-      hideIds: ["forgot-intro"],
-      steps: [
-        { label: "Reset request sent", state: "done" },
-        { label: "An admin verifies and approves", sublabel: "They'll confirm it's really you (Slack DM, in person, etc.) before clicking Approve.", state: "current" },
-        { label: "Set a new master password", sublabel: "You'll see a card on your stack with the link.", state: "pending" },
-        { label: "An admin re-grants your access", state: "pending" },
-        { label: "Read and add secrets", state: "pending" },
-      ],
-    });
-  });
-}
-
 // wireCancelReset wires the small confirmation page linked from the
 // reset-triggered briefing. POSTs /cancel_reset on confirm; that endpoint
 // wipes the row server-side. No master-password unlock required — by

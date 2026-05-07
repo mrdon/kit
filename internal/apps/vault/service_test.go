@@ -143,7 +143,7 @@ func TestRegisterRejectsBadPubkey(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := svc.Register(ctx, caller, RegisterParams{
 				AuthHash:                 randHash(t),
-				KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+				KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 				UserPublicKey:            tc.der,
 				UserPrivateKeyCiphertext: fakePrivCT(),
 				UserPrivateKeyNonce:      make([]byte, 12),
@@ -167,7 +167,7 @@ func TestRegisterBootstrapAdminOnly(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 	err := svc.Register(ctx, nonAdmin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -189,7 +189,7 @@ func TestRegisterPostBootstrapForbidsSelfWrap(t *testing.T) {
 	// Admin bootstraps successfully.
 	if err := svc.Register(ctx, admin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -206,7 +206,7 @@ func TestRegisterPostBootstrapForbidsSelfWrap(t *testing.T) {
 	other := &services.Caller{TenantID: tenantID, UserID: otherUser.ID, IsAdmin: false}
 	err = svc.Register(ctx, other, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -597,7 +597,7 @@ func TestFailedUnlockCardOnlyOnTransition(t *testing.T) {
 	if err := models.RegisterVaultUser(ctx, pool, models.VaultRegisterParams{
 		TenantID:                 tenantID,
 		UserID:                   userID,
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		AuthHash:                 knownHash,
 		UserPublicKey:            pub,
 		UserPrivateKeyCiphertext: fakePrivCT(),
@@ -711,7 +711,7 @@ func TestRegisterUpsertOnPendingRetry(t *testing.T) {
 	// First register: succeeds, row is pending=true.
 	if err := svc.Register(ctx, admin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -724,7 +724,7 @@ func TestRegisterUpsertOnPendingRetry(t *testing.T) {
 	// row is rewritten with the new keys.
 	if err := svc.Register(ctx, admin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -741,7 +741,7 @@ func TestRegisterUpsertOnPendingRetry(t *testing.T) {
 	}
 	err := svc.Register(ctx, admin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"CCCCCCCCCCCCCCCCCCCCCC=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"CCCCCCCCCCCCCCCCCCCCCC=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -767,7 +767,7 @@ func TestCancelResetWipesRowDuringCooldown(t *testing.T) {
 	// Register + activate so we have an active vault user.
 	if err := svc.Register(ctx, admin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -798,7 +798,7 @@ func TestCancelResetWipesRowDuringCooldown(t *testing.T) {
 	if err := svc.Register(ctx, admin, RegisterParams{
 		Replace:                  true,
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -842,7 +842,7 @@ func TestReplaceRefusedWhenLastGrantedMember(t *testing.T) {
 
 	if err := svc.Register(ctx, admin, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),
@@ -857,7 +857,7 @@ func TestReplaceRefusedWhenLastGrantedMember(t *testing.T) {
 	err := svc.Register(ctx, admin, RegisterParams{
 		Replace:                  true,
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),

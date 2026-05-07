@@ -26,7 +26,7 @@ func seedActiveVault(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tena
 	if err := models.RegisterVaultUser(ctx, pool, models.VaultRegisterParams{
 		TenantID:                 tenantID,
 		UserID:                   userID,
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
 		AuthHash:                 randHash(t),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
@@ -196,7 +196,7 @@ func TestRegisterFromScratchAfterAdminReset(t *testing.T) {
 	targetCaller := &services.Caller{TenantID: tenantID, UserID: target.ID, IsAdmin: false}
 	if err := svc.Register(ctx, targetCaller, RegisterParams{
 		AuthHash:                 randHash(t),
-		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		KDFParams:                json.RawMessage(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
 		UserPublicKey:            genRSAPubKey(t),
 		UserPrivateKeyCiphertext: fakePrivCT(),
 		UserPrivateKeyNonce:      make([]byte, 12),

@@ -427,13 +427,20 @@ func (a *App) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"public_key":  target.UserPublicKey,
 		"fingerprint": pubkeyFingerprint(target.UserPublicKey),
 		"pending":     target.Pending,
 		"granted":     target.WrappedVaultKey != nil,
-		"reset":       target.ResetPendingUntil != nil,
-	})
+	}
+	// `reset` (an in-flight master-password reset) is admin-only — it
+	// reveals operationally interesting state (when an attacker would
+	// race the legitimate user's re-grant). Non-admins on the grant
+	// page only need pending/granted to decide whether to wrap or wait.
+	if caller.IsAdmin {
+		out["reset"] = target.ResetPendingUntil != nil
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ===== entry CRUD =====
@@ -696,12 +703,15 @@ func (a *App) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
 	if err := a.svc.RevokeGrant(r.Context(), caller, targetID, audit); err != nil {
-		if errors.Is(err, services.ErrForbidden) {
+		switch {
+		case errors.Is(err, services.ErrForbidden):
 			http.Error(w, "admin only", http.StatusForbidden)
-			return
+		case errors.Is(err, models.ErrNotFound):
+			http.NotFound(w, r)
+		default:
+			slog.Error("vault: revoke grant", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 		}
-		slog.Error("vault: revoke grant", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

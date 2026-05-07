@@ -191,8 +191,8 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 	if len(p.AuthHash) != 32 {
 		return errors.New("auth_hash must be 32 bytes")
 	}
-	if len(p.KDFParams) == 0 {
-		return errors.New("kdf_params required")
+	if err := validateKDFParams(p.KDFParams); err != nil {
+		return fmt.Errorf("invalid kdf_params: %w", err)
 	}
 	if len(p.UserPrivateKeyNonce) != 12 {
 		return errors.New("private key nonce must be 12 bytes")
@@ -224,36 +224,44 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		return errors.New("only the initial admin may pre-set wrapped_vault_key; teammates wait for a grant")
 	}
 
-	// On replace, refuse if a reset is already in flight, and capture
-	// the prior pubkey *before* the write so the audit row records the
-	// real diff (otherwise we'd read back the new key we just wrote).
-	priorFP := ""
+	// On replace, run the lock+check+update through ReplaceVaultUserAtomic
+	// so two concurrent resets within the same tenant can't both pass the
+	// last-granted-member guard and brick the workspace. The helper
+	// returns the prior pubkey so the audit row records a real diff.
+	newFP := pubkeyFingerprint(p.UserPublicKey)
 	if p.Replace {
-		existing, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
+		priorPub, err := models.ReplaceVaultUserAtomic(ctx, s.pool, models.VaultRegisterParams{
+			TenantID:                 c.TenantID,
+			UserID:                   c.UserID,
+			KDFParams:                p.KDFParams,
+			AuthHash:                 p.AuthHash,
+			UserPublicKey:            p.UserPublicKey,
+			UserPrivateKeyCiphertext: p.UserPrivateKeyCiphertext,
+			UserPrivateKeyNonce:      p.UserPrivateKeyNonce,
+		})
 		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return errors.New("no vault user to replace")
-		}
-		if existing.ResetPendingUntil != nil && time.Now().Before(*existing.ResetPendingUntil) {
-			return errors.New("a reset is already in flight; cancel via your DM first")
-		}
-		// Refuse if the caller is the only granted vault member — wiping
-		// their wrapped_vault_key would leave nobody who can re-grant,
-		// bricking the tenant vault. Has-key check is "user_id <> caller
-		// AND wrapped_vault_key IS NOT NULL AND pending=false"; if zero,
-		// we're the last one.
-		if existing.WrappedVaultKey != nil {
-			others, err := models.CountOtherGrantedVaultUsers(ctx, s.pool, c.TenantID, c.UserID)
-			if err != nil {
-				return err
-			}
-			if others == 0 {
+			switch {
+			case errors.Is(err, models.ErrVaultUserNotFound):
+				return errors.New("no vault user to replace")
+			case errors.Is(err, models.ErrResetInFlight):
+				return errors.New("a reset is already in flight; cancel via your DM first")
+			case errors.Is(err, models.ErrLastGrantedMember):
 				return errors.New("you're the only person with vault access — resetting now would lock the workspace out; ask a teammate to register and grant them access first, then reset")
 			}
+			return err
 		}
-		priorFP = pubkeyFingerprint(existing.UserPublicKey)
+		if err := audit.logRequired(ctx, "vault.master_password_reset", "vault_user", &c.UserID, EvtMasterPasswordReset{
+			OldPubKeyFingerprint: pubkeyFingerprint(priorPub),
+			NewPubKeyFingerprint: newFP,
+		}); err != nil {
+			return fmt.Errorf("recording reset audit: %w", err)
+		}
+		s.fireResetTriggeredBriefing(ctx, c)
+		// Re-grant card to admins; failure is logged but not surfaced.
+		if err := s.fireGrantRequestCard(ctx, c, true, newFP); err != nil {
+			slog.Warn("vault: firing grant-request decision card failed", "error", err)
+		}
+		return nil
 	}
 
 	if err := models.RegisterVaultUser(ctx, s.pool, models.VaultRegisterParams{
@@ -265,31 +273,21 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		UserPrivateKeyCiphertext: p.UserPrivateKeyCiphertext,
 		UserPrivateKeyNonce:      p.UserPrivateKeyNonce,
 		WrappedVaultKey:          p.WrappedVaultKey,
-		Replace:                  p.Replace,
 	}); err != nil {
 		return err
 	}
 
-	newFP := pubkeyFingerprint(p.UserPublicKey)
-	if p.Replace {
-		audit.log(ctx, "vault.master_password_reset", "vault_user", &c.UserID, EvtMasterPasswordReset{
-			OldPubKeyFingerprint: priorFP,
-			NewPubKeyFingerprint: newFP,
-		})
-		s.fireResetTriggeredBriefing(ctx, c)
-	} else {
-		audit.log(ctx, "vault.register", "vault_user", &c.UserID, EvtRegister{
-			Replace:           false,
-			IsTenantInitiator: isInitiator,
-			PubKeyFingerprint: newFP,
-		})
-	}
+	audit.log(ctx, "vault.register", "vault_user", &c.UserID, EvtRegister{
+		Replace:           false,
+		IsTenantInitiator: isInitiator,
+		PubKeyFingerprint: newFP,
+	})
 
 	// Fire an admin-targeted decision card unless this is the bootstrap
 	// initiator (who has self-granted; nobody else needs to act).
 	// Best-effort: card-creation failure does not roll back the registration.
 	if !isInitiator {
-		if err := s.fireGrantRequestCard(ctx, c, p.Replace, newFP); err != nil {
+		if err := s.fireGrantRequestCard(ctx, c, false, newFP); err != nil {
 			slog.Warn("vault: firing grant-request decision card failed", "error", err)
 		}
 	}
@@ -352,10 +350,12 @@ func (s *Service) Grant(ctx context.Context, c *services.Caller, p GrantParams, 
 	if err := models.SetVaultGrant(ctx, s.pool, c.TenantID, p.TargetUserID, c.UserID, p.WrappedVaultKey); err != nil {
 		return err
 	}
-	audit.log(ctx, "vault.grant", "vault_user", &p.TargetUserID, EvtGrant{
+	if err := audit.logRequired(ctx, "vault.grant", "vault_user", &p.TargetUserID, EvtGrant{
 		TargetPubKeyFingerprint: pubkeyFingerprint(target.UserPublicKey),
 		DuringResetCooldown:     duringCooldown,
-	})
+	}); err != nil {
+		return fmt.Errorf("recording grant audit: %w", err)
+	}
 	s.fireAccessGrantedBriefing(ctx, c, p.TargetUserID)
 	return nil
 }
@@ -418,7 +418,9 @@ func (s *Service) RevokeGrant(ctx context.Context, c *services.Caller, targetUse
 	if err := models.RevokeVaultGrant(ctx, s.pool, c.TenantID, targetUserID); err != nil {
 		return err
 	}
-	audit.log(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{})
+	if err := audit.logRequired(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{}); err != nil {
+		return fmt.Errorf("recording revoke audit: %w", err)
+	}
 	return nil
 }
 
@@ -445,9 +447,11 @@ func (s *Service) AdminResetVaultUser(ctx context.Context, c *services.Caller, t
 	if err := models.AdminDeleteVaultUser(ctx, s.pool, c.TenantID, targetUserID); err != nil {
 		return err
 	}
-	audit.log(ctx, "vault.admin_reset", "vault_user", &targetUserID, EvtAdminReset{
+	if err := audit.logRequired(ctx, "vault.admin_reset", "vault_user", &targetUserID, EvtAdminReset{
 		TargetUserID: targetUserID,
-	})
+	}); err != nil {
+		return fmt.Errorf("recording admin-reset audit: %w", err)
+	}
 	s.fireAdminResetBriefing(ctx, c, targetUserID)
 	return nil
 }

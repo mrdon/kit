@@ -11,9 +11,10 @@ import (
 )
 
 // csrfHeader is the custom request header every state-changing vault
-// route requires. SameSite=Strict on the session cookie blocks most
-// cross-origin attacks; the header is belt-and-suspenders against any
-// flaw that lets a CORS preflight slip through.
+// route requires. The session cookie is SameSite=Lax (top-level GET
+// navigations carry it), so the custom header is the actual CSRF
+// defense — cross-origin requests can't set a custom header without a
+// preflight, and we don't allow other origins.
 const csrfHeader = "X-Kit-Vault"
 
 // registerVaultRoutes wires all /{slug}/apps/vault/... routes onto the

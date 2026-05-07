@@ -101,28 +101,98 @@ type VaultRegisterParams struct {
 	UserPrivateKeyCiphertext []byte
 	UserPrivateKeyNonce      []byte
 	WrappedVaultKey          []byte // non-nil only for tenant initializer
-	Replace                  bool   // master-password reset path
 }
 
-// CountOtherGrantedVaultUsers returns the number of vault members in
-// the tenant — other than excludeUserID — who hold a wrapped_vault_key
-// AND have completed the self-unlock canary (pending=false). Used by
-// the self-service master-password reset to refuse when the caller is
-// the only person who could re-grant themselves: wiping the only
-// granted row would brick the tenant vault.
-func CountOtherGrantedVaultUsers(ctx context.Context, pool *pgxpool.Pool, tenantID, excludeUserID uuid.UUID) (int, error) {
-	var n int
-	err := pool.QueryRow(ctx, `
-		SELECT count(*) FROM app_vault_users
-		WHERE tenant_id = $1
-		  AND user_id <> $2
-		  AND wrapped_vault_key IS NOT NULL
-		  AND pending = FALSE
-	`, tenantID, excludeUserID).Scan(&n)
+// ReplaceVaultUserAtomic performs the master-password-reset Replace
+// path inside one transaction with a tenant-level advisory lock. The
+// lock serializes concurrent resets within the same tenant so the
+// "last granted member" guard is race-free: without it, two co-admins
+// resetting at the same instant could both pass the count check and
+// both wipe their wrapped_vault_key, leaving the workspace bricked.
+//
+// Returns the row's prior user_public_key for audit fingerprint diff
+// (it's the one place the caller still needs the pre-reset value).
+// Maps the three refusal cases onto sentinel errors so callers can
+// surface clean messages: ErrVaultUserNotFound, ErrResetInFlight,
+// ErrLastGrantedMember.
+func ReplaceVaultUserAtomic(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterParams) ([]byte, error) {
+	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("counting other granted vault users: %w", err)
+		return nil, fmt.Errorf("beginning replace tx: %w", err)
 	}
-	return n, nil
+	defer tx.Rollback(ctx)
+
+	// Advisory lock keyed on the tenant UUID — auto-released at COMMIT
+	// or ROLLBACK. hashtextextended hashes the UUID's text form into a
+	// bigint; collisions across tenants would only cause unrelated
+	// resets to serialize briefly, never lose safety.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`, p.TenantID); err != nil {
+		return nil, fmt.Errorf("acquiring tenant lock: %w", err)
+	}
+
+	var existingPub []byte
+	var existingResetUntil *time.Time
+	var existingWrapped []byte
+	err = tx.QueryRow(ctx, `
+		SELECT user_public_key, reset_pending_until, wrapped_vault_key
+		FROM app_vault_users
+		WHERE tenant_id = $1 AND user_id = $2
+		FOR UPDATE
+	`, p.TenantID, p.UserID).Scan(&existingPub, &existingResetUntil, &existingWrapped)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrVaultUserNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("locking existing row: %w", err)
+	}
+
+	if existingResetUntil != nil && time.Now().Before(*existingResetUntil) {
+		return nil, ErrResetInFlight
+	}
+
+	// Last-granted-member guard. Only matters if the caller currently
+	// holds a wrapped key — wiping a pending or never-granted row can't
+	// brick anyone since the caller had no access to lose.
+	if existingWrapped != nil {
+		var others int
+		err = tx.QueryRow(ctx, `
+			SELECT count(*) FROM app_vault_users
+			WHERE tenant_id = $1 AND user_id <> $2
+			  AND wrapped_vault_key IS NOT NULL AND pending = FALSE
+		`, p.TenantID, p.UserID).Scan(&others)
+		if err != nil {
+			return nil, fmt.Errorf("counting other granted users: %w", err)
+		}
+		if others == 0 {
+			return nil, ErrLastGrantedMember
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE app_vault_users
+		   SET kdf_params = $3,
+		       auth_hash = $4,
+		       user_public_key = $5,
+		       user_private_key_ciphertext = $6,
+		       user_private_key_nonce = $7,
+		       wrapped_vault_key = NULL,
+		       granted_by_user_id = NULL,
+		       granted_at = NULL,
+		       failed_unlocks = 0,
+		       locked_until = NULL,
+		       reset_pending_until = now() + interval '24 hours',
+		       pending = TRUE,
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND user_id = $2
+	`, p.TenantID, p.UserID, p.KDFParams, p.AuthHash, p.UserPublicKey,
+		p.UserPrivateKeyCiphertext, p.UserPrivateKeyNonce); err != nil {
+		return nil, fmt.Errorf("replacing vault user: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing replace: %w", err)
+	}
+	return existingPub, nil
 }
 
 // AnyVaultUserExists returns true if the tenant vault has been
@@ -147,41 +217,14 @@ func AnyVaultUserExists(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return ok, nil
 }
 
-// RegisterVaultUser inserts (or, with Replace=true, replaces) a vault_users row.
-// All new rows start pending=true; the caller flips it via MarkVaultUserActive
-// after the browser passes the self-unlock canary.
+// RegisterVaultUser inserts a fresh vault_users row (or upserts on top
+// of a still-pending row from a canary-failure retry). Activated rows
+// must use ReplaceVaultUserAtomic instead — UPSERT here refuses to
+// overwrite once pending flipped to false.
+//
+// All new rows start pending=true; the caller flips it via
+// MarkVaultUserActive after the browser passes the self-unlock canary.
 func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterParams) error {
-	if p.Replace {
-		// Replace requires an existing row. If the row was deleted
-		// between the service-layer GetVaultUser check and now, we
-		// should fail rather than silently no-op.
-		tag, err := pool.Exec(ctx, `
-			UPDATE app_vault_users
-			   SET kdf_params = $3,
-			       auth_hash = $4,
-			       user_public_key = $5,
-			       user_private_key_ciphertext = $6,
-			       user_private_key_nonce = $7,
-			       wrapped_vault_key = NULL,
-			       granted_by_user_id = NULL,
-			       granted_at = NULL,
-			       failed_unlocks = 0,
-			       locked_until = NULL,
-			       reset_pending_until = now() + interval '24 hours',
-			       pending = TRUE,
-			       updated_at = now()
-			 WHERE tenant_id = $1 AND user_id = $2
-		`, p.TenantID, p.UserID, p.KDFParams, p.AuthHash, p.UserPublicKey,
-			p.UserPrivateKeyCiphertext, p.UserPrivateKeyNonce)
-		if err != nil {
-			return fmt.Errorf("replacing vault user: %w", err)
-		}
-		if tag.RowsAffected() == 0 {
-			return ErrVaultUserNotFound
-		}
-		return nil
-	}
-
 	// Bootstrap initiator (first user in tenant): WrappedVaultKey is set,
 	// granted_by_user_id stays NULL so the partial unique index
 	// idx_app_vault_first_user matches and prevents a second initiator.
@@ -195,8 +238,8 @@ func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterP
 	// existing row is still pending=true. If a user's previous register
 	// attempt threw between INSERT and the self-unlock canary POST, this
 	// lets them retry by submitting again. Activated rows are protected
-	// by the WHERE clause; the only way to replace those is the explicit
-	// Replace=true path, which is gated separately.
+	// by the WHERE clause; the only way to replace those is the
+	// ReplaceVaultUserAtomic path.
 	tag, err := pool.Exec(ctx, `
 		INSERT INTO app_vault_users
 			(tenant_id, user_id, kdf_params, auth_hash, user_public_key,
@@ -221,7 +264,7 @@ func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterP
 	}
 	if tag.RowsAffected() == 0 {
 		// Row exists and is already active (pending=false). Caller must
-		// use Replace=true to reset.
+		// use ReplaceVaultUserAtomic to reset.
 		return errors.New("vault user already active; use master-password reset to replace")
 	}
 	return nil
@@ -316,7 +359,7 @@ func SetVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUser
 // browser sessions that have already cached the unwrapped key are not affected
 // in v1 (forward secrecy is a v2 item; see plan).
 func RevokeVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID uuid.UUID) error {
-	_, err := pool.Exec(ctx, `
+	tag, err := pool.Exec(ctx, `
 		UPDATE app_vault_users
 		   SET wrapped_vault_key = NULL,
 		       granted_by_user_id = NULL,
@@ -326,6 +369,9 @@ func RevokeVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetU
 	`, tenantID, targetUserID)
 	if err != nil {
 		return fmt.Errorf("revoking vault grant: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -587,6 +633,17 @@ var ErrVaultUserNotFound = errors.New("vault user not found")
 // ErrNotFound is the canonical "not found / no scope" sentinel returned by
 // vault read paths so callers can return uniform 404s.
 var ErrNotFound = errors.New("not found")
+
+// ErrResetInFlight is returned by ReplaceVaultUserAtomic when the
+// caller's row already has a non-elapsed reset_pending_until — a
+// previous reset is still in its 24h cooldown window.
+var ErrResetInFlight = errors.New("vault reset already in flight")
+
+// ErrLastGrantedMember is returned by ReplaceVaultUserAtomic when the
+// caller is the only granted vault member in their tenant. Wiping
+// their wrapped_vault_key would leave nobody who could re-grant,
+// bricking the workspace's vault.
+var ErrLastGrantedMember = errors.New("caller is the only granted vault member")
 
 func scanVaultEntries(rows pgx.Rows) ([]VaultEntry, error) {
 	var out []VaultEntry

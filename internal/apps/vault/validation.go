@@ -5,7 +5,9 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -30,6 +32,44 @@ func validateRSAPubKey(der []byte) error {
 	}
 	if rsaPub.E != 65537 {
 		return fmt.Errorf("public exponent must be 65537, got %d", rsaPub.E)
+	}
+	return nil
+}
+
+// minKDFIterations is the floor we accept for PBKDF2-SHA256. The
+// browser registers with 600,000 (OWASP 2024). Without a server-side
+// floor, a Slack-account-compromised attacker — or a custom client —
+// could register with `iterations: 1`, making any DB-leak offline
+// brute force trivially fast.
+const minKDFIterations = 600_000
+
+// validateKDFParams parses the JSON blob the browser sends as
+// kdf_params and refuses anything weaker than the documented v1.5
+// crypto suite (PBKDF2-SHA256, ≥600k iters, 16-byte salt).
+func validateKDFParams(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return errors.New("kdf_params required")
+	}
+	var p struct {
+		Algo       string `json:"algo"`
+		Iterations int    `json:"iterations"`
+		Salt       string `json:"salt"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return fmt.Errorf("kdf_params not valid JSON: %w", err)
+	}
+	if p.Algo != "pbkdf2-sha256" {
+		return fmt.Errorf("kdf_params.algo must be pbkdf2-sha256, got %q", p.Algo)
+	}
+	if p.Iterations < minKDFIterations {
+		return fmt.Errorf("kdf_params.iterations must be >= %d, got %d", minKDFIterations, p.Iterations)
+	}
+	salt, err := base64.StdEncoding.DecodeString(p.Salt)
+	if err != nil {
+		return fmt.Errorf("kdf_params.salt not valid base64: %w", err)
+	}
+	if len(salt) != 16 {
+		return fmt.Errorf("kdf_params.salt must decode to 16 bytes, got %d", len(salt))
 	}
 	return nil
 }
