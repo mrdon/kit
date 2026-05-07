@@ -30,15 +30,17 @@ type Agent struct {
 	llm     *anthropic.Client
 	fetcher *web.Fetcher
 	svc     *services.Services
+	baseURL string
 }
 
 // NewAgent creates a new agent instance.
-func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher) *Agent {
+func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher, baseURL string) *Agent {
 	return &Agent{
 		pool:    pool,
 		llm:     llm,
 		fetcher: fetcher,
 		svc:     services.New(pool, nil),
+		baseURL: baseURL,
 	}
 }
 
@@ -251,7 +253,7 @@ func (a *Agent) buildInitialMessages(ctx context.Context, in RunInput) []anthrop
 }
 
 func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.SystemBlock {
-	systemText := BuildSystemPrompt(ctx, a.pool, in.Tenant, in.User, in.Job)
+	systemText := BuildSystemPrompt(ctx, a.pool, a.baseURL, in.Tenant, in.User, in.Job)
 	if in.SystemSuffix != "" {
 		systemText += "\n\n" + in.SystemSuffix
 	}

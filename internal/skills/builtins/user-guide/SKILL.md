@@ -139,7 +139,7 @@ Tools: `search_emails`, `read_email`, `mark_read`, `send_email` (agent-side only
 
 ## Decisions and briefings (card stack)
 
-Kit surfaces agent-driven prompts in a swipeable mobile card stack at `/app/` (sign in via Slack). Install it to your home screen: iOS Safari → Share → Add to Home Screen; Android Chrome → ⋮ → Install app.
+Kit surfaces agent-driven prompts in a swipeable mobile card stack at `{base-url}/{workspace-slug}/` (sign in via Slack at `/{workspace-slug}/login`). Each workspace has its own URL — the system prompt names yours, so just ask Kit "what's my card stack URL?" in a DM. Install it to your home screen: iOS Safari → Share → Add to Home Screen; Android Chrome → ⋮ → Install app.
 
 Two kinds of card:
 

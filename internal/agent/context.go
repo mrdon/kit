@@ -30,12 +30,17 @@ type JobContext struct {
 
 // BuildSystemPrompt assembles the system prompt from platform rules, tenant info,
 // user context, matching rules, skill catalog, and relevant memories.
-func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, user *models.User, taskCtx *JobContext) string {
+func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, tenant *models.Tenant, user *models.User, taskCtx *JobContext) string {
 	parts := []string{
 		mustRender("system_platform_identity.tmpl", map[string]any{"TenantName": tenant.Name}),
 		mustRender("system_slack_output.tmpl", nil),
 		mustRender("system_gated_tools.tmpl", nil),
 		mustRender("system_require_approval.tmpl", nil),
+		mustRender("system_workspace_urls.tmpl", map[string]any{
+			"MCPURL":      baseURL + "/" + tenant.Slug + "/mcp",
+			"AppURL":      baseURL + "/" + tenant.Slug + "/",
+			"AppLoginURL": baseURL + "/" + tenant.Slug + "/login",
+		}),
 	}
 
 	// User display info (Slack-specific)

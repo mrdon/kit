@@ -42,7 +42,7 @@ func NewApp(pool *pgxpool.Pool, enc *crypto.Encryptor, apiKey, baseURL string, r
 		Pool:      pool,
 		Encryptor: enc,
 		Fetcher:   fetcher,
-		Agent:     agent.NewAgent(pool, llm, fetcher),
+		Agent:     agent.NewAgent(pool, llm, fetcher, baseURL),
 		LLM:       llm,
 		Messenger: messenger.New(pool, enc),
 		BaseURL:   baseURL,
