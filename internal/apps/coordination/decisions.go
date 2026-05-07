@@ -182,7 +182,14 @@ func (a *CoordinationApp) surfaceAbandonmentCard(ctx context.Context, coord *Coo
 			},
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	coord.Config.AbandonmentCardOpen = true
+	if err := UpdateCoordinationConfig(ctx, a.pool, coord.TenantID, coord.ID, coord.Config); err != nil {
+		return fmt.Errorf("marking abandonment card open: %w", err)
+	}
+	return nil
 }
 
 // surfaceConvergenceCardFreeForm surfaces a confirmation card when
@@ -601,6 +608,12 @@ func resolveExtend(ctx context.Context, app *CoordinationApp, coord *Coordinatio
 	`, coord.TenantID, coord.ID, newDeadline)
 	if err != nil {
 		return "", err
+	}
+	// Re-arm: clear the open-card flag so a future deadline lapse can
+	// surface a fresh card.
+	coord.Config.AbandonmentCardOpen = false
+	if err := UpdateCoordinationConfig(ctx, app.pool, coord.TenantID, coord.ID, coord.Config); err != nil {
+		return "", fmt.Errorf("clearing abandonment card flag: %w", err)
 	}
 	notifyOrganizer(ctx, app, coord, fmt.Sprintf("Extended %q — deadline +7 days, %d more rounds available.", coord.Config.Title, MaxRounds))
 	return fmt.Sprintf("Extended: deadline +7 days, %d more rounds.", MaxRounds), nil

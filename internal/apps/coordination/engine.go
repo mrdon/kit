@@ -78,6 +78,9 @@ func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
 		if coord == nil {
 			continue
 		}
+		if coord.Config.AbandonmentCardOpen {
+			continue
+		}
 		// Phase 1: surface as abandonment (the deadline_handling card variant
 		// distinction lives in the spec but for v1 we abandon when the
 		// deadline lapses without convergence).
@@ -268,7 +271,9 @@ func (e *Engine) AdvanceRound(ctx context.Context, coord *Coordination) error {
 	// Round limit check
 	if coord.RoundCount >= MaxRounds {
 		slog.Info("round limit hit", "coord", coord.ID, "rounds", coord.RoundCount)
-		_ = e.app.surfaceAbandonmentCard(ctx, coord, fmt.Sprintf("After %d rounds we couldn't find a time everyone agrees on.", coord.RoundCount))
+		if !coord.Config.AbandonmentCardOpen {
+			_ = e.app.surfaceAbandonmentCard(ctx, coord, fmt.Sprintf("After %d rounds we couldn't find a time everyone agrees on.", coord.RoundCount))
+		}
 		return nil
 	}
 

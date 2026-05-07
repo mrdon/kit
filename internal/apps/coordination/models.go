@@ -85,6 +85,11 @@ type CoordinationConfig struct {
 	Notes            string        `json:"notes,omitempty"`
 	OrganizerTZ      string        `json:"organizer_tz,omitempty"`
 	LatestProposal   ProposalState `json:"latest_proposal,omitzero"`
+	// AbandonmentCardOpen is true once we've surfaced an abandonment
+	// decision card to the organizer. The cron sweep gates on this so a
+	// passed deadline doesn't re-surface a new card every minute. Cleared
+	// when the organizer extends the coordination.
+	AbandonmentCardOpen bool `json:"abandonment_card_open,omitempty"`
 }
 
 // CoordinationResult is the kind-specific result jsonb populated on
