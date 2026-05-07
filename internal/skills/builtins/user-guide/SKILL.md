@@ -137,6 +137,29 @@ Once configured, ask:
 
 Tools: `search_emails`, `read_email`, `mark_read`, `send_email` (agent-side only — `send_email` is not exposed via MCP because it's gated).
 
+## Vault (shared passwords)
+
+Kit's vault stores team logins — POS accounts, SaaS dashboards, Mailchimp, Squarespace, anything where a small group needs to share one set of credentials. Values are encrypted in the browser before they leave the user's device; Kit and the LLM never see plaintext.
+
+Each entry is scoped to one role, and visibility = role membership. Make an entry visible to the whole workspace by scoping it to the tenant's `member` role; lock it down by scoping to a smaller team like `managers` or `kitchen-staff`.
+
+**First-time setup.** Each user registers once at `/{workspace-slug}/apps/vault/register` to set a master password (used to derive the per-user wrap key on their device). After that, an admin grants them access to the team's vault key (one-time approval card per user). They unlock per browser session at `/{workspace-slug}/apps/vault/unlock`.
+
+**Saving a secret.** Ask Kit, and Kit hands back a URL to a browser form — you type the password there, the browser encrypts it client-side, and the ciphertext is what hits the server. Kit will not accept a password pasted into chat:
+
+> "Save the password for our Squarespace, scoped to managers."
+
+**Using a secret.** Ask Kit by name; Kit returns a one-tap URL that opens the reveal page in your browser (you'll be prompted for your master password if your session has timed out):
+
+> "What's the login for our POS?"
+> "Find the Mailchimp password."
+
+**Browsing.** The list page at `/{workspace-slug}/apps/vault/list` shows every entry you can see, with filters and an add button. Tools work the same: `list_secrets` (optionally `role_id`-filtered), `find_secret` for fuzzy lookup by name, `view_secret` for a reveal URL, `start_add_secret` for the add URL.
+
+**Re-scoping or deleting.** `set_secret_role` changes which role owns an entry; `delete_secret` removes it (no undo — recoverable only by re-adding from another source). Both are gated through a confirmation card before they take effect.
+
+**Forgot your master password?** An admin can call `reset_vault_user` to wipe your registration so you can register again. Existing stored secrets are preserved — only your personal wrap is reset; an admin re-grants access afterward.
+
 ## Decisions and briefings (card stack)
 
 Kit surfaces agent-driven prompts in a swipeable mobile card stack at `{base-url}/{workspace-slug}/` (sign in via Slack at `/{workspace-slug}/login`). Each workspace has its own URL — the system prompt names yours, so just ask Kit "what's my card stack URL?" in a DM. Install it to your home screen: iOS Safari → Share → Add to Home Screen; Android Chrome → ⋮ → Install app.
