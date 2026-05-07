@@ -104,6 +104,27 @@ type VaultRegisterParams struct {
 	Replace                  bool   // master-password reset path
 }
 
+// CountOtherGrantedVaultUsers returns the number of vault members in
+// the tenant — other than excludeUserID — who hold a wrapped_vault_key
+// AND have completed the self-unlock canary (pending=false). Used by
+// the self-service master-password reset to refuse when the caller is
+// the only person who could re-grant themselves: wiping the only
+// granted row would brick the tenant vault.
+func CountOtherGrantedVaultUsers(ctx context.Context, pool *pgxpool.Pool, tenantID, excludeUserID uuid.UUID) (int, error) {
+	var n int
+	err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM app_vault_users
+		WHERE tenant_id = $1
+		  AND user_id <> $2
+		  AND wrapped_vault_key IS NOT NULL
+		  AND pending = FALSE
+	`, tenantID, excludeUserID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting other granted vault users: %w", err)
+	}
+	return n, nil
+}
+
 // AnyVaultUserExists returns true if the tenant vault has been
 // successfully bootstrapped — at least one user holds a
 // wrapped_vault_key AND has completed the self-unlock canary

@@ -60,6 +60,7 @@ const VAULT = (() => {
     tenantSlug: root.dataset.tenantSlug,
     entryId: root.dataset.entryId || "",
     targetUserId: root.dataset.targetUserId || "",
+    reset: root.dataset.reset === "1",
   };
 })();
 
@@ -72,9 +73,8 @@ async function main() {
   installLockHooks();
   // Pages that require a registered vault user redirect to /register
   // when /api/me 404s (no vault_users row). Skip on register / cancel-
-  // reset / forgot — those pages are valid regardless of registration
-  // state (forgot exists precisely because the user can't unlock).
-  if (VAULT.page !== "register" && VAULT.page !== "cancel-reset" && VAULT.page !== "forgot") {
+  // reset — those pages are valid regardless of registration state.
+  if (VAULT.page !== "register" && VAULT.page !== "cancel-reset") {
     if (!(await ensureRegistered())) return;
   }
   switch (VAULT.page) {
@@ -84,7 +84,6 @@ async function main() {
     case "reveal":       return wireReveal();
     case "grant":        return wireGrant();
     case "cancel-reset": return wireCancelReset();
-    case "forgot":       return wireForgot();
     default: setStatus(`Unknown vault page: ${VAULT.page}`, "error");
   }
 }
@@ -550,14 +549,17 @@ async function wireRegister() {
       user_private_key_ciphertext: bytesField(wrappedPriv.ciphertext),
       user_private_key_nonce: bytesField(wrappedPriv.nonce),
     };
+    if (VAULT.reset) body.replace = true;
 
     setStatus("Registering with server…");
     let res;
     try {
       res = await api("POST", "/register", body);
     } catch (err) {
-      if ((err.message || "").includes("first user in tenant must self-grant")) {
+      if (!VAULT.reset && (err.message || "").includes("first user in tenant must self-grant")) {
         // Bootstrap: generate vault_key, wrap with own pubkey, retry.
+        // Reset path can never be the bootstrap initiator (an existing
+        // row implies the tenant vault was already initialized).
         const rawVK = crypto.getRandomValues(new Uint8Array(32));
         wrappedVaultKey = await rsaWrapAesKey(rsa.publicKey, rawVK);
         body.wrapped_vault_key = bytesField(wrappedVaultKey);
@@ -618,6 +620,19 @@ async function wireRegister() {
         steps: [
           { label: "Workspace vault initialized", state: "done" },
           { label: "Add your first secret", sublabel: "Use the \"Add a secret\" page or ask Kit in Slack.", state: "current" },
+        ],
+      });
+    } else if (VAULT.reset) {
+      showChecklist({
+        paneId: "success-pane",
+        title: "Master password reset",
+        intro: "Your old keys are gone. An admin needs to re-grant your access to the workspace vault key before you can read or add secrets — your stored secrets are unchanged, just locked to your old keys.",
+        hideIds: ["register-form"],
+        steps: [
+          { label: "New master password saved", sublabel: "On this device only — Kit never saw it.", state: "done" },
+          { label: "An admin re-grants your access", sublabel: "They'll verify your new public-key fingerprint with you out-of-band before approving.", state: "current" },
+          { label: "If this wasn't you, cancel within 24h", sublabel: "Watch for a \"Reset triggered\" briefing on your card stack with a cancel link.", state: "pending" },
+          { label: "Unlock with the new master password", state: "pending" },
         ],
       });
     } else {

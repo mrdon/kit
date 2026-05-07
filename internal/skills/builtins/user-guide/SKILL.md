@@ -191,7 +191,9 @@ Each entry is scoped to one role, and visibility = role membership. Make an entr
 
 **Re-scoping or deleting.** `set_secret_role` changes which role owns an entry; `delete_secret` removes it (no undo — recoverable only by re-adding from another source). Both are gated through a confirmation card before they take effect.
 
-**Forgot your master password?** An admin can call `reset_vault_user` to wipe your registration so you can register again. Existing stored secrets are preserved — only your personal wrap is reset; an admin re-grants access afterward.
+**Forgot your master password?** Click "Forgot your master password?" on the unlock page — it takes you straight to the reset form, no admin approval needed to start. Pick a new master password; an admin then re-grants you access (they'll verify your new public-key fingerprint with you out-of-band before approving). If the reset wasn't you, a "Reset triggered" briefing lands on your card stack with a link to cancel within 24 hours. Existing stored secrets are preserved — only your personal wrap is reset.
+
+If you're the only person with vault access, the reset is refused so the workspace doesn't get locked out — ask a teammate to register and grant them access first, then reset. Admins also still have a manual `reset_vault_user` tool to wipe a stuck user from Slack/MCP.
 
 ## Decisions and briefings (card stack)
 

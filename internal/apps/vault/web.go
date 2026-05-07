@@ -47,6 +47,7 @@ type pageData struct {
 	ChromeCSS    string
 	Title        string
 	Header       chrome.Header
+	Reset        bool // register page: rendering the master-password reset variant
 }
 
 // basePageData returns common page-render fields populated from the
@@ -108,45 +109,13 @@ func (a *App) handleRegisterPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	pd.Title = "Set up vault"
+	pd.Reset = r.URL.Query().Get("reset") == "1"
+	if pd.Reset {
+		pd.Title = "Reset master password"
+	} else {
+		pd.Title = "Set up vault"
+	}
 	renderPage(w, "register.html", pd)
-}
-
-// handleForgotPage renders the "Forgot your master password?" page that
-// the unlock prompts link to. The page itself has no crypto: it explains
-// the admin-approval flow and POSTs to /api/forgot to mint the request
-// card. Tenant + session middleware already gate access; an unauth'd user
-// gets a redirect to /login like any other vault page.
-func (a *App) handleForgotPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Forgot your master password?"
-	renderPage(w, "forgot.html", pd)
-}
-
-// handleForgotPost mints an admin-scoped decision card asking an admin
-// to approve wiping the caller's vault registration. The card carries
-// the gated `reset_vault_user` tool on its approve option; admin
-// approval routes through the existing decision-resolve flow which
-// runs the tool as the approver and lands in Service.AdminResetVaultUser.
-//
-// No master-password unlock required — the legitimate user, by
-// definition, can't unlock right now (that's why they're here).
-// Authentication is the session cookie + the X-Kit-Vault CSRF header
-// enforced by the route's middleware chain.
-func (a *App) handleForgotPost(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	audit := a.svc.AuditFromRequest(caller, r)
-	if err := a.svc.RequestVaultReset(r.Context(), caller, audit); err != nil {
-		slog.Warn("vault: request reset", "error", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (a *App) handleListPage(w http.ResponseWriter, r *http.Request) {

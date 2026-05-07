@@ -100,10 +100,10 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 		// Gated agent tools per the plan + CLAUDE.md "gated tools must
 		// have one entry point" rule. The agent path runs through the
 		// registry's PolicyGate interceptor (decision card → human
-		// approval → svc call). reset_vault_user is also gated because
-		// approval of the request card *is* the reset action; the card
-		// minted by RequestVaultReset carries this tool name on its
-		// approve option, and ResolveDecision runs it as the approver.
+		// approval → svc call). reset_vault_user remains gated as an
+		// admin-side recovery tool — used when an admin manually wipes a
+		// stuck user from Slack/MCP (the typical "I forgot my master
+		// password" case is now self-service via /register?reset=1).
 		// The MCP path does not have an enforced gate today, so mcp.go
 		// refuses these tools outright with a "use the agent or web"
 		// error rather than calling svc directly.

@@ -239,6 +239,20 @@ func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterPa
 		if existing.ResetPendingUntil != nil && time.Now().Before(*existing.ResetPendingUntil) {
 			return errors.New("a reset is already in flight; cancel via your DM first")
 		}
+		// Refuse if the caller is the only granted vault member — wiping
+		// their wrapped_vault_key would leave nobody who can re-grant,
+		// bricking the tenant vault. Has-key check is "user_id <> caller
+		// AND wrapped_vault_key IS NOT NULL AND pending=false"; if zero,
+		// we're the last one.
+		if existing.WrappedVaultKey != nil {
+			others, err := models.CountOtherGrantedVaultUsers(ctx, s.pool, c.TenantID, c.UserID)
+			if err != nil {
+				return err
+			}
+			if others == 0 {
+				return errors.New("you're the only person with vault access — resetting now would lock the workspace out; ask a teammate to register and grant them access first, then reset")
+			}
+		}
 		priorFP = pubkeyFingerprint(existing.UserPublicKey)
 	}
 
@@ -436,81 +450,6 @@ func (s *Service) AdminResetVaultUser(ctx context.Context, c *services.Caller, t
 	})
 	s.fireAdminResetBriefing(ctx, c, targetUserID)
 	return nil
-}
-
-// RequestVaultReset creates a decision card on the admin role's stack
-// asking them to approve wiping the caller's vault registration. The
-// approve option carries the gated `reset_vault_user` tool; admin
-// approval routes through the existing decision-resolve flow which
-// runs the tool as the approver and lands in AdminResetVaultUser.
-//
-// System-scoped (CardSurface.CreateDecision routes through
-// CreateSystemDecision in cmd/kit/vault_cards.go) so the requesting
-// non-admin user can scope the card to the admin role even though
-// they don't hold it themselves.
-func (s *Service) RequestVaultReset(ctx context.Context, c *services.Caller, audit auditCtx) error {
-	if s.cards == nil {
-		return errors.New("card surface not configured")
-	}
-	v, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
-	if err != nil {
-		return err
-	}
-	if v == nil {
-		return errors.New("you have no vault registration to reset — open the vault to set one up")
-	}
-	user, _ := models.GetUserByID(ctx, s.pool, c.TenantID, c.UserID)
-
-	args, err := json.Marshal(map[string]string{"user_id": c.UserID.String()})
-	if err != nil {
-		return fmt.Errorf("marshalling reset args: %w", err)
-	}
-
-	if err := s.cards.CreateDecision(ctx, c.TenantID, CardCreateInput{
-		Title:      "Reset " + resetRequesterDisplay(c, user) + "'s vault?",
-		Body:       buildResetRequestBody(c, user),
-		RoleScopes: []string{"admin"},
-		Decision: &CardDecisionCreateInput{
-			Priority:            "high",
-			RecommendedOptionID: "approve",
-			Options: []CardDecisionOption{
-				{
-					OptionID:  "approve",
-					Label:     "Reset their vault",
-					ToolName:  "reset_vault_user",
-					Arguments: args,
-				},
-				{OptionID: "skip", Label: "Cancel"},
-			},
-		},
-	}); err != nil {
-		return fmt.Errorf("creating reset request card: %w", err)
-	}
-
-	audit.log(ctx, "vault.reset_requested", "vault_user", &c.UserID, EvtVaultResetRequested{})
-	return nil
-}
-
-func resetRequesterDisplay(c *services.Caller, user *models.User) string {
-	if user != nil && user.DisplayName != nil && *user.DisplayName != "" {
-		return sanitizeMarkdownInline(*user.DisplayName)
-	}
-	return sanitizeMarkdownInline(c.Identity)
-}
-
-func buildResetRequestBody(c *services.Caller, user *models.User) string {
-	displayName := resetRequesterDisplay(c, user)
-	slackID := c.Identity
-	if user != nil && user.SlackUserID != "" {
-		slackID = user.SlackUserID
-	}
-	slackID = sanitizeMarkdownInline(slackID)
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "**%s** (<@%s>) forgot their vault master password and is asking for a reset.\n\n", displayName, slackID)
-	b.WriteString("Approving wipes their vault registration. They'll then set a new master password and need their access re-granted — their stored secrets are not lost.\n\n")
-	b.WriteString("**Verify out-of-band that this request is really from them** before approving. A compromised Slack account could trigger this to seed an attacker-controlled key for the next grant step.")
-	return b.String()
 }
 
 // fireAdminResetBriefing posts an urgent briefing on the target's stack

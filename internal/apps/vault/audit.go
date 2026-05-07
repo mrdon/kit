@@ -145,12 +145,6 @@ type EvtAdminReset struct {
 	TargetUserID uuid.UUID `json:"target_user_id"`
 }
 
-// EvtVaultResetRequested is written when a user clicks "Forgot your
-// master password?" and the request card lands on the admin role's
-// stack. Actor is the requesting user; target is the same user (the
-// row whose vault would be wiped on approval).
-type EvtVaultResetRequested struct{}
-
 // ===== HTTP helpers =====
 
 // clientIP returns the request's remote IP as a netip.Addr, preferring the

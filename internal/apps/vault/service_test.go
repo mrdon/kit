@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -778,8 +779,17 @@ func TestCancelResetWipesRowDuringCooldown(t *testing.T) {
 		t.Fatalf("mark active: %v", err)
 	}
 
+	// Self-service Replace=true refuses if the caller is the only
+	// granted vault member (would brick the workspace). Seed a second
+	// granted teammate so the cooldown branch can run.
+	teammate, err := models.GetOrCreateUser(ctx, pool, tenantID, "U_teammate_"+uuid.NewString()[:8], "Teammate", "")
+	if err != nil {
+		t.Fatalf("creating teammate: %v", err)
+	}
+	seedGrantedVault(t, ctx, pool, tenantID, teammate.ID, userID)
+
 	// CancelReset should refuse — no reset is pending.
-	err := svc.CancelReset(ctx, admin, svc.AuditFromRequest(admin, r))
+	err = svc.CancelReset(ctx, admin, svc.AuditFromRequest(admin, r))
 	if err == nil {
 		t.Fatal("CancelReset on a non-cooldown row should return an error")
 	}
@@ -815,5 +825,56 @@ func TestCancelResetWipesRowDuringCooldown(t *testing.T) {
 	}
 	if v != nil {
 		t.Fatal("expected row to be wiped after CancelReset")
+	}
+}
+
+// TestReplaceRefusedWhenLastGrantedMember asserts the bricking guard:
+// self-service master-password reset refuses when the caller is the
+// only granted vault member, since wiping their wrapped_vault_key
+// would leave nobody who can re-grant.
+func TestReplaceRefusedWhenLastGrantedMember(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+	admin := adminCaller(tenantID, userID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	if err := svc.Register(ctx, admin, RegisterParams{
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: fakePrivCT(),
+		UserPrivateKeyNonce:      make([]byte, 12),
+		WrappedVaultKey:          []byte("wrapped1"),
+	}, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := models.MarkVaultUserActive(ctx, pool, tenantID, userID); err != nil {
+		t.Fatalf("mark active: %v", err)
+	}
+
+	err := svc.Register(ctx, admin, RegisterParams{
+		Replace:                  true,
+		AuthHash:                 randHash(t),
+		KDFParams:                json.RawMessage(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"BBBBBBBBBBBBBBBBBBBBBB=="}`),
+		UserPublicKey:            genRSAPubKey(t),
+		UserPrivateKeyCiphertext: fakePrivCT(),
+		UserPrivateKeyNonce:      make([]byte, 12),
+	}, svc.AuditFromRequest(admin, r))
+	if err == nil {
+		t.Fatal("expected reset to fail when caller is only granted vault member")
+	}
+	if !strings.Contains(err.Error(), "only person") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+
+	// Original row is untouched.
+	v, err := models.GetVaultUser(ctx, pool, tenantID, userID)
+	if err != nil || v == nil {
+		t.Fatalf("expected original row intact: v=%v err=%v", v, err)
+	}
+	if v.ResetPendingUntil != nil {
+		t.Error("reset_pending_until should not be set on a refused reset")
 	}
 }
