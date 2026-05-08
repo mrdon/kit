@@ -412,6 +412,10 @@ var alwaysLoaded = map[string]bool{
 	"find_user":                true,
 	"revise_decision_option":   true, // chat-revision path uses this on turn 1
 	"get_decision_tool_result": true,
+	// Job runs that fire a skill prompt ("call load_skill with skill_id=…")
+	// need this on turn 1; if it's deferred, Haiku has been observed to
+	// substitute search_skills (description-only) and miss the skill body.
+	"load_skill": true,
 }
 
 // Definitions returns tool definitions for the Claude API. Tools not in
