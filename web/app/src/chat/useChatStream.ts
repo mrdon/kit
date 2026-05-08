@@ -48,26 +48,17 @@ export type ChatStreamOptions = {
   // Required for quick chat, ignored by card chat. The server keys the
   // session on (user, clientSessionID) when the card is absent.
   clientSessionID?: string;
-  // Fired on each successful turn done event (for refreshing the stack
-  // or running auto-dismiss logic in the parent sheet). askedQuestion
-  // is true when the final response text ends with a question mark —
-  // a belt-and-braces signal that the agent expects the user to reply,
-  // so quick-chat shouldn't auto-dismiss even if a tool fired.
-  onDone?: (info: { actionTaken: boolean; askedQuestion: boolean }) => void;
+  // Fired when a turn finishes so the parent can refresh the stack
+  // (the agent may have captured a todo that surfaces in the next page).
+  onDone?: () => void;
 };
-
-// Terminal tools — firing one of these is just the agent's response,
-// not an action. Anything else firing means the agent did something.
-// Matches the Terminal: true set in internal/tools/core.go.
-const TERMINAL_TOOLS = new Set(['reply_in_thread', 'post_to_channel', 'dm_user']);
 
 /**
  * Hook that drives chat/execute SSE consumption.
  *
  * The caller passes in the execute URL for their surface (card vs quick)
  * plus an optional client session id; we handle fetch lifecycle, SSE
- * parsing, turn state, abort plumbing, and action detection for the
- * auto-dismiss affordance.
+ * parsing, turn state, and abort plumbing.
  */
 export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
   const { executeUrl, clientSessionID, onDone } = opts;
@@ -84,8 +75,6 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       setBusy(true);
-      let actionTaken = false;
-      let lastResponse = '';
       try {
         const resp = await api.chatExecute(
           executeUrl,
@@ -119,7 +108,6 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
             case ChatEvent.Tool: {
               const d = parseEventData(frame.data) as { name?: string };
               if (d.name) {
-                if (!TERMINAL_TOOLS.has(d.name)) actionTaken = true;
                 setTurns((ts) =>
                   ts.map((t) =>
                     t.key === turnKey
@@ -133,15 +121,13 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
             case ChatEvent.Response: {
               const d = parseEventData(frame.data) as { text?: string };
               if (typeof d.text === 'string') {
-                lastResponse = d.text;
                 updateTurn(turnKey, { response: d.text });
               }
               break;
             }
             case ChatEvent.Done: {
               updateTurn(turnKey, { inFlight: false, status: 'done' });
-              const askedQuestion = /\?\s*$/.test(lastResponse);
-              onDone?.({ actionTaken, askedQuestion });
+              onDone?.();
               break;
             }
             case ChatEvent.Error: {

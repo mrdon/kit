@@ -1122,18 +1122,6 @@ a { color: var(--link); }
   100% { transform: scale(1);    box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 12px rgba(22, 163, 74, 0); }
 }
 
-/* Auto-dismiss hold affordance. Appears between the transcript and the
-   composer while the dismiss countdown is running; any pointer tap on
-   the sheet cancels it. */
-.chat-dismiss-hint {
-  text-align: center;
-  font-size: 12px;
-  color: var(--card-muted);
-  padding: 6px 12px;
-  border-top: 1px solid var(--card-border);
-  background: var(--card-bg);
-}
-
 /* Toast viewport. Single-slot, bottom-center, slides up from below.
    Used for pending swipe actions (with Undo), success confirmations,
    and error recovery prompts. */

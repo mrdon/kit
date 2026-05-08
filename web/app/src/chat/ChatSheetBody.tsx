@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import ChatTranscript from './ChatTranscript';
 import ChatComposer from './ChatComposer';
 import { useChatStream } from './useChatStream';
@@ -21,26 +21,16 @@ type Props = {
   onClose: () => void;
   // Called when a turn completes so the parent can refresh the stack.
   onTurnDone?: () => void;
-  // When true, auto-dismiss the sheet ~1.5s after a turn that fired a
-  // non-terminal tool (i.e. the agent did something). Any pointer
-  // interaction on the sheet during the countdown cancels it.
-  autoDismissOnAction?: boolean;
   // Pre-captured audio handed to the composer to transcribe on open.
   // Used by the quick-chat FAB's long-press flow.
   seedAudioBlob?: Blob | null;
 };
 
-// DISMISS_HOLD_MS — how long to wait after an action-successful turn
-// before closing the sheet. Long enough to read the confirmation and
-// tap to cancel if the action was wrong; short enough that snappy
-// captures stay snappy.
-const DISMISS_HOLD_MS = 1500;
-
 /**
  * Shared bottom-sheet body for both card chat (CardChatSheet) and
- * quick chat (QuickChatSheet). Renders header + transcript + composer,
- * owns keyboard offset + SSE wiring, and optionally runs the
- * auto-dismiss hold.
+ * quick chat (QuickChatSheet). Renders header + transcript + composer
+ * and owns keyboard offset + SSE wiring. The sheet stays open until
+ * the user closes it (backdrop tap, ✕ button, or Escape).
  */
 export default function ChatSheetBody({
   title,
@@ -50,54 +40,15 @@ export default function ChatSheetBody({
   placeholder,
   onClose,
   onTurnDone,
-  autoDismissOnAction,
   seedAudioBlob,
 }: Props) {
-  const [dismissing, setDismissing] = useState(false);
-  const dismissTimerRef = useRef<number | null>(null);
-
-  const clearDismiss = () => {
-    if (dismissTimerRef.current !== null) {
-      window.clearTimeout(dismissTimerRef.current);
-      dismissTimerRef.current = null;
-    }
-    setDismissing(false);
-  };
-
-  const onStreamDone = ({
-    actionTaken,
-    askedQuestion,
-  }: {
-    actionTaken: boolean;
-    askedQuestion: boolean;
-  }) => {
-    onTurnDone?.();
-    // Stay open when the agent's final response is a question — even
-    // if a tool fired. Otherwise the user can't see or answer it.
-    if (autoDismissOnAction && actionTaken && !askedQuestion) {
-      setDismissing(true);
-      dismissTimerRef.current = window.setTimeout(() => {
-        dismissTimerRef.current = null;
-        onClose();
-      }, DISMISS_HOLD_MS);
-    }
-  };
-
   const { turns, busy, send, stop, retry } = useChatStream({
     executeUrl,
     clientSessionID,
-    onDone: onStreamDone,
+    onDone: onTurnDone,
   });
 
   const keyboardOffset = useKeyboardOffset();
-
-  useEffect(() => {
-    return () => {
-      if (dismissTimerRef.current !== null) {
-        window.clearTimeout(dismissTimerRef.current);
-      }
-    };
-  }, []);
 
   // Escape closes the sheet when the sheet has focus.
   useEffect(() => {
@@ -113,9 +64,6 @@ export default function ChatSheetBody({
       <div
         className="chat-sheet"
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={() => {
-          if (dismissTimerRef.current !== null) clearDismiss();
-        }}
         style={{ bottom: keyboardOffset }}
       >
         <header className="chat-sheet-header">
@@ -127,11 +75,6 @@ export default function ChatSheetBody({
           </button>
         </header>
         <ChatTranscript turns={turns} onStop={stop} onRetry={retry} />
-        {dismissing && (
-          <div className="chat-dismiss-hint" aria-live="polite">
-            Closing… tap to keep open
-          </div>
-        )}
         <ChatComposer
           transcribeUrl={transcribeUrl}
           busy={busy}

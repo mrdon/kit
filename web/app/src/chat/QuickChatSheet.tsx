@@ -16,9 +16,8 @@ type Props = {
 };
 
 /**
- * Quick-chat (card-less) sheet. Optimized for fast capture — opens
- * empty, auto-dismisses ~1.5s after the agent fires a non-terminal
- * tool, but stays open on clarifications/questions/approvals.
+ * Quick-chat (card-less) sheet. Opens empty for fast capture and stays
+ * open until the user dismisses it (backdrop tap, ✕, or Escape).
  *
  * Session is fresh per open: we mint a UUID on mount and pass it with
  * every turn, so multi-turn within one open attaches but a close+reopen
@@ -38,7 +37,6 @@ export default function QuickChatSheet({ onClose, onTurnDone, seedAudioBlob }: P
       placeholder="Add a todo, ask a question…"
       onClose={onClose}
       onTurnDone={onTurnDone}
-      autoDismissOnAction
       seedAudioBlob={seedAudioBlob}
     />
   );
