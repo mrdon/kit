@@ -70,16 +70,22 @@ var vaultToolMetas = []services.ToolMeta{
 		}, "id"),
 	},
 	{
-		Name: "reset_vault_user",
-		// Description framed for the LLM but rarely invoked by it: this
-		// tool is fired from the "Forgot your master password?" web flow
-		// (POST /apps/vault/api/forgot creates an admin-scoped decision
-		// card whose approve option carries this tool name; resolution
-		// runs the handler as the approving admin).
-		Description: "Wipe a user's vault registration so they can register with a new master password. Used when the user has forgotten their master password. Requires admin approval through a decision card. After the wipe the user must re-register and an admin must re-grant access — existing stored secrets are not lost (vault key unchanged).",
-		Schema: services.PropsReq(map[string]any{
-			"user_id": services.Field("string", "UUID of the user whose vault registration should be wiped."),
-		}, "user_id"),
+		Name:        "setup_vault",
+		Description: "Return a URL the admin can open to set up the tenant vault for the first time. Use when the user wants to start using the vault and no vault exists yet for their tenant. Admin-only. The actual password and crypto setup happens in the browser.",
+		Schema:      services.Props(map[string]any{}),
+		AdminOnly:   true,
+	},
+	{
+		Name:        "rotate_vault_password",
+		Description: "Return a URL the admin can open to rotate the tenant's shared vault master password. Use when an admin wants to change the password (e.g. after an employee departure). Requires the old password to derive the existing wrap; the browser re-wraps the same vault key under a new password so existing entries continue to decrypt. Admin-only.",
+		Schema:      services.Props(map[string]any{}),
+		AdminOnly:   true,
+	},
+	{
+		Name:        "nuke_vault",
+		Description: "Return a URL the admin can open to permanently destroy the tenant's vault — all secrets, the wrapped key, everything. Use ONLY when the team has lost the master password and wants to start fresh. There is no undo. The browser page enforces a slug-typing confirmation before destroying anything. Admin-only.",
+		Schema:      services.Props(map[string]any{}),
+		AdminOnly:   true,
 	},
 }
 
@@ -100,15 +106,12 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 		// Gated agent tools per the plan + CLAUDE.md "gated tools must
 		// have one entry point" rule. The agent path runs through the
 		// registry's PolicyGate interceptor (decision card → human
-		// approval → svc call). reset_vault_user remains gated as an
-		// admin-side recovery tool — used when an admin manually wipes a
-		// stuck user from Slack/MCP (the typical "I forgot my master
-		// password" case is now self-service via /register?reset=1).
-		// The MCP path does not have an enforced gate today, so mcp.go
-		// refuses these tools outright with a "use the agent or web"
-		// error rather than calling svc directly.
+		// approval → svc call). setup/rotate/nuke are URL-returning
+		// tools that don't do anything destructive themselves — the
+		// browser-side page enforces real friction — so they don't
+		// need a gate.
 		switch meta.Name {
-		case "set_secret_role", "delete_secret", "reset_vault_user":
+		case "set_secret_role", "delete_secret":
 			def.DefaultPolicy = tools.PolicyGate
 		}
 		r.Register(def)
@@ -129,8 +132,12 @@ func vaultAgentHandler(name string, svc *Service) tools.HandlerFunc {
 		return handleAgentSetSecretRole(svc)
 	case "delete_secret":
 		return handleAgentDeleteSecret(svc)
-	case "reset_vault_user":
-		return handleAgentResetVaultUser(svc)
+	case "setup_vault":
+		return handleAgentSetupVault(svc)
+	case "rotate_vault_password":
+		return handleAgentRotateVaultPassword(svc)
+	case "nuke_vault":
+		return handleAgentNukeVault(svc)
 	}
 	return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 		return "", fmt.Errorf("unknown vault tool: %s", name)
@@ -282,31 +289,36 @@ func handleAgentSetSecretRole(svc *Service) tools.HandlerFunc {
 	}
 }
 
-func handleAgentResetVaultUser(svc *Service) tools.HandlerFunc {
-	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
-		var inp struct {
-			UserID string `json:"user_id"`
-		}
-		if err := json.Unmarshal(input, &inp); err != nil {
-			return "", fmt.Errorf("parsing input: %w", err)
-		}
-		targetID, err := uuid.Parse(inp.UserID)
-		if err != nil {
-			return "Invalid user_id.", nil
-		}
+func handleAgentSetupVault(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
 		caller := ec.Caller()
-		audit := auditFromExecContext(ec)
-		audit.userAgent = "agent"
-		if err := svc.AdminResetVaultUser(ec.Ctx, caller, targetID, audit); err != nil {
-			if errors.Is(err, models.ErrNotFound) {
-				return "That user has no vault registration to reset.", nil
-			}
-			if errors.Is(err, services.ErrForbidden) {
-				return "Only admins can reset another user's vault.", nil
-			}
-			return "", err
+		if !caller.IsAdmin {
+			return "Only admins can set up the vault.", nil
 		}
-		return "Vault reset. The user can now register a new master password; once they do, an admin will need to re-grant access.", nil
+		setupURL := svc.absURL(fmt.Sprintf("/%s/apps/vault/setup", tenantSlug(ec)))
+		return setupURL + "\n\nOpen this in your browser to choose a master password and initialize the vault. The password should be shared with the team out-of-band (the same way you share other shared-team passwords).", nil
+	}
+}
+
+func handleAgentRotateVaultPassword(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
+		caller := ec.Caller()
+		if !caller.IsAdmin {
+			return "Only admins can rotate the vault password.", nil
+		}
+		rotateURL := svc.absURL(fmt.Sprintf("/%s/apps/vault/rotate", tenantSlug(ec)))
+		return rotateURL + "\n\nOpen this in your browser to change the shared vault master password. You will need both the old and new password — rotation re-wraps the existing vault key, so existing entries continue to work under the new password.", nil
+	}
+}
+
+func handleAgentNukeVault(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
+		caller := ec.Caller()
+		if !caller.IsAdmin {
+			return "Only admins can destroy the vault.", nil
+		}
+		nukeURL := svc.absURL(fmt.Sprintf("/%s/apps/vault/nuke", tenantSlug(ec)))
+		return "**Warning:** opening this URL will let an admin permanently delete every stored secret in the tenant's vault. There is no undo. Use this only if the master password has been lost and the team is willing to start over.\n\n" + nukeURL, nil
 	}
 }
 

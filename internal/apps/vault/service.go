@@ -4,14 +4,13 @@
 //
 //   - service.go (this file): Service struct + the small cross-cutting
 //     methods: requireRecentUnlock (step-up auth), tenantSlug,
-//     AuditFromRequest, and the toListItem / validateScopesAgainstTenant
-//     helpers that both entries.go and unlock.go reach into.
-//   - entries.go:    CRUD on app_vault_entries + UpdateScopes.
-//   - unlock.go:     Unlock, Register, SelfUnlockTest, Grant, RevokeGrant,
-//     DeclinePending, plus the briefing/decision-card
-//     helpers (fire*).
-//   - validation.go: pubkey/ciphertext/scope validators, scopeDiff,
-//     pubkeyFingerprint, dummyHash, nilIfEmpty.
+//     AuditFromRequest, and the toListItem helper that both entries.go
+//     and tools.go reach into.
+//   - entries.go:    CRUD on app_vault_entries + scope changes.
+//   - unlock.go:     Unlock, SetupVault, RotateVaultPassword, NukeVault,
+//     plus the briefing/decision-card helpers (fire*).
+//   - validation.go: kdf_params / wrapped-vault-key shape validators,
+//     dummyHash, nilIfEmpty.
 //   - ratelimit.go:  unlockLimiter (per-IP token bucket).
 //   - audit.go:      auditCtx + the per-action metadata struct types.
 //   - app.go:        apps.App impl, CardSurface interface, CardCreateInput.
@@ -132,29 +131,23 @@ func (s *Service) validateRoleForCaller(ctx context.Context, c *services.Caller,
 
 // requireRecentUnlock enforces step-up auth: the caller must have a
 // successful vault.unlock audit event within the last stepUpWindow AND
-// must currently be a live, unlocked vault member. The membership join
-// matters because a master-password reset (or a teammate revoking the
-// caller's grant) leaves stale audit_events behind that would otherwise
-// satisfy the step-up window for ~5 minutes after the row was wiped or
-// re-pended. Without the join, a recently-unlocked-but-now-reset user
-// could still grant or scope-widen during the cooldown.
+// the tenant's vault row must not be administratively locked. The join
+// guards against the corner case where a tenant is locked (e.g. emergency
+// admin lockout) but the caller still has a recent unlock audit row
+// from before the lock — we want the lock to invalidate step-up
+// immediately rather than waiting for the audit row to age out.
 //
-// Returns ErrStepUpRequired on miss. The unlock-event row is the
-// source-of-truth timestamp; vault_users gates that the caller can
-// actually decrypt anything right now.
+// Returns ErrStepUpRequired on miss.
 func (s *Service) requireRecentUnlock(ctx context.Context, c *services.Caller) error {
 	var lastUnlock time.Time
 	err := s.pool.QueryRow(ctx, `
 		SELECT a.created_at
 		FROM audit_events a
-		JOIN app_vault_users v
-		  ON v.tenant_id = a.tenant_id AND v.user_id = a.actor_user_id
+		JOIN app_vault_tenants v
+		  ON v.tenant_id = a.tenant_id
 		WHERE a.tenant_id = $1
 		  AND a.actor_user_id = $2
 		  AND a.action = 'vault.unlock'
-		  AND v.pending = FALSE
-		  AND v.wrapped_vault_key IS NOT NULL
-		  AND v.reset_pending_until IS NULL
 		  AND (v.locked_until IS NULL OR v.locked_until <= now())
 		ORDER BY a.created_at DESC
 		LIMIT 1

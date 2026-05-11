@@ -12,26 +12,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// VaultUser is one user's per-tenant crypto state. The wrapped_vault_key is
-// nil until an existing tenant member grants this user access; pending is
-// false only after the browser has completed a self-unlock test.
-type VaultUser struct {
-	TenantID                 uuid.UUID
-	UserID                   uuid.UUID
-	KDFParams                json.RawMessage
-	AuthHash                 []byte
-	UserPublicKey            []byte
-	UserPrivateKeyCiphertext []byte
-	UserPrivateKeyNonce      []byte
-	WrappedVaultKey          []byte // nil = not yet granted
-	GrantedByUserID          *uuid.UUID
-	GrantedAt                *time.Time
-	FailedUnlocks            int
-	LockedUntil              *time.Time
-	ResetPendingUntil        *time.Time
-	Pending                  bool
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+// VaultTenant is the tenant-level vault crypto state. One row per tenant
+// once an admin has set up the vault. Every member unlocks against the
+// same auth_hash; the wrapped_vault_key is decrypted browser-side and
+// then cached in a SharedWorker for the session.
+type VaultTenant struct {
+	TenantID             uuid.UUID
+	KDFParams            json.RawMessage
+	AuthHash             []byte
+	WrappedVaultKey      []byte
+	WrappedVaultKeyNonce []byte
+	VaultGeneration      int
+	LockedUntil          *time.Time
+	LastRotatedByUserID  *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // VaultEntry is one stored secret. Title/username/url/tags are plaintext for
@@ -59,367 +54,137 @@ type VaultEntry struct {
 	LastViewedAt    *time.Time
 }
 
-// ===== vault_users =====
+// ===== vault_tenants =====
 
-// GetVaultUser returns the caller's vault_users row, or (nil, nil) if none.
-func GetVaultUser(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) (*VaultUser, error) {
+// GetVaultTenant returns the tenant's vault row, or (nil, nil) if not set up.
+func GetVaultTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (*VaultTenant, error) {
 	row := pool.QueryRow(ctx, `
-		SELECT tenant_id, user_id, kdf_params, auth_hash, user_public_key,
-		       user_private_key_ciphertext, user_private_key_nonce,
-		       wrapped_vault_key, granted_by_user_id, granted_at,
-		       failed_unlocks, locked_until, reset_pending_until, pending,
+		SELECT tenant_id, kdf_params, auth_hash,
+		       wrapped_vault_key, wrapped_vault_key_nonce,
+		       vault_generation, locked_until, last_rotated_by_user_id,
 		       created_at, updated_at
-		FROM app_vault_users
-		WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID)
-	var v VaultUser
+		FROM app_vault_tenants
+		WHERE tenant_id = $1
+	`, tenantID)
+	var v VaultTenant
 	if err := row.Scan(
-		&v.TenantID, &v.UserID, &v.KDFParams, &v.AuthHash, &v.UserPublicKey,
-		&v.UserPrivateKeyCiphertext, &v.UserPrivateKeyNonce,
-		&v.WrappedVaultKey, &v.GrantedByUserID, &v.GrantedAt,
-		&v.FailedUnlocks, &v.LockedUntil, &v.ResetPendingUntil, &v.Pending,
+		&v.TenantID, &v.KDFParams, &v.AuthHash,
+		&v.WrappedVaultKey, &v.WrappedVaultKeyNonce,
+		&v.VaultGeneration, &v.LockedUntil, &v.LastRotatedByUserID,
 		&v.CreatedAt, &v.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil //nolint:nilnil // not found
 		}
-		return nil, fmt.Errorf("getting vault user: %w", err)
+		return nil, fmt.Errorf("getting vault tenant: %w", err)
 	}
 	return &v, nil
 }
 
-// VaultRegisterParams is the input to upsert a vault_users row at registration
-// or master-password reset (with Replace=true). For the very first user in a
-// tenant, WrappedVaultKey is set in the same call (self-grant); for subsequent
-// users it is nil and waits for an existing member to call SetGrant.
-type VaultRegisterParams struct {
-	TenantID                 uuid.UUID
-	UserID                   uuid.UUID
-	KDFParams                json.RawMessage
-	AuthHash                 []byte
-	UserPublicKey            []byte
-	UserPrivateKeyCiphertext []byte
-	UserPrivateKeyNonce      []byte
-	WrappedVaultKey          []byte // non-nil only for tenant initializer
+// VaultSetupParams is the input for one-time-per-tenant vault setup.
+type VaultSetupParams struct {
+	TenantID             uuid.UUID
+	KDFParams            json.RawMessage
+	AuthHash             []byte
+	WrappedVaultKey      []byte
+	WrappedVaultKeyNonce []byte
+	SetupByUserID        uuid.UUID
 }
 
-// ReplaceVaultUserAtomic performs the master-password-reset Replace
-// path inside one transaction with a tenant-level advisory lock. The
-// lock serializes concurrent resets within the same tenant so the
-// "last granted member" guard is race-free: without it, two co-admins
-// resetting at the same instant could both pass the count check and
-// both wipe their wrapped_vault_key, leaving the workspace bricked.
-//
-// Returns the row's prior user_public_key for audit fingerprint diff
-// (it's the one place the caller still needs the pre-reset value).
-// Maps the three refusal cases onto sentinel errors so callers can
-// surface clean messages: ErrVaultUserNotFound, ErrResetInFlight,
-// ErrLastGrantedMember.
-func ReplaceVaultUserAtomic(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterParams) ([]byte, error) {
+// InitVaultTenant inserts the tenant's vault row. Refuses (returns
+// ErrVaultAlreadySetup) if a row already exists — there is no "replace
+// setup" path; replacing is rotate-with-old-password or nuke-and-redo.
+func InitVaultTenant(ctx context.Context, pool *pgxpool.Pool, p VaultSetupParams) error {
+	tag, err := pool.Exec(ctx, `
+		INSERT INTO app_vault_tenants
+			(tenant_id, kdf_params, auth_hash,
+			 wrapped_vault_key, wrapped_vault_key_nonce,
+			 vault_generation, last_rotated_by_user_id)
+		VALUES ($1, $2, $3, $4, $5, 1, $6)
+		ON CONFLICT (tenant_id) DO NOTHING
+	`, p.TenantID, p.KDFParams, p.AuthHash,
+		p.WrappedVaultKey, p.WrappedVaultKeyNonce, p.SetupByUserID)
+	if err != nil {
+		return fmt.Errorf("initializing vault tenant: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrVaultAlreadySetup
+	}
+	return nil
+}
+
+// VaultRotateParams is the input for rotation (admin replaces all the
+// password-derived bits with new ones; vault_key is unchanged so entries
+// remain decryptable under the new password).
+type VaultRotateParams struct {
+	TenantID             uuid.UUID
+	KDFParams            json.RawMessage
+	AuthHash             []byte
+	WrappedVaultKey      []byte
+	WrappedVaultKeyNonce []byte
+	RotatedByUserID      uuid.UUID
+}
+
+// RotateVaultTenant atomically updates kdf_params/auth_hash/wrapped key
+// and increments vault_generation. Refuses if no row exists.
+func RotateVaultTenant(ctx context.Context, pool *pgxpool.Pool, p VaultRotateParams) (int, error) {
+	var newGen int
+	err := pool.QueryRow(ctx, `
+		UPDATE app_vault_tenants
+		   SET kdf_params = $2,
+		       auth_hash = $3,
+		       wrapped_vault_key = $4,
+		       wrapped_vault_key_nonce = $5,
+		       vault_generation = vault_generation + 1,
+		       last_rotated_by_user_id = $6,
+		       updated_at = now()
+		 WHERE tenant_id = $1
+		 RETURNING vault_generation
+	`, p.TenantID, p.KDFParams, p.AuthHash, p.WrappedVaultKey,
+		p.WrappedVaultKeyNonce, p.RotatedByUserID).Scan(&newGen)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, ErrVaultNotSetUp
+		}
+		return 0, fmt.Errorf("rotating vault tenant: %w", err)
+	}
+	return newGen, nil
+}
+
+// NukeVaultTenant deletes the tenant's vault row and all entries in a
+// single transaction. Returns the count of entries destroyed for audit.
+// This is the recovery path when the shared password is lost — see the
+// plan's "Nuke UX" section. There is no undo.
+func NukeVaultTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (int, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("beginning replace tx: %w", err)
+		return 0, fmt.Errorf("beginning nuke tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	// Advisory lock keyed on the tenant UUID — auto-released at COMMIT
-	// or ROLLBACK. hashtextextended hashes the UUID's text form into a
-	// bigint; collisions across tenants would only cause unrelated
-	// resets to serialize briefly, never lose safety.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`, p.TenantID); err != nil {
-		return nil, fmt.Errorf("acquiring tenant lock: %w", err)
-	}
-
-	var existingPub []byte
-	var existingResetUntil *time.Time
-	var existingWrapped []byte
-	err = tx.QueryRow(ctx, `
-		SELECT user_public_key, reset_pending_until, wrapped_vault_key
-		FROM app_vault_users
-		WHERE tenant_id = $1 AND user_id = $2
-		FOR UPDATE
-	`, p.TenantID, p.UserID).Scan(&existingPub, &existingResetUntil, &existingWrapped)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrVaultUserNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("locking existing row: %w", err)
-	}
-
-	if existingResetUntil != nil && time.Now().Before(*existingResetUntil) {
-		return nil, ErrResetInFlight
-	}
-
-	// Last-granted-member guard. Only matters if the caller currently
-	// holds a wrapped key — wiping a pending or never-granted row can't
-	// brick anyone since the caller had no access to lose.
-	if existingWrapped != nil {
-		var others int
-		err = tx.QueryRow(ctx, `
-			SELECT count(*) FROM app_vault_users
-			WHERE tenant_id = $1 AND user_id <> $2
-			  AND wrapped_vault_key IS NOT NULL AND pending = FALSE
-		`, p.TenantID, p.UserID).Scan(&others)
-		if err != nil {
-			return nil, fmt.Errorf("counting other granted users: %w", err)
-		}
-		if others == 0 {
-			return nil, ErrLastGrantedMember
-		}
+	var entryCount int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM app_vault_entries WHERE tenant_id = $1
+	`, tenantID).Scan(&entryCount); err != nil {
+		return 0, fmt.Errorf("counting entries: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
-		UPDATE app_vault_users
-		   SET kdf_params = $3,
-		       auth_hash = $4,
-		       user_public_key = $5,
-		       user_private_key_ciphertext = $6,
-		       user_private_key_nonce = $7,
-		       wrapped_vault_key = NULL,
-		       granted_by_user_id = NULL,
-		       granted_at = NULL,
-		       failed_unlocks = 0,
-		       locked_until = NULL,
-		       reset_pending_until = now() + interval '24 hours',
-		       pending = TRUE,
-		       updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, p.TenantID, p.UserID, p.KDFParams, p.AuthHash, p.UserPublicKey,
-		p.UserPrivateKeyCiphertext, p.UserPrivateKeyNonce); err != nil {
-		return nil, fmt.Errorf("replacing vault user: %w", err)
+		DELETE FROM app_vault_entries WHERE tenant_id = $1
+	`, tenantID); err != nil {
+		return 0, fmt.Errorf("deleting entries: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM app_vault_tenants WHERE tenant_id = $1
+	`, tenantID); err != nil {
+		return 0, fmt.Errorf("deleting tenant row: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing replace: %w", err)
+		return 0, fmt.Errorf("committing nuke: %w", err)
 	}
-	return existingPub, nil
-}
-
-// AnyVaultUserExists returns true if the tenant vault has been
-// successfully bootstrapped — at least one user holds a
-// wrapped_vault_key AND has completed the self-unlock canary
-// (pending=false). Pending rows from a failed bootstrap retry don't
-// count, so a canary-failure retry by the same admin still classifies
-// as "bootstrap" and they can re-upload a fresh wrapped_vault_key.
-func AnyVaultUserExists(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (bool, error) {
-	var ok bool
-	err := pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM app_vault_users
-			WHERE tenant_id = $1
-			  AND wrapped_vault_key IS NOT NULL
-			  AND pending = FALSE
-		)
-	`, tenantID).Scan(&ok)
-	if err != nil {
-		return false, fmt.Errorf("checking vault initialization: %w", err)
-	}
-	return ok, nil
-}
-
-// RegisterVaultUser inserts a fresh vault_users row (or upserts on top
-// of a still-pending row from a canary-failure retry). Activated rows
-// must use ReplaceVaultUserAtomic instead — UPSERT here refuses to
-// overwrite once pending flipped to false.
-//
-// All new rows start pending=true; the caller flips it via
-// MarkVaultUserActive after the browser passes the self-unlock canary.
-func RegisterVaultUser(ctx context.Context, pool *pgxpool.Pool, p VaultRegisterParams) error {
-	// Bootstrap initiator (first user in tenant): WrappedVaultKey is set,
-	// granted_by_user_id stays NULL so the partial unique index
-	// idx_app_vault_first_user matches and prevents a second initiator.
-	// granted_at is set to "now" so we have a record of when the tenant
-	// vault was bootstrapped.
-	var grantedAt any
-	if p.WrappedVaultKey != nil {
-		grantedAt = time.Now()
-	}
-	// UPSERT keyed on (tenant_id, user_id), but ONLY allowed when the
-	// existing row is still pending=true. If a user's previous register
-	// attempt threw between INSERT and the self-unlock canary POST, this
-	// lets them retry by submitting again. Activated rows are protected
-	// by the WHERE clause; the only way to replace those is the
-	// ReplaceVaultUserAtomic path.
-	tag, err := pool.Exec(ctx, `
-		INSERT INTO app_vault_users
-			(tenant_id, user_id, kdf_params, auth_hash, user_public_key,
-			 user_private_key_ciphertext, user_private_key_nonce,
-			 wrapped_vault_key, granted_by_user_id, granted_at, pending)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, TRUE)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-			kdf_params = EXCLUDED.kdf_params,
-			auth_hash = EXCLUDED.auth_hash,
-			user_public_key = EXCLUDED.user_public_key,
-			user_private_key_ciphertext = EXCLUDED.user_private_key_ciphertext,
-			user_private_key_nonce = EXCLUDED.user_private_key_nonce,
-			wrapped_vault_key = EXCLUDED.wrapped_vault_key,
-			granted_at = EXCLUDED.granted_at,
-			updated_at = now()
-		WHERE app_vault_users.pending = TRUE
-	`, p.TenantID, p.UserID, p.KDFParams, p.AuthHash, p.UserPublicKey,
-		p.UserPrivateKeyCiphertext, p.UserPrivateKeyNonce,
-		p.WrappedVaultKey, grantedAt)
-	if err != nil {
-		return fmt.Errorf("inserting vault user: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		// Row exists and is already active (pending=false). Caller must
-		// use ReplaceVaultUserAtomic to reset.
-		return errors.New("vault user already active; use master-password reset to replace")
-	}
-	return nil
-}
-
-// MarkVaultUserActive flips pending=false after a successful self-unlock test.
-func MarkVaultUserActive(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) error {
-	_, err := pool.Exec(ctx, `
-		UPDATE app_vault_users
-		   SET pending = FALSE, updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("marking vault user active: %w", err)
-	}
-	return nil
-}
-
-// CancelVaultReset deletes a vault_users row that's currently in the
-// 24h reset cooldown. Used when the legitimate user spots a reset they
-// didn't initiate (Slack-account-takeover defense): wiping the row
-// invalidates the attacker-supplied keys before any teammate can grant
-// against them. The user is left in a "not registered" state and must
-// re-register normally — same path as a fresh user joining the vault.
-//
-// Refuses if the row exists but isn't in cooldown (no reset to cancel)
-// or if the row is missing (no row, no reset). Returns ErrNotFound in
-// either case so callers can surface a uniform "nothing to do" error.
-func CancelVaultReset(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) error {
-	tag, err := pool.Exec(ctx, `
-		DELETE FROM app_vault_users
-		 WHERE tenant_id = $1 AND user_id = $2
-		   AND reset_pending_until IS NOT NULL
-		   AND reset_pending_until > now()
-	`, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("cancelling vault reset: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// AdminDeleteVaultUser unconditionally removes a user's vault_users row.
-// Used by the admin-driven master-password reset path: the admin approves
-// a decision card requesting reset for a user who forgot theirs; that
-// approval calls this and the user re-registers from scratch via the
-// existing register flow.
-//
-// Unlike CancelVaultReset (legitimate-user escape hatch during the 24h
-// reset cooldown) and DeclinePending (admin rejecting an unwrapped row),
-// this works regardless of the row's pending/granted/cooldown state.
-// Returns ErrNotFound if no row exists so callers can surface a clean
-// "user has no vault registration" message.
-func AdminDeleteVaultUser(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID uuid.UUID) error {
-	tag, err := pool.Exec(ctx, `
-		DELETE FROM app_vault_users
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, targetUserID)
-	if err != nil {
-		return fmt.Errorf("admin-deleting vault user: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetVaultGrant writes a wrapped_vault_key onto the target user's row,
-// granted by granterID. Returns ErrNotFound if the target row doesn't exist.
-func SetVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID, granterID uuid.UUID, wrapped []byte) error {
-	tag, err := pool.Exec(ctx, `
-		UPDATE app_vault_users
-		   SET wrapped_vault_key = $3,
-		       granted_by_user_id = $4,
-		       granted_at = now(),
-		       reset_pending_until = NULL,
-		       updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, targetUserID, wrapped, granterID)
-	if err != nil {
-		return fmt.Errorf("setting vault grant: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrVaultUserNotFound
-	}
-	return nil
-}
-
-// RevokeVaultGrant nulls out wrapped_vault_key for the target user. Existing
-// browser sessions that have already cached the unwrapped key are not affected
-// in v1 (forward secrecy is a v2 item; see plan).
-func RevokeVaultGrant(ctx context.Context, pool *pgxpool.Pool, tenantID, targetUserID uuid.UUID) error {
-	tag, err := pool.Exec(ctx, `
-		UPDATE app_vault_users
-		   SET wrapped_vault_key = NULL,
-		       granted_by_user_id = NULL,
-		       granted_at = NULL,
-		       updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, targetUserID)
-	if err != nil {
-		return fmt.Errorf("revoking vault grant: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// IncrementFailedUnlocks bumps the rate-limit counter and returns the new value.
-// Caller decides whether to set locked_until based on the threshold.
-func IncrementFailedUnlocks(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) (int, error) {
-	var n int
-	err := pool.QueryRow(ctx, `
-		UPDATE app_vault_users
-		   SET failed_unlocks = failed_unlocks + 1, updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-		RETURNING failed_unlocks
-	`, tenantID, userID).Scan(&n)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil // missing row: caller does dummy compare anyway
-		}
-		return 0, fmt.Errorf("incrementing failed unlocks: %w", err)
-	}
-	return n, nil
-}
-
-// ResetFailedUnlocks zeros the counter on a successful unlock.
-func ResetFailedUnlocks(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) error {
-	_, err := pool.Exec(ctx, `
-		UPDATE app_vault_users
-		   SET failed_unlocks = 0, locked_until = NULL, updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID)
-	if err != nil {
-		return fmt.Errorf("resetting failed unlocks: %w", err)
-	}
-	return nil
-}
-
-// SetVaultUserLockedUntil sets the temporary lockout window after the
-// failed-unlock threshold is crossed.
-func SetVaultUserLockedUntil(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, until time.Time) error {
-	_, err := pool.Exec(ctx, `
-		UPDATE app_vault_users
-		   SET locked_until = $3, updated_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID, until)
-	if err != nil {
-		return fmt.Errorf("setting locked_until: %w", err)
-	}
-	return nil
+	return entryCount, nil
 }
 
 // ===== vault_entries =====
@@ -624,26 +389,19 @@ func TouchVaultEntryViewed(ctx context.Context, pool *pgxpool.Pool, tenantID, en
 	return nil
 }
 
-// ===== helpers =====
-
-// ErrVaultUserNotFound is returned by SetVaultGrant when the target user
-// has no vault_users row (i.e., they haven't registered yet).
-var ErrVaultUserNotFound = errors.New("vault user not found")
+// ===== sentinels =====
 
 // ErrNotFound is the canonical "not found / no scope" sentinel returned by
 // vault read paths so callers can return uniform 404s.
 var ErrNotFound = errors.New("not found")
 
-// ErrResetInFlight is returned by ReplaceVaultUserAtomic when the
-// caller's row already has a non-elapsed reset_pending_until — a
-// previous reset is still in its 24h cooldown window.
-var ErrResetInFlight = errors.New("vault reset already in flight")
+// ErrVaultNotSetUp is returned by RotateVaultTenant when no tenant row
+// exists yet. Callers should redirect to /setup.
+var ErrVaultNotSetUp = errors.New("vault not set up")
 
-// ErrLastGrantedMember is returned by ReplaceVaultUserAtomic when the
-// caller is the only granted vault member in their tenant. Wiping
-// their wrapped_vault_key would leave nobody who could re-grant,
-// bricking the workspace's vault.
-var ErrLastGrantedMember = errors.New("caller is the only granted vault member")
+// ErrVaultAlreadySetup is returned by InitVaultTenant when a tenant row
+// already exists. Callers should redirect to /unlock or /rotate.
+var ErrVaultAlreadySetup = errors.New("vault already set up")
 
 func scanVaultEntries(rows pgx.Rows) ([]VaultEntry, error) {
 	var out []VaultEntry

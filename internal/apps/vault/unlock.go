@@ -3,6 +3,7 @@ package vault
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,33 +17,37 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// UnlockResult is the response shape for a successful unlock call.
+// UnlockResult is the response shape for a successful unlock call. The
+// browser uses these to derive enc_key (from kdf_params + the password
+// it just typed) and then AES-GCM-unwrap the wrapped vault key using
+// the AAD that's pinned to the tenant_id.
 type UnlockResult struct {
-	KDFParams                json.RawMessage `json:"kdf_params"`
-	UserPrivateKeyCiphertext []byte          `json:"user_private_key_ciphertext"`
-	UserPrivateKeyNonce      []byte          `json:"user_private_key_nonce"`
-	WrappedVaultKey          []byte          `json:"wrapped_vault_key"`
+	KDFParams            json.RawMessage `json:"kdf_params"`
+	WrappedVaultKey      []byte          `json:"wrapped_vault_key"`
+	WrappedVaultKeyNonce []byte          `json:"wrapped_vault_key_nonce"`
+	VaultGeneration      int             `json:"vault_generation"`
+	// TenantIDBytes is the raw 16 bytes of the tenant UUID, hex-encoded
+	// for JSON transport. The browser decodes it to a Uint8Array and
+	// passes it as the AAD to AES-GCM-decrypt. Pinning the AAD to the
+	// tenant id prevents a leaked wrapped_vault_key row from being
+	// replayed against a different tenant.
+	TenantIDBytes string `json:"tenant_id_bytes"`
 }
 
 // ErrUnlockMismatch is the uniform error returned for unlock miss, bad
-// auth_hash, or no vault_users row — keeps callers from inferring which.
+// auth_hash, or no vault row — keeps callers from inferring which.
 var ErrUnlockMismatch = errors.New("unlock failed")
 
-// ErrUnlockLocked is returned when locked_until is in the future or the
-// per-IP rate limiter has emptied its bucket.
+// ErrUnlockLocked is returned when the per-IP rate limiter has emptied
+// its bucket OR the tenant row's locked_until is in the future.
 var ErrUnlockLocked = errors.New("unlock locked")
 
-// ErrUnlockNotGranted is returned when the user has registered but not
-// yet been granted access (wrapped_vault_key is NULL).
-var ErrUnlockNotGranted = errors.New("not granted")
+// ErrUnlockNotSetUp is returned when the tenant has no vault row yet.
+// Callers should redirect to /setup.
+var ErrUnlockNotSetUp = errors.New("vault not set up")
 
-// ErrUnlockPending is returned when the user's row is pending=true (still
-// in the self-unlock-test phase). They should retry the register flow.
-var ErrUnlockPending = errors.New("registration pending")
-
-// ErrStepUpRequired is returned by sensitive operations (grant,
-// scope-widening) when the caller hasn't unlocked their vault recently
-// enough. Plan §"Step-up auth on sensitive ops": 5-minute window.
+// ErrStepUpRequired is returned by sensitive operations when the caller
+// hasn't unlocked their vault recently enough.
 var ErrStepUpRequired = errors.New("recent unlock required")
 
 const (
@@ -50,559 +55,194 @@ const (
 	// a sensitive operation is allowed.
 	stepUpWindow = 5 * time.Minute
 
-	// unlockLockoutThreshold triggers a soft 15-minute lockout. Counter
-	// resets on successful unlock.
-	unlockLockoutThreshold = 5
-	unlockLockoutDuration  = 15 * time.Minute
-
-	// unlockHardLockoutThreshold promotes a soft lockout into a 24-hour
-	// lockout. Plan §"Unlock attack surface".
-	unlockHardLockoutThreshold = 20
-	unlockHardLockoutDuration  = 24 * time.Hour
-
-	// perIPCapacity / perIPRefillInterval define the secondary per-IP
-	// throttle on /api/vault/unlock and /api/vault/self_unlock_test.
+	// perIPCapacity / perIPRefillInterval define the per-IP throttle on
+	// /api/vault/unlock. The whole rate-limit story now lives here —
+	// there is no per-tenant counter, by design (see plan: a per-tenant
+	// counter creates a self-DoS griefing vector for ex-employees who
+	// know the old password).
 	perIPCapacity       = 20
 	perIPRefillInterval = time.Minute
 )
 
-// Unlock validates auth_hash against the caller's vault_users row.
-// Constant-time comparison; on miss, a dummy comparison runs against
-// random bytes so the response timing doesn't leak row-existence.
-// Rate-limit is enforced before the DB hit.
+// Unlock validates auth_hash against the tenant's vault row.
+// Constant-time comparison; on miss, a dummy comparison runs so timing
+// doesn't leak whether the tenant has a vault. Rate-limit is enforced
+// before the DB hit.
 func (s *Service) Unlock(ctx context.Context, c *services.Caller, authHash []byte, audit auditCtx) (*UnlockResult, error) {
 	if audit.ip != nil && !s.rateLimit.allow(audit.ip.String()) {
+		s.fireFailedUnlockDecision(ctx, c, "rate limited", time.Minute)
+		audit.log(ctx, "vault.unlock_failed", "vault_tenant", nil, EvtUnlockFailed{RateLimited: true})
 		return nil, ErrUnlockLocked
 	}
 
-	v, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
+	v, err := models.GetVaultTenant(ctx, s.pool, c.TenantID)
 	if err != nil {
 		return nil, err
 	}
 
 	if v == nil {
-		// No row: dummy compare for timing parity. Distinct action
-		// string so the audit row doesn't leak "user has no
-		// registration" to a privileged audit-log reader.
+		// No tenant row: dummy compare for timing parity.
 		_ = subtle.ConstantTimeCompare(authHash, dummyHash())
-		audit.log(ctx, "vault.unlock_failed_no_row", "vault_user", &c.UserID, struct{}{})
-		return nil, ErrUnlockMismatch
+		audit.log(ctx, "vault.unlock_failed", "vault_tenant", nil, EvtUnlockFailed{NotSetUp: true})
+		return nil, ErrUnlockNotSetUp
 	}
 
 	if v.LockedUntil != nil && time.Now().Before(*v.LockedUntil) {
-		audit.log(ctx, "vault.unlock_failed", "vault_user", &c.UserID, EvtUnlockFailed{FailedCount: v.FailedUnlocks, Locked: true})
+		audit.log(ctx, "vault.unlock_failed", "vault_tenant", nil, EvtUnlockFailed{Locked: true})
 		return nil, ErrUnlockLocked
 	}
 
 	if subtle.ConstantTimeCompare(authHash, v.AuthHash) != 1 {
-		count, _ := models.IncrementFailedUnlocks(ctx, s.pool, c.TenantID, c.UserID)
-		locked := false
-		var lockoutDuration time.Duration
-		// Fire the user-facing alarm card ONLY on threshold transitions
-		// (count == soft / hard threshold exactly), not on every miss
-		// past threshold. Otherwise an attacker who knows the lockout
-		// timing can spam the user's stack with a fresh card after each
-		// 15-minute cycle.
-		notifyUser := false
-		switch count {
-		case unlockLockoutThreshold:
-			lockoutDuration = unlockLockoutDuration
-			locked = true
-			notifyUser = true
-		case unlockHardLockoutThreshold:
-			lockoutDuration = unlockHardLockoutDuration
-			locked = true
-			notifyUser = true
-		default:
-			// Past either threshold but not on the boundary: still
-			// apply the appropriate lockout, just don't re-alarm.
-			switch {
-			case count > unlockHardLockoutThreshold:
-				lockoutDuration = unlockHardLockoutDuration
-				locked = true
-			case count > unlockLockoutThreshold:
-				lockoutDuration = unlockLockoutDuration
-				locked = true
-			}
-		}
-		if locked {
-			_ = models.SetVaultUserLockedUntil(ctx, s.pool, c.TenantID, c.UserID, time.Now().Add(lockoutDuration))
-			if notifyUser {
-				s.fireFailedUnlockDecision(ctx, c, count, lockoutDuration)
-			}
-		}
-		audit.log(ctx, "vault.unlock_failed", "vault_user", &c.UserID, EvtUnlockFailed{FailedCount: count, Locked: locked})
+		audit.log(ctx, "vault.unlock_failed", "vault_tenant", nil, EvtUnlockFailed{})
 		return nil, ErrUnlockMismatch
 	}
 
-	if v.Pending {
-		return nil, ErrUnlockPending
-	}
-	if v.WrappedVaultKey == nil {
-		return nil, ErrUnlockNotGranted
-	}
-
-	if err := models.ResetFailedUnlocks(ctx, s.pool, c.TenantID, c.UserID); err != nil {
-		slog.Warn("vault: resetting failed_unlocks", "error", err)
-	}
 	// vault.unlock is fail-closed: requireRecentUnlock queries this row
-	// shortly after to authorize widening / grant operations.
-	if err := audit.logRequired(ctx, "vault.unlock", "vault_user", &c.UserID, EvtUnlock{}); err != nil {
+	// shortly after to authorize step-up operations.
+	if err := audit.logRequired(ctx, "vault.unlock", "vault_tenant", nil, EvtUnlock{}); err != nil {
 		return nil, fmt.Errorf("recording unlock: %w", err)
 	}
 
 	return &UnlockResult{
-		KDFParams:                v.KDFParams,
-		UserPrivateKeyCiphertext: v.UserPrivateKeyCiphertext,
-		UserPrivateKeyNonce:      v.UserPrivateKeyNonce,
-		WrappedVaultKey:          v.WrappedVaultKey,
+		KDFParams:            v.KDFParams,
+		WrappedVaultKey:      v.WrappedVaultKey,
+		WrappedVaultKeyNonce: v.WrappedVaultKeyNonce,
+		VaultGeneration:      v.VaultGeneration,
+		TenantIDBytes:        encodeTenantIDForAAD(c.TenantID),
 	}, nil
 }
 
-// RegisterParams is the input to /api/vault/register. WrappedVaultKey is
-// non-nil only for the very first user in a tenant (self-grant); for
-// everyone else the server enforces it stays NULL until a teammate grants.
-type RegisterParams struct {
-	KDFParams                json.RawMessage
-	AuthHash                 []byte
-	UserPublicKey            []byte
-	UserPrivateKeyCiphertext []byte
-	UserPrivateKeyNonce      []byte
-	WrappedVaultKey          []byte
-	Replace                  bool // master-password reset path
+// SetupParams is the input to /api/vault/setup. Admin-only; refuses if
+// the tenant already has a vault row.
+type SetupParams struct {
+	KDFParams            json.RawMessage
+	AuthHash             []byte
+	WrappedVaultKey      []byte
+	WrappedVaultKeyNonce []byte
 }
 
-// Register creates or replaces the caller's vault_users row.
-//
-// Bootstrap rules:
-//   - When no user in the tenant has been activated yet (the
-//     `wrapped_vault_key NOT NULL AND pending=false` query returns 0
-//     rows), the caller MUST be admin AND MUST supply a non-nil
-//     WrappedVaultKey (self-issued tenant init).
-//   - Otherwise WrappedVaultKey MUST be nil; a teammate will grant later.
-//
-// All new rows start pending=true; the browser flips it via SelfUnlockTest
-// after a successful round-trip. Re-registration of a still-pending row
-// is allowed and acts as an UPSERT (canary-failure recovery).
-func (s *Service) Register(ctx context.Context, c *services.Caller, p RegisterParams, audit auditCtx) error {
-	if err := validateRSAPubKey(p.UserPublicKey); err != nil {
-		return fmt.Errorf("invalid public key: %w", err)
-	}
-	if len(p.AuthHash) != 32 {
-		return errors.New("auth_hash must be 32 bytes")
+// SetupVault writes the tenant's vault row for the first time. Admin-only.
+// The browser has already generated vault_key, derived enc_key/auth_hash
+// from the typed password, wrapped vault_key with AAD = tenant_id, and
+// done a local round-trip sanity check. The server's job is to validate
+// the inputs and persist them.
+func (s *Service) SetupVault(ctx context.Context, c *services.Caller, p SetupParams, audit auditCtx) error {
+	if !c.IsAdmin {
+		return services.ErrForbidden
 	}
 	if err := validateKDFParams(p.KDFParams); err != nil {
 		return fmt.Errorf("invalid kdf_params: %w", err)
 	}
-	if len(p.UserPrivateKeyNonce) != 12 {
-		return errors.New("private key nonce must be 12 bytes")
+	if len(p.AuthHash) != 32 {
+		return errors.New("auth_hash must be 32 bytes")
 	}
-	// RSA-2048 PKCS#8 + AES-GCM tag is in a tight (~1200-1300) band;
-	// outside of that range the upload is truncated or garbage. Plan
-	// §"Input validation at registration & grant".
-	const (
-		minPrivCT = 1200
-		maxPrivCT = 1400
-	)
-	if n := len(p.UserPrivateKeyCiphertext); n < minPrivCT || n > maxPrivCT {
-		return fmt.Errorf("private key ciphertext outside RSA-2048 PKCS#8 size range (got %d, want %d-%d)", n, minPrivCT, maxPrivCT)
-	}
-
-	tenantInitialized, err := models.AnyVaultUserExists(ctx, s.pool, c.TenantID)
-	if err != nil {
+	if err := validateWrappedVaultKey(p.WrappedVaultKey, p.WrappedVaultKeyNonce); err != nil {
 		return err
 	}
-	isInitiator := !tenantInitialized && !p.Replace
-	if isInitiator {
-		if !c.IsAdmin {
-			return errors.New("only tenant admins can initialize the vault")
-		}
-		if p.WrappedVaultKey == nil {
-			return errors.New("first user in tenant must self-grant")
-		}
-	} else if p.WrappedVaultKey != nil {
-		return errors.New("only the initial admin may pre-set wrapped_vault_key; teammates wait for a grant")
-	}
 
-	// On replace, run the lock+check+update through ReplaceVaultUserAtomic
-	// so two concurrent resets within the same tenant can't both pass the
-	// last-granted-member guard and brick the workspace. The helper
-	// returns the prior pubkey so the audit row records a real diff.
-	newFP := pubkeyFingerprint(p.UserPublicKey)
-	if p.Replace {
-		priorPub, err := models.ReplaceVaultUserAtomic(ctx, s.pool, models.VaultRegisterParams{
-			TenantID:                 c.TenantID,
-			UserID:                   c.UserID,
-			KDFParams:                p.KDFParams,
-			AuthHash:                 p.AuthHash,
-			UserPublicKey:            p.UserPublicKey,
-			UserPrivateKeyCiphertext: p.UserPrivateKeyCiphertext,
-			UserPrivateKeyNonce:      p.UserPrivateKeyNonce,
-		})
-		if err != nil {
-			switch {
-			case errors.Is(err, models.ErrVaultUserNotFound):
-				return errors.New("no vault user to replace")
-			case errors.Is(err, models.ErrResetInFlight):
-				return errors.New("a reset is already in flight; cancel via your DM first")
-			case errors.Is(err, models.ErrLastGrantedMember):
-				return errors.New("you're the only person with vault access — resetting now would lock the workspace out; ask a teammate to register and grant them access first, then reset")
-			}
-			return err
-		}
-		if err := audit.logRequired(ctx, "vault.master_password_reset", "vault_user", &c.UserID, EvtMasterPasswordReset{
-			OldPubKeyFingerprint: pubkeyFingerprint(priorPub),
-			NewPubKeyFingerprint: newFP,
-		}); err != nil {
-			return fmt.Errorf("recording reset audit: %w", err)
-		}
-		s.fireResetTriggeredBriefing(ctx, c)
-		// Re-grant card to admins; failure is logged but not surfaced.
-		if err := s.fireGrantRequestCard(ctx, c, true, newFP); err != nil {
-			slog.Warn("vault: firing grant-request decision card failed", "error", err)
-		}
-		return nil
-	}
-
-	if err := models.RegisterVaultUser(ctx, s.pool, models.VaultRegisterParams{
-		TenantID:                 c.TenantID,
-		UserID:                   c.UserID,
-		KDFParams:                p.KDFParams,
-		AuthHash:                 p.AuthHash,
-		UserPublicKey:            p.UserPublicKey,
-		UserPrivateKeyCiphertext: p.UserPrivateKeyCiphertext,
-		UserPrivateKeyNonce:      p.UserPrivateKeyNonce,
-		WrappedVaultKey:          p.WrappedVaultKey,
+	if err := models.InitVaultTenant(ctx, s.pool, models.VaultSetupParams{
+		TenantID:             c.TenantID,
+		KDFParams:            p.KDFParams,
+		AuthHash:             p.AuthHash,
+		WrappedVaultKey:      p.WrappedVaultKey,
+		WrappedVaultKeyNonce: p.WrappedVaultKeyNonce,
+		SetupByUserID:        c.UserID,
 	}); err != nil {
 		return err
 	}
-
-	audit.log(ctx, "vault.register", "vault_user", &c.UserID, EvtRegister{
-		Replace:           false,
-		IsTenantInitiator: isInitiator,
-		PubKeyFingerprint: newFP,
-	})
-
-	// Fire an admin-targeted decision card unless this is the bootstrap
-	// initiator (who has self-granted; nobody else needs to act).
-	// Best-effort: card-creation failure does not roll back the registration.
-	if !isInitiator {
-		if err := s.fireGrantRequestCard(ctx, c, false, newFP); err != nil {
-			slog.Warn("vault: firing grant-request decision card failed", "error", err)
-		}
-	}
+	audit.log(ctx, "vault.setup", "vault_tenant", nil, EvtSetup{})
 	return nil
 }
 
-// SelfUnlockTest flips pending=false after the browser has demonstrated
-// the keys round-trip cleanly. Called immediately after Register, with
-// the auth_hash the browser just derived. Constant-time comparison plus
-// the same per-IP rate limit as Unlock so it can't be used as a faster
-// brute-force oracle.
-func (s *Service) SelfUnlockTest(ctx context.Context, c *services.Caller, authHash []byte, audit auditCtx) error {
-	if audit.ip != nil && !s.rateLimit.allow(audit.ip.String()) {
-		return ErrUnlockLocked
-	}
-	v, err := models.GetVaultUser(ctx, s.pool, c.TenantID, c.UserID)
-	if err != nil {
-		return err
-	}
-	if v == nil {
-		_ = subtle.ConstantTimeCompare(authHash, dummyHash())
-		return ErrUnlockMismatch
-	}
-	if subtle.ConstantTimeCompare(authHash, v.AuthHash) != 1 {
-		return ErrUnlockMismatch
-	}
-	return models.MarkVaultUserActive(ctx, s.pool, c.TenantID, c.UserID)
+// RotateParams is the input to /api/vault/rotate. Admin-only; requires
+// the browser to have unlocked locally with the old password first
+// (auth proof = the caller's recent vault.unlock audit row, enforced via
+// requireRecentUnlock; the same wrapped_vault_key is re-wrapped under
+// the new derivation, so unrolling old → new happens entirely browser-side).
+type RotateParams struct {
+	KDFParams            json.RawMessage
+	AuthHash             []byte
+	WrappedVaultKey      []byte
+	WrappedVaultKeyNonce []byte
 }
 
-// GrantParams is the input to /api/vault/grants/<target>. Granter must
-// be a vault member with a recent unlock; the service enforces both.
-type GrantParams struct {
-	TargetUserID    uuid.UUID
-	WrappedVaultKey []byte // RSA-OAEP(vault_key, target's user_public_key)
-}
-
-// Grant writes a wrapped_vault_key onto the target user's row. Re-validates
-// the target's stored pubkey before accepting the wrap. Step-up auth: the
-// caller must have unlocked within stepUpWindow.
-func (s *Service) Grant(ctx context.Context, c *services.Caller, p GrantParams, audit auditCtx) error {
+// RotateVaultPassword updates the tenant's vault row with new password-
+// derived material. The vault_key itself is unchanged (the browser
+// unwrapped it under the old password and re-wrapped it under the new
+// one), so existing encrypted entries continue to decrypt. Bumps
+// vault_generation so live SharedWorkers in other tabs re-lock.
+func (s *Service) RotateVaultPassword(ctx context.Context, c *services.Caller, p RotateParams, audit auditCtx) (int, error) {
+	if !c.IsAdmin {
+		return 0, services.ErrForbidden
+	}
 	if err := s.requireRecentUnlock(ctx, c); err != nil {
-		return err
+		return 0, err
 	}
-	if len(p.WrappedVaultKey) == 0 {
-		return errors.New("wrapped_vault_key required")
+	if err := validateKDFParams(p.KDFParams); err != nil {
+		return 0, fmt.Errorf("invalid kdf_params: %w", err)
 	}
-	target, err := models.GetVaultUser(ctx, s.pool, c.TenantID, p.TargetUserID)
-	if err != nil {
-		return err
+	if len(p.AuthHash) != 32 {
+		return 0, errors.New("auth_hash must be 32 bytes")
 	}
-	if target == nil {
-		return models.ErrVaultUserNotFound
-	}
-	if err := validateRSAPubKey(target.UserPublicKey); err != nil {
-		return fmt.Errorf("target public key invalid: %w", err)
+	if err := validateWrappedVaultKey(p.WrappedVaultKey, p.WrappedVaultKeyNonce); err != nil {
+		return 0, err
 	}
 
-	duringCooldown := target.ResetPendingUntil != nil && time.Now().Before(*target.ResetPendingUntil)
-
-	if err := models.SetVaultGrant(ctx, s.pool, c.TenantID, p.TargetUserID, c.UserID, p.WrappedVaultKey); err != nil {
-		return err
-	}
-	if err := audit.logRequired(ctx, "vault.grant", "vault_user", &p.TargetUserID, EvtGrant{
-		TargetPubKeyFingerprint: pubkeyFingerprint(target.UserPublicKey),
-		DuringResetCooldown:     duringCooldown,
-	}); err != nil {
-		return fmt.Errorf("recording grant audit: %w", err)
-	}
-	s.fireAccessGrantedBriefing(ctx, c, p.TargetUserID)
-	return nil
-}
-
-// CancelReset wipes the caller's vault_users row when it's currently in
-// the 24h post-reset cooldown. This is the legitimate user's escape
-// hatch for the Slack-account-takeover-then-trigger-reset attack: an
-// attacker briefly hijacks Slack, resets the vault password, and waits
-// for an admin to re-grant. The legitimate user — still logged in
-// elsewhere — sees the reset-triggered briefing in their swipe stack
-// and clicks Cancel; this endpoint nukes the attacker's keys before
-// any teammate can wrap a vault key for them.
-//
-// Auth: session cookie only (no step-up — by definition the legitimate
-// user can't unlock right now since the attacker just changed the
-// master password). Idempotent: returns ErrNotFound if there's no row
-// in cooldown to cancel.
-func (s *Service) CancelReset(ctx context.Context, c *services.Caller, audit auditCtx) error {
-	if err := models.CancelVaultReset(ctx, s.pool, c.TenantID, c.UserID); err != nil {
-		return err
-	}
-	audit.log(ctx, "vault.master_password_reset_cancelled", "vault_user", &c.UserID, EvtMasterPasswordResetCancelled{})
-	return nil
-}
-
-// DeclinePending deletes a vault_users row that hasn't been granted yet.
-// Admin-only; refuses if the user already has access (those go through
-// RevokeGrant).
-func (s *Service) DeclinePending(ctx context.Context, c *services.Caller, targetUserID uuid.UUID, audit auditCtx) error {
-	if !c.IsAdmin {
-		return services.ErrForbidden
-	}
-	target, err := models.GetVaultUser(ctx, s.pool, c.TenantID, targetUserID)
-	if err != nil {
-		return err
-	}
-	if target == nil {
-		return models.ErrNotFound
-	}
-	if target.WrappedVaultKey != nil {
-		return errors.New("user already has access; use revoke instead")
-	}
-	if _, err := s.pool.Exec(ctx,
-		`DELETE FROM app_vault_users WHERE tenant_id = $1 AND user_id = $2 AND wrapped_vault_key IS NULL`,
-		c.TenantID, targetUserID,
-	); err != nil {
-		return fmt.Errorf("decline pending: %w", err)
-	}
-	audit.log(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{})
-	return nil
-}
-
-// RevokeGrant nulls the target user's wrapped_vault_key. Forward secrecy
-// is a v2 item — existing browser caches are unaffected. Admin-only;
-// the service enforces the check so MCP / agent callers can't bypass it.
-func (s *Service) RevokeGrant(ctx context.Context, c *services.Caller, targetUserID uuid.UUID, audit auditCtx) error {
-	if !c.IsAdmin {
-		return services.ErrForbidden
-	}
-	if err := models.RevokeVaultGrant(ctx, s.pool, c.TenantID, targetUserID); err != nil {
-		return err
-	}
-	if err := audit.logRequired(ctx, "vault.revoke_grant", "vault_user", &targetUserID, EvtRevokeGrant{}); err != nil {
-		return fmt.Errorf("recording revoke audit: %w", err)
-	}
-	return nil
-}
-
-// AdminResetVaultUser wipes a user's vault_users row so they can register
-// from scratch with a new master password. Called from the gated tool
-// handler after an admin approves the reset request decision card.
-//
-// Defense-in-depth admin check — the gate's resolve path already runs
-// with the approver's caller, but this method must be safe regardless
-// of who calls it. Refuses self-reset to protect admins from locking
-// themselves out (they would then have nobody to grant them back in).
-//
-// On success the caller's identity goes onto the audit row as actor;
-// the row's actor + target_id pair is the source of truth for "who
-// reset whom and when". A best-effort briefing fires on the target's
-// stack with a register link.
-func (s *Service) AdminResetVaultUser(ctx context.Context, c *services.Caller, targetUserID uuid.UUID, audit auditCtx) error {
-	if !c.IsAdmin {
-		return services.ErrForbidden
-	}
-	if c.UserID == targetUserID {
-		return errors.New("admin cannot reset their own vault — ask another admin")
-	}
-	if err := models.AdminDeleteVaultUser(ctx, s.pool, c.TenantID, targetUserID); err != nil {
-		return err
-	}
-	if err := audit.logRequired(ctx, "vault.admin_reset", "vault_user", &targetUserID, EvtAdminReset{
-		TargetUserID: targetUserID,
-	}); err != nil {
-		return fmt.Errorf("recording admin-reset audit: %w", err)
-	}
-	s.fireAdminResetBriefing(ctx, c, targetUserID)
-	return nil
-}
-
-// fireAdminResetBriefing posts an urgent briefing on the target's stack
-// telling them their vault was reset and pointing them at /register.
-// Urgent because they cannot use any stored secret until they re-register.
-// Severity 'important' matches fireResetTriggeredBriefing for consistency.
-func (s *Service) fireAdminResetBriefing(ctx context.Context, approver *services.Caller, targetUserID uuid.UUID) {
-	if s.cards == nil {
-		return
-	}
-	tenant, err := models.GetTenantByID(ctx, s.pool, approver.TenantID)
-	if err != nil || tenant == nil {
-		slog.Warn("vault: loading tenant for admin-reset briefing", "error", err)
-		return
-	}
-	approverUser, _ := models.GetUserByID(ctx, s.pool, approver.TenantID, approver.UserID)
-	approverName := approver.Identity
-	if approverUser != nil && approverUser.DisplayName != nil && *approverUser.DisplayName != "" {
-		approverName = *approverUser.DisplayName
-	}
-	approverName = sanitizeMarkdownInline(approverName)
-
-	registerURL := fmt.Sprintf("/%s/apps/vault/register", tenant.Slug)
-	body := fmt.Sprintf(
-		"**Your vault was reset by %s.** Set a new master password to continue using the vault. "+
-			"After you save, an admin will re-grant your access. Your stored secrets are not lost.\n\n"+
-			"[Set a new master password →](%s)",
-		approverName, registerURL,
-	)
-	err = s.cards.CreateBriefing(ctx, approver.TenantID, CardCreateInput{
-		Title:      "Vault reset — set a new master password",
-		Body:       body,
-		UserScopes: []uuid.UUID{targetUserID},
-		Urgent:     true,
-		Briefing:   &CardBriefingCreateInput{Severity: "important"},
+	newGen, err := models.RotateVaultTenant(ctx, s.pool, models.VaultRotateParams{
+		TenantID:             c.TenantID,
+		KDFParams:            p.KDFParams,
+		AuthHash:             p.AuthHash,
+		WrappedVaultKey:      p.WrappedVaultKey,
+		WrappedVaultKeyNonce: p.WrappedVaultKeyNonce,
+		RotatedByUserID:      c.UserID,
 	})
 	if err != nil {
-		slog.Warn("vault: firing admin-reset briefing failed", "user_id", targetUserID, "error", err)
+		return 0, err
 	}
+	if err := audit.logRequired(ctx, "vault.rotate", "vault_tenant", nil, EvtRotate{NewGeneration: newGen}); err != nil {
+		return newGen, fmt.Errorf("recording rotate audit: %w", err)
+	}
+	return newGen, nil
+}
+
+// NukeVault deletes the tenant's vault row and all entries. Admin-only;
+// requires the caller to have re-confirmed by typing the tenant slug
+// (the web handler checks this before calling here). Returns the count
+// of entries destroyed for the briefing + audit.
+//
+// This is the escape hatch for "the team forgot the master password."
+// There is no undo and no recovery: vault_key is gone, every entry's
+// ciphertext is unreadable from this point forward.
+func (s *Service) NukeVault(ctx context.Context, c *services.Caller, audit auditCtx) (int, error) {
+	if !c.IsAdmin {
+		return 0, services.ErrForbidden
+	}
+	count, err := models.NukeVaultTenant(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	if err := audit.logRequired(ctx, "vault.nuke", "vault_tenant", nil, EvtNuke{EntriesDestroyed: count}); err != nil {
+		return count, fmt.Errorf("recording nuke audit: %w", err)
+	}
+	s.fireVaultNukedBriefing(ctx, c, count)
+	return count, nil
 }
 
 // ===== card / briefing helpers =====
 
-// fireGrantRequestCard creates an admin-scoped decision card asking a
-// teammate to grant (or re-grant after reset) vault access to the caller.
-// Body includes the user's display name + Slack handle + the fingerprint
-// for out-of-band verification.
-func (s *Service) fireGrantRequestCard(ctx context.Context, target *services.Caller, isReset bool, fingerprint string) error {
-	if s.cards == nil {
-		return nil
-	}
-	title := "Grant vault access"
-	if isReset {
-		title = "Re-grant vault access (password reset)"
-	}
-	user, _ := models.GetUserByID(ctx, s.pool, target.TenantID, target.UserID)
-	// Look up the slug for the grant URL; without it the admin sees a
-	// card telling them to "open the grant page" with no link, clicks
-	// the no-op resolve button instead, and the user stays at 403.
-	grantURL := ""
-	if tenant, err := models.GetTenantByID(ctx, s.pool, target.TenantID); err == nil && tenant != nil {
-		grantURL = fmt.Sprintf("/%s/apps/vault/grant/%s", tenant.Slug, target.UserID)
-	}
-	body := buildGrantCardBody(target, user, isReset, fingerprint, grantURL)
-
-	return s.cards.CreateDecision(ctx, target.TenantID, CardCreateInput{
-		Title:      title,
-		Body:       body,
-		RoleScopes: []string{"admin"},
-		Decision: &CardDecisionCreateInput{
-			Priority: "high",
-			// Recommended action is the body-link path; the buttons just
-			// dismiss the card metadata-only since the actual grant
-			// requires browser-side RSA wrap on the grant page.
-			RecommendedOptionID: "handled",
-			Options: []CardDecisionOption{
-				{OptionID: "handled", Label: "I've granted them"},
-				{OptionID: "decline", Label: "Decline"},
-			},
-		},
-	})
-}
-
-func buildGrantCardBody(target *services.Caller, user *models.User, isReset bool, fingerprint, grantURL string) string {
-	displayName := target.Identity
-	slackID := target.Identity
-	if user != nil {
-		slackID = user.SlackUserID
-		if user.DisplayName != nil && *user.DisplayName != "" {
-			displayName = *user.DisplayName
-		}
-	}
-	// Display names come from Slack profiles; a malicious user could
-	// set theirs to inject Markdown / HTML into the admin's swipe card.
-	// Strip the syntactically dangerous characters before interpolation.
-	displayName = sanitizeMarkdownInline(displayName)
-	slackID = sanitizeMarkdownInline(slackID)
-
-	var b strings.Builder
-	if isReset {
-		fmt.Fprintf(&b, "**%s** (<@%s>) reset their vault password. Their public-key fingerprint has changed.\n\n", displayName, slackID)
-	} else {
-		fmt.Fprintf(&b, "**%s** (<@%s>) registered for the vault and needs access.\n\n", displayName, slackID)
-	}
-	b.WriteString("Public-key fingerprint:\n\n```\n")
-	b.WriteString(fingerprint)
-	b.WriteString("\n```\n\n")
-	b.WriteString("**Verify this fingerprint with them out-of-band** before granting.\n\n")
-	if grantURL != "" {
-		// The grant requires browser-side RSA-OAEP wrap of the vault_key
-		// using the target's public key, which only an unlocked admin
-		// browser can do — the server can't grant. The link below is
-		// where the action actually happens; the buttons on this card
-		// only mark it as handled / declined.
-		fmt.Fprintf(&b, "[**Open grant page →**](%s)", grantURL)
-	} else {
-		b.WriteString("Open the grant page to complete the action.")
-	}
-	return b.String()
-}
-
-// sanitizeMarkdownInline removes characters that would terminate a code
-// fence, inline-code span, or HTML tag if interpolated into a Markdown
-// body. Keeps the content recognisable (no full HTML escape) — Slack
-// display names rarely use these characters legitimately.
-func sanitizeMarkdownInline(s string) string {
-	r := strings.NewReplacer(
-		"`", "ʼ",
-		"<", "‹",
-		">", "›",
-		"\n", " ",
-		"\r", " ",
-	)
-	return r.Replace(s)
-}
-
 // fireFailedUnlockDecision creates a high-priority decision card on the
-// affected user's swipe stack: "Was this you? / Lock my account."
-// Decision (not briefing) because the user genuinely needs to choose,
-// and decisions support action buttons today while briefings don't.
-func (s *Service) fireFailedUnlockDecision(ctx context.Context, c *services.Caller, count int, lockoutDuration time.Duration) {
-	if s.cards == nil {
+// affected user's swipe stack so they notice repeated wrong-password
+// attempts. Best-effort — surfaces only on threshold transitions (the
+// rate-limit allow() returns false), not on every miss.
+func (s *Service) fireFailedUnlockDecision(ctx context.Context, c *services.Caller, reason string, window time.Duration) {
+	if s.cards == nil || c == nil {
 		return
 	}
-	body := fmt.Sprintf("**%d failed unlock attempts on your Kit vault.** Your vault is locked for %s.\n\n"+
-		"If this wasn't you, your Slack account may be compromised — rotate your Slack credentials and re-OAuth before approving any vault grant.",
-		count, lockoutDuration)
+	body := fmt.Sprintf("**Failed vault unlock attempts (%s).** The vault is rate-limited for %s on this IP. "+
+		"If this wasn't you, your Slack account may be compromised — rotate Slack credentials and check session activity.",
+		reason, window)
 	err := s.cards.CreateDecision(ctx, c.TenantID, CardCreateInput{
-		Title:      "Failed unlock attempts on your vault",
+		Title:      "Failed vault unlock attempts",
 		Body:       body,
 		UserScopes: []uuid.UUID{c.UserID},
 		Urgent:     true,
@@ -620,49 +260,62 @@ func (s *Service) fireFailedUnlockDecision(ctx context.Context, c *services.Call
 	}
 }
 
-// fireResetTriggeredBriefing posts a briefing on the resetting user's
-// stack so a Slack-account-takeover attacker can't silently complete a
-// reset without the legitimate user noticing.
-func (s *Service) fireResetTriggeredBriefing(ctx context.Context, c *services.Caller) {
-	if s.cards == nil {
+// fireVaultNukedBriefing posts a tenant-wide briefing after a successful
+// /nuke, so other members notice immediately rather than discovering it
+// the next time they try to view a secret.
+func (s *Service) fireVaultNukedBriefing(ctx context.Context, actor *services.Caller, entryCount int) {
+	if s.cards == nil || actor == nil {
 		return
 	}
-	cancelURL := ""
-	if tenant, err := models.GetTenantByID(ctx, s.pool, c.TenantID); err == nil && tenant != nil {
-		cancelURL = fmt.Sprintf("/%s/apps/vault/cancel_reset", tenant.Slug)
+	actorName := actor.Identity
+	user, _ := models.GetUserByID(ctx, s.pool, actor.TenantID, actor.UserID)
+	if user != nil && user.DisplayName != nil && *user.DisplayName != "" {
+		actorName = *user.DisplayName
 	}
-	body := "**Your Kit vault password was just reset.** If this wasn't you, your Slack account " +
-		"may be compromised — rotate your Slack credentials immediately. Until you do, do not " +
-		"approve any incoming grant request for your account."
-	if cancelURL != "" {
-		body += fmt.Sprintf("\n\n[**Cancel the reset**](%s) to wipe the pending keys before a teammate grants access. You will need to re-register afterward.", cancelURL)
+	actorName = sanitizeMarkdownInline(actorName)
+
+	tenant, _ := models.GetTenantByID(ctx, s.pool, actor.TenantID)
+	setupURL := "/apps/vault/setup"
+	if tenant != nil {
+		setupURL = fmt.Sprintf("/%s/apps/vault/setup", tenant.Slug)
 	}
-	err := s.cards.CreateBriefing(ctx, c.TenantID, CardCreateInput{
-		Title:      "Vault password reset",
-		Body:       body,
-		UserScopes: []uuid.UUID{c.UserID},
-		Urgent:     true,
-		Briefing:   &CardBriefingCreateInput{Severity: "important"},
+
+	body := fmt.Sprintf(
+		"**The vault was reset by %s.** All %d stored secrets have been deleted and cannot be recovered. "+
+			"An admin can [set up a fresh vault](%s) with a new master password.",
+		actorName, entryCount, setupURL,
+	)
+	err := s.cards.CreateBriefing(ctx, actor.TenantID, CardCreateInput{
+		Title:    "Vault was reset",
+		Body:     body,
+		Urgent:   true,
+		Briefing: &CardBriefingCreateInput{Severity: "important"},
 	})
 	if err != nil {
-		slog.Warn("vault: firing reset-triggered briefing failed", "user_id", c.UserID, "error", err)
+		slog.Warn("vault: firing vault-nuked briefing failed", "tenant_id", actor.TenantID, "error", err)
 	}
 }
 
-// fireAccessGrantedBriefing posts a briefing on the newly-granted user's
-// stack so they know their access is ready (no polling required).
-func (s *Service) fireAccessGrantedBriefing(ctx context.Context, c *services.Caller, targetUserID uuid.UUID) {
-	if s.cards == nil {
-		return
-	}
-	body := "Your Kit vault access is now active. Open the vault to add or look up secrets."
-	err := s.cards.CreateBriefing(ctx, c.TenantID, CardCreateInput{
-		Title:      "Vault access granted",
-		Body:       body,
-		UserScopes: []uuid.UUID{targetUserID},
-		Briefing:   &CardBriefingCreateInput{Severity: "info"},
-	})
-	if err != nil {
-		slog.Warn("vault: firing access-granted briefing failed", "user_id", targetUserID, "error", err)
-	}
+// sanitizeMarkdownInline removes characters that would terminate a code
+// fence, inline-code span, or HTML tag if interpolated into a Markdown
+// body. Keeps the content recognisable (no full HTML escape) — Slack
+// display names rarely use these characters legitimately.
+func sanitizeMarkdownInline(s string) string {
+	return strings.NewReplacer(
+		"`", "ʼ",
+		"<", "‹",
+		">", "›",
+		"\n", " ",
+		"\r", " ",
+	).Replace(s)
+}
+
+// encodeTenantIDForAAD returns the tenant UUID as a 32-char lowercase
+// hex string of its raw 16 bytes (no hyphens). The browser decodes this
+// to a Uint8Array and passes it as the AAD when AES-GCM-decrypting the
+// wrapped_vault_key. Hex (not the canonical hyphenated form) is the
+// transport so JS doesn't have to parse UUID syntax just to recover
+// bytes — that's the only purpose this representation serves.
+func encodeTenantIDForAAD(id uuid.UUID) string {
+	return hex.EncodeToString(id[:])
 }

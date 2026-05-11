@@ -35,25 +35,22 @@ var staticFS embed.FS
 // inside each vault template resolves.
 var pageTmpl = template.Must(chrome.Tmpl().ParseFS(templatesFS, "templates/*.html"))
 
-// pageData is the render struct for vault HTML pages. Header is the
-// shared chrome shell (workspace icon + name + signed-in user); the
-// rest are vault-route-specific fields.
+// pageData is the render struct for vault HTML pages.
 type pageData struct {
-	TenantSlug   string
-	EntryID      string
-	TargetUserID string
-	StaticBase   string
-	APIBase      string
-	ChromeCSS    string
-	Title        string
-	Header       chrome.Header
-	Reset        bool // register page: rendering the master-password reset variant
+	TenantSlug string
+	EntryID    string
+	StaticBase string
+	APIBase    string
+	ChromeCSS  string
+	Title      string
+	Header     chrome.Header
+	// EntryCount is rendered on /nuke so the admin can see exactly how
+	// many secrets they're about to destroy.
+	EntryCount int
 }
 
 // basePageData returns common page-render fields populated from the
-// request context, including the shared chrome header. Each page
-// handler then layers on Title and any route-specific fields (EntryID,
-// TargetUserID).
+// request context, including the shared chrome header.
 func (a *App) basePageData(r *http.Request) pageData {
 	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
@@ -71,16 +68,10 @@ func (a *App) basePageData(r *http.Request) pageData {
 
 // ===== headers =====
 
-// applySecurityHeaders sets the strict CSP + cross-origin headers documented
-// in the plan. Same set on every vault page.
+// applySecurityHeaders sets the strict CSP + cross-origin headers on
+// every vault page.
 func applySecurityHeaders(w http.ResponseWriter) {
 	h := w.Header()
-	// Trusted Types (`require-trusted-types-for 'script'`) is plan-target
-	// hardening but blocks the SharedWorker constructor for plain string
-	// URLs — it expects a TrustedScriptURL. Re-enable in v1.5 alongside a
-	// default Trusted Types policy that wraps internal worker/script URLs.
-	// The remaining strict-CSP defenses (no inline, no eval, no CDN, COOP/
-	// COEP isolation) are still in force.
 	h.Set("Content-Security-Policy",
 		"default-src 'none'; "+
 			"script-src 'self'; "+
@@ -102,20 +93,61 @@ func applySecurityHeaders(w http.ResponseWriter) {
 
 // ===== HTML pages =====
 
-func (a *App) handleRegisterPage(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleSetupPage(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
+	caller := auth.CallerFromContext(r.Context())
+	if caller == nil || !caller.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
+	}
 	pd := a.basePageData(r)
 	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	pd.Reset = r.URL.Query().Get("reset") == "1"
-	if pd.Reset {
-		pd.Title = "Reset master password"
-	} else {
-		pd.Title = "Set up vault"
+	pd.Title = "Set up vault"
+	renderPage(w, "setup.html", pd)
+}
+
+func (a *App) handleRotatePage(w http.ResponseWriter, r *http.Request) {
+	applySecurityHeaders(w)
+	caller := auth.CallerFromContext(r.Context())
+	if caller == nil || !caller.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
 	}
-	renderPage(w, "register.html", pd)
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	pd.Title = "Rotate vault password"
+	renderPage(w, "rotate.html", pd)
+}
+
+func (a *App) handleNukePage(w http.ResponseWriter, r *http.Request) {
+	applySecurityHeaders(w)
+	caller := auth.CallerFromContext(r.Context())
+	if caller == nil || !caller.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
+	}
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	// Count entries so the warning screen can show the real number.
+	if err := a.pool.QueryRow(r.Context(),
+		`SELECT count(*) FROM app_vault_entries WHERE tenant_id = $1`,
+		caller.TenantID,
+	).Scan(&pd.EntryCount); err != nil {
+		slog.Error("vault: counting entries for nuke page", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	pd.Title = "Destroy vault"
+	renderPage(w, "nuke.html", pd)
 }
 
 func (a *App) handleListPage(w http.ResponseWriter, r *http.Request) {
@@ -157,23 +189,6 @@ func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, "reveal.html", pd)
 }
 
-func (a *App) handleGrantPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	targetID := r.PathValue("user_id")
-	if _, err := uuid.Parse(targetID); err != nil {
-		http.Error(w, "bad user id", http.StatusBadRequest)
-		return
-	}
-	pd.TargetUserID = targetID
-	pd.Title = "Grant vault access"
-	renderPage(w, "grant.html", pd)
-}
-
 func renderPage(w http.ResponseWriter, name string, data pageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := pageTmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -211,57 +226,109 @@ func (a *App) handleStatic(w http.ResponseWriter, r *http.Request) {
 
 // ===== JSON API =====
 
-func (a *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
+// handleSetupPost initializes the tenant vault. Admin-only; refuses if
+// the tenant already has a row. The browser has already derived all the
+// crypto from the master password the admin typed; the server just
+// validates shapes and persists.
+func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	var body struct {
-		AuthHash                 []byte          `json:"auth_hash"`
-		KDFParams                json.RawMessage `json:"kdf_params"`
-		UserPublicKey            []byte          `json:"user_public_key"`
-		UserPrivateKeyCiphertext []byte          `json:"user_private_key_ciphertext"`
-		UserPrivateKeyNonce      []byte          `json:"user_private_key_nonce"`
-		WrappedVaultKey          []byte          `json:"wrapped_vault_key,omitempty"`
-		Replace                  bool            `json:"replace,omitempty"`
+		KDFParams            json.RawMessage `json:"kdf_params"`
+		AuthHash             []byte          `json:"auth_hash"`
+		WrappedVaultKey      []byte          `json:"wrapped_vault_key"`
+		WrappedVaultKeyNonce []byte          `json:"wrapped_vault_key_nonce"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	audit := a.svc.AuditFromRequest(caller, r)
-	err := a.svc.Register(r.Context(), caller, RegisterParams{
-		AuthHash:                 body.AuthHash,
-		KDFParams:                body.KDFParams,
-		UserPublicKey:            body.UserPublicKey,
-		UserPrivateKeyCiphertext: body.UserPrivateKeyCiphertext,
-		UserPrivateKeyNonce:      body.UserPrivateKeyNonce,
-		WrappedVaultKey:          body.WrappedVaultKey,
-		Replace:                  body.Replace,
-	}, audit)
+	err := a.svc.SetupVault(r.Context(), caller, SetupParams{
+		KDFParams:            body.KDFParams,
+		AuthHash:             body.AuthHash,
+		WrappedVaultKey:      body.WrappedVaultKey,
+		WrappedVaultKeyNonce: body.WrappedVaultKeyNonce,
+	}, a.svc.AuditFromRequest(caller, r))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		switch {
+		case errors.Is(err, services.ErrForbidden):
+			http.Error(w, "admin only", http.StatusForbidden)
+		case errors.Is(err, models.ErrVaultAlreadySetup):
+			http.Error(w, "vault already set up; use /rotate or /nuke", http.StatusConflict)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *App) handleSelfUnlockTest(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRotatePost(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	var body struct {
-		AuthHash []byte `json:"auth_hash"`
+		KDFParams            json.RawMessage `json:"kdf_params"`
+		AuthHash             []byte          `json:"auth_hash"`
+		WrappedVaultKey      []byte          `json:"wrapped_vault_key"`
+		WrappedVaultKeyNonce []byte          `json:"wrapped_vault_key_nonce"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := a.svc.SelfUnlockTest(r.Context(), caller, body.AuthHash, a.svc.AuditFromRequest(caller, r)); err != nil {
+	newGen, err := a.svc.RotateVaultPassword(r.Context(), caller, RotateParams{
+		KDFParams:            body.KDFParams,
+		AuthHash:             body.AuthHash,
+		WrappedVaultKey:      body.WrappedVaultKey,
+		WrappedVaultKeyNonce: body.WrappedVaultKeyNonce,
+	}, a.svc.AuditFromRequest(caller, r))
+	if err != nil {
 		switch {
-		case errors.Is(err, ErrUnlockLocked):
-			http.Error(w, "too many attempts", http.StatusTooManyRequests)
+		case errors.Is(err, services.ErrForbidden):
+			http.Error(w, "admin only", http.StatusForbidden)
+		case errors.Is(err, ErrStepUpRequired):
+			http.Error(w, "recent unlock required", http.StatusUnauthorized)
+		case errors.Is(err, models.ErrVaultNotSetUp):
+			http.Error(w, "vault not set up; use /setup", http.StatusNotFound)
 		default:
-			http.Error(w, "verification failed", http.StatusUnauthorized)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "vault_generation": newGen})
+}
+
+// handleNukePost destroys the vault. Admin-only. Requires the caller to
+// re-type the tenant slug as a confirmation gate (defense against
+// click-fatigue, accidental script invocations, and stale tabs).
+func (a *App) handleNukePost(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	var body struct {
+		ConfirmSlug string `json:"confirm_slug"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if body.ConfirmSlug != tenant.Slug {
+		http.Error(w, "confirm_slug does not match tenant slug", http.StatusBadRequest)
+		return
+	}
+	count, err := a.svc.NukeVault(r.Context(), caller, a.svc.AuditFromRequest(caller, r))
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrForbidden):
+			http.Error(w, "admin only", http.StatusForbidden)
+		default:
+			slog.Error("vault: nuke", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "entries_destroyed": count})
 }
 
 func (a *App) handleUnlock(w http.ResponseWriter, r *http.Request) {
@@ -281,10 +348,8 @@ func (a *App) handleUnlock(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		case errors.Is(err, ErrUnlockLocked):
 			http.Error(w, "too many attempts", http.StatusTooManyRequests)
-		case errors.Is(err, ErrUnlockNotGranted):
-			http.Error(w, "no access yet — ask an admin", http.StatusForbidden)
-		case errors.Is(err, ErrUnlockPending):
-			http.Error(w, "registration pending", http.StatusConflict)
+		case errors.Is(err, ErrUnlockNotSetUp):
+			http.Error(w, "vault not set up", http.StatusNotFound)
 		default:
 			slog.Error("vault: unlock", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -295,73 +360,39 @@ func (a *App) handleUnlock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleLock(w http.ResponseWriter, r *http.Request) {
-	// Pure client-side lock for v1: the browser wipes IndexedDB and
-	// terminates the SharedWorker. Server has no per-session state to
-	// clear beyond the session cookie itself, which we leave intact
-	// (logging the user out of Kit is a separate flow).
+	// Pure client-side lock: browser wipes IndexedDB and terminates the
+	// SharedWorker. Server has no per-session vault state to clear.
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleCancelResetPage renders the confirmation screen linked from the
-// reset-triggered briefing's body. Submitting the form POSTs to
-// /api/cancel_reset which wipes the row.
-func (a *App) handleCancelResetPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Cancel vault password reset"
-	renderPage(w, "cancel_reset.html", pd)
-}
-
-// handleCancelReset wipes the caller's vault_users row when it's in the
-// 24h post-reset cooldown. See Service.CancelReset for the threat model.
-func (a *App) handleCancelReset(w http.ResponseWriter, r *http.Request) {
+// handleStatus returns whether the tenant vault is initialized + the
+// kdf_params (so the browser can derive auth_hash on a fresh device).
+// Plain 200 with `set_up: false` if not set up — easier for the
+// page-bootstrap JS than parsing a 404. Always includes
+// `tenant_id_bytes` so the browser knows what to use as the AES-GCM AAD
+// when wrapping at setup time (before any tenant row exists).
+func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
-	audit := a.svc.AuditFromRequest(caller, r)
-	if err := a.svc.CancelReset(r.Context(), caller, audit); err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			http.Error(w, "no pending reset to cancel", http.StatusNotFound)
-			return
-		}
-		slog.Error("vault: cancel reset", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// handleMe returns the caller's vault_users metadata: kdf_params (so the
-// browser can derive auth_hash on a fresh device) plus state flags. Returns
-// 404 if the caller has no row yet (browser sends to /register).
-func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	v, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, caller.UserID)
+	v, err := models.GetVaultTenant(r.Context(), a.pool, caller.TenantID)
 	if err != nil {
-		slog.Error("vault: GetVaultUser", "error", err)
+		slog.Error("vault: GetVaultTenant", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if v == nil {
-		http.NotFound(w, r)
-		return
+	out := map[string]any{
+		"set_up":          v != nil,
+		"tenant_id_bytes": encodeTenantIDForAAD(caller.TenantID),
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"kdf_params": v.KDFParams,
-		"pending":    v.Pending,
-		"granted":    v.WrappedVaultKey != nil,
-	})
+	if v != nil {
+		out["kdf_params"] = v.KDFParams
+		out["vault_generation"] = v.VaultGeneration
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handlePrincipals lists the roles the caller is a member of, plus the
-// tenant's default_role_id (the 'member' role that includes everyone —
-// always in caller.RoleIDs since GetUserRoleIDs appends it). The web
-// dropdown labels the default role as "Members (everyone)" so the
-// scope-everyone affordance maps to a real UUID rather than NULL.
-// Filtered to caller's roles because vault scoping is restricted to
-// teams the caller is on (matching ErrCallerNotInRole on Save).
+// tenant's default_role_id (the 'member' role that includes everyone).
+// The add/reveal pages use this for the "who can see this" selector.
 func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	tenant, err := models.GetTenantByID(r.Context(), a.pool, caller.TenantID)
@@ -397,48 +428,6 @@ func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	}
 	if tenant.DefaultRoleID != nil {
 		out["default_role_id"] = tenant.DefaultRoleID.String()
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-// handleGetUser returns a teammate's pubkey + fingerprint for the grant page.
-// Caller must already have vault access (so they can wrap vault_key for the
-// target). Returns 404 if the target hasn't registered yet.
-func (a *App) handleGetUser(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	targetID, err := uuid.Parse(r.PathValue("user_id"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	// Authz: caller must themselves be a granted vault member.
-	self, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, caller.UserID)
-	if err != nil || self == nil || self.WrappedVaultKey == nil {
-		http.Error(w, "vault access required", http.StatusForbidden)
-		return
-	}
-	target, err := models.GetVaultUser(r.Context(), a.pool, caller.TenantID, targetID)
-	if err != nil {
-		slog.Error("vault: GetVaultUser target", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if target == nil {
-		http.NotFound(w, r)
-		return
-	}
-	out := map[string]any{
-		"public_key":  target.UserPublicKey,
-		"fingerprint": pubkeyFingerprint(target.UserPublicKey),
-		"pending":     target.Pending,
-		"granted":     target.WrappedVaultKey != nil,
-	}
-	// `reset` (an in-flight master-password reset) is admin-only — it
-	// reveals operationally interesting state (when an attacker would
-	// race the legitimate user's re-grant). Non-admins on the grant
-	// page only need pending/granted to decide whether to wrap or wait.
-	if caller.IsAdmin {
-		out["reset"] = target.ResetPendingUntil != nil
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -482,9 +471,7 @@ func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		Tags            []string `json:"tags,omitempty"`
 		ValueCiphertext []byte   `json:"value_ciphertext"`
 		ValueNonce      []byte   `json:"value_nonce"`
-		// RoleID is the owning role; null/omitted means "everyone in
-		// the tenant". Single-role authz model (v1.5).
-		RoleID *string `json:"role_id,omitempty"`
+		RoleID          *string  `json:"role_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -521,8 +508,7 @@ func (a *App) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseOptionalUUID returns nil when the input pointer is nil or its
-// value is an empty string; otherwise parses the UUID. Used to thread
-// "role_id may be null/omitted" through the JSON body shapes.
+// value is an empty string; otherwise parses the UUID.
 func parseOptionalUUID(s *string) (*uuid.UUID, error) {
 	if s == nil || *s == "" {
 		return nil, nil //nolint:nilnil // explicit "not provided" sentinel
@@ -538,7 +524,7 @@ func (a *App) handleGetEntry(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	entryID, err := uuid.Parse(r.PathValue("entry_id"))
 	if err != nil {
-		http.NotFound(w, r) // uniform 404 for bad/no-scope/missing IDs
+		http.NotFound(w, r)
 		return
 	}
 	audit := a.svc.AuditFromRequest(caller, r)
@@ -594,11 +580,6 @@ func (a *App) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleSetEntryRole is the metadata-only "edit who can see this" path
-// used by the reveal page. Saves the trip through UpdateEntry's
-// re-encrypt pipeline since the value isn't changing. Service-level
-// step-up auth fires on widening; surface ErrStepUpRequired as 401 so
-// the JS can prompt for re-unlock.
 func (a *App) handleSetEntryRole(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	entryID, err := uuid.Parse(r.PathValue("entry_id"))
@@ -659,98 +640,10 @@ func (a *App) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// ===== grants =====
-
-func (a *App) handleGrant(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	targetID, err := uuid.Parse(r.PathValue("user_id"))
-	if err != nil {
-		http.Error(w, "bad user id", http.StatusBadRequest)
-		return
-	}
-	var body struct {
-		WrappedVaultKey []byte `json:"wrapped_vault_key"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	audit := a.svc.AuditFromRequest(caller, r)
-	err = a.svc.Grant(r.Context(), caller, GrantParams{
-		TargetUserID:    targetID,
-		WrappedVaultKey: body.WrappedVaultKey,
-	}, audit)
-	if err != nil {
-		switch {
-		case errors.Is(err, models.ErrVaultUserNotFound):
-			http.NotFound(w, r)
-		case errors.Is(err, ErrStepUpRequired):
-			http.Error(w, "recent unlock required", http.StatusUnauthorized)
-		default:
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (a *App) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	targetID, err := uuid.Parse(r.PathValue("user_id"))
-	if err != nil {
-		http.Error(w, "bad user id", http.StatusBadRequest)
-		return
-	}
-	audit := a.svc.AuditFromRequest(caller, r)
-	if err := a.svc.RevokeGrant(r.Context(), caller, targetID, audit); err != nil {
-		switch {
-		case errors.Is(err, services.ErrForbidden):
-			http.Error(w, "admin only", http.StatusForbidden)
-		case errors.Is(err, models.ErrNotFound):
-			http.NotFound(w, r)
-		default:
-			slog.Error("vault: revoke grant", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// handleDeclinePending drops a vault_users row that hasn't been granted
-// yet. The "Decline" button on the admin's grant decision card calls
-// this; rejecting a registration is recoverable (the user can re-register).
-// Service.DeclinePending enforces admin-only and the not-yet-granted check.
-func (a *App) handleDeclinePending(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	targetID, err := uuid.Parse(r.PathValue("user_id"))
-	if err != nil {
-		http.Error(w, "bad user id", http.StatusBadRequest)
-		return
-	}
-	if err := a.svc.DeclinePending(r.Context(), caller, targetID, a.svc.AuditFromRequest(caller, r)); err != nil {
-		switch {
-		case errors.Is(err, services.ErrForbidden):
-			http.Error(w, "admin only", http.StatusForbidden)
-		case errors.Is(err, models.ErrNotFound):
-			http.NotFound(w, r)
-		default:
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
 // ===== misc =====
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
-	// Vault JSON responses depend on the caller's role membership (e.g.
-	// /principals) and contain ciphertext we never want sitting in a
-	// shared/disk cache. Without an explicit directive browsers apply
-	// heuristic caching to GETs, which made role changes look like they
-	// hadn't taken effect after a page refresh.
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)

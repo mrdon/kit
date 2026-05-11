@@ -1,0 +1,31 @@
+{{ define "nuke.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
+<link rel="stylesheet" href="{{ .StaticBase }}/vault.css">
+</head>
+<body>
+{{ template "chrome_header" .Header }}
+<main id="vault-app" data-page="nuke" data-api-base="{{ .APIBase }}" data-static-base="{{ .StaticBase }}" data-tenant-slug="{{ .TenantSlug }}">
+<h1 class="danger">Destroy the vault</h1>
+<noscript>This page requires JavaScript.</noscript>
+<section class="danger-box">
+  <p><strong>This will permanently delete all {{ .EntryCount }} secret{{ if ne .EntryCount 1 }}s{{ end }} in your vault.</strong> They cannot be recovered. Anyone with the current master password will no longer be able to decrypt anything — but you also won't be able to. Use this only if the master password has been lost and the team is willing to start over from an empty vault.</p>
+  <p>After destroying the vault, you'll be redirected to <code>/setup</code> to pick a new master password.</p>
+</section>
+<form id="nuke-form" autocomplete="off">
+  <label>
+    To confirm, type your workspace's slug: <code>{{ .TenantSlug }}</code>
+    <input type="text" name="confirm_slug" autocomplete="off" required>
+  </label>
+  <button type="submit" class="danger">Destroy {{ .EntryCount }} secret{{ if ne .EntryCount 1 }}s{{ end }} permanently</button>
+  <p id="status" role="status"></p>
+</form>
+</main>
+<script type="module" src="{{ .StaticBase }}/vault.js"></script>
+</body>
+</html>
+{{ end }}

@@ -78,18 +78,19 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
 	}
 
-	// Register / unlock / lock
-	mux.Handle("GET /{slug}/apps/vault/register", page(a.handleRegisterPage))
-	mux.Handle("POST /{slug}/apps/vault/api/register", wrap(a.handleRegisterPost))
-	mux.Handle("POST /{slug}/apps/vault/api/self_unlock_test", wrap(a.handleSelfUnlockTest))
+	// Admin-only setup, rotate, nuke pages (browser-driven crypto)
+	mux.Handle("GET /{slug}/apps/vault/setup", page(a.handleSetupPage))
+	mux.Handle("POST /{slug}/apps/vault/api/setup", wrap(a.handleSetupPost))
+	mux.Handle("GET /{slug}/apps/vault/rotate", page(a.handleRotatePage))
+	mux.Handle("POST /{slug}/apps/vault/api/rotate", wrap(a.handleRotatePost))
+	mux.Handle("GET /{slug}/apps/vault/nuke", page(a.handleNukePage))
+	mux.Handle("POST /{slug}/apps/vault/api/nuke", wrap(a.handleNukePost))
+
+	// Unlock / lock / status
 	mux.Handle("POST /{slug}/apps/vault/api/unlock", wrap(a.handleUnlock))
 	mux.Handle("POST /{slug}/apps/vault/lock", wrap(a.handleLock))
-	// Reset cancel — wipes a row in 24h cooldown before a teammate can
-	// re-grant. Page renders confirmation; POST does the wipe.
-	mux.Handle("GET /{slug}/apps/vault/cancel_reset", page(a.handleCancelResetPage))
-	mux.Handle("POST /{slug}/apps/vault/api/cancel_reset", wrap(a.handleCancelReset))
-	mux.Handle("GET /{slug}/apps/vault/api/me", get(a.handleMe))
-	mux.Handle("GET /{slug}/apps/vault/api/users/{user_id}", get(a.handleGetUser))
+	mux.Handle("GET /{slug}/apps/vault/api/status", get(a.handleStatus))
+
 	// Principal listing — populates the "who can see this" selector
 	// on the add / reveal pages.
 	mux.Handle("GET /{slug}/apps/vault/api/principals", get(a.handlePrincipals))
@@ -110,14 +111,6 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleUpdateEntry))
 	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}/role", wrap(a.handleSetEntryRole))
 	mux.Handle("DELETE /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleDeleteEntry))
-
-	// Grants
-	mux.Handle("GET /{slug}/apps/vault/grant/{user_id}", page(a.handleGrantPage))
-	mux.Handle("POST /{slug}/apps/vault/api/grants/{user_id}", wrap(a.handleGrant))
-	mux.Handle("DELETE /{slug}/apps/vault/api/grants/{user_id}", wrap(a.handleRevokeGrant))
-	// Decline a pending registration: deletes the vault_users row entirely
-	// (only valid while wrapped_vault_key IS NULL).
-	mux.Handle("DELETE /{slug}/apps/vault/api/users/{user_id}", wrap(a.handleDeclinePending))
 
 	// Static
 	mux.Handle("GET /{slug}/apps/vault/static/", static(a.handleStatic))

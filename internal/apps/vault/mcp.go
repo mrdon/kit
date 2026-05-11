@@ -41,7 +41,7 @@ func mcpHandlerFor(name string, svc *Service) mcpserver.ToolHandlerFunc {
 		return mcpViewSecret(svc)
 	case "start_add_secret":
 		return mcpStartAddSecret(svc)
-	case "set_secret_role", "delete_secret", "reset_vault_user":
+	case "set_secret_role", "delete_secret":
 		// Agent path runs these through PolicyGate, which mints a
 		// decision card a human approves in the swipe stack before the
 		// tool executes. The MCP path has no equivalent enforced gate
@@ -49,10 +49,14 @@ func mcpHandlerFor(name string, svc *Service) mcpserver.ToolHandlerFunc {
 		// so an MCP harness operator could otherwise wholesale delete
 		// or rescope entries in one call. Until MCP gets a forced-gate
 		// wrapper, refuse here and point the caller at the surfaces
-		// that do enforce approval. CLAUDE.md gated-tool rule: "tool
-		// handler [is] the only entry point to the underlying
-		// dangerous operation."
+		// that do enforce approval.
 		return mcpRefuseGated(name)
+	case "setup_vault":
+		return mcpSetupVault(svc)
+	case "rotate_vault_password":
+		return mcpRotateVaultPassword(svc)
+	case "nuke_vault":
+		return mcpNukeVault(svc)
 	}
 	return nil
 }
@@ -134,6 +138,48 @@ func mcpViewSecret(svc *Service) mcpserver.ToolHandlerFunc {
 			return mcp.NewToolResultError("could not build reveal URL"), nil
 		}
 		return mcp.NewToolResultText("Reveal URL: " + svc.absURL(fmt.Sprintf("/%s/apps/vault/reveal/%s", slug, entryID))), nil
+	})
+}
+
+// adminVaultURL is the common pattern for the admin-only URL-returning
+// tools (setup / rotate / nuke). Returns a clean error string when the
+// caller isn't admin, since MCP tool results need to be user-friendly
+// strings rather than Go errors.
+func adminVaultURL(svc *Service, action string) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if !caller.IsAdmin {
+			return mcp.NewToolResultError("only admins can " + action + " the vault"), nil
+		}
+		slug, err := svc.tenantSlug(ctx, caller.TenantID)
+		if err != nil || slug == "" {
+			return mcp.NewToolResultError("could not build " + action + " URL"), nil
+		}
+		return mcp.NewToolResultText("Open in your browser: " + svc.absURL(fmt.Sprintf("/%s/apps/vault/%s", slug, action))), nil
+	})
+}
+
+func mcpSetupVault(svc *Service) mcpserver.ToolHandlerFunc {
+	return adminVaultURL(svc, "setup")
+}
+
+func mcpRotateVaultPassword(svc *Service) mcpserver.ToolHandlerFunc {
+	return adminVaultURL(svc, "rotate")
+}
+
+func mcpNukeVault(svc *Service) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if !caller.IsAdmin {
+			return mcp.NewToolResultError("only admins can destroy the vault"), nil
+		}
+		slug, err := svc.tenantSlug(ctx, caller.TenantID)
+		if err != nil || slug == "" {
+			return mcp.NewToolResultError("could not build nuke URL"), nil
+		}
+		// Lead with the warning so a careless MCP-driven workflow surfaces
+		// the destructiveness before the link.
+		body := "**WARNING:** opening this URL will permanently delete every secret in the tenant vault. There is no undo. Use only if the master password is unrecoverable.\n\n"
+		body += svc.absURL(fmt.Sprintf("/%s/apps/vault/nuke", slug))
+		return mcp.NewToolResultText(body), nil
 	})
 }
 

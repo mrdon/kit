@@ -5,9 +5,13 @@ import (
 	"time"
 )
 
-// unlockLimiter is the per-IP token bucket used by /api/vault/unlock and
-// /api/vault/self_unlock_test as the secondary throttle to the per-user
-// counter. Plan §"Per-IP rate limit as secondary throttle".
+// unlockLimiter is the per-IP token bucket used by /api/vault/unlock.
+// In the shared-password model this is the *only* rate-limit on unlock —
+// there is no per-tenant counter, because one global counter combined
+// with one shared password would create a self-DoS griefing vector (any
+// ex-employee who still knows the old password could lock out the whole
+// team by spamming wrong passwords). Per-IP catches online brute force;
+// PBKDF2 600k iter is the offline-brute-force defense.
 type unlockLimiter struct {
 	mu       sync.Mutex
 	buckets  map[string]*tokenBucket

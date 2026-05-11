@@ -170,42 +170,112 @@ func TestVaultListSearch(t *testing.T) {
 	}
 }
 
-func TestVaultBootstrapPartialUniqueIndex(t *testing.T) {
-	// The first user in a tenant is identified by (wrapped_vault_key
-	// IS NOT NULL AND granted_by_user_id IS NULL). The partial unique
-	// index ensures no two users can simultaneously claim that role.
+func TestVaultTenantInitAndRotate(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
-	tenantID, userA := testTenantUser(t, ctx, pool)
-	userB := mustOtherUser(t, ctx, pool, tenantID)
+	tenantID, ownerID := testTenantUser(t, ctx, pool)
 
-	// First registration as initiator: succeeds.
-	if err := RegisterVaultUser(ctx, pool, VaultRegisterParams{
-		TenantID:                 tenantID,
-		UserID:                   userA,
-		KDFParams:                []byte(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
-		AuthHash:                 randBytes(t, 32),
-		UserPublicKey:            []byte("pk-a"),
-		UserPrivateKeyCiphertext: []byte("pkct-a"),
-		UserPrivateKeyNonce:      randBytes(t, 12),
-		WrappedVaultKey:          []byte("wrapped-a"),
+	// First setup succeeds.
+	if err := InitVaultTenant(ctx, pool, VaultSetupParams{
+		TenantID:             tenantID,
+		KDFParams:            []byte(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		AuthHash:             randBytes(t, 32),
+		WrappedVaultKey:      randBytes(t, 48),
+		WrappedVaultKeyNonce: randBytes(t, 12),
+		SetupByUserID:        ownerID,
 	}); err != nil {
-		t.Fatalf("first register: %v", err)
+		t.Fatalf("first setup: %v", err)
 	}
 
-	// Second registration as initiator: should fail due to unique index.
-	err := RegisterVaultUser(ctx, pool, VaultRegisterParams{
-		TenantID:                 tenantID,
-		UserID:                   userB,
-		KDFParams:                []byte(`{"algo":"argon2id","v":19,"m":65536,"t":3,"p":1,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
-		AuthHash:                 randBytes(t, 32),
-		UserPublicKey:            []byte("pk-b"),
-		UserPrivateKeyCiphertext: []byte("pkct-b"),
-		UserPrivateKeyNonce:      randBytes(t, 12),
-		WrappedVaultKey:          []byte("wrapped-b"),
+	// Second setup refuses — already initialized.
+	err := InitVaultTenant(ctx, pool, VaultSetupParams{
+		TenantID:             tenantID,
+		KDFParams:            []byte(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"BBBBBBBBBBBBBBBBBBBBBA=="}`),
+		AuthHash:             randBytes(t, 32),
+		WrappedVaultKey:      randBytes(t, 48),
+		WrappedVaultKeyNonce: randBytes(t, 12),
+		SetupByUserID:        ownerID,
 	})
-	if err == nil {
-		t.Fatalf("second initiator registration should fail")
+	if !errors.Is(err, ErrVaultAlreadySetup) {
+		t.Fatalf("second setup should return ErrVaultAlreadySetup, got %v", err)
+	}
+
+	// Rotate bumps generation, preserves identity.
+	newGen, err := RotateVaultTenant(ctx, pool, VaultRotateParams{
+		TenantID:             tenantID,
+		KDFParams:            []byte(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"CCCCCCCCCCCCCCCCCCCCCA=="}`),
+		AuthHash:             randBytes(t, 32),
+		WrappedVaultKey:      randBytes(t, 48),
+		WrappedVaultKeyNonce: randBytes(t, 12),
+		RotatedByUserID:      ownerID,
+	})
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if newGen != 2 {
+		t.Fatalf("expected vault_generation 2 after rotate, got %d", newGen)
+	}
+}
+
+func TestVaultRotateBeforeSetup(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID, ownerID := testTenantUser(t, ctx, pool)
+
+	_, err := RotateVaultTenant(ctx, pool, VaultRotateParams{
+		TenantID:             tenantID,
+		KDFParams:            []byte(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		AuthHash:             randBytes(t, 32),
+		WrappedVaultKey:      randBytes(t, 48),
+		WrappedVaultKeyNonce: randBytes(t, 12),
+		RotatedByUserID:      ownerID,
+	})
+	if !errors.Is(err, ErrVaultNotSetUp) {
+		t.Fatalf("rotate before setup should return ErrVaultNotSetUp, got %v", err)
+	}
+}
+
+func TestVaultNuke(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID, ownerID := testTenantUser(t, ctx, pool)
+
+	// Set up vault and create some entries.
+	if err := InitVaultTenant(ctx, pool, VaultSetupParams{
+		TenantID:             tenantID,
+		KDFParams:            []byte(`{"algo":"pbkdf2-sha256","iterations":600000,"salt":"AAAAAAAAAAAAAAAAAAAAAA=="}`),
+		AuthHash:             randBytes(t, 32),
+		WrappedVaultKey:      randBytes(t, 48),
+		WrappedVaultKeyNonce: randBytes(t, 12),
+		SetupByUserID:        ownerID,
+	}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	tenant, _ := GetTenantByID(ctx, pool, tenantID)
+	memberID := *tenant.DefaultRoleID
+	for range 3 {
+		if _, err := CreateVaultEntry(ctx, pool, VaultEntry{
+			TenantID:        tenantID,
+			OwnerUserID:     ownerID,
+			RoleID:          &memberID,
+			Title:           "entry",
+			ValueCiphertext: randBytes(t, 32),
+			ValueNonce:      randBytes(t, 12),
+		}); err != nil {
+			t.Fatalf("create entry: %v", err)
+		}
+	}
+
+	count, err := NukeVaultTenant(ctx, pool, tenantID)
+	if err != nil {
+		t.Fatalf("nuke: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 entries destroyed, got %d", count)
+	}
+	v, _ := GetVaultTenant(ctx, pool, tenantID)
+	if v != nil {
+		t.Fatalf("vault row should be gone after nuke")
 	}
 }
 

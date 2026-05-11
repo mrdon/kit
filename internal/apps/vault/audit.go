@@ -1,7 +1,8 @@
 // Package vault implements Kit's password-vault feature: per-tenant
-// encrypted vault distributed via per-user RSA-OAEP wrapping (Bitwarden-Org
-// / 1Password-Shared-Vault model). All encryption and decryption happen in
-// the browser; the server stores only ciphertext, public keys, and metadata.
+// encrypted vault locked behind one shared master password (shared
+// out-of-band among the team). All encryption and decryption happen in
+// the browser; the server stores only ciphertext, the auth_hash for
+// password validation, and metadata.
 //
 // Audit events go through the general audit_events table (Kit-wide). The
 // constructors here pin the metadata shape per action so log readers can
@@ -82,35 +83,35 @@ func (a auditCtx) logRequired(ctx context.Context, action, targetKind string, ta
 
 // ===== Pinned metadata shapes per action =====
 
-// EvtRegister is written when a user creates or replaces their vault_users row.
-type EvtRegister struct {
-	Replace           bool   `json:"replace"`             // true on master-password reset
-	IsTenantInitiator bool   `json:"is_tenant_initiator"` // first user in the tenant
-	PubKeyFingerprint string `json:"pubkey_fingerprint"`
-}
+// EvtSetup is written when an admin initializes the tenant vault for the
+// first time. Actor is the admin; target_kind=vault_tenant, target_id nil.
+type EvtSetup struct{}
 
 // EvtUnlock is written on a successful unlock (auth_hash match).
 type EvtUnlock struct{}
 
-// EvtUnlockFailed is written on a missed unlock.
+// EvtUnlockFailed is written on a missed unlock or rate-limited request.
+// At most one of NotSetUp / Locked / RateLimited is true at a time;
+// none being true means "auth_hash mismatch on a healthy tenant row."
 type EvtUnlockFailed struct {
-	FailedCount int  `json:"failed_count"`
-	Locked      bool `json:"locked"` // true once threshold crosses into locked_until
+	NotSetUp    bool `json:"not_set_up,omitempty"`
+	Locked      bool `json:"locked,omitempty"`
+	RateLimited bool `json:"rate_limited,omitempty"`
 }
 
-// EvtGrant is written when an existing vault user wraps the vault key for
-// a teammate. The granter is the row's actor_user_id; the target is its
-// target_id. The fingerprint stays in metadata because it's the
-// out-of-band-verifiable identity the granter relied on.
-type EvtGrant struct {
-	TargetPubKeyFingerprint string `json:"target_pubkey_fingerprint"`
-	DuringResetCooldown     bool   `json:"during_reset_cooldown"`
+// EvtRotate is written when an admin rotates the master password. The
+// vault_key is unchanged (existing entries still decrypt); only the
+// password-derived material is replaced.
+type EvtRotate struct {
+	NewGeneration int `json:"new_generation"`
 }
 
-// EvtRevokeGrant is written when an admin nulls out a teammate's wrapped
-// key (or declines a pending registration). All identity lives on the
-// row itself; metadata is empty.
-type EvtRevokeGrant struct{}
+// EvtNuke is written when an admin destroys the tenant vault (escape
+// hatch for "we lost the password"). All entries are gone along with
+// the wrap.
+type EvtNuke struct {
+	EntriesDestroyed int `json:"entries_destroyed"`
+}
 
 // EvtEntryCreate / EvtEntryView / EvtEntryUpdate / EvtEntryDelete capture
 // the entry id; never log titles or other content fields.
@@ -124,25 +125,6 @@ type EvtEntryDelete struct{}
 type EvtScopeChange struct {
 	FromRoleID *uuid.UUID `json:"from_role_id,omitempty"`
 	ToRoleID   *uuid.UUID `json:"to_role_id,omitempty"`
-}
-
-// EvtMasterPasswordReset is written when a user uses the replace=true path.
-type EvtMasterPasswordReset struct {
-	OldPubKeyFingerprint string `json:"old_pubkey_fingerprint"`
-	NewPubKeyFingerprint string `json:"new_pubkey_fingerprint"`
-}
-
-// EvtMasterPasswordResetCancelled is written when the reset target wipes
-// their pending-reset row (Slack-account-takeover defense path).
-type EvtMasterPasswordResetCancelled struct{}
-
-// EvtAdminReset is written when an admin approves the "wipe a user's
-// vault registration so they can re-register from scratch" flow. Actor
-// is the approving admin; target_kind=vault_user, target_id is the
-// user being reset (also kept here so audit-log readers don't have to
-// re-derive it from the target_id column).
-type EvtAdminReset struct {
-	TargetUserID uuid.UUID `json:"target_user_id"`
 }
 
 // ===== HTTP helpers =====
