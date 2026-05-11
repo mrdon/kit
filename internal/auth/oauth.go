@@ -309,7 +309,16 @@ func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "issuing session", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, cookiePath, http.StatusSeeOther)
+	// If the user landed on /login via a redirect from a deep link, the
+	// /login?continue=1 handler stashed the original URL in a __Host-
+	// cookie. Honour it now — but only if the cookie still validates
+	// against the tenant we actually signed into (catches the
+	// signed-into-wrong-workspace edge case).
+	target := cookiePath
+	if rt := ConsumePWAReturnTo(w, r, tenant.Slug); rt != "" {
+		target = rt
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // HandleToken exchanges an authorization code for an access token.

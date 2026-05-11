@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -72,7 +73,12 @@ func AssertTenantMatch(signer *SessionSigner, next http.Handler) http.Handler {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
-			http.Redirect(w, r, "/"+r.PathValue("slug")+"/login", http.StatusSeeOther)
+			slug := r.PathValue("slug")
+			loginURL := "/" + slug + "/login"
+			if IsSafeReturnTo(r.URL.RequestURI(), slug) {
+				loginURL += "?return_to=" + url.QueryEscape(r.URL.RequestURI())
+			}
+			http.Redirect(w, r, loginURL, http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)

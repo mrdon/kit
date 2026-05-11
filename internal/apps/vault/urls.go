@@ -5,6 +5,7 @@ package vault
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/mrdon/kit/internal/auth"
@@ -55,7 +56,13 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 					http.Error(w, "tenant not resolved", http.StatusBadRequest)
 					return
 				}
-				http.Redirect(w, r, "/"+slug+"/login", http.StatusSeeOther)
+				// Preserve the deep link so the post-OAuth callback can
+				// land them back here instead of the cards UI.
+				loginURL := "/" + slug + "/login"
+				if auth.IsSafeReturnTo(r.URL.RequestURI(), slug) {
+					loginURL += "?return_to=" + url.QueryEscape(r.URL.RequestURI())
+				}
+				http.Redirect(w, r, loginURL, http.StatusSeeOther)
 				return
 			}
 			inner.ServeHTTP(w, r)

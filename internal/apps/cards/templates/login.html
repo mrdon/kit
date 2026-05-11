@@ -22,7 +22,7 @@
   {{ if .HasIcon }}<img class="icon" src="/{{ .TenantSlug }}/icon-192.png" alt="">{{ else }}<div class="icon"></div>{{ end }}
   <h1>Sign in to <span class="workspace">{{ .WorkspaceName }}</span></h1>
   <p>Kit uses your Slack identity to sign you in — same account, no extra password to remember.</p>
-  <a class="btn" href="/{{ .TenantSlug }}/login?continue=1">Continue with Slack</a>
+  <a class="btn" href="{{ .ContinueHref }}">Continue with Slack</a>
   <p class="hint">You'll bounce to slack.com to confirm, then come right back.</p>
 </main>
 </body>

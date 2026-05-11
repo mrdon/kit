@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/mrdon/kit/internal/auth"
@@ -180,10 +181,22 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
+	// return_to (if present and safe) is preserved through the Slack
+	// round-trip via a short-lived __Host- cookie set when the user
+	// clicks Continue. Validation happens both here (before showing the
+	// interstitial) and again in the callback handler.
+	returnTo := r.URL.Query().Get("return_to")
+	if returnTo != "" && !auth.IsSafeReturnTo(returnTo, tenant.Slug) {
+		returnTo = ""
+	}
 	if r.URL.Query().Get("continue") != "1" {
 		name := tenant.Name
 		if name == "" {
 			name = tenant.Slug
+		}
+		continueHref := "/" + tenant.Slug + "/login?continue=1"
+		if returnTo != "" {
+			continueHref += "&return_to=" + url.QueryEscape(returnTo)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -191,6 +204,7 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"TenantSlug":    tenant.Slug,
 			"WorkspaceName": name,
 			"HasIcon":       len(tenant.Icon192) > 0,
+			"ContinueHref":  continueHref,
 		}); err != nil {
 			slog.Error("cards: rendering login page", "error", err)
 		}
@@ -202,6 +216,9 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.SetPWAOAuthNonce(w, nonce)
+	if returnTo != "" {
+		auth.SetPWAReturnTo(w, returnTo)
+	}
 	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce, tenant.SlackTeamID)
 	http.Redirect(w, r, slackURL, http.StatusFound)
 }
