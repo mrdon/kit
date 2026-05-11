@@ -289,19 +289,17 @@ async function lockNow() {
 }
 
 function installLockHooks() {
-  // Lock on tab visibility change / close. Idle timer lives in the
-  // worker, so we don't need to schedule one here.
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      // soft signal — worker keeps its key, but the activity timer
-      // hasn't been bumped, so idle-lock will fire on schedule.
-    }
-  });
-  window.addEventListener("beforeunload", () => {
-    // best-effort lock; SharedWorker will outlive this if other tabs
-    // are open, but it's the right call for the last tab.
-    workerCall("lock").catch(() => {});
-  });
+  // The SharedWorker survives page reloads and navigation; the only
+  // automatic lock paths are its idle (10min) and absolute (30min)
+  // timers, or an explicit "Lock now" button. We deliberately do NOT
+  // lock on beforeunload — that would re-prompt for the master
+  // password on every refresh, which is hostile UX.
+  //
+  // When the user closes the last vault tab, the browser GCs the
+  // SharedWorker after a short grace period and the cached key dies
+  // with it; reopening starts fresh and prompts for unlock. That's
+  // the natural close-the-tab-to-lock behaviour and doesn't need
+  // explicit help here.
 }
 
 // ===== unlock flow =====
