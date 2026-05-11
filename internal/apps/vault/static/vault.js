@@ -731,17 +731,21 @@ function renderRevealedEntry(entry, decoded) {
   display.appendChild(title);
 
   const list = document.createElement("dl");
+  list.className = "entry-fields";
   const addRow = (label, value, kind) => {
     const dt = document.createElement("dt");
     dt.textContent = label;
     list.appendChild(dt);
     const dd = document.createElement("dd");
     if (kind === "secret") {
+      const row = document.createElement("div");
+      row.className = "secret-row";
       const span = document.createElement("span");
       span.className = "secret-value";
       span.textContent = "•••••";
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.className = "secret-action";
       btn.textContent = "Show";
       btn.addEventListener("click", () => {
         const showing = span.textContent !== "•••••";
@@ -750,11 +754,20 @@ function renderRevealedEntry(entry, decoded) {
       });
       const copy = document.createElement("button");
       copy.type = "button";
+      copy.className = "secret-action";
       copy.textContent = "Copy";
       copy.addEventListener("click", () => navigator.clipboard.writeText(value));
-      dd.appendChild(span);
-      dd.appendChild(btn);
-      dd.appendChild(copy);
+      row.appendChild(span);
+      row.appendChild(btn);
+      row.appendChild(copy);
+      dd.appendChild(row);
+    } else if (kind === "link") {
+      const a = document.createElement("a");
+      a.href = value;
+      a.textContent = value;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      dd.appendChild(a);
     } else {
       dd.textContent = value;
     }
@@ -765,7 +778,7 @@ function renderRevealedEntry(entry, decoded) {
   if (username) addRow("Username", username);
   if (decoded.password) addRow("Password", decoded.password, "secret");
   const url = entry.URL || entry.url;
-  if (url) addRow("URL", url);
+  if (url) addRow("URL", url, "link");
   if (decoded.notes) addRow("Notes", decoded.notes);
   display.appendChild(list);
 
