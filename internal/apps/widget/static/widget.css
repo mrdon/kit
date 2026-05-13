@@ -46,6 +46,7 @@
   flex-direction: column;
   overflow: hidden;
 }
+.kit-widget-panel[hidden] { display: none; }
 
 .kit-widget-header {
   display: flex;

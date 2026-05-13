@@ -5,11 +5,16 @@
 <div class="success-pane">
   <p class="warn">This is the only time the token is shown. Copy the snippet below and paste it into your website. If you lose it, revoke this token and create a new one.</p>
   <h2>Embed snippet</h2>
-  <p>Paste this into a custom-HTML block on your site (Wix → Editor → Add → Embed → Custom Code, or equivalent):</p>
   <pre id="snippet">{{ .EmbedSnippet }}</pre>
   <div class="copy-row">
     <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('snippet').textContent).then(() => this.textContent = 'Copied');">Copy snippet</button>
   </div>
   <p class="meta">Allowed origins: {{ range $i, $o := .AllowedOrigins }}{{ if $i }}, {{ end }}<code>{{ $o }}</code>{{ end }}</p>
+</div>
+
+<div class="explainer">
+  <h2>Wix setup notes</h2>
+  <p><strong>Place the snippet in your site's body, not an Embed block.</strong> Go to <em>Settings → Advanced → Custom Code → Add Custom Code</em>. Set "Place Code in" to <strong>Body - end</strong>. Choose specific pages if you only want the bubble on certain pages. (Custom Code requires a paid Wix plan.) Pasting into an on-page <em>Embed → Custom Code</em> element puts the bubble inside a tiny iframe; the floating position only works when the script lives in the top frame.</p>
+  <p><strong>For password-protected pages</strong>, add <code>&amp;wait_for=&lt;CSS selector&gt;</code> to the URL in the snippet. The bubble won't appear until an element matching that selector exists — pick something on the page that only renders <em>after</em> the visitor enters the password. Example: <code>&lt;script src="…/widget.js?token=…&amp;wait_for=%23SITE_CONTAINER" async&gt;&lt;/script&gt;</code>.</p>
 </div>
 {{ end }}

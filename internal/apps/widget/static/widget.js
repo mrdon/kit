@@ -28,8 +28,21 @@
     } catch (e) { return ''; }
   }
 
+  // wait_for: optional CSS selector. When set, the bubble doesn't
+  // mount until an element matching this selector appears in the DOM.
+  // Used to gate the widget on a Wix per-page password prompt or any
+  // other "show only after the visitor sees real content" condition.
+  function scriptWaitFor() {
+    try {
+      var s = document.currentScript;
+      if (!s || !s.src) return '';
+      return new URL(s.src).searchParams.get('wait_for') || '';
+    } catch (e) { return ''; }
+  }
+
   var BASE = scriptOrigin();
   var TOKEN = scriptToken();
+  var WAIT_FOR = scriptWaitFor();
 
   if (!BASE || !TOKEN) {
     console.warn('kit-widget: missing base url or token in script src');
@@ -360,11 +373,32 @@
     obs.observe(document.body, { childList: true });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
+  // mountWhenReady defers attach() until the wait_for selector
+  // matches an element in the DOM, if one was configured. With no
+  // wait_for, attach() runs immediately. With one, a MutationObserver
+  // watches for the selector to appear (e.g. content that only
+  // renders once a Wix page password has been entered).
+  function mountWhenReady() {
+    if (!WAIT_FOR) {
       attach(); watchMounted();
+      return;
+    }
+    if (document.querySelector(WAIT_FOR)) {
+      attach(); watchMounted();
+      return;
+    }
+    var obs = new MutationObserver(function () {
+      if (document.querySelector(WAIT_FOR)) {
+        obs.disconnect();
+        attach(); watchMounted();
+      }
     });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mountWhenReady);
   } else {
-    attach(); watchMounted();
+    mountWhenReady();
   }
 })();
