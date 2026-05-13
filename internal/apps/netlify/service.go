@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -173,6 +174,17 @@ func (s *Service) RequestChange(
 	if err != nil {
 		return nil, err
 	}
+	// Diagnostic: did Netlify honor the chain we requested? If we
+	// sent parent_agent_runner_id and the response echoes it,
+	// chaining is live. If not, the field is silently being dropped
+	// and we need a different mechanism.
+	slog.Info("netlify agent run created",
+		"run_id", runner.ID,
+		"sent_parent", chainedFrom,
+		"echoed_parent", runner.ParentAgentRunnerID,
+		"state", runner.State,
+		"branch", runner.Branch,
+	)
 	// Netlify sometimes populates latest_session_deploy_url
 	// asynchronously: the POST returns before the deploy id has been
 	// minted. One follow-up GET gives the URL a chance to land

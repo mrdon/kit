@@ -27,9 +27,10 @@ var ErrAgentRunnersNotAvailable = errors.New("agent runners not available on thi
 type AgentRunner struct {
 	ID                     string `json:"id"`
 	SiteID                 string `json:"site_id"`
-	State                  string `json:"state"`         // pending | running | succeeded | failed | cancelled
-	Branch                 string `json:"branch"`        // base branch we forked off
-	ResultBranch           string `json:"result_branch"` // what the agent committed to
+	State                  string `json:"state"`                  // pending | running | succeeded | failed | cancelled
+	Branch                 string `json:"branch"`                 // base branch we forked off
+	ResultBranch           string `json:"result_branch"`          // what the agent committed to
+	ParentAgentRunnerID    string `json:"parent_agent_runner_id"` // echoed back when we set it
 	Title                  string `json:"title"`
 	CurrentTask            string `json:"current_task"`
 	ResultDiff             string `json:"result_diff"`
