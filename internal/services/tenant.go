@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,40 +45,43 @@ func (s *TenantService) Update(ctx context.Context, c *Caller, businessType, tim
 	return models.UpdateTenantSetup(ctx, s.pool, c.TenantID, businessType, timezone)
 }
 
+// ErrSlackDomainUnavailable is returned by EnsureSlackDomain when the
+// workspace subdomain can't be resolved — either the service is unwired
+// (test/dev) or the team.info call failed. Callers that need the domain
+// to render correct UX should fail loud rather than silently degrade.
+var ErrSlackDomainUnavailable = errors.New("slack team domain unavailable")
+
 // EnsureSlackDomain returns the tenant's Slack workspace subdomain,
 // fetching and persisting it via team.info if not already stored.
-// Tenants installed before slack_team_domain existed land here with an
-// empty value; one team.info call backfills the row so subsequent calls
-// are pure DB reads.
+// Tenants installed before slack_team_domain existed land here empty;
+// one team.info call backfills the row so subsequent reads are pure DB.
 //
-// Returns "" (no error) if the fetcher is unwired, the bot token can't
-// be decrypted, or Slack's response lacks a domain — the caller should
-// proceed with the empty value, which downstream URL builders treat as
-// "fall back to slack.com without workspace pinning".
-func (s *TenantService) EnsureSlackDomain(ctx context.Context, tenant *models.Tenant) string {
+// Returns ErrSlackDomainUnavailable if the value can't be produced
+// (encryptor unwired, decrypt fails, team.info fails, or Slack returns
+// an empty domain). Caller decides whether to 500 or degrade.
+func (s *TenantService) EnsureSlackDomain(ctx context.Context, tenant *models.Tenant) (string, error) {
 	if tenant.SlackTeamDomain != "" {
-		return tenant.SlackTeamDomain
+		return tenant.SlackTeamDomain, nil
 	}
 	if s.teamInfo == nil || s.enc == nil {
-		return ""
+		return "", ErrSlackDomainUnavailable
 	}
 	botToken, err := s.enc.Decrypt(tenant.BotToken)
 	if err != nil {
-		slog.Warn("tenant: decrypting bot token for domain backfill", "tenant_id", tenant.ID, "error", err)
-		return ""
+		return "", fmt.Errorf("decrypting bot token: %w", err)
 	}
 	domain, err := s.teamInfo(ctx, botToken)
-	if err != nil || domain == "" {
-		if err != nil {
-			slog.Warn("tenant: team.info during domain backfill", "tenant_id", tenant.ID, "error", err)
-		}
-		return ""
+	if err != nil {
+		return "", fmt.Errorf("team.info: %w", err)
+	}
+	if domain == "" {
+		return "", ErrSlackDomainUnavailable
 	}
 	if err := models.SetTenantSlackDomain(ctx, s.pool, tenant.ID, domain); err != nil {
 		slog.Warn("tenant: persisting backfilled domain", "tenant_id", tenant.ID, "error", err)
-		// Fall through — return the value for this request even if the
-		// write failed; the next call will retry.
+		// Return the value anyway — we have it for this request even if
+		// the write failed; the next call will retry the backfill.
 	}
 	tenant.SlackTeamDomain = domain
-	return domain
+	return domain, nil
 }

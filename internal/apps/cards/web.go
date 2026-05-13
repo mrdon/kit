@@ -198,11 +198,27 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if returnTo != "" {
 			continueHref += "&return_to=" + url.QueryEscape(returnTo)
 		}
+		// The interstitial shows the workspace URL the user will need
+		// on Slack's signed-out sign-in page, so the value must be
+		// present. Hard-fail if we can't resolve it — retry surfaces
+		// any transient team.info issue without quietly rendering a
+		// degraded page.
+		if a.tenants == nil {
+			http.Error(w, "tenant service not configured", http.StatusInternalServerError)
+			return
+		}
+		domain, err := a.tenants.EnsureSlackDomain(r.Context(), tenant)
+		if err != nil {
+			slog.Error("cards: resolving slack workspace domain", "tenant_id", tenant.ID, "error", err)
+			http.Error(w, "Couldn't load workspace info. Please retry.", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		if err := cardsPageTmpl.ExecuteTemplate(w, "login.html", map[string]any{
 			"TenantSlug":    tenant.Slug,
 			"WorkspaceName": name,
+			"WorkspaceURL":  domain + ".slack.com",
 			"HasIcon":       len(tenant.Icon192) > 0,
 			"ContinueHref":  continueHref,
 		}); err != nil {
@@ -219,14 +235,20 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if returnTo != "" {
 		auth.SetPWAReturnTo(w, returnTo)
 	}
-	// One-time per-tenant: tenants installed before slack_team_domain
-	// existed land here with an empty domain. TenantService.EnsureSlackDomain
-	// calls team.info and persists so the next login (and Slack's
-	// signed-out sign-in page) can pin the workspace via subdomain
-	// instead of asking the user to type it.
-	domain := tenant.SlackTeamDomain
-	if domain == "" && a.tenants != nil {
-		domain = a.tenants.EnsureSlackDomain(r.Context(), tenant)
+	// The interstitial path already ensured the domain, so this is a
+	// pure DB read in the normal flow. If it isn't (someone hit
+	// ?continue=1 first), fail loudly rather than degrade — the
+	// invariant is "by the time we redirect to Slack, the workspace is
+	// pinned by subdomain."
+	if a.tenants == nil {
+		http.Error(w, "tenant service not configured", http.StatusInternalServerError)
+		return
+	}
+	domain, err := a.tenants.EnsureSlackDomain(r.Context(), tenant)
+	if err != nil {
+		slog.Error("cards: resolving slack workspace domain", "tenant_id", tenant.ID, "error", err)
+		http.Error(w, "Couldn't load workspace info. Please retry.", http.StatusInternalServerError)
+		return
 	}
 	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce, tenant.SlackTeamID, domain)
 	http.Redirect(w, r, slackURL, http.StatusFound)
