@@ -40,7 +40,7 @@ var vaultToolMetas = []services.ToolMeta{
 	},
 	{
 		Name:        "view_secret",
-		Description: "Return a one-tap URL the user can open to see a secret's value in their browser. The URL points to the vault reveal page; the agent never sees the password. Use when the user asks to see, copy, or use a specific entry.",
+		Description: "Reveal a vault entry to the user. In Slack, this posts a one-shot reveal URL as an ephemeral message in the current thread — visible only to the requester. That ephemeral IS the response: do NOT post a separate reply restating it. In non-Slack contexts (MCP), returns a URL the harness renders. The agent never sees the secret value.",
 		Schema: services.PropsReq(map[string]any{
 			"id": services.Field("string", "Vault entry UUID (from list_secrets / find_secret)"),
 		}, "id"),
@@ -114,6 +114,13 @@ func registerVaultAgentTools(r *tools.Registry, isAdmin bool, svc *Service) {
 		switch meta.Name {
 		case "set_secret_role", "delete_secret":
 			def.DefaultPolicy = tools.PolicyGate
+		case "view_secret":
+			// Terminal in the Slack agent loop: the ephemeral the
+			// handler posts IS the user-visible response — there is
+			// no follow-up reply_in_thread call, no redundant "I
+			// sent you a link" message. MCP and other harnesses
+			// ignore Terminal entirely.
+			def.Terminal = true
 		}
 		r.Register(def)
 	}
@@ -209,10 +216,13 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
-		entryID, err := uuid.Parse(inp.ID)
-		if err != nil {
-			return "Invalid id.", nil
+		slackOut := ec != nil && ec.Channel != "" && ec.Slack != nil
+
+		entryID, parseErr := uuid.Parse(inp.ID)
+		if parseErr != nil {
+			return viewSecretReply(ec, slackOut, "I couldn't read that vault entry id.")
 		}
+
 		caller := ec.Caller()
 		// Authz check via GetEntry; we don't return ciphertext.
 		audit := auditFromExecContext(ec)
@@ -220,19 +230,20 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 		entry, err := svc.GetEntry(ec.Ctx, caller, entryID, audit)
 		if err != nil {
 			if errors.Is(err, models.ErrNotFound) {
-				return "No entry with that id, or you don't have access.", nil
+				return viewSecretReply(ec, slackOut, "I couldn't find that vault entry, or you don't have access.")
 			}
 			return "", err
 		}
 		basePath := fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID)
 
 		// Slack-mediated path: sign a one-shot token, post the URL as
-		// an ephemeral message (only the user sees it, and ephemerals
-		// don't land in conversations.history → invisible to the LLM
-		// even if it later calls get_slack_messages). The tool's own
-		// return text intentionally omits the URL so it never enters
-		// session_events.
-		if ec != nil && ec.Channel != "" && ec.Slack != nil && svc.deepLinks != nil && ec.User != nil {
+		// an ephemeral message in the same thread (visible only to the
+		// requester, not in conversations.history → invisible to the
+		// LLM). Marked Terminal at registration time so no redundant
+		// "I sent you a link" reply follows. The agent's tool-result
+		// text is dropped by the loop on a terminal call, so it's
+		// fine to return a sparse value here.
+		if slackOut && svc.deepLinks != nil && ec.User != nil {
 			token, signErr := svc.deepLinks.Sign(ec.User.ID, caller.TenantID, entryID, deepLinkTTL)
 			if signErr == nil {
 				rawURL := svc.absURL(basePath + "?t=" + token)
@@ -240,21 +251,37 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 				if title == "" {
 					title = "your vault entry"
 				}
-				ephemeralText := "Reveal " + title + ": " + rawURL + "\n\n_Link is single-use and expires in 2 minutes._"
-				if postErr := ec.Slack.PostEphemeral(ec.Ctx, ec.Channel, caller.Identity, ephemeralText); postErr == nil {
-					return "I sent you a Reveal link for " + title + " — check the ephemeral message in this channel (visible only to you). The link is single-use and expires in 2 minutes.", nil
+				ephemeralText := "Reveal " + title + ": " + rawURL + "\n\n_Link is single-use and expires in 2 minutes. Only you can see this message._"
+				if postErr := ec.Slack.PostEphemeral(ec.Ctx, ec.Channel, caller.Identity, ec.ThreadTS, ephemeralText); postErr == nil {
+					return "sent ephemeral reveal link", nil
 				}
-				// Posting the ephemeral failed (e.g. bot not in
-				// channel). Fall through to the tokenless URL path so
-				// the user still has a way to view the secret.
 			}
+			// Token sign failed or ephemeral failed. Fall through to
+			// the public tokenless URL so the user still has a way
+			// to view the secret.
 		}
 
-		// Fallback (no Slack channel, no signer, or ephemeral post failed):
-		// return a tokenless URL. The user goes through the normal
-		// Slack-OAuth login on the reveal page.
-		return "Open in your browser to view: " + svc.absURL(basePath), nil
+		// Fallback (no Slack channel, signer missing, or ephemeral
+		// post failed): return a tokenless URL. In MCP / job contexts
+		// this becomes the rendered result; in the Slack path the
+		// terminal flag swallows it, so we also post it to the thread
+		// when we can.
+		fallback := "Open in your browser to view: " + svc.absURL(basePath)
+		return viewSecretReply(ec, slackOut, fallback)
 	}
+}
+
+// viewSecretReply mirrors the reply text to the Slack thread when a
+// channel is available (so terminal-tool semantics don't eat the
+// message), and always returns the same string for non-Slack callers
+// (MCP, headless jobs). Errors from PostMessage are ignored — there's
+// nothing useful to do; the tool result text is still recorded in the
+// session event log.
+func viewSecretReply(ec *tools.ExecContext, slackOut bool, text string) (string, error) {
+	if slackOut {
+		_ = ec.Slack.PostMessage(ec.Ctx, ec.Channel, ec.ThreadTS, text)
+	}
+	return text, nil
 }
 
 // deepLinkTTL is the validity window for the reveal-URL token. Kept
