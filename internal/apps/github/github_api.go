@@ -160,7 +160,7 @@ func (s *Service) MergeBranch(
 	defer resp.Body.Close()
 	// 201 = merged, 204 = nothing to merge (already up to date),
 	// 404 = base/head not found, 409 = merge conflict
-	if resp.StatusCode == 204 {
+	if resp.StatusCode == http.StatusNoContent {
 		return nil // no-op merge is success
 	}
 	if resp.StatusCode >= 400 {
