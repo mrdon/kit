@@ -1,4 +1,4 @@
-package mcp
+package widget
 
 import (
 	"context"

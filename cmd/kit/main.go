@@ -28,6 +28,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/apps/vault"
 	"github.com/mrdon/kit/internal/apps/voting"
+	widgetapp "github.com/mrdon/kit/internal/apps/widget"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/config"
@@ -43,7 +44,6 @@ import (
 	"github.com/mrdon/kit/internal/transcribe"
 	"github.com/mrdon/kit/internal/web"
 	"github.com/mrdon/kit/internal/web/chrome"
-	"github.com/mrdon/kit/internal/widget"
 )
 
 func main() {
@@ -209,6 +209,11 @@ func main() {
 	}
 	cards.ConfigureChat(app.Agent, enc, transcriber)
 
+	// Widget app needs the agent (for chat dispatch), the session signer
+	// (for the Slack-OAuth-gated admin pages), and the base URL (for
+	// rendering embed snippets).
+	widgetapp.Configure(app.Agent, sessionSigner, cfg.BaseURL)
+
 	// Coordination needs builderLLM, the Messenger from app, the CardService
 	// (for surfacing decision cards), and the JobService (for shepherd
 	// jobs). Wired here because Messenger lives on app.
@@ -369,13 +374,6 @@ func main() {
 
 	// Shared chrome (header CSS) for non-card-UI HTML pages
 	chrome.RegisterRoutes(mux)
-
-	// Public website chat widget: serves /widget.js, /widget.css, and
-	// /widget/api/{open,chat,health}. Tenant is resolved per-request
-	// from the widget token in the request body, so the routes sit at
-	// the top level rather than under /{slug}/.
-	widgetSvc := widget.New(pool, app.Agent, widget.NewLimiter())
-	widget.NewHandler(widgetSvc).Register(mux)
 
 	// Landing page
 	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL))

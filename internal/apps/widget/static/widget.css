@@ -107,6 +107,31 @@
   color: #1a1a1a;
   border-bottom-left-radius: 4px;
 }
+.kit-widget-msg-assistant p { margin: 0 0 8px; }
+.kit-widget-msg-assistant p:last-child { margin-bottom: 0; }
+.kit-widget-msg-assistant ul,
+.kit-widget-msg-assistant ol { margin: 4px 0 8px; padding-left: 20px; }
+.kit-widget-msg-assistant li { margin: 2px 0; }
+.kit-widget-msg-assistant h1,
+.kit-widget-msg-assistant h2,
+.kit-widget-msg-assistant h3,
+.kit-widget-msg-assistant h4,
+.kit-widget-msg-assistant h5,
+.kit-widget-msg-assistant h6 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 6px 0 4px;
+}
+.kit-widget-msg-assistant code {
+  background: rgba(0,0,0,0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.kit-widget-msg-assistant a {
+  color: #1f6feb;
+  text-decoration: underline;
+}
 
 .kit-widget-system {
   text-align: center;

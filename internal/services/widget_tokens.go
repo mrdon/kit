@@ -6,6 +6,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -18,14 +19,15 @@ import (
 // website chat widget's per-tenant embed tokens. All three are
 // admin-only: distributing a token is a sensitive act because it lets
 // the holder embed your knowledge base on any allowed origin.
+//
+// `create_widget_token` does not mint a token over chat — the plaintext
+// would land in session_events and persist forever. Instead it returns
+// the admin URL where the token is generated server-side, shown once
+// in the browser, and never written to any LLM transcript.
 var WidgetTokenTools = []ToolMeta{
-	{Name: "create_widget_token", Description: "Create a new website chat widget token. Returns the plaintext token once — it cannot be retrieved again. Provide at least one allowed origin (e.g. https://example.wixsite.com).", Schema: propsReq(map[string]any{
-		"allowed_origins": map[string]any{
-			"type":        "array",
-			"description": "Exact-match origin allowlist (e.g. https://example.wixsite.com). At least one required.",
-			"items":       map[string]any{"type": "string"},
-		},
-	}, "allowed_origins"), AdminOnly: true},
+	{Name: "create_widget_token", Description: "Get the admin URL for minting a website chat widget token. Tokens are generated on a web page (not via chat) to keep secrets out of session history. If an origin is provided, the URL pre-fills the form.", Schema: props(map[string]any{
+		"origin": field("string", "Optional website origin to pre-fill (e.g. https://example.com)."),
+	}), AdminOnly: true},
 	{Name: "list_widget_tokens", Description: "List active widget tokens for this tenant. Plaintext is never returned; each row shows a synthesized placeholder.", Schema: props(map[string]any{}), AdminOnly: true},
 	{Name: "revoke_widget_token", Description: "Revoke a widget token. The embed snippet using it stops working immediately.", Schema: propsReq(map[string]any{
 		"token_id": field("string", "The widget token UUID, from list_widget_tokens"),
@@ -128,6 +130,18 @@ func (s *WidgetTokenService) Revoke(ctx context.Context, c *Caller, tokenID uuid
 		return ErrForbidden
 	}
 	return models.RevokeWidgetToken(ctx, s.pool, c.TenantID, tokenID)
+}
+
+// AdminURL returns the admin page where widget tokens are minted. The
+// optional `origin` value (if non-empty) is encoded as a query
+// parameter so the form pre-fills.
+func (s *WidgetTokenService) AdminURL(tenantSlug, origin string) string {
+	base := strings.TrimRight(s.baseURL, "/")
+	u := base + "/" + tenantSlug + "/widget"
+	if origin != "" {
+		u += "?origin=" + url.QueryEscape(origin)
+	}
+	return u
 }
 
 // generateWidgetTokenPlaintext returns a 32-byte cryptographically

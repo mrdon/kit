@@ -1,4 +1,4 @@
-package mcp
+package widget
 
 import (
 	"context"
@@ -11,27 +11,25 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/mcpauth"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
-func widgetTokenMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
+func widgetTokenMCPHandler(name string, pool *pgxpool.Pool, svc *services.Services) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "create_widget_token":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-			origins := req.GetStringSlice("allowed_origins", nil)
-			created, err := svc.WidgetTokens.Create(ctx, caller, origins)
-			if err != nil {
-				return nil, err
+			tenant, err := models.GetTenantByID(ctx, pool, caller.TenantID)
+			if err != nil || tenant == nil {
+				return mcp.NewToolResultError("tenant not found"), nil
 			}
+			origin := req.GetString("origin", "")
+			adminURL := svc.WidgetTokens.AdminURL(tenant.Slug, origin)
 			var b strings.Builder
-			fmt.Fprintf(&b, "Widget token created (ID: %s).\n\n", created.ID)
-			fmt.Fprintf(&b, "Token (shown once — save it now): %s\n\n", created.Plaintext)
-			b.WriteString("Embed snippet:\n")
-			b.WriteString(created.EmbedSnippet)
-			b.WriteString("\n\nAllowed origins:\n")
-			for _, o := range created.AllowedOrigin {
-				fmt.Fprintf(&b, "- %s\n", o)
-			}
+			b.WriteString("To mint a widget token, open this URL in your browser (admin only):\n\n")
+			b.WriteString(adminURL)
+			b.WriteString("\n\nThe token is shown once on the resulting page and never written to chat history. ")
+			b.WriteString("If you provided an origin, the form is pre-filled — just click Generate.")
 			return mcp.NewToolResultText(b.String()), nil
 		})
 	case "list_widget_tokens":

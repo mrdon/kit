@@ -1,21 +1,28 @@
-package tools
+package widget
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/tools"
 )
 
-func registerWidgetTokenTools(r *Registry, isAdmin bool) {
+// registerWidgetTokenTools wires the three admin token tools onto the
+// agent registry. create_widget_token does NOT mint over chat (which
+// would persist plaintext in session_events). It returns the admin URL
+// the user opens in their browser; the actual mint happens in the
+// Slack-OAuth-gated web handler.
+func registerWidgetTokenTools(r *tools.Registry, isAdmin bool) {
 	for _, meta := range services.WidgetTokenTools {
 		if meta.AdminOnly && !isAdmin {
 			continue
 		}
-		r.Register(Def{
+		r.Register(tools.Def{
 			Name:        meta.Name,
 			Description: meta.Description,
 			Schema:      meta.Schema,
@@ -25,7 +32,7 @@ func registerWidgetTokenTools(r *Registry, isAdmin bool) {
 	}
 }
 
-func widgetTokenHandler(name string) HandlerFunc {
+func widgetTokenHandler(name string) tools.HandlerFunc {
 	switch name {
 	case "create_widget_token":
 		return handleCreateWidgetToken
@@ -34,36 +41,30 @@ func widgetTokenHandler(name string) HandlerFunc {
 	case "revoke_widget_token":
 		return handleRevokeWidgetToken
 	default:
-		return func(_ *ExecContext, _ json.RawMessage) (string, error) {
+		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown widget token tool: %s", name)
 		}
 	}
 }
 
-func handleCreateWidgetToken(ec *ExecContext, input json.RawMessage) (string, error) {
+func handleCreateWidgetToken(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
-		AllowedOrigins []string `json:"allowed_origins"`
+		Origin string `json:"origin"`
 	}
-	if err := json.Unmarshal(input, &inp); err != nil {
-		return "", err
+	_ = json.Unmarshal(input, &inp)
+	if ec.Tenant == nil {
+		return "", errors.New("tenant not resolved")
 	}
-	created, err := ec.Svc.WidgetTokens.Create(ec.Ctx, ec.Caller(), inp.AllowedOrigins)
-	if err != nil {
-		return "", err
-	}
+	adminURL := ec.Svc.WidgetTokens.AdminURL(ec.Tenant.Slug, inp.Origin)
 	var b strings.Builder
-	fmt.Fprintf(&b, "Widget token created (ID: %s).\n\n", created.ID)
-	fmt.Fprintf(&b, "Token (shown once — save it now): %s\n\n", created.Plaintext)
-	b.WriteString("Embed snippet:\n")
-	b.WriteString(created.EmbedSnippet)
-	b.WriteString("\n\nAllowed origins:\n")
-	for _, o := range created.AllowedOrigin {
-		fmt.Fprintf(&b, "- %s\n", o)
-	}
+	b.WriteString("To mint a widget token, open this URL in your browser (admin only):\n\n")
+	b.WriteString(adminURL)
+	b.WriteString("\n\nThe token is shown once on the resulting page and never written to chat history. ")
+	b.WriteString("If you provided an origin, the form is pre-filled — just click Generate.")
 	return b.String(), nil
 }
 
-func handleListWidgetTokens(ec *ExecContext, _ json.RawMessage) (string, error) {
+func handleListWidgetTokens(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
 	tokens, err := ec.Svc.WidgetTokens.List(ec.Ctx, ec.Caller())
 	if err != nil {
 		return "", err
@@ -84,7 +85,7 @@ func handleListWidgetTokens(ec *ExecContext, _ json.RawMessage) (string, error) 
 	return b.String(), nil
 }
 
-func handleRevokeWidgetToken(ec *ExecContext, input json.RawMessage) (string, error) {
+func handleRevokeWidgetToken(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		TokenID string `json:"token_id"`
 	}

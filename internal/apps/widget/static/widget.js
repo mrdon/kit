@@ -166,10 +166,81 @@
   function addBubble(role, text) {
     var div = document.createElement('div');
     div.className = 'kit-widget-msg kit-widget-msg-' + role;
-    div.textContent = text;
+    if (role === 'assistant') {
+      div.innerHTML = renderMarkdown(text);
+    } else {
+      div.textContent = text;
+    }
     msgs.appendChild(div);
     msgs.scrollTop = msgs.scrollHeight;
     return div;
+  }
+
+  // Minimal markdown → HTML for assistant replies. Handles the
+  // subset the LLM actually emits: bold, italic, inline code, bullet
+  // and numbered lists, headings, paragraph breaks, and links. Input
+  // is HTML-escaped first so any markup in the source is rendered as
+  // literal text. We deliberately don't include images, raw HTML,
+  // blockquotes, or fenced code blocks — they'd add complexity for
+  // negligible Q&A benefit.
+  function renderMarkdown(src) {
+    var esc = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Split into blocks on blank lines.
+    var blocks = esc.split(/\n\s*\n/);
+    var html = '';
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i].trim();
+      if (!block) continue;
+
+      // Heading: ### Title
+      var hMatch = block.match(/^(#{1,6})\s+(.+)$/);
+      if (hMatch && !/\n/.test(block)) {
+        var level = Math.min(6, hMatch[1].length);
+        html += '<h' + level + '>' + inlineMarkdown(hMatch[2]) + '</h' + level + '>';
+        continue;
+      }
+
+      // Bulleted list: lines starting with -, *, or +
+      if (/^([-*+])\s+/.test(block)) {
+        var items = block.split(/\n/).filter(function (l) { return /^([-*+])\s+/.test(l); });
+        html += '<ul>';
+        for (var j = 0; j < items.length; j++) {
+          html += '<li>' + inlineMarkdown(items[j].replace(/^([-*+])\s+/, '')) + '</li>';
+        }
+        html += '</ul>';
+        continue;
+      }
+
+      // Numbered list: lines starting with "1. " etc.
+      if (/^\d+\.\s+/.test(block)) {
+        var numItems = block.split(/\n/).filter(function (l) { return /^\d+\.\s+/.test(l); });
+        html += '<ol>';
+        for (var k = 0; k < numItems.length; k++) {
+          html += '<li>' + inlineMarkdown(numItems[k].replace(/^\d+\.\s+/, '')) + '</li>';
+        }
+        html += '</ol>';
+        continue;
+      }
+
+      // Paragraph — single newlines become <br>.
+      html += '<p>' + inlineMarkdown(block).replace(/\n/g, '<br>') + '</p>';
+    }
+    return html;
+  }
+
+  function inlineMarkdown(s) {
+    // Inline code: `text` — done first so other rules don't touch it.
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    // Bold: **text**
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    // Italic: *text* (avoid eating bold's leftover *)
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    // Markdown links: [text](url) — restrict to http(s):// for safety.
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (_, txt, href) {
+      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
+    });
+    return s;
   }
 
   function addSystemLine(text) {

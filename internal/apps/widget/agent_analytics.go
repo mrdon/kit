@@ -1,4 +1,4 @@
-package tools
+package widget
 
 import (
 	"encoding/json"
@@ -10,11 +10,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/tools"
 )
 
-func registerWidgetAnalyticsTools(r *Registry, _ bool) {
+func registerWidgetAnalyticsTools(r *tools.Registry, _ bool) {
 	for _, meta := range services.WidgetAnalyticsTools {
-		r.Register(Def{
+		r.Register(tools.Def{
 			Name:        meta.Name,
 			Description: meta.Description,
 			Schema:      meta.Schema,
@@ -23,7 +24,7 @@ func registerWidgetAnalyticsTools(r *Registry, _ bool) {
 	}
 }
 
-func widgetAnalyticsHandler(name string) HandlerFunc {
+func widgetAnalyticsHandler(name string) tools.HandlerFunc {
 	switch name {
 	case "list_widget_conversations":
 		return handleListWidgetConversations
@@ -32,13 +33,13 @@ func widgetAnalyticsHandler(name string) HandlerFunc {
 	case "read_widget_conversation":
 		return handleReadWidgetConversation
 	default:
-		return func(_ *ExecContext, _ json.RawMessage) (string, error) {
+		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown widget analytics tool: %s", name)
 		}
 	}
 }
 
-func handleListWidgetConversations(ec *ExecContext, input json.RawMessage) (string, error) {
+func handleListWidgetConversations(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		Since     string `json:"since"`
 		Until     string `json:"until"`
@@ -78,7 +79,7 @@ func handleListWidgetConversations(ec *ExecContext, input json.RawMessage) (stri
 	return b.String(), nil
 }
 
-func handleSearchWidgetConversations(ec *ExecContext, input json.RawMessage) (string, error) {
+func handleSearchWidgetConversations(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		Query string `json:"query"`
 		Since string `json:"since"`
@@ -112,7 +113,7 @@ func handleSearchWidgetConversations(ec *ExecContext, input json.RawMessage) (st
 	return b.String(), nil
 }
 
-func handleReadWidgetConversation(ec *ExecContext, input json.RawMessage) (string, error) {
+func handleReadWidgetConversation(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		SessionID string `json:"session_id"`
 	}

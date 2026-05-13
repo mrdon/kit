@@ -322,8 +322,6 @@ func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool
 	registerWebTools(r)
 	registerJobTools(r, isAdmin)
 	registerUserTools(r)
-	registerWidgetTokenTools(r, isAdmin)
-	registerWidgetAnalyticsTools(r, isAdmin)
 
 	// App tools
 	for _, a := range apps.All() {
