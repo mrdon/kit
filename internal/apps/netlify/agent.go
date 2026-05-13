@@ -110,6 +110,12 @@ func formatPublishError(ec *tools.ExecContext, err error) string {
 			page = "Kit's integrations page (/" + slug + "/admin/integrations)"
 		}
 		return "Netlify isn't connected for this workspace. Connect it at " + page + " before publishing."
+	case errors.Is(err, ErrNetlifyCodingInstallMissing):
+		return "Netlify can't push to GitHub because its **Coding** GitHub App isn't authorized on " +
+			"this Netlify team. (This is separate from Kit's GitHub App and from Netlify's normal " +
+			"site→repo connection.) In the Netlify dashboard go to **Team settings → Connected services " +
+			"→ GitHub → Manage permissions** and grant the Coding app write access, then try publishing " +
+			"again."
 	}
 	return "Couldn't publish the change: " + err.Error()
 }

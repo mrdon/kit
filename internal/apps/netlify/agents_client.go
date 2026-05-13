@@ -17,6 +17,13 @@ import (
 // render upgrade-your-plan guidance instead of leaking raw API text.
 var ErrAgentRunnersNotAvailable = errors.New("agent runners not available on this netlify account plan")
 
+// ErrNetlifyCodingInstallMissing is returned by commitAgentRunner when
+// the user hasn't authorized Netlify's "Coding" GitHub App scope on
+// their team — Netlify's standard GitHub connection is read-only
+// (build triggers), and the commit-back-to-GitHub feature needs the
+// separate Coding install with write permissions.
+var ErrNetlifyCodingInstallMissing = errors.New("netlify coding github install missing")
+
 // AgentRunner mirrors the public Netlify API agentRunner object. We
 // project only the fields we use today; the underlying object has
 // more (PR metadata, deploy ids, etc.) we'll add when later steps
@@ -230,8 +237,15 @@ func commitAgentRunner(
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		bodyStr := string(body)
+		// Netlify returns 500 with this specific message when the
+		// team hasn't authorized Netlify's "Coding" GitHub App
+		// (read+write) on top of the standard connection.
+		if strings.Contains(bodyStr, "Coding installation not configured") {
+			return ErrNetlifyCodingInstallMissing
+		}
 		return fmt.Errorf("netlify commit failed (status %d): %s",
-			resp.StatusCode, string(body))
+			resp.StatusCode, bodyStr)
 	}
 	return nil
 }
