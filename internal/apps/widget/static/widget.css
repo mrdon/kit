@@ -55,9 +55,21 @@
   border-bottom: 1px solid #eee;
   gap: 8px;
 }
+.kit-widget-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
 .kit-widget-title {
   font-weight: 600;
-  flex: 1;
+}
+.kit-widget-subtitle {
+  font-size: 11px;
+  color: #888;
+  font-weight: 400;
+  margin-top: 2px;
 }
 .kit-widget-new {
   background: none;
@@ -151,17 +163,23 @@
 
 .kit-widget-form {
   display: flex;
+  align-items: flex-end;
   border-top: 1px solid #eee;
   padding: 8px 10px;
   gap: 6px;
 }
 .kit-widget-input {
   flex: 1;
+  min-width: 0;
   border: 1px solid #ddd;
   border-radius: 18px;
   padding: 8px 14px;
   font: inherit;
+  line-height: 1.4;
   outline: none;
+  resize: none;
+  overflow-y: auto;
+  word-wrap: break-word;
 }
 .kit-widget-input:focus { border-color: #1f6feb; }
 .kit-widget-send {

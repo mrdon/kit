@@ -105,13 +105,16 @@
       + '</button>'
       + '<div class="kit-widget-panel" hidden>'
       +   '<header class="kit-widget-header">'
-      +     '<span class="kit-widget-title">Ask a question</span>'
+      +     '<div class="kit-widget-titles">'
+      +       '<span class="kit-widget-title">Ask a question</span>'
+      +       '<span class="kit-widget-subtitle">AI assistant — answers can be wrong. Verify important details with us.</span>'
+      +     '</div>'
       +     '<button class="kit-widget-new" type="button" aria-label="New chat">New chat</button>'
       +     '<button class="kit-widget-close" type="button" aria-label="Close">×</button>'
       +   '</header>'
       +   '<div class="kit-widget-messages" aria-live="polite"></div>'
       +   '<form class="kit-widget-form">'
-      +     '<input class="kit-widget-input" type="text" placeholder="Type a question…" autocomplete="off" />'
+      +     '<textarea class="kit-widget-input" placeholder="Type a question…" autocomplete="off" rows="1"></textarea>'
       +     '<button class="kit-widget-send" type="submit" aria-label="Send">Send</button>'
       +   '</form>'
       + '</div>';
@@ -136,6 +139,33 @@
     root.querySelector('.kit-widget-close').addEventListener('click', closePanel);
     root.querySelector('.kit-widget-new').addEventListener('click', resetConversation);
     form.addEventListener('submit', onSubmit);
+
+    // Textarea auto-grow up to 3 lines, then scroll internally.
+    // Enter submits; Shift+Enter inserts a newline (standard chat
+    // pattern; lets visitors paste a multi-line question if they
+    // really want one).
+    input.addEventListener('input', autoGrow);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+  }
+
+  function autoGrow() {
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, inputMaxHeight()) + 'px';
+  }
+
+  function inputMaxHeight() {
+    var cs = window.getComputedStyle(input);
+    var line = parseFloat(cs.lineHeight) || 20;
+    var padT = parseFloat(cs.paddingTop) || 0;
+    var padB = parseFloat(cs.paddingBottom) || 0;
+    return Math.ceil(line * 3 + padT + padB);
   }
 
   function togglePanel() {
@@ -286,6 +316,7 @@
     if (!text) return;
     addBubble('user', text);
     input.value = '';
+    autoGrow();
     input.disabled = true;
     form.querySelector('.kit-widget-send').disabled = true;
     setStatus('Thinking…');
