@@ -135,8 +135,19 @@ func (a *App) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	installerID := caller.UserID
+	login, accType := "", ""
+	if acct, err := a.svc.fetchInstallationAccount(r.Context(), installationID); err == nil {
+		login = acct.Login
+		accType = acct.Type
+	} else {
+		// Non-fatal: log and save without the account details. The
+		// integrations page will lazy-fetch on next render so we
+		// catch up eventually.
+		slog.Warn("github: fetch install account",
+			"installation_id", installationID, "error", err)
+	}
 	if err := SaveInstallation(r.Context(), a.pool, tenant.ID,
-		installationID, "", "", &installerID); err != nil {
+		installationID, login, accType, &installerID); err != nil {
 		slog.Error("github: saving installation", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

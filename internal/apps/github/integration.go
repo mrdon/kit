@@ -30,10 +30,12 @@ func (i *githubIntegration) Description() string {
 func (i *githubIntegration) Slug() string { return "github" }
 
 func (i *githubIntegration) Status(ctx context.Context, tenantID uuid.UUID) (admin.Status, error) {
-	if i.app == nil || i.app.pool == nil {
+	if i.app == nil || i.app.svc == nil {
 		return admin.Status{}, nil
 	}
-	inst, err := GetInstallation(ctx, i.app.pool, tenantID)
+	// Service.GetInstallation lazy-backfills account_login on read
+	// for install rows that predate the fetch-on-install logic.
+	inst, err := i.app.svc.GetInstallation(ctx, tenantID)
 	if err != nil {
 		return admin.Status{}, err
 	}
@@ -43,6 +45,9 @@ func (i *githubIntegration) Status(ctx context.Context, tenantID uuid.UUID) (adm
 	detail := fmt.Sprintf("Installation #%d", inst.InstallationID)
 	if inst.AccountLogin != "" {
 		detail = "Installed on " + inst.AccountLogin
+		if inst.AccountType == "Organization" {
+			detail += " (org)"
+		}
 	}
 	return admin.Status{Connected: true, Detail: detail}, nil
 }

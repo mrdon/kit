@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -44,7 +45,28 @@ func (s *Service) AppSlug() string {
 }
 
 // GetInstallation is a thin pass-through to the models layer so
-// other apps don't need to import the model package directly.
+// other apps don't need to import the model package directly. Lazy-
+// backfills account_login + account_type on read if they're empty
+// and the GitHub App is configured — old install rows predate the
+// fetch-on-install logic.
 func (s *Service) GetInstallation(ctx context.Context, tenantID uuid.UUID) (*Installation, error) {
-	return GetInstallation(ctx, s.pool, tenantID)
+	inst, err := GetInstallation(ctx, s.pool, tenantID)
+	if err != nil || inst == nil {
+		return inst, err
+	}
+	if inst.AccountLogin == "" && s.HasAppConfig() {
+		if acct, ferr := s.fetchInstallationAccount(ctx, inst.InstallationID); ferr != nil {
+			slog.Warn("github: lazy-backfill install account",
+				"installation_id", inst.InstallationID, "error", ferr)
+		} else {
+			if uerr := UpdateInstallationAccount(ctx, s.pool, tenantID,
+				acct.Login, acct.Type); uerr != nil {
+				slog.Warn("github: persisting backfilled account",
+					"installation_id", inst.InstallationID, "error", uerr)
+			}
+			inst.AccountLogin = acct.Login
+			inst.AccountType = acct.Type
+		}
+	}
+	return inst, nil
 }

@@ -103,6 +103,28 @@ func SaveInstallation(
 	return nil
 }
 
+// UpdateInstallationAccount populates account_login + account_type
+// after the fact — used by the lazy-backfill path on the
+// integrations page when an old install row predates the
+// fetch-on-install logic.
+func UpdateInstallationAccount(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	tenantID uuid.UUID,
+	accountLogin, accountType string,
+) error {
+	const q = `
+        UPDATE app_github_installations SET
+            account_login = NULLIF($2, ''),
+            account_type  = NULLIF($3, ''),
+            updated_at    = now()
+        WHERE tenant_id = $1`
+	if _, err := pool.Exec(ctx, q, tenantID, accountLogin, accountType); err != nil {
+		return fmt.Errorf("updating github installation account: %w", err)
+	}
+	return nil
+}
+
 // DeleteInstallation drops the row. Called when the user clicks
 // Disconnect; the GitHub-side install is left for the user to remove
 // manually on GitHub (we can't revoke their installation, only
