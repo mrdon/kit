@@ -1,0 +1,21 @@
+{{ define "page" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
+{{ range .ExtraCSS }}<link rel="stylesheet" href="{{ . }}">
+{{ end }}
+{{ block "extra_head" . }}{{ end }}
+</head>
+<body>
+{{ template "chrome_header" .Header }}
+<main{{ if .MainAttrs }} {{ .MainAttrs }}{{ end }}>
+{{ block "content" . }}{{ end }}
+</main>
+{{ range .ExtraJS }}<script type="module" src="{{ . }}"></script>
+{{ end }}
+{{ block "scripts" . }}{{ end }}
+</body>
+</html>{{ end }}

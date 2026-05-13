@@ -20,7 +20,7 @@ import (
 	"github.com/mrdon/kit/internal/models"
 )
 
-//go:embed templates/header.html
+//go:embed templates/header.html templates/layout.html
 var templateFS embed.FS
 
 //go:embed static/header.css
@@ -48,14 +48,14 @@ type Header struct {
 	// /{slug}/logout in cards/web.go.
 	LogoutURL string
 	// HomeURL is the brand link's destination — consumer-specific.
-	// Vault points it at /{slug}/apps/vault/list; an integration page
+	// Vault points it at /{slug}/apps/vault; an integration page
 	// might point it at the integrations index. Empty string renders
 	// the brand as plain text instead of a link.
 	HomeURL string
 }
 
 // For populates a Header from the request's tenant + caller context.
-// homeURL is consumer-specific (e.g., /{slug}/apps/vault/list). Returns
+// homeURL is consumer-specific (e.g., /{slug}/apps/vault). Returns
 // a zero Header (renders as a degraded but non-broken bar) if the
 // request has no tenant resolved.
 //
@@ -82,11 +82,48 @@ func For(r *http.Request, pool *pgxpool.Pool, homeURL string) Header {
 	return h
 }
 
-// Tmpl returns a parsed template containing the {{ template
-// "chrome_header" . }} partial. Consuming apps clone this and call
-// .ParseFS(theirOwnFS, ...) to layer their page templates on top.
+// Tmpl returns a parsed template containing the chrome header partial
+// (`chrome_header`) and the shared page layout (`page`). Consuming
+// apps clone this and call .ParseFS(theirOwnFS, ...) to layer their
+// page templates on top, then execute "page" with PageData.
 func Tmpl() *template.Template {
-	return template.Must(template.ParseFS(templateFS, "templates/header.html"))
+	return template.Must(template.ParseFS(templateFS, "templates/header.html", "templates/layout.html"))
+}
+
+// PageData is the render struct for the shared layout. Apps embed it
+// in their per-page structs or use it directly.
+type PageData struct {
+	// Title goes in the <title> tag.
+	Title string
+	// ChromeCSS is the URL of the chrome header stylesheet (use HeaderCSSPath).
+	ChromeCSS string
+	// Header is the populated chrome header (use For()).
+	Header Header
+	// ExtraCSS lists additional stylesheets to link in the <head>.
+	ExtraCSS []string
+	// ExtraJS lists additional module scripts to load at the bottom.
+	ExtraJS []string
+	// MainAttrs is rendered verbatim inside the opening <main> tag
+	// (e.g. `id="vault-app" data-page="list"`). Empty for plain pages.
+	MainAttrs template.HTMLAttr
+}
+
+// RenderPage renders one page using the chrome layout. contentFS is the
+// app's embed.FS containing per-page content templates (each defines
+// `{{ define "content" }}…{{ end }}`). contentTemplate is the file
+// path inside that FS. The chrome template set is cloned per call so
+// pages don't trample each other's content definitions.
+func RenderPage(w http.ResponseWriter, contentFS embed.FS, contentTemplate string, data any) error {
+	t, err := Tmpl().Clone()
+	if err != nil {
+		return err
+	}
+	t, err = t.ParseFS(contentFS, contentTemplate)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return t.ExecuteTemplate(w, "page", data)
 }
 
 // RegisterRoutes wires the static CSS route. Call once from main.go.

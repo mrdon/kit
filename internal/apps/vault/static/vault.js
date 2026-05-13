@@ -466,7 +466,7 @@ async function wireSetup() {
 
     setStatus("Vault set up. Redirecting…");
     setTimeout(() => {
-      window.location.href = `/${VAULT.tenantSlug}/apps/vault/list`;
+      window.location.href = `/${VAULT.tenantSlug}/apps/vault`;
     }, 800);
   });
 }
@@ -555,7 +555,7 @@ async function wireRotate() {
       return;
     }
     setStatus("Password rotated. Redirecting…");
-    setTimeout(() => { window.location.href = `/${VAULT.tenantSlug}/apps/vault/list`; }, 800);
+    setTimeout(() => { window.location.href = `/${VAULT.tenantSlug}/apps/vault`; }, 800);
   });
 }
 
@@ -691,7 +691,7 @@ async function wireAdd() {
     }
     const listLink = document.getElementById("saved-list-link");
     if (listLink) {
-      listLink.href = `/${VAULT.tenantSlug}/apps/vault/list`;
+      listLink.href = `/${VAULT.tenantSlug}/apps/vault`;
     }
     showSection("saved-message");
   });

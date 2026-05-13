@@ -56,7 +56,7 @@ func (a *App) basePageData(r *http.Request) pageData {
 	if tenant == nil {
 		return pageData{}
 	}
-	homeURL := fmt.Sprintf("/%s/apps/vault/list", tenant.Slug)
+	homeURL := fmt.Sprintf("/%s/apps/vault", tenant.Slug)
 	return pageData{
 		TenantSlug: tenant.Slug,
 		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),

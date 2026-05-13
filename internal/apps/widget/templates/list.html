@@ -1,65 +1,36 @@
-{{ define "widget_list.html" }}<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Website chat widget — {{ .TenantName }}</title>
-<link rel="stylesheet" href="{{ .ChromeCSS }}">
-<style>
-  body { max-width: 720px; margin: 0 auto; padding: 20px; font: 14px/1.5 system-ui, sans-serif; color: #222; }
-  h1 { font-size: 22px; margin-top: 24px; }
-  p { color: #555; }
-  form { margin: 16px 0; padding: 16px; background: #f7f7f9; border-radius: 8px; }
-  label { display: block; margin-bottom: 8px; font-weight: 600; }
-  input[type=url] { width: 100%; padding: 8px 10px; font: inherit; border: 1px solid #ccc; border-radius: 4px; }
-  button { padding: 8px 16px; font: inherit; background: #1f6feb; color: white; border: none; border-radius: 4px; cursor: pointer; }
-  button.revoke { background: #c0392b; padding: 4px 10px; font-size: 12px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; font-size: 13px; }
-  th { background: #f4f4f4; }
-  .empty { color: #888; font-style: italic; padding: 12px 0; }
-  .err { background: #ffe6e6; border: 1px solid #f5b5b5; color: #8a1a1a; padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
-</style>
-</head>
-<body>
-{{ template "chrome_header" .Header }}
-<main>
+{{ define "content" }}
 <h1>Website chat widget</h1>
-<p>Tokens here let you embed a floating chat bubble on your website (e.g. Wix custom-HTML block). Each token allows one or more website origins; visitors who load the embed snippet from those origins can ask questions and the agent answers from your skills, rules, memories, and calendar — strictly read-only.</p>
+<div class="explainer">
+  <p>Embed a floating chat bubble on your website (Wix, Squarespace, or any custom-HTML block). Visitors ask questions and the agent answers from your skills, rules, memories, and calendar — strictly read-only.</p>
+  <p>Each token allows one website origin. Generate one token per site.</p>
+</div>
 
 {{ if .Error }}<div class="err">{{ .Error }}</div>{{ end }}
 
-<form method="POST" action="/{{ .TenantSlug }}/widget/new">
-  <label>Allowed website origin
-    <input type="url" name="origin" placeholder="https://example.com" required>
-  </label>
-  <p>Just the scheme + hostname + port, no path — e.g. <code>https://example.wixsite.com</code>. The widget will only work when loaded from that origin.</p>
+<form class="mint" method="POST" action="/{{ .TenantSlug }}/apps/widget/new">
+  <label for="origin">Website origin</label>
+  <input type="url" id="origin" name="origin" placeholder="https://example.com" value="{{ .PrefillOrigin }}" required autofocus>
+  <p class="help">Scheme + hostname + port, no path. The widget will only work when loaded from this exact origin.</p>
   <button type="submit">Generate token</button>
 </form>
 
-<h2 style="font-size: 18px;">Active tokens</h2>
+<h2>Active tokens</h2>
 {{ if .Tokens }}
-<table>
-  <thead><tr><th>Token</th><th>Allowed origins</th><th>Created</th><th>Last used</th><th></th></tr></thead>
-  <tbody>
+<ul class="token-list">
   {{ range .Tokens }}
-    <tr>
-      <td><code>{{ .Placeholder }}</code></td>
-      <td>{{ range .AllowedOrigins }}<div>{{ . }}</div>{{ end }}</td>
-      <td>{{ .CreatedAt }}</td>
-      <td>{{ if .LastUsedAt }}{{ .LastUsedAt }}{{ else }}—{{ end }}</td>
-      <td>
-        <form method="POST" action="/{{ $.TenantSlug }}/widget/{{ .ID }}/revoke" onsubmit="return confirm('Revoke this token? The embed snippet using it will stop working immediately.');">
-          <button type="submit" class="revoke">Revoke</button>
-        </form>
-      </td>
-    </tr>
+    <li>
+      <div class="meta">
+        <div class="placeholder">{{ .Placeholder }}</div>
+        <div class="origins">{{ range .AllowedOrigins }}<div>{{ . }}</div>{{ end }}</div>
+        <div class="timestamps">created {{ .CreatedAt }}{{ if .LastUsedAt }} · last used {{ .LastUsedAt }}{{ end }}</div>
+      </div>
+      <form method="POST" action="/{{ $.TenantSlug }}/apps/widget/{{ .ID }}/revoke" onsubmit="return confirm('Revoke this token? The embed snippet using it will stop working immediately.');">
+        <button type="submit" class="danger">Revoke</button>
+      </form>
+    </li>
   {{ end }}
-  </tbody>
-</table>
+</ul>
 {{ else }}
-<p class="empty">No active widget tokens yet.</p>
+<p class="token-list empty">No active widget tokens yet.</p>
 {{ end }}
-</main>
-</body>
-</html>{{ end }}
+{{ end }}

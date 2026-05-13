@@ -105,8 +105,14 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	// Capture
 	mux.Handle("GET /{slug}/apps/vault/add", page(a.handleAddPage))
 
-	// List (browse all secrets the caller can view)
-	mux.Handle("GET /{slug}/apps/vault/list", page(a.handleListPage))
+	// List (browse all secrets the caller can view). The canonical
+	// path is /{slug}/apps/vault; the /list suffix stays as a
+	// 301 redirect so existing bookmarks and chat messages survive.
+	mux.Handle("GET /{slug}/apps/vault", page(a.handleListPage))
+	mux.Handle("GET /{slug}/apps/vault/list", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		http.Redirect(w, r, "/"+slug+"/apps/vault", http.StatusMovedPermanently)
+	}))
 
 	// Reveal
 	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", page(a.handleRevealPage))

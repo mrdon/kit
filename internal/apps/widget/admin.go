@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/auth"
-	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/web/chrome"
 )
@@ -21,11 +20,13 @@ import (
 //go:embed templates/*.html
 var adminTemplatesFS embed.FS
 
-// adminTmpl is the widget-admin template set with the shared chrome
-// header partial mixed in. Cloned from chrome.Tmpl() like vault/cards
-// do so the {{ template "chrome_header" . }} call inside each template
-// resolves.
-var adminTmpl = template.Must(chrome.Tmpl().ParseFS(adminTemplatesFS, "templates/*.html"))
+//go:embed static/admin.css
+var adminStaticFS embed.FS
+
+// adminCSSPath is the URL suffix where the widget admin stylesheet is
+// served (prefixed with the tenant slug). Kept in the same path tree
+// as the admin pages so the middleware chain is uniform.
+const adminCSSPath = "/apps/widget/static/admin.css"
 
 // AdminHandler hosts the Slack-OAuth-gated admin pages that mint and
 // revoke widget tokens. Distinct from the public widget Handler so
@@ -46,13 +47,11 @@ func NewAdminHandler(pool *pgxpool.Pool, signer *auth.SessionSigner, svc *servic
 }
 
 // Register wires the admin routes onto the given mux. Each route runs
-// through the same middleware chain as the cards stack and vault:
-// tenantMW → signer.Middleware → AssertTenantMatch → requireCaller.
-// HTML page routes redirect unauthenticated requests to the PWA login.
+// through the same middleware chain as vault: tenantMW →
+// signer.Middleware → AssertTenantMatch → requireAdmin. HTML page
+// routes redirect unauthenticated requests to the PWA login.
 func (h *AdminHandler) Register(mux *http.ServeMux) {
 	if h.signer == nil {
-		// No signer = no authentication possible; refuse to register so
-		// admins see 404 rather than a permissive surface.
 		slog.Warn("widget admin handler: no session signer; routes not registered")
 		return
 	}
@@ -76,9 +75,13 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 			inner.ServeHTTP(w, r)
 		})
 	}
-	mux.Handle("GET /{slug}/widget", page(h.handleList))
-	mux.Handle("POST /{slug}/widget/new", page(h.handleMint))
-	mux.Handle("POST /{slug}/widget/{id}/revoke", page(h.handleRevoke))
+	static := func(handler http.HandlerFunc) http.Handler {
+		return tenantMW(http.HandlerFunc(handler))
+	}
+	mux.Handle("GET /{slug}/apps/widget", page(h.handleList))
+	mux.Handle("POST /{slug}/apps/widget/new", page(h.handleMint))
+	mux.Handle("POST /{slug}/apps/widget/{id}/revoke", page(h.handleRevoke))
+	mux.Handle("GET /{slug}/apps/widget/static/admin.css", static(h.handleAdminCSS))
 }
 
 // requireAdminHandler refuses requests where the resolved caller is
@@ -99,26 +102,27 @@ func requireAdminHandler(h http.HandlerFunc) http.Handler {
 	})
 }
 
+// listPageData is the render data for the widget admin list page.
+// Embeds chrome.PageData so the shared layout fields render uniformly
+// with vault and other admin surfaces.
 type listPageData struct {
-	TenantSlug string
-	TenantName string
-	ChromeCSS  string
-	Header     chrome.Header
-	Tokens     []services.WidgetTokenSummary
-	Error      string
+	chrome.PageData
+	TenantSlug    string
+	Tokens        []services.WidgetTokenSummary
+	Error         string
+	PrefillOrigin string
 }
 
+// mintedPageData is the render data for the post-mint reveal page.
 type mintedPageData struct {
+	chrome.PageData
 	TenantSlug     string
-	TenantName     string
-	ChromeCSS      string
-	Header         chrome.Header
 	EmbedSnippet   string
 	AllowedOrigins []string
 }
 
 func (h *AdminHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	tenant := tenantFromCtx(r)
+	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
 		http.Error(w, "tenant not found", http.StatusInternalServerError)
 		return
@@ -131,21 +135,25 @@ func (h *AdminHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := listPageData{
-		TenantSlug: tenant.Slug,
-		TenantName: tenant.Name,
-		ChromeCSS:  chrome.HeaderCSSPath,
-		Header:     buildHeader(r, h.pool, tenant),
-		Tokens:     tokens,
-		Error:      r.URL.Query().Get("err"),
+		PageData: chrome.PageData{
+			Title:     "Website chat widget — " + tenant.Name,
+			ChromeCSS: chrome.HeaderCSSPath,
+			Header:    chrome.For(r, h.pool, "/"+tenant.Slug+"/apps/widget"),
+			ExtraCSS:  []string{"/" + tenant.Slug + adminCSSPath},
+			MainAttrs: template.HTMLAttr(`id="widget-admin"`),
+		},
+		TenantSlug:    tenant.Slug,
+		Tokens:        tokens,
+		Error:         r.URL.Query().Get("err"),
+		PrefillOrigin: r.URL.Query().Get("origin"),
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := adminTmpl.ExecuteTemplate(w, "widget_list.html", data); err != nil {
+	if err := chrome.RenderPage(w, adminTemplatesFS, "templates/list.html", data); err != nil {
 		slog.Error("rendering widget list page", "error", err)
 	}
 }
 
 func (h *AdminHandler) handleMint(w http.ResponseWriter, r *http.Request) {
-	tenant := tenantFromCtx(r)
+	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
 		http.Error(w, "tenant not found", http.StatusInternalServerError)
 		return
@@ -158,31 +166,34 @@ func (h *AdminHandler) handleMint(w http.ResponseWriter, r *http.Request) {
 	origin := strings.TrimSpace(r.PostForm.Get("origin"))
 	origin = strings.TrimRight(origin, "/")
 	if origin == "" {
-		http.Redirect(w, r, "/"+tenant.Slug+"/widget?err="+url.QueryEscape("origin is required"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenant.Slug+"/apps/widget?err="+url.QueryEscape("origin is required"), http.StatusSeeOther)
 		return
 	}
 	created, err := h.svc.Create(r.Context(), caller, []string{origin})
 	if err != nil {
 		slog.Warn("creating widget token", "error", err, "tenant_id", tenant.ID)
-		http.Redirect(w, r, "/"+tenant.Slug+"/widget?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenant.Slug+"/apps/widget?err="+url.QueryEscape(err.Error())+"&origin="+url.QueryEscape(origin), http.StatusSeeOther)
 		return
 	}
 	data := mintedPageData{
+		PageData: chrome.PageData{
+			Title:     "Widget token created — " + tenant.Name,
+			ChromeCSS: chrome.HeaderCSSPath,
+			Header:    chrome.For(r, h.pool, "/"+tenant.Slug+"/apps/widget"),
+			ExtraCSS:  []string{"/" + tenant.Slug + adminCSSPath},
+			MainAttrs: template.HTMLAttr(`id="widget-admin"`),
+		},
 		TenantSlug:     tenant.Slug,
-		TenantName:     tenant.Name,
-		ChromeCSS:      chrome.HeaderCSSPath,
-		Header:         buildHeader(r, h.pool, tenant),
 		EmbedSnippet:   created.EmbedSnippet,
 		AllowedOrigins: created.AllowedOrigin,
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := adminTmpl.ExecuteTemplate(w, "widget_minted.html", data); err != nil {
+	if err := chrome.RenderPage(w, adminTemplatesFS, "templates/minted.html", data); err != nil {
 		slog.Error("rendering widget minted page", "error", err)
 	}
 }
 
 func (h *AdminHandler) handleRevoke(w http.ResponseWriter, r *http.Request) {
-	tenant := tenantFromCtx(r)
+	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
 		http.Error(w, "tenant not found", http.StatusInternalServerError)
 		return
@@ -191,26 +202,24 @@ func (h *AdminHandler) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Redirect(w, r, "/"+tenant.Slug+"/widget?err="+url.QueryEscape("invalid token id"), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenant.Slug+"/apps/widget?err="+url.QueryEscape("invalid token id"), http.StatusSeeOther)
 		return
 	}
 	if err := h.svc.Revoke(r.Context(), caller, id); err != nil {
 		slog.Warn("revoking widget token", "error", err, "tenant_id", tenant.ID, "token_id", id)
-		http.Redirect(w, r, "/"+tenant.Slug+"/widget?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/"+tenant.Slug+"/apps/widget?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/"+tenant.Slug+"/widget", http.StatusSeeOther)
+	http.Redirect(w, r, "/"+tenant.Slug+"/apps/widget", http.StatusSeeOther)
 }
 
-// tenantFromCtx pulls the tenant resolved by auth.TenantFromPath out
-// of the request context.
-func tenantFromCtx(r *http.Request) *models.Tenant {
-	return auth.TenantFromContext(r.Context())
-}
-
-// buildHeader populates the chrome header struct via the shared
-// `chrome.For()` helper so this admin page styles itself like vault
-// and cards.
-func buildHeader(r *http.Request, pool *pgxpool.Pool, tenant *models.Tenant) chrome.Header {
-	return chrome.For(r, pool, "/"+tenant.Slug+"/")
+func (h *AdminHandler) handleAdminCSS(w http.ResponseWriter, _ *http.Request) {
+	body, err := adminStaticFS.ReadFile("static/admin.css")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(body)
 }
