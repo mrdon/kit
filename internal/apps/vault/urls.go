@@ -3,9 +3,7 @@
 package vault
 
 import (
-	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/mrdon/kit/internal/auth"
@@ -41,32 +39,13 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 
 	tenantMW := auth.TenantFromPath(a.pool)
 
-	// HTML pages: tenant + session, but no JSON / CSRF gate. If the
-	// session cookie is missing entirely, redirect to /{slug}/login
-	// (PWA's Slack-OpenID kickoff) instead of returning a bare 401 —
-	// the user landed here from an agent link and expects to "just log
-	// in". Tampered/invalid cookies still 401 via signer.Middleware so
-	// we don't paper over auth bugs.
+	// HTML pages: tenant + session, but no JSON / CSRF gate. Wrapped in
+	// auth.PageRoute so any auth failure (missing cookie, stale cookie,
+	// wrong tenant) becomes a 303 to /{slug}/login with return_to — users
+	// landing here from an agent-issued deep link expect to "just log in",
+	// not see a bare 401.
 	page := func(h http.HandlerFunc) http.Handler {
-		inner := tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, err := r.Cookie(auth.SessionCookieName); errors.Is(err, http.ErrNoCookie) {
-				slug := r.PathValue("slug")
-				if slug == "" {
-					http.Error(w, "tenant not resolved", http.StatusBadRequest)
-					return
-				}
-				// Preserve the deep link so the post-OAuth callback can
-				// land them back here instead of the cards UI.
-				loginURL := "/" + slug + "/login"
-				if auth.IsSafeReturnTo(r.URL.RequestURI(), slug) {
-					loginURL += "?return_to=" + url.QueryEscape(r.URL.RequestURI())
-				}
-				http.Redirect(w, r, loginURL, http.StatusSeeOther)
-				return
-			}
-			inner.ServeHTTP(w, r)
-		})
+		return auth.PageRoute(tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
 	}
 
 	// JSON state-changing API: tenant + JSON content-type + session.

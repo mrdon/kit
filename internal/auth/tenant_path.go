@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -57,9 +56,9 @@ func TenantFromPath(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 // TenantFromPath and SessionSigner.Middleware have run earlier in the
 // chain (if not, behaves conservatively: 403).
 //
-// API routes (paths containing "/api/") get a 403; HTML routes get a
-// redirect to /{slug}/login so the user can re-authenticate into the
-// correct workspace.
+// Page routes (tagged via PageRoute) and HTML navigations redirect to
+// /{slug}/login so the user can re-authenticate into the correct
+// workspace; API routes get a 403.
 func AssertTenantMatch(signer *SessionSigner, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pathTenant := TenantFromContext(r.Context())
@@ -69,7 +68,7 @@ func AssertTenantMatch(signer *SessionSigner, next http.Handler) http.Handler {
 				signer.Clear(w, "/")
 				signer.Clear(w, "/"+r.PathValue("slug")+"/")
 			}
-			if strings.Contains(r.URL.Path, "/api/") {
+			if !shouldRedirectToLogin(r) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}

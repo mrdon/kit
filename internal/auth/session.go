@@ -175,7 +175,7 @@ func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.H
 // redirect to the tenant login page (for HTML navigations). Returns
 // 401 if the tenant slug can't be resolved from the path.
 func (s *SessionSigner) denyOrRedirect(w http.ResponseWriter, r *http.Request) {
-	if !wantsHTML(r) {
+	if !shouldRedirectToLogin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -189,6 +189,39 @@ func (s *SessionSigner) denyOrRedirect(w http.ResponseWriter, r *http.Request) {
 		loginURL += "?return_to=" + url.QueryEscape(r.URL.RequestURI())
 	}
 	http.Redirect(w, r, loginURL, http.StatusSeeOther)
+}
+
+// pageRouteKey marks a request as an HTML page navigation. Set by
+// PageRoute, consumed by shouldRedirectToLogin so any auth failure on
+// such a route lands the user at /{slug}/login instead of a bare 401 —
+// even when the client's Accept header is non-standard (some webviews,
+// curl, etc.).
+type pageRouteKeyType struct{}
+
+var pageRouteKey = pageRouteKeyType{}
+
+// PageRoute marks the request as an HTML page navigation so any
+// downstream auth failure becomes a redirect to /{slug}/login rather
+// than a bare 401. Wrap per-app page handlers with this; API routes
+// should not be wrapped (they should keep returning 401/403).
+func PageRoute(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), pageRouteKey, true)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// IsPageRoute reports whether the request was tagged by PageRoute.
+func IsPageRoute(r *http.Request) bool {
+	v, _ := r.Context().Value(pageRouteKey).(bool)
+	return v
+}
+
+// shouldRedirectToLogin reports whether an auth-failure response should
+// be a 303 to the tenant login page (true) or a bare 401 (false).
+// Either an explicit PageRoute tag or a text/html Accept header counts.
+func shouldRedirectToLogin(r *http.Request) bool {
+	return IsPageRoute(r) || wantsHTML(r)
 }
 
 // wantsHTML reports whether the request's Accept header asks for
