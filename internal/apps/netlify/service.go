@@ -273,22 +273,28 @@ type PublishResult struct {
 }
 
 // PublishChange takes the latest agent run for the given Slack thread
-// and commits its working state to the tenant's production branch
-// via Netlify's commit endpoint. Netlify's connected GitHub
-// integration pushes the commit; Netlify's normal CI then builds
-// production from the target branch.
+// and gets its changes onto the tenant's production branch in two
+// steps:
+//
+//  1. POST /agent_runners/<id>/commit?target_branch=<pr_branch>:
+//     Netlify pushes the agent's working state to its designated PR
+//     branch on GitHub (the runner can only commit to that branch;
+//     target_branch is not arbitrary).
+//  2. POST /repos/<owner>/<repo>/merges via Kit's GitHub App: merges
+//     the PR branch into the tenant's production branch. Netlify's
+//     normal CI auto-deploys production from there.
 //
 // Refuses if (a) no change_thread exists for this Slack thread,
-// (b) the latest run hasn't completed yet, or (c) Netlify isn't
-// connected for this tenant. Marks the change_thread as 'published'
-// on success.
+// (b) the latest run hasn't completed yet, (c) Netlify isn't
+// connected, or (d) Kit's GitHub App isn't installed (needed for
+// step 2). Marks the change_thread as 'published' on success.
 func (s *Service) PublishChange(
 	ctx context.Context,
 	tenantID uuid.UUID,
 	slackChannel, slackThreadTS string,
 ) (*PublishResult, error) {
 	if slackChannel == "" || slackThreadTS == "" {
-		return nil, errors.New("ship requires slack thread coordinates")
+		return nil, errors.New("publish requires slack thread coordinates")
 	}
 	cfg, err := GetConfig(ctx, s.pool, tenantID)
 	if err != nil {
@@ -296,6 +302,19 @@ func (s *Service) PublishChange(
 	}
 	if cfg == nil || !cfg.ConnectedNetlify() {
 		return nil, ErrNetlifyNotConnected
+	}
+	if cfg.NetlifyRepoOwner == "" || cfg.NetlifyRepoName == "" {
+		return nil, errors.New("netlify site doesn't have a parsed GitHub repo — re-pick the site on the integrations page")
+	}
+	if s.github == nil {
+		return nil, ErrGitHubNotConnected
+	}
+	inst, err := s.github.GetInstallation(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading github install: %w", err)
+	}
+	if inst == nil {
+		return nil, ErrGitHubNotConnected
 	}
 	priorRun, err := resolvePriorRun(ctx, s.pool, tenantID, slackChannel, slackThreadTS)
 	if err != nil {
@@ -311,10 +330,35 @@ func (s *Service) PublishChange(
 	if err != nil {
 		return nil, fmt.Errorf("decrypting netlify token: %w", err)
 	}
+
+	// Step 1: discover the runner's PR branch (Netlify-assigned)
+	// and commit the agent's working state to it.
+	runner, err := getAgentRunner(ctx, accessToken, priorRun.NetlifyRunnerID)
+	if err != nil {
+		return nil, fmt.Errorf("loading runner state: %w", err)
+	}
+	if runner.PRBranch == "" {
+		return nil, errors.New("runner has no PR branch assigned yet — try again in a few seconds")
+	}
 	if err := commitAgentRunner(ctx, accessToken,
-		priorRun.NetlifyRunnerID, cfg.ProductionBranch); err != nil {
+		priorRun.NetlifyRunnerID, runner.PRBranch); err != nil {
 		return nil, err
 	}
+
+	// Step 2: merge the PR branch into production via Kit's
+	// GitHub App. Netlify's auto-deploy picks up the resulting
+	// main-branch commit and rebuilds the live site.
+	commitMsg := "Publish via Kit"
+	if priorRun.Summary != "" {
+		commitMsg = "Publish via Kit: " + priorRun.Summary
+	}
+	if err := s.github.MergeBranch(ctx, inst.InstallationID,
+		cfg.NetlifyRepoOwner, cfg.NetlifyRepoName,
+		cfg.ProductionBranch, runner.PRBranch, commitMsg); err != nil {
+		return nil, fmt.Errorf("merging %s → %s: %w",
+			runner.PRBranch, cfg.ProductionBranch, err)
+	}
+
 	if _, err := s.pool.Exec(ctx,
 		`UPDATE app_netlify_change_threads SET state = 'published', updated_at = now()
          WHERE id = $1`, priorRun.ChangeThreadID); err != nil {

@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
@@ -73,6 +74,101 @@ func signAppJWT(privateKeyPEM []byte, appID int64) (string, error) {
 type installAccount struct {
 	Login string
 	Type  string // "User" or "Organization"
+}
+
+// MintInstallationToken issues a short-lived (1 hour) installation
+// access token for the given install. The returned token is used in
+// the Authorization header for repo-level GitHub API calls
+// (compare, merge, contents, etc.). Tokens are never persisted —
+// the caller decides what to do with the string then discards it.
+func (s *Service) MintInstallationToken(ctx context.Context, installationID int64) (string, error) {
+	if !s.HasAppConfig() {
+		return "", errors.New("kit github app not configured")
+	}
+	appJWT, err := signAppJWT(s.privateKey, s.appID)
+	if err != nil {
+		return "", fmt.Errorf("signing app jwt: %w", err)
+	}
+	url := fmt.Sprintf("https://api.github.com/app/installations/%d/access_tokens", installationID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("building installation token request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+appJWT)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("posting installation token: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("github access_tokens failed (status %d): %s",
+			resp.StatusCode, string(body))
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decoding installation token: %w", err)
+	}
+	if out.Token == "" {
+		return "", errors.New("installation token response missing token")
+	}
+	return out.Token, nil
+}
+
+// MergeBranch merges head into base on the given repo via GitHub's
+// merges API. Used by the netlify app to push a runner's PR branch
+// into the production branch when the user publishes.
+func (s *Service) MergeBranch(
+	ctx context.Context,
+	installationID int64,
+	owner, repo, base, head, commitMessage string,
+) error {
+	token, err := s.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return err
+	}
+	body := map[string]string{
+		"base": base,
+		"head": head,
+	}
+	if commitMessage != "" {
+		body["commit_message"] = commitMessage
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encoding merge body: %w", err)
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/merges",
+		owner, repo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url,
+		bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("building merge request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("posting merge: %w", err)
+	}
+	defer resp.Body.Close()
+	// 201 = merged, 204 = nothing to merge (already up to date),
+	// 404 = base/head not found, 409 = merge conflict
+	if resp.StatusCode == 204 {
+		return nil // no-op merge is success
+	}
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("github merge failed (status %d): %s",
+			resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 // fetchInstallationAccount calls the GitHub App API to look up the

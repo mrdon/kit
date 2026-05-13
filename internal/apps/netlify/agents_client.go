@@ -37,6 +37,7 @@ type AgentRunner struct {
 	State                  string `json:"state"`                  // pending | running | succeeded | failed | cancelled
 	Branch                 string `json:"branch"`                 // base branch we forked off
 	ResultBranch           string `json:"result_branch"`          // what the agent committed to
+	PRBranch               string `json:"pr_branch"`              // the GitHub branch Netlify commits this runner's work to
 	ParentAgentRunnerID    string `json:"parent_agent_runner_id"` // echoed back when we set it
 	Title                  string `json:"title"`
 	CurrentTask            string `json:"current_task"`
