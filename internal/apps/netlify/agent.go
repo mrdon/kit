@@ -33,14 +33,14 @@ turn's state.`,
 		}, "prompt"),
 	},
 	{
-		Name: "netlify_ship_change",
-		Description: `Ship the latest preview to production. Call this when the user clearly
-indicates they want the changes from this Slack thread to go live —
-"ship it", "deploy", "looks good, ship", etc.
+		Name: "netlify_publish_change",
+		Description: `Publish the latest preview to the live site. Call this when the user clearly
+indicates they want the changes from this Slack thread to go live — "publish",
+"ship it", "make it live", "looks good, deploy", "send it", etc.
 
-Refuses if the thread has no agent runs yet, or if the latest run is
-still building. Once it succeeds, Netlify commits the changes to the
-production branch and the live site updates in ~90 seconds.`,
+Refuses if the thread has no agent runs yet, or if the latest run is still
+building. Once it succeeds, Netlify commits the changes to the production
+branch and the live site updates in ~90 seconds.`,
 		Schema: services.Props(map[string]any{}),
 	},
 }
@@ -61,57 +61,57 @@ func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 	switch name {
 	case "netlify_request_change":
 		return requestChangeHandler(svc)
-	case "netlify_ship_change":
-		return shipChangeHandler(svc)
+	case "netlify_publish_change":
+		return publishChangeHandler(svc)
 	}
 	return nil
 }
 
-func shipChangeHandler(svc *Service) tools.HandlerFunc {
+func publishChangeHandler(svc *Service) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
 		caller := ec.Caller()
 		if caller == nil {
 			return "", errors.New("no caller in context")
 		}
 		if ec.Channel == "" || ec.ThreadTS == "" {
-			return "Shipping requires running this from inside a Slack thread that has at least one Netlify run.", nil
+			return "Publishing requires running this from inside a Slack thread that has at least one Netlify run.", nil
 		}
-		res, err := svc.ShipChange(ec.Ctx, caller.TenantID, ec.Channel, ec.ThreadTS)
+		res, err := svc.PublishChange(ec.Ctx, caller.TenantID, ec.Channel, ec.ThreadTS)
 		if err != nil {
-			return formatShipError(ec, err), nil
+			return formatPublishError(ec, err), nil
 		}
 		var b strings.Builder
-		b.WriteString(":rocket: Shipped to production.\n")
+		b.WriteString(":rocket: Published to the live site.\n")
 		fmt.Fprintf(&b, "- target branch: `%s`\n", res.TargetBranch)
 		if res.Summary != "" {
 			fmt.Fprintf(&b, "- last change: %s\n", res.Summary)
 		}
-		b.WriteString("\nNetlify will rebuild and the live site updates in about a minute and a half. " +
-			"Tell the user it's shipping; no need to share the run id.")
+		b.WriteString("\nNetlify is rebuilding now; the live site updates in about a minute and a half. " +
+			"Tell the user it's publishing; no need to share the run id.")
 		return b.String(), nil
 	}
 }
 
-// formatShipError converts typed sentinels into copy the LLM can
+// formatPublishError converts typed sentinels into copy the LLM can
 // relay verbatim. Unknown errors fall through with the raw message.
-func formatShipError(ec *tools.ExecContext, err error) string {
+func formatPublishError(ec *tools.ExecContext, err error) string {
 	slug := ""
 	if ec.Tenant != nil {
 		slug = ec.Tenant.Slug
 	}
 	switch {
-	case errors.Is(err, ErrNothingToShip):
-		return "There's no preview to ship in this thread yet. Make a change first by asking for one (e.g. \"make the H1 blue\"), then ship it once the preview looks right."
-	case errors.Is(err, ErrShipPending):
-		return "The latest build is still running — wait for the preview-ready message and try ship-it again after."
+	case errors.Is(err, ErrNothingToPublish):
+		return "There's no preview to publish in this thread yet. Make a change first by asking for one (e.g. \"make the H1 blue\"), then publish it once the preview looks right."
+	case errors.Is(err, ErrPublishPending):
+		return "The latest build is still running — wait for the preview-ready message and try publishing again after."
 	case errors.Is(err, ErrNetlifyNotConnected):
 		page := "Kit's integrations page"
 		if slug != "" {
 			page = "Kit's integrations page (/" + slug + "/admin/integrations)"
 		}
-		return "Netlify isn't connected for this workspace. Connect it at " + page + " before shipping."
+		return "Netlify isn't connected for this workspace. Connect it at " + page + " before publishing."
 	}
-	return "Couldn't ship the change: " + err.Error()
+	return "Couldn't publish the change: " + err.Error()
 }
 
 func requestChangeHandler(svc *Service) tools.HandlerFunc {

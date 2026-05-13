@@ -29,18 +29,18 @@ func mcpHandlerFor(name string, svc *Service) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "netlify_request_change":
 		return mcpRequestChange(svc)
-	case "netlify_ship_change":
-		return mcpShipChange(svc)
+	case "netlify_publish_change":
+		return mcpPublishChange(svc)
 	}
 	return nil
 }
 
-func mcpShipChange(svc *Service) mcpserver.ToolHandlerFunc {
+func mcpPublishChange(svc *Service) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		// MCP callers (Claude Code, Cowork) don't have a Slack
-		// thread by default — ship is currently Slack-thread-bound.
+		// thread by default — publish is currently Slack-thread-bound.
 		// Could expand to take channel+ts as args; YAGNI for v1.
-		return mcp.NewToolResultError("netlify_ship_change is currently Slack-only — call it from a Slack thread that has at least one netlify_request_change run."), nil
+		return mcp.NewToolResultError("netlify_publish_change is currently Slack-only — call it from a Slack thread that has at least one netlify_request_change run."), nil
 	})
 }
 

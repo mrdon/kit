@@ -23,12 +23,12 @@ changes accumulate. **You don't need to know or mention this** —
 just call `netlify_request_change` with the user's new prompt
 every time. Kit handles the chain.
 
-When the user signals they want to deploy ("ship it", "looks good,
-deploy", "make it live", "send it"), call `netlify_ship_change`.
-The tool commits the latest preview's changes to the production
-branch and Netlify auto-deploys. Refuses cleanly if there's no
-build to ship or the latest one is still running — relay whatever
-copy the tool returns.
+When the user signals they want the changes live ("publish", "ship
+it", "make it live", "deploy", "send it", "looks good, push it"),
+call `netlify_publish_change`. The tool commits the latest preview's
+changes to the production branch and Netlify auto-deploys. Refuses
+cleanly if there's no build to publish or the latest one is still
+running — relay whatever copy the tool returns.
 
 Don't call `netlify_request_change` for non-website asks. The tool
 is only for changes to the marketing site that's connected in this

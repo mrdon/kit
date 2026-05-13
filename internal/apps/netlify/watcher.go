@@ -199,7 +199,7 @@ func (s *Service) postWatcherResult(in watcherInput, runner *AgentRunner, summar
 		if summary == "" {
 			b.WriteString("\n_Click through to check what changed._")
 		} else {
-			b.WriteString("\nReply in this thread to iterate, or say \"ship it\" to deploy.")
+			b.WriteString("\nReply in this thread to iterate, or say \"publish\" to make it live.")
 		}
 	case runner.State == "failed":
 		fmt.Fprintf(&b, ":x: The agent run failed.\n")
