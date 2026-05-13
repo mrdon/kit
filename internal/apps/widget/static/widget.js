@@ -375,25 +375,30 @@
 
   // mountWhenReady defers attach() until the wait_for selector
   // matches an element in the DOM, if one was configured. With no
-  // wait_for, attach() runs immediately. With one, a MutationObserver
-  // watches for the selector to appear (e.g. content that only
-  // renders once a Wix page password has been entered).
+  // wait_for, attach() runs immediately.
+  //
+  // We poll every 400ms instead of using a MutationObserver because
+  // Wix often handles password-gate unlocks by toggling CSS on
+  // existing nodes (no childlist mutation fires, so an observer
+  // would miss it). Polling is cheap and catches both adds and
+  // class/style flips.
   function mountWhenReady() {
     if (!WAIT_FOR) {
       attach(); watchMounted();
       return;
     }
-    if (document.querySelector(WAIT_FOR)) {
-      attach(); watchMounted();
-      return;
-    }
-    var obs = new MutationObserver(function () {
-      if (document.querySelector(WAIT_FOR)) {
-        obs.disconnect();
-        attach(); watchMounted();
-      }
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
+    console.info('kit-widget: waiting for selector', WAIT_FOR);
+    if (tryMount()) return;
+    var interval = setInterval(function () {
+      if (tryMount()) clearInterval(interval);
+    }, 400);
+  }
+
+  function tryMount() {
+    if (!document.querySelector(WAIT_FOR)) return false;
+    console.info('kit-widget: selector matched, mounting bubble');
+    attach(); watchMounted();
+    return true;
   }
 
   if (document.readyState === 'loading') {
