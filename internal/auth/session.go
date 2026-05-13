@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -142,12 +143,15 @@ func (s *SessionSigner) Clear(w http.ResponseWriter, path string) {
 
 // Middleware reads the session cookie, verifies its HMAC, resolves the
 // api_token, and injects a Caller into the request context. Requests
-// without a valid session get a 401.
+// without a valid session get a 401 — except HTML page navigations
+// (those whose Accept header indicates text/html), which redirect to
+// the tenant's login page so users don't see a bare "unauthorized"
+// when their session is missing or stale.
 func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, ok := s.extractToken(r)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			s.denyOrRedirect(w, r)
 			return
 		}
 		caller, err := resolveToken(r.Context(), pool, token)
@@ -157,12 +161,50 @@ func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.H
 			return
 		}
 		if caller == nil {
-			http.Error(w, "session expired", http.StatusUnauthorized)
+			// Stale cookie — same UX as missing: send the user to
+			// login instead of a bare 401 page.
+			s.denyOrRedirect(w, r)
 			return
 		}
 		ctx := context.WithValue(r.Context(), callerKey, caller)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// denyOrRedirect picks between a 401 (for API/JSON clients) and a 303
+// redirect to the tenant login page (for HTML navigations). Returns
+// 401 if the tenant slug can't be resolved from the path.
+func (s *SessionSigner) denyOrRedirect(w http.ResponseWriter, r *http.Request) {
+	if !wantsHTML(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	slug := r.PathValue("slug")
+	if slug == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	loginURL := "/" + slug + "/login"
+	if IsSafeReturnTo(r.URL.RequestURI(), slug) {
+		loginURL += "?return_to=" + url.QueryEscape(r.URL.RequestURI())
+	}
+	http.Redirect(w, r, loginURL, http.StatusSeeOther)
+}
+
+// wantsHTML reports whether the request's Accept header asks for
+// text/html (i.e. a browser navigation, not a fetch / JSON client).
+func wantsHTML(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return false
+	}
+	for part := range strings.SplitSeq(accept, ",") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "text/html") || strings.HasPrefix(part, "application/xhtml") {
+			return true
+		}
+	}
+	return false
 }
 
 // signValue appends an HMAC tag so a tampered cookie fails the MAC check
