@@ -54,34 +54,36 @@ type CreateAgentRunnerInput struct {
 
 // createAgentRunner kicks off an agent run. Returns the new
 // AgentRunner including its id and (initially-empty) preview URL.
+//
+// Implementation note: Netlify's OpenAPI swagger documents these
+// fields as query params, but the live API expects them in the JSON
+// body — empty body returns "unexpected end of input" (500), and
+// query-only returns "no prompt provided" (400). We send everything
+// in the body and ignore the query-param documentation.
 func createAgentRunner(ctx context.Context, accessToken string, in CreateAgentRunnerInput) (*AgentRunner, error) {
 	if in.SiteID == "" {
 		return nil, errors.New("site_id is required")
 	}
-	q := url.Values{
-		"site_id": {in.SiteID},
-	}
+	bodyMap := map[string]any{"site_id": in.SiteID}
 	if in.Prompt != "" {
-		q.Set("prompt", in.Prompt)
+		bodyMap["prompt"] = in.Prompt
 	}
 	if in.Branch != "" {
-		q.Set("branch", in.Branch)
+		bodyMap["branch"] = in.Branch
 	}
 	if in.Agent != "" {
-		q.Set("agent", in.Agent)
+		bodyMap["agent"] = in.Agent
 	}
 	if in.Model != "" {
-		q.Set("model", in.Model)
+		bodyMap["model"] = in.Model
 	}
-	endpoint := netlifyAPIBase + "/agent_runners?" + q.Encode()
-	// Send an empty JSON body. The Netlify backend's request parser
-	// runs unconditionally and 500s with "unexpected end of input"
-	// if the body is missing — even though the OpenAPI spec lists
-	// the inputs as query params. Belt-and-suspenders: also keep
-	// the query params so any field the spec documents that way
-	// continues to land.
+	bodyBytes, err := json.Marshal(bodyMap)
+	if err != nil {
+		return nil, fmt.Errorf("encoding agent_runners body: %w", err)
+	}
+	endpoint := netlifyAPIBase + "/agent_runners"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
-		bytes.NewReader([]byte("{}")))
+		bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("building agent_runners request: %w", err)
 	}
