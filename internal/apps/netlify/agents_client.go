@@ -119,6 +119,110 @@ func createAgentRunner(ctx context.Context, accessToken string, in CreateAgentRu
 	return &out, nil
 }
 
+// AgentRunnerSession is one turn inside an existing agent_runner.
+// Created via POST /agent_runners/<runner_id>/sessions. This is the
+// right primitive for "now make it lighter blue" — iteration adds
+// a session to the existing runner rather than starting a new one.
+type AgentRunnerSession struct {
+	ID            string `json:"id"`
+	AgentRunnerID string `json:"agent_runner_id"`
+	State         string `json:"state"`
+	Prompt        string `json:"prompt"`
+	Title         string `json:"title"`
+	ResultDiff    string `json:"result_diff"`
+	CommitSHA     string `json:"commit_sha"`
+	DeployID      string `json:"deploy_id"`
+	DeployURL     string `json:"deploy_url"`
+	Duration      int    `json:"duration"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+	DoneAt        string `json:"done_at"`
+}
+
+// createAgentRunnerSession adds a follow-up turn to an existing runner.
+// The body shape mirrors createAgentRunner (JSON body, not query params
+// — same surprise as the runner endpoint).
+func createAgentRunnerSession(
+	ctx context.Context,
+	accessToken, runnerID, prompt, agent, model string,
+) (*AgentRunnerSession, error) {
+	if runnerID == "" {
+		return nil, errors.New("runner_id is required")
+	}
+	body := map[string]any{}
+	if prompt != "" {
+		body["prompt"] = prompt
+	}
+	if agent != "" {
+		body["agent"] = agent
+	}
+	if model != "" {
+		body["model"] = model
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding session body: %w", err)
+	}
+	endpoint := netlifyAPIBase + "/agent_runners/" + url.PathEscape(runnerID) + "/sessions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
+		bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("building session request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("posting session: %w", err)
+	}
+	defer resp.Body.Close()
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading session response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("netlify create session failed (status %d): %s",
+			resp.StatusCode, string(respBytes))
+	}
+	var out AgentRunnerSession
+	if err := json.Unmarshal(respBytes, &out); err != nil {
+		return nil, fmt.Errorf("decoding session response: %w", err)
+	}
+	return &out, nil
+}
+
+// getAgentRunnerSession fetches one session's state. Used by the
+// watcher to poll follow-up turns.
+func getAgentRunnerSession(
+	ctx context.Context,
+	accessToken, runnerID, sessionID string,
+) (*AgentRunnerSession, error) {
+	endpoint := netlifyAPIBase + "/agent_runners/" + url.PathEscape(runnerID) +
+		"/sessions/" + url.PathEscape(sessionID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building get session request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching session: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("netlify get session failed (status %d): %s",
+			resp.StatusCode, string(body))
+	}
+	var out AgentRunnerSession
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding session response: %w", err)
+	}
+	return &out, nil
+}
+
 // getAgentRunner fetches an existing agent run by id. Used for
 // polling status + reading result_diff once the run completes.
 func getAgentRunner(ctx context.Context, accessToken, id string) (*AgentRunner, error) {

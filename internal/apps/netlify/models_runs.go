@@ -28,21 +28,34 @@ type ChangeThread struct {
 // AgentRun is one round-trip to Netlify Agent Runners. Mirrors the
 // upstream AgentRunner record we care about plus our own grouping +
 // summary fields.
+//
+// NetlifyRunID semantics: for the first turn in a Slack thread,
+// NetlifyRunID == NetlifyRunnerID and refers to the agent_runner.
+// For follow-up turns, NetlifyRunID is the session id and
+// NetlifyRunnerID is the parent runner. The watcher uses the
+// equality check to decide which Netlify endpoint to poll.
 type AgentRun struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	ChangeThreadID uuid.UUID
-	NetlifyRunID   string
-	Prompt         string
-	BaseBranch     string
-	ResultBranch   string
-	PreviewURL     string
-	State          string
-	Summary        string
-	ResultDiff     string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DoneAt         *time.Time
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	ChangeThreadID  uuid.UUID
+	NetlifyRunID    string
+	NetlifyRunnerID string
+	Prompt          string
+	BaseBranch      string
+	ResultBranch    string
+	PreviewURL      string
+	State           string
+	Summary         string
+	ResultDiff      string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DoneAt          *time.Time
+}
+
+// IsSession reports whether this row is a follow-up session (rather
+// than a first-turn agent_runner).
+func (r *AgentRun) IsSession() bool {
+	return r.NetlifyRunnerID != "" && r.NetlifyRunnerID != r.NetlifyRunID
 }
 
 // EnsureChangeThread finds or creates the change-thread for a given
@@ -81,6 +94,7 @@ func EnsureChangeThread(
 func GetAgentRun(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*AgentRun, error) {
 	const q = `
         SELECT id, tenant_id, change_thread_id, netlify_run_id,
+               COALESCE(netlify_runner_id, netlify_run_id),
                prompt, base_branch,
                COALESCE(result_branch, ''),
                COALESCE(preview_url, ''),
@@ -93,6 +107,7 @@ func GetAgentRun(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*AgentR
 	var run AgentRun
 	err := pool.QueryRow(ctx, q, id).Scan(
 		&run.ID, &run.TenantID, &run.ChangeThreadID, &run.NetlifyRunID,
+		&run.NetlifyRunnerID,
 		&run.Prompt, &run.BaseBranch,
 		&run.ResultBranch, &run.PreviewURL, &run.State,
 		&run.Summary, &run.ResultDiff,
@@ -129,30 +144,36 @@ func GetChangeThread(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*Ch
 }
 
 // CreateAgentRun inserts a new agent_run row right after Netlify
-// accepts the run. Returns the freshly-created row.
+// accepts the run. For first-turn rows runnerID == runID (we just
+// created the runner); for follow-up sessions runnerID is the
+// parent runner's id and runID is the new session id.
 func CreateAgentRun(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	tenantID, changeThreadID uuid.UUID,
-	netlifyRunID, prompt, baseBranch, previewURL, state string,
+	netlifyRunID, netlifyRunnerID, prompt, baseBranch, previewURL, state string,
 ) (*AgentRun, error) {
+	if netlifyRunnerID == "" {
+		netlifyRunnerID = netlifyRunID
+	}
 	const q = `
         INSERT INTO app_netlify_agent_runs (
-            tenant_id, change_thread_id, netlify_run_id,
+            tenant_id, change_thread_id, netlify_run_id, netlify_runner_id,
             prompt, base_branch, preview_url, state
         )
-        VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7)
+        VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)
         RETURNING id, created_at, updated_at`
 	var run AgentRun
 	run.TenantID = tenantID
 	run.ChangeThreadID = changeThreadID
 	run.NetlifyRunID = netlifyRunID
+	run.NetlifyRunnerID = netlifyRunnerID
 	run.Prompt = prompt
 	run.BaseBranch = baseBranch
 	run.PreviewURL = previewURL
 	run.State = state
 	err := pool.QueryRow(ctx, q,
-		tenantID, changeThreadID, netlifyRunID,
+		tenantID, changeThreadID, netlifyRunID, netlifyRunnerID,
 		prompt, baseBranch, previewURL, state,
 	).Scan(&run.ID, &run.CreatedAt, &run.UpdatedAt)
 	if err != nil {

@@ -138,69 +138,80 @@ func (s *Service) RequestChange(
 	if err != nil {
 		return nil, fmt.Errorf("decrypting netlify token: %w", err)
 	}
-	// Chaining: if this Slack thread already has a prior agent run,
-	// fork the new run off it via Netlify's parent_agent_runner_id
-	// mechanism so the agent picks up the cumulative state ("blue →
-	// lighter blue → move the contact form" all build on each other).
-	// Using parent_agent_runner_id rather than branch=<result_branch>
-	// because result_branch is only populated after the prior run
-	// makes its first commit (~15-30s into the run); the parent id
-	// is available immediately, so chaining works even if the user
-	// fires a follow-up while the prior build is still running.
-	baseBranch := cfg.ProductionBranch
+	// Chaining: if this Slack thread already has a prior turn, add a
+	// new session to that runner via POST /agent_runners/<rid>/sessions
+	// rather than starting a fresh runner. This is the documented
+	// "several agent runs per task" path — the agent sees the
+	// cumulative state of the runner regardless of build state.
+	//
+	// If no prior turn (first message in thread): POST /agent_runners
+	// creates a new runner.
+	var (
+		runID         string // what we'll store as netlify_run_id
+		runnerID      string // the runner this turn belongs to
+		runState      string
+		runPreviewURL string
+	)
 	chainedFrom := ""
+
 	if in.SlackChannel != "" && in.SlackThreadTS != "" {
 		if priorRun, perr := resolvePriorRun(ctx, s.pool, tenantID,
 			in.SlackChannel, in.SlackThreadTS); perr == nil &&
-			priorRun != nil && priorRun.NetlifyRunID != "" {
-			chainedFrom = priorRun.NetlifyRunID
-			// base_branch becomes informational only — Netlify
-			// derives the real base from parent_agent_runner_id.
-			// Use the prior result_branch when available so our
-			// DB row reflects the actual chain point.
-			if priorRun.ResultBranch != "" {
-				baseBranch = priorRun.ResultBranch
-			}
+			priorRun != nil && priorRun.NetlifyRunnerID != "" {
+			chainedFrom = priorRun.NetlifyRunnerID
 		}
 	}
 
-	runner, err := createAgentRunner(ctx, accessToken, CreateAgentRunnerInput{
-		SiteID:              cfg.NetlifySiteID,
-		Prompt:              in.Prompt,
-		Branch:              baseBranch,
-		Agent:               cfg.DefaultAgent,
-		ParentAgentRunnerID: chainedFrom,
-	})
-	if err != nil {
-		return nil, err
-	}
-	// Diagnostic: did Netlify honor the chain we requested? If we
-	// sent parent_agent_runner_id and the response echoes it,
-	// chaining is live. If not, the field is silently being dropped
-	// and we need a different mechanism.
-	slog.Info("netlify agent run created",
-		"run_id", runner.ID,
-		"sent_parent", chainedFrom,
-		"echoed_parent", runner.ParentAgentRunnerID,
-		"state", runner.State,
-		"branch", runner.Branch,
-	)
-	// Netlify sometimes populates latest_session_deploy_url
-	// asynchronously: the POST returns before the deploy id has been
-	// minted. One follow-up GET gives the URL a chance to land
-	// without us having to poll repeatedly. Best-effort — if the
-	// fetch fails, fall through with whatever we had.
-	if runner.LatestSessionDeployURL == "" {
-		if refreshed, ferr := getAgentRunner(ctx, accessToken, runner.ID); ferr == nil {
-			runner = refreshed
+	if chainedFrom != "" {
+		// Follow-up turn: add a session to the existing runner.
+		session, serr := createAgentRunnerSession(ctx, accessToken,
+			chainedFrom, in.Prompt, cfg.DefaultAgent, "")
+		if serr != nil {
+			return nil, serr
 		}
+		runID = session.ID
+		runnerID = chainedFrom
+		runState = session.State
+		runPreviewURL = session.DeployURL
+		slog.Info("netlify session created",
+			"session_id", runID, "runner_id", runnerID,
+			"state", runState, "deploy_url", runPreviewURL)
+	} else {
+		// First turn in this thread: create a new runner. Branch
+		// defaults to production; Netlify forks the agent's working
+		// branch off it internally.
+		runner, rerr := createAgentRunner(ctx, accessToken, CreateAgentRunnerInput{
+			SiteID: cfg.NetlifySiteID,
+			Prompt: in.Prompt,
+			Branch: cfg.ProductionBranch,
+			Agent:  cfg.DefaultAgent,
+		})
+		if rerr != nil {
+			return nil, rerr
+		}
+		// Netlify sometimes populates latest_session_deploy_url
+		// asynchronously: the POST returns before the deploy id has
+		// been minted. One follow-up GET gives the URL a chance to
+		// land. Best-effort.
+		if runner.LatestSessionDeployURL == "" {
+			if refreshed, ferr := getAgentRunner(ctx, accessToken, runner.ID); ferr == nil {
+				runner = refreshed
+			}
+		}
+		runID = runner.ID
+		runnerID = runner.ID // same on first turn
+		runState = runner.State
+		runPreviewURL = runner.LatestSessionDeployURL
+		slog.Info("netlify runner created",
+			"runner_id", runID, "state", runState,
+			"deploy_url", runPreviewURL, "branch", runner.Branch)
 	}
 
 	result := &ChangeRunResult{
-		RunID:            runner.ID,
-		State:            runner.State,
-		BaseBranch:       runner.Branch,
-		PreviewURL:       runner.LatestSessionDeployURL,
+		RunID:            runID,
+		State:            runState,
+		BaseBranch:       cfg.ProductionBranch,
+		PreviewURL:       runPreviewURL,
 		ProductionBranch: cfg.ProductionBranch,
 		ChainedFromRunID: chainedFrom,
 	}
@@ -216,8 +227,8 @@ func (s *Service) RequestChange(
 			return nil, fmt.Errorf("ensure change thread: %w", cerr)
 		}
 		run, rerr := CreateAgentRun(ctx, s.pool, tenantID, ct.ID,
-			runner.ID, in.Prompt, baseBranch,
-			runner.LatestSessionDeployURL, runner.State)
+			runID, runnerID, in.Prompt, cfg.ProductionBranch,
+			runPreviewURL, runState)
 		if rerr != nil {
 			return nil, fmt.Errorf("create agent_run: %w", rerr)
 		}
@@ -228,13 +239,14 @@ func (s *Service) RequestChange(
 			return result, fmt.Errorf("bot token unavailable; watcher disabled: %w", terr)
 		}
 		s.startWatcher(watcherInput{
-			tenantID:      tenantID,
-			runID:         run.ID,
-			netlifyRunID:  runner.ID,
-			netlifyToken:  accessToken,
-			slackBotToken: botToken,
-			slackChannel:  in.SlackChannel,
-			slackThreadTS: in.SlackThreadTS,
+			tenantID:        tenantID,
+			runID:           run.ID,
+			netlifyRunID:    runID,
+			netlifyRunnerID: runnerID,
+			netlifyToken:    accessToken,
+			slackBotToken:   botToken,
+			slackChannel:    in.SlackChannel,
+			slackThreadTS:   in.SlackThreadTS,
 		})
 		result.WatcherStarted = true
 	}

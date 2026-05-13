@@ -28,14 +28,19 @@ const watcherPollInterval = 5 * time.Second
 
 // watcherInput is the immutable bundle the watcher needs to do its
 // job. Constructed by RequestChange just before goroutine spawn.
+//
+// If netlifyRunID == netlifyRunnerID this is a first-turn runner
+// (poll GET /agent_runners/<id>). Otherwise it's a follow-up session
+// (poll GET /agent_runners/<runner_id>/sessions/<session_id>).
 type watcherInput struct {
-	tenantID      uuid.UUID
-	runID         uuid.UUID // our DB id
-	netlifyRunID  string
-	netlifyToken  string // already decrypted
-	slackBotToken string // already decrypted
-	slackChannel  string
-	slackThreadTS string
+	tenantID        uuid.UUID
+	runID           uuid.UUID // our DB id
+	netlifyRunID    string    // runner id OR session id
+	netlifyRunnerID string    // always the runner id
+	netlifyToken    string    // already decrypted
+	slackBotToken   string    // already decrypted
+	slackChannel    string
+	slackThreadTS   string
 }
 
 // startWatcher kicks off a background goroutine that polls Netlify
@@ -79,39 +84,70 @@ func (s *Service) runWatcher(ctx context.Context, in watcherInput) {
 	}
 }
 
-// checkRun does one GET /agent_runners/<id>, updates the DB row,
-// and posts to Slack + returns true if the run is in a terminal
-// state. Returns false if the run is still in flight (caller
-// should keep polling).
+// checkRun polls Netlify for the current state of this run/session,
+// updates the DB row, and posts to Slack + returns true if the
+// run is in a terminal state. Returns false if still in flight.
+//
+// Branches on whether this is a first-turn runner or a follow-up
+// session — see watcherInput.
 func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
-	runner, err := getAgentRunner(ctx, in.netlifyToken, in.netlifyRunID)
-	if err != nil {
-		// Transient errors are common (rate limits, momentary
-		// flakes); don't give up — let the next tick retry.
-		slog.Warn("netlify watcher: get agent_runner",
-			"netlify_run_id", in.netlifyRunID, "error", err)
-		return false
+	// session: poll session endpoint, normalize the response shape
+	// into the same fields we'd otherwise read from a runner.
+	var (
+		state, doneAtStr, deployURL, resultBranch string
+	)
+	postRunner := &AgentRunner{} // placeholder for postWatcherResult
+
+	if in.netlifyRunID != in.netlifyRunnerID {
+		sess, err := getAgentRunnerSession(ctx, in.netlifyToken,
+			in.netlifyRunnerID, in.netlifyRunID)
+		if err != nil {
+			slog.Warn("netlify watcher: get session",
+				"runner_id", in.netlifyRunnerID,
+				"session_id", in.netlifyRunID, "error", err)
+			return false
+		}
+		state = sess.State
+		doneAtStr = sess.DoneAt
+		deployURL = sess.DeployURL
+		// session doesn't expose a result_branch directly; leave empty.
+		postRunner.ID = sess.AgentRunnerID
+		postRunner.State = sess.State
+		postRunner.DoneAt = sess.DoneAt
+		postRunner.LatestSessionDeployURL = sess.DeployURL
+		postRunner.CurrentTask = sess.Title
+	} else {
+		runner, err := getAgentRunner(ctx, in.netlifyToken, in.netlifyRunID)
+		if err != nil {
+			slog.Warn("netlify watcher: get agent_runner",
+				"netlify_run_id", in.netlifyRunID, "error", err)
+			return false
+		}
+		state = runner.State
+		doneAtStr = runner.DoneAt
+		deployURL = runner.LatestSessionDeployURL
+		resultBranch = runner.ResultBranch
+		postRunner = runner
 	}
+
 	var doneAt *time.Time
-	if runner.DoneAt != "" {
-		if t, perr := time.Parse(time.RFC3339, runner.DoneAt); perr == nil {
+	if doneAtStr != "" {
+		if t, perr := time.Parse(time.RFC3339, doneAtStr); perr == nil {
 			doneAt = &t
 		} else {
-			// Unparseable but non-empty done_at still indicates
-			// terminal — stamp it now so we don't loop forever.
 			now := time.Now()
 			doneAt = &now
 		}
 	}
 	if uerr := UpdateAgentRunProgress(ctx, s.pool, in.runID,
-		runner.State, runner.ResultBranch, runner.LatestSessionDeployURL, doneAt); uerr != nil {
+		state, resultBranch, deployURL, doneAt); uerr != nil {
 		slog.Warn("netlify watcher: persisting progress",
 			"run_id", in.runID, "error", uerr)
 	}
 	if doneAt == nil {
 		return false
 	}
-	s.postWatcherResult(in, runner)
+	s.postWatcherResult(in, postRunner)
 	return true
 }
 
