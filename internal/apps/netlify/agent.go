@@ -97,6 +97,11 @@ func formatRequestChangeError(ec *tools.ExecContext, err error) string {
 		return "Netlify isn't connected for this workspace yet. An admin needs to connect it at " + settingsURL + " before I can make website changes."
 	case errors.Is(err, ErrGitHubNotConnected):
 		return "GitHub isn't connected for this workspace yet. An admin needs to install the Kit GitHub App at " + settingsURL + " before I can make website changes."
+	case errors.Is(err, ErrAgentRunnersNotAvailable):
+		return "The connected Netlify account's plan doesn't include Agent Runners. " +
+			"Migrate the team to Netlify's Credit-based plan (the free tier is enough to test) " +
+			"and try again. Legacy 'Starter' accounts don't have Agent Runners — that's the most " +
+			"common cause of this error."
 	}
 	// Unknown error: surface the message so the LLM can relay /
 	// debug. Wrap with a hint that it might be transient.
