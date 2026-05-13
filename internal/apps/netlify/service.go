@@ -331,21 +331,37 @@ func (s *Service) PublishChange(
 		return nil, fmt.Errorf("decrypting netlify token: %w", err)
 	}
 
-	// Step 1: discover the runner's PR branch (Netlify-assigned)
-	// and commit the agent's working state to it.
-	runner, err := getAgentRunner(ctx, accessToken, priorRun.NetlifyRunnerID)
+	// Step 1: open a PR via Netlify. This pushes the agent's
+	// working state to a GitHub branch and populates pr_branch on
+	// the runner — that field stays empty until we (or someone in
+	// the Netlify UI) explicitly request a PR.
+	prResp, err := pullRequestAgentRunner(ctx, accessToken, priorRun.NetlifyRunnerID)
 	if err != nil {
-		return nil, fmt.Errorf("loading runner state: %w", err)
+		return nil, fmt.Errorf("creating netlify PR: %w", err)
 	}
-	if runner.PRBranch == "" {
-		return nil, errors.New("runner has no PR branch assigned yet — try again in a few seconds")
+	prBranch := prResp.PRBranch
+	if prBranch == "" {
+		// /pull_request response may not include the branch field on
+		// some Netlify deploys — fall back to a fresh GET.
+		runner, gerr := getAgentRunner(ctx, accessToken, priorRun.NetlifyRunnerID)
+		if gerr != nil {
+			return nil, fmt.Errorf("loading runner state: %w", gerr)
+		}
+		prBranch = runner.PRBranch
 	}
+	if prBranch == "" {
+		return nil, errors.New("netlify didn't assign a PR branch even after pull_request — try again in a moment")
+	}
+
+	// Step 2: commit the runner's working state to its PR branch.
+	// (Netlify's commit endpoint only accepts target_branch=<pr_branch>;
+	// it can't be redirected to main directly.)
 	if err := commitAgentRunner(ctx, accessToken,
-		priorRun.NetlifyRunnerID, runner.PRBranch); err != nil {
+		priorRun.NetlifyRunnerID, prBranch); err != nil {
 		return nil, err
 	}
 
-	// Step 2: merge the PR branch into production via Kit's
+	// Step 3: merge the PR branch into production via Kit's
 	// GitHub App. Netlify's auto-deploy picks up the resulting
 	// main-branch commit and rebuilds the live site.
 	commitMsg := "Publish via Kit"
@@ -354,9 +370,9 @@ func (s *Service) PublishChange(
 	}
 	if err := s.github.MergeBranch(ctx, inst.InstallationID,
 		cfg.NetlifyRepoOwner, cfg.NetlifyRepoName,
-		cfg.ProductionBranch, runner.PRBranch, commitMsg); err != nil {
+		cfg.ProductionBranch, prBranch, commitMsg); err != nil {
 		return nil, fmt.Errorf("merging %s → %s: %w",
-			runner.PRBranch, cfg.ProductionBranch, err)
+			prBranch, cfg.ProductionBranch, err)
 	}
 
 	if _, err := s.pool.Exec(ctx,

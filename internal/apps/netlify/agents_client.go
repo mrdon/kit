@@ -200,6 +200,49 @@ func createAgentRunnerSession(
 	return &out, nil
 }
 
+// pullRequestAgentRunner asks Netlify to push the runner's working
+// state to its GitHub PR branch and open a PR for it. The agent
+// run's pr_branch field is empty until this is called — the
+// dashboard's "Create PR" button is what populates it. Kit calls
+// this automatically as the first step of publishing so the user
+// doesn't have to click in the Netlify UI.
+func pullRequestAgentRunner(
+	ctx context.Context,
+	accessToken, runnerID string,
+) (*AgentRunner, error) {
+	if runnerID == "" {
+		return nil, errors.New("runner_id is required")
+	}
+	endpoint := netlifyAPIBase + "/agent_runners/" +
+		url.PathEscape(runnerID) + "/pull_request"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
+		bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return nil, fmt.Errorf("building pull_request request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("posting pull_request: %w", err)
+	}
+	defer resp.Body.Close()
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading pull_request response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("netlify pull_request failed (status %d): %s",
+			resp.StatusCode, string(respBytes))
+	}
+	// Response may be the agentRunner (with pr_branch + pr_url now set)
+	// or empty body for older deployments. Try to decode but fall through.
+	var out AgentRunner
+	_ = json.Unmarshal(respBytes, &out)
+	return &out, nil
+}
+
 // commitAgentRunner takes the runner's current state and commits
 // it to target_branch on the connected GitHub repo. Netlify's own
 // GitHub integration handles the actual push; Kit's GitHub App is
