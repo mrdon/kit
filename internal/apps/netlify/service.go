@@ -2,6 +2,7 @@ package netlify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -10,6 +11,15 @@ import (
 	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/crypto"
 )
+
+// ErrNetlifyNotConnected is returned by RequestChange when the tenant
+// hasn't connected Netlify yet. Surfaced to the agent so it can tell
+// the user what to do, rather than the LLM hallucinating an
+// explanation.
+var ErrNetlifyNotConnected = errors.New("netlify not connected")
+
+// ErrGitHubNotConnected is the analogue for the GitHub side.
+var ErrGitHubNotConnected = errors.New("github not connected")
 
 // Service is the thin business-logic layer over the netlify config
 // table. Stays small in v1 — most useful work shows up once agent
@@ -68,4 +78,82 @@ func (s *Service) HasGitHubAppConfig() bool {
 		return false
 	}
 	return s.github.HasAppConfig()
+}
+
+// ChangeRequest is the v1 input to RequestChange. Only the prompt is
+// user-controlled; the site, base branch, and agent come from
+// app_netlify_config.
+type ChangeRequest struct {
+	Prompt string
+}
+
+// ChangeRunResult is the v1 return shape. Mirrors the small subset
+// of AgentRunner fields callers need to surface back to the user
+// from Slack / MCP.
+type ChangeRunResult struct {
+	RunID            string
+	State            string
+	BaseBranch       string
+	PreviewURL       string
+	ProductionBranch string
+}
+
+// RequestChange starts a Netlify Agent Run for the tenant. v1
+// behaviour: single-shot run forked off the production branch
+// (no chaining), default agent, no clarifier. Returns immediately
+// with the new run's id + preview URL — the URL 404s until the
+// build completes (~60s), but is correct as soon as Netlify
+// accepts the run.
+func (s *Service) RequestChange(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	in ChangeRequest,
+) (*ChangeRunResult, error) {
+	cfg, err := GetConfig(ctx, s.pool, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading netlify config: %w", err)
+	}
+	if cfg == nil || !cfg.ConnectedNetlify() {
+		return nil, ErrNetlifyNotConnected
+	}
+	if s.github == nil {
+		return nil, ErrGitHubNotConnected
+	}
+	inst, err := s.github.GetInstallation(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading github install: %w", err)
+	}
+	if inst == nil {
+		return nil, ErrGitHubNotConnected
+	}
+	accessToken, err := s.enc.Decrypt(cfg.NetlifyAccessTokenCipher)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting netlify token: %w", err)
+	}
+	runner, err := createAgentRunner(ctx, accessToken, CreateAgentRunnerInput{
+		SiteID: cfg.NetlifySiteID,
+		Prompt: in.Prompt,
+		Branch: cfg.ProductionBranch,
+		Agent:  cfg.DefaultAgent,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Netlify sometimes populates latest_session_deploy_url
+	// asynchronously: the POST returns before the deploy id has been
+	// minted. One follow-up GET gives the URL a chance to land
+	// without us having to poll repeatedly. Best-effort — if the
+	// fetch fails, fall through with whatever we had.
+	if runner.LatestSessionDeployURL == "" {
+		if refreshed, ferr := getAgentRunner(ctx, accessToken, runner.ID); ferr == nil {
+			runner = refreshed
+		}
+	}
+	return &ChangeRunResult{
+		RunID:            runner.ID,
+		State:            runner.State,
+		BaseBranch:       runner.Branch,
+		PreviewURL:       runner.LatestSessionDeployURL,
+		ProductionBranch: cfg.ProductionBranch,
+	}, nil
 }

@@ -10,6 +10,7 @@ package netlify
 
 import (
 	"context"
+	_ "embed"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,7 +22,11 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/tools"
 )
+
+//go:embed prompts/system_netlify.tmpl
+var systemPromptText string
 
 var instance *App
 
@@ -90,15 +95,23 @@ func (a *App) Service() *Service { return a.svc }
 
 func (a *App) Name() string { return "netlify" }
 
-func (a *App) SystemPrompt() string { return "" }
+func (a *App) SystemPrompt() string { return systemPromptText }
 
-func (a *App) ToolMetas() []services.ToolMeta { return nil }
+func (a *App) ToolMetas() []services.ToolMeta { return netlifyTools }
 
-func (a *App) RegisterAgentTools(_ context.Context, _ any, _ *services.Caller, _ bool) {
+func (a *App) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, _ bool) {
+	r, ok := registerer.(*tools.Registry)
+	if !ok || a.svc == nil {
+		return
+	}
+	registerNetlifyAgentTools(r, a.svc)
 }
 
 func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
-	return nil
+	if a.svc == nil {
+		return nil
+	}
+	return buildNetlifyMCPTools(a.svc)
 }
 
 func (a *App) RegisterRoutes(mux *http.ServeMux) {
