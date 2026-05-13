@@ -137,6 +137,16 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist the workspace subdomain so /{slug}/login can route users
+	// through https://<domain>.slack.com/... — Slack's signed-out flow
+	// needs the subdomain to pin the workspace, and `team=<id>` alone
+	// doesn't carry the user through Slack's generic sign-in page.
+	if err := models.SetTenantSlackDomain(ctx, h.pool, tenant.ID, domain); err != nil {
+		slog.Warn("saving tenant slack domain", "team_id", resp.Team.ID, "error", err)
+	} else {
+		tenant.SlackTeamDomain = domain
+	}
+
 	// Ensure builtin roles exist for this tenant. Idempotent — safe to run on
 	// every install/reinstall.
 	memberRole, err := models.GetOrCreateRole(ctx, h.pool, tenant.ID, models.RoleMember, "Default role for all team members")

@@ -97,15 +97,17 @@ type Services struct {
 
 // New creates a Services bundle with all service instances. baseURL is
 // used by the widget-token service to render the embed snippet; pass
-// the public base URL of the Kit deployment.
-func New(pool *pgxpool.Pool, enc *crypto.Encryptor, baseURL string) *Services {
+// the public base URL of the Kit deployment. teamInfo is optional —
+// pass nil to disable Slack team.info-backed features like
+// TenantService.EnsureSlackDomain.
+func New(pool *pgxpool.Pool, enc *crypto.Encryptor, baseURL string, teamInfo SlackTeamInfoFetcher) *Services {
 	return &Services{
 		Skills:          &SkillService{pool: pool},
 		Rules:           &RuleService{pool: pool},
 		Memories:        &MemoryService{pool: pool},
 		Roles:           &RoleService{pool: pool},
 		Jobs:            &JobService{pool: pool},
-		Tenants:         &TenantService{pool: pool},
+		Tenants:         &TenantService{pool: pool, enc: enc, teamInfo: teamInfo},
 		Users:           &UserService{pool: pool},
 		Sessions:        &SessionService{pool: pool},
 		WidgetTokens:    NewWidgetTokenService(pool, baseURL),

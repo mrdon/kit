@@ -219,7 +219,16 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if returnTo != "" {
 		auth.SetPWAReturnTo(w, returnTo)
 	}
-	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce, tenant.SlackTeamID)
+	// One-time per-tenant: tenants installed before slack_team_domain
+	// existed land here with an empty domain. TenantService.EnsureSlackDomain
+	// calls team.info and persists so the next login (and Slack's
+	// signed-out sign-in page) can pin the workspace via subdomain
+	// instead of asking the user to type it.
+	domain := tenant.SlackTeamDomain
+	if domain == "" && a.tenants != nil {
+		domain = a.tenants.EnsureSlackDomain(r.Context(), tenant)
+	}
+	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce, tenant.SlackTeamID, domain)
 	http.Redirect(w, r, slackURL, http.StatusFound)
 }
 

@@ -43,6 +43,15 @@ func Configure(signer *auth.SessionSigner, slack auth.SlackOpenIDConfig, baseURL
 	}
 }
 
+// ConfigureTenants wires the shared TenantService so handleLogin can
+// lazy-backfill slack_team_domain on legacy tenants.
+func ConfigureTenants(t *services.TenantService) {
+	if instance == nil {
+		return
+	}
+	instance.tenants = t
+}
+
 // ConfigureChat wires the dependencies needed by the chat/transcribe and
 // chat/execute SSE endpoints. Optional: if transcriber is nil the voice
 // path returns a clear "not configured" error; if agent is nil both
@@ -163,6 +172,7 @@ type CardsApp struct {
 	enc         *crypto.Encryptor
 	transcriber transcribe.Transcriber
 	chatLimiter *chat.ExecuteLimiter
+	tenants     *services.TenantService
 }
 
 // Init sets up the service after DB is available and registers the

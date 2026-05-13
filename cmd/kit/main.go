@@ -105,7 +105,11 @@ func main() {
 	}
 
 	// Shared services bundle, reused by the MCP server below.
-	svc := services.New(pool, enc, cfg.BaseURL)
+	teamInfoFetcher := func(ctx context.Context, botToken string) (string, error) {
+		domain, _, _, err := kitslack.NewClient(botToken).TeamInfo(ctx)
+		return domain, err
+	}
+	svc := services.New(pool, enc, cfg.BaseURL, teamInfoFetcher)
 
 	// Lazy user-profile enrichment. models.GetUserByID /
 	// GetUserBySlackID / EnsureUserBySlackID call this enricher when a
@@ -175,6 +179,7 @@ func main() {
 			cfg.BaseURL,
 			cfg.Env == "dev",
 		)
+		cards.ConfigureTenants(svc.Tenants)
 	}
 
 	// Redis (optional — web_fetch caching)

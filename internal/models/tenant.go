@@ -14,18 +14,19 @@ import (
 )
 
 type Tenant struct {
-	ID            uuid.UUID
-	SlackTeamID   string
-	Name          string
-	BotToken      string // encrypted
-	Slug          string
-	Icon192       []byte
-	Icon512       []byte
-	BusinessType  *string
-	Timezone      string
-	SetupComplete bool
-	DefaultRoleID *uuid.UUID
-	CreatedAt     time.Time
+	ID              uuid.UUID
+	SlackTeamID     string
+	SlackTeamDomain string // workspace subdomain, e.g. "monarchbands" — empty for legacy tenants
+	Name            string
+	BotToken        string // encrypted
+	Slug            string
+	Icon192         []byte
+	Icon512         []byte
+	BusinessType    *string
+	Timezone        string
+	SetupComplete   bool
+	DefaultRoleID   *uuid.UUID
+	CreatedAt       time.Time
 }
 
 // slugValid matches the CHECK constraint in the tenants table. Kept in
@@ -102,9 +103,9 @@ func UpsertTenant(ctx context.Context, pool *pgxpool.Pool, slackTeamID, name, en
 			slug = EXCLUDED.slug,
 			icon_192 = COALESCE(EXCLUDED.icon_192, tenants.icon_192),
 			icon_512 = COALESCE(EXCLUDED.icon_512, tenants.icon_512)
-		RETURNING id, slack_team_id, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
+		RETURNING id, slack_team_id, slack_team_domain, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
 	`, uuid.New(), slackTeamID, name, encryptedToken, slug, icon192, icon512).Scan(
-		&tenant.ID, &tenant.SlackTeamID, &tenant.Name, &tenant.BotToken,
+		&tenant.ID, &tenant.SlackTeamID, &tenant.SlackTeamDomain, &tenant.Name, &tenant.BotToken,
 		&tenant.Slug, &tenant.Icon192, &tenant.Icon512,
 		&tenant.BusinessType, &tenant.Timezone, &tenant.SetupComplete, &tenant.DefaultRoleID, &tenant.CreatedAt,
 	)
@@ -117,10 +118,10 @@ func UpsertTenant(ctx context.Context, pool *pgxpool.Pool, slackTeamID, name, en
 func GetTenantBySlackTeamID(ctx context.Context, pool *pgxpool.Pool, slackTeamID string) (*Tenant, error) {
 	tenant := &Tenant{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, slack_team_id, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
+		SELECT id, slack_team_id, slack_team_domain, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
 		FROM tenants WHERE slack_team_id = $1
 	`, slackTeamID).Scan(
-		&tenant.ID, &tenant.SlackTeamID, &tenant.Name, &tenant.BotToken,
+		&tenant.ID, &tenant.SlackTeamID, &tenant.SlackTeamDomain, &tenant.Name, &tenant.BotToken,
 		&tenant.Slug, &tenant.Icon192, &tenant.Icon512,
 		&tenant.BusinessType, &tenant.Timezone, &tenant.SetupComplete, &tenant.DefaultRoleID, &tenant.CreatedAt,
 	)
@@ -139,10 +140,10 @@ func GetTenantBySlackTeamID(ctx context.Context, pool *pgxpool.Pool, slackTeamID
 func GetTenantBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (*Tenant, error) {
 	tenant := &Tenant{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, slack_team_id, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
+		SELECT id, slack_team_id, slack_team_domain, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
 		FROM tenants WHERE slug = $1
 	`, slug).Scan(
-		&tenant.ID, &tenant.SlackTeamID, &tenant.Name, &tenant.BotToken,
+		&tenant.ID, &tenant.SlackTeamID, &tenant.SlackTeamDomain, &tenant.Name, &tenant.BotToken,
 		&tenant.Slug, &tenant.Icon192, &tenant.Icon512,
 		&tenant.BusinessType, &tenant.Timezone, &tenant.SetupComplete, &tenant.DefaultRoleID, &tenant.CreatedAt,
 	)
@@ -153,6 +154,22 @@ func GetTenantBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (*Ten
 		return nil, fmt.Errorf("getting tenant by slug: %w", err)
 	}
 	return tenant, nil
+}
+
+// SetTenantSlackDomain writes the workspace subdomain captured at install
+// time (team.info → domain). No-ops on empty input so a failed team.info
+// call doesn't clobber a previously-good value.
+func SetTenantSlackDomain(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, domain string) error {
+	if domain == "" {
+		return nil
+	}
+	_, err := pool.Exec(ctx, `
+		UPDATE tenants SET slack_team_domain = $2 WHERE id = $1
+	`, tenantID, domain)
+	if err != nil {
+		return fmt.Errorf("setting tenant slack domain: %w", err)
+	}
+	return nil
 }
 
 func UpdateTenantSetup(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, businessType, timezone string) error {
@@ -170,10 +187,10 @@ func UpdateTenantSetup(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UU
 func GetTenantByID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (*Tenant, error) {
 	tenant := &Tenant{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, slack_team_id, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
+		SELECT id, slack_team_id, slack_team_domain, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
 		FROM tenants WHERE id = $1
 	`, tenantID).Scan(
-		&tenant.ID, &tenant.SlackTeamID, &tenant.Name, &tenant.BotToken,
+		&tenant.ID, &tenant.SlackTeamID, &tenant.SlackTeamDomain, &tenant.Name, &tenant.BotToken,
 		&tenant.Slug, &tenant.Icon192, &tenant.Icon512,
 		&tenant.BusinessType, &tenant.Timezone, &tenant.SetupComplete, &tenant.DefaultRoleID, &tenant.CreatedAt,
 	)
@@ -189,7 +206,7 @@ func GetTenantByID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 // ListAllTenants returns all tenants.
 func ListAllTenants(ctx context.Context, pool *pgxpool.Pool) ([]Tenant, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, slack_team_id, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
+		SELECT id, slack_team_id, slack_team_domain, name, bot_token, slug, icon_192, icon_512, business_type, timezone, setup_complete, default_role_id, created_at
 		FROM tenants
 	`)
 	if err != nil {
@@ -200,7 +217,7 @@ func ListAllTenants(ctx context.Context, pool *pgxpool.Pool) ([]Tenant, error) {
 	var tenants []Tenant
 	for rows.Next() {
 		var t Tenant
-		if err := rows.Scan(&t.ID, &t.SlackTeamID, &t.Name, &t.BotToken,
+		if err := rows.Scan(&t.ID, &t.SlackTeamID, &t.SlackTeamDomain, &t.Name, &t.BotToken,
 			&t.Slug, &t.Icon192, &t.Icon512,
 			&t.BusinessType, &t.Timezone, &t.SetupComplete, &t.DefaultRoleID, &t.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning tenant: %w", err)

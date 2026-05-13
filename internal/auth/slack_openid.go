@@ -27,12 +27,22 @@ type SlackIdentity struct {
 }
 
 // SlackAuthorizeURL builds the Slack OpenID authorization URL to redirect
-// the browser to. state is echoed back through the callback. If teamID is
-// non-empty, Slack pre-selects that workspace in the sign-in UI so the
-// user doesn't have to remember (or type) their workspace slug.
-func SlackAuthorizeURL(cfg SlackOpenIDConfig, redirectURI, state, teamID string) string {
+// the browser to. state is echoed back through the callback.
+//
+// teamDomain is the workspace subdomain (e.g. "monarchbands" for
+// monarchbands.slack.com). When non-empty, the URL is rooted at
+// https://<teamDomain>.slack.com/... so Slack's signed-out sign-in page
+// is already scoped to that workspace — the user never has to type a
+// workspace URL from memory. teamID is still passed as a belt-and-
+// suspenders for users who already have a Slack session.
+func SlackAuthorizeURL(cfg SlackOpenIDConfig, redirectURI, state, teamID, teamDomain string) string {
+	host := "slack.com"
+	if teamDomain != "" {
+		host = teamDomain + ".slack.com"
+	}
 	u := fmt.Sprintf(
-		"https://slack.com/openid/connect/authorize?response_type=code&client_id=%s&scope=openid,profile&redirect_uri=%s&state=%s&nonce=%s",
+		"https://%s/openid/connect/authorize?response_type=code&client_id=%s&scope=openid,profile&redirect_uri=%s&state=%s&nonce=%s",
+		host,
 		url.QueryEscape(cfg.ClientID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape(state),
