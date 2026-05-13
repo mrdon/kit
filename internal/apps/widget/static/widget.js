@@ -30,19 +30,21 @@
 
   // wait_for: optional CSS selector. When set, the bubble doesn't
   // mount until an element matching this selector appears in the DOM.
-  // Used to gate the widget on a Wix per-page password prompt or any
-  // other "show only after the visitor sees real content" condition.
-  function scriptWaitFor() {
+  // wait_until_gone: opposite — mounts when the selector stops
+  // matching (e.g. a Wix password-prompt dialog has been dismissed).
+  // At most one of the two is honoured; wait_for wins if both set.
+  function scriptParam(name) {
     try {
       var s = document.currentScript;
       if (!s || !s.src) return '';
-      return new URL(s.src).searchParams.get('wait_for') || '';
+      return new URL(s.src).searchParams.get(name) || '';
     } catch (e) { return ''; }
   }
 
   var BASE = scriptOrigin();
   var TOKEN = scriptToken();
-  var WAIT_FOR = scriptWaitFor();
+  var WAIT_FOR = scriptParam('wait_for');
+  var WAIT_UNTIL_GONE = scriptParam('wait_until_gone');
 
   if (!BASE || !TOKEN) {
     console.warn('kit-widget: missing base url or token in script src');
@@ -383,20 +385,27 @@
   // would miss it). Polling is cheap and catches both adds and
   // class/style flips.
   function mountWhenReady() {
-    if (!WAIT_FOR) {
+    var gate = null;
+    if (WAIT_FOR) {
+      gate = function () { return !!document.querySelector(WAIT_FOR); };
+      console.info('kit-widget: waiting for selector to appear', WAIT_FOR);
+    } else if (WAIT_UNTIL_GONE) {
+      gate = function () { return !document.querySelector(WAIT_UNTIL_GONE); };
+      console.info('kit-widget: waiting for selector to be gone', WAIT_UNTIL_GONE);
+    }
+    if (!gate) {
       attach(); watchMounted();
       return;
     }
-    console.info('kit-widget: waiting for selector', WAIT_FOR);
-    if (tryMount()) return;
+    if (tryMount(gate)) return;
     var interval = setInterval(function () {
-      if (tryMount()) clearInterval(interval);
+      if (tryMount(gate)) clearInterval(interval);
     }, 400);
   }
 
-  function tryMount() {
-    if (!document.querySelector(WAIT_FOR)) return false;
-    console.info('kit-widget: selector matched, mounting bubble');
+  function tryMount(gate) {
+    if (!gate()) return false;
+    console.info('kit-widget: gate satisfied, mounting bubble');
     attach(); watchMounted();
     return true;
   }
