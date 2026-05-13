@@ -19,17 +19,29 @@ var netlifyTools = []services.ToolMeta{
 		Description: `Request a change to the team's marketing website. Use this when the user asks
 for a tweak to the public site (e.g. "make the banner blue", "update our hours",
 "add this paragraph to the about page"). The change runs in Netlify's cloud — Kit
-does not edit the site directly. Returns a preview URL the user can click to see
-the result (404 for the first ~60 seconds while the build runs).
+does not edit the site directly.
 
-In v1 this is single-shot: each call starts a fresh run off the production
-branch and the user gets ONE preview URL back. Don't call this in a loop;
-respond to the user with the URL and wait for their reply.`,
+Kit posts the preview URL back to the Slack thread automatically when the
+build finishes (~60s). Don't share the URL yourself; just acknowledge the
+request briefly and wait. Iteration in a thread is automatic — call this
+tool again with a new prompt and Kit chains the new run off the previous
+turn's state.`,
 		Schema: services.PropsReq(map[string]any{
 			"prompt": services.Field("string",
 				"The change to make, in plain English. Pass the user's request as-is "+
 					"unless it's clearly missing critical context."),
 		}, "prompt"),
+	},
+	{
+		Name: "netlify_ship_change",
+		Description: `Ship the latest preview to production. Call this when the user clearly
+indicates they want the changes from this Slack thread to go live —
+"ship it", "deploy", "looks good, ship", etc.
+
+Refuses if the thread has no agent runs yet, or if the latest run is
+still building. Once it succeeds, Netlify commits the changes to the
+production branch and the live site updates in ~90 seconds.`,
+		Schema: services.Props(map[string]any{}),
 	},
 }
 
@@ -46,10 +58,60 @@ func registerNetlifyAgentTools(r *tools.Registry, svc *Service) {
 }
 
 func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
-	if name == "netlify_request_change" {
+	switch name {
+	case "netlify_request_change":
 		return requestChangeHandler(svc)
+	case "netlify_ship_change":
+		return shipChangeHandler(svc)
 	}
 	return nil
+}
+
+func shipChangeHandler(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
+		caller := ec.Caller()
+		if caller == nil {
+			return "", errors.New("no caller in context")
+		}
+		if ec.Channel == "" || ec.ThreadTS == "" {
+			return "Shipping requires running this from inside a Slack thread that has at least one Netlify run.", nil
+		}
+		res, err := svc.ShipChange(ec.Ctx, caller.TenantID, ec.Channel, ec.ThreadTS)
+		if err != nil {
+			return formatShipError(ec, err), nil
+		}
+		var b strings.Builder
+		b.WriteString(":rocket: Shipped to production.\n")
+		fmt.Fprintf(&b, "- target branch: `%s`\n", res.TargetBranch)
+		if res.Summary != "" {
+			fmt.Fprintf(&b, "- last change: %s\n", res.Summary)
+		}
+		b.WriteString("\nNetlify will rebuild and the live site updates in about a minute and a half. " +
+			"Tell the user it's shipping; no need to share the run id.")
+		return b.String(), nil
+	}
+}
+
+// formatShipError converts typed sentinels into copy the LLM can
+// relay verbatim. Unknown errors fall through with the raw message.
+func formatShipError(ec *tools.ExecContext, err error) string {
+	slug := ""
+	if ec.Tenant != nil {
+		slug = ec.Tenant.Slug
+	}
+	switch {
+	case errors.Is(err, ErrNothingToShip):
+		return "There's no preview to ship in this thread yet. Make a change first by asking for one (e.g. \"make the H1 blue\"), then ship it once the preview looks right."
+	case errors.Is(err, ErrShipPending):
+		return "The latest build is still running — wait for the preview-ready message and try ship-it again after."
+	case errors.Is(err, ErrNetlifyNotConnected):
+		page := "Kit's integrations page"
+		if slug != "" {
+			page = "Kit's integrations page (/" + slug + "/admin/integrations)"
+		}
+		return "Netlify isn't connected for this workspace. Connect it at " + page + " before shipping."
+	}
+	return "Couldn't ship the change: " + err.Error()
 }
 
 func requestChangeHandler(svc *Service) tools.HandlerFunc {

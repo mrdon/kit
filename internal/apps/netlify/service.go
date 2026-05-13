@@ -24,6 +24,15 @@ var ErrNetlifyNotConnected = errors.New("netlify not connected")
 // ErrGitHubNotConnected is the analogue for the GitHub side.
 var ErrGitHubNotConnected = errors.New("github not connected")
 
+// ErrNothingToShip is returned by ShipChange when no active change
+// thread exists for the Slack thread (no prior agent run).
+var ErrNothingToShip = errors.New("no agent run to ship in this thread")
+
+// ErrShipPending is returned when the latest run hasn't completed
+// yet — committing a still-running run produces unpredictable
+// results. Caller should ask the user to wait.
+var ErrShipPending = errors.New("latest agent run is still in progress")
+
 // Service is the thin business-logic layer over the netlify config
 // table. Stays small in v1 — most useful work shows up once agent
 // runs and image uploads land.
@@ -254,6 +263,69 @@ func (s *Service) RequestChange(
 	}
 
 	return result, nil
+}
+
+// ShipResult is what ShipChange returns when a commit succeeds.
+type ShipResult struct {
+	TargetBranch string // production branch we shipped to
+	RunnerID     string // Netlify runner id that was committed
+	Summary      string // latest run's diff summary, if we have it
+}
+
+// ShipChange takes the latest agent run for the given Slack thread
+// and commits its working state to the tenant's production branch
+// via Netlify's commit endpoint. Netlify's connected GitHub
+// integration pushes the commit; Netlify's normal CI then builds
+// production from the target branch.
+//
+// Refuses if (a) no change_thread exists for this Slack thread,
+// (b) the latest run hasn't completed yet, or (c) Netlify isn't
+// connected for this tenant. Marks the change_thread as 'shipped'
+// on success.
+func (s *Service) ShipChange(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	slackChannel, slackThreadTS string,
+) (*ShipResult, error) {
+	if slackChannel == "" || slackThreadTS == "" {
+		return nil, errors.New("ship requires slack thread coordinates")
+	}
+	cfg, err := GetConfig(ctx, s.pool, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading netlify config: %w", err)
+	}
+	if cfg == nil || !cfg.ConnectedNetlify() {
+		return nil, ErrNetlifyNotConnected
+	}
+	priorRun, err := resolvePriorRun(ctx, s.pool, tenantID, slackChannel, slackThreadTS)
+	if err != nil {
+		return nil, fmt.Errorf("loading prior run: %w", err)
+	}
+	if priorRun == nil {
+		return nil, ErrNothingToShip
+	}
+	if priorRun.DoneAt == nil {
+		return nil, ErrShipPending
+	}
+	accessToken, err := s.enc.Decrypt(cfg.NetlifyAccessTokenCipher)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting netlify token: %w", err)
+	}
+	if err := commitAgentRunner(ctx, accessToken,
+		priorRun.NetlifyRunnerID, cfg.ProductionBranch); err != nil {
+		return nil, err
+	}
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE app_netlify_change_threads SET state = 'shipped', updated_at = now()
+         WHERE id = $1`, priorRun.ChangeThreadID); err != nil {
+		slog.Warn("ship: marking change_thread shipped",
+			"thread_id", priorRun.ChangeThreadID, "error", err)
+	}
+	return &ShipResult{
+		TargetBranch: cfg.ProductionBranch,
+		RunnerID:     priorRun.NetlifyRunnerID,
+		Summary:      priorRun.Summary,
+	}, nil
 }
 
 // resolvePriorRun returns the most recent agent_run row for a given

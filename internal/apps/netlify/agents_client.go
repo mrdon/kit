@@ -192,6 +192,50 @@ func createAgentRunnerSession(
 	return &out, nil
 }
 
+// commitAgentRunner takes the runner's current state and commits
+// it to target_branch on the connected GitHub repo. Netlify's own
+// GitHub integration handles the actual push; Kit's GitHub App is
+// not involved here. Once the commit lands, Netlify's normal CI
+// builds production from target_branch.
+//
+// Swagger says target_branch is a query param. Send it both ways
+// (query + body) defensively — the create_agent_runner endpoint
+// taught us Netlify's docs don't always match the live API.
+func commitAgentRunner(
+	ctx context.Context,
+	accessToken, runnerID, targetBranch string,
+) error {
+	if runnerID == "" {
+		return errors.New("runner_id is required")
+	}
+	if targetBranch == "" {
+		return errors.New("target_branch is required")
+	}
+	q := url.Values{"target_branch": {targetBranch}}
+	endpoint := netlifyAPIBase + "/agent_runners/" +
+		url.PathEscape(runnerID) + "/commit?" + q.Encode()
+	bodyBytes, _ := json.Marshal(map[string]any{"target_branch": targetBranch})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
+		bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("building commit request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("posting commit: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("netlify commit failed (status %d): %s",
+			resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // getAgentRunnerSession fetches one session's state. Used by the
 // watcher to poll follow-up turns.
 func getAgentRunnerSession(
