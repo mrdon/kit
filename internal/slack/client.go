@@ -44,6 +44,25 @@ func NewDryRunClient(botToken string) *Client {
 	return c
 }
 
+// PostEphemeral sends a message to a Slack channel that is visible only
+// to the given user. Used by side-channel paths that must not land the
+// message in conversations.history (e.g. the vault deep-link tool, which
+// posts a one-shot login URL the LLM must never see). Slack docs:
+// https://api.slack.com/methods/chat.postEphemeral
+func (c *Client) PostEphemeral(ctx context.Context, channel, userID, text string) error {
+	if c.dryRun {
+		c.Captured = append(c.Captured, CapturedMessage{Channel: channel, Text: text})
+		return nil
+	}
+	payload := map[string]string{
+		"channel": channel,
+		"user":    userID,
+		"text":    text,
+	}
+	_, err := c.apiCall(ctx, "chat.postEphemeral", payload)
+	return err
+}
+
 // PostMessage sends a message to a Slack channel, optionally in a thread.
 func (c *Client) PostMessage(ctx context.Context, channel, threadTS, text string) error {
 	if c.dryRun {

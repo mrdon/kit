@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -216,17 +217,50 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 		// Authz check via GetEntry; we don't return ciphertext.
 		audit := auditFromExecContext(ec)
 		audit.userAgent = "agent"
-		_, err = svc.GetEntry(ec.Ctx, caller, entryID, audit)
+		entry, err := svc.GetEntry(ec.Ctx, caller, entryID, audit)
 		if err != nil {
 			if errors.Is(err, models.ErrNotFound) {
 				return "No entry with that id, or you don't have access.", nil
 			}
 			return "", err
 		}
-		url := svc.absURL(fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID))
-		return "Open in your browser to view: " + url, nil
+		basePath := fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID)
+
+		// Slack-mediated path: sign a one-shot token, post the URL as
+		// an ephemeral message (only the user sees it, and ephemerals
+		// don't land in conversations.history → invisible to the LLM
+		// even if it later calls get_slack_messages). The tool's own
+		// return text intentionally omits the URL so it never enters
+		// session_events.
+		if ec != nil && ec.Channel != "" && ec.Slack != nil && svc.deepLinks != nil && ec.User != nil {
+			token, signErr := svc.deepLinks.Sign(ec.User.ID, caller.TenantID, entryID, deepLinkTTL)
+			if signErr == nil {
+				rawURL := svc.absURL(basePath + "?t=" + token)
+				title := entry.Title
+				if title == "" {
+					title = "your vault entry"
+				}
+				ephemeralText := "Reveal " + title + ": " + rawURL + "\n\n_Link is single-use and expires in 2 minutes._"
+				if postErr := ec.Slack.PostEphemeral(ec.Ctx, ec.Channel, caller.Identity, ephemeralText); postErr == nil {
+					return "I sent you a Reveal link for " + title + " — check the ephemeral message in this channel (visible only to you). The link is single-use and expires in 2 minutes.", nil
+				}
+				// Posting the ephemeral failed (e.g. bot not in
+				// channel). Fall through to the tokenless URL path so
+				// the user still has a way to view the secret.
+			}
+		}
+
+		// Fallback (no Slack channel, no signer, or ephemeral post failed):
+		// return a tokenless URL. The user goes through the normal
+		// Slack-OAuth login on the reveal page.
+		return "Open in your browser to view: " + svc.absURL(basePath), nil
 	}
 }
+
+// deepLinkTTL is the validity window for the reveal-URL token. Kept
+// short so a leaked URL (browser history, log capture, screenshot) is
+// only useful for the brief moment the user is actually tapping it.
+const deepLinkTTL = 2 * time.Minute
 
 func handleAgentStartAddSecret(svc *Service) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {

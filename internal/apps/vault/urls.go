@@ -5,6 +5,7 @@ package vault
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mrdon/kit/internal/auth"
 )
@@ -27,6 +28,10 @@ const csrfHeader = "X-Kit-Vault"
 //	→ requireCaller (refuses if no Caller landed in ctx)
 //	→ handler
 //
+// The reveal page additionally runs the deep-link middleware between
+// tenantMW and signer.Middleware so a Slack-issued one-shot token can
+// mint a session without requiring an OAuth round-trip.
+//
 // HTML page routes (GET /vault/register etc.) skip the JSON / CSRF gate
 // since they're plain navigations.
 func registerVaultRoutes(mux *http.ServeMux, a *App) {
@@ -46,6 +51,29 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	// not see a bare 401.
 	page := func(h http.HandlerFunc) http.Handler {
 		return auth.PageRoute(tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
+	}
+
+	// revealPage layers the deep-link consumer ahead of the cookie
+	// middleware so a fresh token mints a session before the cookie
+	// check runs. Requests without `?t=` fall through untouched and
+	// hit the existing cookie/OAuth path. If no deepLinks signer is
+	// configured (sessionSecret missing), this collapses to the same
+	// chain as page().
+	revealPage := page
+	if a.deepLinks != nil {
+		deeplinkMW := a.deepLinks.Middleware(auth.DeepLinkMiddlewareConfig{
+			Pool:       a.pool,
+			Sessions:   a.signer,
+			SessionTTL: time.Hour,
+			BindCheck: func(r *http.Request, c *auth.Claims) bool {
+				return r.PathValue("entry_id") == c.EntryID.String()
+			},
+			OnError:   a.handleDeepLinkError,
+			OnSuccess: a.handleDeepLinkSuccess,
+		})
+		revealPage = func(h http.HandlerFunc) http.Handler {
+			return auth.PageRoute(tenantMW(deeplinkMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))))
+		}
 	}
 
 	// JSON state-changing API: tenant + JSON content-type + session.
@@ -93,8 +121,9 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 		http.Redirect(w, r, "/"+slug+"/apps/vault", http.StatusMovedPermanently)
 	}))
 
-	// Reveal
-	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", page(a.handleRevealPage))
+	// Reveal — uses the deep-link-aware page wrapper so Slack-issued
+	// tokens can authenticate without an OAuth round-trip.
+	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", revealPage(a.handleRevealPage))
 
 	// Entries CRUD (browser-driven; ciphertext on the wire)
 	mux.Handle("GET /{slug}/apps/vault/api/entries", get(a.handleListEntries))

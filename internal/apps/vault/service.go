@@ -32,6 +32,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -64,6 +65,11 @@ type Service struct {
 	// paths so the agent's response includes a fully-qualified URL —
 	// without it the LLM may hallucinate a host when rendering the path.
 	baseURL string
+
+	// deepLinks signs the one-shot tokens that ride in agent-issued
+	// reveal URLs. Populated via Configure; nil-safe — the tool falls
+	// back to a tokenless URL so the user still authenticates via OAuth.
+	deepLinks *auth.DeepLinkSigner
 }
 
 // NewService constructs a vault service backed by the given pool.

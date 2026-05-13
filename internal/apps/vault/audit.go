@@ -127,6 +127,25 @@ type EvtScopeChange struct {
 	ToRoleID   *uuid.UUID `json:"to_role_id,omitempty"`
 }
 
+// EvtTokenConsumed records a successful single-use consumption of a
+// reveal deep-link token. EntryID is the bound resource; JTI is the
+// token's one-shot id (truncated for log readability, full value never
+// re-derivable from the audit row).
+type EvtTokenConsumed struct {
+	EntryID uuid.UUID `json:"entry_id"`
+	JTI     string    `json:"jti"`
+}
+
+// EvtTokenRejected records a deep-link token failure where the
+// signature was valid (so the token's tenant attribution is trusted).
+// bad_sig / malformed paths never reach the audit table because their
+// claimed tenant is untrusted — those log via slog.Warn instead.
+type EvtTokenRejected struct {
+	Reason  string    `json:"reason"`
+	EntryID uuid.UUID `json:"entry_id,omitempty"`
+	JTI     string    `json:"jti,omitempty"`
+}
+
 // ===== HTTP helpers =====
 
 // clientIP returns the request's remote IP as a netip.Addr, preferring the

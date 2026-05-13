@@ -71,6 +71,14 @@ func NewSessionSigner(secret string) (*SessionSigner, error) {
 // A second Set-Cookie with Path=/ and MaxAge=-1 is emitted alongside so
 // any stale root-scope cookie from before the migration is cleared.
 func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, tenantID, userID uuid.UUID, path string) error {
+	return s.IssueWithTTL(ctx, w, pool, tenantID, userID, path, sessionMaxAge)
+}
+
+// IssueWithTTL is Issue with a caller-supplied lifetime. Used by the
+// deep-link middleware to mint shorter-lived sessions (the token itself
+// proved access for one resource at one moment; we don't want to leave
+// behind a 30-day cookie from a single-tap auth).
+func (s *SessionSigner) IssueWithTTL(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, tenantID, userID uuid.UUID, path string, ttl time.Duration) error {
 	if path == "" {
 		path = "/"
 	}
@@ -78,7 +86,7 @@ func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *
 	if err != nil {
 		return fmt.Errorf("generating token: %w", err)
 	}
-	expiresAt := time.Now().Add(sessionMaxAge)
+	expiresAt := time.Now().Add(ttl)
 	if err := models.CreateAPIToken(ctx, pool, tenantID, userID, hash, expiresAt); err != nil {
 		return fmt.Errorf("creating api token: %w", err)
 	}
@@ -100,7 +108,7 @@ func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *
 		Value:    s.signValue(raw),
 		Path:     path,
 		Expires:  expiresAt,
-		MaxAge:   int(sessionMaxAge.Seconds()),
+		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,

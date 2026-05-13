@@ -231,12 +231,22 @@ func main() {
 	// Vault uses the same CardService for both admin grant-request
 	// decision cards and user-targeted security-tripwire briefings
 	// (reset triggered, access granted, failed-unlock alarm). Plus
-	// the session signer for HTTP routes. Wrapped in a thin adapter
-	// so the vault package doesn't import internal/apps/cards directly
-	// (keeps the dep graph one-way).
+	// the session signer for HTTP routes and a deep-link signer for
+	// one-shot reveal URLs posted via Slack ephemeral. Wrapped in a
+	// thin adapter so the vault package doesn't import internal/apps/cards
+	// directly (keeps the dep graph one-way).
+	var deepLinkSigner *auth.DeepLinkSigner
+	if sessionSigner != nil {
+		deepLinkSigner, err = auth.NewDeepLinkSigner(sessionSecret)
+		if err != nil {
+			slog.Warn("deep-link signer not configured — vault reveal will fall back to OAuth login", "error", err)
+			deepLinkSigner = nil
+		}
+	}
 	vault.Configure(
 		newVaultCardAdapter(cards.ServiceForGating()),
 		sessionSigner,
+		deepLinkSigner,
 		cfg.BaseURL,
 	)
 

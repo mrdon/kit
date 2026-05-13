@@ -189,6 +189,103 @@ func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, "reveal.html", pd)
 }
 
+// deepLinkErrorPageData is the render struct for the deep-link error
+// page. Carries the user-facing reason copy in addition to the standard
+// chrome fields.
+type deepLinkErrorPageData struct {
+	pageData
+	ReasonMessage string
+}
+
+// handleDeepLinkSuccess is the OnSuccess callback wired into the
+// deep-link middleware. Writes a verified-tenant audit row recording
+// the consumed jti so we can correlate to the agent's view_secret
+// action in incident review.
+func (a *App) handleDeepLinkSuccess(r *http.Request, claims *auth.Claims) {
+	if a.svc == nil || claims == nil {
+		return
+	}
+	actor := claims.UserID
+	actx := auditCtx{
+		pool:      a.svc.pool,
+		tenantID:  claims.TenantID,
+		actorID:   &actor,
+		ip:        clientIP(r),
+		userAgent: clientUA(r),
+	}
+	actx.log(r.Context(), "vault.token_consumed", "vault_entry", &claims.EntryID, EvtTokenConsumed{
+		EntryID: claims.EntryID,
+		JTI:     claims.JTI,
+	})
+}
+
+// handleDeepLinkError is the OnError callback wired into the deep-link
+// middleware. For verified-tenant failures (claims != nil) it writes an
+// audit row scoped to the token's tenant; for bad_sig / malformed it
+// only slog.Warns since the claimed tenant is untrusted. In every case
+// it renders a friendly error page that guides the user to ask Kit for
+// a fresh link or open the vault manually — explicitly NOT a redirect
+// to /login (per plan, the user isn't logged out, the link is stale).
+func (a *App) handleDeepLinkError(w http.ResponseWriter, r *http.Request, reason auth.DeepLinkReason, claims *auth.Claims) {
+	switch reason {
+	case auth.DeepLinkBadSig, auth.DeepLinkMalformed:
+		slog.Warn("vault: deep-link rejected (untrusted payload)", "reason", reason)
+	case auth.DeepLinkExpired, auth.DeepLinkConsumed, auth.DeepLinkTenantMismatch, auth.DeepLinkEntryMismatch:
+		if claims != nil && a.svc != nil {
+			actor := claims.UserID
+			actx := auditCtx{
+				pool:      a.svc.pool,
+				tenantID:  claims.TenantID,
+				actorID:   &actor,
+				ip:        clientIP(r),
+				userAgent: clientUA(r),
+			}
+			actx.log(r.Context(), "vault.token_rejected", "vault_entry", &claims.EntryID, EvtTokenRejected{
+				Reason:  string(reason),
+				EntryID: claims.EntryID,
+				JTI:     claims.JTI,
+			})
+		} else {
+			slog.Warn("vault: deep-link rejected without claims", "reason", reason)
+		}
+	}
+
+	applySecurityHeaders(w)
+	pd := a.basePageData(r)
+	if pd.TenantSlug == "" {
+		http.Error(w, "deep-link rejected", http.StatusForbidden)
+		return
+	}
+	pd.Title = "Reveal link unavailable"
+	data := deepLinkErrorPageData{
+		pageData:      pd,
+		ReasonMessage: deepLinkErrorMessage(reason),
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	if err := pageTmpl.ExecuteTemplate(w, "deeplink_error.html", data); err != nil {
+		slog.Error("vault: rendering deeplink_error template", "error", err)
+	}
+}
+
+// deepLinkErrorMessage maps a structured reason to user-facing copy.
+// Kept narrow on purpose — every variant says "ask for a fresh link"
+// without hinting at internal verification mechanics that could help
+// an attacker probe.
+func deepLinkErrorMessage(reason auth.DeepLinkReason) string {
+	switch reason {
+	case auth.DeepLinkExpired:
+		return "This Reveal link has expired. Reveal links are only valid for 2 minutes after Kit sends them."
+	case auth.DeepLinkConsumed:
+		return "This Reveal link has already been used. Each link works only once."
+	case auth.DeepLinkEntryMismatch, auth.DeepLinkTenantMismatch:
+		return "This Reveal link points to the wrong workspace or entry. Ask Kit for a fresh link."
+	case auth.DeepLinkBadSig, auth.DeepLinkMalformed:
+		return "This Reveal link is no longer valid. Ask Kit for a fresh link."
+	}
+	return "This Reveal link is no longer valid. Ask Kit for a fresh link."
+}
+
 func renderPage(w http.ResponseWriter, name string, data pageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := pageTmpl.ExecuteTemplate(w, name, data); err != nil {

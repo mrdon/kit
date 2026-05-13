@@ -34,11 +34,12 @@ func init() {
 //   - Decision cards for tenant admins on grant requests / password resets.
 //   - Briefings for the user being acted on (security tripwires).
 type App struct {
-	pool    *pgxpool.Pool
-	svc     *Service
-	cards   CardSurface
-	signer  *auth.SessionSigner
-	baseURL string
+	pool      *pgxpool.Pool
+	svc       *Service
+	cards     CardSurface
+	signer    *auth.SessionSigner
+	deepLinks *auth.DeepLinkSigner
+	baseURL   string
 }
 
 // CardSurface is the small slice of CardService the vault needs.
@@ -109,21 +110,27 @@ func (a *App) Init(pool *pgxpool.Pool) {
 //   - cards: card creation (admin-targeted grant decisions + user-
 //     targeted security-tripwire briefings + failed-unlock decision)
 //   - signer: session cookie middleware on HTTP routes
+//   - deepLinks: signer for one-shot reveal-URL tokens posted via Slack
+//     ephemeral; nil disables the agent's deep-link path (tool falls
+//     back to a tokenless URL that re-uses the OAuth login flow)
 //   - baseURL: Kit's external origin used by agent/MCP tools to return
 //     fully-qualified URLs (otherwise the LLM hallucinates a host)
 //
-// cards is nil-safe in tests (events just don't fire). HTTP routes
-// refuse to register without a signer.
-func Configure(cards CardSurface, signer *auth.SessionSigner, baseURL string) {
+// cards and deepLinks are nil-safe in tests (deep-link absent → tool
+// still works, just without the no-OAuth shortcut). HTTP routes refuse
+// to register without a signer.
+func Configure(cards CardSurface, signer *auth.SessionSigner, deepLinks *auth.DeepLinkSigner, baseURL string) {
 	if instance == nil {
 		return
 	}
 	instance.cards = cards
 	instance.signer = signer
+	instance.deepLinks = deepLinks
 	instance.baseURL = baseURL
 	if instance.svc != nil {
 		instance.svc.cards = cards
 		instance.svc.baseURL = baseURL
+		instance.svc.deepLinks = deepLinks
 	}
 }
 
