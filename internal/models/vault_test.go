@@ -170,6 +170,41 @@ func TestVaultListSearch(t *testing.T) {
 	}
 }
 
+// Regression: titles like "SignupGenius" stay as a single token under the
+// English FTS dictionary, so a natural-language query "signup genius" used to
+// miss. The ILIKE fallback added to ListVaultEntries must match it.
+func TestVaultListSearchCamelCase(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID, ownerID := testTenantUser(t, ctx, pool)
+
+	tenant, err := GetTenantByID(ctx, pool, tenantID)
+	if err != nil || tenant == nil || tenant.DefaultRoleID == nil {
+		t.Fatalf("loading default role: %v", err)
+	}
+	memberID := *tenant.DefaultRoleID
+	if _, err := CreateVaultEntry(ctx, pool, VaultEntry{
+		TenantID:        tenantID,
+		OwnerUserID:     ownerID,
+		RoleID:          &memberID,
+		Title:           "SignupGenius",
+		ValueCiphertext: []byte("ct"),
+		ValueNonce:      randBytes(t, 12),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	for _, q := range []string{"signup", "signup genius", "Genius"} {
+		rows, err := ListVaultEntries(ctx, pool, tenantID, ownerID, nil, q, "", nil, 100)
+		if err != nil {
+			t.Fatalf("list %q: %v", q, err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("query %q: expected 1 match, got %d", q, len(rows))
+		}
+	}
+}
+
 func TestVaultTenantInitAndRotate(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()

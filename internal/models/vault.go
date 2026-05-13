@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -263,10 +264,25 @@ func ListVaultEntries(ctx context.Context, pool *pgxpool.Pool, tenantID, callerI
 	orderBy := "e.last_viewed_at DESC NULLS LAST, e.created_at DESC"
 
 	if query != "" {
+		haystack := "coalesce(e.title,'')||' '||coalesce(e.url,'')||' '||coalesce(e.username,'')"
 		args = append(args, query)
 		ftsParam := len(args)
-		where += fmt.Sprintf(" AND to_tsvector('english', coalesce(e.title,'')||' '||coalesce(e.url,'')||' '||coalesce(e.username,'')) @@ plainto_tsquery('english', $%d)", ftsParam)
-		orderBy = fmt.Sprintf("ts_rank(to_tsvector('english', coalesce(e.title,'')||' '||coalesce(e.url,'')||' '||coalesce(e.username,'')), plainto_tsquery('english', $%d)) DESC, %s", ftsParam, orderBy)
+		fts := fmt.Sprintf("to_tsvector('english', %s) @@ plainto_tsquery('english', $%d)", haystack, ftsParam)
+		// Per-token ILIKE fallback handles runtogether/camelCase titles
+		// (e.g. "SignupGenius") that the English FTS dictionary keeps as a
+		// single token, so a natural-language "signup genius" query
+		// otherwise misses entirely.
+		var ilikeClauses []string
+		for tok := range strings.FieldsSeq(query) {
+			args = append(args, "%"+escapeLikePattern(tok)+"%")
+			ilikeClauses = append(ilikeClauses, fmt.Sprintf("%s ILIKE $%d", haystack, len(args)))
+		}
+		if len(ilikeClauses) > 0 {
+			where += fmt.Sprintf(" AND ( %s OR ( %s ) )", fts, strings.Join(ilikeClauses, " AND "))
+		} else {
+			where += " AND " + fts
+		}
+		orderBy = fmt.Sprintf("ts_rank(to_tsvector('english', %s), plainto_tsquery('english', $%d)) DESC, %s", haystack, ftsParam, orderBy)
 	}
 	if tag != "" {
 		args = append(args, tag)
@@ -402,6 +418,15 @@ var ErrVaultNotSetUp = errors.New("vault not set up")
 // ErrVaultAlreadySetup is returned by InitVaultTenant when a tenant row
 // already exists. Callers should redirect to /unlock or /rotate.
 var ErrVaultAlreadySetup = errors.New("vault already set up")
+
+// escapeLikePattern escapes the three LIKE metachars (\, %, _) so a free-text
+// search term is treated as a literal substring rather than a pattern.
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	s = strings.ReplaceAll(s, "_", `\_`)
+	return s
+}
 
 func scanVaultEntries(rows pgx.Rows) ([]VaultEntry, error) {
 	var out []VaultEntry
