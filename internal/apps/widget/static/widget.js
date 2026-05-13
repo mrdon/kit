@@ -385,29 +385,51 @@
   // would miss it). Polling is cheap and catches both adds and
   // class/style flips.
   function mountWhenReady() {
-    var gate = null;
     if (WAIT_FOR) {
-      gate = function () { return !!document.querySelector(WAIT_FOR); };
       console.info('kit-widget: waiting for selector to appear', WAIT_FOR);
-    } else if (WAIT_UNTIL_GONE) {
-      gate = function () { return !document.querySelector(WAIT_UNTIL_GONE); };
-      console.info('kit-widget: waiting for selector to be gone', WAIT_UNTIL_GONE);
+      pollUntil(function () { return !!document.querySelector(WAIT_FOR); });
+      return;
     }
-    if (!gate) {
+    if (WAIT_UNTIL_GONE) {
+      // Two-phase: first wait up to 3s for the selector to appear
+      // (so we don't race a fade-in modal), then wait for it to go.
+      // If it never appears, treat the page as already unblocked.
+      console.info('kit-widget: waiting for selector to appear then disappear', WAIT_UNTIL_GONE);
+      var seen = false;
+      var deadline = Date.now() + 3000;
+      var iv = setInterval(function () {
+        var present = !!document.querySelector(WAIT_UNTIL_GONE);
+        if (present) seen = true;
+        if (seen && !present) {
+          console.info('kit-widget: gate cleared, mounting bubble');
+          attach(); watchMounted();
+          clearInterval(iv);
+          return;
+        }
+        if (!seen && Date.now() > deadline) {
+          console.info('kit-widget: gate never appeared, mounting anyway');
+          attach(); watchMounted();
+          clearInterval(iv);
+        }
+      }, 200);
+      return;
+    }
+    attach(); watchMounted();
+  }
+
+  function pollUntil(predicate) {
+    if (predicate()) {
+      console.info('kit-widget: gate satisfied, mounting bubble');
       attach(); watchMounted();
       return;
     }
-    if (tryMount(gate)) return;
-    var interval = setInterval(function () {
-      if (tryMount(gate)) clearInterval(interval);
+    var iv = setInterval(function () {
+      if (predicate()) {
+        console.info('kit-widget: gate satisfied, mounting bubble');
+        attach(); watchMounted();
+        clearInterval(iv);
+      }
     }, 400);
-  }
-
-  function tryMount(gate) {
-    if (!gate()) return false;
-    console.info('kit-widget: gate satisfied, mounting bubble');
-    attach(); watchMounted();
-    return true;
   }
 
   if (document.readyState === 'loading') {
