@@ -16,6 +16,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
@@ -81,6 +82,7 @@ func Configure(
 		instance.svc.github = githubSvc
 		instance.svc.baseURL = baseURL
 	}
+	admin.RegisterIntegration(&netlifyIntegration{app: instance})
 }
 
 // Service returns the live service, or nil before Configure has run.

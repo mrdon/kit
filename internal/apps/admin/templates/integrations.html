@@ -1,0 +1,67 @@
+{{ define "integrations.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; }
+  main { max-width: 760px; margin: 2rem auto; padding: 0 1.25rem; }
+  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+  .lede { color: #555; margin: 0 0 1.5rem; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; background: #fff; display: flex; gap: 1rem; align-items: flex-start; justify-content: space-between; }
+  .card h2 { margin: 0 0 0.25rem; font-size: 1.1rem; }
+  .card .meta { color: #555; font-size: 0.9rem; margin: 0 0 0.35rem; }
+  .card .detail { color: #444; font-size: 0.9rem; margin: 0; }
+  .card .detail code { background: #f4f4f4; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.85rem; }
+  .pill { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 500; vertical-align: middle; margin-right: 0.4rem; }
+  .pill.on { background: #e6f4ea; color: #1e7e34; }
+  .pill.off { background: #fde7e9; color: #b3261e; }
+  .pill.err { background: #fef7e0; color: #8a6d00; }
+  .actions { flex: 0 0 auto; }
+  .btn { display: inline-block; padding: 0.45rem 0.9rem; border-radius: 6px; border: 1px solid #1d4ed8; background: #fff; color: #1d4ed8; text-decoration: none; font-size: 0.9rem; }
+  .btn:hover { background: #f0f4ff; }
+  .empty { color: #777; font-style: italic; padding: 1rem 0; }
+</style>
+</head>
+<body>
+{{ template "chrome_header" .Header }}
+<main>
+  <h1>Integrations</h1>
+  <p class="lede">External services connected to this workspace.</p>
+
+  {{ if not .Rows }}
+    <div class="empty">No integrations registered yet.</div>
+  {{ end }}
+
+  {{ range .Rows }}
+    <div class="card" id="integration-{{ .Slug }}">
+      <div>
+        <h2>
+          {{ if .StatusError }}
+            <span class="pill err">Error</span>
+          {{ else if .Connected }}
+            <span class="pill on">Connected</span>
+          {{ else }}
+            <span class="pill off">Not connected</span>
+          {{ end }}
+          {{ .Name }}
+        </h2>
+        <p class="meta">{{ .Description }}</p>
+        {{ if .StatusError }}
+          <p class="detail">{{ .StatusError }}</p>
+        {{ else if .Detail }}
+          <p class="detail">{{ .Detail }}</p>
+        {{ end }}
+      </div>
+      {{ if .ManageURL }}
+        <div class="actions">
+          <a class="btn" href="{{ .ManageURL }}">Manage →</a>
+        </div>
+      {{ end }}
+    </div>
+  {{ end }}
+</main>
+</body>
+</html>{{ end }}

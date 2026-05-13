@@ -18,6 +18,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -74,6 +75,8 @@ func Configure(
 	instance.svc.appID = appID
 	instance.svc.privateKey = privateKey
 	instance.svc.baseURL = baseURL
+
+	admin.RegisterIntegration(&githubIntegration{app: instance})
 }
 
 // GetService returns the shared service. Other Kit apps (notably
