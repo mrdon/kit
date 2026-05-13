@@ -118,7 +118,13 @@ func formatRequestChangeOK(res *ChangeRunResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Started a Netlify agent run.\n")
 	fmt.Fprintf(&b, "- run_id: %s\n", res.RunID)
-	fmt.Fprintf(&b, "- base branch: %s\n", res.BaseBranch)
+	fmt.Fprintf(&b, "- base branch: %s", res.BaseBranch)
+	if res.ChainedFromRunID != "" {
+		fmt.Fprintf(&b, " (chained from prior run %s — this build accumulates on the last preview)", res.ChainedFromRunID)
+	} else if res.BaseBranch == res.ProductionBranch {
+		fmt.Fprintf(&b, " (production)")
+	}
+	b.WriteString("\n")
 	if res.PreviewURL != "" {
 		fmt.Fprintf(&b, "- preview URL: %s\n", res.PreviewURL)
 	}

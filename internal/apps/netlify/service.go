@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/apps/github"
@@ -100,7 +101,8 @@ type ChangeRunResult struct {
 	BaseBranch       string
 	PreviewURL       string
 	ProductionBranch string
-	WatcherStarted   bool // true when an in-process watcher is polling + will post-back
+	WatcherStarted   bool   // true when an in-process watcher is polling + will post-back
+	ChainedFromRunID string // Netlify run id this one forked off; empty for first run in thread
 }
 
 // RequestChange starts a Netlify Agent Run for the tenant. v1
@@ -135,10 +137,28 @@ func (s *Service) RequestChange(
 	if err != nil {
 		return nil, fmt.Errorf("decrypting netlify token: %w", err)
 	}
+	// Branch chaining: if this Slack thread already has a completed
+	// agent run on it, fork the new run off that run's result_branch
+	// so subsequent edits accumulate ("blue → lighter blue → no, back
+	// to blue") instead of resetting to production every turn.
+	// Production-branch fallback applies when (a) it's the first run
+	// in this thread or (b) the prior run hasn't produced a
+	// result_branch yet (still in flight / failed).
+	baseBranch := cfg.ProductionBranch
+	chainedFrom := ""
+	if in.SlackChannel != "" && in.SlackThreadTS != "" {
+		if priorRun, perr := resolvePriorRun(ctx, s.pool, tenantID,
+			in.SlackChannel, in.SlackThreadTS); perr == nil &&
+			priorRun != nil && priorRun.ResultBranch != "" {
+			baseBranch = priorRun.ResultBranch
+			chainedFrom = priorRun.NetlifyRunID
+		}
+	}
+
 	runner, err := createAgentRunner(ctx, accessToken, CreateAgentRunnerInput{
 		SiteID: cfg.NetlifySiteID,
 		Prompt: in.Prompt,
-		Branch: cfg.ProductionBranch,
+		Branch: baseBranch,
 		Agent:  cfg.DefaultAgent,
 	})
 	if err != nil {
@@ -161,6 +181,7 @@ func (s *Service) RequestChange(
 		BaseBranch:       runner.Branch,
 		PreviewURL:       runner.LatestSessionDeployURL,
 		ProductionBranch: cfg.ProductionBranch,
+		ChainedFromRunID: chainedFrom,
 	}
 
 	// If we have Slack thread coordinates, group the run into a
@@ -174,7 +195,7 @@ func (s *Service) RequestChange(
 			return nil, fmt.Errorf("ensure change thread: %w", cerr)
 		}
 		run, rerr := CreateAgentRun(ctx, s.pool, tenantID, ct.ID,
-			runner.ID, in.Prompt, cfg.ProductionBranch,
+			runner.ID, in.Prompt, baseBranch,
 			runner.LatestSessionDeployURL, runner.State)
 		if rerr != nil {
 			return nil, fmt.Errorf("create agent_run: %w", rerr)
@@ -198,4 +219,35 @@ func (s *Service) RequestChange(
 	}
 
 	return result, nil
+}
+
+// resolvePriorRun returns the most recent agent_run row for a given
+// Slack thread, or nil if there is none. Used by RequestChange to
+// pick the right base branch for branch chaining: if the prior run
+// completed and has a result_branch, the new run forks off that
+// instead of production.
+func resolvePriorRun(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	tenantID uuid.UUID,
+	slackChannel, slackThreadTS string,
+) (*AgentRun, error) {
+	const q = `
+        SELECT ct.latest_agent_run_id
+        FROM app_netlify_change_threads ct
+        WHERE ct.tenant_id = $1
+          AND ct.slack_channel = $2
+          AND ct.slack_thread_ts = $3`
+	var runID *uuid.UUID
+	err := pool.QueryRow(ctx, q, tenantID, slackChannel, slackThreadTS).Scan(&runID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil //nolint:nilnil
+		}
+		return nil, fmt.Errorf("looking up prior run: %w", err)
+	}
+	if runID == nil {
+		return nil, nil //nolint:nilnil
+	}
+	return GetAgentRun(ctx, pool, *runID)
 }

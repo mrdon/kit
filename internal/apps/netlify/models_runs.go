@@ -77,6 +77,36 @@ func EnsureChangeThread(
 	return &ct, nil
 }
 
+// GetAgentRun fetches one agent_run row by id.
+func GetAgentRun(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*AgentRun, error) {
+	const q = `
+        SELECT id, tenant_id, change_thread_id, netlify_run_id,
+               prompt, base_branch,
+               COALESCE(result_branch, ''),
+               COALESCE(preview_url, ''),
+               state,
+               COALESCE(summary, ''),
+               COALESCE(result_diff, ''),
+               created_at, updated_at, done_at
+        FROM app_netlify_agent_runs
+        WHERE id = $1`
+	var run AgentRun
+	err := pool.QueryRow(ctx, q, id).Scan(
+		&run.ID, &run.TenantID, &run.ChangeThreadID, &run.NetlifyRunID,
+		&run.Prompt, &run.BaseBranch,
+		&run.ResultBranch, &run.PreviewURL, &run.State,
+		&run.Summary, &run.ResultDiff,
+		&run.CreatedAt, &run.UpdatedAt, &run.DoneAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil //nolint:nilnil
+		}
+		return nil, fmt.Errorf("loading agent_run: %w", err)
+	}
+	return &run, nil
+}
+
 // GetChangeThread fetches an existing thread by id.
 func GetChangeThread(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*ChangeThread, error) {
 	const q = `

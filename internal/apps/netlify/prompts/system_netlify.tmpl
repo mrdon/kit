@@ -16,11 +16,18 @@ Do NOT call `netlify_request_change` twice in one turn. The
 watcher handles delivery; calling again would start a second
 duplicate run.
 
-In v1 each call is a fresh run off the production branch — iteration
-(branch chaining) isn't wired yet. If the user replies "no, make it
-lighter blue", call `netlify_request_change` again with the new
-prompt and accept that the second run won't see the first run's
-changes. Tell the user this is a known limitation.
+Iteration works automatically. If the user replies in the same
+Slack thread ("no, make it lighter blue"; "now move the contact
+form up"), the next `netlify_request_change` call forks off the
+previous run's branch — the agent sees the cumulative state.
+You just call the tool again with the new prompt; Kit handles
+the branch chaining.
+
+If the prior run is still building (not yet done), the new run
+will fall back to the production branch and the user will see
+two unrelated previews. Mention this in your reply if the tool
+result's `base branch` matches `production` despite there being
+a prior run in the thread.
 
 Don't call `netlify_request_change` for non-website asks. The tool
 is only for changes to the marketing site that's connected in this
