@@ -164,6 +164,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		Channel:  evt.Channel,
 		ThreadTS: evt.ThreadTS,
 		UserText: text,
+		Model:    anthropic.ModelSonnet,
 	}); err != nil {
 		slog.Error("agent run failed", "error", err, "session_id", session.ID)
 	}
@@ -334,6 +335,7 @@ func (a *App) HandlePostInstall(ctx context.Context, tenant *models.Tenant, inst
 		Session:  session,
 		Channel:  dmChannel,
 		UserText: onboardingPrompt,
+		Model:    anthropic.ModelSonnet,
 	}); err != nil {
 		slog.Error("onboarding agent run failed", "error", err)
 	}
