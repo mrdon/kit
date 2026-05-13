@@ -91,10 +91,8 @@ func (s *Service) runWatcher(ctx context.Context, in watcherInput) {
 // Branches on whether this is a first-turn runner or a follow-up
 // session — see watcherInput.
 func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
-	// session: poll session endpoint, normalize the response shape
-	// into the same fields we'd otherwise read from a runner.
 	var (
-		state, doneAtStr, deployURL, resultBranch string
+		state, doneAtStr, deployURL, resultBranch, resultDiff string
 	)
 	postRunner := &AgentRunner{} // placeholder for postWatcherResult
 
@@ -110,7 +108,7 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 		state = sess.State
 		doneAtStr = sess.DoneAt
 		deployURL = sess.DeployURL
-		// session doesn't expose a result_branch directly; leave empty.
+		resultDiff = sess.ResultDiff
 		postRunner.ID = sess.AgentRunnerID
 		postRunner.State = sess.State
 		postRunner.DoneAt = sess.DoneAt
@@ -127,6 +125,7 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 		doneAtStr = runner.DoneAt
 		deployURL = runner.LatestSessionDeployURL
 		resultBranch = runner.ResultBranch
+		resultDiff = runner.ResultDiff
 		postRunner = runner
 	}
 
@@ -147,7 +146,27 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 	if doneAt == nil {
 		return false
 	}
-	s.postWatcherResult(in, postRunner)
+
+	// On success, run the diff through Haiku for a plain-language
+	// summary. Best-effort: failures log + fall through with no
+	// summary rather than blocking the post-back.
+	summary := ""
+	if (state == "succeeded" || state == "") && resultDiff != "" && s.llm != nil {
+		summarizeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if out, serr := summarizeDiff(summarizeCtx, s.llm, resultDiff); serr != nil {
+			slog.Warn("netlify watcher: summarizing diff",
+				"run_id", in.runID, "error", serr)
+		} else {
+			summary = out
+			if perr := PersistAgentRunSummary(ctx, s.pool, in.runID, summary); perr != nil {
+				slog.Warn("netlify watcher: persisting summary",
+					"run_id", in.runID, "error", perr)
+			}
+		}
+		cancel()
+	}
+
+	s.postWatcherResult(in, postRunner, summary)
 	return true
 }
 
@@ -155,7 +174,12 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 // the originating Slack thread. Uses the tenant's bot token to call
 // chat.postMessage directly — does NOT go through the agent loop
 // because the agent loop is long gone by now.
-func (s *Service) postWatcherResult(in watcherInput, runner *AgentRunner) {
+//
+// summary is the Haiku-generated plain-language description of the
+// diff. Empty string means we didn't summarize (no diff, no LLM
+// wired, or summarize call failed) — the post-back falls back to
+// a generic "click to check" hint.
+func (s *Service) postWatcherResult(in watcherInput, runner *AgentRunner, summary string) {
 	postCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	client := kitslack.NewClient(in.slackBotToken)
@@ -163,13 +187,20 @@ func (s *Service) postWatcherResult(in watcherInput, runner *AgentRunner) {
 	switch {
 	case runner.State == "succeeded" || (runner.DoneAt != "" && runner.State == ""):
 		b.WriteString(":white_check_mark: Build ready.\n")
+		if summary != "" {
+			fmt.Fprintf(&b, "_%s_\n", summary)
+		}
 		if runner.LatestSessionDeployURL != "" {
 			fmt.Fprintf(&b, "Preview: %s\n", runner.LatestSessionDeployURL)
 		}
 		if runner.ResultBranch != "" {
 			fmt.Fprintf(&b, "Branch: `%s`\n", runner.ResultBranch)
 		}
-		b.WriteString("\n_Diff summary coming in a follow-up; for now click through and check._")
+		if summary == "" {
+			b.WriteString("\n_Click through to check what changed._")
+		} else {
+			b.WriteString("\nReply in this thread to iterate, or say \"ship it\" to deploy.")
+		}
 	case runner.State == "failed":
 		fmt.Fprintf(&b, ":x: The agent run failed.\n")
 		if runner.CurrentTask != "" {

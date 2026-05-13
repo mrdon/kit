@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/apps/github"
@@ -73,6 +74,7 @@ func Configure(
 	baseURL string,
 	netlifyClientID, netlifyClientSecret string,
 	githubSvc *github.Service,
+	llm *anthropic.Client,
 ) {
 	if instance == nil {
 		return
@@ -85,6 +87,7 @@ func Configure(
 		instance.svc.netlifyClientID = netlifyClientID
 		instance.svc.netlifyClientSecret = netlifyClientSecret
 		instance.svc.github = githubSvc
+		instance.svc.llm = llm
 		instance.svc.baseURL = baseURL
 	}
 	admin.RegisterIntegration(&netlifyIntegration{app: instance})

@@ -268,6 +268,7 @@ func main() {
 		cfg.NetlifyClientID,
 		cfg.NetlifyClientSecret,
 		github.GetService(),
+		builderLLM,
 	)
 
 	// Wire the urgent-card push surface so cards created with

@@ -188,6 +188,26 @@ func CreateAgentRun(
 	return &run, nil
 }
 
+// PersistAgentRunSummary stores the Haiku-generated plain-language
+// diff summary so it's available for later reference (history,
+// debugging, future "what did you change?" follow-ups).
+func PersistAgentRunSummary(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	runID uuid.UUID,
+	summary string,
+) error {
+	const q = `
+        UPDATE app_netlify_agent_runs SET
+            summary    = $2,
+            updated_at = now()
+        WHERE id = $1`
+	if _, err := pool.Exec(ctx, q, runID, summary); err != nil {
+		return fmt.Errorf("persisting summary: %w", err)
+	}
+	return nil
+}
+
 // UpdateAgentRunProgress writes per-poll updates from Netlify. Called
 // by the watcher after each fetch. Doesn't touch summary/result_diff
 // — those are stamped separately when we have them.

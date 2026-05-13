@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/crypto"
 )
@@ -35,6 +36,7 @@ type Service struct {
 	pool   *pgxpool.Pool
 	enc    *crypto.Encryptor
 	github *github.Service
+	llm    *anthropic.Client // used by the watcher for diff summaries
 
 	// Netlify OAuth client credentials, populated via Configure.
 	// Empty strings leave the Netlify Connect button disabled.
