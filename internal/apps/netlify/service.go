@@ -80,22 +80,27 @@ func (s *Service) HasGitHubAppConfig() bool {
 	return s.github.HasAppConfig()
 }
 
-// ChangeRequest is the v1 input to RequestChange. Only the prompt is
-// user-controlled; the site, base branch, and agent come from
-// app_netlify_config.
+// ChangeRequest is the input to RequestChange. The prompt is the
+// user's ask; SlackChannel + SlackThreadTS bind the run to the
+// Slack thread for post-back. Empty Slack fields are valid (MCP
+// callers, scripted runs) — RequestChange skips the watcher in
+// that case and the caller is responsible for polling.
 type ChangeRequest struct {
-	Prompt string
+	Prompt        string
+	SlackChannel  string
+	SlackThreadTS string
 }
 
-// ChangeRunResult is the v1 return shape. Mirrors the small subset
-// of AgentRunner fields callers need to surface back to the user
-// from Slack / MCP.
+// ChangeRunResult is the return shape. Mirrors the small subset of
+// AgentRunner fields callers need to surface back to the user from
+// Slack / MCP.
 type ChangeRunResult struct {
-	RunID            string
+	RunID            string // Netlify's run id (string), useful for dashboard lookups
 	State            string
 	BaseBranch       string
 	PreviewURL       string
 	ProductionBranch string
+	WatcherStarted   bool // true when an in-process watcher is polling + will post-back
 }
 
 // RequestChange starts a Netlify Agent Run for the tenant. v1
@@ -149,11 +154,48 @@ func (s *Service) RequestChange(
 			runner = refreshed
 		}
 	}
-	return &ChangeRunResult{
+
+	result := &ChangeRunResult{
 		RunID:            runner.ID,
 		State:            runner.State,
 		BaseBranch:       runner.Branch,
 		PreviewURL:       runner.LatestSessionDeployURL,
 		ProductionBranch: cfg.ProductionBranch,
-	}, nil
+	}
+
+	// If we have Slack thread coordinates, group the run into a
+	// change-thread row, persist the agent_run, and spawn a watcher
+	// that will post-back once Netlify reports done_at. Skipped for
+	// MCP / scripted callers that didn't provide thread info.
+	if in.SlackChannel != "" && in.SlackThreadTS != "" {
+		ct, cerr := EnsureChangeThread(ctx, s.pool, tenantID,
+			in.SlackChannel, in.SlackThreadTS, cfg.ProductionBranch)
+		if cerr != nil {
+			return nil, fmt.Errorf("ensure change thread: %w", cerr)
+		}
+		run, rerr := CreateAgentRun(ctx, s.pool, tenantID, ct.ID,
+			runner.ID, in.Prompt, cfg.ProductionBranch,
+			runner.LatestSessionDeployURL, runner.State)
+		if rerr != nil {
+			return nil, fmt.Errorf("create agent_run: %w", rerr)
+		}
+		botToken, terr := s.decryptTenantBotToken(ctx, tenantID)
+		if terr != nil {
+			// Surface the error but the Netlify run is already
+			// happening — return the URL anyway and skip the watcher.
+			return result, fmt.Errorf("bot token unavailable; watcher disabled: %w", terr)
+		}
+		s.startWatcher(watcherInput{
+			tenantID:      tenantID,
+			runID:         run.ID,
+			netlifyRunID:  runner.ID,
+			netlifyToken:  accessToken,
+			slackBotToken: botToken,
+			slackChannel:  in.SlackChannel,
+			slackThreadTS: in.SlackThreadTS,
+		})
+		result.WatcherStarted = true
+	}
+
+	return result, nil
 }

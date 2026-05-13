@@ -67,7 +67,11 @@ func requestChangeHandler(svc *Service) tools.HandlerFunc {
 		if caller == nil {
 			return "", errors.New("no caller in context")
 		}
-		res, err := svc.RequestChange(ec.Ctx, caller.TenantID, ChangeRequest{Prompt: inp.Prompt})
+		res, err := svc.RequestChange(ec.Ctx, caller.TenantID, ChangeRequest{
+			Prompt:        inp.Prompt,
+			SlackChannel:  ec.Channel,
+			SlackThreadTS: ec.ThreadTS,
+		})
 		if err != nil {
 			return formatRequestChangeError(ec, err), nil
 		}
@@ -100,9 +104,11 @@ func formatRequestChangeError(ec *tools.ExecContext, err error) string {
 }
 
 // formatRequestChangeOK is the success-case string. Tells the LLM
-// what to say to the user — explicit instructions because the
-// behaviour (preview URL 404s for ~60s) isn't obvious from the
-// raw fields alone.
+// what to say to the user. When a watcher is running (the common
+// Slack case), the LLM should NOT share the preview URL — the
+// watcher will post it back with build-completion info. When no
+// watcher is running (MCP / scripted path with no Slack thread),
+// share what we have.
 func formatRequestChangeOK(res *ChangeRunResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Started a Netlify agent run.\n")
@@ -110,12 +116,15 @@ func formatRequestChangeOK(res *ChangeRunResult) string {
 	fmt.Fprintf(&b, "- base branch: %s\n", res.BaseBranch)
 	if res.PreviewURL != "" {
 		fmt.Fprintf(&b, "- preview URL: %s\n", res.PreviewURL)
-	} else {
-		fmt.Fprintf(&b, "- preview URL: (still provisioning — Netlify will populate this in a few seconds)\n")
 	}
-	b.WriteString("\nWhen reporting to the user:\n")
-	b.WriteString("- Share the preview URL.\n")
-	b.WriteString("- Tell them the page may 404 for the first ~60 seconds while the build runs.\n")
-	b.WriteString("- Tell them to reply in this thread if they want to iterate (v1 doesn't chain yet — each reply starts a fresh run for now).\n")
+	if res.WatcherStarted {
+		b.WriteString("\nA background watcher is polling Netlify. When the build is ready " +
+			"(~60 seconds), Kit will post the preview URL into this Slack thread directly. ")
+		b.WriteString("Reply to the user with a brief acknowledgement (e.g. \"On it — I'll post the preview here when it's ready.\"). ")
+		b.WriteString("DO NOT call netlify_request_change again in this turn — the watcher handles delivery.")
+	} else {
+		b.WriteString("\nNo Slack thread bound to this call (probably an MCP / scripted invocation). " +
+			"Share the preview URL with the user; the page may 404 for the first ~60 seconds.")
+	}
 	return b.String()
 }
