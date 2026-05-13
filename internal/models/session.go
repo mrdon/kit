@@ -16,10 +16,26 @@ type Session struct {
 	TenantID       uuid.UUID
 	SlackThreadTS  string
 	SlackChannelID string
-	UserID         uuid.UUID
-	BotInitiated   bool
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// UserID is uuid.Nil for anonymous widget sessions (slack_channel_id =
+	// 'web:widget'). For every other channel it's the real user.
+	UserID       uuid.UUID
+	BotInitiated bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// WidgetChannelID is the synthetic slack_channel_id for sessions created
+// by the website chat widget. The session's user_id is NULL for these
+// rows; the database CHECK constraint enforces that pairing.
+const WidgetChannelID = "web:widget"
+
+// scanUserID converts the nullable user_id column into Session.UserID.
+// Returns uuid.Nil when the column is NULL (widget sessions).
+func scanUserID(n uuid.NullUUID) uuid.UUID {
+	if !n.Valid {
+		return uuid.Nil
+	}
+	return n.UUID
 }
 
 // CreateSession creates a new session with a unique thread_ts.
@@ -28,17 +44,19 @@ type Session struct {
 // sessions only route explicit @-mentions.
 func CreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string, userID uuid.UUID, botInitiated bool) (*Session, error) {
 	session := &Session{}
+	var uidNull uuid.NullUUID
 	err := pool.QueryRow(ctx, `
 		INSERT INTO sessions (id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated, created_at, updated_at
 	`, uuid.New(), tenantID, channelID, threadTS, userID, botInitiated).Scan(
 		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
-		&session.UserID, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
+		&uidNull, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
+	session.UserID = scanUserID(uidNull)
 	return session, nil
 }
 
@@ -46,13 +64,14 @@ func CreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, 
 // session exists, matching the other get-by-id helpers in this package.
 func GetSession(ctx context.Context, pool *pgxpool.Pool, tenantID, sessionID uuid.UUID) (*Session, error) {
 	session := &Session{}
+	var uidNull uuid.NullUUID
 	err := pool.QueryRow(ctx, `
 		SELECT id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated, created_at, updated_at
 		FROM sessions
 		WHERE tenant_id = $1 AND id = $2
 	`, tenantID, sessionID).Scan(
 		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
-		&session.UserID, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
+		&uidNull, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
@@ -60,6 +79,7 @@ func GetSession(ctx context.Context, pool *pgxpool.Pool, tenantID, sessionID uui
 	if err != nil {
 		return nil, fmt.Errorf("getting session: %w", err)
 	}
+	session.UserID = scanUserID(uidNull)
 	return session, nil
 }
 
@@ -84,9 +104,11 @@ func ListRecentSessionsForUser(ctx context.Context, pool *pgxpool.Pool, tenantID
 	var sessions []Session
 	for rows.Next() {
 		var s Session
-		if err := rows.Scan(&s.ID, &s.TenantID, &s.SlackChannelID, &s.SlackThreadTS, &s.UserID, &s.BotInitiated, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var uidNull uuid.NullUUID
+		if err := rows.Scan(&s.ID, &s.TenantID, &s.SlackChannelID, &s.SlackThreadTS, &uidNull, &s.BotInitiated, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning session: %w", err)
 		}
+		s.UserID = scanUserID(uidNull)
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()
@@ -97,13 +119,14 @@ func ListRecentSessionsForUser(ctx context.Context, pool *pgxpool.Pool, tenantID
 // create a session on miss.
 func FindSessionByThread(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string) (*Session, error) {
 	session := &Session{}
+	var uidNull uuid.NullUUID
 	err := pool.QueryRow(ctx, `
 		SELECT id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated, created_at, updated_at
 		FROM sessions
 		WHERE tenant_id = $1 AND slack_channel_id = $2 AND slack_thread_ts = $3
 	`, tenantID, channelID, threadTS).Scan(
 		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
-		&session.UserID, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
+		&uidNull, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
@@ -111,6 +134,7 @@ func FindSessionByThread(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	if err != nil {
 		return nil, fmt.Errorf("finding session by thread: %w", err)
 	}
+	session.UserID = scanUserID(uidNull)
 	return session, nil
 }
 
@@ -135,6 +159,7 @@ func UpdateSessionThreadTS(ctx context.Context, pool *pgxpool.Pool, tenantID, se
 // through CreateSession with botInitiated=true instead.
 func GetOrCreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS string, userID uuid.UUID) (*Session, error) {
 	session := &Session{}
+	var uidNull uuid.NullUUID
 	err := pool.QueryRow(ctx, `
 		INSERT INTO sessions (id, tenant_id, slack_channel_id, slack_thread_ts, user_id)
 		VALUES ($1, $2, $3, $4, $5)
@@ -143,10 +168,35 @@ func GetOrCreateSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 		RETURNING id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated, created_at, updated_at
 	`, uuid.New(), tenantID, channelID, threadTS, userID).Scan(
 		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
-		&session.UserID, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
+		&uidNull, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get or create session: %w", err)
 	}
+	session.UserID = scanUserID(uidNull)
+	return session, nil
+}
+
+// GetOrCreateWidgetSession finds or creates an anonymous widget session
+// keyed by the browser's conversation_id. user_id is always NULL for
+// widget rows; the database CHECK constraint enforces that the NULL is
+// only valid when slack_channel_id = WidgetChannelID.
+func GetOrCreateWidgetSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, conversationID string) (*Session, error) {
+	session := &Session{}
+	var uidNull uuid.NullUUID
+	err := pool.QueryRow(ctx, `
+		INSERT INTO sessions (id, tenant_id, slack_channel_id, slack_thread_ts, user_id)
+		VALUES ($1, $2, $3, $4, NULL)
+		ON CONFLICT (tenant_id, slack_channel_id, slack_thread_ts)
+		DO UPDATE SET updated_at = now()
+		RETURNING id, tenant_id, slack_channel_id, slack_thread_ts, user_id, bot_initiated, created_at, updated_at
+	`, uuid.New(), tenantID, WidgetChannelID, conversationID).Scan(
+		&session.ID, &session.TenantID, &session.SlackChannelID, &session.SlackThreadTS,
+		&uidNull, &session.BotInitiated, &session.CreatedAt, &session.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get or create widget session: %w", err)
+	}
+	session.UserID = scanUserID(uidNull)
 	return session, nil
 }

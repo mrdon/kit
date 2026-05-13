@@ -118,7 +118,7 @@ func (s *JobService) Create(ctx context.Context, c *Caller, in CreateInput) (*mo
 	}
 	var skillID *uuid.UUID
 	if in.SkillName != "" {
-		skill, serr := models.GetSkillByName(ctx, s.pool, c.TenantID, in.SkillName)
+		skill, serr := models.GetSkillByName(ctx, s.pool, c.TenantID, in.SkillName, false)
 		if serr != nil {
 			return nil, fmt.Errorf("looking up skill %q: %w", in.SkillName, serr)
 		}
@@ -190,7 +190,7 @@ func (s *JobService) Update(ctx context.Context, c *Caller, jobID uuid.UUID, in 
 	if in.SkillName != nil {
 		var skillID *uuid.UUID
 		if *in.SkillName != "" {
-			skill, serr := models.GetSkillByName(ctx, s.pool, c.TenantID, *in.SkillName)
+			skill, serr := models.GetSkillByName(ctx, s.pool, c.TenantID, *in.SkillName, false)
 			if serr != nil {
 				return fmt.Errorf("looking up skill %q: %w", *in.SkillName, serr)
 			}

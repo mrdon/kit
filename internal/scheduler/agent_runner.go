@@ -109,7 +109,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 	// message only needs to nudge the agent to re-evaluate.
 	userText := job.Description
 	if job.SkillID != nil {
-		skill, serr := models.GetSkill(ctx, s.pool, tenant.ID, *job.SkillID)
+		skill, serr := models.GetSkill(ctx, s.pool, tenant.ID, *job.SkillID, false)
 		if serr != nil || skill == nil {
 			msg := fmt.Sprintf("loading skill %s", job.SkillID)
 			slog.Error("loading skill for job", "job_id", job.ID, "skill_id", *job.SkillID, "error", serr)

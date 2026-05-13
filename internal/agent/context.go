@@ -99,3 +99,28 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 
 	return strings.Join(parts, "\n\n")
 }
+
+// BuildWidgetSystemPrompt assembles the system prompt for an anonymous
+// website-widget conversation. Composed from a strict subset of the
+// templates BuildSystemPrompt uses: identity + knowledge context
+// (filtered to drop builtin Kit skills) + the widget-specific rules
+// that constrain answers to skill/rule/memory/calendar knowledge.
+//
+// Slack-output, gated-tools, approval, scheduling, and app-system
+// prompts are deliberately omitted — none of them apply on the widget
+// surface and they would only confuse the model about what to do.
+func BuildWidgetSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant) string {
+	caller := &services.Caller{
+		TenantID:                tenant.ID,
+		Roles:                   []string{models.RoleMember},
+		IsAdmin:                 false,
+		HideBuiltinSkills:       true,
+		HideJobReferencedSkills: true,
+		Timezone:                services.ResolveTimezone("", tenant.Timezone),
+	}
+	parts := []string{
+		mustRender("system_widget.tmpl", map[string]any{"TenantName": tenant.Name}),
+		services.BuildKnowledgeContext(ctx, pool, caller, tenant),
+	}
+	return strings.Join(parts, "\n\n")
+}

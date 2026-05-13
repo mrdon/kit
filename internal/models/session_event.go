@@ -28,6 +28,7 @@ const (
 	EventTypeDecisionResolved SessionEventType = "decision_resolved"
 	EventTypePolicyEnforced   SessionEventType = "policy_enforced"
 	EventTypeDryRunCaptures   SessionEventType = "dry_run_captures"
+	EventTypeWidgetStarted    SessionEventType = "widget_started"
 )
 
 // PolicyEnforcedAction names the specific policy intervention recorded

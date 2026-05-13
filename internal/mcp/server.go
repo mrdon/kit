@@ -112,6 +112,8 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 		{services.TenantTools, wrap(tenantMCPHandler)},
 		{services.UserTools, wrap(userMCPHandler)},
 		{services.SessionTools, wrap(sessionMCPHandler)},
+		{services.WidgetTokenTools, wrap(widgetTokenMCPHandler)},
+		{services.WidgetAnalyticsTools, wrap(widgetAnalyticsMCPHandler)},
 	}
 
 	var out []mcpserver.ServerTool
@@ -186,6 +188,7 @@ func collectToolVisibility() (adminOnly map[string]bool, roleGated map[string][]
 		services.SkillTools, services.RuleTools, services.MemoryTools,
 		services.RoleTools, services.JobTools, services.TenantTools,
 		services.UserTools, services.SessionTools,
+		services.WidgetTokenTools, services.WidgetAnalyticsTools,
 	}
 	record := func(m services.ToolMeta) {
 		if m.AdminOnly {

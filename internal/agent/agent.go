@@ -39,7 +39,7 @@ func NewAgent(pool *pgxpool.Pool, llm *anthropic.Client, fetcher *web.Fetcher, b
 		pool:    pool,
 		llm:     llm,
 		fetcher: fetcher,
-		svc:     services.New(pool, nil),
+		svc:     services.New(pool, nil, baseURL),
 		baseURL: baseURL,
 	}
 }
@@ -106,6 +106,25 @@ type RunInput struct {
 	// callers). The scheduler sets this from job.Model so each
 	// scheduled run honours the classifier's decision.
 	Model string
+
+	// WidgetAllowedTools, when non-empty, restricts the registry to
+	// exactly the named tools. Set by the website chat widget to clamp
+	// the agent to a read-only Q&A surface (skills, memories, calendar,
+	// terminal reply). Distinct from JobPolicy.AllowedTools — no
+	// infrastructure carve-out is applied, and it is enforced via
+	// Registry.RestrictToTools so both DefinitionsFor and
+	// ExecuteWithResult see the same set.
+	WidgetAllowedTools []string
+
+	// WidgetMode, when true, builds the system prompt via
+	// BuildWidgetSystemPrompt instead of the standard assembly. Used
+	// alongside WidgetAllowedTools for anonymous website conversations
+	// where User is nil and the prompt must not mention Slack.
+	WidgetMode bool
+
+	// WidgetTenantName overrides the tenant name used by the widget
+	// system prompt. Falls back to Tenant.Name when empty.
+	WidgetTenantName string
 }
 
 // Run executes the agent loop for a user message.
@@ -119,6 +138,9 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	if in.DropGatedTools {
 		registry.DropGatedTools()
 	}
+	if len(in.WidgetAllowedTools) > 0 {
+		registry.RestrictToTools(in.WidgetAllowedTools)
+	}
 
 	var status *statusTracker
 	if in.Job == nil && !strings.HasPrefix(in.Channel, "web:") {
@@ -127,11 +149,14 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		defer status.cleanup(ctx)
 	}
 
-	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeMessageReceived, map[string]any{
-		"user_id": in.User.ID,
+	msgEvent := map[string]any{
 		"text":    in.UserText,
 		"channel": in.Channel,
-	})
+	}
+	if in.User != nil {
+		msgEvent["user_id"] = in.User.ID
+	}
+	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeMessageReceived, msgEvent)
 
 	messages := a.buildInitialMessages(ctx, in)
 	systemPrompt := a.buildSystemPrompt(ctx, in)
@@ -229,6 +254,7 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 		Responder:   in.Responder,
 		OnToolCall:  in.OnToolCall,
 		OnIteration: in.OnIteration,
+		WidgetMode:  in.WidgetMode,
 	}
 	if in.Job != nil && in.Job.ID != (uuid.UUID{}) {
 		jobID := in.Job.ID
@@ -253,7 +279,12 @@ func (a *Agent) buildInitialMessages(ctx context.Context, in RunInput) []anthrop
 }
 
 func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.SystemBlock {
-	systemText := BuildSystemPrompt(ctx, a.pool, a.baseURL, in.Tenant, in.User, in.Job)
+	var systemText string
+	if in.WidgetMode {
+		systemText = BuildWidgetSystemPrompt(ctx, a.pool, in.Tenant)
+	} else {
+		systemText = BuildSystemPrompt(ctx, a.pool, a.baseURL, in.Tenant, in.User, in.Job)
+	}
 	if in.SystemSuffix != "" {
 		systemText += "\n\n" + in.SystemSuffix
 	}
@@ -544,7 +575,8 @@ func (a *Agent) rebuildHistory(ctx context.Context, tenant *models.Tenant, sessi
 			models.EventTypeError,
 			models.EventTypeSessionComplete,
 			models.EventTypePolicyEnforced,
-			models.EventTypeDryRunCaptures:
+			models.EventTypeDryRunCaptures,
+			models.EventTypeWidgetStarted:
 			// Diagnostic / telemetry events — not part of the conversation.
 		}
 	}

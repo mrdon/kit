@@ -43,6 +43,7 @@ import (
 	"github.com/mrdon/kit/internal/transcribe"
 	"github.com/mrdon/kit/internal/web"
 	"github.com/mrdon/kit/internal/web/chrome"
+	"github.com/mrdon/kit/internal/widget"
 )
 
 func main() {
@@ -104,7 +105,7 @@ func main() {
 	}
 
 	// Shared services bundle, reused by the MCP server below.
-	svc := services.New(pool, enc)
+	svc := services.New(pool, enc, cfg.BaseURL)
 
 	// Lazy user-profile enrichment. models.GetUserByID /
 	// GetUserBySlackID / EnsureUserBySlackID call this enricher when a
@@ -368,6 +369,13 @@ func main() {
 
 	// Shared chrome (header CSS) for non-card-UI HTML pages
 	chrome.RegisterRoutes(mux)
+
+	// Public website chat widget: serves /widget.js, /widget.css, and
+	// /widget/api/{open,chat,health}. Tenant is resolved per-request
+	// from the widget token in the request body, so the routes sit at
+	// the top level rather than under /{slug}/.
+	widgetSvc := widget.New(pool, app.Agent, widget.NewLimiter())
+	widget.NewHandler(widgetSvc).Register(mux)
 
 	// Landing page
 	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL))

@@ -179,7 +179,9 @@ type SkillSummary struct {
 // ListSkillsFiltered returns skills visible to the caller with optional search.
 // If admin is true, all skills in the tenant are returned.
 // Otherwise, only skills matching the caller's roles/identity are returned.
-func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, admin bool, userID uuid.UUID, roleIDs []uuid.UUID, search string) ([]SkillSummary, error) {
+// excludeJobReferenced=true filters out skills wired into any tenant
+// job (used by the public website widget).
+func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, admin bool, userID uuid.UUID, roleIDs []uuid.UUID, search string, excludeJobReferenced bool) ([]SkillSummary, error) {
 	var args []any
 	args = append(args, tenantID) // $1
 
@@ -195,6 +197,13 @@ func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	if search != "" {
 		args = append(args, "%"+strings.ToLower(search)+"%")
 		where.WriteString(fmt.Sprintf("\n\t\t\tAND (LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", len(args), len(args)))
+	}
+
+	if excludeJobReferenced {
+		where.WriteString(`
+			AND NOT EXISTS (
+				SELECT 1 FROM jobs j WHERE j.skill_id = s.id AND j.tenant_id = s.tenant_id
+			)`)
 	}
 
 	join := ""
@@ -379,12 +388,20 @@ func DeleteSkill(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid
 	return nil
 }
 
-func GetSkill(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID) (*Skill, error) {
+// GetSkill fetches one skill by ID. excludeJobReferenced=true makes
+// the lookup miss if the skill is wired into any tenant job (used by
+// the public website widget so workflow skills are invisible).
+func GetSkill(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID, excludeJobReferenced bool) (*Skill, error) {
 	s := &Skill{}
-	err := pool.QueryRow(ctx, `
+	q := `
 		SELECT id, tenant_id, name, description, content, user_invocable, source, created_at, updated_at
-		FROM skills WHERE tenant_id = $1 AND id = $2
-	`, tenantID, skillID).Scan(
+		FROM skills s WHERE s.tenant_id = $1 AND s.id = $2`
+	if excludeJobReferenced {
+		q += ` AND NOT EXISTS (
+			SELECT 1 FROM jobs j WHERE j.skill_id = s.id AND j.tenant_id = s.tenant_id
+		)`
+	}
+	err := pool.QueryRow(ctx, q, tenantID, skillID).Scan(
 		&s.ID, &s.TenantID, &s.Name, &s.Description, &s.Content,
 		&s.UserInvocable, &s.Source, &s.CreatedAt, &s.UpdatedAt,
 	)
@@ -401,12 +418,19 @@ func GetSkill(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UU
 // nil if none matches. Used by create_task to validate skill_name at
 // row-insert time; the skill_name column is a plain text reference (no
 // FK) so the lookup exists only to catch typos early.
-func GetSkillByName(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (*Skill, error) {
+// excludeJobReferenced=true makes the lookup miss if the skill is wired
+// into any tenant job (widget surface).
+func GetSkillByName(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string, excludeJobReferenced bool) (*Skill, error) {
 	s := &Skill{}
-	err := pool.QueryRow(ctx, `
+	q := `
 		SELECT id, tenant_id, name, description, content, user_invocable, source, created_at, updated_at
-		FROM skills WHERE tenant_id = $1 AND name = $2
-	`, tenantID, name).Scan(
+		FROM skills s WHERE s.tenant_id = $1 AND s.name = $2`
+	if excludeJobReferenced {
+		q += ` AND NOT EXISTS (
+			SELECT 1 FROM jobs j WHERE j.skill_id = s.id AND j.tenant_id = s.tenant_id
+		)`
+	}
+	err := pool.QueryRow(ctx, q, tenantID, name).Scan(
 		&s.ID, &s.TenantID, &s.Name, &s.Description, &s.Content,
 		&s.UserInvocable, &s.Source, &s.CreatedAt, &s.UpdatedAt,
 	)
@@ -466,12 +490,20 @@ func DeleteSkillFile(ctx context.Context, pool *pgxpool.Pool, tenantID, fileID u
 	return nil
 }
 
-func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID uuid.UUID) (*SkillFile, error) {
+// GetSkillReference fetches one skill_references row by ID.
+// excludeJobReferenced=true makes the lookup miss if the parent skill
+// is wired into any tenant job (widget surface).
+func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID uuid.UUID, excludeJobReferenced bool) (*SkillFile, error) {
 	ref := &SkillFile{}
-	err := pool.QueryRow(ctx, `
-		SELECT id, skill_id, tenant_id, filename, content
-		FROM skill_references WHERE tenant_id = $1 AND id = $2
-	`, tenantID, refID).Scan(&ref.ID, &ref.SkillID, &ref.TenantID, &ref.Filename, &ref.Content)
+	q := `
+		SELECT sr.id, sr.skill_id, sr.tenant_id, sr.filename, sr.content
+		FROM skill_references sr WHERE sr.tenant_id = $1 AND sr.id = $2`
+	if excludeJobReferenced {
+		q += ` AND NOT EXISTS (
+			SELECT 1 FROM jobs j WHERE j.skill_id = sr.skill_id AND j.tenant_id = sr.tenant_id
+		)`
+	}
+	err := pool.QueryRow(ctx, q, tenantID, refID).Scan(&ref.ID, &ref.SkillID, &ref.TenantID, &ref.Filename, &ref.Content)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
 	}
@@ -547,11 +579,19 @@ func GetSkillScopes(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID u
 }
 
 // SearchSkills performs FTS on skills visible to the user's roles.
-func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, query string) ([]Skill, error) {
+// excludeJobReferenced=true filters out skills wired into any tenant
+// job (used by the public website widget so workflow skills are hidden).
+func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, query string, excludeJobReferenced bool) ([]Skill, error) {
 	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	ftsParam := 2 + len(scopeArgs)
 	args := append([]any{tenantID}, scopeArgs...)
 	args = append(args, query)
+	jobFilter := ""
+	if excludeJobReferenced {
+		jobFilter = ` AND NOT EXISTS (
+			SELECT 1 FROM jobs j WHERE j.skill_id = s.id AND j.tenant_id = s.tenant_id
+		)`
+	}
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT DISTINCT s.id, s.name, s.description
 		FROM skills s
@@ -562,10 +602,10 @@ func SearchSkills(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid
 		AND (
 			to_tsvector('english', s.content) @@ plainto_tsquery('english', $%d)
 			OR to_tsvector('english', s.description) @@ plainto_tsquery('english', $%d)
-		)
+		)%s
 		ORDER BY s.name
 		LIMIT 10
-	`, scopeSQL, ftsParam, ftsParam), args...)
+	`, scopeSQL, ftsParam, ftsParam, jobFilter), args...)
 	if err != nil {
 		return nil, fmt.Errorf("searching skills: %w", err)
 	}

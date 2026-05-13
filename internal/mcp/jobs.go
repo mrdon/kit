@@ -202,7 +202,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 
 		userText := job.Description
 		if job.SkillID != nil {
-			skill, serr := models.GetSkill(ctx, pool, tenant.ID, *job.SkillID)
+			skill, serr := models.GetSkill(ctx, pool, tenant.ID, *job.SkillID, false)
 			if serr != nil {
 				return nil, fmt.Errorf("loading skill %s: %w", *job.SkillID, serr)
 			}
@@ -327,7 +327,8 @@ func formatTaskRunStatus(sessionID uuid.UUID, events []models.SessionEvent) stri
 			models.EventTypeLLMResponse,
 			models.EventTypeToolResults,
 			models.EventTypeDecisionResolved,
-			models.EventTypePolicyEnforced:
+			models.EventTypePolicyEnforced,
+			models.EventTypeWidgetStarted:
 			// Not surfaced in the run-status report.
 		}
 	}

@@ -39,15 +39,18 @@ type SkillService struct {
 	pool *pgxpool.Pool
 }
 
-// Search searches skills visible to the caller.
+// Search searches skills visible to the caller. When the caller has
+// HideJobReferencedSkills set, the underlying SQL excludes skills
+// wired into any scheduled job (these are tenant-internal workflows,
+// not Q&A material).
 func (s *SkillService) Search(ctx context.Context, c *Caller, query string) ([]models.Skill, error) {
-	return models.SearchSkills(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query)
+	return models.SearchSkills(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, query, c.HideJobReferencedSkills)
 }
 
 // Load returns a skill by ID with authorization check.
 // Also accepts built-in skill names (e.g. "user-guide").
 func (s *SkillService) Load(ctx context.Context, c *Caller, skillID uuid.UUID) (*models.Skill, []models.SkillFile, error) {
-	skill, err := models.GetSkill(ctx, s.pool, c.TenantID, skillID)
+	skill, err := models.GetSkill(ctx, s.pool, c.TenantID, skillID, c.HideJobReferencedSkills)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading skill: %w", err)
 	}
@@ -69,6 +72,9 @@ func (s *SkillService) Load(ctx context.Context, c *Caller, skillID uuid.UUID) (
 // c may be nil for legacy call sites that pre-date role gating; in that
 // case admin-only skills remain loadable (no caller to check against).
 func (s *SkillService) LoadByName(c *Caller, name string) (*models.Skill, error) {
+	if c != nil && c.HideBuiltinSkills {
+		return nil, ErrNotFound
+	}
 	b := skills.GetBuiltin(name)
 	if b == nil {
 		return nil, ErrNotFound
@@ -89,7 +95,7 @@ func (s *SkillService) LoadByName(c *Caller, name string) (*models.Skill, error)
 // load_skill so task-scheduled prompts like `load_skill skill_id=foo`
 // resolve the tenant's own skills without needing a UUID.
 func (s *SkillService) ResolveByName(ctx context.Context, c *Caller, name string) (*models.Skill, []models.SkillFile, error) {
-	skill, err := models.GetSkillByName(ctx, s.pool, c.TenantID, name)
+	skill, err := models.GetSkillByName(ctx, s.pool, c.TenantID, name, c.HideJobReferencedSkills)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading skill by name: %w", err)
 	}
@@ -111,7 +117,7 @@ func (s *SkillService) ResolveByName(ctx context.Context, c *Caller, name string
 
 // LoadFile returns a skill file by ID with authorization on the parent skill.
 func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID) (*models.SkillFile, error) {
-	ref, err := models.GetSkillReference(ctx, s.pool, c.TenantID, fileID)
+	ref, err := models.GetSkillReference(ctx, s.pool, c.TenantID, fileID, c.HideJobReferencedSkills)
 	if err != nil {
 		return nil, fmt.Errorf("loading skill file: %w", err)
 	}
@@ -130,11 +136,14 @@ func (s *SkillService) LoadFile(ctx context.Context, c *Caller, fileID uuid.UUID
 // Admins see all skills; non-admins see only scope-matched skills.
 // Built-in skills are included at the top of the list.
 func (s *SkillService) List(ctx context.Context, c *Caller, search string) ([]models.SkillSummary, error) {
-	dbSkills, err := models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.UserID, c.RoleIDs, search)
+	dbSkills, err := models.ListSkillsFiltered(ctx, s.pool, c.TenantID, c.IsAdmin, c.UserID, c.RoleIDs, search, c.HideJobReferencedSkills)
 	if err != nil {
 		return nil, err
 	}
-	builtins := skills.VisibleMatchBuiltins(search, c.IsAdmin)
+	var builtins []skills.BuiltinSkill
+	if !c.HideBuiltinSkills {
+		builtins = skills.VisibleMatchBuiltins(search, c.IsAdmin)
+	}
 	result := make([]models.SkillSummary, 0, len(builtins)+len(dbSkills))
 	for _, b := range builtins {
 		result = append(result, models.SkillSummary{

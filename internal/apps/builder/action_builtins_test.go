@@ -98,7 +98,7 @@ func newActionFixture(t *testing.T) *actionFixture {
 	if err != nil {
 		t.Fatalf("encryptor: %v", err)
 	}
-	svc := services.New(pool, enc)
+	svc := services.New(pool, enc, "")
 
 	actions := BuildActionBuiltins(pool, svc, nil, tenant.ID, appID, user.ID, nil)
 

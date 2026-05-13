@@ -23,6 +23,16 @@ type Caller struct {
 	// Timezone is the IANA tz of the caller, resolved as user.Timezone with
 	// fallback to tenant.Timezone, then "UTC". Always populated.
 	Timezone string
+	// HideBuiltinSkills suppresses Kit's built-in skills (user guide, etc.)
+	// from skill listings and lookups. The website widget sets this so the
+	// public Q&A bot can't surface Kit-product documentation when asked
+	// about the tenant's knowledge base.
+	HideBuiltinSkills bool
+	// HideJobReferencedSkills excludes tenant skills wired as the
+	// SkillID of any scheduled job. The widget sets this so workflow
+	// skills (which the tenant uses internally to drive automation)
+	// don't end up cited in answers to website visitors.
+	HideJobReferencedSkills bool
 }
 
 // Location returns the caller's *time.Location, falling back to UTC on parse failure.
@@ -72,29 +82,35 @@ var (
 
 // Services bundles all service instances for convenient passing to tool adapters.
 type Services struct {
-	Skills   *SkillService
-	Rules    *RuleService
-	Memories *MemoryService
-	Roles    *RoleService
-	Jobs     *JobService
-	Tenants  *TenantService
-	Users    *UserService
-	Sessions *SessionService
-	Enc      *crypto.Encryptor
+	Skills          *SkillService
+	Rules           *RuleService
+	Memories        *MemoryService
+	Roles           *RoleService
+	Jobs            *JobService
+	Tenants         *TenantService
+	Users           *UserService
+	Sessions        *SessionService
+	WidgetTokens    *WidgetTokenService
+	WidgetAnalytics *WidgetAnalyticsService
+	Enc             *crypto.Encryptor
 }
 
-// New creates a Services bundle with all service instances.
-func New(pool *pgxpool.Pool, enc *crypto.Encryptor) *Services {
+// New creates a Services bundle with all service instances. baseURL is
+// used by the widget-token service to render the embed snippet; pass
+// the public base URL of the Kit deployment.
+func New(pool *pgxpool.Pool, enc *crypto.Encryptor, baseURL string) *Services {
 	return &Services{
-		Skills:   &SkillService{pool: pool},
-		Rules:    &RuleService{pool: pool},
-		Memories: &MemoryService{pool: pool},
-		Roles:    &RoleService{pool: pool},
-		Jobs:     &JobService{pool: pool},
-		Tenants:  &TenantService{pool: pool},
-		Users:    &UserService{pool: pool},
-		Sessions: &SessionService{pool: pool},
-		Enc:      enc,
+		Skills:          &SkillService{pool: pool},
+		Rules:           &RuleService{pool: pool},
+		Memories:        &MemoryService{pool: pool},
+		Roles:           &RoleService{pool: pool},
+		Jobs:            &JobService{pool: pool},
+		Tenants:         &TenantService{pool: pool},
+		Users:           &UserService{pool: pool},
+		Sessions:        &SessionService{pool: pool},
+		WidgetTokens:    NewWidgetTokenService(pool, baseURL),
+		WidgetAnalytics: NewWidgetAnalyticsService(pool),
+		Enc:             enc,
 	}
 }
 

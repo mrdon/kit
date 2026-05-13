@@ -104,10 +104,31 @@ type ExecContext struct {
 	// the LLM call. Used by the chat path to flip the UI status line
 	// back to "thinking" between tool calls.
 	OnIteration func()
+
+	// WidgetMode is true for runs originating from the public website
+	// chat widget. Caller() returns a fixed anonymous Caller (member
+	// role, HideBuiltinSkills=true) instead of looking up the user's
+	// roles in the DB.
+	WidgetMode bool
 }
 
 // Caller builds a services.Caller from the current execution context.
+//
+// Widget-mode runs short-circuit the DB role lookup and return a fixed
+// anonymous Caller: member role only, HideBuiltinSkills enabled so the
+// Kit user-guide and other product-internal skills don't leak into the
+// public Q&A surface.
 func (ec *ExecContext) Caller() *services.Caller {
+	if ec.WidgetMode {
+		return &services.Caller{
+			TenantID:                ec.Tenant.ID,
+			Roles:                   []string{models.RoleMember},
+			IsAdmin:                 false,
+			HideBuiltinSkills:       true,
+			HideJobReferencedSkills: true,
+			Timezone:                services.ResolveTimezone("", ec.Tenant.Timezone),
+		}
+	}
 	roles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
 	roleIDs, _ := models.GetUserRoleIDs(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
 	return &services.Caller{
@@ -301,6 +322,8 @@ func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool
 	registerWebTools(r)
 	registerJobTools(r, isAdmin)
 	registerUserTools(r)
+	registerWidgetTokenTools(r, isAdmin)
+	registerWidgetAnalyticsTools(r, isAdmin)
 
 	// App tools
 	for _, a := range apps.All() {
@@ -373,6 +396,34 @@ func (r *Registry) Policies() map[string]Policy {
 		out[d.Name] = d.DefaultPolicy
 	}
 	return out
+}
+
+// RestrictToTools narrows the registry to exactly the named tools and
+// drops everything else. Used by the website chat widget to clamp the
+// agent to a tight read-only allowlist (skills, memories, calendar,
+// terminal reply). Unlike JobPolicy.AllowedTools, no infrastructure
+// carve-out is applied — the list passed here is authoritative.
+//
+// Names that don't match any registered Def are silently ignored, so
+// callers can pass a hand-maintained allowlist without worrying about
+// tool churn in unrelated packages.
+func (r *Registry) RestrictToTools(allowed []string) {
+	if len(allowed) == 0 {
+		return
+	}
+	allowSet := make(map[string]struct{}, len(allowed))
+	for _, n := range allowed {
+		allowSet[n] = struct{}{}
+	}
+	kept := r.defs[:0]
+	for _, d := range r.defs {
+		if _, ok := allowSet[d.Name]; ok {
+			kept = append(kept, d)
+			continue
+		}
+		delete(r.handlers, d.Name)
+	}
+	r.defs = kept
 }
 
 // DropGatedTools removes every Def whose DefaultPolicy is PolicyGate

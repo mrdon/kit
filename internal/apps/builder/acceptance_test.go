@@ -177,7 +177,7 @@ func replayExample(t *testing.T, f *acceptanceFixture, def exampleDefinition) st
 func acceptanceDeps(t *testing.T, f *acceptanceFixture, sender Sender) *scriptRunDeps {
 	t.Helper()
 	return &scriptRunDeps{
-		Services:   services.New(f.pool, nil),
+		Services:   services.New(f.pool, nil, ""),
 		Engine:     testEngine,
 		Sender:     sender,
 		BuildSlack: nil,

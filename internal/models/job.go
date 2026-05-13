@@ -289,6 +289,33 @@ func UpdateJobSkillID(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID u
 }
 
 // DeleteJob deletes a job and its scope rows (via CASCADE). Builtin jobs cannot be deleted.
+// ListSkillIDsReferencedByJobs returns the distinct skill IDs that any
+// active or inactive job in this tenant points at via Jobs.SkillID.
+// Used by the website chat widget to exclude tenant-internal workflow
+// skills from the public Q&A surface — if a skill is wired into a
+// scheduled job, it's almost certainly not customer-facing FAQ
+// material.
+func ListSkillIDsReferencedByJobs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT DISTINCT skill_id
+		FROM jobs
+		WHERE tenant_id = $1 AND skill_id IS NOT NULL
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing job-referenced skill ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning job-referenced skill id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func DeleteJob(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID) error {
 	tag, err := pool.Exec(ctx, `DELETE FROM jobs WHERE tenant_id = $1 AND id = $2 AND job_type != $3`, tenantID, jobID, JobTypeBuiltin)
 	if err != nil {

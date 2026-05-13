@@ -226,3 +226,23 @@ Create from an agent context (Slack, MCP, or a skill):
 > "Create a briefing about last night's sales — highest Thursday in 6 months."
 
 Via MCP: `create_decision`, `create_briefing`, `update_decision`, `update_briefing`, `list_decisions`, `list_briefings`, `resolve_decision`, `ack_briefing`. Cards are scoped like other Kit resources — role, user, or tenant-wide.
+
+## Website chat widget
+
+You can embed Kit as a floating chat bubble on your own website (e.g. a Wix members-only page). Visitors click the bubble, ask a question, and get an answer drawn from your tenant's skills, rules, memories, and calendar. The widget is strictly read-only — visitors can't create tasks, save memories, or trigger any action. Kit-internal builtin skills (this user guide, etc.) and any skill wired into a scheduled job are filtered out automatically, so only your customer-facing knowledge surfaces.
+
+**Setup (admin, one-time):**
+
+> "Create a widget token for https://example.com"
+
+Kit returns a token (shown once — save it) and a one-line `<script>` snippet. Paste the snippet into your site's custom-HTML block; the bubble appears in the bottom-right and survives client-side navigation.
+
+**Manage tokens** with `list_widget_tokens` and `revoke_widget_token` (revoke stops the embed working immediately).
+
+**Review conversations** any member of the workspace can ask:
+
+> "What questions did people ask the widget this week?"
+> "Did anyone ask about band camp?"
+> "Show me conversations that didn't get a good answer."
+
+Kit calls `list_widget_conversations`, `search_widget_conversations`, and `read_widget_conversation` to answer. Visitor identity is anonymous (a per-browser UUID), so cross-conversation grouping works without storing personal data.
