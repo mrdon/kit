@@ -137,29 +137,38 @@ func (s *Service) RequestChange(
 	if err != nil {
 		return nil, fmt.Errorf("decrypting netlify token: %w", err)
 	}
-	// Branch chaining: if this Slack thread already has a completed
-	// agent run on it, fork the new run off that run's result_branch
-	// so subsequent edits accumulate ("blue → lighter blue → no, back
-	// to blue") instead of resetting to production every turn.
-	// Production-branch fallback applies when (a) it's the first run
-	// in this thread or (b) the prior run hasn't produced a
-	// result_branch yet (still in flight / failed).
+	// Chaining: if this Slack thread already has a prior agent run,
+	// fork the new run off it via Netlify's parent_agent_runner_id
+	// mechanism so the agent picks up the cumulative state ("blue →
+	// lighter blue → move the contact form" all build on each other).
+	// Using parent_agent_runner_id rather than branch=<result_branch>
+	// because result_branch is only populated after the prior run
+	// makes its first commit (~15-30s into the run); the parent id
+	// is available immediately, so chaining works even if the user
+	// fires a follow-up while the prior build is still running.
 	baseBranch := cfg.ProductionBranch
 	chainedFrom := ""
 	if in.SlackChannel != "" && in.SlackThreadTS != "" {
 		if priorRun, perr := resolvePriorRun(ctx, s.pool, tenantID,
 			in.SlackChannel, in.SlackThreadTS); perr == nil &&
-			priorRun != nil && priorRun.ResultBranch != "" {
-			baseBranch = priorRun.ResultBranch
+			priorRun != nil && priorRun.NetlifyRunID != "" {
 			chainedFrom = priorRun.NetlifyRunID
+			// base_branch becomes informational only — Netlify
+			// derives the real base from parent_agent_runner_id.
+			// Use the prior result_branch when available so our
+			// DB row reflects the actual chain point.
+			if priorRun.ResultBranch != "" {
+				baseBranch = priorRun.ResultBranch
+			}
 		}
 	}
 
 	runner, err := createAgentRunner(ctx, accessToken, CreateAgentRunnerInput{
-		SiteID: cfg.NetlifySiteID,
-		Prompt: in.Prompt,
-		Branch: baseBranch,
-		Agent:  cfg.DefaultAgent,
+		SiteID:              cfg.NetlifySiteID,
+		Prompt:              in.Prompt,
+		Branch:              baseBranch,
+		Agent:               cfg.DefaultAgent,
+		ParentAgentRunnerID: chainedFrom,
 	})
 	if err != nil {
 		return nil, err

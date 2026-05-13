@@ -109,22 +109,14 @@ func formatRequestChangeError(ec *tools.ExecContext, err error) string {
 }
 
 // formatRequestChangeOK is the success-case string. Tells the LLM
-// what to say to the user. When a watcher is running (the common
-// Slack case), the LLM should NOT share the preview URL — the
-// watcher will post it back with build-completion info. When no
-// watcher is running (MCP / scripted path with no Slack thread),
-// share what we have.
+// what to say to the user — deliberately brief. Chaining is
+// automatic and handled inside Kit; the LLM never needs to know
+// or mention it. When a watcher is running (the common Slack
+// case), the watcher posts the preview URL when the build is
+// ready; the LLM just gives a brief acknowledgement.
 func formatRequestChangeOK(res *ChangeRunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Started a Netlify agent run.\n")
-	fmt.Fprintf(&b, "- run_id: %s\n", res.RunID)
-	fmt.Fprintf(&b, "- base branch: %s", res.BaseBranch)
-	if res.ChainedFromRunID != "" {
-		fmt.Fprintf(&b, " (chained from prior run %s — this build accumulates on the last preview)", res.ChainedFromRunID)
-	} else if res.BaseBranch == res.ProductionBranch {
-		fmt.Fprintf(&b, " (production)")
-	}
-	b.WriteString("\n")
+	fmt.Fprintf(&b, "Started a Netlify agent run (id=%s).\n", res.RunID)
 	if res.PreviewURL != "" {
 		fmt.Fprintf(&b, "- preview URL: %s\n", res.PreviewURL)
 	}

@@ -42,14 +42,13 @@ type AgentRunner struct {
 }
 
 // CreateAgentRunnerInput is the v1 subset of fields we actually pass.
-// The Netlify API accepts these via query params (yes, a POST with
-// query params — verified against open-api/swagger.yml).
 type CreateAgentRunnerInput struct {
-	SiteID string // required
-	Prompt string
-	Branch string // base branch to fork off; empty = default
-	Agent  string // "claude" | "codex" | "gemini"; empty = Netlify's default
-	Model  string // model id; empty = agent's default
+	SiteID              string // required
+	Prompt              string
+	Branch              string // base branch to fork off; empty = default
+	Agent               string // "claude" | "codex" | "gemini"; empty = Netlify's default
+	Model               string // model id; empty = agent's default
+	ParentAgentRunnerID string // chain off a prior run's id (Netlify's "follow-up" mechanism); empty for fresh run
 }
 
 // createAgentRunner kicks off an agent run. Returns the new
@@ -76,6 +75,9 @@ func createAgentRunner(ctx context.Context, accessToken string, in CreateAgentRu
 	}
 	if in.Model != "" {
 		bodyMap["model"] = in.Model
+	}
+	if in.ParentAgentRunnerID != "" {
+		bodyMap["parent_agent_runner_id"] = in.ParentAgentRunnerID
 	}
 	bodyBytes, err := json.Marshal(bodyMap)
 	if err != nil {
