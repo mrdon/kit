@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/agent"
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps/cards/shared"
 	"github.com/mrdon/kit/internal/models"
 	kitslack "github.com/mrdon/kit/internal/slack"
@@ -169,7 +170,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 			// tool. The pick-vs-edit distinction (resolve_decision vs
 			// revise_decision_option) is exactly the kind of tool-use
 			// nuance Sonnet handles reliably and Haiku doesn't.
-			runInput.Model = models.JobModelSonnet
+			runInput.Model = anthropic.ModelSonnet
 		}
 	} else {
 		runInput.SystemSuffix = buildQuickSystemSuffix()
@@ -181,7 +182,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		// more reliably at the cost of a few extra cents per turn, a
 		// fair trade for a surface where "it said it did but didn't"
 		// is the worst failure mode.
-		runInput.Model = models.JobModelSonnet
+		runInput.Model = anthropic.ModelSonnet
 	}
 
 	if err := in.Agent.Run(ctx, runInput); err != nil {

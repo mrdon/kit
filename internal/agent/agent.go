@@ -101,10 +101,10 @@ type RunInput struct {
 	// HALTED result mid-chat is confusing UX.
 	DropGatedTools bool
 
-	// Model is the tier name ("haiku" or "sonnet") to run this turn
-	// under. Empty → Haiku (matches pre-change behaviour for interactive
-	// callers). The scheduler sets this from job.Model so each
-	// scheduled run honours the classifier's decision.
+	// Model is the Anthropic Messages API model ID to run this turn
+	// under (e.g. anthropic.ModelSonnet). Empty → Haiku. Job callers
+	// resolve job.Model (a tier name) through models.JobModelID before
+	// passing the result here.
 	Model string
 
 	// WidgetAllowedTools, when non-empty, restricts the registry to
@@ -161,7 +161,10 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	messages := a.buildInitialMessages(ctx, in)
 	systemPrompt := a.buildSystemPrompt(ctx, in)
 	toolDefs := buildToolDefs(registry, caller)
-	modelID := models.ModelIDFor(in.Model)
+	modelID := in.Model
+	if modelID == "" {
+		modelID = anthropic.ModelHaiku
+	}
 
 	sentMessage := false
 	var usage usageTotals

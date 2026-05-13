@@ -228,7 +228,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 			Channel:  job.ChannelID,
 			UserText: userText,
 			Job:      tc,
-			Model:    job.Model,
+			Model:    models.JobModelID(job.Model),
 		}
 		go func() {
 			runCtx := context.Background()

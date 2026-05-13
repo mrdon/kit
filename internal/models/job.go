@@ -34,19 +34,19 @@ const (
 )
 
 // Tier names persisted in jobs.model. Picked at create_task time by a
-// Haiku classifier pass and threaded into agent.RunInput.Model so the
-// scheduler honours the per-job choice. Kept as short tier names (not
-// full Anthropic model IDs) so a future pricing/ID shift only updates
-// ModelIDFor, not every row.
+// Haiku classifier pass; the scheduler resolves the tier to an Anthropic
+// model ID via JobModelID before calling agent.Run. Kept as short tier
+// names (not full Anthropic model IDs) so a future pricing/ID shift only
+// updates JobModelID, not every DB row.
 const (
 	JobModelHaiku  = "haiku"
 	JobModelSonnet = "sonnet"
 )
 
-// ModelIDFor maps a tier name to the Anthropic Messages API model ID.
-// Empty / unknown values fall back to the Haiku ID so callers that don't
-// set Model on RunInput keep today's behaviour.
-func ModelIDFor(tier string) string {
+// JobModelID maps a job's persisted tier name to the Anthropic Messages
+// API model ID. Empty / unknown values fall back to the Haiku ID so a
+// row with no tier set still runs.
+func JobModelID(tier string) string {
 	switch tier {
 	case JobModelSonnet:
 		return anthropic.ModelSonnet

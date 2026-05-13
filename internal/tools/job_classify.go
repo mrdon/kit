@@ -37,7 +37,7 @@ func ClassifyTaskModel(ctx context.Context, llm *anthropic.Client, description s
 		return models.JobModelHaiku
 	}
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     models.ModelIDFor(models.JobModelHaiku),
+		Model:     models.JobModelID(models.JobModelHaiku),
 		MaxTokens: 8,
 		System: []anthropic.SystemBlock{{
 			Type: "text",

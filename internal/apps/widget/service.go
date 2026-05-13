@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/agent"
+	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -181,6 +182,7 @@ func (s *Service) Chat(ctx context.Context, in ChatInput) error {
 		ThreadTS:           in.ConversationID,
 		UserText:           in.Message,
 		Responder:          responder,
+		Model:              anthropic.ModelSonnet,
 		WidgetMode:         true,
 		WidgetAllowedTools: AllowedTools,
 		DropGatedTools:     true,
