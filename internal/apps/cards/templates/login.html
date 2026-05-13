@@ -17,7 +17,10 @@
   .workspace-url { margin: 24px 0 8px; padding: 16px; background: #fff7e6; border: 1px solid #f5d28a; border-radius: 8px; text-align: left; }
   .workspace-url-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8a5b00; margin-bottom: 8px; }
   .workspace-url-value { display: flex; align-items: center; gap: 8px; }
-  .workspace-url-value code { flex: 1; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 1.05rem; font-weight: 600; color: #1a1a2e; background: #fff; padding: 10px 12px; border-radius: 6px; border: 1px solid #f5d28a; word-break: break-all; }
+  .workspace-url-value code { flex: 1; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 1.05rem; font-weight: 600; background: #fff; padding: 10px 12px; border-radius: 6px; border: 1px solid #f5d28a; word-break: break-all; }
+  .workspace-url-slug { color: #1a1a2e; }
+  .workspace-url-suffix { color: #9a8260; }
+  .workspace-url-note code { background: #fff; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
   .workspace-url-copy { padding: 10px 14px; border-radius: 6px; border: 1px solid #f5d28a; background: #fff; color: #8a5b00; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
   .workspace-url-copy:hover { background: #fff3d6; }
   .workspace-url-note { font-size: 0.85rem; color: #6b5200; margin: 10px 0 0; line-height: 1.5; }
@@ -32,10 +35,10 @@
   <div class="workspace-url">
     <div class="workspace-url-label">If Slack asks for your workspace URL</div>
     <div class="workspace-url-value">
-      <code id="workspace-url">{{ .WorkspaceURL }}</code>
-      <button type="button" class="workspace-url-copy" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent); this.textContent='Copied'; setTimeout(()=>this.textContent='Copy',1500);">Copy</button>
+      <code><span class="workspace-url-slug">{{ .SlackWorkspaceSlug }}</span><span class="workspace-url-suffix">.slack.com</span></code>
+      <button type="button" class="workspace-url-copy" data-slug="{{ .SlackWorkspaceSlug }}" onclick="navigator.clipboard.writeText(this.dataset.slug); this.textContent='Copied'; setTimeout(()=>this.textContent='Copy slug',1500);">Copy slug</button>
     </div>
-    <p class="workspace-url-note">Already signed in to Slack in this browser? You'll skip this step.</p>
+    <p class="workspace-url-note">Slack's input only takes the slug (the part before <code>.slack.com</code>). Already signed in to Slack in this browser? You'll skip this step.</p>
   </div>
   <a class="btn" href="{{ .ContinueHref }}">Continue with Slack</a>
   <p class="hint">You'll bounce to slack.com to confirm, then come right back.</p>

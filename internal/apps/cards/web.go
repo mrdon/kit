@@ -216,11 +216,11 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		if err := cardsPageTmpl.ExecuteTemplate(w, "login.html", map[string]any{
-			"TenantSlug":    tenant.Slug,
-			"WorkspaceName": name,
-			"WorkspaceURL":  domain + ".slack.com",
-			"HasIcon":       len(tenant.Icon192) > 0,
-			"ContinueHref":  continueHref,
+			"TenantSlug":         tenant.Slug,
+			"WorkspaceName":      name,
+			"SlackWorkspaceSlug": domain,
+			"HasIcon":            len(tenant.Icon192) > 0,
+			"ContinueHref":       continueHref,
 		}); err != nil {
 			slog.Error("cards: rendering login page", "error", err)
 		}
