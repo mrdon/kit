@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/mrdon/kit/internal/auth"
-	"github.com/mrdon/kit/internal/models"
 )
 
 // netlifyRedirectURI builds the absolute callback URL Netlify will
@@ -50,19 +49,34 @@ func (a *App) handleNetlifyConnect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, netlifyOAuthAuthorize+"?"+q.Encode(), http.StatusSeeOther)
 }
 
-// handleNetlifyCallback runs at the tenant-agnostic path
-// /oauth/netlify/callback. The caller is identified by the session
-// cookie; the tenant is recovered from the state cookie's embedded
-// slug. We verify all three:
+// handleNetlifyCallbackBounce runs at /oauth/netlify/callback — the
+// fixed redirect URI registered with Netlify's OAuth app. It only
+// reads the slug from the (root-scoped) state cookie and 303s to the
+// per-tenant callback URL so the session cookie (Path=/{slug}/)
+// gets sent by the browser and the full auth chain runs at
+// handleNetlifyCallback.
 //
-//  1. URL state param == cookie state (CSRF)
-//  2. session cookie's caller.TenantID matches the slug from the
-//     state cookie (no cross-tenant token planting)
-//  3. caller is an admin (configuration is admin-only)
-//
-// On success, exchanges the authorization code for tokens, encrypts
-// them, persists, and redirects to /{slug}/apps/netlify/settings so
-// the site picker can render.
+// Doesn't clear the state cookie or validate state vs URL state —
+// both happen at the per-tenant handler so any tampered request
+// gets the same uniform error response.
+func (a *App) handleNetlifyCallbackBounce(w http.ResponseWriter, r *http.Request) {
+	_, slug := readOAuthStateCookie(r)
+	if slug == "" {
+		http.Error(w, "missing or expired connect state — restart from Kit", http.StatusBadRequest)
+		return
+	}
+	dest := "/" + slug + "/oauth/netlify/callback"
+	if q := r.URL.RawQuery; q != "" {
+		dest += "?" + q
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// handleNetlifyCallback runs at /{slug}/oauth/netlify/callback after
+// the top-level bouncer 303s here. Verifies state, cross-checks the
+// cookie slug against the URL slug, exchanges the authorization code
+// for tokens, encrypts them, persists, and redirects to
+// /{slug}/apps/netlify/settings so the site picker can render.
 func (a *App) handleNetlifyCallback(w http.ResponseWriter, r *http.Request) {
 	if !a.svc.HasNetlifyCredentials() {
 		http.Error(w, "netlify oauth not configured", http.StatusServiceUnavailable)
@@ -87,23 +101,21 @@ func (a *App) handleNetlifyCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auth chain has already validated session, tenant slug, and admin
+	// role (this runs under the per-tenant `page` middleware). Cross-
+	// check that the state cookie's slug matches the URL slug so a
+	// stolen state cookie can't be used to plant tokens under a
+	// different tenant.
+	tenant := auth.TenantFromContext(r.Context())
 	caller := auth.CallerFromContext(r.Context())
-	if caller == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if tenant == nil || caller == nil {
+		http.Error(w, "tenant or caller not resolved", http.StatusInternalServerError)
 		return
 	}
-	if !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
-	tenant, err := models.GetTenantBySlug(r.Context(), a.pool, cookieSlug)
-	if err != nil || tenant == nil {
-		slog.Warn("netlify: callback slug not found", "slug", cookieSlug, "error", err)
-		http.Error(w, "tenant not found", http.StatusBadRequest)
-		return
-	}
-	if tenant.ID != caller.TenantID {
-		http.Error(w, "tenant mismatch", http.StatusForbidden)
+	if cookieSlug != tenant.Slug {
+		slog.Warn("netlify: callback slug mismatch",
+			"cookie_slug", cookieSlug, "url_slug", tenant.Slug)
+		http.Error(w, "connect state slug mismatch", http.StatusBadRequest)
 		return
 	}
 

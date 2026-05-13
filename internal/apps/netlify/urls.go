@@ -38,17 +38,16 @@ func registerNetlifyRoutes(mux *http.ServeMux, a *App) {
 			auth.AssertTenantMatch(a.signer, requireAdminHandler(h)))))
 	}
 
-	// Top-level OAuth callback (tenant identified via state cookie).
-	callback := func(h http.HandlerFunc) http.Handler {
-		return auth.PageRoute(a.signer.Middleware(a.pool, requireAdminHandler(h)))
-	}
-
 	// Settings landing page.
 	mux.Handle("GET /{slug}/apps/netlify/settings", page(a.handleSettingsPage))
 
-	// Netlify OAuth dance.
+	// Netlify OAuth dance. Top-level callback is a tiny bouncer that
+	// reads the slug from the state cookie (Path=/) and 303s to the
+	// per-tenant callback URL where the session cookie (Path=/{slug}/)
+	// is in scope. See handleNetlifyCallbackBounce for the rationale.
 	mux.Handle("GET /{slug}/apps/netlify/connect/netlify", page(a.handleNetlifyConnect))
-	mux.Handle("GET /oauth/netlify/callback", callback(a.handleNetlifyCallback))
+	mux.HandleFunc("GET /oauth/netlify/callback", a.handleNetlifyCallbackBounce)
+	mux.Handle("GET /{slug}/oauth/netlify/callback", page(a.handleNetlifyCallback))
 	mux.Handle("POST /{slug}/apps/netlify/site", page(a.handleNetlifySitePick))
 	mux.Handle("POST /{slug}/apps/netlify/disconnect/netlify", page(a.handleNetlifyDisconnect))
 

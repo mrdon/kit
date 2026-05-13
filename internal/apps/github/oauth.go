@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/mrdon/kit/internal/auth"
-	"github.com/mrdon/kit/internal/models"
 )
 
 // installPathPrefix is the per-tenant route prefix the github app
@@ -56,8 +55,32 @@ func (a *App) handleConnect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, installURL, http.StatusSeeOther)
 }
 
-// handleCallback runs at the tenant-agnostic /oauth/github/callback
-// path. Verifies state, identifies the tenant from the state cookie,
+// handleCallbackBounce runs at the tenant-agnostic /oauth/github/callback
+// path that GitHub's Setup URL points at. It only reads the slug from
+// the (root-scoped) state cookie and 303s to the per-tenant callback
+// URL — that way the per-tenant session cookie (Path=/{slug}/) gets
+// sent by the browser and the full auth chain runs at handleCallback.
+//
+// Doesn't clear the state cookie; the per-tenant handler does that
+// after validating it. Doesn't validate state vs URL state here
+// either — that check is also at the per-tenant handler so any
+// tampered request gets a uniform error response.
+func (a *App) handleCallbackBounce(w http.ResponseWriter, r *http.Request) {
+	_, slug, _ := readOAuthStateCookie(r)
+	if slug == "" {
+		http.Error(w, "missing or expired install state — restart the install from Kit", http.StatusBadRequest)
+		return
+	}
+	dest := "/" + slug + "/oauth/github/callback"
+	if q := r.URL.RawQuery; q != "" {
+		dest += "?" + q
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// handleCallback runs at /{slug}/oauth/github/callback after the
+// top-level bouncer 303s here. Verifies state, identifies the tenant
+// from the URL slug (cross-checked against the state cookie),
 // records the installation_id, and bounces the user back to the
 // return_to URL captured at connect time.
 func (a *App) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -84,23 +107,21 @@ func (a *App) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auth chain has already validated session, tenant slug, and admin
+	// role (this runs under the per-tenant `page` middleware). Cross-
+	// check that the state cookie's slug matches the URL slug so a
+	// stolen state cookie can't be used to confirm an install under a
+	// different tenant.
+	tenant := auth.TenantFromContext(r.Context())
 	caller := auth.CallerFromContext(r.Context())
-	if caller == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if tenant == nil || caller == nil {
+		http.Error(w, "tenant or caller not resolved", http.StatusInternalServerError)
 		return
 	}
-	if !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
-	tenant, err := models.GetTenantBySlug(r.Context(), a.pool, cookieSlug)
-	if err != nil || tenant == nil {
-		slog.Warn("github: callback slug not found", "slug", cookieSlug, "error", err)
-		http.Error(w, "tenant not found", http.StatusBadRequest)
-		return
-	}
-	if tenant.ID != caller.TenantID {
-		http.Error(w, "tenant mismatch", http.StatusForbidden)
+	if cookieSlug != tenant.Slug {
+		slog.Warn("github: callback slug mismatch",
+			"cookie_slug", cookieSlug, "url_slug", tenant.Slug)
+		http.Error(w, "install state slug mismatch", http.StatusBadRequest)
 		return
 	}
 

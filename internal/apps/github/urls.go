@@ -20,13 +20,17 @@ func registerGitHubRoutes(mux *http.ServeMux, a *App) {
 			auth.AssertTenantMatch(a.signer, requireAdminHandler(h)))))
 	}
 
-	callback := func(h http.HandlerFunc) http.Handler {
-		return auth.PageRoute(a.signer.Middleware(a.pool, requireAdminHandler(h)))
-	}
-
 	mux.Handle("GET /{slug}"+installPathPrefix+"/connect", page(a.handleConnect))
 	mux.Handle("POST /{slug}"+installPathPrefix+"/disconnect", page(a.handleDisconnect))
-	mux.Handle("GET "+callbackPath, callback(a.handleCallback))
+
+	// Top-level callback is a tiny bouncer: GitHub's Setup URL must be
+	// a fixed string registered with the App, but our session cookie is
+	// scoped to /{slug}/ so it isn't sent to a root path. The bouncer
+	// reads the slug from the state cookie (Path=/) and 303s to the
+	// per-tenant callback URL where the session cookie comes back into
+	// scope and the full auth chain runs.
+	mux.HandleFunc("GET "+callbackPath, a.handleCallbackBounce)
+	mux.Handle("GET /{slug}/oauth/github/callback", page(a.handleCallback))
 }
 
 func requireAdminHandler(h http.HandlerFunc) http.Handler {
