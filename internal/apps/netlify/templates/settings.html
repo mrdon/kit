@@ -1,0 +1,128 @@
+{{ define "settings.html" }}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<link rel="stylesheet" href="{{ .ChromeCSS }}">
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; }
+  main { max-width: 720px; margin: 2rem auto; padding: 0 1.25rem; }
+  h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+  .lede { color: #555; margin: 0 0 1.5rem; }
+  .banner { padding: 0.75rem 1rem; background: #e6f4ea; border: 1px solid #34a853; border-radius: 6px; margin-bottom: 1rem; }
+  .banner.warn { background: #fef7e0; border-color: #f9ab00; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; background: #fff; }
+  .card h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
+  .status { font-size: 0.9rem; color: #555; margin: 0 0 1rem; }
+  .status .pill { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 500; }
+  .status .pill.on { background: #e6f4ea; color: #1e7e34; }
+  .status .pill.off { background: #fde7e9; color: #b3261e; }
+  .status .pill.skip { background: #eee; color: #555; }
+  .row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 0.55rem 1rem; border-radius: 6px; border: 1px solid #1d4ed8; background: #1d4ed8; color: #fff; text-decoration: none; font: inherit; cursor: pointer; }
+  .btn:hover { background: #1740a8; }
+  .btn:disabled, .btn.disabled { background: #aab; border-color: #aab; cursor: not-allowed; }
+  .btn.secondary { background: #fff; color: #1d4ed8; }
+  .btn.secondary:hover { background: #f0f4ff; }
+  .btn.danger { background: #fff; color: #b3261e; border-color: #b3261e; }
+  .btn.danger:hover { background: #fde7e9; }
+  .hint { font-size: 0.85rem; color: #777; margin-top: 0.5rem; }
+  form.inline { display: inline; }
+  code { background: #f4f4f4; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+{{ template "chrome_header" .Header }}
+<main>
+  <h1>Website settings</h1>
+  <p class="lede">Connect this workspace to Netlify and GitHub so the team can request website changes from Slack.</p>
+
+  {{ if .Banner }}
+    <div class="banner">{{ .Banner }}</div>
+  {{ end }}
+
+  <div class="card">
+    <h2>Netlify</h2>
+    {{ if .NetlifyConnected }}
+      <p class="status">
+        <span class="pill on">Connected</span>
+        Site: <code>{{ .NetlifySiteName }}</code>
+      </p>
+      <form class="inline" method="post" action="/{{ .TenantSlug }}/apps/netlify/disconnect/netlify">
+        <button class="btn danger" type="submit">Disconnect Netlify</button>
+      </form>
+    {{ else if .NetlifyNeedsPicker }}
+      <p class="status">
+        <span class="pill on">Signed in</span>
+        Pick which Netlify site this workspace will edit.
+      </p>
+      {{ if .NetlifySitesError }}
+        <p class="hint">{{ .NetlifySitesError }}</p>
+      {{ else if not .NetlifySites }}
+        <p class="hint">No Netlify sites visible to your account. Create one in Netlify, then refresh this page.</p>
+      {{ else }}
+        <form method="post" action="/{{ .TenantSlug }}/apps/netlify/site">
+          <div class="row">
+            <select name="site_id" required>
+              {{ range .NetlifySites }}
+                <option value="{{ .ID }}">{{ .Name }}{{ if .URL }} — {{ .URL }}{{ end }}</option>
+              {{ end }}
+            </select>
+            <button class="btn" type="submit">Use this site</button>
+          </div>
+        </form>
+      {{ end }}
+      <form class="inline" method="post" action="/{{ .TenantSlug }}/apps/netlify/disconnect/netlify" style="margin-top:0.75rem;">
+        <button class="btn danger" type="submit">Cancel and disconnect</button>
+      </form>
+    {{ else if not .NetlifyConfigured }}
+      <p class="status">
+        <span class="pill skip">Unavailable</span>
+        The Netlify OAuth app hasn't been configured for this Kit install.
+      </p>
+      <p class="hint">Ask the Kit operator to set <code>NETLIFY_CLIENT_ID</code> and <code>NETLIFY_CLIENT_SECRET</code>.</p>
+    {{ else }}
+      <p class="status">
+        <span class="pill off">Not connected</span>
+        Sign in with Netlify to pick which site this workspace edits.
+      </p>
+      <a class="btn" href="/{{ .TenantSlug }}/apps/netlify/connect/netlify">Connect Netlify</a>
+    {{ end }}
+  </div>
+
+  <div class="card">
+    <h2>GitHub</h2>
+    {{ if .GitHubConnected }}
+      <p class="status">
+        <span class="pill on">Connected</span>
+        {{ if .GitHubAccountLogin }}
+          Installed on <code>{{ .GitHubAccountLogin }}</code>.
+        {{ else }}
+          Kit GitHub App installation #{{ .GitHubInstallationID }}.
+        {{ end }}
+        {{ if and .NetlifyRepoOwner .NetlifyRepoName }}
+          Will edit <code>{{ .NetlifyRepoOwner }}/{{ .NetlifyRepoName }}</code> (from your Netlify site).
+        {{ end }}
+      </p>
+      <form class="inline" method="post" action="/{{ .TenantSlug }}/apps/github/disconnect?return_to=/{{ .TenantSlug }}/apps/netlify/settings">
+        <button class="btn danger" type="submit">Disconnect GitHub</button>
+      </form>
+    {{ else if not .GitHubConfigured }}
+      <p class="status">
+        <span class="pill skip">Unavailable</span>
+        The Kit GitHub App hasn't been configured for this Kit install.
+      </p>
+      <p class="hint">Ask the Kit operator to set <code>KIT_GITHUB_APP_SLUG</code>, <code>KIT_GITHUB_APP_ID</code>, and <code>KIT_GITHUB_APP_PRIVATE_KEY</code>.</p>
+    {{ else }}
+      <p class="status">
+        <span class="pill off">Not connected</span>
+        Install the Kit GitHub App on the repository that backs your Netlify site
+        {{ if and .NetlifyRepoOwner .NetlifyRepoName }}(<code>{{ .NetlifyRepoOwner }}/{{ .NetlifyRepoName }}</code>){{ end }}.
+      </p>
+      <a class="btn" href="/{{ .TenantSlug }}/apps/github/connect?return_to=/{{ .TenantSlug }}/apps/netlify/settings">Install GitHub App</a>
+    {{ end }}
+  </div>
+</main>
+</body>
+</html>{{ end }}

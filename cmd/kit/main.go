@@ -23,7 +23,9 @@ import (
 	"github.com/mrdon/kit/internal/apps/cards"
 	"github.com/mrdon/kit/internal/apps/coordination"
 	"github.com/mrdon/kit/internal/apps/email"
+	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/apps/integrations"
+	"github.com/mrdon/kit/internal/apps/netlify"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/apps/vault"
@@ -248,6 +250,22 @@ func main() {
 		sessionSigner,
 		deepLinkSigner,
 		cfg.BaseURL,
+	)
+
+	github.Configure(
+		sessionSigner,
+		cfg.BaseURL,
+		cfg.GitHubAppSlug,
+		cfg.GitHubAppID,
+		cfg.GitHubAppPrivateKey,
+	)
+	netlify.Configure(
+		sessionSigner,
+		enc,
+		cfg.BaseURL,
+		cfg.NetlifyClientID,
+		cfg.NetlifyClientSecret,
+		github.GetService(),
 	)
 
 	// Wire the urgent-card push surface so cards created with

@@ -1,0 +1,236 @@
+package netlify
+
+import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/models"
+)
+
+// netlifyRedirectURI builds the absolute callback URL Netlify will
+// send the user back to after authorize. Must match the redirect URI
+// registered with the Netlify OAuth app exactly.
+func (a *App) netlifyRedirectURI() string {
+	return a.baseURL + "/oauth/netlify/callback"
+}
+
+// handleNetlifyConnect kicks off the Netlify OAuth dance. Caller must
+// be an admin of the tenant identified by the URL slug (enforced by
+// the middleware chain). Generates a CSRF state value, stores it in a
+// short-lived cookie alongside the slug, and redirects the user to
+// Netlify's authorize endpoint.
+func (a *App) handleNetlifyConnect(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	if !a.svc.HasNetlifyCredentials() {
+		http.Error(w, "netlify oauth not configured for this kit install", http.StatusServiceUnavailable)
+		return
+	}
+	state, err := genOAuthState()
+	if err != nil {
+		slog.Error("netlify: generating state", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	setOAuthStateCookie(w, state, tenant.Slug, isSecureRequest(r))
+
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {a.svc.netlifyClientID},
+		"redirect_uri":  {a.netlifyRedirectURI()},
+		"state":         {state},
+	}
+	http.Redirect(w, r, netlifyOAuthAuthorize+"?"+q.Encode(), http.StatusSeeOther)
+}
+
+// handleNetlifyCallback runs at the tenant-agnostic path
+// /oauth/netlify/callback. The caller is identified by the session
+// cookie; the tenant is recovered from the state cookie's embedded
+// slug. We verify all three:
+//
+//  1. URL state param == cookie state (CSRF)
+//  2. session cookie's caller.TenantID matches the slug from the
+//     state cookie (no cross-tenant token planting)
+//  3. caller is an admin (configuration is admin-only)
+//
+// On success, exchanges the authorization code for tokens, encrypts
+// them, persists, and redirects to /{slug}/apps/netlify/settings so
+// the site picker can render.
+func (a *App) handleNetlifyCallback(w http.ResponseWriter, r *http.Request) {
+	if !a.svc.HasNetlifyCredentials() {
+		http.Error(w, "netlify oauth not configured", http.StatusServiceUnavailable)
+		return
+	}
+	urlState := r.URL.Query().Get("state")
+	cookieState, cookieSlug := readOAuthStateCookie(r)
+	clearOAuthStateCookie(w, isSecureRequest(r))
+	if urlState == "" || cookieState == "" || urlState != cookieState {
+		http.Error(w, "oauth state mismatch", http.StatusBadRequest)
+		return
+	}
+	if errCode := r.URL.Query().Get("error"); errCode != "" {
+		desc := r.URL.Query().Get("error_description")
+		slog.Warn("netlify: oauth user-denied", "error", errCode, "desc", desc)
+		a.redirectToSettings(w, r, cookieSlug, "Connection cancelled.")
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing code", http.StatusBadRequest)
+		return
+	}
+
+	caller := auth.CallerFromContext(r.Context())
+	if caller == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !caller.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
+	}
+	tenant, err := models.GetTenantBySlug(r.Context(), a.pool, cookieSlug)
+	if err != nil || tenant == nil {
+		slog.Warn("netlify: callback slug not found", "slug", cookieSlug, "error", err)
+		http.Error(w, "tenant not found", http.StatusBadRequest)
+		return
+	}
+	if tenant.ID != caller.TenantID {
+		http.Error(w, "tenant mismatch", http.StatusForbidden)
+		return
+	}
+
+	tok, err := exchangeNetlifyCode(r.Context(),
+		a.svc.netlifyClientID, a.svc.netlifyClientSecret,
+		code, a.netlifyRedirectURI())
+	if err != nil {
+		slog.Error("netlify: code exchange", "tenant_id", caller.TenantID, "error", err)
+		http.Error(w, "netlify code exchange failed", http.StatusBadGateway)
+		return
+	}
+
+	accessCipher, err := a.enc.Encrypt(tok.AccessToken)
+	if err != nil {
+		slog.Error("netlify: encrypting access token", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	var refreshCipher string
+	if tok.RefreshToken != "" {
+		refreshCipher, err = a.enc.Encrypt(tok.RefreshToken)
+		if err != nil {
+			slog.Error("netlify: encrypting refresh token", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+	expiresAt := time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
+	if tok.ExpiresIn == 0 {
+		// Netlify long-lived tokens — record a far-future expiry so the
+		// non-NULL contract holds and the refresh-on-expiry logic just
+		// never fires.
+		expiresAt = time.Now().Add(365 * 24 * time.Hour)
+	}
+	if err := SaveNetlifyTokens(r.Context(), a.pool, caller.TenantID,
+		accessCipher, refreshCipher, expiresAt); err != nil {
+		slog.Error("netlify: saving tokens", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	a.redirectToSettings(w, r, tenant.Slug, "Netlify connected. Pick a site below.")
+}
+
+// handleNetlifySitePick records the user's site choice from the
+// dropdown rendered on the settings page. Looks the site up on
+// Netlify to capture the default branch + (best-effort) the connected
+// repo for the GitHub-side prefill.
+func (a *App) handleNetlifySitePick(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	caller := auth.CallerFromContext(r.Context())
+	if tenant == nil || caller == nil {
+		http.Error(w, "tenant or caller not resolved", http.StatusInternalServerError)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	siteID := r.FormValue("site_id")
+	if siteID == "" {
+		http.Error(w, "site_id required", http.StatusBadRequest)
+		return
+	}
+	cfg, err := a.svc.GetConfig(r.Context(), caller.TenantID)
+	if err != nil {
+		slog.Error("netlify: site pick: loading config", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if cfg.NetlifyAccessTokenCipher == "" {
+		http.Error(w, "connect netlify first", http.StatusBadRequest)
+		return
+	}
+	accessToken, err := a.enc.Decrypt(cfg.NetlifyAccessTokenCipher)
+	if err != nil {
+		slog.Error("netlify: decrypting access token", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	site, err := getNetlifySite(r.Context(), accessToken, siteID)
+	if err != nil {
+		slog.Error("netlify: fetching site", "site_id", siteID, "error", err)
+		http.Error(w, "could not load site", http.StatusBadGateway)
+		return
+	}
+	prodBranch := site.BuildSettings.Branch
+	if prodBranch == "" {
+		prodBranch = site.DefaultBranch
+	}
+	owner, repo, _ := parseRepoURL(site.BuildSettings.RepoURL)
+	if err := SaveNetlifySite(r.Context(), a.pool, caller.TenantID,
+		site.ID, site.Name, prodBranch, owner, repo); err != nil {
+		slog.Error("netlify: saving site pick", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	a.redirectToSettings(w, r, tenant.Slug,
+		fmt.Sprintf("Site set to %s. Connect GitHub next.", site.Name))
+}
+
+// handleNetlifyDisconnect drops the Netlify side of the connection.
+// GitHub install is unaffected — disconnecting one side leaves the
+// other intact so the user can re-link without redoing both.
+func (a *App) handleNetlifyDisconnect(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	caller := auth.CallerFromContext(r.Context())
+	if tenant == nil || caller == nil {
+		http.Error(w, "tenant or caller not resolved", http.StatusInternalServerError)
+		return
+	}
+	if err := ClearNetlify(r.Context(), a.pool, caller.TenantID); err != nil {
+		slog.Error("netlify: clearing connection", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	a.redirectToSettings(w, r, tenant.Slug, "Netlify disconnected.")
+}
+
+// redirectToSettings issues a 303 back to the settings page, with an
+// optional banner message that the page renders above the connection
+// cards.
+func (a *App) redirectToSettings(w http.ResponseWriter, r *http.Request, slug, msg string) {
+	dest := "/" + slug + "/apps/netlify/settings"
+	if msg != "" {
+		dest += "?msg=" + url.QueryEscape(msg)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
