@@ -20,6 +20,42 @@ var templatesFS embed.FS
 // . }} resolves inside our templates).
 var pageTmpl = template.Must(chrome.Tmpl().ParseFS(templatesFS, "templates/*.html"))
 
+// teamSitesGroup is one team's slice of sites, used by the picker
+// template to render an <optgroup> per team.
+type teamSitesGroup struct {
+	TeamName string
+	TeamSlug string
+	Sites    []NetlifySite
+}
+
+// groupSitesByTeam splits a flat site list into per-team groups,
+// preserving discovery order and labeling unknown-team sites
+// (account_name empty) as "Personal". Used by handleSettingsPage
+// to feed the picker's <optgroup> rendering.
+func groupSitesByTeam(sites []NetlifySite) []teamSitesGroup {
+	indexBySlug := map[string]int{}
+	out := []teamSitesGroup{}
+	for _, s := range sites {
+		name := s.AccountName
+		if name == "" {
+			name = "Personal"
+		}
+		slug := s.AccountSlug
+		key := slug
+		if key == "" {
+			key = "_personal_"
+		}
+		idx, ok := indexBySlug[key]
+		if !ok {
+			out = append(out, teamSitesGroup{TeamName: name, TeamSlug: slug})
+			idx = len(out) - 1
+			indexBySlug[key] = idx
+		}
+		out[idx].Sites = append(out[idx].Sites, s)
+	}
+	return out
+}
+
 // settingsPageData is the render struct for the settings page.
 type settingsPageData struct {
 	TenantSlug string
@@ -41,9 +77,10 @@ type settingsPageData struct {
 	NetlifySiteID      string
 	NetlifyRepoOwner   string
 	NetlifyRepoName    string
-	NetlifyNeedsPicker bool          // true when Netlify is OAuth'd but no site picked yet
-	NetlifySites       []NetlifySite // populated for the picker dropdown
-	NetlifySitesError  string        // surfaced if the sites listing call failed
+	NetlifyNeedsPicker bool             // true when Netlify is OAuth'd but no site picked yet
+	NetlifySites       []NetlifySite    // flat list of all sites (for fallback / count)
+	NetlifySitesByTeam []teamSitesGroup // grouped for the picker <optgroup> rendering
+	NetlifySitesError  string           // surfaced if the sites listing call failed
 
 	// Per-tenant GitHub install state — sourced from the github Kit
 	// app's service, since that app owns the install row.
@@ -115,12 +152,13 @@ func (a *App) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 				"tenant_id", caller.TenantID, "error", err)
 			pd.NetlifySitesError = "Could not decrypt stored token. Disconnect and reconnect."
 		} else {
-			sites, err := listNetlifySites(r.Context(), accessToken)
+			sites, err := listNetlifySitesAcrossAccounts(r.Context(), accessToken)
 			if err != nil {
 				slog.Warn("netlify: listing sites", "error", err)
 				pd.NetlifySitesError = "Could not load your Netlify sites. Try disconnecting and reconnecting."
 			} else {
 				pd.NetlifySites = sites
+				pd.NetlifySitesByTeam = groupSitesByTeam(sites)
 			}
 		}
 	}

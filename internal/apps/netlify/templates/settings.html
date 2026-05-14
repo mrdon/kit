@@ -65,8 +65,12 @@
         <form method="post" action="/{{ .TenantSlug }}/apps/netlify/site">
           <div class="row">
             <select name="site_id" required>
-              {{ range .NetlifySites }}
-                <option value="{{ .ID }}">{{ .Name }}{{ if .URL }} — {{ .URL }}{{ end }}</option>
+              {{ range .NetlifySitesByTeam }}
+                <optgroup label="{{ .TeamName }}">
+                  {{ range .Sites }}
+                    <option value="{{ .ID }}">{{ .Name }}{{ if .URL }} — {{ .URL }}{{ end }}</option>
+                  {{ end }}
+                </optgroup>
               {{ end }}
             </select>
             <button class="btn" type="submit">Use this site</button>

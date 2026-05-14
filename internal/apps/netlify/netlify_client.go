@@ -89,12 +89,125 @@ type NetlifySite struct {
 	Name          string `json:"name"`
 	URL           string `json:"url"`
 	AdminURL      string `json:"admin_url"`
+	AccountID     string `json:"account_id"`
+	AccountName   string `json:"account_name"`
+	AccountSlug   string `json:"account_slug"`
 	BuildSettings struct {
 		RepoURL  string `json:"repo_url"`
 		RepoPath string `json:"repo_path"`
 		Branch   string `json:"branch"`
 	} `json:"build_settings"`
 	DefaultBranch string `json:"default_branch"`
+}
+
+// NetlifyAccount is one team / account the user belongs to.
+// Returned by GET /accounts (operationId listAccountsForUser).
+type NetlifyAccount struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	Type string `json:"type"` // "team" or similar
+}
+
+// listNetlifyAccounts returns every team/account the authenticated
+// user is a member of. /sites by itself only returns sites the user
+// has direct access to in their default account context; users on
+// multiple teams need a per-team site fetch to see everything.
+func listNetlifyAccounts(ctx context.Context, accessToken string) ([]NetlifyAccount, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		netlifyAPIBase+"/accounts", nil)
+	if err != nil {
+		return nil, fmt.Errorf("building accounts request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing netlify accounts: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("netlify accounts list failed (status %d): %s",
+			resp.StatusCode, string(body))
+	}
+	var accounts []NetlifyAccount
+	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
+		return nil, fmt.Errorf("decoding accounts response: %w", err)
+	}
+	return accounts, nil
+}
+
+// listNetlifySitesForAccount lists sites scoped to one account/team.
+// Uses /{account_slug}/sites — needed when the user belongs to
+// multiple teams since /sites alone doesn't reliably span them.
+func listNetlifySitesForAccount(ctx context.Context, accessToken, accountSlug string) ([]NetlifySite, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		netlifyAPIBase+"/"+url.PathEscape(accountSlug)+"/sites?per_page=100", nil)
+	if err != nil {
+		return nil, fmt.Errorf("building per-account sites request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing netlify sites for %s: %w", accountSlug, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("netlify per-account sites failed (status %d): %s",
+			resp.StatusCode, string(body))
+	}
+	var sites []NetlifySite
+	if err := json.NewDecoder(resp.Body).Decode(&sites); err != nil {
+		return nil, fmt.Errorf("decoding per-account sites response: %w", err)
+	}
+	return sites, nil
+}
+
+// listNetlifySitesAcrossAccounts iterates the user's accounts and
+// merges sites from each. Used by the settings-page picker so users
+// on multiple teams see everything in one dropdown.
+func listNetlifySitesAcrossAccounts(ctx context.Context, accessToken string) ([]NetlifySite, error) {
+	accounts, err := listNetlifyAccounts(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		// Fall back to /sites — covers OAuth tokens that for some
+		// reason don't expose /accounts (older personal accounts).
+		return listNetlifySites(ctx, accessToken)
+	}
+	seen := make(map[string]bool)
+	var out []NetlifySite
+	for _, acct := range accounts {
+		if acct.Slug == "" {
+			continue
+		}
+		sites, ferr := listNetlifySitesForAccount(ctx, accessToken, acct.Slug)
+		if ferr != nil {
+			// Skip team-level failures rather than blanking the
+			// whole picker — partial is better than empty.
+			continue
+		}
+		for _, site := range sites {
+			if seen[site.ID] {
+				continue
+			}
+			seen[site.ID] = true
+			// Backfill account fields in case the per-account
+			// endpoint omitted them.
+			if site.AccountSlug == "" {
+				site.AccountSlug = acct.Slug
+			}
+			if site.AccountName == "" {
+				site.AccountName = acct.Name
+			}
+			out = append(out, site)
+		}
+	}
+	return out, nil
 }
 
 // listNetlifySites pulls the first page of sites the user can see.
