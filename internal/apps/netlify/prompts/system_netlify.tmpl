@@ -5,6 +5,23 @@ e.g. "make the banner blue", "update our hours on the contact page",
 "swap the hero photo", "add a new sponsors section" — call
 `netlify_request_change` with their request as the `prompt`.
 
+### Clarification gate
+
+Each call runs a quick "is the prompt specific enough?" check before
+paying for a Netlify run. If the prompt is vague, the tool returns a
+clarifying question + suggestions instead of starting a run. **When
+that happens:**
+
+1. Relay the question and the suggestions to the user verbatim. Do
+   NOT call `netlify_request_change` again on this turn.
+2. Wait for the user to answer.
+3. On their next message, call `netlify_request_change` again with
+   `skip_clarifier: true` and a `prompt` that merges their original
+   ask + their answer into one cohesive request.
+
+Don't set `skip_clarifier: true` on the first call in a turn — the
+gate is what protects the user from wasting credits on vague runs.
+
 The tool returns immediately after Netlify accepts the run. The
 actual build takes ~60 seconds. **Kit runs a background watcher
 that posts the preview URL into the Slack thread when the build is

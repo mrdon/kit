@@ -30,6 +30,10 @@ turn's state.`,
 			"prompt": services.Field("string",
 				"The change to make, in plain English. Pass the user's request as-is "+
 					"unless it's clearly missing critical context."),
+			"skip_clarifier": services.Field("boolean",
+				"Set to true ONLY when the user has just answered a clarifying question "+
+					"in this thread and you're now retrying with the refined prompt. "+
+					"Otherwise omit — the clarifier saves us from paying for vague runs."),
 		}, "prompt"),
 	},
 	{
@@ -131,7 +135,8 @@ func formatPublishError(ec *tools.ExecContext, err error) string {
 func requestChangeHandler(svc *Service) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
 		var inp struct {
-			Prompt string `json:"prompt"`
+			Prompt        string `json:"prompt"`
+			SkipClarifier bool   `json:"skip_clarifier"`
 		}
 		if err := json.Unmarshal(raw, &inp); err != nil {
 			return "", fmt.Errorf("parsing args: %w", err)
@@ -143,6 +148,19 @@ func requestChangeHandler(svc *Service) tools.HandlerFunc {
 		if caller == nil {
 			return "", errors.New("no caller in context")
 		}
+
+		// Clarification gate: front-load ambiguity *before* paying
+		// for a Netlify run. Skipped when the LLM signals this is a
+		// follow-up to a prior clarification, or when no LLM client
+		// is wired. Best-effort — a failed clarify falls through to
+		// "clear" so the gate never blocks a working flow.
+		if !inp.SkipClarifier && svc.llm != nil {
+			if clar, cerr := clarify(ec.Ctx, svc.llm, inp.Prompt); cerr == nil &&
+				clar != nil && !clar.Clear {
+				return formatClarification(clar), nil
+			}
+		}
+
 		res, err := svc.RequestChange(ec.Ctx, caller.TenantID, ChangeRequest{
 			Prompt:        inp.Prompt,
 			SlackChannel:  ec.Channel,
@@ -153,6 +171,28 @@ func requestChangeHandler(svc *Service) tools.HandlerFunc {
 		}
 		return formatRequestChangeOK(res), nil
 	}
+}
+
+// formatClarification turns the gate's verdict into copy the LLM
+// relays verbatim to the user. The LLM should NOT call
+// netlify_request_change again on the same turn — wait for the
+// user to answer, then call with skip_clarifier=true and a refined
+// prompt that merges the user's original ask + their answer.
+func formatClarification(c *Clarification) string {
+	var b strings.Builder
+	b.WriteString("Before I kick off a run, I need a bit more direction.\n\n")
+	b.WriteString("Ask the user this question verbatim, then wait for their reply:\n")
+	fmt.Fprintf(&b, "  %s\n", c.Question)
+	if len(c.Suggestions) > 0 {
+		b.WriteString("Offer these options:\n")
+		for _, s := range c.Suggestions {
+			fmt.Fprintf(&b, "  • %s\n", s)
+		}
+	}
+	b.WriteString("\nWhen they answer, call netlify_request_change again with " +
+		"`skip_clarifier: true` and a `prompt` that merges their original ask with " +
+		"their answer. Do NOT call the tool right now.")
+	return b.String()
 }
 
 // formatRequestChangeError turns the typed sentinels into agent-
