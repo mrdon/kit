@@ -214,8 +214,13 @@ func (a *App) handleNetlifySitePick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.redirectToSettings(w, r, tenant.Slug,
-		fmt.Sprintf("Site set to %s. Connect GitHub next.", site.Name))
+	msg := fmt.Sprintf("Site set to %s.", site.Name)
+	if a.svc.github != nil {
+		if inst, _ := a.svc.github.GetInstallation(r.Context(), caller.TenantID); inst == nil {
+			msg += " Connect GitHub next."
+		}
+	}
+	a.redirectToSettings(w, r, tenant.Slug, msg)
 }
 
 // handleNetlifyDisconnect drops the Netlify side of the connection.
