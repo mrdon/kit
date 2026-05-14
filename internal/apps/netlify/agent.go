@@ -37,6 +37,16 @@ turn's state.`,
 		}, "prompt"),
 	},
 	{
+		Name: "netlify_check_status",
+		Description: `Get the current status of the latest website-change run in this Slack
+thread. Call this when the user asks "what's happening?", "any progress?",
+"still going?", or anything similar. Returns whether the build is still
+running, what the agent is currently doing, how long it's taken, and any
+recent step narration. Don't call this proactively — only when the user
+explicitly asks for status.`,
+		Schema: services.Props(map[string]any{}),
+	},
+	{
 		Name: "netlify_publish_change",
 		Description: `Publish the latest preview to the live site. Call this when the user clearly
 indicates they want the changes from this Slack thread to go live — "publish",
@@ -67,8 +77,74 @@ func agentHandlerFor(name string, svc *Service) tools.HandlerFunc {
 		return requestChangeHandler(svc)
 	case "netlify_publish_change":
 		return publishChangeHandler(svc)
+	case "netlify_check_status":
+		return checkStatusHandler(svc)
 	}
 	return nil
+}
+
+func checkStatusHandler(svc *Service) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
+		caller := ec.Caller()
+		if caller == nil {
+			return "", errors.New("no caller in context")
+		}
+		if ec.Channel == "" || ec.ThreadTS == "" {
+			return "Status check requires a Slack thread — start by asking for a change first.", nil
+		}
+		st, err := svc.CheckChangeStatus(ec.Ctx, caller.TenantID, ec.Channel, ec.ThreadTS)
+		if err != nil {
+			if errors.Is(err, ErrNothingToPublish) {
+				return "No agent runs yet in this thread — ask for a change first.", nil
+			}
+			return "Couldn't load status: " + err.Error(), nil
+		}
+		return formatStatus(st), nil
+	}
+}
+
+// formatStatus produces the LLM-relayable status report. Tuned for
+// the LLM to pass through with light paraphrasing.
+func formatStatus(st *ChangeStatus) string {
+	var b strings.Builder
+	switch {
+	case st.Done && (st.State == "succeeded" || st.State == "done"):
+		b.WriteString("The latest build is done — preview is ready.\n")
+		if st.PreviewURL != "" {
+			fmt.Fprintf(&b, "Preview: %s\n", st.PreviewURL)
+		}
+		if st.Summary != "" {
+			fmt.Fprintf(&b, "Summary: %s\n", st.Summary)
+		}
+		b.WriteString("Tell the user the build is ready (with the preview URL) and ask whether to publish or iterate.")
+	case st.Done && st.State == "failed":
+		b.WriteString("The last build failed.\n")
+		if st.CurrentTask != "" {
+			fmt.Fprintf(&b, "Last step before failure: %s\n", st.CurrentTask)
+		}
+		b.WriteString("Tell the user it failed and suggest they try a different request.")
+	case st.Done && st.State == "cancelled":
+		b.WriteString("The last build was cancelled. Tell the user and ask if they want to try again.")
+	default:
+		// Still running — give the most useful in-flight info.
+		fmt.Fprintf(&b, "Still working (%ds elapsed). State: %s.\n",
+			st.ElapsedSecs, st.State)
+		if st.CurrentTask != "" {
+			fmt.Fprintf(&b, "Currently: %s\n", st.CurrentTask)
+		}
+		if n := len(st.Steps); n > 0 {
+			b.WriteString("Recent steps:\n")
+			start := max(n-3, 0)
+			for _, step := range st.Steps[start:] {
+				if step.Title != "" {
+					fmt.Fprintf(&b, "  • %s\n", step.Title)
+				}
+			}
+		}
+		b.WriteString("\nTell the user where things stand. The preview URL won't work yet; " +
+			"a final 'Build ready' message will land in this thread when it completes.")
+	}
+	return b.String()
 }
 
 func publishChangeHandler(svc *Service) tools.HandlerFunc {

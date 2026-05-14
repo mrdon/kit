@@ -160,20 +160,29 @@ func createAgentRunner(ctx context.Context, accessToken string, in CreateAgentRu
 // right primitive for "now make it lighter blue" — iteration adds
 // a session to the existing runner rather than starting a new one.
 type AgentRunnerSession struct {
-	ID            string `json:"id"`
-	AgentRunnerID string `json:"agent_runner_id"`
-	State         string `json:"state"`
-	Prompt        string `json:"prompt"`
-	Title         string `json:"title"`
-	Result        string `json:"result"` // Netlify's narrative summary of the change
-	ResultDiff    string `json:"result_diff"`
-	CommitSHA     string `json:"commit_sha"`
-	DeployID      string `json:"deploy_id"`
-	DeployURL     string `json:"deploy_url"`
-	Duration      int    `json:"duration"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
-	DoneAt        string `json:"done_at"`
+	ID            string                   `json:"id"`
+	AgentRunnerID string                   `json:"agent_runner_id"`
+	State         string                   `json:"state"`
+	Prompt        string                   `json:"prompt"`
+	Title         string                   `json:"title"`
+	Result        string                   `json:"result"` // Netlify's narrative summary of the change
+	ResultDiff    string                   `json:"result_diff"`
+	CommitSHA     string                   `json:"commit_sha"`
+	DeployID      string                   `json:"deploy_id"`
+	DeployURL     string                   `json:"deploy_url"`
+	Duration      int                      `json:"duration"`
+	Steps         []AgentRunnerSessionStep `json:"steps"` // narration trace of what the agent did
+	CreatedAt     string                   `json:"created_at"`
+	UpdatedAt     string                   `json:"updated_at"`
+	DoneAt        string                   `json:"done_at"`
+}
+
+// AgentRunnerSessionStep is one item in a session's step trace —
+// human-readable narration of what the agent did. Surfaced by the
+// status tool when a user asks "what's happening now?"
+type AgentRunnerSessionStep struct {
+	Title   string `json:"title"`
+	Message string `json:"message"`
 }
 
 // createAgentRunnerSession adds a follow-up turn to an existing runner.

@@ -31,8 +31,19 @@ func mcpHandlerFor(name string, svc *Service) mcpserver.ToolHandlerFunc {
 		return mcpRequestChange(svc)
 	case "netlify_publish_change":
 		return mcpPublishChange(svc)
+	case "netlify_check_status":
+		return mcpCheckStatus(svc)
 	}
 	return nil
+}
+
+func mcpCheckStatus(svc *Service) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		// Slack-only for the same reason netlify_publish_change is —
+		// the lookup is keyed on Slack thread coordinates.
+		_ = caller
+		return mcp.NewToolResultError("netlify_check_status is currently Slack-only — ask from inside a Slack thread that has a run in flight."), nil
+	})
 }
 
 func mcpPublishChange(svc *Service) mcpserver.ToolHandlerFunc {

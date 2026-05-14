@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -263,6 +264,93 @@ func (s *Service) RequestChange(
 	}
 
 	return result, nil
+}
+
+// ChangeStatus is the live status of the latest run in a Slack
+// thread. Returned by CheckChangeStatus when the user asks "what's
+// happening now?". The status fields come straight from Netlify on
+// each call — our DB is just the breadcrumb to find the runner.
+type ChangeStatus struct {
+	State        string                   // running | done | succeeded | failed | cancelled
+	Done         bool                     // true once Netlify has marked the run terminal
+	CurrentTask  string                   // what the agent is doing right now
+	StartedAt    time.Time                // when our row was created
+	ElapsedSecs  int                      // wall-clock elapsed since the run was started
+	Prompt       string                   // user's original ask
+	PreviewURL   string                   // populated as soon as a deploy id is minted
+	ResultBranch string                   // populated after the agent commits
+	Summary      string                   // Netlify's narrative if available
+	Steps        []AgentRunnerSessionStep // session step trace
+}
+
+// CheckChangeStatus reports on the latest agent run in a Slack
+// thread. Used by the status tool so the user can ask Kit "any
+// progress?" without leaving Slack.
+func (s *Service) CheckChangeStatus(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	slackChannel, slackThreadTS string,
+) (*ChangeStatus, error) {
+	if slackChannel == "" || slackThreadTS == "" {
+		return nil, errors.New("status check requires slack thread coordinates")
+	}
+	cfg, err := GetConfig(ctx, s.pool, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading netlify config: %w", err)
+	}
+	if cfg == nil || !cfg.ConnectedNetlify() {
+		return nil, ErrNetlifyNotConnected
+	}
+	priorRun, err := resolvePriorRun(ctx, s.pool, tenantID, slackChannel, slackThreadTS)
+	if err != nil {
+		return nil, fmt.Errorf("loading prior run: %w", err)
+	}
+	if priorRun == nil {
+		return nil, ErrNothingToPublish
+	}
+	accessToken, err := s.enc.Decrypt(cfg.NetlifyAccessTokenCipher)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting netlify token: %w", err)
+	}
+
+	out := &ChangeStatus{
+		Prompt:      priorRun.Prompt,
+		StartedAt:   priorRun.CreatedAt,
+		Summary:     priorRun.Summary,
+		ElapsedSecs: int(time.Since(priorRun.CreatedAt).Seconds()),
+	}
+
+	// Same branching as the watcher: poll the session endpoint for
+	// follow-up turns, the runner endpoint for first turns.
+	if priorRun.NetlifyRunID != priorRun.NetlifyRunnerID {
+		sess, ferr := getAgentRunnerSession(ctx, accessToken,
+			priorRun.NetlifyRunnerID, priorRun.NetlifyRunID)
+		if ferr != nil {
+			return nil, fmt.Errorf("fetching session: %w", ferr)
+		}
+		out.State = sess.State
+		out.Done = sess.DoneAt != ""
+		out.CurrentTask = sess.Title
+		out.PreviewURL = sess.DeployURL
+		out.Steps = sess.Steps
+		if sess.Result != "" {
+			out.Summary = sess.Result
+		}
+	} else {
+		runner, ferr := getAgentRunner(ctx, accessToken, priorRun.NetlifyRunID)
+		if ferr != nil {
+			return nil, fmt.Errorf("fetching runner: %w", ferr)
+		}
+		out.State = runner.State
+		out.Done = runner.DoneAt != ""
+		out.CurrentTask = runner.CurrentTask
+		out.PreviewURL = runner.LatestSessionDeployURL
+		out.ResultBranch = runner.ResultBranch
+		if runner.Result != "" {
+			out.Summary = runner.Result
+		}
+	}
+	return out, nil
 }
 
 // PublishResult is what PublishChange returns when a commit succeeds.

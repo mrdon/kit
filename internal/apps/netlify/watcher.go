@@ -15,10 +15,11 @@ import (
 )
 
 // watcherTimeout is the hard upper bound on a watcher goroutine.
-// A Netlify Agent Run takes 30–120s typically; 5 minutes covers
-// long-tail runs. Past this, we log + post a "taking longer than
-// expected" message so the user isn't left hanging.
-const watcherTimeout = 5 * time.Minute
+// A Netlify Agent Run takes 30–120s typically; 10 minutes covers
+// long-tail runs that legitimately need more time. Past this, the
+// timeout post tells the user to call netlify_check_status for
+// follow-up info instead of leaving them hanging.
+const watcherTimeout = 10 * time.Minute
 
 // watcherPollInterval is the cadence we hit Netlify's
 // GET /agent_runners/<id>. 5s strikes a balance: fast enough that
@@ -237,8 +238,9 @@ func (s *Service) postWatcherTimeout(in watcherInput) {
 	postCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	client := kitslack.NewClient(in.slackBotToken)
-	msg := ":hourglass: The Netlify run is taking longer than expected. " +
-		"It may still finish — check the Netlify dashboard for run `" + in.netlifyRunID + "`."
+	msg := ":hourglass: The build is taking longer than usual. " +
+		"It may still finish — ping me here (\"what's happening?\") to check status, " +
+		"or look at run `" + in.netlifyRunID + "` in the Netlify dashboard."
 	if err := client.PostMessage(postCtx, in.slackChannel, in.slackThreadTS, msg); err != nil {
 		slog.Warn("netlify watcher: posting timeout to slack",
 			"channel", in.slackChannel, "thread", in.slackThreadTS, "error", err)

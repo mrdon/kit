@@ -47,6 +47,16 @@ changes to the production branch and Netlify auto-deploys. Refuses
 cleanly if there's no build to publish or the latest one is still
 running — relay whatever copy the tool returns.
 
+### Status checks during a run
+
+If the user asks for status mid-build — "what's happening?", "any
+progress?", "still going?", "how's it going?" — call
+`netlify_check_status`. It returns either a "build is done" report
+(in which case relay the preview URL + summary) or an in-flight
+report with elapsed time and the agent's current step. Only call
+this when the user explicitly asks for status; don't ping it
+proactively.
+
 Don't call `netlify_request_change` for non-website asks. The tool
 is only for changes to the marketing site that's connected in this
 workspace's settings.
