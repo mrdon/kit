@@ -119,6 +119,84 @@ func (s *Service) MintInstallationToken(ctx context.Context, installationID int6
 	return out.Token, nil
 }
 
+// PullRequest is the subset of a GitHub PR we surface back to the
+// user. Fetched after a publish so the confirmation message can
+// include a real GitHub link + line stats + merge commit SHA.
+type PullRequest struct {
+	URL            string
+	Number         int
+	Title          string
+	Body           string
+	State          string // "open" | "closed"
+	Merged         bool
+	MergeCommitSHA string
+	Additions      int
+	Deletions      int
+	ChangedFiles   int
+	HTMLURL        string
+}
+
+// GetPullRequest fetches a PR by number. Used by the netlify app
+// after publish to enrich the confirmation message.
+func (s *Service) GetPullRequest(
+	ctx context.Context,
+	installationID int64,
+	owner, repo string,
+	number int,
+) (*PullRequest, error) {
+	token, err := s.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d",
+		owner, repo, number)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building pr request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching pr: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("github get pr failed (status %d): %s",
+			resp.StatusCode, string(body))
+	}
+	var raw struct {
+		HTMLURL        string `json:"html_url"`
+		Number         int    `json:"number"`
+		Title          string `json:"title"`
+		Body           string `json:"body"`
+		State          string `json:"state"`
+		Merged         bool   `json:"merged"`
+		MergeCommitSHA string `json:"merge_commit_sha"`
+		Additions      int    `json:"additions"`
+		Deletions      int    `json:"deletions"`
+		ChangedFiles   int    `json:"changed_files"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decoding pr response: %w", err)
+	}
+	return &PullRequest{
+		URL:            raw.HTMLURL,
+		HTMLURL:        raw.HTMLURL,
+		Number:         raw.Number,
+		Title:          raw.Title,
+		Body:           raw.Body,
+		State:          raw.State,
+		Merged:         raw.Merged,
+		MergeCommitSHA: raw.MergeCommitSHA,
+		Additions:      raw.Additions,
+		Deletions:      raw.Deletions,
+		ChangedFiles:   raw.ChangedFiles,
+	}, nil
+}
+
 // MergeBranch merges head into base on the given repo via GitHub's
 // merges API. Used by the netlify app to push a runner's PR branch
 // into the production branch when the user publishes.

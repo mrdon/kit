@@ -92,7 +92,7 @@ func (s *Service) runWatcher(ctx context.Context, in watcherInput) {
 // session — see watcherInput.
 func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 	var (
-		state, doneAtStr, deployURL, resultBranch, resultDiff string
+		state, doneAtStr, deployURL, resultBranch, resultDiff, resultNarrative string
 	)
 	postRunner := &AgentRunner{} // placeholder for postWatcherResult
 
@@ -109,6 +109,7 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 		doneAtStr = sess.DoneAt
 		deployURL = sess.DeployURL
 		resultDiff = sess.ResultDiff
+		resultNarrative = sess.Result
 		postRunner.ID = sess.AgentRunnerID
 		postRunner.State = sess.State
 		postRunner.DoneAt = sess.DoneAt
@@ -126,6 +127,7 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 		deployURL = runner.LatestSessionDeployURL
 		resultBranch = runner.ResultBranch
 		resultDiff = runner.ResultDiff
+		resultNarrative = runner.Result
 		postRunner = runner
 	}
 
@@ -147,23 +149,28 @@ func (s *Service) checkRun(ctx context.Context, in watcherInput) (done bool) {
 		return false
 	}
 
-	// On success, run the diff through Haiku for a plain-language
-	// summary. Best-effort: failures log + fall through with no
-	// summary rather than blocking the post-back.
-	summary := ""
-	if (state == "succeeded" || state == "") && resultDiff != "" && s.llm != nil {
+	// Prefer Netlify's own narrative (the `result` field on the
+	// runner/session — same text that ends up in the PR body). Fall
+	// back to a Haiku summary of the diff *only* if both `result`
+	// is empty AND the diff is populated. In practice Netlify keeps
+	// the diff internal and returns empty — so `result` is the path
+	// that actually works.
+	summary := strings.TrimSpace(resultNarrative)
+	if summary == "" && resultDiff != "" && s.llm != nil {
 		summarizeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		if out, serr := summarizeDiff(summarizeCtx, s.llm, resultDiff); serr != nil {
 			slog.Warn("netlify watcher: summarizing diff",
 				"run_id", in.runID, "error", serr)
 		} else {
 			summary = out
-			if perr := PersistAgentRunSummary(ctx, s.pool, in.runID, summary); perr != nil {
-				slog.Warn("netlify watcher: persisting summary",
-					"run_id", in.runID, "error", perr)
-			}
 		}
 		cancel()
+	}
+	if summary != "" {
+		if perr := PersistAgentRunSummary(ctx, s.pool, in.runID, summary); perr != nil {
+			slog.Warn("netlify watcher: persisting summary",
+				"run_id", in.runID, "error", perr)
+		}
 	}
 
 	s.postWatcherResult(in, postRunner, summary)
@@ -185,7 +192,7 @@ func (s *Service) postWatcherResult(in watcherInput, runner *AgentRunner, summar
 	client := kitslack.NewClient(in.slackBotToken)
 	var b strings.Builder
 	switch {
-	case runner.State == "succeeded" || (runner.DoneAt != "" && runner.State == ""):
+	case isSuccessState(runner.State) || (runner.DoneAt != "" && runner.State == ""):
 		b.WriteString(":white_check_mark: Build ready.\n")
 		if summary != "" {
 			fmt.Fprintf(&b, "_%s_\n", summary)
@@ -236,6 +243,14 @@ func (s *Service) postWatcherTimeout(in watcherInput) {
 		slog.Warn("netlify watcher: posting timeout to slack",
 			"channel", in.slackChannel, "thread", in.slackThreadTS, "error", err)
 	}
+}
+
+// isSuccessState reports whether a Netlify run/session state string
+// means "completed successfully." Netlify uses both "done" (current)
+// and "succeeded" (per OpenAPI spec) at different surfaces — accept
+// either.
+func isSuccessState(s string) bool {
+	return s == "done" || s == "succeeded"
 }
 
 // decryptTenantBotToken loads the tenant's bot token from the

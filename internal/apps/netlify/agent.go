@@ -81,13 +81,21 @@ func publishChangeHandler(svc *Service) tools.HandlerFunc {
 			return formatPublishError(ec, err), nil
 		}
 		var b strings.Builder
-		b.WriteString(":rocket: Published to the live site.\n")
-		fmt.Fprintf(&b, "- target branch: `%s`\n", res.TargetBranch)
-		if res.Summary != "" {
-			fmt.Fprintf(&b, "- last change: %s\n", res.Summary)
+		b.WriteString(":rocket: Published.\n")
+		if res.PRTitle != "" {
+			fmt.Fprintf(&b, "_%q_\n", res.PRTitle)
+		} else if res.Summary != "" {
+			fmt.Fprintf(&b, "_%s_\n", res.Summary)
+		}
+		if res.ChangedFiles > 0 || res.Additions > 0 || res.Deletions > 0 {
+			fmt.Fprintf(&b, "- %d file(s) changed (+%d / -%d)\n",
+				res.ChangedFiles, res.Additions, res.Deletions)
+		}
+		if res.PRURL != "" {
+			fmt.Fprintf(&b, "- PR: %s\n", res.PRURL)
 		}
 		b.WriteString("\nNetlify is rebuilding now; the live site updates in about a minute and a half. " +
-			"Tell the user it's publishing; no need to share the run id.")
+			"Tell the user it's publishing — include the PR link verbatim if present.")
 		return b.String(), nil
 	}
 }

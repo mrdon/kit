@@ -270,6 +270,12 @@ type PublishResult struct {
 	TargetBranch string // production branch we shipped to
 	RunnerID     string // Netlify runner id that was committed
 	Summary      string // latest run's diff summary, if we have it
+	PRURL        string // GitHub PR page (created by Netlify, merged by Kit)
+	PRTitle      string // PR's auto-generated title
+	Additions    int
+	Deletions    int
+	ChangedFiles int
+	MergeSHA     string // commit SHA on the production branch after merge
 }
 
 // PublishChange takes the latest agent run for the given Slack thread
@@ -381,11 +387,31 @@ func (s *Service) PublishChange(
 		slog.Warn("publish: marking change_thread published",
 			"thread_id", priorRun.ChangeThreadID, "error", err)
 	}
-	return &PublishResult{
+
+	result := &PublishResult{
 		TargetBranch: cfg.ProductionBranch,
 		RunnerID:     priorRun.NetlifyRunnerID,
 		Summary:      priorRun.Summary,
-	}, nil
+	}
+
+	// Best-effort PR enrichment for the confirmation message. Use
+	// the pr_number from the runner state if we have it; merge is
+	// already done so a fetch failure here is cosmetic.
+	if prResp.PRNumber > 0 {
+		if pr, perr := s.github.GetPullRequest(ctx, inst.InstallationID,
+			cfg.NetlifyRepoOwner, cfg.NetlifyRepoName, prResp.PRNumber); perr == nil {
+			result.PRURL = pr.URL
+			result.PRTitle = pr.Title
+			result.Additions = pr.Additions
+			result.Deletions = pr.Deletions
+			result.ChangedFiles = pr.ChangedFiles
+			result.MergeSHA = pr.MergeCommitSHA
+		} else {
+			slog.Warn("publish: fetching PR for confirmation",
+				"pr_number", prResp.PRNumber, "error", perr)
+		}
+	}
+	return result, nil
 }
 
 // resolvePriorRun returns the most recent agent_run row for a given

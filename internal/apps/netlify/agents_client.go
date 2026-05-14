@@ -7,10 +7,36 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 )
+
+// maxLogBytes caps how much of a Netlify response body we log.
+// Mining responses is useful for discovering fields we don't yet
+// expose (steps[], result narratives, etc.); blasting MB-sized
+// responses into stdout is not.
+const maxLogBytes = 4096
+
+// logNetlifyResponse dumps the first 4KB of a Netlify response body
+// for postmortem field-discovery. Truncates noisily so it's obvious
+// when the rest is being elided.
+func logNetlifyResponse(op string, status int, body []byte) {
+	preview := string(body)
+	truncated := false
+	if len(preview) > maxLogBytes {
+		preview = preview[:maxLogBytes]
+		truncated = true
+	}
+	slog.Info("netlify api response",
+		"op", op,
+		"status", status,
+		"body_bytes", len(body),
+		"truncated", truncated,
+		"body", preview,
+	)
+}
 
 // ErrAgentRunnersNotAvailable is returned when Netlify's 403 mentions
 // the plan-gate copy. Surfaced as typed so the tool handler can
@@ -41,6 +67,7 @@ type AgentRunner struct {
 	ParentAgentRunnerID    string `json:"parent_agent_runner_id"` // echoed back when we set it
 	Title                  string `json:"title"`
 	CurrentTask            string `json:"current_task"`
+	Result                 string `json:"result"` // Netlify's narrative summary of the change
 	ResultDiff             string `json:"result_diff"`
 	LatestSessionDeployURL string `json:"latest_session_deploy_url"` // preview URL
 	PRURL                  string `json:"pr_url"`
@@ -110,6 +137,7 @@ func createAgentRunner(ctx context.Context, accessToken string, in CreateAgentRu
 	if err != nil {
 		return nil, fmt.Errorf("reading agent_runners response: %w", err)
 	}
+	logNetlifyResponse("POST /agent_runners", resp.StatusCode, body)
 	if resp.StatusCode >= 400 {
 		// 403s with the plan-gate message become a typed sentinel
 		// so the tool handler can render upgrade guidance.
@@ -137,6 +165,7 @@ type AgentRunnerSession struct {
 	State         string `json:"state"`
 	Prompt        string `json:"prompt"`
 	Title         string `json:"title"`
+	Result        string `json:"result"` // Netlify's narrative summary of the change
 	ResultDiff    string `json:"result_diff"`
 	CommitSHA     string `json:"commit_sha"`
 	DeployID      string `json:"deploy_id"`
@@ -189,6 +218,7 @@ func createAgentRunnerSession(
 	if err != nil {
 		return nil, fmt.Errorf("reading session response: %w", err)
 	}
+	logNetlifyResponse("POST /agent_runners/<id>/sessions", resp.StatusCode, respBytes)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("netlify create session failed (status %d): %s",
 			resp.StatusCode, string(respBytes))
@@ -232,6 +262,7 @@ func pullRequestAgentRunner(
 	if err != nil {
 		return nil, fmt.Errorf("reading pull_request response: %w", err)
 	}
+	logNetlifyResponse("POST /agent_runners/<id>/pull_request", resp.StatusCode, respBytes)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("netlify pull_request failed (status %d): %s",
 			resp.StatusCode, string(respBytes))
@@ -313,14 +344,19 @@ func getAgentRunnerSession(
 		return nil, fmt.Errorf("fetching session: %w", err)
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("netlify get session failed (status %d): %s",
 			resp.StatusCode, string(body))
 	}
+	// Only log when the session reaches a terminal state, otherwise
+	// the watcher's 5s polls flood the logs with pending bodies.
 	var out AgentRunnerSession
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("decoding session response: %w", err)
+	}
+	if out.DoneAt != "" {
+		logNetlifyResponse("GET /agent_runners/<id>/sessions/<sid>", resp.StatusCode, body)
 	}
 	return &out, nil
 }
@@ -340,14 +376,19 @@ func getAgentRunner(ctx context.Context, accessToken, id string) (*AgentRunner, 
 		return nil, fmt.Errorf("fetching agent_runner: %w", err)
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("netlify get agent_runner failed (status %d): %s",
 			resp.StatusCode, string(body))
 	}
 	var out AgentRunner
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("decoding agent_runner response: %w", err)
+	}
+	// Same poll-noise rationale as the session fetch above: only
+	// log when the runner reaches a terminal state.
+	if out.DoneAt != "" {
+		logNetlifyResponse("GET /agent_runners/<id>", resp.StatusCode, body)
 	}
 	return &out, nil
 }
