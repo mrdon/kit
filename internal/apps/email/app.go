@@ -92,11 +92,11 @@ func (a *App) callerHasAccount(ctx context.Context, caller *services.Caller) boo
 	return integ != nil
 }
 
-// RegisterMCPTools deliberately returns nil. send_email is PolicyGate and
-// per .claude/skills/gated-tools-guide.md must not be reachable except via
-// tools.Registry.Execute. The reads have no MCP-side use case.
+// RegisterMCPTools exposes the read-side IMAP tools to MCP callers.
+// send_email stays off MCP because it's PolicyGate — per the gated-tools
+// guide it must only reach SMTP via tools.Registry.Execute.
 func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
-	return nil
+	return buildEmailMCPTools(a)
 }
 
 func (a *App) RegisterRoutes(_ *http.ServeMux) {}
