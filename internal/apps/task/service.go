@@ -508,6 +508,10 @@ func (s *TaskService) canWrite(ctx context.Context, c *services.Caller, t *Task)
 
 // FormatTask formats a task for display.
 func FormatTask(t *Task) string {
+	return formatTaskLine(t, true)
+}
+
+func formatTaskLine(t *Task, truncateDesc bool) string {
 	var status string
 	switch t.Status {
 	case "open":
@@ -539,7 +543,7 @@ func FormatTask(t *Task) string {
 	}
 	if t.Description != "" {
 		desc := t.Description
-		if len(desc) > 100 {
+		if truncateDesc && len(desc) > 100 {
 			desc = desc[:100] + "..."
 		}
 		b.WriteString("\n  ")
@@ -551,7 +555,7 @@ func FormatTask(t *Task) string {
 // FormatTaskDetailed formats a task with its events for display.
 func FormatTaskDetailed(t *Task, events []TaskEvent) string {
 	var b strings.Builder
-	b.WriteString(FormatTask(t))
+	b.WriteString(formatTaskLine(t, false))
 	if t.ClosedAt != nil {
 		b.WriteString("\n  Closed: ")
 		b.WriteString(t.ClosedAt.Format(time.RFC3339))
