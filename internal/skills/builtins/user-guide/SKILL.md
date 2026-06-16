@@ -93,6 +93,16 @@ Kit tracks tasks for your team. Create them from conversation or explicitly:
 
 Tasks support priorities, due dates, role scoping, and an activity log. Use `list_tasks` to see open items or `complete_task` to mark one done. Use `snooze_task` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active. To delete, set `status` to `cancelled` via `update_task` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
 
+## Web console
+
+For deliberate, do-it-yourself work on a desktop, open the web console at `/<your-slug>/web`. It's a direct-manipulation UI — distinct from Slack (ask the agent) and the swipe feed (mobile triage). The launcher links to:
+
+- **Tasks** — a list and a drag-to-move kanban board (group by role or assignee), with inline status/priority edits, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
+- **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
+- **Integrations / Website / Chat widget** — admin-only setup pages for Netlify, GitHub, and the website chat widget.
+
+It works alongside Slack and the feed, not instead of them.
+
 ## Slack Channel Search
 
 Admins can configure Slack channels for Kit to search. Once configured, Kit can read and search messages in those channels:
