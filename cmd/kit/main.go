@@ -171,8 +171,10 @@ func main() {
 	// Haiku suggester, the JobService for spawning jobs when the user
 	// taps a resolution chip, and the encryptor for decrypting the
 	// tenant bot token at DM-open time.
-	task.Configure(builderLLM, svc.Jobs, enc)
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
+	// The task app needs the signer for its console HTTP routes; wired
+	// here (after the signer is constructed) alongside its other deps.
+	task.Configure(builderLLM, svc.Jobs, enc, sessionSigner)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
 		sessionSigner = nil

@@ -134,9 +134,102 @@ export interface NetlifyStatus {
   github_disconnect_url: string;
 }
 
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  blocked_reason?: string;
+  scope_id: string;
+  assignee_user_id?: string;
+  due_date?: string;
+  snoozed_until?: string;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+  assignee_name?: string;
+  role_name?: string;
+}
+
+export interface TaskEvent {
+  id: string;
+  event_type: string;
+  content?: string;
+  old_value?: string;
+  new_value?: string;
+  author_name?: string;
+  created_at: string;
+}
+
+export interface TasksMeta {
+  roles: string[];
+  statuses: string[];
+  priorities: string[];
+}
+
+export interface TaskFilters {
+  status?: string;
+  priority?: string;
+  role_scope?: string;
+  search?: string;
+  assigned_to_me?: boolean;
+  unassigned?: boolean;
+  overdue?: boolean;
+  include_closed?: boolean;
+}
+
+export interface CreateTaskBody {
+  title: string;
+  description?: string;
+  priority?: string;
+  role_scope?: string;
+  assignee?: string;
+  due_date?: string;
+}
+
+export interface UpdateTaskBody {
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  blocked_reason?: string;
+  assignee?: string;
+  clear_assignee?: boolean;
+  role_scope?: string;
+  due_date?: string;
+  clear_due_date?: boolean;
+}
+
+function taskQuery(f: TaskFilters): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) {
+    if (v === undefined || v === '' || v === false) continue;
+    p.set(k, String(v));
+  }
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+}
+
 export const api = {
   me: () => apiGet<Me>('/me'),
   integrations: () => apiGet<Integration[]>('/integrations'),
+
+  tasksMeta: () => apiGet<TasksMeta>('/tasks/meta'),
+  listTasks: (f: TaskFilters = {}) =>
+    apiGet<{ tasks: Task[] }>(`/tasks${taskQuery(f)}`),
+  getTask: (id: string) =>
+    apiGet<{ task: Task; events: TaskEvent[] }>(`/tasks/${id}`),
+  createTask: (body: CreateTaskBody) =>
+    apiPost<{ task: Task }>('/tasks', body),
+  updateTask: (id: string, body: UpdateTaskBody) =>
+    apiPatch<{ task: Task }>(`/tasks/${id}`, body),
+  completeTask: (id: string) =>
+    apiPost<{ task: Task }>(`/tasks/${id}/complete`),
+  snoozeTask: (id: string, days: number) =>
+    apiPost<{ task: Task }>(`/tasks/${id}/snooze`, { days }),
+  addTaskComment: (id: string, content: string) =>
+    apiPost<void>(`/tasks/${id}/comments`, { content }),
 
   widgetTokens: () => apiGet<{ tokens: WidgetToken[] }>('/widget/tokens'),
   mintWidgetToken: (origin: string) =>

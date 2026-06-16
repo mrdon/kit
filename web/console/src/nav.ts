@@ -15,6 +15,11 @@ export interface Section {
 
 export const SECTIONS: Section[] = [
   {
+    to: '/tasks',
+    label: 'Tasks',
+    blurb: 'List and board for everything your roles own.',
+  },
+  {
     to: '/integrations',
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',

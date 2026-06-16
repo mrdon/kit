@@ -9,6 +9,7 @@ import (
 
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
@@ -27,6 +28,7 @@ type TaskApp struct {
 	llm     *anthropic.Client
 	taskSvc *services.JobService
 	enc     *crypto.Encryptor
+	signer  *auth.SessionSigner
 }
 
 // Configure wires the anthropic client (for the resolution suggester),
@@ -35,13 +37,14 @@ type TaskApp struct {
 // a DM at resolve time). Call once from main.go after services.New.
 // Safe to omit in tests: missing llm silently skips the suggester;
 // missing taskSvc/enc fails any chip tap with a clear error.
-func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.Encryptor) {
+func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.Encryptor, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.llm = llm
 	instance.taskSvc = taskSvc
 	instance.enc = enc
+	instance.signer = signer
 }
 
 // Init sets up the service after DB is available and registers this
@@ -70,8 +73,11 @@ func (a *TaskApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcps
 	return buildTaskMCPTools(a.svc)
 }
 
-func (a *TaskApp) RegisterRoutes(_ *http.ServeMux) {
-	// No HTTP routes for task app.
+func (a *TaskApp) RegisterRoutes(mux *http.ServeMux) {
+	if a.svc == nil || a.signer == nil {
+		return
+	}
+	registerTaskRoutes(mux, a)
 }
 
 func (a *TaskApp) CronJobs() []apps.CronJob {

@@ -2,10 +2,8 @@ package task
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -71,23 +69,17 @@ func mcpCreateTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 		}
 
 		if dueDateStr != "" {
-			d, err := time.Parse("2006-01-02", dueDateStr)
-			if err != nil {
-				return mcp.NewToolResultError("Invalid due_date format. Use YYYY-MM-DD."), nil
+			d, msg := parseYMD("due_date", dueDateStr)
+			if msg != "" {
+				return mcp.NewToolResultError(msg), nil
 			}
-			in.DueDate = &d
+			in.DueDate = d
 		}
 
 		t, err := svc.Create(ctx, caller, in)
 		if err != nil {
-			if errors.Is(err, ErrPrimaryRoleNotSet) {
-				return mcp.NewToolResultError(primaryRoleNotSetMessage(caller)), nil
-			}
-			if errors.Is(err, services.ErrForbidden) {
-				return mcp.NewToolResultError("Permission denied."), nil
-			}
-			if errors.Is(err, ErrInvalidRole) {
-				return mcp.NewToolResultError(fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", in.RoleName)), nil
+			if msg, _, ok := mapTaskError(err, caller, in.RoleName); ok {
+				return mcp.NewToolResultError(msg), nil
 			}
 			return nil, err
 		}
@@ -128,11 +120,11 @@ func mcpListTasks(svc *TaskService) mcpserver.ToolHandlerFunc {
 		}
 
 		if cs := req.GetString("closed_since", ""); cs != "" {
-			t, err := time.Parse("2006-01-02", cs)
-			if err != nil {
-				return mcp.NewToolResultError("Invalid closed_since format. Use YYYY-MM-DD."), nil
+			t, msg := parseYMD("closed_since", cs)
+			if msg != "" {
+				return mcp.NewToolResultError(msg), nil
 			}
-			f.ClosedSince = &t
+			f.ClosedSince = t
 		}
 
 		tasks, err := svc.List(ctx, caller, f)
@@ -164,8 +156,8 @@ func mcpGetTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 
 		t, events, err := svc.Get(ctx, caller, taskID)
 		if err != nil {
-			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Task not found."), nil
+			if msg, _, ok := mapTaskError(err, caller, ""); ok {
+				return mcp.NewToolResultError(msg), nil
 			}
 			return nil, err
 		}
@@ -215,11 +207,11 @@ func mcpUpdateTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 			u.NewRoleName = &v
 		}
 		if v := req.GetString("due_date", ""); v != "" {
-			d, err := time.Parse("2006-01-02", v)
-			if err != nil {
-				return mcp.NewToolResultError("Invalid due_date format. Use YYYY-MM-DD."), nil
+			d, msg := parseYMD("due_date", v)
+			if msg != "" {
+				return mcp.NewToolResultError(msg), nil
 			}
-			u.DueDate = &d
+			u.DueDate = d
 		}
 		if b, ok := args["clear_due_date"].(bool); ok && b {
 			u.ClearDueDate = true
@@ -227,14 +219,8 @@ func mcpUpdateTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 
 		t, err := svc.Update(ctx, caller, taskID, u)
 		if err != nil {
-			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Task not found."), nil
-			}
-			if errors.Is(err, services.ErrForbidden) {
-				return mcp.NewToolResultError("Permission denied."), nil
-			}
-			if errors.Is(err, ErrInvalidRole) {
-				return mcp.NewToolResultError(fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", req.GetString("role_scope", ""))), nil
+			if msg, _, ok := mapTaskError(err, caller, req.GetString("role_scope", "")); ok {
+				return mcp.NewToolResultError(msg), nil
 			}
 			return nil, err
 		}
@@ -254,8 +240,8 @@ func mcpAddTaskComment(svc *TaskService) mcpserver.ToolHandlerFunc {
 		}
 
 		if err := svc.AddComment(ctx, caller, taskID, content); err != nil {
-			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Task not found."), nil
+			if msg, _, ok := mapTaskError(err, caller, ""); ok {
+				return mcp.NewToolResultError(msg), nil
 			}
 			return nil, err
 		}
@@ -274,11 +260,8 @@ func mcpCompleteTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 
 		t, err := svc.Complete(ctx, caller, taskID)
 		if err != nil {
-			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Task not found."), nil
-			}
-			if errors.Is(err, services.ErrForbidden) {
-				return mcp.NewToolResultError("Permission denied."), nil
+			if msg, _, ok := mapTaskError(err, caller, ""); ok {
+				return mcp.NewToolResultError(msg), nil
 			}
 			return nil, err
 		}
@@ -305,11 +288,8 @@ func mcpSnoozeTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 		}
 		t, err := svc.SnoozeDays(ctx, caller, taskID, days)
 		if err != nil {
-			if errors.Is(err, services.ErrNotFound) {
-				return mcp.NewToolResultError("Task not found."), nil
-			}
-			if errors.Is(err, services.ErrForbidden) {
-				return mcp.NewToolResultError("Permission denied."), nil
+			if msg, _, ok := mapTaskError(err, caller, ""); ok {
+				return mcp.NewToolResultError(msg), nil
 			}
 			if strings.Contains(err.Error(), "snooze days must be") {
 				return mcp.NewToolResultError(err.Error()), nil
