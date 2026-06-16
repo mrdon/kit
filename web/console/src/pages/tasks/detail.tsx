@@ -221,17 +221,21 @@ function Properties({
 
       <label className="field">
         <span>Category</span>
-        <input
-          list="task-categories"
-          placeholder="e.g. brewing, sales (auto-assigned)"
-          defaultValue={task.category ?? ''}
-          onBlur={(e) => e.target.value !== (task.category ?? '') && patch({ category: e.target.value })}
-        />
-        <datalist id="task-categories">
+        <select
+          value={task.category ?? ''}
+          disabled={saving}
+          onChange={(e) => patch({ category: e.target.value })}
+        >
+          <option value="">Uncategorized</option>
+          {task.category && !(meta?.categories ?? []).includes(task.category) && (
+            <option value={task.category}>{task.category}</option>
+          )}
           {(meta?.categories ?? []).map((c) => (
-            <option key={c} value={c} />
+            <option key={c} value={c}>
+              {c}
+            </option>
           ))}
-        </datalist>
+        </select>
       </label>
 
       <label className="field">
