@@ -18,10 +18,11 @@ import (
 	"github.com/mrdon/kit/internal"
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
-	"github.com/mrdon/kit/internal/apps/admin"
+	_ "github.com/mrdon/kit/internal/apps/admin"
 	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
+	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/apps/coordination"
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/github"
@@ -253,7 +254,7 @@ func main() {
 		cfg.BaseURL,
 	)
 
-	admin.Configure(sessionSigner)
+	console.Configure(sessionSigner)
 	github.Configure(
 		sessionSigner,
 		cfg.BaseURL,

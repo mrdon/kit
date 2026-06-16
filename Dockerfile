@@ -11,6 +11,15 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web/app/ ./
 RUN npm run build
 
+# Console build stage — produces web/console/dist (the desktop web UI at
+# /{slug}/web) which the Go binary embeds via //go:embed in web/console.
+FROM node:22-alpine AS console
+WORKDIR /app/web/console
+COPY web/console/package.json web/console/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY web/console/ ./
+RUN npm run build
+
 # Whisper build stage — compiles whisper-cli and downloads the model.
 # Pinned to a release tag so the layer cache is stable; bumping the tag
 # is the only thing that invalidates this stage.
@@ -38,8 +47,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go mod download
 
 COPY . .
-# Drop in the frontend bundle from the frontend stage so //go:embed picks it up.
+# Drop in the frontend bundles from the build stages so //go:embed picks them up.
 COPY --from=frontend /app/web/app/dist ./web/app/dist
+COPY --from=console /app/web/console/dist ./web/console/dist
 
 ARG VERSION=dev
 ARG COMMIT=none

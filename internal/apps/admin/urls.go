@@ -10,25 +10,21 @@ import (
 
 func registerAdminRoutes(mux *http.ServeMux, a *App) {
 	tenantMW := auth.TenantFromPath(a.pool)
-	page := func(h http.HandlerFunc) http.Handler {
-		return auth.PageRoute(tenantMW(a.signer.Middleware(a.pool,
-			auth.AssertTenantMatch(a.signer, requireAdminHandler(h)))))
-	}
 
-	mux.Handle("GET /{slug}/admin/integrations", page(a.handleIntegrationsIndex))
+	// The integrations index moved into the React console at
+	// /{slug}/web/integrations. Keep the old admin URL working — it's
+	// referenced from Slack DMs, agent messages, and bookmarks — by
+	// 302-redirecting to the console route. The literal "web" segment
+	// matches console.Segment; admin can't import console (console imports
+	// admin's Integration registry, which would cycle).
+	mux.Handle("GET /{slug}/admin/integrations", tenantMW(http.HandlerFunc(redirectToConsoleIntegrations)))
 }
 
-func requireAdminHandler(h http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		caller := auth.CallerFromContext(r.Context())
-		if caller == nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !caller.IsAdmin {
-			http.Error(w, "admin only", http.StatusForbidden)
-			return
-		}
-		h(w, r)
-	})
+func redirectToConsoleIntegrations(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/"+tenant.Slug+"/web/integrations", http.StatusFound)
 }

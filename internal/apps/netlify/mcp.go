@@ -65,9 +65,9 @@ func mcpRequestChange(svc *Service) mcpserver.ToolHandlerFunc {
 		if rerr != nil {
 			switch {
 			case errors.Is(rerr, ErrNetlifyNotConnected):
-				return mcp.NewToolResultError("netlify not connected — visit /admin/integrations to connect"), nil
+				return mcp.NewToolResultError("netlify not connected — visit /web/integrations to connect"), nil
 			case errors.Is(rerr, ErrGitHubNotConnected):
-				return mcp.NewToolResultError("github not connected — visit /admin/integrations to install the Kit GitHub App"), nil
+				return mcp.NewToolResultError("github not connected — visit /web/integrations to install the Kit GitHub App"), nil
 			}
 			return mcp.NewToolResultError(rerr.Error()), nil
 		}

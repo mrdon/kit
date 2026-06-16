@@ -1,0 +1,382 @@
+/* Kit console — a light portal that wears the same indigo chrome top bar
+ * as Kit's other non-card pages (see internal/web/chrome). Structured
+ * after the vault UI: a persistent top bar over a centered content
+ * column with a page head, then content. */
+
+:root {
+  --ink: #1f2937;
+  --ink-soft: #4b5563;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
+  --bg: #f9fafb;
+  --panel: #ffffff;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --ok-bg: #d1fae5;
+  --ok-ink: #047857;
+  --off-bg: #f3f4f6;
+  --off-ink: #6b7280;
+  --error-bg: #fee2e2;
+  --error-ink: #b91c1c;
+  --radius: 0.625rem;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+}
+
+/* --- Top bar (mirrors .chrome-header) --- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(180deg, #1e1b4b 0%, #312e81 100%);
+  color: #e0e7ff;
+  font-size: 0.875rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.topbar-link {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  color: #c7d2fe;
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.topbar-link:hover {
+  color: #ffffff;
+  background: rgba(199, 210, 254, 0.12);
+}
+
+.topbar-link.active {
+  color: #ffffff;
+  background: rgba(199, 210, 254, 0.22);
+}
+
+.topbar-brand:hover {
+  color: #c7d2fe;
+}
+
+.topbar-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.topbar-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-product {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #c7d2fe;
+  background: rgba(199, 210, 254, 0.15);
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #c7d2fe;
+  min-width: 0;
+}
+
+.topbar-username {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+
+.topbar-logout {
+  color: #ffffff;
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.topbar-logout:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* --- Content column --- */
+
+.content {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.page-head {
+  margin-bottom: 1.5rem;
+}
+
+.page-head h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--muted);
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+}
+
+.crumbs {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+}
+
+.crumbs a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.crumbs a:hover {
+  text-decoration: underline;
+}
+
+.crumb-sep {
+  margin: 0 0.4rem;
+  color: var(--line-strong);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.banner {
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.banner-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+/* --- Launcher tiles --- */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.1rem 1.2rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+
+.tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+.tile:active {
+  transform: translateY(1px);
+}
+
+.tile-title {
+  font-weight: 600;
+}
+
+.tile-blurb {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* --- Card list (integrations, future surfaces) --- */
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.card-title {
+  font-weight: 600;
+}
+
+.card-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.card-side {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex: 0 0 auto;
+}
+
+.card-detail {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.card-manage {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.card-manage:hover {
+  text-decoration: underline;
+}
+
+.pill {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill-ok {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+}
+
+.pill-off {
+  background: var(--off-bg);
+  color: var(--off-ink);
+}
+
+.pill-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+@media (max-width: 40rem) {
+  .topbar {
+    padding: 0.5rem 0.875rem;
+  }
+  .topbar-left {
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .topbar-username {
+    max-width: 7rem;
+  }
+  .topbar-product {
+    display: none;
+  }
+  .content {
+    padding: 1.25rem 1rem 3rem;
+  }
+}
+
+/* --- Dark mode (follows the OS preference) --- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e5e7eb;
+    --ink-soft: #cbd5e1;
+    --muted: #94a3b8;
+    --line: #2a2f3a;
+    --line-strong: #3a414f;
+    --bg: #0f1420;
+    --panel: #1a2030;
+    --accent: #7aa2f7;
+    --accent-hover: #97b6ff;
+    --ok-bg: rgba(46, 204, 113, 0.16);
+    --ok-ink: #4ade80;
+    --off-bg: rgba(148, 163, 184, 0.16);
+    --off-ink: #cbd5e1;
+    --error-bg: rgba(239, 68, 68, 0.16);
+    --error-ink: #f87171;
+  }
+  .tile,
+  .card {
+    box-shadow: none;
+  }
+  .tile:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+}

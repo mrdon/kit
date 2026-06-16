@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean monty-wasm
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean monty-wasm
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -23,7 +23,7 @@ COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-X github.com/mrdon/kit/internal/buildinfo.Version=$(VERSION) -X github.com/mrdon/kit/internal/buildinfo.Commit=$(COMMIT) -X github.com/mrdon/kit/internal/buildinfo.Date=$(DATE)"
 
-build: app-build ## Build the binary (includes frontend)
+build: app-build console-build ## Build the binary (includes frontend)
 	@echo "Building $(BINARY_NAME)..."
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
@@ -47,6 +47,27 @@ $(APP_DIR)/node_modules:
 
 app-clean: ## Remove frontend build output + node_modules
 	@rm -rf $(APP_DIR)/dist $(APP_DIR)/node_modules
+
+# Console SPA lifecycle — the desktop web UI at /{slug}/web. Mirrors the
+# app-* targets; its dist/ is embedded via //go:embed in web/console.
+CONSOLE_DIR=web/console
+
+console-init: ## Install console deps (npm install)
+	@echo "Installing console deps..."
+	@cd $(CONSOLE_DIR) && npm install
+
+console-dev: ## Run Vite dev server for the console
+	@cd $(CONSOLE_DIR) && npm run dev
+
+console-build: $(CONSOLE_DIR)/node_modules ## Build the console to $(CONSOLE_DIR)/dist
+	@echo "Building console..."
+	@cd $(CONSOLE_DIR) && npm run build
+
+$(CONSOLE_DIR)/node_modules:
+	@cd $(CONSOLE_DIR) && npm install
+
+console-clean: ## Remove console build output + node_modules
+	@rm -rf $(CONSOLE_DIR)/dist $(CONSOLE_DIR)/node_modules
 
 eval-parse: ## Run coordination parseMeetingReply evals against the live API (costs money, requires ANTHROPIC_API_KEY)
 	@cd internal/apps/coordination/evals && go test -tags eval -v ./...

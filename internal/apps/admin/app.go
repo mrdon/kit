@@ -1,9 +1,9 @@
-// Package admin hosts admin-only dashboard pages that span multiple
-// other apps. v1 ships a single page — the integrations index at
-// /{slug}/admin/integrations — that surfaces every registered
-// Integration so admins can find Netlify, GitHub, and future
-// connection surfaces from one place. Apps surface themselves via
-// RegisterIntegration; admin imports nothing from them.
+// Package admin hosts the cross-app Integration registry (registry.go)
+// that lets apps surface themselves on the integrations index without
+// admin importing them. The index UI itself now lives in the React
+// console at /{slug}/web/integrations (rendered from this registry via
+// internal/apps/console); admin only keeps a redirect from the legacy
+// /{slug}/admin/integrations URL.
 package admin
 
 import (
@@ -14,7 +14,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
-	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -25,24 +24,17 @@ func init() {
 	apps.Register(instance)
 }
 
-// App owns the per-tenant admin dashboard. Currently just the
-// integrations index; will grow over time.
+// App owns the per-tenant admin surface. Its dashboard pages now live in
+// the React console (/{slug}/web); admin keeps the cross-app Integration
+// registry (registry.go) plus a redirect from the legacy
+// /{slug}/admin/integrations URL into the console.
 type App struct {
-	pool   *pgxpool.Pool
-	signer *auth.SessionSigner
+	pool *pgxpool.Pool
 }
 
 // Init wires the pool. Called after migrations succeed.
 func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
-}
-
-// Configure wires the runtime surfaces.
-func Configure(signer *auth.SessionSigner) {
-	if instance == nil {
-		return
-	}
-	instance.signer = signer
 }
 
 func (a *App) Name() string { return "admin" }
@@ -59,7 +51,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 }
 
 func (a *App) RegisterRoutes(mux *http.ServeMux) {
-	if a.pool == nil || a.signer == nil {
+	if a.pool == nil {
 		return
 	}
 	registerAdminRoutes(mux, a)

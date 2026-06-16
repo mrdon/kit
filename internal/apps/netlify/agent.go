@@ -195,7 +195,7 @@ func formatPublishError(ec *tools.ExecContext, err error) string {
 	case errors.Is(err, ErrNetlifyNotConnected):
 		page := "Kit's integrations page"
 		if slug != "" {
-			page = "Kit's integrations page (/" + slug + "/admin/integrations)"
+			page = "Kit's integrations page (/" + slug + "/web/integrations)"
 		}
 		return "Netlify isn't connected for this workspace. Connect it at " + page + " before publishing."
 	case errors.Is(err, ErrNetlifyCodingInstallMissing):
@@ -282,7 +282,7 @@ func formatRequestChangeError(ec *tools.ExecContext, err error) string {
 	}
 	settingsURL := "Kit's integrations page"
 	if slug != "" {
-		settingsURL = fmt.Sprintf("Kit's integrations page (/%s/admin/integrations)", slug)
+		settingsURL = fmt.Sprintf("Kit's integrations page (/%s/web/integrations)", slug)
 	}
 	switch {
 	case errors.Is(err, ErrNetlifyNotConnected):

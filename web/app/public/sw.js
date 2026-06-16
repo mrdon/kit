@@ -19,7 +19,7 @@
 // source works for every workspace.
 const SCOPE_URL = new URL(self.registration.scope);
 const SCOPE = SCOPE_URL.pathname; // trailing slash included
-const CACHE = 'kit' + SCOPE + 'v6';
+const CACHE = 'kit' + SCOPE + 'v7';
 // Shell is intentionally minimal — manifest and icons are fetched
 // straight from the network so install-time icon changes aren't
 // masked by a stale cached shell.
@@ -68,6 +68,13 @@ self.addEventListener('fetch', (e) => {
   // otherwise pin a stale version across deploys until the cache
   // version is bumped, breaking the dev/iteration loop for app code.
   if (url.pathname.includes('/apps/') && url.pathname.includes('/static/')) return;
+  // Never touch the desktop console at /{slug}/web/*. It is a separate,
+  // online-only React bundle (web/console) served from /console/assets/
+  // with its own deploy cadence; it deliberately registers no SW. Because
+  // this cards SW's scope (/{slug}/) covers /{slug}/web/, we must opt it
+  // out explicitly or its network-first-with-fallback would cache console
+  // HTML and serve a stale shell offline.
+  if (url.pathname === SCOPE + 'web' || url.pathname.startsWith(SCOPE + 'web/')) return;
 
   if (e.request.method !== 'GET') return;
 
