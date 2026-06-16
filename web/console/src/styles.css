@@ -629,8 +629,17 @@ code {
 
 .trow-resolve {
   flex: none;
-  padding: 0.2rem 0.6rem;
-  font-size: 0.78rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+}
+
+.trow-resolve:hover {
+  color: var(--accent);
 }
 
 .trow-title {
@@ -651,22 +660,23 @@ code {
   padding: 0.1rem 0.3rem;
 }
 
-.tag-claim {
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--ink-soft);
+.trow-claim {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
   cursor: pointer;
+  padding: 0.15rem 0.35rem;
 }
 
-.tag-claim:hover {
-  border-color: var(--accent);
+.trow-claim:hover {
   color: var(--accent);
 }
 
-.tag-claim-on {
-  background: rgba(37, 99, 235, 0.15);
+.trow-claim-on {
   color: var(--accent);
-  border-color: transparent;
 }
 
 .tag-onit {

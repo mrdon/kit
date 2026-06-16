@@ -204,19 +204,35 @@ function TaskRow({
             </span>
           ) : (
             <button
-              className={`tag tag-claim${mine ? ' tag-claim-on' : ''}`}
+              className={`trow-claim${mine ? ' trow-claim-on' : ''}`}
+              aria-label={mine ? 'Release task' : 'Claim task'}
+              title={
+                mine
+                  ? 'You’re on it — move back to open and unassign'
+                  : 'I’m on it — move to in progress and assign to me'
+              }
               onClick={() => onClaim(t.id, !mine)}
             >
-              {mine ? "I'm on it ✓" : "I'm on it"}
+              {mine ? '●' : '○'}
             </button>
           ))}
         {closed ? (
-          <button className="btn btn-ghost trow-resolve" onClick={() => onReopen(t.id)}>
-            Reopen
+          <button
+            className="trow-resolve"
+            title="Reopen"
+            aria-label="Reopen task"
+            onClick={() => onReopen(t.id)}
+          >
+            ↩
           </button>
         ) : (
-          <button className="btn trow-resolve" onClick={() => onResolve(t.id)}>
-            Resolve
+          <button
+            className="trow-resolve"
+            title="Resolve"
+            aria-label="Resolve task"
+            onClick={() => onResolve(t.id)}
+          >
+            ✓
           </button>
         )}
       </div>
