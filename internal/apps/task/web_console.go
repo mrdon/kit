@@ -25,6 +25,7 @@ func registerTaskRoutes(mux *http.ServeMux, a *TaskApp) {
 	mux.Handle("GET /{slug}/api/tasks/meta", jsonRoute(a.handleMeta))
 	mux.Handle("GET /{slug}/api/tasks/{id}", jsonRoute(a.handleGet))
 	mux.Handle("PATCH /{slug}/api/tasks/{id}", jsonRoute(a.handleUpdate))
+	mux.Handle("POST /{slug}/api/tasks/categorize", jsonRoute(a.handleCategorize))
 	mux.Handle("POST /{slug}/api/tasks/{id}/complete", jsonRoute(a.handleComplete))
 	mux.Handle("POST /{slug}/api/tasks/{id}/snooze", jsonRoute(a.handleSnooze))
 	mux.Handle("POST /{slug}/api/tasks/{id}/comments", jsonRoute(a.handleComment))
@@ -210,6 +211,16 @@ func (a *TaskApp) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	taskJSON(w, http.StatusOK, map[string]any{"task": views[0], "events": evViews})
+}
+
+func (a *TaskApp) handleCategorize(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	n, err := a.svc.CategorizeUncategorized(r.Context(), caller)
+	if err != nil {
+		a.taskServiceErr(w, r, err, caller, "")
+		return
+	}
+	taskJSON(w, http.StatusOK, map[string]any{"queued": n})
 }
 
 func (a *TaskApp) handleComplete(w http.ResponseWriter, r *http.Request) {

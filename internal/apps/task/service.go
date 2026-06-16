@@ -176,6 +176,29 @@ func callerHasRole(c *services.Caller, name string) bool {
 	return slices.Contains(c.Roles, name)
 }
 
+// CategorizeUncategorized fires the async categorizer for every active,
+// uncategorized task the caller can see, and returns how many were queued.
+// Backfills tasks created before categorization existed, and re-tidies any
+// that never got a label. No-op when no LLM is configured.
+func (s *TaskService) CategorizeUncategorized(ctx context.Context, c *services.Caller) (int, error) {
+	if s.app == nil || s.app.llm == nil {
+		return 0, nil
+	}
+	tasks, err := s.List(ctx, c, TaskFilters{})
+	if err != nil {
+		return 0, err
+	}
+	queued := 0
+	for i := range tasks {
+		if strings.TrimSpace(tasks[i].Category) != "" {
+			continue
+		}
+		go runCategorizer(s.pool, s.app.llm, *c, tasks[i])
+		queued++
+	}
+	return queued, nil
+}
+
 // List returns tasks visible to the caller, with optional filters.
 func (s *TaskService) List(ctx context.Context, c *services.Caller, f TaskFilters) ([]Task, error) {
 	if c.IsAdmin {

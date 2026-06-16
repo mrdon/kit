@@ -230,6 +230,7 @@ export const api = {
     apiPatch<{ task: Task }>(`/tasks/${id}`, body),
   completeTask: (id: string) =>
     apiPost<{ task: Task }>(`/tasks/${id}/complete`),
+  categorizeTasks: () => apiPost<{ queued: number }>('/tasks/categorize'),
   snoozeTask: (id: string, days: number) =>
     apiPost<{ task: Task }>(`/tasks/${id}/snooze`, { days }),
   addTaskComment: (id: string, content: string) =>

@@ -39,7 +39,7 @@ export default function Tasks() {
   const [filters, setFilters] = useState<TaskFilters>({ include_closed: false });
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; undo: () => void } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -65,11 +65,28 @@ export default function Tasks() {
     }
   };
 
-  const showToast = useCallback((msg: string, undo: () => void) => {
+  const showToast = useCallback((msg: string, undo?: () => void) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ msg, undo });
     toastTimer.current = setTimeout(() => setToast(null), 7000);
   }, []);
+
+  // Backfill categories for tasks created before categorization existed.
+  // The categorizer runs async server-side, so reload shortly after.
+  const autoCategorize = async () => {
+    setErr(null);
+    try {
+      const { queued } = await api.categorizeTasks();
+      if (queued === 0) {
+        showToast('Everything is already categorized');
+      } else {
+        showToast(`Categorizing ${queued} task${queued === 1 ? '' : 's'}…`);
+        setTimeout(load, 5000);
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
@@ -85,7 +102,7 @@ export default function Tasks() {
 
   const runUndo = () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toast?.undo();
+    toast?.undo?.();
     setToast(null);
   };
 
@@ -168,6 +185,12 @@ export default function Tasks() {
           />
           Show closed
         </label>
+
+        {view === 'grouped' && (
+          <button className="btn btn-ghost toolbar-end" onClick={autoCategorize}>
+            ✨ Auto-categorize
+          </button>
+        )}
       </div>
 
       {view === 'grouped' ? (
@@ -197,9 +220,11 @@ export default function Tasks() {
       {toast && (
         <div className="toast" role="status">
           <span>{toast.msg}</span>
-          <button className="toast-undo" onClick={runUndo}>
-            Undo
-          </button>
+          {toast.undo && (
+            <button className="toast-undo" onClick={runUndo}>
+              Undo
+            </button>
+          )}
         </div>
       )}
 
