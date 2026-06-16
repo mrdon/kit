@@ -808,6 +808,83 @@ code {
   border-bottom-color: var(--accent);
 }
 
+/* View-mode title: a heading that becomes an input on click. */
+h2.view-title {
+  cursor: text;
+  border-radius: 0.3rem;
+  margin: 0 -0.3rem 1rem;
+  padding: 0.2rem 0.3rem;
+}
+
+h2.view-title:hover {
+  background: var(--off-bg);
+}
+
+/* The description, shown formatted and prioritized above the properties.
+   Clicking drops into the raw textarea. */
+.md-body {
+  cursor: text;
+  border-radius: 0.4rem;
+  margin: 0 -0.4rem 1.25rem;
+  padding: 0.5rem 0.4rem;
+  min-height: 2.5rem;
+}
+
+.md-body:hover {
+  background: var(--off-bg);
+}
+
+.body-edit {
+  width: 100%;
+  margin-bottom: 1.25rem;
+  font: inherit;
+  border: 1px solid var(--accent);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--panel);
+  color: var(--ink);
+  resize: vertical;
+}
+
+/* Markdown typography for the rendered body. */
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p { margin: 0 0 0.6rem; line-height: 1.5; }
+.markdown h1, .markdown h2, .markdown h3 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.markdown h1 { font-size: 1.2rem; }
+.markdown h2 { font-size: 1.05rem; }
+.markdown h3 { font-size: 0.95rem; }
+.markdown ul, .markdown ol { margin: 0 0 0.6rem; padding-left: 1.3rem; }
+.markdown li { margin: 0.15rem 0; }
+.markdown a { color: var(--accent); }
+.markdown code {
+  background: var(--off-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.3rem;
+  font-size: 0.85em;
+}
+.markdown pre {
+  background: var(--off-bg);
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.4rem;
+  overflow-x: auto;
+}
+.markdown pre code { background: none; padding: 0; }
+.markdown blockquote {
+  margin: 0 0 0.6rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink-soft);
+}
+.markdown table { border-collapse: collapse; margin: 0 0 0.6rem; }
+.markdown th, .markdown td { border: 1px solid var(--line); padding: 0.3rem 0.5rem; }
+
+/* Properties block reads as secondary to the body. */
+.task-props {
+  border-top: 1px solid var(--line);
+  padding-top: 0.9rem;
+}
+
 .field {
   display: flex;
   flex-direction: column;
