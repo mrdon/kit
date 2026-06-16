@@ -38,23 +38,35 @@ func registerNetlifyRoutes(mux *http.ServeMux, a *App) {
 			auth.AssertTenantMatch(a.signer, requireAdminHandler(h)))))
 	}
 
-	// Settings landing page.
-	mux.Handle("GET /{slug}/apps/netlify/settings", page(a.handleSettingsPage))
+	// The settings UI moved into the React console at /{slug}/web/netlify.
+	// Keep the old URL working (bookmarks, agent messages) by redirecting.
+	mux.Handle("GET /{slug}/apps/netlify/settings", tenantMW(http.HandlerFunc(redirectToConsole)))
+
+	// Console JSON endpoints (status + site-pick + disconnect).
+	registerConsoleRoutes(mux, a)
 
 	// Netlify OAuth dance. Top-level callback is a tiny bouncer that
 	// reads the slug from the state cookie (Path=/) and 303s to the
 	// per-tenant callback URL where the session cookie (Path=/{slug}/)
 	// is in scope. See handleNetlifyCallbackBounce for the rationale.
+	// The connect/callback handlers redirect back to /{slug}/web/netlify.
 	mux.Handle("GET /{slug}/apps/netlify/connect/netlify", page(a.handleNetlifyConnect))
 	mux.HandleFunc("GET /oauth/netlify/callback", a.handleNetlifyCallbackBounce)
 	mux.Handle("GET /{slug}/oauth/netlify/callback", page(a.handleNetlifyCallback))
-	mux.Handle("POST /{slug}/apps/netlify/site", page(a.handleNetlifySitePick))
-	mux.Handle("POST /{slug}/apps/netlify/disconnect/netlify", page(a.handleNetlifyDisconnect))
 
 	// GitHub install lives in the github Kit app (shared substrate,
-	// one install per tenant). The "Install GitHub App" + Disconnect
-	// buttons on this app's settings page link to the github app's
-	// routes with return_to=/{slug}/apps/netlify/settings.
+	// one install per tenant). The console's status JSON hands the client
+	// the github connect/disconnect URLs with return_to=/{slug}/web/netlify.
+}
+
+// redirectToConsole 302s the legacy settings URL to the console page.
+func redirectToConsole(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/"+tenant.Slug+"/web/netlify", http.StatusFound)
 }
 
 // requireAdminHandler refuses requests where the caller is not a

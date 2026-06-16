@@ -20,4 +20,16 @@ export const SECTIONS: Section[] = [
     blurb: 'Connect Netlify, GitHub, and other services.',
     admin: true,
   },
+  {
+    to: '/netlify',
+    label: 'Website',
+    blurb: 'Connect Netlify + GitHub so the team can request site changes.',
+    admin: true,
+  },
+  {
+    to: '/widget',
+    label: 'Chat widget',
+    blurb: 'Mint and revoke embed tokens for the website chat widget.',
+    admin: true,
+  },
 ];

@@ -45,5 +45,5 @@ func (i *netlifyIntegration) Status(ctx context.Context, tenantID uuid.UUID) (ad
 }
 
 func (i *netlifyIntegration) ManageURL(tenantSlug string) string {
-	return "/" + tenantSlug + "/apps/netlify/settings"
+	return "/" + tenantSlug + "/web/netlify"
 }

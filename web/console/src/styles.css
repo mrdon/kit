@@ -211,6 +211,118 @@ body {
   color: var(--error-ink);
 }
 
+.banner-ok {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+  cursor: pointer;
+}
+
+/* --- Panels (settings sections) --- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.panel-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.status-line {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+code {
+  background: var(--off-bg);
+  color: var(--ink);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+}
+
+/* --- Forms + buttons --- */
+
+.inline-form {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 0.5rem;
+}
+
+.inline-form input,
+.inline-form select {
+  flex: 1 1 14rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 0.95rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--error-ink);
+  border-color: var(--error-ink);
+}
+
+.btn-danger:hover {
+  background: var(--error-bg);
+  border-color: var(--error-ink);
+}
+
+.btn-spaced {
+  margin-top: 0.75rem;
+}
+
+.snippet-box {
+  margin-top: 0.85rem;
+}
+
+.snippet {
+  background: var(--off-bg);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0.4rem 0 0;
+}
+
 /* --- Launcher tiles --- */
 
 .tile-grid {

@@ -4,6 +4,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Shell from './Shell';
 import Launcher from './Launcher';
 import Integrations from './pages/Integrations';
+import Netlify from './pages/Netlify';
+import Widget from './pages/Widget';
 import { BASENAME } from './workspace';
 import './styles.css';
 
@@ -19,6 +21,8 @@ createRoot(document.getElementById('root')!).render(
         <Route element={<Shell />}>
           <Route path="/" element={<Launcher />} />
           <Route path="/integrations" element={<Integrations />} />
+          <Route path="/netlify" element={<Netlify />} />
+          <Route path="/widget" element={<Widget />} />
         </Route>
       </Routes>
     </BrowserRouter>

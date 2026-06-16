@@ -1,7 +1,6 @@
 package netlify
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -160,92 +159,12 @@ func (a *App) handleNetlifyCallback(w http.ResponseWriter, r *http.Request) {
 	a.redirectToSettings(w, r, tenant.Slug, "Netlify connected. Pick a site below.")
 }
 
-// handleNetlifySitePick records the user's site choice from the
-// dropdown rendered on the settings page. Looks the site up on
-// Netlify to capture the default branch + (best-effort) the connected
-// repo for the GitHub-side prefill.
-func (a *App) handleNetlifySitePick(w http.ResponseWriter, r *http.Request) {
-	tenant := auth.TenantFromContext(r.Context())
-	caller := auth.CallerFromContext(r.Context())
-	if tenant == nil || caller == nil {
-		http.Error(w, "tenant or caller not resolved", http.StatusInternalServerError)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	siteID := r.FormValue("site_id")
-	if siteID == "" {
-		http.Error(w, "site_id required", http.StatusBadRequest)
-		return
-	}
-	cfg, err := a.svc.GetConfig(r.Context(), caller.TenantID)
-	if err != nil {
-		slog.Error("netlify: site pick: loading config", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if cfg.NetlifyAccessTokenCipher == "" {
-		http.Error(w, "connect netlify first", http.StatusBadRequest)
-		return
-	}
-	accessToken, err := a.enc.Decrypt(cfg.NetlifyAccessTokenCipher)
-	if err != nil {
-		slog.Error("netlify: decrypting access token", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	site, err := getNetlifySite(r.Context(), accessToken, siteID)
-	if err != nil {
-		slog.Error("netlify: fetching site", "site_id", siteID, "error", err)
-		http.Error(w, "could not load site", http.StatusBadGateway)
-		return
-	}
-	prodBranch := site.BuildSettings.Branch
-	if prodBranch == "" {
-		prodBranch = site.DefaultBranch
-	}
-	owner, repo, _ := parseRepoURL(site.BuildSettings.RepoURL)
-	if err := SaveNetlifySite(r.Context(), a.pool, caller.TenantID,
-		site.ID, site.Name, prodBranch, owner, repo); err != nil {
-		slog.Error("netlify: saving site pick", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	msg := fmt.Sprintf("Site set to %s.", site.Name)
-	if a.svc.github != nil {
-		if inst, _ := a.svc.github.GetInstallation(r.Context(), caller.TenantID); inst == nil {
-			msg += " Connect GitHub next."
-		}
-	}
-	a.redirectToSettings(w, r, tenant.Slug, msg)
-}
-
-// handleNetlifyDisconnect drops the Netlify side of the connection.
-// GitHub install is unaffected — disconnecting one side leaves the
-// other intact so the user can re-link without redoing both.
-func (a *App) handleNetlifyDisconnect(w http.ResponseWriter, r *http.Request) {
-	tenant := auth.TenantFromContext(r.Context())
-	caller := auth.CallerFromContext(r.Context())
-	if tenant == nil || caller == nil {
-		http.Error(w, "tenant or caller not resolved", http.StatusInternalServerError)
-		return
-	}
-	if err := ClearNetlify(r.Context(), a.pool, caller.TenantID); err != nil {
-		slog.Error("netlify: clearing connection", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	a.redirectToSettings(w, r, tenant.Slug, "Netlify disconnected.")
-}
-
-// redirectToSettings issues a 303 back to the settings page, with an
-// optional banner message that the page renders above the connection
-// cards.
+// redirectToSettings issues a 303 back to the console Website settings
+// page, with an optional banner message the page surfaces via ?msg=.
+// Site-pick and disconnect are now JSON endpoints (web_console.go); this
+// is used only by the OAuth connect/callback flow, which is full-page.
 func (a *App) redirectToSettings(w http.ResponseWriter, r *http.Request, slug, msg string) {
-	dest := "/" + slug + "/apps/netlify/settings"
+	dest := "/" + slug + "/web/netlify"
 	if msg != "" {
 		dest += "?msg=" + url.QueryEscape(msg)
 	}

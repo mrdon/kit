@@ -1,4 +1,4 @@
-import { BASENAME, SLUG } from './workspace';
+import { SLUG } from './workspace';
 
 // The console talks to JSON endpoints under /{slug}/web/api/*. Those
 // routes return 401 (never a 303-to-login) on a missing/expired session
@@ -13,7 +13,10 @@ import { BASENAME, SLUG } from './workspace';
 // X-Kit-Vault).
 const CSRF_HEADER = 'X-Kit-Web';
 
-export const API_BASE = `${BASENAME}/api`;
+// The console API lives at /{slug}/api/... — fetch-only, not under the
+// /web shell prefix. The cards service worker skips anything containing
+// /api/, so these responses are never cached.
+export const API_BASE = `/${SLUG}/api`;
 
 function loginRedirect(): never {
   const returnTo = encodeURIComponent(
@@ -89,7 +92,60 @@ export interface Integration {
   manage_url: string;
 }
 
+export interface WidgetToken {
+  id: string;
+  placeholder: string;
+  allowed_origins: string[];
+  created_at: string;
+  last_used_at: string;
+}
+
+export interface MintedToken {
+  embed_snippet: string;
+  allowed_origins: string[];
+}
+
+export interface NetlifySiteOption {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface NetlifySiteGroup {
+  team: string;
+  sites: NetlifySiteOption[];
+}
+
+export interface NetlifyStatus {
+  netlify_configured: boolean;
+  github_configured: boolean;
+  netlify_connected: boolean;
+  netlify_site_name: string;
+  netlify_repo_owner: string;
+  netlify_repo_name: string;
+  netlify_needs_picker: boolean;
+  netlify_sites_error: string;
+  sites_by_team: NetlifySiteGroup[];
+  github_connected: boolean;
+  github_account_login: string;
+  github_installation_id: number;
+  netlify_connect_url: string;
+  github_connect_url: string;
+  github_disconnect_url: string;
+}
+
 export const api = {
   me: () => apiGet<Me>('/me'),
   integrations: () => apiGet<Integration[]>('/integrations'),
+
+  widgetTokens: () => apiGet<{ tokens: WidgetToken[] }>('/widget/tokens'),
+  mintWidgetToken: (origin: string) =>
+    apiPost<MintedToken>('/widget/tokens', { origin }),
+  revokeWidgetToken: (id: string) =>
+    apiPost<void>(`/widget/tokens/${encodeURIComponent(id)}/revoke`),
+
+  netlifyStatus: () => apiGet<NetlifyStatus>('/netlify/status'),
+  netlifyPickSite: (siteId: string) =>
+    apiPost<{ message: string }>('/netlify/site', { site_id: siteId }),
+  netlifyDisconnect: () => apiPost<void>('/netlify/disconnect'),
 };

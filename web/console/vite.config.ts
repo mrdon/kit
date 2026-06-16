@@ -25,7 +25,7 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      [`${DEV_SLUG}/web/api`]: 'http://localhost:8488',
+      [`${DEV_SLUG}/api`]: 'http://localhost:8488',
       [`${DEV_SLUG}/login`]: 'http://localhost:8488',
       [`${DEV_SLUG}/dev-login`]: 'http://localhost:8488',
       [`${DEV_SLUG}/icon.svg`]: 'http://localhost:8488',
