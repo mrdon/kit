@@ -500,79 +500,141 @@ code {
   color: #fff;
 }
 
-/* --- Tasks: board --- */
+/* --- Tasks: grouped (priority bands + category sub-groups) --- */
 
-.board-wrap {
+.bands {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.1rem;
 }
 
-.swimlane-head {
-  margin: 0 0 0.5rem;
-  font-size: 0.95rem;
-  color: var(--ink-soft);
-}
-
-.board {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.board-col {
-  background: var(--off-bg);
+.band {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0.6rem;
-  min-height: 4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  padding: 0.6rem 0.75rem 0.75rem;
+  background: var(--panel);
 }
 
-.board-col-over {
+.band-over {
   border-color: var(--accent);
   background: rgba(37, 99, 235, 0.06);
 }
 
-.board-col-head {
+.band-head {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.78rem;
-  font-weight: 600;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.band-head h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.band-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+}
+
+.band-count {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.band-empty {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.cat-group + .cat-group {
+  margin-top: 0.45rem;
+}
+
+.cat-head {
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   color: var(--muted);
+  padding: 0.25rem 0.2rem;
 }
 
-.board-count {
-  color: var(--muted);
-}
-
-.board-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.7rem;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
-}
-
-.board-card:hover {
-  border-color: var(--accent);
-}
-
-.board-card-title {
-  display: block;
-  font-size: 0.9rem;
-  margin-bottom: 0.4rem;
-}
-
-.board-card-meta {
+.trow {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.2rem;
+  border-top: 1px solid var(--line);
+}
+
+.trow-mine {
+  font-weight: 600;
+}
+
+.trow-other {
+  opacity: 0.55;
+}
+
+.trow-check {
+  flex: none;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: transparent;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.trow-check:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.trow-title {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+}
+
+.trow-meta {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.3rem;
+  flex: none;
+}
+
+.cat-select {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.3rem;
+}
+
+.tag-claim {
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.tag-claim:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tag-claim-on {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.tag-onit {
+  background: var(--off-bg);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
 }
 
 .tag {
@@ -588,10 +650,14 @@ code {
   border: 1px solid var(--line);
 }
 
-.pr-low { background: rgba(100, 116, 139, 0.18); color: var(--off-ink); }
-.pr-medium { background: rgba(37, 99, 235, 0.15); color: var(--accent); }
+.pr-normal { background: rgba(100, 116, 139, 0.18); color: var(--off-ink); }
 .pr-high { background: rgba(249, 115, 22, 0.18); color: #c2410c; }
-.pr-urgent { background: var(--error-bg); color: var(--error-ink); }
+.pr-blocker { background: var(--error-bg); color: var(--error-ink); }
+
+/* Band dots reuse the priority palette as solid swatches. */
+.band-dot.pr-normal { background: var(--off-ink); }
+.band-dot.pr-high { background: #f97316; }
+.band-dot.pr-blocker { background: var(--error-ink); }
 
 /* --- Tasks: list --- */
 
@@ -881,8 +947,12 @@ code {
 }
 
 @media (max-width: 48rem) {
-  .board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .trow {
+    flex-wrap: wrap;
+  }
+  .trow-title {
+    flex-basis: 100%;
+    order: -1;
   }
 }
 

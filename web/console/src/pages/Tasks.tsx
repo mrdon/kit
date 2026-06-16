@@ -6,26 +6,28 @@ import {
   type Task,
   type TaskFilters,
   type TasksMeta,
+  type UpdateTaskBody,
 } from '../api';
-import TaskBoard, { type Swimlane } from './tasks/board';
+import TaskGrouped from './tasks/grouped';
 import TaskList from './tasks/list';
 import TaskDetail from './tasks/detail';
 import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL } from './tasks/common';
 
-type View = 'board' | 'list';
+type View = 'grouped' | 'list';
 
 export default function Tasks() {
   const [meta, setMeta] = useState<TasksMeta | null>(null);
+  const [meId, setMeId] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const [view, setView] = useState<View>('board');
-  const [swimlane, setSwimlane] = useState<Swimlane>('role');
+  const [view, setView] = useState<View>('grouped');
   const [filters, setFilters] = useState<TaskFilters>({ include_closed: false });
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     api.tasksMeta().then(setMeta).catch(() => {});
+    api.me().then((m) => setMeId(m.user_id)).catch(() => {});
   }, []);
 
   const load = useCallback(() => {
@@ -36,7 +38,7 @@ export default function Tasks() {
   }, [filters]);
   useEffect(load, [load]);
 
-  const quickEdit = async (id: string, patch: { status?: string; priority?: string }) => {
+  const quickEdit = async (id: string, patch: UpdateTaskBody) => {
     setErr(null);
     try {
       await api.updateTask(id, patch);
@@ -46,7 +48,23 @@ export default function Tasks() {
     }
   };
 
-  const move = (id: string, status: string) => quickEdit(id, { status });
+  const resolve = async (id: string) => {
+    setErr(null);
+    try {
+      await api.completeTask(id);
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+
+  // "I'm on it": claiming assigns the task to me (and marks it in progress);
+  // unclaiming returns it to the open backlog. Assignment is the signal that
+  // blocks the work off for teammates.
+  const claim = (id: string, on: boolean) =>
+    on
+      ? quickEdit(id, { status: 'in_progress', assignee: meId })
+      : quickEdit(id, { status: 'open', clear_assignee: true });
 
   const setFilter = (k: keyof TaskFilters, v: string | boolean) =>
     setFilters((f) => ({ ...f, [k]: v === '' ? undefined : v }));
@@ -72,10 +90,10 @@ export default function Tasks() {
       <div className="toolbar">
         <div className="seg">
           <button
-            className={`seg-btn${view === 'board' ? ' seg-active' : ''}`}
-            onClick={() => setView('board')}
+            className={`seg-btn${view === 'grouped' ? ' seg-active' : ''}`}
+            onClick={() => setView('grouped')}
           >
-            Board
+            Tasks
           </button>
           <button
             className={`seg-btn${view === 'list' ? ' seg-active' : ''}`}
@@ -119,24 +137,19 @@ export default function Tasks() {
           />
           Show closed
         </label>
-
-        {view === 'board' && (
-          <label className="check">
-            Group by
-            <select
-              value={swimlane}
-              onChange={(e) => setSwimlane(e.target.value as Swimlane)}
-            >
-              <option value="role">Role</option>
-              <option value="assignee">Assignee</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-        )}
       </div>
 
-      {view === 'board' ? (
-        <TaskBoard tasks={tasks} swimlane={swimlane} onMove={move} onOpen={setOpenId} />
+      {view === 'grouped' ? (
+        <TaskGrouped
+          tasks={tasks}
+          meId={meId}
+          categories={meta?.categories ?? []}
+          onReprioritize={(id, priority) => quickEdit(id, { priority })}
+          onClaim={claim}
+          onResolve={resolve}
+          onSetCategory={(id, category) => quickEdit(id, { category })}
+          onOpen={setOpenId}
+        />
       ) : (
         <TaskList tasks={tasks} onQuickEdit={quickEdit} onOpen={setOpenId} />
       )}

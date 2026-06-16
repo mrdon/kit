@@ -97,7 +97,7 @@ Tasks support priorities, due dates, role scoping, and an activity log. Use `lis
 
 For deliberate, do-it-yourself work on a desktop, open the web console at `/<your-slug>/web`. It's a direct-manipulation UI — distinct from Slack (ask the agent) and the swipe feed (mobile triage). The launcher links to:
 
-- **Tasks** — a list and a drag-to-move kanban board (group by role or assignee), with inline status/priority edits, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
+- **Tasks** — a priority-banded list (Blocker / High / Normal) grouped by an auto-assigned topic category. Drag a task between bands to reprioritize, tap "I'm on it" to claim it (which reserves it so teammates skip it) or the checkbox to resolve. Also a flat List view, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Integrations / Website / Chat widget** — admin-only setup pages for Netlify, GitHub, and the website chat widget.
 

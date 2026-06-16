@@ -387,10 +387,9 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 		b.WriteString(`
 		ORDER BY
 			CASE t.priority
-				WHEN 'urgent' THEN 0
-				WHEN 'high'   THEN 1
-				WHEN 'medium' THEN 2
-				WHEN 'low'    THEN 3
+				WHEN 'blocker' THEN 0
+				WHEN 'high'    THEN 1
+				WHEN 'normal'  THEN 2
 			END,
 			t.due_date ASC NULLS LAST,
 			t.snoozed_until ASC
@@ -404,10 +403,9 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 				ELSE 2
 			END,
 			CASE t.priority
-				WHEN 'urgent' THEN 0
-				WHEN 'high'   THEN 1
-				WHEN 'medium' THEN 2
-				WHEN 'low'    THEN 3
+				WHEN 'blocker' THEN 0
+				WHEN 'high'    THEN 1
+				WHEN 'normal'  THEN 2
 			END,
 			t.due_date ASC NULLS LAST,
 			t.created_at DESC
@@ -578,7 +576,7 @@ func buildSnoozedDigest(c *services.Caller, snoozed []stackTask) (shared.StackIt
 }
 
 // taskTier maps a task to one of the shared priority tiers. Due today or
-// earlier goes to critical; due within 3 days OR priority=urgent goes to
+// earlier goes to critical; due within 3 days OR priority=blocker goes to
 // high; priority=high or due within 7 days goes to medium; else low.
 func taskTier(t *Task) shared.PriorityTier {
 	if days, ok := daysUntilDue(t.DueDate); ok {
@@ -592,9 +590,9 @@ func taskTier(t *Task) shared.PriorityTier {
 		}
 	}
 	switch t.Priority {
-	case "urgent":
+	case PriorityBlocker:
 		return shared.TierHigh
-	case "high":
+	case PriorityHigh:
 		return shared.TierMedium
 	}
 	return shared.TierLow

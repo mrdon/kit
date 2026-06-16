@@ -177,7 +177,7 @@ func TestActionBuiltins_UpdateTodo_BumpsUpdateCounter(t *testing.T) {
 	beforeUpdates := f.actions.MutationSummary()["updates"]
 	_, err = f.dispatchCall(t, FnUpdateTask, map[string]any{
 		"task_id":  todoID,
-		"priority": "urgent",
+		"priority": "blocker",
 	})
 	if err != nil {
 		t.Fatalf("update_task: %v", err)
@@ -193,8 +193,8 @@ func TestActionBuiltins_UpdateTodo_BumpsUpdateCounter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if tv.Priority != "urgent" {
-		t.Errorf("priority = %v, want urgent", tv.Priority)
+	if tv.Priority != "blocker" {
+		t.Errorf("priority = %v, want blocker", tv.Priority)
 	}
 }
 
@@ -417,7 +417,7 @@ func TestActionBuiltins_TenantIsolation(t *testing.T) {
 	// B's caller should not be able to see / update A's todo.
 	_, err = fB.dispatchCall(t, FnUpdateTask, map[string]any{
 		"task_id":  todoAID.String(),
-		"priority": "urgent",
+		"priority": "blocker",
 	})
 	if err == nil {
 		t.Fatal("B was able to update A's todo; tenant isolation broken")

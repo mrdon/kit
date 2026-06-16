@@ -36,6 +36,7 @@ func (a *TaskApp) handleList(w http.ResponseWriter, r *http.Request) {
 	f := TaskFilters{
 		Status:        q.Get("status"),
 		Priority:      q.Get("priority"),
+		Category:      q.Get("category"),
 		RoleName:      q.Get("role_scope"),
 		Search:        q.Get("search"),
 		AssignedToMe:  q.Get("assigned_to_me") == "true",
@@ -128,6 +129,7 @@ type updateBody struct {
 	Description   *string `json:"description"`
 	Status        *string `json:"status"`
 	Priority      *string `json:"priority"`
+	Category      *string `json:"category"`
 	BlockedReason *string `json:"blocked_reason"`
 	Assignee      *string `json:"assignee"`
 	ClearAssignee bool    `json:"clear_assignee"`
@@ -152,6 +154,7 @@ func (a *TaskApp) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		Description:   body.Description,
 		Status:        body.Status,
 		Priority:      body.Priority,
+		Category:      body.Category,
 		BlockedReason: body.BlockedReason,
 		ClearAssignee: body.ClearAssignee,
 		ClearDueDate:  body.ClearDueDate,
@@ -272,10 +275,16 @@ func (a *TaskApp) handleComment(w http.ResponseWriter, r *http.Request) {
 // the role filter + create form) and the static status/priority sets.
 func (a *TaskApp) handleMeta(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
+	categories, err := listCategories(r.Context(), a.svc.pool, caller.TenantID)
+	if err != nil {
+		slog.Error("task: listing categories for meta", "error", err)
+		categories = nil // non-fatal — the chip just won't offer existing labels
+	}
 	taskJSON(w, http.StatusOK, map[string]any{
 		"roles":      caller.Roles,
 		"statuses":   []string{"open", "in_progress", "blocked", "done", "cancelled"},
-		"priorities": []string{"low", "medium", "high", "urgent"},
+		"priorities": Priorities,
+		"categories": categories,
 	})
 }
 

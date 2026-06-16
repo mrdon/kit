@@ -17,21 +17,19 @@ export const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-// Board columns exclude cancelled — it's a soft-delete, not a workflow lane.
-export const BOARD_STATUSES: Status[] = [
-  'open',
-  'in_progress',
-  'blocked',
-  'done',
-];
+// Priority bands, highest first — these drive the grouped view's sections.
+export const PRIORITIES = ['blocker', 'high', 'normal'] as const;
+export type Priority = (typeof PRIORITIES)[number];
 
-export const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 export const PRIORITY_LABEL: Record<string, string> = {
-  low: 'Low',
-  medium: 'Medium',
+  blocker: 'Blocker',
   high: 'High',
-  urgent: 'Urgent',
+  normal: 'Normal',
 };
+
+// Uncategorized tasks group under this client-side label (category is null
+// until the async categorizer runs, and may stay null for vague tasks).
+export const NO_CATEGORY = 'Uncategorized';
 
 export const statusClass = (s: string) => `st-${s}`;
 export const priorityClass = (p: string) => `pr-${p}`;

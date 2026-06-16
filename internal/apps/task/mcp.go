@@ -95,6 +95,7 @@ func mcpListTasks(svc *TaskService) mcpserver.ToolHandlerFunc {
 		f := TaskFilters{
 			Status:   req.GetString("status", ""),
 			Priority: req.GetString("priority", ""),
+			Category: req.GetString("category", ""),
 			RoleName: req.GetString("role_scope", ""),
 			Search:   req.GetString("search", ""),
 		}
@@ -188,6 +189,10 @@ func mcpUpdateTask(svc *TaskService) mcpserver.ToolHandlerFunc {
 		}
 		if v := req.GetString("priority", ""); v != "" {
 			u.Priority = &v
+		}
+		if _, present := args["category"]; present {
+			v := req.GetString("category", "")
+			u.Category = &v
 		}
 		if v := req.GetString("blocked_reason", ""); v != "" {
 			u.BlockedReason = &v

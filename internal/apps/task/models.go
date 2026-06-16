@@ -13,6 +13,21 @@ import (
 	"github.com/mrdon/kit/internal/models"
 )
 
+// Task priority levels, highest first. The DB CHECK constraint (migration
+// 058) is the source of truth for what's storable; these constants keep
+// Go-side defaults and comparisons from drifting into raw string literals.
+const (
+	PriorityBlocker = "blocker"
+	PriorityHigh    = "high"
+	PriorityNormal  = "normal"
+)
+
+// DefaultPriority is applied when a task is created without one.
+const DefaultPriority = PriorityNormal
+
+// Priorities lists the valid priority values, highest first.
+var Priorities = []string{PriorityBlocker, PriorityHigh, PriorityNormal}
+
 // Task represents a task item.
 type Task struct {
 	ID             uuid.UUID    `json:"id"`
@@ -21,6 +36,7 @@ type Task struct {
 	Description    string       `json:"description,omitempty"`
 	Status         string       `json:"status"`
 	Priority       string       `json:"priority"`
+	Category       string       `json:"category,omitempty"`
 	BlockedReason  string       `json:"blocked_reason,omitempty"`
 	ScopeID        uuid.UUID    `json:"scope_id"`
 	AssigneeUserID *uuid.UUID   `json:"assignee_user_id,omitempty"`
@@ -49,6 +65,7 @@ type TaskEvent struct {
 type TaskFilters struct {
 	Status         string
 	Priority       string
+	Category       string     // filter by exact category label
 	AssignedToMe   bool       // sugar for AssigneeUserID = caller
 	AssigneeUserID *uuid.UUID // filter by exact assignee
 	Unassigned     bool       // filter to assignee_user_id IS NULL
@@ -70,6 +87,7 @@ type TaskUpdates struct {
 	Description    *string
 	Status         *string
 	Priority       *string
+	Category       *string
 	BlockedReason  *string
 	ScopeID        *uuid.UUID
 	AssigneeUserID *uuid.UUID
@@ -83,16 +101,16 @@ type TaskUpdates struct {
 // taskColumns is the SELECT list for app_tasks, always aliased as t. in the
 // query — the alias is required because list queries JOIN scopes which has
 // its own id/tenant_id columns.
-const taskColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.blocked_reason, t.scope_id, t.assignee_user_id, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at`
+const taskColumns = `t.id, t.tenant_id, t.title, t.description, t.status, t.priority, t.category, t.blocked_reason, t.scope_id, t.assignee_user_id, t.due_date, t.snoozed_until, t.resolutions, t.created_at, t.updated_at, t.closed_at`
 
 func scanTask(row interface{ Scan(...any) error }) (*Task, error) {
 	var t Task
-	var description, blockedReason *string
+	var description, category, blockedReason *string
 	var dueDate, snoozedUntil *time.Time
 	var resolutionsJSON []byte
 	err := row.Scan(
 		&t.ID, &t.TenantID, &t.Title, &description,
-		&t.Status, &t.Priority, &blockedReason,
+		&t.Status, &t.Priority, &category, &blockedReason,
 		&t.ScopeID, &t.AssigneeUserID, &dueDate, &snoozedUntil,
 		&resolutionsJSON,
 		&t.CreatedAt, &t.UpdatedAt, &t.ClosedAt,
@@ -102,6 +120,9 @@ func scanTask(row interface{ Scan(...any) error }) (*Task, error) {
 	}
 	if description != nil {
 		t.Description = *description
+	}
+	if category != nil {
+		t.Category = *category
 	}
 	if blockedReason != nil {
 		t.BlockedReason = *blockedReason
@@ -185,6 +206,12 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 		args = append(args, f.Priority)
 	}
 
+	if f.Category != "" {
+		argN++
+		b.WriteString(fmt.Sprintf(` AND t.category = $%d`, argN))
+		args = append(args, f.Category)
+	}
+
 	if f.AssignedToMe && userID != nil {
 		argN++
 		b.WriteString(fmt.Sprintf(` AND t.assignee_user_id = $%d`, argN))
@@ -221,7 +248,7 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 		args = append(args, *f.ClosedSince)
 	}
 
-	b.WriteString(` ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, t.due_date ASC NULLS LAST, t.created_at DESC`)
+	b.WriteString(` ORDER BY CASE t.priority WHEN 'blocker' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 END, t.due_date ASC NULLS LAST, t.created_at DESC`)
 	b.WriteString(` LIMIT 50`)
 
 	return b.String(), args
@@ -275,6 +302,11 @@ func updateTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.U
 		argN++
 		sets = append(sets, fmt.Sprintf("priority = $%d", argN))
 		args = append(args, *u.Priority)
+	}
+	if u.Category != nil {
+		argN++
+		sets = append(sets, fmt.Sprintf("category = $%d", argN))
+		args = append(args, nilIfEmpty(*u.Category))
 	}
 	if u.BlockedReason != nil {
 		argN++
@@ -392,6 +424,45 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// listCategories returns the distinct non-empty category labels in use across
+// a tenant's active tasks, most-used first. Fed to the categorizer so it
+// reuses an existing label before coining a new one (keeps the set from
+// sprawling) and to the console as the chip's picklist.
+func listCategories(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]string, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT category FROM app_tasks
+		WHERE tenant_id = $1 AND category IS NOT NULL AND category <> ''
+		  AND status NOT IN ('done','cancelled')
+		GROUP BY category
+		ORDER BY count(*) DESC, category ASC
+		LIMIT 50`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing categories: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, fmt.Errorf("scanning category: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// setTaskCategory writes a single task's category. Used by the async
+// categorizer; a no-op (zero rows) when the task has since been deleted.
+func setTaskCategory(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID, category string) error {
+	if _, err := pool.Exec(ctx,
+		`UPDATE app_tasks SET category = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, taskID, nilIfEmpty(category),
+	); err != nil {
+		return fmt.Errorf("writing category: %w", err)
+	}
+	return nil
 }
 
 // setTaskResolutions writes the full resolutions array for a task, replacing

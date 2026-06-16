@@ -140,6 +140,7 @@ export interface Task {
   description?: string;
   status: string;
   priority: string;
+  category?: string;
   blocked_reason?: string;
   scope_id: string;
   assignee_user_id?: string;
@@ -166,11 +167,13 @@ export interface TasksMeta {
   roles: string[];
   statuses: string[];
   priorities: string[];
+  categories: string[];
 }
 
 export interface TaskFilters {
   status?: string;
   priority?: string;
+  category?: string;
   role_scope?: string;
   search?: string;
   assigned_to_me?: boolean;
@@ -193,6 +196,7 @@ export interface UpdateTaskBody {
   description?: string;
   status?: string;
   priority?: string;
+  category?: string;
   blocked_reason?: string;
   assignee?: string;
   clear_assignee?: boolean;

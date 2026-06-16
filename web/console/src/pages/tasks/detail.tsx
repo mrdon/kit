@@ -159,6 +159,24 @@ export default function TaskDetail({ taskId, meta, onClose, onChanged }: Props) 
             </div>
 
             <label className="field">
+              <span>Category</span>
+              <input
+                list="task-categories"
+                placeholder="e.g. brewing, sales (auto-assigned)"
+                defaultValue={task.category ?? ''}
+                onBlur={(e) =>
+                  e.target.value !== (task.category ?? '') &&
+                  patch({ category: e.target.value })
+                }
+              />
+              <datalist id="task-categories">
+                {meta?.categories.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="field">
               <span>Assignee {task.assignee_name ? `(${task.assignee_name})` : ''}</span>
               <div className="field-row">
                 <input

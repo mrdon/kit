@@ -112,6 +112,7 @@ func handleListTasks(svc *TaskService) tools.HandlerFunc {
 		var inp struct {
 			Status        string `json:"status"`
 			Priority      string `json:"priority"`
+			Category      string `json:"category"`
 			AssignedToMe  bool   `json:"assigned_to_me"`
 			Assignee      string `json:"assignee"`
 			Unassigned    bool   `json:"unassigned"`
@@ -128,6 +129,7 @@ func handleListTasks(svc *TaskService) tools.HandlerFunc {
 		f := TaskFilters{
 			Status:        inp.Status,
 			Priority:      inp.Priority,
+			Category:      inp.Category,
 			AssignedToMe:  inp.AssignedToMe,
 			Unassigned:    inp.Unassigned,
 			RoleName:      inp.RoleScope,
@@ -207,6 +209,7 @@ func handleUpdateTask(svc *TaskService) tools.HandlerFunc {
 			Description   string  `json:"description"`
 			Status        string  `json:"status"`
 			Priority      string  `json:"priority"`
+			Category      string  `json:"category"`
 			BlockedReason string  `json:"blocked_reason"`
 			Assignee      string  `json:"assignee"`
 			ClearAssignee bool    `json:"clear_assignee"`
@@ -235,6 +238,9 @@ func handleUpdateTask(svc *TaskService) tools.HandlerFunc {
 		}
 		if inp.Priority != "" {
 			u.Priority = &inp.Priority
+		}
+		if inp.Category != "" {
+			u.Category = &inp.Category
 		}
 		if inp.BlockedReason != "" {
 			u.BlockedReason = &inp.BlockedReason

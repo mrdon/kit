@@ -63,6 +63,7 @@ type UpdateInput struct {
 	Description   *string
 	Status        *string
 	Priority      *string
+	Category      *string
 	BlockedReason *string
 	DueDate       *time.Time
 	ClearDueDate  bool
@@ -111,7 +112,7 @@ func (s *TaskService) Create(ctx context.Context, c *services.Caller, in CreateI
 		t.Status = "open"
 	}
 	if t.Priority == "" {
-		t.Priority = "medium"
+		t.Priority = DefaultPriority
 	}
 
 	if err := createTask(ctx, s.pool, t); err != nil {
@@ -126,6 +127,7 @@ func (s *TaskService) Create(ctx context.Context, c *services.Caller, in CreateI
 	// value so a later mutation by the request path can't observe them.
 	if s.app != nil && s.app.llm != nil {
 		go runResolutionSuggester(s.pool, s.app.llm, *c, *t)
+		go runCategorizer(s.pool, s.app.llm, *c, *t)
 	}
 
 	return t, nil
@@ -238,11 +240,23 @@ func (s *TaskService) Update(ctx context.Context, c *services.Caller, taskID uui
 		}
 	}
 
+	// "I'm on it": claiming a task (status → in_progress) on an unassigned
+	// task stamps the caller as assignee. Assignment isn't set up front in
+	// this model — it happens by the act of starting, so others know to
+	// leave the task alone. Only fills the gap: an explicit assignee in the
+	// same call, or an existing one, wins.
+	if u.Status != nil && *u.Status == "in_progress" &&
+		t.AssigneeUserID == nil && u.NewAssigneeUserID == nil && !u.ClearAssignee {
+		caller := c.UserID
+		u.NewAssigneeUserID = &caller
+	}
+
 	dbUpdates := TaskUpdates{
 		Title:          u.Title,
 		Description:    u.Description,
 		Status:         u.Status,
 		Priority:       u.Priority,
+		Category:       u.Category,
 		BlockedReason:  u.BlockedReason,
 		ScopeID:        newScope,
 		AssigneeUserID: u.NewAssigneeUserID,
@@ -253,6 +267,20 @@ func (s *TaskService) Update(ctx context.Context, c *services.Caller, taskID uui
 		ClearSnooze:    u.ClearSnooze,
 	}
 
+	s.appendUpdateEvents(ctx, c, taskID, t, u, newScope)
+
+	if err := updateTask(ctx, s.pool, c.TenantID, taskID, dbUpdates); err != nil {
+		return nil, err
+	}
+
+	return getTask(ctx, s.pool, c.TenantID, taskID)
+}
+
+// appendUpdateEvents writes the audit-log entries for whichever fields an
+// Update actually changed. Split out of Update to keep that method's
+// branching under the complexity budget. Event-write failures are dropped
+// (best-effort log) — the update itself has already been validated.
+func (s *TaskService) appendUpdateEvents(ctx context.Context, c *services.Caller, taskID uuid.UUID, t *Task, u UpdateInput, newScope *uuid.UUID) {
 	if u.Status != nil && *u.Status != t.Status {
 		content := ""
 		if u.BlockedReason != nil {
@@ -279,12 +307,6 @@ func (s *TaskService) Update(ctx context.Context, c *services.Caller, taskID uui
 	if u.Priority != nil && *u.Priority != t.Priority {
 		_ = appendEvent(ctx, s.pool, c.TenantID, taskID, &c.UserID, "priority_change", "", t.Priority, *u.Priority)
 	}
-
-	if err := updateTask(ctx, s.pool, c.TenantID, taskID, dbUpdates); err != nil {
-		return nil, err
-	}
-
-	return getTask(ctx, s.pool, c.TenantID, taskID)
 }
 
 // Complete is a shortcut to mark a task as done.

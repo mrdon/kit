@@ -19,7 +19,7 @@ import (
 )
 
 // dispatchCreateTask handles create_task(title, description="",
-// priority="medium", due_date=None, role_scope=None, assignee=None) →
+// priority="normal", due_date=None, role_scope=None, assignee=None) →
 // task dict.
 //
 // The legacy `private` and `visibility` kwargs are silently ignored — the
@@ -40,7 +40,7 @@ func dispatchCreateTask(ctx context.Context, a *ActionBuiltins, deps *actionDeps
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 	if priority == "" {
-		priority = "medium"
+		priority = task.PriorityNormal
 	}
 	dueDate, err := argOptionalDate(call.Args, "due_date")
 	if err != nil {
@@ -249,6 +249,7 @@ func taskToMap(t *task.Task) map[string]any {
 		"description": t.Description,
 		"status":      t.Status,
 		"priority":    t.Priority,
+		"category":    t.Category,
 		"scope_id":    t.ScopeID.String(),
 	}
 	if t.AssigneeUserID != nil {
