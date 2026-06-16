@@ -7,6 +7,7 @@ import Integrations from './pages/Integrations';
 import Netlify from './pages/Netlify';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
+import Vault from './pages/Vault';
 import { BASENAME } from './workspace';
 import './styles.css';
 
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
         <Route element={<Shell />}>
           <Route path="/" element={<Launcher />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/vault" element={<Vault />} />
           <Route path="/integrations" element={<Integrations />} />
           <Route path="/netlify" element={<Netlify />} />
           <Route path="/widget" element={<Widget />} />

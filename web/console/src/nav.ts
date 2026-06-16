@@ -20,6 +20,11 @@ export const SECTIONS: Section[] = [
     blurb: 'List and board for everything your roles own.',
   },
   {
+    to: '/vault',
+    label: 'Vault',
+    blurb: 'Shared team secrets, end-to-end encrypted in your browser.',
+  },
+  {
     to: '/integrations',
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',

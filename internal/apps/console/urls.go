@@ -14,6 +14,10 @@ func registerConsoleRoutes(mux *http.ServeMux, a *App) {
 
 	// Shared console bundle — one copy serves every workspace.
 	mux.Handle("GET /console/assets/", consoleweb.AssetHandler())
+	// The vault SharedWorker is emitted unhashed at the dist root (it
+	// needs a stable URL); served here, never under /console/assets/.
+	mux.Handle("GET /console/vault-worker.js", consoleweb.StaticFileHandler(
+		"vault-worker.js", "application/javascript; charset=utf-8"))
 
 	// Shell: the index and every client-side route serve the same SPA
 	// HTML. The {rest...} wildcard covers /{slug}/web/ and any deeper

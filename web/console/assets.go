@@ -85,6 +85,29 @@ func htmlEscape(s string) string {
 	return r.Replace(s)
 }
 
+// StaticFileHandler serves a single named file from the dist root (e.g.
+// the vault SharedWorker, which Vite emits unhashed from public/). It is
+// separate from AssetHandler, which only serves the hashed bundle under
+// /console/assets/. Workers must not be cached aggressively — browsers
+// re-fetch to detect updates — so this sets no-cache.
+func StaticFileHandler(name, contentType string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sub, err := distSubFS()
+		if err != nil {
+			http.Error(w, "console not built", http.StatusServiceUnavailable)
+			return
+		}
+		body, err := fs.ReadFile(sub, name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(body)
+	})
+}
+
 func distSubFS() (fs.FS, error) {
 	return fs.Sub(distFS, "dist")
 }

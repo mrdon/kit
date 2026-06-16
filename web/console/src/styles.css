@@ -774,6 +774,112 @@ code {
   font-size: 0.88rem;
 }
 
+/* --- Vault --- */
+
+.vault-filter {
+  flex: 1 1 16rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.lock-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.entry-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.entry-link:hover {
+  border-color: var(--accent);
+}
+
+.entry-title {
+  font-weight: 600;
+}
+
+.entry-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.entry-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+.entry-fields dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.entry-fields dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.secret-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.totp-box {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--off-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.totp-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.totp-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+}
+
 @media (max-width: 48rem) {
   .board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
