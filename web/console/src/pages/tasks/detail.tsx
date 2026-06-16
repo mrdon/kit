@@ -170,7 +170,7 @@ export default function TaskDetail({ taskId, meta, onClose, onChanged }: Props) 
                 }
               />
               <datalist id="task-categories">
-                {meta?.categories.map((c) => (
+                {(meta?.categories ?? []).map((c) => (
                   <option key={c} value={c} />
                 ))}
               </datalist>

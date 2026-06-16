@@ -278,7 +278,9 @@ func (a *TaskApp) handleMeta(w http.ResponseWriter, r *http.Request) {
 	categories, err := listCategories(r.Context(), a.svc.pool, caller.TenantID)
 	if err != nil {
 		slog.Error("task: listing categories for meta", "error", err)
-		categories = nil // non-fatal — the chip just won't offer existing labels
+	}
+	if categories == nil {
+		categories = []string{} // marshal as [] not null, honoring the API's string[]
 	}
 	taskJSON(w, http.StatusOK, map[string]any{
 		"roles":      caller.Roles,
