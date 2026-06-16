@@ -15,9 +15,12 @@ interface Props {
   onReprioritize: (id: string, priority: string) => void;
   onClaim: (id: string, claim: boolean) => void;
   onResolve: (id: string) => void;
+  onReopen: (id: string) => void;
   onSetCategory: (id: string, category: string) => void;
   onOpen: (id: string) => void;
 }
+
+const isClosed = (t: Task) => t.status === 'done' || t.status === 'cancelled';
 
 // "Claimed" keys off assignee, not status: assigning a task reserves it, so
 // teammates can block work off for each other before anyone starts. An
@@ -62,6 +65,7 @@ export default function TaskGrouped({
   onReprioritize,
   onClaim,
   onResolve,
+  onReopen,
   onSetCategory,
   onOpen,
 }: Props) {
@@ -115,6 +119,7 @@ export default function TaskGrouped({
                       onDragEnd={() => setDragId(null)}
                       onClaim={onClaim}
                       onResolve={onResolve}
+                      onReopen={onReopen}
                       onSetCategory={onSetCategory}
                       onOpen={onOpen}
                     />
@@ -137,6 +142,7 @@ interface RowProps {
   onDragEnd: () => void;
   onClaim: (id: string, claim: boolean) => void;
   onResolve: (id: string) => void;
+  onReopen: (id: string) => void;
   onSetCategory: (id: string, category: string) => void;
   onOpen: (id: string) => void;
 }
@@ -149,11 +155,13 @@ function TaskRow({
   onDragEnd,
   onClaim,
   onResolve,
+  onReopen,
   onSetCategory,
   onOpen,
 }: RowProps) {
   const mine = claimedByMe(t, meId);
   const other = claimedByOther(t, meId);
+  const closed = isClosed(t);
   const catOptions = [...new Set([...categories, t.category].filter(Boolean) as string[])];
 
   return (
@@ -163,14 +171,9 @@ function TaskRow({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
-      <button
-        className="trow-check"
-        title="Resolve"
-        aria-label="Resolve task"
-        onClick={() => onResolve(t.id)}
-      >
-        ✓
-      </button>
+      <span className="trow-grip" aria-hidden title="Drag to change priority">
+        ⠿
+      </span>
 
       <button className="trow-title link-btn" onClick={() => onOpen(t.id)}>
         {t.title}
@@ -194,16 +197,26 @@ function TaskRow({
           </select>
         )}
         {t.due_date && <span className="tag tag-soft">{fmtDate(t.due_date)}</span>}
-        {other ? (
-          <span className="tag tag-onit" title="Someone is on this — skip it">
-            ● {t.assignee_name || 'on it'}
-          </span>
+        {!closed &&
+          (other ? (
+            <span className="tag tag-onit" title={`Assigned to ${t.assignee_name || 'someone'} — skip it`}>
+              👤 {t.assignee_name || 'Assigned'}
+            </span>
+          ) : (
+            <button
+              className={`tag tag-claim${mine ? ' tag-claim-on' : ''}`}
+              onClick={() => onClaim(t.id, !mine)}
+            >
+              {mine ? "I'm on it ✓" : "I'm on it"}
+            </button>
+          ))}
+        {closed ? (
+          <button className="btn btn-ghost trow-resolve" onClick={() => onReopen(t.id)}>
+            Reopen
+          </button>
         ) : (
-          <button
-            className={`tag tag-claim${mine ? ' tag-claim-on' : ''}`}
-            onClick={() => onClaim(t.id, !mine)}
-          >
-            {mine ? "I'm on it ✓" : "I'm on it"}
+          <button className="btn trow-resolve" onClick={() => onResolve(t.id)}>
+            Resolve
           </button>
         )}
       </div>

@@ -575,24 +575,62 @@ code {
 }
 
 .trow-other {
-  opacity: 0.55;
+  opacity: 0.72;
 }
 
-.trow-check {
+.trow-grip {
   flex: none;
-  width: 1.3rem;
-  height: 1.3rem;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: transparent;
-  cursor: pointer;
+  cursor: grab;
+  color: var(--muted);
+  font-size: 1.05rem;
   line-height: 1;
+  padding: 0.1rem 0.25rem;
+  user-select: none;
+  letter-spacing: -0.1em;
 }
 
-.trow-check:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.trow-grip:hover {
+  color: var(--ink);
+}
+
+.trow:active .trow-grip {
+  cursor: grabbing;
+}
+
+/* --- Toast (undo) --- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 0.6rem 0.75rem 0.6rem 1rem;
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(8, 11, 18, 0.3);
+  font-size: 0.88rem;
+}
+
+.toast-undo {
+  border: 0;
+  background: none;
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.trow-resolve {
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
 }
 
 .trow-title {

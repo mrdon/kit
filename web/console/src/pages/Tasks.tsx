@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   api,
@@ -15,6 +15,21 @@ import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL } from './tasks/comm
 
 type View = 'grouped' | 'list';
 
+// inversePatch builds the undo for a quick action: for each field the patch
+// changed, restore the task's prior value. Assignee is special — clear it if
+// the task had no assignee before, otherwise reassign the previous one.
+function inversePatch(prev: Task, patch: UpdateTaskBody): UpdateTaskBody {
+  const inv: UpdateTaskBody = {};
+  if ('priority' in patch) inv.priority = prev.priority;
+  if ('status' in patch) inv.status = prev.status;
+  if ('category' in patch) inv.category = prev.category ?? '';
+  if ('assignee' in patch || 'clear_assignee' in patch) {
+    if (prev.assignee_user_id) inv.assignee = prev.assignee_user_id;
+    else inv.clear_assignee = true;
+  }
+  return inv;
+}
+
 export default function Tasks() {
   const [meta, setMeta] = useState<TasksMeta | null>(null);
   const [meId, setMeId] = useState('');
@@ -24,6 +39,8 @@ export default function Tasks() {
   const [filters, setFilters] = useState<TaskFilters>({ include_closed: false });
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; undo: () => void } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     api.tasksMeta().then(setMeta).catch(() => {});
@@ -38,7 +55,7 @@ export default function Tasks() {
   }, [filters]);
   useEffect(load, [load]);
 
-  const quickEdit = async (id: string, patch: UpdateTaskBody) => {
+  const mutate = async (id: string, patch: UpdateTaskBody) => {
     setErr(null);
     try {
       await api.updateTask(id, patch);
@@ -48,23 +65,37 @@ export default function Tasks() {
     }
   };
 
-  const resolve = async (id: string) => {
-    setErr(null);
-    try {
-      await api.completeTask(id);
-      load();
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+  const showToast = useCallback((msg: string, undo: () => void) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, undo });
+    toastTimer.current = setTimeout(() => setToast(null), 7000);
+  }, []);
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  // act applies a patch and offers an undo toast. The inverse is built from
+  // the task's prior state for whichever fields the patch touched, so any
+  // quick action — reprioritize, claim, resolve, recategorize — is reversible.
+  const act = async (id: string, patch: UpdateTaskBody, label: string) => {
+    const prev = tasks.find((t) => t.id === id);
+    await mutate(id, patch);
+    if (prev) showToast(label, () => mutate(id, inversePatch(prev, patch)));
+  };
+
+  const runUndo = () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toast?.undo();
+    setToast(null);
   };
 
   // "I'm on it": claiming assigns the task to me (and marks it in progress);
-  // unclaiming returns it to the open backlog. Assignment is the signal that
-  // blocks the work off for teammates.
+  // unclaiming returns it to the open backlog. Assignment blocks the work
+  // off for teammates.
   const claim = (id: string, on: boolean) =>
     on
-      ? quickEdit(id, { status: 'in_progress', assignee: meId })
-      : quickEdit(id, { status: 'open', clear_assignee: true });
+      ? act(id, { status: 'in_progress', assignee: meId }, 'Claimed task')
+      : act(id, { status: 'open', clear_assignee: true }, 'Released task');
 
   const setFilter = (k: keyof TaskFilters, v: string | boolean) =>
     setFilters((f) => ({ ...f, [k]: v === '' ? undefined : v }));
@@ -144,14 +175,32 @@ export default function Tasks() {
           tasks={tasks}
           meId={meId}
           categories={meta?.categories ?? []}
-          onReprioritize={(id, priority) => quickEdit(id, { priority })}
+          onReprioritize={(id, priority) =>
+            act(id, { priority }, `Moved to ${PRIORITY_LABEL[priority] ?? priority}`)
+          }
           onClaim={claim}
-          onResolve={resolve}
-          onSetCategory={(id, category) => quickEdit(id, { category })}
+          onResolve={(id) => act(id, { status: 'done' }, 'Resolved task')}
+          onReopen={(id) => act(id, { status: 'open' }, 'Reopened task')}
+          onSetCategory={(id, category) =>
+            act(id, { category }, category ? `Set category “${category}”` : 'Cleared category')
+          }
           onOpen={setOpenId}
         />
       ) : (
-        <TaskList tasks={tasks} onQuickEdit={quickEdit} onOpen={setOpenId} />
+        <TaskList
+          tasks={tasks}
+          onQuickEdit={(id, patch) => act(id, patch, 'Updated task')}
+          onOpen={setOpenId}
+        />
+      )}
+
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast.msg}</span>
+          <button className="toast-undo" onClick={runUndo}>
+            Undo
+          </button>
+        </div>
       )}
 
       {openId && (
