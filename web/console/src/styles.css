@@ -659,11 +659,6 @@ code {
   flex: none;
 }
 
-.cat-select {
-  font-size: 0.72rem;
-  padding: 0.1rem 0.3rem;
-}
-
 .trow-claim {
   flex: none;
   border: 0;

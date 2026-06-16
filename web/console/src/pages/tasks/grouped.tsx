@@ -11,12 +11,10 @@ import {
 interface Props {
   tasks: Task[];
   meId: string;
-  categories: string[];
   onReprioritize: (id: string, priority: string) => void;
   onClaim: (id: string, claim: boolean) => void;
   onResolve: (id: string) => void;
   onReopen: (id: string) => void;
-  onSetCategory: (id: string, category: string) => void;
   onOpen: (id: string) => void;
 }
 
@@ -61,12 +59,10 @@ function byCategory(tasks: Task[]): [string, Task[]][] {
 export default function TaskGrouped({
   tasks,
   meId,
-  categories,
   onReprioritize,
   onClaim,
   onResolve,
   onReopen,
-  onSetCategory,
   onOpen,
 }: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
@@ -114,13 +110,11 @@ export default function TaskGrouped({
                       key={t.id}
                       t={t}
                       meId={meId}
-                      categories={categories}
                       onDragStart={() => setDragId(t.id)}
                       onDragEnd={() => setDragId(null)}
                       onClaim={onClaim}
                       onResolve={onResolve}
                       onReopen={onReopen}
-                      onSetCategory={onSetCategory}
                       onOpen={onOpen}
                     />
                   ))}
@@ -137,32 +131,27 @@ export default function TaskGrouped({
 interface RowProps {
   t: Task;
   meId: string;
-  categories: string[];
   onDragStart: () => void;
   onDragEnd: () => void;
   onClaim: (id: string, claim: boolean) => void;
   onResolve: (id: string) => void;
   onReopen: (id: string) => void;
-  onSetCategory: (id: string, category: string) => void;
   onOpen: (id: string) => void;
 }
 
 function TaskRow({
   t,
   meId,
-  categories,
   onDragStart,
   onDragEnd,
   onClaim,
   onResolve,
   onReopen,
-  onSetCategory,
   onOpen,
 }: RowProps) {
   const mine = claimedByMe(t, meId);
   const other = claimedByOther(t, meId);
   const closed = isClosed(t);
-  const catOptions = [...new Set([...categories, t.category].filter(Boolean) as string[])];
 
   return (
     <article
@@ -180,22 +169,6 @@ function TaskRow({
       </button>
 
       <div className="trow-meta">
-        {catOptions.length > 0 && (
-          <select
-            className="mini-select cat-select"
-            value={t.category ?? ''}
-            title="Category"
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => onSetCategory(t.id, e.target.value)}
-          >
-            {!t.category && <option value="">—</option>}
-            {catOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        )}
         {t.due_date && <span className="tag tag-soft">{fmtDate(t.due_date)}</span>}
         {!closed &&
           (other ? (

@@ -197,16 +197,12 @@ export default function Tasks() {
         <TaskGrouped
           tasks={tasks}
           meId={meId}
-          categories={meta?.categories ?? []}
           onReprioritize={(id, priority) =>
             act(id, { priority }, `Moved to ${PRIORITY_LABEL[priority] ?? priority}`)
           }
           onClaim={claim}
           onResolve={(id) => act(id, { status: 'done' }, 'Resolved task')}
           onReopen={(id) => act(id, { status: 'open' }, 'Reopened task')}
-          onSetCategory={(id, category) =>
-            act(id, { category }, category ? `Set category “${category}”` : 'Cleared category')
-          }
           onOpen={setOpenId}
         />
       ) : (
