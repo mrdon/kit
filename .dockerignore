@@ -4,6 +4,8 @@
 .env
 .env.*
 dist/
+**/node_modules
+**/dist
 *.md
 compose.yaml
 testdata/

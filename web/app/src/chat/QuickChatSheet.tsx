@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import ChatSheetBody from './ChatSheetBody';
+import { ChatSheetBody } from '@chat';
 import { chatTranscribeUrl, quickChatExecuteUrl } from '../api';
 import { BASENAME } from '../workspace';
 

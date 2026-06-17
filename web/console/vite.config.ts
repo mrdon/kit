@@ -17,12 +17,11 @@ const DEV_SLUG = '/gravity-brewing';
 export default defineConfig({
   plugins: [react()],
   base: '/console/',
-  // `@chat` is the shared LLM chat widget. It physically lives in the
-  // cards PWA (web/app/src/chat) — its canonical home, next to the
-  // node_modules it resolves react from — and the console borrows it so
-  // the voice + agent surface stays in one place.
+  // `@chat` is the shared @kit/chat workspace package (web/shared),
+  // aliased to source so Vite's react plugin transforms it as first-party
+  // code; deps resolve from the hoisted web/node_modules.
   resolve: {
-    alias: { '@chat': path.resolve(__dirname, '../app/src/chat') },
+    alias: { '@chat': path.resolve(__dirname, '../shared/src/chat') },
   },
   build: {
     outDir: 'dist',

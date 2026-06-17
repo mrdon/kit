@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -15,6 +16,12 @@ const DEV_SLUG = '/gravity-brewing';
 export default defineConfig({
   plugins: [react()],
   base: '/app/',
+  // The chat widget is the shared @kit/chat workspace package
+  // (web/shared). Alias it to source so Vite's react plugin transforms it
+  // as first-party code; deps resolve from the hoisted web/node_modules.
+  resolve: {
+    alias: { '@chat': path.resolve(__dirname, '../shared/src/chat') },
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

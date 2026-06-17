@@ -1,4 +1,4 @@
-import ChatSheetBody from './ChatSheetBody';
+import { ChatSheetBody } from '@chat';
 import { cardChatExecuteUrl, chatTranscribeUrl } from '../api';
 import { BASENAME } from '../workspace';
 

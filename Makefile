@@ -28,46 +28,46 @@ build: app-build console-build ## Build the binary (includes frontend)
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
 
-# Frontend PWA lifecycle — all npm invocation goes through these.
+# Frontend lifecycle — the cards PWA (web/app), the console (web/console),
+# and the shared chat widget (web/shared) form one npm workspace rooted at
+# web/. Deps install + hoist to web/node_modules; each app builds in place.
+WEB_DIR=web
 APP_DIR=web/app
+CONSOLE_DIR=web/console
 
-app-init: ## Install frontend deps (npm install)
+$(WEB_DIR)/node_modules:
+	@cd $(WEB_DIR) && npm install
+
+app-init: ## Install all frontend deps (npm workspaces)
 	@echo "Installing frontend deps..."
-	@cd $(APP_DIR) && npm install
+	@cd $(WEB_DIR) && npm install
 
-app-dev: ## Run Vite dev server (proxies /api to :$(APP_PORT))
+app-dev: ## Run Vite dev server for the cards PWA
 	@cd $(APP_DIR) && npm run dev
 
-app-build: $(APP_DIR)/node_modules ## Build the frontend to $(APP_DIR)/dist
+app-build: $(WEB_DIR)/node_modules ## Build the cards PWA to web/app/dist
 	@echo "Building frontend..."
 	@cd $(APP_DIR) && npm run build
 
-$(APP_DIR)/node_modules:
-	@cd $(APP_DIR) && npm install
+app-clean: ## Remove frontend build output + shared node_modules
+	@rm -rf $(APP_DIR)/dist $(WEB_DIR)/node_modules
 
-app-clean: ## Remove frontend build output + node_modules
-	@rm -rf $(APP_DIR)/dist $(APP_DIR)/node_modules
-
-# Console SPA lifecycle — the desktop web UI at /{slug}/web. Mirrors the
-# app-* targets; its dist/ is embedded via //go:embed in web/console.
-CONSOLE_DIR=web/console
-
-console-init: ## Install console deps (npm install)
-	@echo "Installing console deps..."
-	@cd $(CONSOLE_DIR) && npm install
+# Console SPA — the desktop web UI at /{slug}/web; same workspace as the
+# PWA, so deps are already installed by app-init. dist/ is embedded via
+# //go:embed in web/console.
+console-init: ## Install all frontend deps (alias for app-init)
+	@echo "Installing frontend deps..."
+	@cd $(WEB_DIR) && npm install
 
 console-dev: ## Run Vite dev server for the console
 	@cd $(CONSOLE_DIR) && npm run dev
 
-console-build: $(CONSOLE_DIR)/node_modules ## Build the console to $(CONSOLE_DIR)/dist
+console-build: $(WEB_DIR)/node_modules ## Build the console to web/console/dist
 	@echo "Building console..."
 	@cd $(CONSOLE_DIR) && npm run build
 
-$(CONSOLE_DIR)/node_modules:
-	@cd $(CONSOLE_DIR) && npm install
-
-console-clean: ## Remove console build output + node_modules
-	@rm -rf $(CONSOLE_DIR)/dist $(CONSOLE_DIR)/node_modules
+console-clean: ## Remove console build output
+	@rm -rf $(CONSOLE_DIR)/dist
 
 eval-parse: ## Run coordination parseMeetingReply evals against the live API (costs money, requires ANTHROPIC_API_KEY)
 	@cd internal/apps/coordination/evals && go test -tags eval -v ./...

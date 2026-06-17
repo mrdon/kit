@@ -1,0 +1,13 @@
+{
+  "name": "kit-web",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": [
+    "shared",
+    "app",
+    "console"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present"
+  }
+}

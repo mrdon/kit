@@ -1,33 +1,20 @@
 # syntax=docker/dockerfile:1.6
 # ^^ enables RUN --mount=type=cache for Go/npm caches.
 
-# Frontend build stage — produces web/app/dist which the Go binary embeds.
-# npm cache is mounted so repeated deploys reuse the package tarballs
-# without re-downloading them from the registry.
+# Frontend build stage — one npm workspace (web/) builds both the cards PWA
+# (web/app/dist) and the console (web/console/dist), which the Go binary
+# embeds via //go:embed. The shared chat widget lives in web/shared and is
+# hoisted alongside, so there's a single install and no per-app copying.
+# npm cache is mounted so repeated deploys reuse package tarballs.
 FROM node:22-alpine AS frontend
-WORKDIR /app/web/app
-COPY web/app/package.json web/app/package-lock.json ./
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+COPY web/app/package.json ./app/
+COPY web/console/package.json ./console/
+COPY web/shared/package.json ./shared/
 RUN --mount=type=cache,target=/root/.npm npm ci
-COPY web/app/ ./
-RUN npm run build
-
-# Console build stage — produces web/console/dist (the desktop web UI at
-# /{slug}/web) which the Go binary embeds via //go:embed in web/console.
-#
-# The console reuses the cards app's chat widget (web/app/src/chat) through
-# the @chat alias (../app/src/chat). Mirror the local layout here so that
-# import — and the React it pulls in — resolves from web/app/node_modules at
-# build time, exactly as it does on a dev machine. Only the chat subtree and
-# the app's deps are needed, not the whole app.
-FROM node:22-alpine AS console
-WORKDIR /app/web/console
-COPY web/app/package.json web/app/package-lock.json /app/web/app/
-RUN --mount=type=cache,target=/root/.npm cd /app/web/app && npm ci
-COPY web/app/src/chat /app/web/app/src/chat
-COPY web/console/package.json web/console/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-COPY web/console/ ./
-RUN npm run build
+COPY web/ ./
+RUN npm run build --workspaces --if-present
 
 # Whisper build stage — compiles whisper-cli and downloads the model.
 # Pinned to a release tag so the layer cache is stable; bumping the tag
@@ -56,9 +43,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go mod download
 
 COPY . .
-# Drop in the frontend bundles from the build stages so //go:embed picks them up.
+# Drop in the frontend bundles from the workspace build so //go:embed picks
+# them up.
 COPY --from=frontend /app/web/app/dist ./web/app/dist
-COPY --from=console /app/web/console/dist ./web/console/dist
+COPY --from=frontend /app/web/console/dist ./web/console/dist
 
 ARG VERSION=dev
 ARG COMMIT=none

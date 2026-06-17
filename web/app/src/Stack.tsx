@@ -10,7 +10,7 @@ import {
   isAudioCaptureSupported,
   startAudioCapture,
   type AudioCaptureSession,
-} from './chat/audioCapture';
+} from '@chat';
 import SwipeCard, { type SwipeCardHandle } from './stack/SwipeCard';
 import { showToast } from './toast/bus';
 

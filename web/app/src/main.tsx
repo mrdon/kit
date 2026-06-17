@@ -6,7 +6,7 @@ import StackItemDetail from './StackItemDetail';
 import ToastViewport from './toast/ToastViewport';
 import { BASENAME } from './workspace';
 import './styles.css';
-import './chat/chat.css';
+import '@chat/chat.css';
 
 // Service worker is registered lazily so a dev build over HTTP localhost
 // still boots cleanly. Scope comes from the SW URL's path; the SW itself

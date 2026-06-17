@@ -17,8 +17,8 @@
     "verbatimModuleSyntax": false,
     "baseUrl": ".",
     "paths": {
-      "@chat": ["../app/src/chat/index.ts"],
-      "@chat/*": ["../app/src/chat/*"]
+      "@chat": ["../shared/src/chat/index.ts"],
+      "@chat/*": ["../shared/src/chat/*"]
     }
   },
   "include": ["src"]
