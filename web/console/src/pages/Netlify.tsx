@@ -57,6 +57,8 @@ export default function Netlify() {
         <nav className="crumbs">
           <Link to="/">Home</Link>
           <span className="crumb-sep">/</span>
+          <Link to="/admin">Admin</Link>
+          <span className="crumb-sep">/</span>
           <span>Website</span>
         </nav>
         <h1>Website settings</h1>

@@ -49,6 +49,8 @@ export default function Widget() {
         <nav className="crumbs">
           <Link to="/">Home</Link>
           <span className="crumb-sep">/</span>
+          <Link to="/admin">Admin</Link>
+          <span className="crumb-sep">/</span>
           <span>Chat widget</span>
         </nav>
         <h1>Website chat widget</h1>

@@ -49,3 +49,9 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
 ];
+
+// The top nav and home launcher show only the primary sections; the
+// admin-only ones (roles, integrations, …) are infrequent setup, so they're
+// grouped behind the Admin area (pages/Admin.tsx) to keep the chrome clean.
+export const PRIMARY_SECTIONS = SECTIONS.filter((s) => !s.admin);
+export const ADMIN_SECTIONS = SECTIONS.filter((s) => s.admin);

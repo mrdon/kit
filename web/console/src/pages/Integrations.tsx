@@ -19,6 +19,8 @@ export default function Integrations() {
         <nav className="crumbs">
           <Link to="/">Home</Link>
           <span className="crumb-sep">/</span>
+          <Link to="/admin">Admin</Link>
+          <span className="crumb-sep">/</span>
           <span>Integrations</span>
         </nav>
         <h1>Integrations</h1>
