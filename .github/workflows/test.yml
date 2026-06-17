@@ -45,21 +45,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: |
-            web/app/package-lock.json
-            web/console/package-lock.json
+          cache-dependency-path: web/package-lock.json
 
-      - name: Build frontend (required by //go:embed)
+      - name: Build frontends (required by //go:embed)
         run: |
-          cd web/app
+          cd web
           npm ci
-          npm run build
-
-      - name: Build console (required by //go:embed)
-        run: |
-          cd web/console
-          npm ci
-          npm run build
+          npm run build --workspaces --if-present
 
       - name: Check formatting
         run: |
