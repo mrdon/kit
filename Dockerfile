@@ -13,8 +13,17 @@ RUN npm run build
 
 # Console build stage — produces web/console/dist (the desktop web UI at
 # /{slug}/web) which the Go binary embeds via //go:embed in web/console.
+#
+# The console reuses the cards app's chat widget (web/app/src/chat) through
+# the @chat alias (../app/src/chat). Mirror the local layout here so that
+# import — and the React it pulls in — resolves from web/app/node_modules at
+# build time, exactly as it does on a dev machine. Only the chat subtree and
+# the app's deps are needed, not the whole app.
 FROM node:22-alpine AS console
 WORKDIR /app/web/console
+COPY web/app/package.json web/app/package-lock.json /app/web/app/
+RUN --mount=type=cache,target=/root/.npm cd /app/web/app && npm ci
+COPY web/app/src/chat /app/web/app/src/chat
 COPY web/console/package.json web/console/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web/console/ ./
