@@ -216,7 +216,7 @@ func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*servi
 		return nil, nil //nolint:nilnil // tenant deleted
 	}
 
-	cr, _ := services.NewRoleService(pool, nil).ResolveCallerRoles(ctx, tenant, apiToken.UserID)
+	cr, _ := services.NewRoleService(pool).ResolveCallerRoles(ctx, tenant, apiToken.UserID)
 
 	return &services.Caller{
 		TenantID: apiToken.TenantID,

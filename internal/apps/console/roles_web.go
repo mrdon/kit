@@ -1,12 +1,18 @@
 package console
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
 // The roles page is the admin surface for "who is in which role": a matrix
@@ -42,7 +48,7 @@ func (a *App) handleRoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	m, err := services.NewRoleService(a.pool, a.enc).Membership(r.Context(), caller)
+	m, err := services.NewRoleService(a.pool).Membership(r.Context(), caller, a.slackRoster(caller.TenantID))
 	if err != nil {
 		writeRolesErr(w, err)
 		return
@@ -105,7 +111,7 @@ func (a *App) roleMembership(w http.ResponseWriter, r *http.Request, assign bool
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "slack_user_id and role_name are required"})
 		return
 	}
-	svc := services.NewRoleService(a.pool, a.enc)
+	svc := services.NewRoleService(a.pool)
 	var err error
 	if assign {
 		err = svc.Assign(r.Context(), caller, body.SlackUserID, body.RoleName)
@@ -117,6 +123,42 @@ func (a *App) roleMembership(w http.ResponseWriter, r *http.Request, assign bool
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// slackRoster builds a WorkspaceLister that returns the tenant's full Slack
+// member list, so the roles matrix shows everyone (not just users who've used
+// Kit). Fetching it — token decryption + the Slack API — is infrastructure,
+// so it lives here in the console rather than in the role service. Returns
+// nil if no encryptor is wired; Membership then falls back to known users.
+func (a *App) slackRoster(tenantID uuid.UUID) services.WorkspaceLister {
+	if a.enc == nil {
+		return nil
+	}
+	return func(ctx context.Context) ([]services.WorkspacePerson, error) {
+		tenant, err := models.GetTenantByID(ctx, a.pool, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if tenant == nil || tenant.BotToken == "" {
+			return nil, fmt.Errorf("no bot token for tenant %s", tenantID)
+		}
+		token, err := a.enc.Decrypt(tenant.BotToken)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting bot token: %w", err)
+		}
+		infos, err := kitslack.NewClient(token).ListAllUsers(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing slack users: %w", err)
+		}
+		people := make([]services.WorkspacePerson, 0, len(infos))
+		for _, in := range infos {
+			people = append(people, services.WorkspacePerson{
+				SlackUserID: in.SlackUserID,
+				DisplayName: in.DisplayName,
+			})
+		}
+		return people, nil
+	}
 }
 
 // writeRolesErr maps a RoleService error to a status + JSON message.

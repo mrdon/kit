@@ -4,15 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
-	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
 // RoleTools defines the shared tool metadata for role operations.
@@ -40,21 +37,20 @@ var RoleTools = []ToolMeta{
 }
 
 // RoleService is the single home for role business logic — effective-role
-// resolution (explicit rows + the tenant default-role fallback), membership
-// listing, and assignment. Every surface (agent context, builder, console)
-// goes through here so the rules can't drift. enc is optional; it's only
-// needed to list the full Slack workspace in Membership.
+// resolution (explicit rows + the universal member catchall), membership
+// listing, and assignment. Every surface (agent context, builder, console,
+// OAuth install) goes through here so the rules can't drift. It depends only
+// on the DB; listing the Slack roster is injected (see WorkspaceLister) so
+// this package stays free of the Slack transport.
 type RoleService struct {
 	pool *pgxpool.Pool
-	enc  *crypto.Encryptor
 }
 
 // NewRoleService returns a standalone RoleService. Most callers get one via
 // the Services bundle (New); this constructor lets surfaces that only need
 // roles (e.g. the console roles page) build one without the full bundle.
-// enc may be nil for callers that don't list the Slack workspace.
-func NewRoleService(pool *pgxpool.Pool, enc *crypto.Encryptor) *RoleService {
-	return &RoleService{pool: pool, enc: enc}
+func NewRoleService(pool *pgxpool.Pool) *RoleService {
+	return &RoleService{pool: pool}
 }
 
 // EffectiveRoleNames returns the roles a user effectively holds: their
@@ -143,6 +139,14 @@ func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleNa
 		return fmt.Errorf("resolving user: %w", err)
 	}
 	return models.AssignRole(ctx, s.pool, c.TenantID, user.ID, roleName)
+}
+
+// GrantInstallerAdmin makes the workspace installer an admin during OAuth
+// setup. It is the one privileged, caller-less role write — bootstrapping the
+// first admin, when no admin Caller exists yet to satisfy Assign's gate.
+// Every other assignment goes through Assign. Idempotent.
+func (s *RoleService) GrantInstallerAdmin(ctx context.Context, tenantID, userID uuid.UUID) error {
+	return models.AssignRole(ctx, s.pool, tenantID, userID, models.RoleAdmin)
 }
 
 // Unassign removes a role from a user by Slack ID. Admin only. Refuses to
@@ -275,11 +279,18 @@ type UserRoles struct {
 	Roles       []string
 }
 
-// Membership returns the full role/user matrix. Admin only. People are
-// sourced from the entire Slack workspace so everyone shows up, not just
-// users who've already used Kit; each person's roles come from the single
-// EffectiveRoleNames definition (explicit rows or the default-role fallback).
-func (s *RoleService) Membership(ctx context.Context, c *Caller) (*RoleMembership, error) {
+// WorkspaceLister returns the workspace's people (typically the Slack
+// roster). It's injected because fetching it — decrypting the bot token and
+// calling the Slack API — is infrastructure, not role logic, and keeps this
+// package independent of the Slack client. Pass nil to list only the people
+// Kit already knows about.
+type WorkspaceLister func(ctx context.Context) ([]WorkspacePerson, error)
+
+// Membership returns the full role/user matrix. Admin only. People come from
+// the injected lister (the whole Slack workspace) so everyone shows up, not
+// just users who've used Kit; each person's roles come from the single
+// EffectiveRoleNames definition (explicit rows + the member catchall).
+func (s *RoleService) Membership(ctx context.Context, c *Caller, lister WorkspaceLister) (*RoleMembership, error) {
 	if !c.IsAdmin {
 		return nil, ErrForbidden
 	}
@@ -305,7 +316,7 @@ func (s *RoleService) Membership(ctx context.Context, c *Caller) (*RoleMembershi
 	}
 
 	counts := make(map[string]int)
-	people := s.workspacePeople(ctx, tenant, kitUsers)
+	people := workspacePeople(ctx, lister, kitUsers)
 	users := make([]UserRoles, 0, len(people))
 	for _, p := range people {
 		ur := UserRoles{SlackUserID: p.SlackUserID, DisplayName: p.DisplayName}
@@ -350,11 +361,11 @@ type WorkspacePerson struct {
 	DisplayName string
 }
 
-// workspacePeople returns everyone in the workspace, sourced from the Slack
-// roster (so people who've never used Kit still appear). Kit display names
-// win when set. If Slack is unavailable (no encryptor/token or an API
-// error) it falls back to the known Kit users so the page still renders.
-func (s *RoleService) workspacePeople(ctx context.Context, tenant *models.Tenant, kitUsers []models.User) []WorkspacePerson {
+// workspacePeople returns everyone in the workspace via the injected lister
+// (so people who've never used Kit still appear), with Kit display names
+// winning when set. If no lister is given or it errors, it falls back to the
+// known Kit users so the page still renders.
+func workspacePeople(ctx context.Context, lister WorkspaceLister, kitUsers []models.User) []WorkspacePerson {
 	kitName := make(map[string]string, len(kitUsers))
 	for _, u := range kitUsers {
 		if u.DisplayName != nil && *u.DisplayName != "" {
@@ -362,27 +373,22 @@ func (s *RoleService) workspacePeople(ctx context.Context, tenant *models.Tenant
 		}
 	}
 
-	if s.enc != nil && tenant.BotToken != "" {
-		token, err := s.enc.Decrypt(tenant.BotToken)
-		if err != nil {
-			slog.Warn("roles: decrypting bot token; showing kit users only", "tenant_id", tenant.ID, "error", err)
-		} else if infos, err := kitslack.NewClient(token).ListAllUsers(ctx); err != nil {
-			slog.Warn("roles: listing slack users; showing kit users only", "tenant_id", tenant.ID, "error", err)
-		} else {
-			seen := make(map[string]bool, len(infos))
-			people := make([]WorkspacePerson, 0, len(infos))
-			for _, in := range infos {
-				name := kitName[in.SlackUserID]
+	if lister != nil {
+		if roster, err := lister(ctx); err == nil {
+			seen := make(map[string]bool, len(roster))
+			people := make([]WorkspacePerson, 0, len(roster))
+			for _, p := range roster {
+				name := kitName[p.SlackUserID]
 				if name == "" {
-					name = in.DisplayName
+					name = p.DisplayName
 				}
 				if name == "" {
-					name = in.SlackUserID
+					name = p.SlackUserID
 				}
-				people = append(people, WorkspacePerson{SlackUserID: in.SlackUserID, DisplayName: name})
-				seen[in.SlackUserID] = true
+				people = append(people, WorkspacePerson{SlackUserID: p.SlackUserID, DisplayName: name})
+				seen[p.SlackUserID] = true
 			}
-			// Include Kit users Slack didn't return (deactivated, renamed, …).
+			// Include Kit users the roster didn't return (deactivated, …).
 			for _, u := range kitUsers {
 				if !seen[u.SlackUserID] {
 					people = append(people, WorkspacePerson{SlackUserID: u.SlackUserID, DisplayName: userDisplayName(u)})

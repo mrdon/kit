@@ -108,7 +108,7 @@ func TestRoleService_Membership_EffectiveRoles(t *testing.T) {
 		t.Fatalf("assigning bob admin: %v", err)
 	}
 
-	m, err := svc.Membership(ctx, admin)
+	m, err := svc.Membership(ctx, admin, nil)
 	if err != nil {
 		t.Fatalf("Membership: %v", err)
 	}

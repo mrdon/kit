@@ -14,6 +14,7 @@ import (
 
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 )
 
 var oauthScopes = []string{
@@ -172,7 +173,7 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := models.AssignRole(ctx, h.pool, tenant.ID, adminUser.ID, models.RoleAdmin); err != nil {
+	if err := services.NewRoleService(h.pool).GrantInstallerAdmin(ctx, tenant.ID, adminUser.ID); err != nil {
 		slog.Warn("assigning admin role to installer", "error", err)
 	}
 

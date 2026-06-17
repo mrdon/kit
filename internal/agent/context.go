@@ -53,7 +53,7 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 		userTZ = tenant.Timezone
 	}
 
-	cr, _ := services.NewRoleService(pool, nil).ResolveCallerRoles(ctx, tenant, user.ID)
+	cr, _ := services.NewRoleService(pool).ResolveCallerRoles(ctx, tenant, user.ID)
 	isAdmin := slices.Contains(cr.Names, models.RoleAdmin)
 
 	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v, timezone: %s)", displayName, isAdmin, userTZ))

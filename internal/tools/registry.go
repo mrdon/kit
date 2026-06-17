@@ -129,7 +129,7 @@ func (ec *ExecContext) Caller() *services.Caller {
 			Timezone:                services.ResolveTimezone("", ec.Tenant.Timezone),
 		}
 	}
-	cr, _ := services.NewRoleService(ec.Pool, nil).ResolveCallerRoles(ec.Ctx, ec.Tenant, ec.User.ID)
+	cr, _ := services.NewRoleService(ec.Pool).ResolveCallerRoles(ec.Ctx, ec.Tenant, ec.User.ID)
 	return &services.Caller{
 		TenantID: ec.Tenant.ID,
 		UserID:   ec.User.ID,

@@ -107,7 +107,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		return
 	}
 
-	roles, _ := services.NewRoleService(a.Pool, a.Encryptor).EffectiveRoleNames(ctx, tenant, user.ID)
+	roles, _ := services.NewRoleService(a.Pool).EffectiveRoleNames(ctx, tenant, user.ID)
 	isAdmin := slices.Contains(roles, models.RoleAdmin)
 
 	if !tenant.SetupComplete && !isAdmin {
