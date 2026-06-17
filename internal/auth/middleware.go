@@ -216,16 +216,15 @@ func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*servi
 		return nil, nil //nolint:nilnil // tenant deleted
 	}
 
-	roles, _ := models.GetUserRoleNames(ctx, pool, apiToken.TenantID, apiToken.UserID, tenant.DefaultRoleID)
-	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, apiToken.TenantID, apiToken.UserID, tenant.DefaultRoleID)
+	cr, _ := services.NewRoleService(pool, nil).ResolveCallerRoles(ctx, tenant, apiToken.UserID)
 
 	return &services.Caller{
 		TenantID: apiToken.TenantID,
 		UserID:   apiToken.UserID,
 		Identity: user.SlackUserID,
-		Roles:    roles,
-		RoleIDs:  roleIDs,
-		IsAdmin:  slices.Contains(roles, models.RoleAdmin),
+		Roles:    cr.Names,
+		RoleIDs:  cr.IDs,
+		IsAdmin:  slices.Contains(cr.Names, models.RoleAdmin),
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}, nil
 }

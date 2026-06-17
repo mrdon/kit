@@ -129,15 +129,14 @@ func (ec *ExecContext) Caller() *services.Caller {
 			Timezone:                services.ResolveTimezone("", ec.Tenant.Timezone),
 		}
 	}
-	roles, _ := models.GetUserRoleNames(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
-	roleIDs, _ := models.GetUserRoleIDs(ec.Ctx, ec.Pool, ec.Tenant.ID, ec.User.ID, ec.Tenant.DefaultRoleID)
+	cr, _ := services.NewRoleService(ec.Pool, nil).ResolveCallerRoles(ec.Ctx, ec.Tenant, ec.User.ID)
 	return &services.Caller{
 		TenantID: ec.Tenant.ID,
 		UserID:   ec.User.ID,
 		Identity: ec.User.SlackUserID,
-		Roles:    roles,
-		RoleIDs:  roleIDs,
-		IsAdmin:  slices.Contains(roles, models.RoleAdmin),
+		Roles:    cr.Names,
+		RoleIDs:  cr.IDs,
+		IsAdmin:  slices.Contains(cr.Names, models.RoleAdmin),
 		Timezone: services.ResolveTimezone(ec.User.Timezone, ec.Tenant.Timezone),
 	}
 }

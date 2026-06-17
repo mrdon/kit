@@ -256,7 +256,7 @@ func main() {
 		cfg.BaseURL,
 	)
 
-	console.Configure(sessionSigner)
+	console.Configure(sessionSigner, enc)
 	github.Configure(
 		sessionSigner,
 		cfg.BaseURL,

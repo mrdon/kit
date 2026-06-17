@@ -53,9 +53,8 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 		userTZ = tenant.Timezone
 	}
 
-	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
-	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
-	isAdmin := slices.Contains(roleNames, models.RoleAdmin)
+	cr, _ := services.NewRoleService(pool, nil).ResolveCallerRoles(ctx, tenant, user.ID)
+	isAdmin := slices.Contains(cr.Names, models.RoleAdmin)
 
 	parts = append(parts, fmt.Sprintf("Current user: %s (admin: %v, timezone: %s)", displayName, isAdmin, userTZ))
 
@@ -73,8 +72,8 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 		TenantID: tenant.ID,
 		UserID:   user.ID,
 		Identity: user.SlackUserID,
-		Roles:    roleNames,
-		RoleIDs:  roleIDs,
+		Roles:    cr.Names,
+		RoleIDs:  cr.IDs,
 		IsAdmin:  isAdmin,
 		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -38,6 +39,7 @@ func init() {
 type App struct {
 	pool   *pgxpool.Pool
 	signer *auth.SessionSigner
+	enc    *crypto.Encryptor
 }
 
 // Init wires the pool. Called after migrations succeed.
@@ -45,12 +47,14 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 }
 
-// Configure wires the runtime surfaces.
-func Configure(signer *auth.SessionSigner) {
+// Configure wires the runtime surfaces. enc is used by the roles page to
+// list the full Slack workspace (it decrypts the tenant bot token).
+func Configure(signer *auth.SessionSigner, enc *crypto.Encryptor) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
+	instance.enc = enc
 }
 
 func (a *App) Name() string { return "console" }

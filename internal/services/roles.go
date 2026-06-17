@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"sort"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
+	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
 // RoleTools defines the shared tool metadata for role operations.
@@ -34,16 +39,54 @@ var RoleTools = []ToolMeta{
 	}, "role_name"), AdminOnly: true},
 }
 
-// RoleService handles role operations with authorization.
+// RoleService is the single home for role business logic — effective-role
+// resolution (explicit rows + the tenant default-role fallback), membership
+// listing, and assignment. Every surface (agent context, builder, console)
+// goes through here so the rules can't drift. enc is optional; it's only
+// needed to list the full Slack workspace in Membership.
 type RoleService struct {
 	pool *pgxpool.Pool
+	enc  *crypto.Encryptor
 }
 
 // NewRoleService returns a standalone RoleService. Most callers get one via
 // the Services bundle (New); this constructor lets surfaces that only need
 // roles (e.g. the console roles page) build one without the full bundle.
-func NewRoleService(pool *pgxpool.Pool) *RoleService {
-	return &RoleService{pool: pool}
+// enc may be nil for callers that don't list the Slack workspace.
+func NewRoleService(pool *pgxpool.Pool, enc *crypto.Encryptor) *RoleService {
+	return &RoleService{pool: pool, enc: enc}
+}
+
+// EffectiveRoleNames returns the roles a user effectively holds: their
+// explicit user_roles, or the tenant's default role if they have none. This
+// is THE definition of "what roles does this user have" — agent context,
+// builder, and the console all call it so the default-role fallback can
+// never drift between surfaces.
+func (s *RoleService) EffectiveRoleNames(ctx context.Context, tenant *models.Tenant, userID uuid.UUID) ([]string, error) {
+	return models.GetUserRoleNames(ctx, s.pool, tenant.ID, userID, tenant.DefaultRoleID)
+}
+
+// CallerRoles is a user's effective role names plus role IDs, both resolved
+// through the same default-role fallback so name-based checks (e.g. isAdmin)
+// and id-based checks (scope filtering) can never disagree.
+type CallerRoles struct {
+	Names []string
+	IDs   []uuid.UUID
+}
+
+// ResolveCallerRoles returns the effective roles for building a Caller. This
+// is the single path the agent context, tool registry, and API-token
+// middleware all use, so none of them re-implement the fallback.
+func (s *RoleService) ResolveCallerRoles(ctx context.Context, tenant *models.Tenant, userID uuid.UUID) (CallerRoles, error) {
+	names, err := models.GetUserRoleNames(ctx, s.pool, tenant.ID, userID, tenant.DefaultRoleID)
+	if err != nil {
+		return CallerRoles{}, err
+	}
+	ids, err := models.GetUserRoleIDs(ctx, s.pool, tenant.ID, userID, tenant.DefaultRoleID)
+	if err != nil {
+		return CallerRoles{}, err
+	}
+	return CallerRoles{Names: names, IDs: ids}, nil
 }
 
 // List returns all roles in the tenant. Admin only.
@@ -188,4 +231,169 @@ func (s *RoleService) ListMembers(ctx context.Context, c *Caller, roleName strin
 		return nil, ErrForbidden
 	}
 	return models.ListRoleMembers(ctx, s.pool, c.TenantID, roleName)
+}
+
+// RoleMembership is the workspace-wide "who holds which role" view: every
+// person in the workspace (the full Slack roster, merged with Kit's user
+// records) plus the roles each effectively holds. It's the single source
+// the console Roles page renders — no surface recomputes membership itself.
+type RoleMembership struct {
+	Roles []RoleSummary
+	Users []UserRoles
+}
+
+// RoleSummary is a role plus how many people effectively hold it.
+type RoleSummary struct {
+	Name        string
+	Description string
+	MemberCount int
+}
+
+// UserRoles is one person and the roles they effectively hold. UserID is
+// empty for people who have no Kit record yet (Slack members who haven't
+// interacted with Kit) — they're effectively in the tenant default role.
+type UserRoles struct {
+	UserID      string
+	SlackUserID string
+	DisplayName string
+	Roles       []string
+}
+
+// Membership returns the full role/user matrix. Admin only. People are
+// sourced from the entire Slack workspace so everyone shows up, not just
+// users who've already used Kit; each person's roles come from the single
+// EffectiveRoleNames definition (explicit rows or the default-role fallback).
+func (s *RoleService) Membership(ctx context.Context, c *Caller) (*RoleMembership, error) {
+	if !c.IsAdmin {
+		return nil, ErrForbidden
+	}
+	tenant, err := models.GetTenantByID(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading tenant: %w", err)
+	}
+	if tenant == nil {
+		return nil, ErrNotFound
+	}
+	roles, err := models.ListRoles(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing roles: %w", err)
+	}
+	kitUsers, err := models.ListUsersByTenant(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing users: %w", err)
+	}
+
+	// The default role record-less people effectively belong to.
+	defaultName := ""
+	if tenant.DefaultRoleID != nil {
+		for _, r := range roles {
+			if r.ID == *tenant.DefaultRoleID {
+				defaultName = r.Name
+				break
+			}
+		}
+	}
+
+	bySlack := make(map[string]models.User, len(kitUsers))
+	for _, u := range kitUsers {
+		bySlack[u.SlackUserID] = u
+	}
+
+	counts := make(map[string]int)
+	people := s.workspacePeople(ctx, tenant, kitUsers)
+	users := make([]UserRoles, 0, len(people))
+	for _, p := range people {
+		ur := UserRoles{SlackUserID: p.SlackUserID, DisplayName: p.DisplayName, Roles: []string{}}
+		if ku, ok := bySlack[p.SlackUserID]; ok {
+			ur.UserID = ku.ID.String()
+			names, err := s.EffectiveRoleNames(ctx, tenant, ku.ID)
+			if err != nil {
+				return nil, err
+			}
+			if names != nil {
+				ur.Roles = names
+			}
+		} else if defaultName != "" {
+			// No Kit record yet → effectively in the default role only.
+			ur.Roles = []string{defaultName}
+		}
+		for _, n := range ur.Roles {
+			counts[n]++
+		}
+		users = append(users, ur)
+	}
+	sort.Slice(users, func(i, j int) bool { return users[i].DisplayName < users[j].DisplayName })
+
+	summaries := make([]RoleSummary, 0, len(roles))
+	for _, r := range roles {
+		desc := ""
+		if r.Description != nil {
+			desc = *r.Description
+		}
+		summaries = append(summaries, RoleSummary{Name: r.Name, Description: desc, MemberCount: counts[r.Name]})
+	}
+
+	return &RoleMembership{Roles: summaries, Users: users}, nil
+}
+
+// WorkspacePerson is one workspace member: a Slack identity + display name.
+type WorkspacePerson struct {
+	SlackUserID string
+	DisplayName string
+}
+
+// workspacePeople returns everyone in the workspace, sourced from the Slack
+// roster (so people who've never used Kit still appear). Kit display names
+// win when set. If Slack is unavailable (no encryptor/token or an API
+// error) it falls back to the known Kit users so the page still renders.
+func (s *RoleService) workspacePeople(ctx context.Context, tenant *models.Tenant, kitUsers []models.User) []WorkspacePerson {
+	kitName := make(map[string]string, len(kitUsers))
+	for _, u := range kitUsers {
+		if u.DisplayName != nil && *u.DisplayName != "" {
+			kitName[u.SlackUserID] = *u.DisplayName
+		}
+	}
+
+	if s.enc != nil && tenant.BotToken != "" {
+		token, err := s.enc.Decrypt(tenant.BotToken)
+		if err != nil {
+			slog.Warn("roles: decrypting bot token; showing kit users only", "tenant_id", tenant.ID, "error", err)
+		} else if infos, err := kitslack.NewClient(token).ListAllUsers(ctx); err != nil {
+			slog.Warn("roles: listing slack users; showing kit users only", "tenant_id", tenant.ID, "error", err)
+		} else {
+			seen := make(map[string]bool, len(infos))
+			people := make([]WorkspacePerson, 0, len(infos))
+			for _, in := range infos {
+				name := kitName[in.SlackUserID]
+				if name == "" {
+					name = in.DisplayName
+				}
+				if name == "" {
+					name = in.SlackUserID
+				}
+				people = append(people, WorkspacePerson{SlackUserID: in.SlackUserID, DisplayName: name})
+				seen[in.SlackUserID] = true
+			}
+			// Include Kit users Slack didn't return (deactivated, renamed, …).
+			for _, u := range kitUsers {
+				if !seen[u.SlackUserID] {
+					people = append(people, WorkspacePerson{SlackUserID: u.SlackUserID, DisplayName: userDisplayName(u)})
+				}
+			}
+			return people
+		}
+	}
+
+	people := make([]WorkspacePerson, 0, len(kitUsers))
+	for _, u := range kitUsers {
+		people = append(people, WorkspacePerson{SlackUserID: u.SlackUserID, DisplayName: userDisplayName(u)})
+	}
+	return people
+}
+
+func userDisplayName(u models.User) string {
+	if u.DisplayName != nil && *u.DisplayName != "" {
+		return *u.DisplayName
+	}
+	return u.SlackUserID
 }

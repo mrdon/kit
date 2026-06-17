@@ -4,18 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"sort"
 
 	"github.com/mrdon/kit/internal/auth"
-	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
-// The roles page is the admin surface for "who is in which role". It's a
-// matrix: every role down one axis, every workspace user down the other,
-// with assign/unassign toggling membership. All three endpoints are
-// admin-gated (AdminJSON) and reuse services.RoleService so the wording and
-// rules match the MCP role tools — the CLAUDE.md tool-parity rule.
+// The roles page is the admin surface for "who is in which role": a matrix
+// of every role against every workspace member, with assign/unassign
+// toggling membership. These handlers are thin — all role logic (effective
+// roles, the Slack roster, the default-role fallback, the assign/unassign
+// guards) lives in services.RoleService, shared with the MCP/agent tools.
 
 type roleInfo struct {
 	Name        string `json:"name"`
@@ -35,72 +33,43 @@ type rolesResponse struct {
 	Users []roleUserInfo `json:"users"`
 }
 
-// handleRoles returns the full role/user matrix: every role (with a member
-// count) and every user (with the roles they hold).
+// handleRoles returns the full role/user matrix from the service and maps it
+// to the JSON the page renders. No business logic here.
 func (a *App) handleRoles(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	if caller == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	svc := services.NewRoleService(a.pool)
-
-	roles, err := svc.List(r.Context(), caller)
+	m, err := services.NewRoleService(a.pool, a.enc).Membership(r.Context(), caller)
 	if err != nil {
 		writeRolesErr(w, err)
 		return
 	}
-	users, err := models.ListUsersByTenant(r.Context(), a.pool, caller.TenantID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not load users"})
-		return
-	}
 
-	// Build userID -> role names by walking each role's members once. Avoids
-	// a per-user role query and yields the per-role member counts for free.
-	rolesByUser := make(map[string][]string)
 	resp := rolesResponse{
-		Roles: make([]roleInfo, 0, len(roles)),
-		Users: make([]roleUserInfo, 0, len(users)),
+		Roles: make([]roleInfo, 0, len(m.Roles)),
+		Users: make([]roleUserInfo, 0, len(m.Users)),
 	}
-	for _, role := range roles {
-		members, err := svc.ListMembers(r.Context(), caller, role.Name)
-		if err != nil {
-			writeRolesErr(w, err)
-			return
-		}
-		for _, m := range members {
-			rolesByUser[m.ID.String()] = append(rolesByUser[m.ID.String()], role.Name)
-		}
-		desc := ""
-		if role.Description != nil {
-			desc = *role.Description
-		}
+	for _, role := range m.Roles {
 		resp.Roles = append(resp.Roles, roleInfo{
 			Name:        role.Name,
-			Description: desc,
-			MemberCount: len(members),
+			Description: role.Description,
+			MemberCount: role.MemberCount,
 		})
 	}
-
-	for _, u := range users {
-		name := u.SlackUserID
-		if u.DisplayName != nil && *u.DisplayName != "" {
-			name = *u.DisplayName
+	for _, u := range m.Users {
+		roles := u.Roles
+		if roles == nil {
+			roles = []string{}
 		}
-		held := rolesByUser[u.ID.String()]
-		sort.Strings(held)
 		resp.Users = append(resp.Users, roleUserInfo{
-			UserID:      u.ID.String(),
+			UserID:      u.UserID,
 			SlackUserID: u.SlackUserID,
-			DisplayName: name,
-			Roles:       held,
+			DisplayName: u.DisplayName,
+			Roles:       roles,
 		})
 	}
-	sort.Slice(resp.Users, func(i, j int) bool {
-		return resp.Users[i].DisplayName < resp.Users[j].DisplayName
-	})
-
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -134,7 +103,7 @@ func (a *App) roleMembership(w http.ResponseWriter, r *http.Request, assign bool
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "slack_user_id and role_name are required"})
 		return
 	}
-	svc := services.NewRoleService(a.pool)
+	svc := services.NewRoleService(a.pool, a.enc)
 	var err error
 	if assign {
 		err = svc.Assign(r.Context(), caller, body.SlackUserID, body.RoleName)

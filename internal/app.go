@@ -18,6 +18,7 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/ingest"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/services/messenger"
 	kitslack "github.com/mrdon/kit/internal/slack"
 	"github.com/mrdon/kit/internal/web"
@@ -106,7 +107,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		return
 	}
 
-	roles, _ := models.GetUserRoleNames(ctx, a.Pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	roles, _ := services.NewRoleService(a.Pool, a.Encryptor).EffectiveRoleNames(ctx, tenant, user.ID)
 	isAdmin := slices.Contains(roles, models.RoleAdmin)
 
 	if !tenant.SetupComplete && !isAdmin {

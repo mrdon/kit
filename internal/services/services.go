@@ -105,7 +105,7 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor, baseURL string, teamInfo Sla
 		Skills:          &SkillService{pool: pool},
 		Rules:           &RuleService{pool: pool},
 		Memories:        &MemoryService{pool: pool},
-		Roles:           &RoleService{pool: pool},
+		Roles:           NewRoleService(pool, enc),
 		Jobs:            &JobService{pool: pool},
 		Tenants:         &TenantService{pool: pool, enc: enc, teamInfo: teamInfo},
 		Users:           &UserService{pool: pool},

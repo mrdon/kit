@@ -22,18 +22,15 @@ export default function Roles() {
     void load();
   }, []);
 
-  const toggle = async (
-    slackUserID: string,
-    userID: string,
-    roleName: string,
-    had: boolean,
-  ) => {
-    const key = `${userID}:${roleName}`;
+  const toggle = async (slackUserID: string, roleName: string, had: boolean) => {
+    // Key on Slack id — workspace members without a Kit record yet have no
+    // user_id, but the Slack id is always present and unique.
+    const key = `${slackUserID}:${roleName}`;
     if (pending.has(key)) return;
     setErr(null);
     setPending((p) => new Set(p).add(key));
     // Optimistic update of the local matrix.
-    setData((d) => d && applyMembership(d, userID, roleName, !had));
+    setData((d) => d && applyMembership(d, slackUserID, roleName, !had));
     try {
       if (had) await api.unassignRole(slackUserID, roleName);
       else await api.assignRole(slackUserID, roleName);
@@ -42,7 +39,7 @@ export default function Roles() {
     } catch (e) {
       setErr((e as Error).message);
       // Revert the optimistic change.
-      setData((d) => d && applyMembership(d, userID, roleName, had));
+      setData((d) => d && applyMembership(d, slackUserID, roleName, had));
     } finally {
       setPending((p) => {
         const next = new Set(p);
@@ -92,13 +89,13 @@ export default function Roles() {
             </thead>
             <tbody>
               {data.users.map((u) => (
-                <tr key={u.user_id}>
+                <tr key={u.slack_user_id}>
                   <th className="roles-user" scope="row">
                     <span className="roles-user-name">{u.display_name}</span>
                   </th>
                   {data.roles.map((r) => {
                     const had = u.roles.includes(r.name);
-                    const key = `${u.user_id}:${r.name}`;
+                    const key = `${u.slack_user_id}:${r.name}`;
                     return (
                       <td key={r.name} className="roles-cell">
                         <input
@@ -106,9 +103,7 @@ export default function Roles() {
                           checked={had}
                           disabled={pending.has(key)}
                           aria-label={`${u.display_name} in ${r.name}`}
-                          onChange={() =>
-                            toggle(u.slack_user_id, u.user_id, r.name, had)
-                          }
+                          onChange={() => toggle(u.slack_user_id, r.name, had)}
                         />
                       </td>
                     );
@@ -128,14 +123,14 @@ export default function Roles() {
 // revert.
 function applyMembership(
   d: RolesMatrix,
-  userID: string,
+  slackUserID: string,
   roleName: string,
   member: boolean,
 ): RolesMatrix {
   return {
     roles: d.roles,
     users: d.users.map((u) => {
-      if (u.user_id !== userID) return u;
+      if (u.slack_user_id !== slackUserID) return u;
       const has = u.roles.includes(roleName);
       if (member === has) return u;
       const roles = member

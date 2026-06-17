@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,6 +80,52 @@ func TestRoleService_Assign_UnknownRole(t *testing.T) {
 	err := svc.Assign(ctx, admin, "U_ghost", "does-not-exist")
 	if !errors.Is(err, ErrRoleNotFound) {
 		t.Fatalf("Assign(unknown role) error = %v, want ErrRoleNotFound", err)
+	}
+}
+
+// TestRoleService_Membership_EffectiveRoles verifies the matrix reflects
+// EFFECTIVE roles: a user with no explicit roles shows up in the tenant
+// default role (member), while a user with an explicit role shows that.
+// This is the centralized default-role fallback the console page relies on.
+func TestRoleService_Membership_EffectiveRoles(t *testing.T) {
+	svc, admin, tenant, ctx := rolesTestTenant(t)
+
+	// Make 'member' the tenant default role.
+	memberRole, err := models.GetOrCreateRole(ctx, svc.pool, tenant.ID, models.RoleMember, "member")
+	if err != nil {
+		t.Fatalf("creating member role: %v", err)
+	}
+	if err := models.SetDefaultRole(ctx, svc.pool, tenant.ID, &memberRole.ID); err != nil {
+		t.Fatalf("setting default role: %v", err)
+	}
+
+	// Alice has no explicit roles; Bob is an explicit admin.
+	if _, err := models.GetOrCreateUser(ctx, svc.pool, tenant.ID, "U_alice", "Alice", ""); err != nil {
+		t.Fatalf("creating alice: %v", err)
+	}
+	if err := svc.Assign(ctx, admin, "U_bob", models.RoleAdmin); err != nil {
+		t.Fatalf("assigning bob admin: %v", err)
+	}
+
+	m, err := svc.Membership(ctx, admin)
+	if err != nil {
+		t.Fatalf("Membership: %v", err)
+	}
+
+	rolesOf := func(slackID string) []string {
+		for _, u := range m.Users {
+			if u.SlackUserID == slackID {
+				return u.Roles
+			}
+		}
+		t.Fatalf("user %s not in membership", slackID)
+		return nil
+	}
+	if got := rolesOf("U_alice"); !slices.Contains(got, models.RoleMember) || slices.Contains(got, models.RoleAdmin) {
+		t.Errorf("Alice effective roles = %v, want [member] (default fallback)", got)
+	}
+	if got := rolesOf("U_bob"); !slices.Contains(got, models.RoleAdmin) {
+		t.Errorf("Bob effective roles = %v, want to include admin", got)
 	}
 }
 

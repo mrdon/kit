@@ -126,7 +126,7 @@ func (d *actionDeps) caller(ctx context.Context) (*services.Caller, error) {
 	if tenant == nil {
 		return nil, fmt.Errorf("tenant %s not found", d.tenantID)
 	}
-	roles, err := models.GetUserRoleNames(ctx, d.pool, d.tenantID, d.callerUserID, tenant.DefaultRoleID)
+	roles, err := d.svc.Roles.EffectiveRoleNames(ctx, tenant, d.callerUserID)
 	if err != nil {
 		return nil, fmt.Errorf("loading user roles: %w", err)
 	}
