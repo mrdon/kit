@@ -153,7 +153,7 @@ export default function Vault() {
         />
       )}
       {panel?.kind === 'reveal' && (
-        <RevealPanel entryId={panel.id} onClose={() => setPanel(null)} />
+        <RevealPanel entryId={panel.id} onClose={() => setPanel(null)} onSaved={loadEntries} />
       )}
 
       {showRotate && <RotateModal onClose={() => setShowRotate(false)} />}

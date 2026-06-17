@@ -53,6 +53,8 @@ export interface VaultEntryFull {
   username?: string;
   URL?: string;
   url?: string;
+  Tags?: string[];
+  tags?: string[];
   ValueCiphertext?: string;
   value_ciphertext?: string;
   ValueNonce?: string;
