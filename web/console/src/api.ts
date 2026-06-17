@@ -138,6 +138,9 @@ export interface RoleInfo {
   name: string;
   description: string;
   member_count: number;
+  // The universal "member" catchall: everyone holds it and it can't be
+  // toggled, so the UI renders its column locked.
+  catchall: boolean;
 }
 
 export interface RoleUser {

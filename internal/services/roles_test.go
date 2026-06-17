@@ -99,7 +99,8 @@ func TestRoleService_Membership_EffectiveRoles(t *testing.T) {
 		t.Fatalf("setting default role: %v", err)
 	}
 
-	// Alice has no explicit roles; Bob is an explicit admin.
+	// Alice has no explicit roles; Bob is an explicit admin. Both must be
+	// members — member is a universal catchall.
 	if _, err := models.GetOrCreateUser(ctx, svc.pool, tenant.ID, "U_alice", "Alice", ""); err != nil {
 		t.Fatalf("creating alice: %v", err)
 	}
@@ -122,10 +123,41 @@ func TestRoleService_Membership_EffectiveRoles(t *testing.T) {
 		return nil
 	}
 	if got := rolesOf("U_alice"); !slices.Contains(got, models.RoleMember) || slices.Contains(got, models.RoleAdmin) {
-		t.Errorf("Alice effective roles = %v, want [member] (default fallback)", got)
+		t.Errorf("Alice effective roles = %v, want just [member]", got)
 	}
-	if got := rolesOf("U_bob"); !slices.Contains(got, models.RoleAdmin) {
-		t.Errorf("Bob effective roles = %v, want to include admin", got)
+	// Bob has an explicit role AND is still a member (catchall is universal).
+	if got := rolesOf("U_bob"); !slices.Contains(got, models.RoleAdmin) || !slices.Contains(got, models.RoleMember) {
+		t.Errorf("Bob effective roles = %v, want both admin and member", got)
+	}
+}
+
+// TestRoleService_Member_NeverStored verifies the member catchall is never
+// written as a user_roles row: assigning it is a no-op, unassigning it is
+// refused, and no row appears either way.
+func TestRoleService_Member_NeverStored(t *testing.T) {
+	svc, admin, tenant, ctx := rolesTestTenant(t)
+	if _, err := models.GetOrCreateRole(ctx, svc.pool, tenant.ID, models.RoleMember, "member"); err != nil {
+		t.Fatalf("creating member role: %v", err)
+	}
+
+	// Assigning member is a silent no-op.
+	if err := svc.Assign(ctx, admin, "U_carol", models.RoleMember); err != nil {
+		t.Fatalf("Assign(member) = %v, want nil no-op", err)
+	}
+	// Unassigning member is refused.
+	if err := svc.Unassign(ctx, admin, "U_carol", models.RoleMember); !errors.Is(err, ErrCannotLeaveMember) {
+		t.Fatalf("Unassign(member) = %v, want ErrCannotLeaveMember", err)
+	}
+	// No member row was written.
+	var n int
+	if err := svc.pool.QueryRow(ctx, `
+		SELECT count(*) FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+		WHERE ur.tenant_id = $1 AND r.name = $2
+	`, tenant.ID, models.RoleMember).Scan(&n); err != nil {
+		t.Fatalf("counting member rows: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("found %d explicit member rows, want 0", n)
 	}
 }
 

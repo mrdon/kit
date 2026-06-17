@@ -19,6 +19,7 @@ type roleInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	MemberCount int    `json:"member_count"`
+	Catchall    bool   `json:"catchall"`
 }
 
 type roleUserInfo struct {
@@ -56,6 +57,7 @@ func (a *App) handleRoles(w http.ResponseWriter, r *http.Request) {
 			Name:        role.Name,
 			Description: role.Description,
 			MemberCount: role.MemberCount,
+			Catchall:    role.Catchall,
 		})
 	}
 	for _, u := range m.Users {
@@ -128,6 +130,8 @@ func writeRolesErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Role does not exist."})
 	case errors.Is(err, services.ErrLastAdmin):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "Can't remove the last admin."})
+	case errors.Is(err, services.ErrCannotLeaveMember):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "Everyone is a member; that role can't be changed."})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal error"})
 	}

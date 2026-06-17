@@ -94,8 +94,8 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) caller(t *testing.T, u *models.User) *services.Caller {
 	t.Helper()
 	ctx := context.Background()
-	roleIDs, _ := models.GetUserRoleIDs(ctx, f.pool, f.tenant.ID, u.ID, nil)
-	roleNames, _ := models.GetUserRoleNames(ctx, f.pool, f.tenant.ID, u.ID, nil)
+	roleIDs, _ := models.GetUserRoleIDs(ctx, f.pool, f.tenant.ID, u.ID)
+	roleNames, _ := models.GetUserRoleNames(ctx, f.pool, f.tenant.ID, u.ID)
 	return &services.Caller{
 		TenantID: f.tenant.ID,
 		UserID:   u.ID,

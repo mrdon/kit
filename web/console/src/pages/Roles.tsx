@@ -96,13 +96,15 @@ export default function Roles() {
                   {data.roles.map((r) => {
                     const had = u.roles.includes(r.name);
                     const key = `${u.slack_user_id}:${r.name}`;
+                    // Member is a universal catchall: always on, never toggleable.
                     return (
                       <td key={r.name} className="roles-cell">
                         <input
                           type="checkbox"
-                          checked={had}
-                          disabled={pending.has(key)}
+                          checked={had || r.catchall}
+                          disabled={pending.has(key) || r.catchall}
                           aria-label={`${u.display_name} in ${r.name}`}
+                          title={r.catchall ? 'Everyone is a member' : undefined}
                           onChange={() => toggle(u.slack_user_id, r.name, had)}
                         />
                       </td>

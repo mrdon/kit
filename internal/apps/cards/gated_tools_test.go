@@ -65,8 +65,8 @@ func newFixture(t *testing.T) *gatedFixture {
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}
-	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
-	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, tenant.ID, user.ID, tenant.DefaultRoleID)
+	roleNames, _ := models.GetUserRoleNames(ctx, pool, tenant.ID, user.ID)
+	roleIDs, _ := models.GetUserRoleIDs(ctx, pool, tenant.ID, user.ID)
 	caller := &services.Caller{
 		TenantID: tenant.ID,
 		UserID:   user.ID,

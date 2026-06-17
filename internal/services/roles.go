@@ -63,7 +63,7 @@ func NewRoleService(pool *pgxpool.Pool, enc *crypto.Encryptor) *RoleService {
 // builder, and the console all call it so the default-role fallback can
 // never drift between surfaces.
 func (s *RoleService) EffectiveRoleNames(ctx context.Context, tenant *models.Tenant, userID uuid.UUID) ([]string, error) {
-	return models.GetUserRoleNames(ctx, s.pool, tenant.ID, userID, tenant.DefaultRoleID)
+	return models.GetUserRoleNames(ctx, s.pool, tenant.ID, userID)
 }
 
 // CallerRoles is a user's effective role names plus role IDs, both resolved
@@ -78,11 +78,11 @@ type CallerRoles struct {
 // is the single path the agent context, tool registry, and API-token
 // middleware all use, so none of them re-implement the fallback.
 func (s *RoleService) ResolveCallerRoles(ctx context.Context, tenant *models.Tenant, userID uuid.UUID) (CallerRoles, error) {
-	names, err := models.GetUserRoleNames(ctx, s.pool, tenant.ID, userID, tenant.DefaultRoleID)
+	names, err := models.GetUserRoleNames(ctx, s.pool, tenant.ID, userID)
 	if err != nil {
 		return CallerRoles{}, err
 	}
-	ids, err := models.GetUserRoleIDs(ctx, s.pool, tenant.ID, userID, tenant.DefaultRoleID)
+	ids, err := models.GetUserRoleIDs(ctx, s.pool, tenant.ID, userID)
 	if err != nil {
 		return CallerRoles{}, err
 	}
@@ -116,10 +116,20 @@ var ErrRoleNotFound = errors.New("role does not exist")
 // admin-only operation, so it's refused.
 var ErrLastAdmin = errors.New("cannot remove the last admin")
 
+// ErrCannotLeaveMember is returned when something tries to unassign the
+// `member` role. Member is a universal catchall every user always holds; it's
+// never stored as an assignment and can't be removed.
+var ErrCannotLeaveMember = errors.New("everyone is a member; the member role can't be removed")
+
 // Assign assigns a role to a user by Slack ID. Admin only.
 func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleName string) error {
 	if !c.IsAdmin {
 		return ErrForbidden
+	}
+	// Member is universal and implicit — assigning it is a no-op, and it must
+	// never be written as a user_roles row.
+	if roleName == models.RoleMember {
+		return nil
 	}
 	exists, err := models.RoleExists(ctx, s.pool, c.TenantID, roleName)
 	if err != nil {
@@ -140,6 +150,9 @@ func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleNa
 func (s *RoleService) Unassign(ctx context.Context, c *Caller, slackUserID, roleName string) error {
 	if !c.IsAdmin {
 		return ErrForbidden
+	}
+	if roleName == models.RoleMember {
+		return ErrCannotLeaveMember
 	}
 	exists, err := models.RoleExists(ctx, s.pool, c.TenantID, roleName)
 	if err != nil {
@@ -242,11 +255,14 @@ type RoleMembership struct {
 	Users []UserRoles
 }
 
-// RoleSummary is a role plus how many people effectively hold it.
+// RoleSummary is a role plus how many people effectively hold it. Catchall
+// marks the universal `member` role: everyone holds it and it can't be
+// toggled, so the UI renders it locked.
 type RoleSummary struct {
 	Name        string
 	Description string
 	MemberCount int
+	Catchall    bool
 }
 
 // UserRoles is one person and the roles they effectively hold. UserID is
@@ -283,17 +299,6 @@ func (s *RoleService) Membership(ctx context.Context, c *Caller) (*RoleMembershi
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
 
-	// The default role record-less people effectively belong to.
-	defaultName := ""
-	if tenant.DefaultRoleID != nil {
-		for _, r := range roles {
-			if r.ID == *tenant.DefaultRoleID {
-				defaultName = r.Name
-				break
-			}
-		}
-	}
-
 	bySlack := make(map[string]models.User, len(kitUsers))
 	for _, u := range kitUsers {
 		bySlack[u.SlackUserID] = u
@@ -303,19 +308,17 @@ func (s *RoleService) Membership(ctx context.Context, c *Caller) (*RoleMembershi
 	people := s.workspacePeople(ctx, tenant, kitUsers)
 	users := make([]UserRoles, 0, len(people))
 	for _, p := range people {
-		ur := UserRoles{SlackUserID: p.SlackUserID, DisplayName: p.DisplayName, Roles: []string{}}
+		ur := UserRoles{SlackUserID: p.SlackUserID, DisplayName: p.DisplayName}
 		if ku, ok := bySlack[p.SlackUserID]; ok {
 			ur.UserID = ku.ID.String()
 			names, err := s.EffectiveRoleNames(ctx, tenant, ku.ID)
 			if err != nil {
 				return nil, err
 			}
-			if names != nil {
-				ur.Roles = names
-			}
-		} else if defaultName != "" {
-			// No Kit record yet → effectively in the default role only.
-			ur.Roles = []string{defaultName}
+			ur.Roles = names
+		} else {
+			// No Kit record yet → effectively just the member catchall.
+			ur.Roles = []string{models.RoleMember}
 		}
 		for _, n := range ur.Roles {
 			counts[n]++
@@ -330,7 +333,12 @@ func (s *RoleService) Membership(ctx context.Context, c *Caller) (*RoleMembershi
 		if r.Description != nil {
 			desc = *r.Description
 		}
-		summaries = append(summaries, RoleSummary{Name: r.Name, Description: desc, MemberCount: counts[r.Name]})
+		summaries = append(summaries, RoleSummary{
+			Name:        r.Name,
+			Description: desc,
+			MemberCount: counts[r.Name],
+			Catchall:    r.Name == models.RoleMember,
+		})
 	}
 
 	return &RoleMembership{Roles: summaries, Users: users}, nil

@@ -244,15 +244,18 @@ func FindAdminUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 	return u, nil
 }
 
-// GetUserRoleIDs returns the role IDs for a user.
-// If the user has no assigned roles and the tenant has a default role,
-// the user is auto-assigned to it and that role ID is returned.
-func GetUserRoleIDs(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, defaultRoleID *uuid.UUID) ([]uuid.UUID, error) {
+// GetUserRoleIDs returns the role IDs a user effectively holds: their
+// explicit user_roles plus the universal `member` catchall, which every user
+// always belongs to. Member is implicit — it's never stored as a user_roles
+// row, so it's added here via UNION rather than read from the table.
+func GetUserRoleIDs(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT role_id FROM user_roles
-		WHERE tenant_id = $1 AND user_id = $2
-		ORDER BY role_id
-	`, tenantID, userID)
+		SELECT ur.role_id FROM user_roles ur
+		WHERE ur.tenant_id = $1 AND ur.user_id = $2
+		UNION
+		SELECT id FROM roles WHERE tenant_id = $1 AND name = $3
+		ORDER BY 1
+	`, tenantID, userID, RoleMember)
 	if err != nil {
 		return nil, fmt.Errorf("getting user role ids: %w", err)
 	}
@@ -266,35 +269,21 @@ func GetUserRoleIDs(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uu
 		}
 		ids = append(ids, id)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if len(ids) == 0 && defaultRoleID != nil {
-		_, err := pool.Exec(ctx, `
-			INSERT INTO user_roles (tenant_id, user_id, role_id)
-			VALUES ($1, $2, $3)
-			ON CONFLICT DO NOTHING
-		`, tenantID, userID, *defaultRoleID)
-		if err != nil {
-			return nil, fmt.Errorf("auto-assigning default role: %w", err)
-		}
-		ids = append(ids, *defaultRoleID)
-	}
-
-	return ids, nil
+	return ids, rows.Err()
 }
 
-// GetUserRoleNames returns the role names for a user.
-// If the user has no assigned roles and the tenant has a default role,
-// the user is auto-assigned to it and that role name is returned.
-func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, defaultRoleID *uuid.UUID) ([]string, error) {
+// GetUserRoleNames returns the role names a user effectively holds: their
+// explicit user_roles plus the universal `member` catchall (see
+// GetUserRoleIDs). Member is implicit and never stored as an assignment.
+func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) ([]string, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT r.name FROM user_roles ur
 		JOIN roles r ON r.id = ur.role_id
 		WHERE ur.tenant_id = $1 AND ur.user_id = $2
-		ORDER BY r.name
-	`, tenantID, userID)
+		UNION
+		SELECT name FROM roles WHERE tenant_id = $1 AND name = $3
+		ORDER BY 1
+	`, tenantID, userID, RoleMember)
 	if err != nil {
 		return nil, fmt.Errorf("getting user roles: %w", err)
 	}
@@ -308,26 +297,5 @@ func GetUserRoleNames(ctx context.Context, pool *pgxpool.Pool, tenantID, userID 
 		}
 		names = append(names, name)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Auto-assign default role if user has none
-	if len(names) == 0 && defaultRoleID != nil {
-		_, err := pool.Exec(ctx, `
-			INSERT INTO user_roles (tenant_id, user_id, role_id)
-			VALUES ($1, $2, $3)
-			ON CONFLICT DO NOTHING
-		`, tenantID, userID, *defaultRoleID)
-		if err != nil {
-			return nil, fmt.Errorf("auto-assigning default role: %w", err)
-		}
-		var name string
-		err = pool.QueryRow(ctx, `SELECT name FROM roles WHERE id = $1`, *defaultRoleID).Scan(&name)
-		if err == nil {
-			names = append(names, name)
-		}
-	}
-
-	return names, nil
+	return names, rows.Err()
 }

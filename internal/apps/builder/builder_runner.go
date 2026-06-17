@@ -92,7 +92,7 @@ func (r *builderRunner) Run(ctx context.Context, job *models.Job) error {
 		r.deactivate(ctx, job, "creator no longer exists")
 		return nil
 	}
-	roles, err := models.GetUserRoleNames(ctx, r.pool, job.TenantID, user.ID, nil)
+	roles, err := models.GetUserRoleNames(ctx, r.pool, job.TenantID, user.ID)
 	if err != nil {
 		slog.Error("loading builder_script creator roles", "job_id", job.ID, "error", err)
 		r.advanceNextRun(ctx, job)
