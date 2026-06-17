@@ -25,6 +25,12 @@ export const SECTIONS: Section[] = [
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',
   },
   {
+    to: '/roles',
+    label: 'Roles',
+    blurb: 'See who belongs to which role and change membership.',
+    admin: true,
+  },
+  {
     to: '/integrations',
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',

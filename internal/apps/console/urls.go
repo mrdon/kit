@@ -32,4 +32,10 @@ func registerConsoleRoutes(mux *http.ServeMux, a *App) {
 	// Feature apps register their own /{slug}/api/... routes the same way.
 	mux.Handle("GET /{slug}/api/me", jsonRoute(a.handleMe))
 	mux.Handle("GET /{slug}/api/integrations", adminJSON(a.handleIntegrations))
+
+	// Role membership matrix. Admin-only: the page reveals every user and
+	// lets an admin change who is in which role.
+	mux.Handle("GET /{slug}/api/roles", adminJSON(a.handleRoles))
+	mux.Handle("POST /{slug}/api/roles/assign", adminJSON(a.handleRoleAssign))
+	mux.Handle("POST /{slug}/api/roles/unassign", adminJSON(a.handleRoleUnassign))
 }

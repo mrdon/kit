@@ -100,6 +100,9 @@ func handleCreateTask(svc *TaskService) tools.HandlerFunc {
 			if errors.Is(err, ErrInvalidRole) {
 				return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", inp.RoleScope), nil
 			}
+			if errors.Is(err, ErrInvalidPriority) {
+				return fmt.Sprintf("Invalid priority. Use one of: %s.", strings.Join(Priorities, ", ")), nil
+			}
 			return "", fmt.Errorf("creating task: %w", err)
 		}
 
@@ -285,6 +288,9 @@ func handleUpdateTask(svc *TaskService) tools.HandlerFunc {
 					name = *inp.RoleScope
 				}
 				return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", name), nil
+			}
+			if errors.Is(err, ErrInvalidPriority) {
+				return fmt.Sprintf("Invalid priority. Use one of: %s.", strings.Join(Priorities, ", ")), nil
 			}
 			return "", fmt.Errorf("updating task: %w", err)
 		}

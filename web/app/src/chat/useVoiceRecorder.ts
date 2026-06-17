@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
-import { readSSE } from '../sse';
-import { BASENAME } from '../workspace';
+import { chatTranscribe } from './transport';
+import { readSSE } from './sse';
 import { ChatEvent } from './events';
 import { parseEventData } from './parse';
 import {
@@ -38,11 +37,13 @@ export type UseVoiceRecorder = {
  * reads `partial` while recording and replaces the textarea on stop()
  * with the returned final transcript.
  *
- * transcribeUrl is passed in so the hook stays surface-agnostic (card
- * chat and quick chat both hit the same card-less /chat/transcribe
- * today, but this keeps the hook from hardcoding that).
+ * transcribeUrl is passed in so the hook stays surface-agnostic; loginUrl
+ * is where to bounce on a 401 (each app knows its own login path).
  */
-export function useVoiceRecorder(transcribeUrl: string): UseVoiceRecorder {
+export function useVoiceRecorder(
+  transcribeUrl: string,
+  loginUrl: string,
+): UseVoiceRecorder {
   const sessionRef = useRef<AudioCaptureSession | null>(null);
 
   const [supported, setSupported] = useState(false);
@@ -65,9 +66,9 @@ export function useVoiceRecorder(transcribeUrl: string): UseVoiceRecorder {
       setPartial('');
       setError(null);
       try {
-        const resp = await api.chatTranscribe(transcribeUrl, blob);
+        const resp = await chatTranscribe(transcribeUrl, blob);
         if (resp.status === 401) {
-          window.location.href = BASENAME + '/login';
+          window.location.href = loginUrl;
           return '';
         }
         if (!resp.ok) {
@@ -111,7 +112,7 @@ export function useVoiceRecorder(transcribeUrl: string): UseVoiceRecorder {
         return '';
       }
     },
-    [transcribeUrl],
+    [transcribeUrl, loginUrl],
   );
 
   const start = useCallback(async () => {

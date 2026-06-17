@@ -91,41 +91,8 @@ export const api = {
     return j<ActionResult>(r);
   },
 
-  // chatTranscribe uploads audio to the given URL and returns the fetch
-  // Response whose body is an SSE stream of partial/final/error events.
-  // The X-Kit-Chat header lifts the request out of the CORS "simple
-  // request" category so the server's CSRF check passes for multipart
-  // bodies.
-  chatTranscribe: (url: string, audio: Blob, signal?: AbortSignal): Promise<Response> => {
-    const form = new FormData();
-    form.append('audio', audio, 'clip');
-    return fetch(url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'X-Kit-Chat': '1' },
-      body: form,
-      signal,
-    });
-  },
-
-  // chatExecute posts the user's text (typed or edited transcript) to
-  // the given URL and returns an SSE stream of status/tool/response/done
-  // events. clientSessionID is required for quick chat and ignored by
-  // card chat (the server keys on the card triple instead).
-  chatExecute: (
-    url: string,
-    text: string,
-    opts?: { clientSessionID?: string },
-    signal?: AbortSignal,
-  ): Promise<Response> => {
-    const body: Record<string, unknown> = { text };
-    if (opts?.clientSessionID) body.client_session_id = opts.clientSessionID;
-    return fetch(url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal,
-    });
-  },
+  // The chat fetch helpers (transcribe/execute) live in the shared chat
+  // widget (web/shared/chat → @chat/transport); the CardChatSheet /
+  // QuickChatSheet wrappers build the URLs via the exports above and the
+  // shared hooks call them. Keeping them out of here avoids duplication.
 };

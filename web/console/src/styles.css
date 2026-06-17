@@ -116,17 +116,6 @@ body {
   text-overflow: ellipsis;
 }
 
-.topbar-product {
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #c7d2fe;
-  background: rgba(199, 210, 254, 0.15);
-}
-
 .topbar-user {
   display: flex;
   align-items: center;
@@ -454,6 +443,12 @@ code {
   gap: 1rem;
 }
 
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -502,6 +497,65 @@ code {
 .seg-active {
   background: var(--accent);
   color: #fff;
+}
+
+/* --- Roles matrix (users × roles) --- */
+
+.roles-matrix-wrap {
+  overflow-x: auto;
+}
+
+.roles-matrix {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.roles-matrix th,
+.roles-matrix td {
+  border: 1px solid var(--line);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+}
+
+.roles-corner {
+  background: var(--panel);
+}
+
+.roles-col {
+  text-align: center;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.roles-col-name {
+  display: block;
+  font-weight: 600;
+}
+
+.roles-col-count {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.roles-user {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.roles-cell {
+  text-align: center;
+}
+
+.roles-cell input {
+  width: 1.05rem;
+  height: 1.05rem;
+  cursor: pointer;
+}
+
+.roles-cell input:disabled {
+  cursor: progress;
+  opacity: 0.5;
 }
 
 /* --- Tasks: grouped (priority bands + category sub-groups) --- */
@@ -1090,9 +1144,6 @@ h2.view-title:hover {
   }
   .topbar-username {
     max-width: 7rem;
-  }
-  .topbar-product {
-    display: none;
   }
   .content {
     padding: 1.25rem 1rem 3rem;

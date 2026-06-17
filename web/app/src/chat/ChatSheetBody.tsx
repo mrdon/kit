@@ -3,47 +3,48 @@ import ChatTranscript from './ChatTranscript';
 import ChatComposer from './ChatComposer';
 import { useChatStream } from './useChatStream';
 
-type Props = {
+export type ChatSheetBodyProps = {
   // Header label shown at the top of the sheet.
   title: string;
-  // URL to POST each chat turn to. Built by the caller via
-  // cardChatExecuteUrl or quickChatExecuteUrl.
+  // URL to POST each chat turn to. Built by the caller for its surface
+  // (card chat, quick chat, tasks chat, …).
   executeUrl: string;
-  // URL the mic uploads audio to. Card-agnostic today but passed in so
-  // surfaces can point their own routes if needed.
+  // URL the mic uploads audio to.
   transcribeUrl: string;
-  // Required for quick chat, ignored for card chat.
+  // Where to bounce the browser on a 401 (each app knows its login path).
+  loginUrl: string;
+  // Required for quick/tasks chat, ignored for card chat.
   clientSessionID?: string;
   // Optional placeholder override for the composer.
   placeholder?: string;
-  // Dismiss the sheet. Parent re-enables long-press on the stack when
-  // this fires.
+  // Dismiss the sheet.
   onClose: () => void;
-  // Called when a turn completes so the parent can refresh the stack.
+  // Called when a turn completes so the parent can refresh its view.
   onTurnDone?: () => void;
   // Pre-captured audio handed to the composer to transcribe on open.
-  // Used by the quick-chat FAB's long-press flow.
   seedAudioBlob?: Blob | null;
 };
 
 /**
- * Shared bottom-sheet body for both card chat (CardChatSheet) and
- * quick chat (QuickChatSheet). Renders header + transcript + composer
- * and owns keyboard offset + SSE wiring. The sheet stays open until
- * the user closes it (backdrop tap, ✕ button, or Escape).
+ * Shared bottom-sheet body for every chat surface (card chat, quick
+ * chat, tasks chat). Renders header + transcript + composer and owns
+ * keyboard offset + SSE wiring. Stays open until the user closes it
+ * (backdrop tap, ✕ button, or Escape).
  */
 export default function ChatSheetBody({
   title,
   executeUrl,
   transcribeUrl,
+  loginUrl,
   clientSessionID,
   placeholder,
   onClose,
   onTurnDone,
   seedAudioBlob,
-}: Props) {
+}: ChatSheetBodyProps) {
   const { turns, busy, send, stop, retry } = useChatStream({
     executeUrl,
+    loginUrl,
     clientSessionID,
     onDone: onTurnDone,
   });
@@ -77,6 +78,7 @@ export default function ChatSheetBody({
         <ChatTranscript turns={turns} onStop={stop} onRetry={retry} />
         <ChatComposer
           transcribeUrl={transcribeUrl}
+          loginUrl={loginUrl}
           busy={busy}
           onSubmit={send}
           placeholder={placeholder}

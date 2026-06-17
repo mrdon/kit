@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,14 @@ const DefaultPriority = PriorityNormal
 
 // Priorities lists the valid priority values, highest first.
 var Priorities = []string{PriorityBlocker, PriorityHigh, PriorityNormal}
+
+// ValidPriority reports whether p is one of the storable priority values.
+// Callers validate before insert/update so a stale value (e.g. the old
+// low/medium/urgent scale) surfaces as a clean 400 instead of a raw DB
+// CHECK-constraint violation surfaced as a 500.
+func ValidPriority(p string) bool {
+	return slices.Contains(Priorities, p)
+}
 
 // Task represents a task item.
 type Task struct {

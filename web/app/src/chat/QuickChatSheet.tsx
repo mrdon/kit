@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import ChatSheetBody from './ChatSheetBody';
 import { chatTranscribeUrl, quickChatExecuteUrl } from '../api';
+import { BASENAME } from '../workspace';
 
 type Props = {
   // Dismiss the sheet. The parent re-enables the FAB / clears state
@@ -33,6 +34,7 @@ export default function QuickChatSheet({ onClose, onTurnDone, seedAudioBlob }: P
       title="Quick chat"
       executeUrl={quickChatExecuteUrl()}
       transcribeUrl={chatTranscribeUrl()}
+      loginUrl={BASENAME + '/login'}
       clientSessionID={clientSessionID}
       placeholder="Add a todo, ask a question…"
       onClose={onClose}

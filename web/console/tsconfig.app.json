@@ -14,7 +14,12 @@
     "isolatedModules": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": false,
+    "baseUrl": ".",
+    "paths": {
+      "@chat": ["../app/src/chat/index.ts"],
+      "@chat/*": ["../app/src/chat/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../app/src/chat"]
 }

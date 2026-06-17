@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mrdon/kit/internal/services"
@@ -25,6 +26,8 @@ func mapTaskError(err error, caller *services.Caller, roleName string) (msg stri
 		return "Permission denied.", http.StatusForbidden, true
 	case errors.Is(err, ErrInvalidRole):
 		return fmt.Sprintf("Role %q does not exist. Use list_roles to see available roles.", roleName), http.StatusBadRequest, true
+	case errors.Is(err, ErrInvalidPriority):
+		return fmt.Sprintf("Invalid priority. Use one of: %s.", strings.Join(Priorities, ", ")), http.StatusBadRequest, true
 	case errors.Is(err, services.ErrNotFound):
 		return "Task not found.", http.StatusNotFound, true
 	}

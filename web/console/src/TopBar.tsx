@@ -25,7 +25,6 @@ export default function TopBar() {
             />
           )}
           <span className="topbar-name">{me?.workspace_name ?? 'Kit'}</span>
-          <span className="topbar-product">Console</span>
         </Link>
         <nav className="topbar-nav">
           <NavLink to="/" end className="topbar-link">

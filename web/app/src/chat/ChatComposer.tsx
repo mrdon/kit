@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useVoiceRecorder } from './useVoiceRecorder';
 
 type Props = {
-  // URL the mic uploads audio to. Card-agnostic today, but passed in
-  // so the composer stays surface-agnostic.
+  // URL the mic uploads audio to. Passed in so the composer stays
+  // surface-agnostic.
   transcribeUrl: string;
+  // Where to bounce on a 401 during transcription.
+  loginUrl: string;
   // Disabled while an execute request is in flight — prevents double-send.
   busy: boolean;
   onSubmit: (text: string) => void;
@@ -32,10 +34,17 @@ type Props = {
  * If MediaRecorder/getUserMedia aren't available the mic is hidden and
  * the UI remains fully usable for typing.
  */
-export default function ChatComposer({ transcribeUrl, busy, onSubmit, placeholder, seedAudioBlob }: Props) {
+export default function ChatComposer({
+  transcribeUrl,
+  loginUrl,
+  busy,
+  onSubmit,
+  placeholder,
+  seedAudioBlob,
+}: Props) {
   const [text, setText] = useState('');
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  const recorder = useVoiceRecorder(transcribeUrl);
+  const recorder = useVoiceRecorder(transcribeUrl, loginUrl);
   // Snapshot of the textarea at the moment the user starts holding the
   // mic, so streaming partials append to existing typed content
   // without clobbering it.

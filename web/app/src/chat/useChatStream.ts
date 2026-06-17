@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { api } from '../api';
-import { readSSE } from '../sse';
-import { BASENAME } from '../workspace';
+import { chatExecute } from './transport';
+import { readSSE } from './sse';
 import { ChatEvent, ChatStatus, type ChatStatusType } from './events';
 import { parseEventData } from './parse';
 
@@ -42,14 +41,17 @@ export type UseChatStreamResult = {
 };
 
 export type ChatStreamOptions = {
-  // URL to POST each turn to. Callers build this via cardChatExecuteUrl
-  // or quickChatExecuteUrl so the hook stays agnostic to surface.
+  // URL to POST each turn to. Callers build this for their surface
+  // (card chat vs quick chat) so the hook stays agnostic.
   executeUrl: string;
+  // Where to send the browser on a 401 (session missing/expired). Each
+  // app knows its own login path; the hook stays origin-agnostic.
+  loginUrl: string;
   // Required for quick chat, ignored by card chat. The server keys the
   // session on (user, clientSessionID) when the card is absent.
   clientSessionID?: string;
-  // Fired when a turn finishes so the parent can refresh the stack
-  // (the agent may have captured a todo that surfaces in the next page).
+  // Fired when a turn finishes so the parent can refresh its view (the
+  // agent may have created/changed data that should now appear).
   onDone?: () => void;
 };
 
@@ -61,7 +63,7 @@ export type ChatStreamOptions = {
  * parsing, turn state, and abort plumbing.
  */
 export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
-  const { executeUrl, clientSessionID, onDone } = opts;
+  const { executeUrl, loginUrl, clientSessionID, onDone } = opts;
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -76,16 +78,15 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
       abortRef.current = ctrl;
       setBusy(true);
       try {
-        const resp = await api.chatExecute(
+        const resp = await chatExecute(
           executeUrl,
           text,
           clientSessionID ? { clientSessionID } : undefined,
           ctrl.signal,
         );
         if (resp.status === 401) {
-          // The regular api.j() handles this for JSON calls; do it
-          // manually for streams.
-          window.location.href = BASENAME + '/login';
+          // Streams bypass the JSON fetch wrapper, so handle 401 here.
+          window.location.href = loginUrl;
           return;
         }
         if (!resp.ok) {
@@ -156,7 +157,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
         setBusy(false);
       }
     },
-    [executeUrl, clientSessionID, updateTurn, onDone],
+    [executeUrl, loginUrl, clientSessionID, updateTurn, onDone],
   );
 
   const send = useCallback(
@@ -200,4 +201,3 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
 
   return { turns, busy, send, stop, retry };
 }
-

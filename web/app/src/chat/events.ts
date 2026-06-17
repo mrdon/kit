@@ -1,6 +1,6 @@
-// Event names emitted by /api/v1/stack/items/.../chat/transcribe and
-// .../chat/execute. Mirror of internal/chat/events.go. No raw string
-// literals at call sites — import a ChatEvent constant instead.
+// Event names emitted by /api/v1/.../chat/transcribe and .../chat/execute.
+// Mirror of internal/chat/events.go. No raw string literals at call sites —
+// import a ChatEvent constant instead.
 
 export const ChatEvent = {
   Partial: 'partial',

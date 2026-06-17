@@ -1,7 +1,7 @@
 // Shared MediaRecorder primitives for both the chat composer's mic
 // (press-and-hold) and the quick-chat FAB (long-press to arm, tap to
 // stop). Keeps mime selection and stream cleanup in one place so the
-// two surfaces don't drift on browser-support edge cases.
+// surfaces don't drift on browser-support edge cases.
 
 const MIME_CANDIDATES = [
   'audio/webm;codecs=opus',

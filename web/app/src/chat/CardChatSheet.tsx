@@ -1,5 +1,6 @@
 import ChatSheetBody from './ChatSheetBody';
 import { cardChatExecuteUrl, chatTranscribeUrl } from '../api';
+import { BASENAME } from '../workspace';
 
 type Props = {
   // The card this chat is scoped to. One conversation per (card, user)
@@ -18,10 +19,10 @@ type Props = {
 };
 
 /**
- * Thin wrapper over ChatSheetBody for the card-scoped surface. Builds
- * the card execute URL and passes the card title; all the heavy
- * lifting (transcript, composer, SSE, keyboard offset) is in the body.
- * No auto-dismiss — card chat is always conversational.
+ * Thin wrapper over the shared ChatSheetBody for the card-scoped
+ * surface. Builds the card execute URL and passes the card title; all
+ * the heavy lifting (transcript, composer, SSE, keyboard offset) lives
+ * in the shared widget. No auto-dismiss — card chat is conversational.
  */
 export default function CardChatSheet({ sourceApp, kind, id, title, onClose, onTurnDone }: Props) {
   return (
@@ -29,6 +30,7 @@ export default function CardChatSheet({ sourceApp, kind, id, title, onClose, onT
       title={title}
       executeUrl={cardChatExecuteUrl(sourceApp, kind, id)}
       transcribeUrl={chatTranscribeUrl()}
+      loginUrl={BASENAME + '/login'}
       onClose={onClose}
       onTurnDone={onTurnDone}
     />

@@ -18,8 +18,16 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 // Priority bands, highest first — these drive the grouped view's sections.
+// Must stay in sync with the server: the app_tasks priority CHECK
+// constraint (migration 058) and task.Priorities / task.DefaultPriority in
+// Go. The /tasks/meta endpoint serves the same set; this constant is the
+// single client-side source so the create form, grouped bands, and
+// per-row selects never drift onto a value the DB will reject.
 export const PRIORITIES = ['blocker', 'high', 'normal'] as const;
 export type Priority = (typeof PRIORITIES)[number];
+
+// Default for new tasks — mirrors task.DefaultPriority on the server.
+export const DEFAULT_PRIORITY: Priority = 'normal';
 
 export const PRIORITY_LABEL: Record<string, string> = {
   blocker: 'Blocker',

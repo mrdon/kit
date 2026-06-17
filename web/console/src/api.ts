@@ -134,6 +134,24 @@ export interface NetlifyStatus {
   github_disconnect_url: string;
 }
 
+export interface RoleInfo {
+  name: string;
+  description: string;
+  member_count: number;
+}
+
+export interface RoleUser {
+  user_id: string;
+  slack_user_id: string;
+  display_name: string;
+  roles: string[];
+}
+
+export interface RolesMatrix {
+  roles: RoleInfo[];
+  users: RoleUser[];
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -218,6 +236,18 @@ function taskQuery(f: TaskFilters): string {
 export const api = {
   me: () => apiGet<Me>('/me'),
   integrations: () => apiGet<Integration[]>('/integrations'),
+
+  roles: () => apiGet<RolesMatrix>('/roles'),
+  assignRole: (slackUserID: string, roleName: string) =>
+    apiPost<void>('/roles/assign', {
+      slack_user_id: slackUserID,
+      role_name: roleName,
+    }),
+  unassignRole: (slackUserID: string, roleName: string) =>
+    apiPost<void>('/roles/unassign', {
+      slack_user_id: slackUserID,
+      role_name: roleName,
+    }),
 
   tasksMeta: () => apiGet<TasksMeta>('/tasks/meta'),
   listTasks: (f: TaskFilters = {}) =>

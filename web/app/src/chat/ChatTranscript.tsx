@@ -14,7 +14,7 @@ type Props = {
  * Renders the scrollable transcript. Each turn gets a user bubble and,
  * while the agent runs, a status row. Once the response arrives it's
  * rendered as an assistant bubble (markdown-rendered, matching how
- * bodies are rendered elsewhere in the PWA).
+ * bodies are rendered elsewhere).
  */
 export default function ChatTranscript({ turns, onStop, onRetry }: Props) {
   const bottomRef = useRef<HTMLDivElement | null>(null);

@@ -39,6 +39,13 @@ type RoleService struct {
 	pool *pgxpool.Pool
 }
 
+// NewRoleService returns a standalone RoleService. Most callers get one via
+// the Services bundle (New); this constructor lets surfaces that only need
+// roles (e.g. the console roles page) build one without the full bundle.
+func NewRoleService(pool *pgxpool.Pool) *RoleService {
+	return &RoleService{pool: pool}
+}
+
 // List returns all roles in the tenant. Admin only.
 func (s *RoleService) List(ctx context.Context, c *Caller) ([]models.Role, error) {
 	if !c.IsAdmin {
@@ -55,10 +62,28 @@ func (s *RoleService) Create(ctx context.Context, c *Caller, name, description s
 	return models.CreateRole(ctx, s.pool, c.TenantID, name, description)
 }
 
+// ErrRoleNotFound is returned by Assign/Unassign when the named role does
+// not exist in the tenant. Without this check the underlying INSERT/DELETE
+// match zero rows and silently succeed, so a typo'd role name looks like it
+// worked.
+var ErrRoleNotFound = errors.New("role does not exist")
+
+// ErrLastAdmin is returned when an unassign would remove the admin role from
+// the final remaining admin — that would lock the workspace out of every
+// admin-only operation, so it's refused.
+var ErrLastAdmin = errors.New("cannot remove the last admin")
+
 // Assign assigns a role to a user by Slack ID. Admin only.
 func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleName string) error {
 	if !c.IsAdmin {
 		return ErrForbidden
+	}
+	exists, err := models.RoleExists(ctx, s.pool, c.TenantID, roleName)
+	if err != nil {
+		return fmt.Errorf("checking role: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%q: %w", roleName, ErrRoleNotFound)
 	}
 	user, err := models.GetOrCreateUser(ctx, s.pool, c.TenantID, slackUserID, "", "")
 	if err != nil {
@@ -67,10 +92,18 @@ func (s *RoleService) Assign(ctx context.Context, c *Caller, slackUserID, roleNa
 	return models.AssignRole(ctx, s.pool, c.TenantID, user.ID, roleName)
 }
 
-// Unassign removes a role from a user by Slack ID. Admin only.
+// Unassign removes a role from a user by Slack ID. Admin only. Refuses to
+// strip the admin role from the last admin (ErrLastAdmin).
 func (s *RoleService) Unassign(ctx context.Context, c *Caller, slackUserID, roleName string) error {
 	if !c.IsAdmin {
 		return ErrForbidden
+	}
+	exists, err := models.RoleExists(ctx, s.pool, c.TenantID, roleName)
+	if err != nil {
+		return fmt.Errorf("checking role: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%q: %w", roleName, ErrRoleNotFound)
 	}
 	user, err := models.GetUserBySlackID(ctx, s.pool, c.TenantID, slackUserID)
 	if err != nil {
@@ -78,6 +111,22 @@ func (s *RoleService) Unassign(ctx context.Context, c *Caller, slackUserID, role
 	}
 	if user == nil {
 		return ErrNotFound
+	}
+	if roleName == models.RoleAdmin {
+		admins, err := models.ListRoleMembers(ctx, s.pool, c.TenantID, models.RoleAdmin)
+		if err != nil {
+			return fmt.Errorf("counting admins: %w", err)
+		}
+		isAdmin := false
+		for _, a := range admins {
+			if a.ID == user.ID {
+				isAdmin = true
+				break
+			}
+		}
+		if isAdmin && len(admins) <= 1 {
+			return ErrLastAdmin
+		}
 	}
 	return models.UnassignRole(ctx, s.pool, c.TenantID, user.ID, roleName)
 }

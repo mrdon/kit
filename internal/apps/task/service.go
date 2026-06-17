@@ -34,6 +34,11 @@ var ErrInvalidRole = errors.New("role does not exist")
 // The agent surfaces this as "set a primary role or pass role_scope".
 var ErrPrimaryRoleNotSet = errors.New("primary role not set")
 
+// ErrInvalidPriority is returned when a create/update carries a priority
+// outside the storable set (Priorities). Validating here turns a DB CHECK
+// violation into a clean 400 across every surface (console + agent + MCP).
+var ErrInvalidPriority = errors.New("invalid priority")
+
 // NewService returns a TaskService bound to pool. Exported so builder-app
 // bridges (and other external wiring) can construct a service without going
 // through the app init path.
@@ -113,6 +118,9 @@ func (s *TaskService) Create(ctx context.Context, c *services.Caller, in CreateI
 	}
 	if t.Priority == "" {
 		t.Priority = DefaultPriority
+	}
+	if !ValidPriority(t.Priority) {
+		return nil, fmt.Errorf("%q: %w", t.Priority, ErrInvalidPriority)
 	}
 
 	if err := createTask(ctx, s.pool, t); err != nil {
@@ -261,6 +269,10 @@ func (s *TaskService) Update(ctx context.Context, c *services.Caller, taskID uui
 		if u.BlockedReason == nil || *u.BlockedReason == "" {
 			return nil, errors.New("blocked_reason is required when setting status to blocked")
 		}
+	}
+
+	if u.Priority != nil && !ValidPriority(*u.Priority) {
+		return nil, fmt.Errorf("%q: %w", *u.Priority, ErrInvalidPriority)
 	}
 
 	// "I'm on it": claiming a task (status → in_progress) on an unassigned

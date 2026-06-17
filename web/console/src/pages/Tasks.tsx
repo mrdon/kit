@@ -11,7 +11,14 @@ import {
 import TaskGrouped from './tasks/grouped';
 import TaskList from './tasks/list';
 import TaskDetail from './tasks/detail';
-import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL } from './tasks/common';
+import TasksChat from '../TasksChat';
+import {
+  DEFAULT_PRIORITY,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  STATUSES,
+  STATUS_LABEL,
+} from './tasks/common';
 
 type View = 'grouped' | 'list';
 
@@ -39,6 +46,7 @@ export default function Tasks() {
   const [filters, setFilters] = useState<TaskFilters>({ include_closed: false });
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -127,9 +135,18 @@ export default function Tasks() {
         </nav>
         <div className="page-head-row">
           <h1>Tasks</h1>
-          <button className="btn" onClick={() => setCreating(true)}>
-            New task
-          </button>
+          <div className="page-head-actions">
+            <button
+              className="btn btn-ghost"
+              onClick={() => setChatOpen(true)}
+              title="Talk or type to Kit — add tasks, ask questions"
+            >
+              🎙 Assistant
+            </button>
+            <button className="btn" onClick={() => setCreating(true)}>
+              New task
+            </button>
+          </div>
         </div>
       </div>
 
@@ -224,6 +241,8 @@ export default function Tasks() {
         </div>
       )}
 
+      {chatOpen && <TasksChat onClose={() => setChatOpen(false)} onTurnDone={load} />}
+
       {openId && (
         <TaskDetail
           taskId={openId}
@@ -256,7 +275,10 @@ function CreateTask({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [body, setBody] = useState<CreateTaskBody>({ title: '', priority: 'medium' });
+  const [body, setBody] = useState<CreateTaskBody>({
+    title: '',
+    priority: DEFAULT_PRIORITY,
+  });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
