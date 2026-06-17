@@ -19,6 +19,7 @@ import (
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	_ "github.com/mrdon/kit/internal/apps/admin"
+	attachmentapp "github.com/mrdon/kit/internal/apps/attachment"
 	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
@@ -255,6 +256,11 @@ func main() {
 		deepLinkSigner,
 		cfg.BaseURL,
 	)
+
+	// General attachment capability: read_attachment tool + signed-token
+	// serve route. Shares the encryptor and the deep-link signer; uses the
+	// builder LLM client for image transcription.
+	attachmentapp.Configure(enc, deepLinkSigner, builderLLM)
 
 	console.Configure(sessionSigner, enc)
 	github.Configure(

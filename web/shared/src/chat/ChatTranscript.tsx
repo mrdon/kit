@@ -26,7 +26,25 @@ export default function ChatTranscript({ turns, onStop, onRetry }: Props) {
     <div className="chat-transcript">
       {turns.map((t) => (
         <div key={t.key} className="chat-turn">
-          <div className="chat-bubble chat-bubble-user">{t.userText}</div>
+          {t.attachments && t.attachments.length > 0 && (
+            <div className="chat-turn-attachments">
+              {t.attachments.map((a, i) =>
+                a.previewUrl ? (
+                  <img
+                    key={`${a.name}-${i}`}
+                    src={a.previewUrl}
+                    alt={a.name}
+                    className="chat-attachment-thumb"
+                  />
+                ) : (
+                  <span key={`${a.name}-${i}`} className="chat-attachment-chip" title={a.name}>
+                    📄 {a.name}
+                  </span>
+                ),
+              )}
+            </div>
+          )}
+          {t.userText && <div className="chat-bubble chat-bubble-user">{t.userText}</div>}
           <ChatStatusRow
             status={t.status}
             inFlight={t.inFlight}

@@ -29,12 +29,31 @@ export function chatTranscribe(
 // given URL and returns an SSE stream of status/tool/response/done
 // events. clientSessionID is required for quick chat and ignored by
 // card chat (the server keys on the card triple instead).
+//
+// When files are present the request is sent as multipart/form-data with
+// the X-Kit-Chat header (which lifts it out of the CORS "simple request"
+// category so the server's CSRF check passes) — the same shape audio
+// upload already uses. Otherwise it stays a plain JSON POST.
 export function chatExecute(
   url: string,
   text: string,
-  opts?: { clientSessionID?: string },
+  opts?: { clientSessionID?: string; files?: File[] },
   signal?: AbortSignal,
 ): Promise<Response> {
+  const files = opts?.files ?? [];
+  if (files.length > 0) {
+    const form = new FormData();
+    form.append('text', text);
+    if (opts?.clientSessionID) form.append('client_session_id', opts.clientSessionID);
+    for (const f of files) form.append('files', f, f.name);
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Kit-Chat': '1' },
+      body: form,
+      signal,
+    });
+  }
   const body: Record<string, unknown> = { text };
   if (opts?.clientSessionID) body.client_session_id = opts.clientSessionID;
   return fetch(url, {

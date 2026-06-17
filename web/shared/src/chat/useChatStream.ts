@@ -24,14 +24,18 @@ export type ChatTurn = {
   toolCount: number;
   // On transport/server error, the message text so the UI can show retry.
   errorMessage?: string;
+  // Files the user attached to this turn, for rendering on the user
+  // bubble. previewUrl is a local object URL for image thumbnails.
+  attachments?: { name: string; previewUrl?: string }[];
 };
 
 export type UseChatStreamResult = {
   turns: ChatTurn[];
   // True while any turn is executing.
   busy: boolean;
-  // Add a new turn for the given user text and start executing it.
-  send: (userText: string) => void;
+  // Add a new turn for the given user text (and optional files) and start
+  // executing it.
+  send: (userText: string, files?: File[]) => void;
   // Abort the in-flight request, if any.
   stop: () => void;
   // Start a turn using an already-added placeholder (for voice flow
@@ -73,7 +77,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
   }, []);
 
   const runExecute = useCallback(
-    async (turnKey: string, text: string) => {
+    async (turnKey: string, text: string, files?: File[]) => {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       setBusy(true);
@@ -81,7 +85,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
         const resp = await chatExecute(
           executeUrl,
           text,
-          clientSessionID ? { clientSessionID } : undefined,
+          { clientSessionID, files },
           ctrl.signal,
         );
         if (resp.status === 401) {
@@ -161,8 +165,12 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
   );
 
   const send = useCallback(
-    (userText: string) => {
+    (userText: string, files?: File[]) => {
       const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const attachments = (files ?? []).map((f) => ({
+        name: f.name,
+        previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
+      }));
       setTurns((ts) => [
         ...ts,
         {
@@ -172,9 +180,10 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
           status: ChatStatus.Thinking,
           inFlight: true,
           toolCount: 0,
+          attachments: attachments.length > 0 ? attachments : undefined,
         },
       ]);
-      runExecute(key, userText);
+      runExecute(key, userText, files);
     },
     [runExecute],
   );

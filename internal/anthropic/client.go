@@ -3,6 +3,7 @@ package anthropic
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,8 +78,33 @@ type Content struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   any    `json:"content,omitempty"`
 
+	// For image blocks. Only ever set on an outgoing user-message vision
+	// input (see ImageContent / DescribeImage); never inside a tool_result.
+	Source *ImageSource `json:"source,omitempty"`
+
 	// For prompt caching
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// ImageSource is the source payload of an "image" content block. Only the
+// base64 form is used here.
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // e.g. "image/jpeg"
+	Data      string `json:"data"`       // base64-encoded image bytes
+}
+
+// ImageContent builds an "image" content block from raw image bytes,
+// base64-encoding them. mediaType is the IANA media type (e.g. "image/jpeg").
+func ImageContent(mediaType string, raw []byte) Content {
+	return Content{
+		Type: "image",
+		Source: &ImageSource{
+			Type:      "base64",
+			MediaType: mediaType,
+			Data:      base64.StdEncoding.EncodeToString(raw),
+		},
+	}
 }
 
 // SystemBlock is a content block in the system prompt array.

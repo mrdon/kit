@@ -91,6 +91,11 @@ type ExecuteInput struct {
 	// closing the sheet discards it. Ignored when Card is non-nil —
 	// card-scoped sessions are keyed on the card triple.
 	ClientSessionID string
+
+	// Attachments are files uploaded with this turn (already stored by the
+	// handler). They surface to the agent as a manifest it reads on demand
+	// via the read_attachment tool.
+	Attachments []agent.AttachmentRef
 }
 
 // Execute runs one chat turn for a (tenant, user, card) triple. It
@@ -104,8 +109,8 @@ type ExecuteInput struct {
 // UUID per sheet-open gives fresh history, while multiple turns within
 // one open share context.
 func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
-	if in.Text == "" {
-		return errors.New("text required")
+	if in.Text == "" && len(in.Attachments) == 0 {
+		return errors.New("text or attachment required")
 	}
 	if in.Card == nil && in.ClientSessionID == "" {
 		return errors.New("client_session_id required for quick chat")
@@ -128,13 +133,14 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 	})
 
 	runInput := agent.RunInput{
-		Slack:    in.Slack,
-		Tenant:   in.Tenant,
-		User:     in.User,
-		Session:  session,
-		Channel:  SentinelChannel,
-		ThreadTS: thread,
-		UserText: in.Text,
+		Slack:       in.Slack,
+		Tenant:      in.Tenant,
+		User:        in.User,
+		Session:     session,
+		Channel:     SentinelChannel,
+		ThreadTS:    thread,
+		UserText:    in.Text,
+		Attachments: in.Attachments,
 
 		Responder: responder,
 		OnToolCall: func(name string) {

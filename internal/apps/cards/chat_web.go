@@ -6,9 +6,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
+	"strings"
 
+	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/apps/cards/shared"
+	store "github.com/mrdon/kit/internal/attachment"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/chat"
 	"github.com/mrdon/kit/internal/models"
@@ -98,6 +102,101 @@ type chatExecuteRequest struct {
 	ClientSessionID string `json:"client_session_id,omitempty"`
 }
 
+// maxAttachments caps files per chat turn (the manifest + per-image cost
+// would otherwise be unbounded).
+const maxAttachments = 10
+
+// maxMultipartBytes bounds the whole multipart form in memory.
+const maxMultipartBytes = 60 << 20 // 60 MiB
+
+// readChatInput parses the chat-execute request. JSON bodies carry text
+// only; multipart bodies additionally carry files, which are stored
+// immediately and returned as agent attachment refs. On any failure it
+// writes the HTTP error and returns ok=false. Must run before the SSE
+// stream opens.
+func (a *CardsApp) readChatInput(w http.ResponseWriter, r *http.Request, caller *services.Caller) (req chatExecuteRequest, attachments []agent.AttachmentRef, ok bool) {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		return a.readMultipartChatInput(w, r, caller)
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Warn("reading chat execute body", "error", err, "content_length", r.ContentLength)
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return req, nil, false
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Text == "" {
+		http.Error(w, "text required", http.StatusBadRequest)
+		return req, nil, false
+	}
+	return req, nil, true
+}
+
+func (a *CardsApp) readMultipartChatInput(w http.ResponseWriter, r *http.Request, caller *services.Caller) (req chatExecuteRequest, attachments []agent.AttachmentRef, ok bool) {
+	if a.enc == nil {
+		http.Error(w, "attachments not configured", http.StatusInternalServerError)
+		return req, nil, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxMultipartBytes)
+	if err := r.ParseMultipartForm(maxMultipartBytes); err != nil {
+		http.Error(w, "upload too large or malformed", http.StatusRequestEntityTooLarge)
+		return req, nil, false
+	}
+	req.Text = r.FormValue("text")
+	req.ClientSessionID = r.FormValue("client_session_id")
+
+	files := r.MultipartForm.File["files"]
+	if len(files) > maxAttachments {
+		http.Error(w, "too many attachments", http.StatusRequestEntityTooLarge)
+		return req, nil, false
+	}
+	svc := store.NewService(a.pool, a.enc)
+	for _, fh := range files {
+		raw, err := readUpload(fh)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return req, nil, false
+		}
+		mime := fh.Header.Get("Content-Type")
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		att, err := svc.Store(r.Context(), caller.TenantID, caller.UserID, fh.Filename, mime, raw)
+		if err != nil {
+			slog.Warn("storing chat attachment", "error", err, "filename", fh.Filename)
+			http.Error(w, "could not store attachment", http.StatusInternalServerError)
+			return req, nil, false
+		}
+		attachments = append(attachments, agent.AttachmentRef{
+			ID: att.ID.String(), Filename: att.Filename, Mime: att.Mime, Size: att.Size,
+		})
+	}
+
+	if req.Text == "" && len(attachments) == 0 {
+		http.Error(w, "text or attachment required", http.StatusBadRequest)
+		return req, nil, false
+	}
+	return req, attachments, true
+}
+
+// readUpload reads one multipart file, enforcing the per-file size cap.
+func readUpload(fh *multipart.FileHeader) ([]byte, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return nil, errors.New("bad upload")
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, store.MaxBytes+1))
+	if err != nil {
+		return nil, errors.New("bad upload")
+	}
+	if len(raw) > store.MaxBytes {
+		return nil, errors.New("attachment too large")
+	}
+	return raw, nil
+}
+
 // handleChatExecute runs one chat turn against a card and streams the
 // agent's progress as SSE events: status, tool, response, done.
 //
@@ -113,19 +212,11 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cap request body + message size. Done before SSE headers so a 413
-	// shows up as a proper HTTP error to the client, not a mid-stream
-	// SSE error event.
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Warn("reading chat execute body", "error", err, "content_length", r.ContentLength)
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-		return
-	}
-	var req chatExecuteRequest
-	if err := json.Unmarshal(body, &req); err != nil || req.Text == "" {
-		http.Error(w, "text required", http.StatusBadRequest)
+	// Parse the request (JSON or multipart with attachments) BEFORE the SSE
+	// stream opens, so a 413/400 is a proper HTTP error rather than a
+	// mid-stream SSE event.
+	req, attachments, ok := a.readChatInput(w, r, caller)
+	if !ok {
 		return
 	}
 	const maxTextBytes = 8 * 1024
@@ -133,7 +224,7 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message too long", http.StatusRequestEntityTooLarge)
 		return
 	}
-	slog.Info("chat execute request", "user_id", caller.UserID, "text_len", len(req.Text))
+	slog.Info("chat execute request", "user_id", caller.UserID, "text_len", len(req.Text), "attachments", len(attachments))
 
 	// Rate limit + concurrency cap, still pre-stream so the client can
 	// retry without parsing an SSE error frame.
@@ -233,6 +324,7 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 		Card:            cardItem,
 		Text:            req.Text,
 		ClientSessionID: req.ClientSessionID,
+		Attachments:     attachments,
 	}
 	if err := chat.Execute(r.Context(), in, emit); err != nil {
 		cardStr := "quick"

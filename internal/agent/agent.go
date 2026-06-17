@@ -125,6 +125,13 @@ type RunInput struct {
 	// WidgetTenantName overrides the tenant name used by the widget
 	// system prompt. Falls back to Tenant.Name when empty.
 	WidgetTenantName string
+
+	// Attachments are files the user attached to THIS turn. Their bytes are
+	// NOT placed in context — a cheap manifest (id/filename/mime/size) is
+	// appended to the user message so the model can fetch any of them via
+	// the read_attachment tool on demand. The manifest persists in history,
+	// so follow-up turns can still reference and re-read them.
+	Attachments []AttachmentRef
 }
 
 // Run executes the agent loop for a user message.
@@ -149,12 +156,22 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 		defer status.cleanup(ctx)
 	}
 
+	// Append a cheap attachment manifest to the user text so the model
+	// knows what's attached and can fetch it via read_attachment. Folding
+	// it into UserText means it's both persisted (replay) and sent live.
+	if manifest := attachmentManifest(in.Attachments); manifest != "" {
+		in.UserText = in.UserText + "\n\n" + manifest
+	}
+
 	msgEvent := map[string]any{
 		"text":    in.UserText,
 		"channel": in.Channel,
 	}
 	if in.User != nil {
 		msgEvent["user_id"] = in.User.ID
+	}
+	if len(in.Attachments) > 0 {
+		msgEvent["attachments"] = in.Attachments
 	}
 	_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeMessageReceived, msgEvent)
 

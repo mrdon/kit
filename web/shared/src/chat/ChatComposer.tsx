@@ -9,7 +9,7 @@ type Props = {
   loginUrl: string;
   // Disabled while an execute request is in flight — prevents double-send.
   busy: boolean;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, files: File[]) => void;
   // Override for the textarea placeholder. Falls back to the voice-aware
   // default when omitted.
   placeholder?: string;
@@ -43,8 +43,15 @@ export default function ChatComposer({
   seedAudioBlob,
 }: Props) {
   const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recorder = useVoiceRecorder(transcribeUrl, loginUrl);
+
+  // Cap matches the server (internal/attachment.MaxBytes); reject locally
+  // so the user gets immediate feedback instead of a failed upload.
+  const MAX_FILE_BYTES = 10 * 1024 * 1024;
+  const MAX_FILES = 10;
   // Snapshot of the textarea at the moment the user starts holding the
   // mic, so streaming partials append to existing typed content
   // without clobbering it.
@@ -89,9 +96,28 @@ export default function ChatComposer({
 
   const submit = () => {
     const t = text.trim();
-    if (!t || busy) return;
-    onSubmit(t);
+    if ((!t && files.length === 0) || busy) return;
+    onSubmit(t, files);
     setText('');
+    setFiles([]);
+  };
+
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-picking the same file
+    setFiles((prev) => {
+      const next = [...prev];
+      for (const f of picked) {
+        if (f.size > MAX_FILE_BYTES) continue; // silently skip oversize
+        if (next.length >= MAX_FILES) break;
+        next.push(f);
+      }
+      return next;
+    });
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -122,10 +148,29 @@ export default function ChatComposer({
     taRef.current?.focus();
   };
 
-  const canSend = !busy && text.trim().length > 0;
+  const canSend = !busy && (text.trim().length > 0 || files.length > 0);
 
   return (
     <div className="chat-composer">
+      {files.length > 0 && (
+        <div className="chat-attachments">
+          {files.map((f, i) => (
+            <span key={`${f.name}-${i}`} className="chat-attachment-chip">
+              <span className="chat-attachment-name" title={f.name}>
+                {f.type.startsWith('image/') ? '🖼' : '📄'} {f.name}
+              </span>
+              <button
+                type="button"
+                className="chat-attachment-remove"
+                onClick={() => removeFile(i)}
+                aria-label={`Remove ${f.name}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {(recorder.state === 'recording' || recorder.state === 'transcribing') && (
         <div className="chat-voice-hint" aria-live="polite">
           <span className="chat-voice-dot" />
@@ -144,6 +189,23 @@ export default function ChatComposer({
         onKeyDown={onKeyDown}
         disabled={busy || recorder.state === 'transcribing'}
       />
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,application/pdf,.txt,.md,.csv,.docx"
+        style={{ display: 'none' }}
+        onChange={onPickFiles}
+      />
+      <button
+        type="button"
+        className="chat-attach"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={busy || files.length >= MAX_FILES}
+        aria-label="Attach files"
+      >
+        📎
+      </button>
       {recorder.supported && (
         <button
           type="button"

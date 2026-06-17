@@ -285,3 +285,62 @@
   0%, 100% { opacity: 0.35; transform: scale(0.85); }
   50%      { opacity: 1;    transform: scale(1.2); }
 }
+
+/* --- Attachments (file upload) --- */
+.chat-attach {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+.chat-attach:hover { opacity: 1; }
+.chat-attach:disabled { opacity: 0.3; cursor: default; }
+
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.chat-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--card-code-bg);
+  color: var(--card-fg);
+  font-size: 0.8rem;
+}
+.chat-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-attachment-remove {
+  background: transparent;
+  border: none;
+  color: var(--card-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.chat-attachment-remove:hover { color: var(--card-heading); }
+
+.chat-turn-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+.chat-attachment-thumb {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  object-fit: cover;
+}

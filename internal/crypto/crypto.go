@@ -38,14 +38,38 @@ func NewEncryptor(hexKey string) (*Encryptor, error) {
 	return &Encryptor{gcm: gcm}, nil
 }
 
-// Encrypt encrypts plaintext and returns hex-encoded ciphertext.
-func (e *Encryptor) Encrypt(plaintext string) (string, error) {
+// EncryptBytes encrypts plaintext bytes and returns nonce||ciphertext as
+// raw bytes — suitable for a BYTEA column. The string Encrypt is the
+// hex-encoded form of this.
+func (e *Encryptor) EncryptBytes(plaintext []byte) ([]byte, error) {
 	nonce := make([]byte, e.gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("generating nonce: %w", err)
+		return nil, fmt.Errorf("generating nonce: %w", err)
+	}
+	return e.gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// DecryptBytes reverses EncryptBytes.
+func (e *Encryptor) DecryptBytes(ciphertext []byte) ([]byte, error) {
+	nonceSize := e.gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, errors.New("ciphertext too short")
 	}
 
-	ciphertext := e.gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	nonce, body := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := e.gcm.Open(nil, nonce, body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting: %w", err)
+	}
+	return plaintext, nil
+}
+
+// Encrypt encrypts plaintext and returns hex-encoded ciphertext.
+func (e *Encryptor) Encrypt(plaintext string) (string, error) {
+	ciphertext, err := e.EncryptBytes([]byte(plaintext))
+	if err != nil {
+		return "", err
+	}
 	return hex.EncodeToString(ciphertext), nil
 }
 
@@ -55,17 +79,9 @@ func (e *Encryptor) Decrypt(hexCiphertext string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decoding ciphertext: %w", err)
 	}
-
-	nonceSize := e.gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return "", errors.New("ciphertext too short")
-	}
-
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := e.gcm.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := e.DecryptBytes(ciphertext)
 	if err != nil {
-		return "", fmt.Errorf("decrypting: %w", err)
+		return "", err
 	}
-
 	return string(plaintext), nil
 }

@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -45,6 +46,36 @@ func TestEncryptProducesDifferentCiphertexts(t *testing.T) {
 
 	if ct1 == ct2 {
 		t.Error("two encryptions of the same plaintext should produce different ciphertexts (random nonce)")
+	}
+}
+
+func TestEncryptDecryptBytesRoundTrip(t *testing.T) {
+	key := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	enc, err := NewEncryptor(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Binary payload with NUL bytes — the string API would be lossy here.
+	plaintext := []byte{0x00, 0xff, 0x10, 0x00, 0x42, 0x00}
+	ct, err := enc.EncryptBytes(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(ct, plaintext) {
+		t.Error("ciphertext should differ from plaintext")
+	}
+
+	got, err := enc.DecryptBytes(ct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, plaintext) {
+		t.Errorf("decrypted = %v, want %v", got, plaintext)
+	}
+
+	if _, err := enc.DecryptBytes([]byte{0x01}); err == nil {
+		t.Error("expected error decrypting too-short ciphertext")
 	}
 }
 
