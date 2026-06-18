@@ -15,6 +15,7 @@ import (
 
 	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/anthropic"
+	attachmentstore "github.com/mrdon/kit/internal/attachment"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/ingest"
 	"github.com/mrdon/kit/internal/models"
@@ -152,20 +153,32 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		"files", len(evt.Files),
 	)
 
+	// Partition uploads: image files become chat attachments (anyone can
+	// attach a receipt photo; the agent reads them on demand via
+	// read_attachment). Non-image files stay on the admin-only skill-ingest
+	// path — those create knowledge skills, a deliberate admin operation.
 	text := evt.Text
-	if len(evt.Files) > 0 && isAdmin {
-		text = a.ingestFiles(ctx, client, tenant.ID, evt.Channel, evt.ThreadTS, text, evt.Files)
+	var attachments []agent.AttachmentRef
+	if len(evt.Files) > 0 {
+		images, others := partitionImageFiles(evt.Files)
+		if len(others) > 0 && isAdmin {
+			text = a.ingestFiles(ctx, client, tenant.ID, evt.Channel, evt.ThreadTS, text, others)
+		}
+		if len(images) > 0 {
+			attachments = a.storeSlackAttachments(ctx, client, tenant.ID, user.ID, images)
+		}
 	}
 
 	if err := a.Agent.Run(ctx, agent.RunInput{
-		Slack:    client,
-		Tenant:   tenant,
-		User:     user,
-		Session:  session,
-		Channel:  evt.Channel,
-		ThreadTS: evt.ThreadTS,
-		UserText: text,
-		Model:    anthropic.ModelSonnet,
+		Slack:       client,
+		Tenant:      tenant,
+		User:        user,
+		Session:     session,
+		Channel:     evt.Channel,
+		ThreadTS:    evt.ThreadTS,
+		UserText:    text,
+		Attachments: attachments,
+		Model:       anthropic.ModelSonnet,
 	}); err != nil {
 		slog.Error("agent run failed", "error", err, "session_id", session.ID)
 	}
@@ -255,6 +268,48 @@ func parseMentionEvent(rawEvent json.RawMessage) (*slackEvent, bool) {
 		TriggerTS:   mention.Timestamp,
 		Files:       mention.Files,
 	}, true
+}
+
+// partitionImageFiles splits Slack uploads into images (routed to the general
+// attachment store so the agent can read them) and everything else (the
+// admin-only skill-ingest path).
+func partitionImageFiles(files []kitslack.File) (images, others []kitslack.File) {
+	for _, f := range files {
+		if strings.HasPrefix(f.MimeType, "image/") {
+			images = append(images, f)
+		} else {
+			others = append(others, f)
+		}
+	}
+	return images, others
+}
+
+// storeSlackAttachments downloads each image with the bot token and persists it
+// (encrypted) in the attachment store, returning agent refs. A per-file
+// failure is logged and skipped — a bad download shouldn't sink the whole turn.
+func (a *App) storeSlackAttachments(ctx context.Context, client *kitslack.Client, tenantID, userID uuid.UUID, files []kitslack.File) []agent.AttachmentRef {
+	svc := attachmentstore.NewService(a.Pool, a.Encryptor)
+	var refs []agent.AttachmentRef
+	for _, f := range files {
+		data, err := client.GetFileContent(ctx, f.URL)
+		if err != nil {
+			slog.Warn("downloading slack attachment", "filename", f.Name, "error", err)
+			continue
+		}
+		mime := f.MimeType
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		att, err := svc.Store(ctx, tenantID, userID, f.Name, mime, data)
+		if err != nil {
+			slog.Warn("storing slack attachment", "filename", f.Name, "error", err)
+			continue
+		}
+		refs = append(refs, agent.AttachmentRef{
+			ID: att.ID.String(), Filename: att.Filename, Mime: att.Mime, Size: att.Size,
+		})
+	}
+	return refs
 }
 
 // ingestFiles processes uploaded files through the ingester and returns the
