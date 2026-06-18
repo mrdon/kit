@@ -136,6 +136,18 @@ func deleteItem(ctx context.Context, pool *pgxpool.Pool, tenantID, itemID uuid.U
 	return nil
 }
 
+// setItemCategory writes a single item's category. Used by the async
+// categorizer; a no-op when the item has since been deleted.
+func setItemCategory(ctx context.Context, pool *pgxpool.Pool, tenantID, itemID uuid.UUID, category string) error {
+	if _, err := pool.Exec(ctx,
+		`UPDATE app_expense_items SET category = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, itemID, nilIfEmpty(category),
+	); err != nil {
+		return fmt.Errorf("writing item category: %w", err)
+	}
+	return nil
+}
+
 // recomputeTotal recalculates a report's total_cents from its items. Called
 // after every item mutation so denormalised total stays consistent.
 func recomputeTotal(ctx context.Context, pool *pgxpool.Pool, tenantID, reportID uuid.UUID) error {

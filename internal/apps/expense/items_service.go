@@ -53,6 +53,12 @@ func (s *ExpenseService) AddItem(ctx context.Context, c *services.Caller, report
 		return nil, err
 	}
 	_ = appendEvent(ctx, s.pool, c.TenantID, r.ID, &c.UserID, "item_added", itemSummary(it), "", "")
+
+	// Auto-categorize when the caller didn't supply one. Detached goroutine
+	// (request ctx may cancel); a manual category is never overwritten.
+	if it.Category == "" && s.app != nil && s.app.llm != nil {
+		go runItemCategorizer(s.pool, s.app.llm, c.TenantID, it.ID, it.Vendor, it.Note)
+	}
 	return it, nil
 }
 
