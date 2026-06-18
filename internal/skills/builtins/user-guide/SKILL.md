@@ -93,11 +93,29 @@ Kit tracks tasks for your team. Create them from conversation or explicitly:
 
 Tasks support priorities, due dates, role scoping, and an activity log. Use `list_tasks` to see open items or `complete_task` to mark one done. Use `snooze_task` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active. To delete, set `status` to `cancelled` via `update_task` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
 
+## Expense reports
+
+Kit files and routes expense reports. A report is a titled group of line items — each line is one receipt (vendor, date, amount, optional tax). A report belongs to a role (the team that owns the spend); anyone in the role can see it, and the submitter (or an admin) edits it while it's a draft.
+
+Attach a receipt photo or PDF in chat and ask Kit to log it:
+
+> "Here's my receipt from the hardware store — start an expense report."
+> "Add this $42 lunch to my June expenses."
+
+Kit reads the receipt with `read_attachment` (vision OCR), pulls out the vendor/date/amount, and adds a line item. When you're done, submit the report for approval:
+
+> "Submit my June expenses."
+
+Lifecycle: **draft → submitted → approved / rejected → reimbursed**. On submit, Kit raises an approval **decision card**. By default you can assign a specific **approver** (any teammate) when you create or submit; if you don't, anyone in the owning role (other than you) can approve. Approvers act via the card, MCP/agent tools, or the web console — you can't approve your own report. A rejected report can be reopened, fixed, and resubmitted; an approved one can be marked reimbursed.
+
+Tools: `create_expense_report`, `add_expense_item`, `update_expense_item`, `remove_expense_item`, `assign_expense_approver`, `submit_expense_report`, `approve_expense_report`, `reject_expense_report`, `mark_expense_reimbursed`, `reopen_expense_report`, `list_expense_reports`, `get_expense_report`, `add_expense_comment`.
+
 ## Web console
 
 For deliberate, do-it-yourself work on a desktop, open the web console at `/<your-slug>/web`. It's a direct-manipulation UI — distinct from Slack (ask the agent) and the swipe feed (mobile triage). The launcher links to:
 
 - **Tasks** — a priority-banded list (Blocker / High / Normal) grouped by an auto-assigned topic category. Drag a task between bands to reprioritize, tap "I'm on it" to claim it (which reserves it so teammates skip it) or the checkbox to resolve. Also a flat List view, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
+- **Expenses** — reports grouped by status; open one to add or remove line items, assign an approver, and submit/approve/reject/reimburse. Receipts attached in chat show on their line items.
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Integrations / Website / Chat widget** — admin-only setup pages for Netlify, GitHub, and the website chat widget.
 
