@@ -15,7 +15,7 @@ import (
 )
 
 // AdminHandler hosts the session-gated JSON endpoints that mint and
-// revoke widget tokens for the React console (/{slug}/web/widget). The
+// revoke widget tokens for the React console (/{slug}/web/admin/widget). The
 // rendering lives in web/console; this layer is JSON over the existing
 // WidgetTokenService. Distinct from the public widget Handler so the
 // signer/services dependency stays out of the unauthenticated path.

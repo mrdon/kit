@@ -21,7 +21,7 @@ func registerConsoleRoutes(mux *http.ServeMux, a *App) {
 
 	// Shell: the index and every client-side route serve the same SPA
 	// HTML. The {rest...} wildcard covers /{slug}/web/ and any deeper
-	// client route (e.g. /{slug}/web/integrations) on reload.
+	// client route (e.g. /{slug}/web/admin/integrations) on reload.
 	mux.Handle("GET /{slug}/"+Segment, page(a.handleShell))
 	mux.Handle("GET /{slug}/"+Segment+"/{rest...}", page(a.handleShell))
 

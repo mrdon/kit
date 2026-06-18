@@ -1,7 +1,7 @@
 // Package admin hosts the cross-app Integration registry (registry.go)
 // that lets apps surface themselves on the integrations index without
 // admin importing them. The index UI itself now lives in the React
-// console at /{slug}/web/integrations (rendered from this registry via
+// console at /{slug}/web/admin/integrations (rendered from this registry via
 // internal/apps/console); admin only keeps a redirect from the legacy
 // /{slug}/admin/integrations URL.
 package admin

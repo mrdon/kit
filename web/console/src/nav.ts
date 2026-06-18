@@ -30,7 +30,7 @@ export const SECTIONS: Section[] = [
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',
   },
   {
-    to: '/roles',
+    to: '/admin/roles',
     label: 'Roles',
     blurb: 'See who belongs to which role and change membership.',
     admin: true,
@@ -42,19 +42,19 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
   {
-    to: '/integrations',
+    to: '/admin/integrations',
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',
     admin: true,
   },
   {
-    to: '/netlify',
+    to: '/admin/netlify',
     label: 'Website',
     blurb: 'Connect Netlify + GitHub so the team can request site changes.',
     admin: true,
   },
   {
-    to: '/widget',
+    to: '/admin/widget',
     label: 'Chat widget',
     blurb: 'Mint and revoke embed tokens for the website chat widget.',
     admin: true,

@@ -29,13 +29,13 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/" element={<Launcher />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/expenses" element={<Expenses />} />
-          <Route path="/admin/expenses" element={<ExpenseSettings />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/roles" element={<Roles />} />
           <Route path="/vault" element={<Vault />} />
-          <Route path="/integrations" element={<Integrations />} />
-          <Route path="/netlify" element={<Netlify />} />
-          <Route path="/widget" element={<Widget />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/admin/expenses" element={<ExpenseSettings />} />
+          <Route path="/admin/roles" element={<Roles />} />
+          <Route path="/admin/integrations" element={<Integrations />} />
+          <Route path="/admin/netlify" element={<Netlify />} />
+          <Route path="/admin/widget" element={<Widget />} />
         </Route>
       </Routes>
     </BrowserRouter>

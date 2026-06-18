@@ -38,7 +38,7 @@ func registerNetlifyRoutes(mux *http.ServeMux, a *App) {
 			auth.AssertTenantMatch(a.signer, requireAdminHandler(h)))))
 	}
 
-	// The settings UI moved into the React console at /{slug}/web/netlify.
+	// The settings UI moved into the React console at /{slug}/web/admin/netlify.
 	// Keep the old URL working (bookmarks, agent messages) by redirecting.
 	mux.Handle("GET /{slug}/apps/netlify/settings", tenantMW(http.HandlerFunc(redirectToConsole)))
 
@@ -49,14 +49,14 @@ func registerNetlifyRoutes(mux *http.ServeMux, a *App) {
 	// reads the slug from the state cookie (Path=/) and 303s to the
 	// per-tenant callback URL where the session cookie (Path=/{slug}/)
 	// is in scope. See handleNetlifyCallbackBounce for the rationale.
-	// The connect/callback handlers redirect back to /{slug}/web/netlify.
+	// The connect/callback handlers redirect back to /{slug}/web/admin/netlify.
 	mux.Handle("GET /{slug}/apps/netlify/connect/netlify", page(a.handleNetlifyConnect))
 	mux.HandleFunc("GET /oauth/netlify/callback", a.handleNetlifyCallbackBounce)
 	mux.Handle("GET /{slug}/oauth/netlify/callback", page(a.handleNetlifyCallback))
 
 	// GitHub install lives in the github Kit app (shared substrate,
 	// one install per tenant). The console's status JSON hands the client
-	// the github connect/disconnect URLs with return_to=/{slug}/web/netlify.
+	// the github connect/disconnect URLs with return_to=/{slug}/web/admin/netlify.
 }
 
 // redirectToConsole 302s the legacy settings URL to the console page.
@@ -66,7 +66,7 @@ func redirectToConsole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/"+tenant.Slug+"/web/netlify", http.StatusFound)
+	http.Redirect(w, r, "/"+tenant.Slug+"/web/admin/netlify", http.StatusFound)
 }
 
 // requireAdminHandler refuses requests where the caller is not a

@@ -14,7 +14,7 @@ import (
 )
 
 // registerConsoleRoutes wires the React console's JSON endpoints for the
-// Website settings page (/{slug}/web/netlify). The OAuth connect/callback
+// Website settings page (/{slug}/web/admin/netlify). The OAuth connect/callback
 // dance stays as full-page routes in urls.go; only status + the two
 // state-changing actions are JSON here. All admin-only.
 func registerConsoleRoutes(mux *http.ServeMux, a *App) {
@@ -68,7 +68,7 @@ func (a *App) buildStatus(ctx context.Context, tenantSlug string, tenantID uuid.
 	if err != nil {
 		return statusJSON{}, err
 	}
-	consoleReturn := "/" + tenantSlug + "/web/netlify"
+	consoleReturn := "/" + tenantSlug + "/web/admin/netlify"
 	st := statusJSON{
 		NetlifyConfigured: a.svc.HasNetlifyCredentials(),
 		GithubConfigured:  a.svc.HasGitHubAppConfig(),

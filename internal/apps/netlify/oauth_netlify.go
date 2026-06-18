@@ -164,7 +164,7 @@ func (a *App) handleNetlifyCallback(w http.ResponseWriter, r *http.Request) {
 // Site-pick and disconnect are now JSON endpoints (web_console.go); this
 // is used only by the OAuth connect/callback flow, which is full-page.
 func (a *App) redirectToSettings(w http.ResponseWriter, r *http.Request, slug, msg string) {
-	dest := "/" + slug + "/web/netlify"
+	dest := "/" + slug + "/web/admin/netlify"
 	if msg != "" {
 		dest += "?msg=" + url.QueryEscape(msg)
 	}
