@@ -1178,3 +1178,190 @@ h2.view-title:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 }
+
+/* --- Expenses --- */
+.group {
+  margin-bottom: 1.5rem;
+}
+.group-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.group-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--off-bg);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+.empty {
+  color: var(--muted);
+  padding: 1rem 0;
+}
+.row-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+.row-card:hover {
+  border-color: var(--line-strong);
+}
+.row-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.row-card-title {
+  font-weight: 500;
+  color: var(--ink);
+}
+.row-card-sub {
+  font-size: 0.8rem;
+  color: var(--error-ink);
+}
+.row-card-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.drawer-wide {
+  max-width: 40rem;
+}
+.detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.75rem;
+}
+.detail-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.detail-desc {
+  color: var(--ink-soft);
+  margin: 0 0 1rem;
+}
+.status-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  background: var(--off-bg);
+  color: var(--off-ink);
+}
+.status-submitted { background: #dbeafe; color: #1d4ed8; }
+.status-approved { background: var(--ok-bg); color: var(--ok-ink); }
+.status-rejected { background: var(--error-bg); color: var(--error-ink); }
+.status-reimbursed { background: var(--ok-bg); color: var(--ok-ink); }
+.item-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.88rem;
+}
+.item-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding: 0.4rem 0.5rem;
+}
+.item-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.4rem 0.5rem;
+  color: var(--ink);
+}
+.item-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.link-danger {
+  background: none;
+  border: none;
+  color: var(--error-ink);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.add-item {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.add-item input {
+  flex: 1 1 6rem;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  color: var(--ink);
+}
+.add-item input.num {
+  flex: 0 0 6rem;
+  text-align: right;
+}
+.btn-sm {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+}
+.approver-field {
+  display: flex;
+  gap: 0.4rem;
+  flex: 1 1 100%;
+  margin-bottom: 0.5rem;
+}
+.approver-field input {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  color: var(--ink);
+}
+.activity {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+.activity-title {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  margin: 0 0 0.5rem;
+}
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.activity-when {
+  color: var(--muted);
+  margin-right: 0.5rem;
+  white-space: nowrap;
+}

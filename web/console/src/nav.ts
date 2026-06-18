@@ -20,6 +20,11 @@ export const SECTIONS: Section[] = [
     blurb: 'List and board for everything your roles own.',
   },
   {
+    to: '/expenses',
+    label: 'Expenses',
+    blurb: 'File and approve expense reports with receipts.',
+  },
+  {
     to: '/vault',
     label: 'Vault',
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',

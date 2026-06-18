@@ -7,6 +7,7 @@ import Integrations from './pages/Integrations';
 import Netlify from './pages/Netlify';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
+import Expenses from './pages/Expenses';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
 import Vault from './pages/Vault';
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
         <Route element={<Shell />}>
           <Route path="/" element={<Launcher />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/expenses" element={<Expenses />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/vault" element={<Vault />} />
