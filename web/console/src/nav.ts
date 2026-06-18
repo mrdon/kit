@@ -36,6 +36,12 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
   {
+    to: '/admin/expenses',
+    label: 'Expense settings',
+    blurb: 'Choose which role approves expense reports.',
+    admin: true,
+  },
+  {
     to: '/integrations',
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',

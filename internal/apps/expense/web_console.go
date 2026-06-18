@@ -20,11 +20,16 @@ func registerExpenseRoutes(mux *http.ServeMux, a *ExpenseApp) {
 	jsonRoute := func(h http.HandlerFunc) http.Handler {
 		return console.JSON(a.svc.pool, a.signer, h)
 	}
+	// The approval policy is admin-only config — gate it at the middleware
+	// (AdminJSON returns 403 for non-admins) rather than only in the handler.
+	adminRoute := func(h http.HandlerFunc) http.Handler {
+		return console.AdminJSON(a.svc.pool, a.signer, h)
+	}
 	mux.Handle("GET /{slug}/api/expenses", jsonRoute(a.handleList))
 	mux.Handle("POST /{slug}/api/expenses", jsonRoute(a.handleCreate))
 	mux.Handle("GET /{slug}/api/expenses/meta", jsonRoute(a.handleMeta))
-	mux.Handle("GET /{slug}/api/expenses/policy", jsonRoute(a.handleGetPolicy))
-	mux.Handle("PUT /{slug}/api/expenses/policy", jsonRoute(a.handleSetPolicy))
+	mux.Handle("GET /{slug}/api/expenses/policy", adminRoute(a.handleGetPolicy))
+	mux.Handle("PUT /{slug}/api/expenses/policy", adminRoute(a.handleSetPolicy))
 	mux.Handle("GET /{slug}/api/expenses/{id}", jsonRoute(a.handleGet))
 	mux.Handle("POST /{slug}/api/expenses/{id}/approver", jsonRoute(a.handleAssignApprover))
 	mux.Handle("POST /{slug}/api/expenses/{id}/items", jsonRoute(a.handleAddItem))
