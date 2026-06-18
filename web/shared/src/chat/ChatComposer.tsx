@@ -193,7 +193,7 @@ export default function ChatComposer({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,application/pdf,.txt,.md,.csv,.docx"
+        accept="image/*,text/*,application/pdf,application/json,.txt,.md,.csv,.docx,.json,.yaml,.yml,.log,.xml,.tsv"
         style={{ display: 'none' }}
         onChange={onPickFiles}
       />

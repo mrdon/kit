@@ -1,12 +1,14 @@
 package attachment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -65,7 +67,7 @@ func readAttachment(ctx context.Context, svc *store.Service, sender anthropic.Se
 			return "", errors.New("vision is not configured")
 		}
 		return anthropic.DescribeImage(ctx, sender, raw, meta.Mime, instructions)
-	case isExtractable(meta.Filename, meta.Mime):
+	case isExtractable(meta.Filename, meta.Mime, raw):
 		text, err := ingest.ExtractText(raw, meta.Filename, meta.Mime)
 		if err != nil {
 			return "", fmt.Errorf("extracting text: %w", err)
@@ -84,13 +86,14 @@ func metadataNote(filename, mime string, size int) string {
 }
 
 // isExtractable reports whether ingest.ExtractText will produce meaningful
-// text (rather than returning raw binary as a string).
-func isExtractable(filename, mime string) bool {
+// text (rather than returning raw binary as a string). Binary formats
+// (pdf, docx) are recognised by extension/mime; everything else is
+// accepted only if the bytes actually look like text — that lets any
+// text-ish file through (json, yaml, logs, source code) regardless of how
+// the browser labelled its mime, while still rejecting true binaries.
+func isExtractable(filename, mime string, raw []byte) bool {
 	switch strings.ToLower(filepath.Ext(filename)) {
-	case ".pdf", ".docx", ".txt", ".md", ".csv":
-		return true
-	}
-	if strings.HasPrefix(mime, "text/") {
+	case ".pdf", ".docx":
 		return true
 	}
 	switch mime {
@@ -98,7 +101,34 @@ func isExtractable(filename, mime string) bool {
 		"application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 		return true
 	}
-	return false
+	return looksLikeText(raw)
+}
+
+// looksLikeText heuristically detects UTF-8 text: a NUL byte is the
+// strongest binary signal, and the content must be valid UTF-8. Sniffs a
+// bounded prefix so a huge file doesn't cost a full scan.
+func looksLikeText(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	const sniff = 8192
+	head := raw
+	truncated := false
+	if len(head) > sniff {
+		head, truncated = head[:sniff], true
+	}
+	if bytes.IndexByte(head, 0) >= 0 {
+		return false
+	}
+	// When we cut at the sniff boundary a multi-byte rune may straddle
+	// it; drop up to 3 trailing bytes so a partial rune doesn't fail an
+	// otherwise-valid prefix.
+	if truncated {
+		for i := 0; i < 3 && len(head) > 0 && !utf8.Valid(head); i++ {
+			head = head[:len(head)-1]
+		}
+	}
+	return utf8.Valid(head)
 }
 
 // registerAgentTool wires read_attachment into the agent registry. The
