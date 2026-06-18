@@ -48,7 +48,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 async function mutate<T>(
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {
@@ -68,6 +68,8 @@ export const apiPost = <T>(path: string, body?: unknown) =>
   mutate<T>('POST', path, body);
 export const apiPatch = <T>(path: string, body?: unknown) =>
   mutate<T>('PATCH', path, body);
+export const apiPut = <T>(path: string, body?: unknown) =>
+  mutate<T>('PUT', path, body);
 export const apiDelete = <T>(path: string, body?: unknown) =>
   mutate<T>('DELETE', path, body);
 
@@ -272,6 +274,12 @@ export interface ExpensesMeta {
   roles: string[];
   statuses: string[];
   currencies: string[];
+  is_admin: boolean;
+}
+
+export interface ExpensePolicy {
+  approver_role?: string;
+  approver_user_id?: string;
 }
 
 export interface ExpenseFilters {
@@ -357,7 +365,12 @@ export const api = {
   listExpenses: (f: ExpenseFilters = {}) =>
     apiGet<{ reports: ExpenseReport[] }>(`/expenses${expenseQuery(f)}`),
   getExpense: (id: string) =>
-    apiGet<{ report: ExpenseReport; events: ExpenseEvent[] }>(`/expenses/${id}`),
+    apiGet<{ report: ExpenseReport; events: ExpenseEvent[]; can_approve: boolean }>(
+      `/expenses/${id}`,
+    ),
+  expensePolicy: () => apiGet<{ policy: ExpensePolicy }>('/expenses/policy'),
+  setExpensePolicy: (body: { approver_role?: string; approver?: string }) =>
+    apiPut<{ policy: ExpensePolicy }>('/expenses/policy', body),
   createExpense: (body: CreateExpenseBody) =>
     apiPost<{ report: ExpenseReport }>('/expenses', body),
   assignExpenseApprover: (id: string, approver: string) =>

@@ -4,18 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
 // canApprove reports whether the caller may approve/reject/reimburse a report.
-// The submitter never can (no self-approval). When a specific approver is
-// assigned, only they or an admin qualify; otherwise approval falls back to any
-// member of the owning role (or an admin) — the same "anyone in the role can
-// act" model as tasks.
-func (s *ExpenseService) canApprove(ctx context.Context, c *services.Caller, r *Report) bool {
+// The submitter never can (no self-approval). A submitted report always carries
+// a resolved approver (a specific person or a role — defaulting to admin), so
+// approval is: the assigned person, or a member of the approver role, or an
+// admin.
+func (s *ExpenseService) canApprove(_ context.Context, c *services.Caller, r *Report) bool {
 	if r.SubmitterUserID == c.UserID {
 		return false
 	}
@@ -25,11 +27,33 @@ func (s *ExpenseService) canApprove(ctx context.Context, c *services.Caller, r *
 	if r.ApproverUserID != nil {
 		return *r.ApproverUserID == c.UserID
 	}
-	scope, err := getScopeRow(ctx, s.pool, c.TenantID, r.ScopeID)
-	if err != nil {
-		return false
+	return r.ApproverRole != "" && slices.Contains(c.Roles, r.ApproverRole)
+}
+
+// applyApprovalPolicy snapshots the tenant policy's approver onto a report at
+// submit time, unless the report already carries a per-report override. Mutates
+// r in place and persists the change.
+func (s *ExpenseService) applyApprovalPolicy(ctx context.Context, c *services.Caller, r *Report) {
+	if r.ApproverUserID != nil || r.ApproverRole != "" {
+		return // explicit per-report override wins
 	}
-	return c.CanSee([]services.ScopeRef{scope})
+	pol, _ := loadPolicy(ctx, s.pool, c.TenantID)
+	var u reportUpdate
+	switch {
+	case pol.ApproverUserID != nil:
+		r.ApproverUserID = pol.ApproverUserID
+		u.ApproverUserID = pol.ApproverUserID
+	default:
+		// A configured role, or the admin default when nothing is set, so every
+		// submitted report has a defined approver (and visibility follows it).
+		role := pol.ApproverRole
+		if role == "" {
+			role = models.RoleAdmin
+		}
+		r.ApproverRole = role
+		u.ApproverRole = &role
+	}
+	_ = updateReport(ctx, s.pool, c.TenantID, r.ID, u)
 }
 
 // SubmitReport moves a draft report to submitted and raises the approval
@@ -59,6 +83,8 @@ func (s *ExpenseService) SubmitReport(ctx context.Context, c *services.Caller, r
 	}
 	_ = appendEvent(ctx, s.pool, c.TenantID, reportID, &c.UserID, "submitted", "", StatusDraft, StatusSubmitted)
 
+	// Snapshot the tenant approval policy onto the report, then raise the card.
+	s.applyApprovalPolicy(ctx, c, r)
 	if err := s.raiseApprovalCard(ctx, c, r, items); err != nil {
 		// The report is already submitted; a card failure shouldn't roll that
 		// back (an approver can still act via tool/console). Log-and-continue.
@@ -78,20 +104,15 @@ func (s *ExpenseService) raiseApprovalCard(ctx context.Context, c *services.Call
 		Body:     approvalCardBody(r, items),
 		ReportID: r.ID,
 	}
-	// Route to the assigned approver when one is set; otherwise to the owning
-	// role.
-	if r.ApproverUserID != nil {
+	// applyApprovalPolicy has already set a specific approver or a role
+	// (defaulting to admin), so route the card to whichever is present.
+	switch {
+	case r.ApproverUserID != nil:
 		in.ApproverUserID = r.ApproverUserID
-	} else {
-		scope, err := getScopeRow(ctx, s.pool, c.TenantID, r.ScopeID)
-		if err != nil || scope.RoleID == nil {
-			return errors.New("owning role not resolvable for approval card")
-		}
-		roleName, err := getRoleName(ctx, s.pool, c.TenantID, *scope.RoleID)
-		if err != nil {
-			return err
-		}
-		in.ApproverRoleName = roleName
+	case r.ApproverRole != "":
+		in.ApproverRoleName = r.ApproverRole
+	default:
+		return errors.New("no approver resolved for approval card")
 	}
 	cardID, err := s.app.cards.CreateApprovalDecision(ctx, c.TenantID, in)
 	if err != nil {

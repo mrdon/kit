@@ -19,6 +19,7 @@ export default function ExpenseDetail({
 }) {
   const [report, setReport] = useState<ExpenseReport | null>(null);
   const [events, setEvents] = useState<ExpenseEvent[]>([]);
+  const [canApprove, setCanApprove] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,6 +29,7 @@ export default function ExpenseDetail({
       .then((r) => {
         setReport(r.report);
         setEvents(r.events);
+        setCanApprove(r.can_approve);
       })
       .catch((e) => setErr(e.message));
   }, [reportId]);
@@ -95,7 +97,7 @@ export default function ExpenseDetail({
           <AddItemForm busy={busy} onAdd={(body) => run(() => api.addExpenseItem(reportId, body))} />
         )}
 
-        <Actions report={report} busy={busy} run={run} />
+        <Actions report={report} canApprove={canApprove} busy={busy} run={run} />
 
         {events.length > 0 && (
           <div className="activity">
@@ -196,11 +198,6 @@ function AddItemForm({
       />
       <input type="date" value={body.spent_on ?? ''} onChange={(e) => set('spent_on', e.target.value)} />
       <input
-        placeholder="Category"
-        value={body.category ?? ''}
-        onChange={(e) => set('category', e.target.value)}
-      />
-      <input
         className="num"
         placeholder="0.00"
         inputMode="decimal"
@@ -216,10 +213,12 @@ function AddItemForm({
 
 function Actions({
   report,
+  canApprove,
   busy,
   run,
 }: {
   report: ExpenseReport;
+  canApprove: boolean;
   busy: boolean;
   run: (fn: () => Promise<unknown>) => void;
 }) {
@@ -228,7 +227,6 @@ function Actions({
     case 'draft':
       return (
         <div className="drawer-actions">
-          <ApproverField id={id} current={report.approver_user_id} run={run} busy={busy} />
           <button
             className="btn"
             disabled={busy || (report.items ?? []).length === 0}
@@ -239,6 +237,10 @@ function Actions({
         </div>
       );
     case 'submitted':
+      // Only an eligible approver sees the controls; the submitter just waits.
+      if (!canApprove) {
+        return <p className="detail-desc">Submitted — awaiting approval.</p>;
+      }
       return (
         <div className="drawer-actions">
           <button className="btn" disabled={busy} onClick={() => run(() => api.approveExpense(id))}>
@@ -275,36 +277,6 @@ function Actions({
     default:
       return null;
   }
-}
-
-function ApproverField({
-  id,
-  current,
-  run,
-  busy,
-}: {
-  id: string;
-  current?: string;
-  run: (fn: () => Promise<unknown>) => void;
-  busy: boolean;
-}) {
-  const [ref, setRef] = useState('');
-  return (
-    <div className="approver-field">
-      <input
-        placeholder={current ? 'Change approver…' : 'Assign approver (optional)'}
-        value={ref}
-        onChange={(e) => setRef(e.target.value)}
-      />
-      <button
-        className="btn btn-sm btn-ghost"
-        disabled={busy}
-        onClick={() => run(() => api.assignExpenseApprover(id, ref))}
-      >
-        {current ? 'Update' : 'Assign'}
-      </button>
-    </div>
-  );
 }
 
 function describeEvent(e: ExpenseEvent): string {

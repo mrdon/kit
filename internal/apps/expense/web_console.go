@@ -23,6 +23,8 @@ func registerExpenseRoutes(mux *http.ServeMux, a *ExpenseApp) {
 	mux.Handle("GET /{slug}/api/expenses", jsonRoute(a.handleList))
 	mux.Handle("POST /{slug}/api/expenses", jsonRoute(a.handleCreate))
 	mux.Handle("GET /{slug}/api/expenses/meta", jsonRoute(a.handleMeta))
+	mux.Handle("GET /{slug}/api/expenses/policy", jsonRoute(a.handleGetPolicy))
+	mux.Handle("PUT /{slug}/api/expenses/policy", jsonRoute(a.handleSetPolicy))
 	mux.Handle("GET /{slug}/api/expenses/{id}", jsonRoute(a.handleGet))
 	mux.Handle("POST /{slug}/api/expenses/{id}/approver", jsonRoute(a.handleAssignApprover))
 	mux.Handle("POST /{slug}/api/expenses/{id}/items", jsonRoute(a.handleAddItem))
@@ -98,7 +100,41 @@ func (a *ExpenseApp) handleGet(w http.ResponseWriter, r *http.Request) {
 	if events == nil {
 		events = []ReportEvent{}
 	}
-	expenseJSON(w, http.StatusOK, map[string]any{"report": rep, "events": events})
+	expenseJSON(w, http.StatusOK, map[string]any{
+		"report":      rep,
+		"events":      events,
+		"can_approve": a.svc.CanApprove(r.Context(), caller, rep),
+	})
+}
+
+func (a *ExpenseApp) handleGetPolicy(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	pol, err := a.svc.GetPolicy(r.Context(), caller)
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	expenseJSON(w, http.StatusOK, map[string]any{"policy": pol})
+}
+
+func (a *ExpenseApp) handleSetPolicy(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	var body struct {
+		ApproverRole string `json:"approver_role"`
+		Approver     string `json:"approver"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		expenseErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	pol, err := a.svc.SetPolicy(r.Context(), caller, SetPolicyInput{
+		ApproverRole: body.ApproverRole, ApproverRef: body.Approver,
+	})
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	expenseJSON(w, http.StatusOK, map[string]any{"policy": pol})
 }
 
 func (a *ExpenseApp) handleComment(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +220,7 @@ func (a *ExpenseApp) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"roles":      caller.Roles,
 		"statuses":   []string{StatusDraft, StatusSubmitted, StatusApproved, StatusRejected, StatusReimbursed},
 		"currencies": []string{"USD", "EUR", "GBP", "CAD", "AUD"},
+		"is_admin":   caller.IsAdmin,
 	})
 }
 

@@ -20,6 +20,7 @@ export default function Expenses() {
   const [filters, setFilters] = useState<ExpenseFilters>({ include_closed: true });
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     api.expensesMeta().then(setMeta).catch(() => {});
@@ -52,6 +53,11 @@ export default function Expenses() {
         <div className="page-head-row">
           <h1>Expenses</h1>
           <div className="page-head-actions">
+            {meta?.is_admin && (
+              <button className="btn btn-ghost" onClick={() => setSettingsOpen(true)}>
+                ⚙ Settings
+              </button>
+            )}
             <button className="btn" onClick={() => setCreating(true)}>
               New report
             </button>
@@ -124,6 +130,81 @@ export default function Expenses() {
           }}
         />
       )}
+
+      {settingsOpen && (
+        <ExpenseSettings meta={meta} onClose={() => setSettingsOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+function ExpenseSettings({
+  meta,
+  onClose,
+}: {
+  meta: ExpensesMeta | null;
+  onClose: () => void;
+}) {
+  const [role, setRole] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .expensePolicy()
+      .then((r) => setRole(r.policy.approver_role ?? ''))
+      .catch((e) => setErr(e.message));
+  }, []);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      await api.setExpensePolicy({ approver_role: role });
+      setSaved(true);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+        <button className="drawer-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+        <h2 className="panel-title">Expense settings</h2>
+        <p className="detail-desc">
+          Choose which role approves expense reports. Only members of that role
+          (and admins) can approve — and only they can see reports they didn't
+          submit. Leave as “Admins only” to keep approvals with admins.
+        </p>
+        {err && <p className="banner banner-error">{err}</p>}
+        {saved && <p className="banner banner-ok">Saved.</p>}
+        <form onSubmit={save} className="stack-form">
+          <label className="field">
+            <span>Approver role</span>
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="">Admins only</option>
+              {meta?.roles.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="drawer-actions">
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </aside>
     </div>
   );
 }
@@ -171,35 +252,15 @@ function CreateExpense({
             <span>Title</span>
             <input required autoFocus onChange={(e) => set('title', e.target.value)} />
           </label>
-          <div className="field-row">
-            <label className="field">
-              <span>Currency</span>
-              <select value={body.currency} onChange={(e) => set('currency', e.target.value)}>
-                {(meta?.currencies ?? ['USD']).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Role</span>
-              <select onChange={(e) => set('role_scope', e.target.value)} defaultValue="">
-                <option value="">Primary role</option>
-                {meta?.roles.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
           <label className="field">
-            <span>Approver (optional)</span>
-            <input
-              placeholder="name, @slack id, or UUID — blank = anyone in the role"
-              onChange={(e) => set('approver', e.target.value)}
-            />
+            <span>Currency</span>
+            <select value={body.currency} onChange={(e) => set('currency', e.target.value)}>
+              {(meta?.currencies ?? ['USD']).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Description</span>

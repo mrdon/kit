@@ -21,6 +21,7 @@ type fixture struct {
 	tenant *models.Tenant
 	alice  *models.User // member only
 	bob    *models.User // member + founders
+	carol  *models.User // member only (an unrelated teammate)
 	admin  *models.User // admin
 }
 
@@ -48,8 +49,9 @@ func newFixture(t *testing.T) *fixture {
 	}
 	alice, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_alice", "Alice", "")
 	bob, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_bob", "Bob", "")
+	carol, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_carol", "Carol", "")
 	admin, _ := models.GetOrCreateUser(ctx, pool, tenant.ID, "U_admin", "Admin", "")
-	for _, u := range []*models.User{alice, bob, admin} {
+	for _, u := range []*models.User{alice, bob, carol, admin} {
 		if err := models.AssignRole(ctx, pool, tenant.ID, u.ID, models.RoleMember); err != nil {
 			t.Fatalf("assign member: %v", err)
 		}
@@ -57,7 +59,7 @@ func newFixture(t *testing.T) *fixture {
 	_ = models.AssignRole(ctx, pool, tenant.ID, admin.ID, models.RoleAdmin)
 	_ = models.AssignRole(ctx, pool, tenant.ID, bob.ID, "founders")
 
-	return &fixture{pool: pool, svc: &ExpenseService{pool: pool}, tenant: tenant, alice: alice, bob: bob, admin: admin}
+	return &fixture{pool: pool, svc: &ExpenseService{pool: pool}, tenant: tenant, alice: alice, bob: bob, carol: carol, admin: admin}
 }
 
 func (f *fixture) caller(u *models.User) *services.Caller {
@@ -111,20 +113,71 @@ func TestLifecycleAndTotal(t *testing.T) {
 	if _, err := f.svc.SubmitReport(ctx, f.caller(f.alice), id); err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	// bob is in the member role and isn't the submitter → may approve.
-	r, err = f.svc.ApproveReport(ctx, f.caller(f.bob), id)
+	// No policy configured → approval defaults to admins. bob (member) can't
+	// even see it, let alone approve.
+	if _, err := f.svc.ApproveReport(ctx, f.caller(f.bob), id); !errors.Is(err, services.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for non-admin default approver, got %v", err)
+	}
+	// admin approves and reimburses.
+	r, err = f.svc.ApproveReport(ctx, f.caller(f.admin), id)
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	if r.Status != StatusApproved {
 		t.Fatalf("status = %s, want approved", r.Status)
 	}
-	r, err = f.svc.MarkReimbursed(ctx, f.caller(f.bob), id)
+	r, err = f.svc.MarkReimbursed(ctx, f.caller(f.admin), id)
 	if err != nil {
 		t.Fatalf("reimburse: %v", err)
 	}
 	if r.Status != StatusReimbursed {
 		t.Fatalf("status = %s, want reimbursed", r.Status)
+	}
+}
+
+// TestPolicyRoleApproval: with an approver-role policy, a member of that role
+// (not the submitter) can approve, and the report is visible to them but not to
+// unrelated users.
+func TestPolicyRoleApproval(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, err := f.svc.SetPolicy(ctx, f.caller(f.admin), SetPolicyInput{ApproverRole: "founders"}); err != nil {
+		t.Fatalf("set policy: %v", err)
+	}
+	id := f.draftWithItem(t)
+	if _, err := f.svc.SubmitReport(ctx, f.caller(f.alice), id); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	// bob is in founders → can approve; visibility follows.
+	if _, _, err := f.svc.Get(ctx, f.caller(f.bob), id); err != nil {
+		t.Fatalf("approver should see report: %v", err)
+	}
+	// carol (member only, not the approver role, not submitter) must NOT see it.
+	if _, _, err := f.svc.Get(ctx, f.caller(f.carol), id); !errors.Is(err, services.ErrNotFound) {
+		t.Fatalf("non-approver should not see report, got %v", err)
+	}
+	mine, err := f.svc.List(ctx, f.caller(f.carol), ReportFilters{})
+	if err != nil {
+		t.Fatalf("carol list: %v", err)
+	}
+	if len(mine) != 0 {
+		t.Fatalf("carol should see no reports, got %d", len(mine))
+	}
+	r, err := f.svc.ApproveReport(ctx, f.caller(f.bob), id)
+	if err != nil {
+		t.Fatalf("founders approve: %v", err)
+	}
+	if r.Status != StatusApproved {
+		t.Fatalf("status = %s, want approved", r.Status)
+	}
+}
+
+// TestSetPolicyRequiresAdmin: non-admins can't change the policy.
+func TestSetPolicyRequiresAdmin(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, err := f.svc.SetPolicy(ctx, f.caller(f.alice), SetPolicyInput{ApproverRole: "founders"}); !errors.Is(err, services.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }
 
@@ -172,7 +225,8 @@ func TestRejectThenReopen(t *testing.T) {
 	if _, err := f.svc.SubmitReport(ctx, f.caller(f.alice), id); err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	r, err := f.svc.RejectReport(ctx, f.caller(f.bob), id, "missing receipt")
+	// Default approver is admins; admin rejects.
+	r, err := f.svc.RejectReport(ctx, f.caller(f.admin), id, "missing receipt")
 	if err != nil {
 		t.Fatalf("reject: %v", err)
 	}

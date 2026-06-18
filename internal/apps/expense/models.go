@@ -8,8 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/mrdon/kit/internal/models"
 )
 
 // Report statuses. The DB CHECK constraint (migration 061) is the source of
@@ -33,7 +31,8 @@ type Report struct {
 	Status          string     `json:"status"`
 	ScopeID         uuid.UUID  `json:"scope_id"`
 	SubmitterUserID uuid.UUID  `json:"submitter_user_id"`
-	ApproverUserID  *uuid.UUID `json:"approver_user_id,omitempty"`   // assigned approver
+	ApproverUserID  *uuid.UUID `json:"approver_user_id,omitempty"`   // assigned/policy approver (specific person)
+	ApproverRole    string     `json:"approver_role,omitempty"`      // policy approver role (snapshot at submit)
 	DecidedByUserID *uuid.UUID `json:"decided_by_user_id,omitempty"` // who approved/rejected
 	DecisionCardID  *uuid.UUID `json:"decision_card_id,omitempty"`
 	RejectionReason string     `json:"rejection_reason,omitempty"`
@@ -86,14 +85,14 @@ type ReportFilters struct {
 	IncludeClosed bool // admit approved/rejected/reimbursed when Status is empty
 }
 
-const reportColumns = `r.id, r.tenant_id, r.title, r.description, r.status, r.scope_id, r.submitter_user_id, r.approver_user_id, r.decided_by_user_id, r.decision_card_id, r.rejection_reason, r.total_cents, r.currency, r.submitted_at, r.decided_at, r.reimbursed_at, r.created_at, r.updated_at`
+const reportColumns = `r.id, r.tenant_id, r.title, r.description, r.status, r.scope_id, r.submitter_user_id, r.approver_user_id, r.approver_role, r.decided_by_user_id, r.decision_card_id, r.rejection_reason, r.total_cents, r.currency, r.submitted_at, r.decided_at, r.reimbursed_at, r.created_at, r.updated_at`
 
 func scanReport(row interface{ Scan(...any) error }) (*Report, error) {
 	var r Report
-	var description, rejection *string
+	var description, rejection, approverRole *string
 	err := row.Scan(
 		&r.ID, &r.TenantID, &r.Title, &description, &r.Status,
-		&r.ScopeID, &r.SubmitterUserID, &r.ApproverUserID, &r.DecidedByUserID, &r.DecisionCardID,
+		&r.ScopeID, &r.SubmitterUserID, &r.ApproverUserID, &approverRole, &r.DecidedByUserID, &r.DecisionCardID,
 		&rejection, &r.TotalCents, &r.Currency,
 		&r.SubmittedAt, &r.DecidedAt, &r.ReimbursedAt,
 		&r.CreatedAt, &r.UpdatedAt,
@@ -106,6 +105,9 @@ func scanReport(row interface{ Scan(...any) error }) (*Report, error) {
 	}
 	if rejection != nil {
 		r.RejectionReason = *rejection
+	}
+	if approverRole != nil {
+		r.ApproverRole = *approverRole
 	}
 	return &r, nil
 }
@@ -127,32 +129,32 @@ func getReport(ctx context.Context, pool *pgxpool.Pool, tenantID, reportID uuid.
 	return scanReport(row)
 }
 
-// listReports returns reports visible to the caller. A non-admin sees a
-// report iff they're in the owning role OR they submitted it. Admin
-// (userID == nil) bypasses the scope filter.
-func listReports(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, f ReportFilters) ([]Report, error) {
+// listReports returns reports visible to the caller. Visibility follows
+// approval authority, not owning-role membership: you always see your own
+// reports; you see someone else's only if you're its approver (the assigned
+// person, or a member of its snapshot approver_role). Admin (userID == nil)
+// sees everything.
+func listReports(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, userID *uuid.UUID, roleNames []string, f ReportFilters) ([]Report, error) {
 	var b strings.Builder
 	args := []any{tenantID}
 	argN := 1
 
 	b.WriteString(`SELECT ` + reportColumns + ` FROM app_expense_reports r`)
-	if userID != nil {
-		b.WriteString(` JOIN scopes sc ON sc.id = r.scope_id`)
-	}
 	b.WriteString(` WHERE r.tenant_id = $1`)
 
 	if userID != nil {
-		// Role membership OR own submission grants visibility.
 		argN++
-		mineArg := argN
+		meArg := argN
 		args = append(args, *userID)
-		if len(roleIDs) > 0 {
-			argN++
-			b.WriteString(fmt.Sprintf(` AND (sc.role_id = ANY($%d) OR r.submitter_user_id = $%d)`, argN, mineArg))
-			args = append(args, roleIDs)
-		} else {
-			b.WriteString(fmt.Sprintf(` AND r.submitter_user_id = $%d`, mineArg))
-		}
+		argN++
+		rolesArg := argN
+		args = append(args, roleNames)
+		// Own submission, OR I'm the assigned approver, OR I'm in the report's
+		// snapshot approver role. Others' drafts have no approver snapshot, so
+		// they stay invisible.
+		b.WriteString(fmt.Sprintf(
+			` AND (r.submitter_user_id = $%d OR r.approver_user_id = $%d OR (r.approver_role IS NOT NULL AND r.approver_role = ANY($%d)))`,
+			meArg, meArg, rolesArg))
 	}
 
 	if f.MineOnly && userID != nil {
@@ -201,6 +203,7 @@ type reportUpdate struct {
 	Description      *string
 	ApproverUserID   *uuid.UUID // assigned approver
 	ClearApprover    bool
+	ApproverRole     *string    // policy approver role snapshot
 	DecidedByUserID  *uuid.UUID // who approved/rejected
 	DecisionCardID   *uuid.UUID
 	RejectionReason  *string
@@ -233,6 +236,9 @@ func updateReport(ctx context.Context, pool *pgxpool.Pool, tenantID, reportID uu
 	} else if u.ClearApprover {
 		sets = append(sets, "approver_user_id = NULL")
 	}
+	if u.ApproverRole != nil {
+		add("approver_role", nilIfEmpty(*u.ApproverRole))
+	}
 	if u.DecidedByUserID != nil {
 		add("decided_by_user_id", *u.DecidedByUserID)
 	}
@@ -260,33 +266,6 @@ func updateReport(ctx context.Context, pool *pgxpool.Pool, tenantID, reportID uu
 		return fmt.Errorf("updating report: %w", err)
 	}
 	return nil
-}
-
-// getScopeRow returns the scope row for a single scope_id, used for in-memory
-// access checks via services.Caller.CanSee.
-func getScopeRow(ctx context.Context, pool *pgxpool.Pool, tenantID, scopeID uuid.UUID) (models.ScopeRow, error) {
-	var r models.ScopeRow
-	err := pool.QueryRow(ctx, `
-		SELECT id, role_id, user_id FROM scopes WHERE tenant_id = $1 AND id = $2`,
-		tenantID, scopeID,
-	).Scan(&r.ID, &r.RoleID, &r.UserID)
-	if err != nil {
-		return models.ScopeRow{}, fmt.Errorf("loading scope %s: %w", scopeID, err)
-	}
-	return r, nil
-}
-
-// getRoleName resolves a role's name by id, tenant-scoped. Used to scope the
-// approval card to the owning role (cards target roles by name).
-func getRoleName(ctx context.Context, pool *pgxpool.Pool, tenantID, roleID uuid.UUID) (string, error) {
-	var name string
-	err := pool.QueryRow(ctx,
-		`SELECT name FROM roles WHERE tenant_id = $1 AND id = $2`, tenantID, roleID,
-	).Scan(&name)
-	if err != nil {
-		return "", fmt.Errorf("loading role name %s: %w", roleID, err)
-	}
-	return name, nil
 }
 
 func nilIfEmpty(s string) *string {

@@ -152,7 +152,51 @@ func (s *ExpenseService) resolveRole(ctx context.Context, c *services.Caller, ro
 	if len(c.RoleIDs) == 1 {
 		return models.GetOrCreateScope(ctx, s.pool, c.TenantID, &c.RoleIDs[0], nil)
 	}
-	return uuid.Nil, ErrPrimaryRoleNotSet
+	// Multiple roles, no primary: default to the member catchall (everyone
+	// holds it) rather than blocking the submitter. Small-org expenses being
+	// team-visible is fine; an admin can set the user's primary role to narrow
+	// ownership later.
+	memberID, err := services.ResolveRoleID(ctx, s.pool, c.TenantID, models.RoleMember)
+	if err != nil {
+		return uuid.Nil, ErrPrimaryRoleNotSet
+	}
+	return models.GetOrCreateScope(ctx, s.pool, c.TenantID, &memberID, nil)
+}
+
+// GetPolicy returns the tenant's expense approval policy (readable by anyone).
+func (s *ExpenseService) GetPolicy(ctx context.Context, c *services.Caller) (Policy, error) {
+	return loadPolicy(ctx, s.pool, c.TenantID)
+}
+
+// SetPolicyInput is the admin-supplied shape for configuring approval routing.
+// At most one of ApproverRef / ApproverRole should be set; ApproverRef wins.
+type SetPolicyInput struct {
+	ApproverRole string // role name whose members approve
+	ApproverRef  string // a specific user (UUID, Slack ID, or name)
+}
+
+// SetPolicy configures the tenant-wide approval policy. Admin-only.
+func (s *ExpenseService) SetPolicy(ctx context.Context, c *services.Caller, in SetPolicyInput) (Policy, error) {
+	if !c.IsAdmin {
+		return Policy{}, services.ErrForbidden
+	}
+	var p Policy
+	if strings.TrimSpace(in.ApproverRef) != "" {
+		id, err := s.resolveUser(ctx, c, in.ApproverRef)
+		if err != nil {
+			return Policy{}, err
+		}
+		p.ApproverUserID = id
+	} else if role := strings.TrimSpace(in.ApproverRole); role != "" {
+		if _, err := services.ResolveRoleID(ctx, s.pool, c.TenantID, role); err != nil {
+			return Policy{}, fmt.Errorf("%q: %w", role, ErrInvalidRole)
+		}
+		p.ApproverRole = role
+	}
+	if err := savePolicy(ctx, s.pool, c.TenantID, p); err != nil {
+		return Policy{}, err
+	}
+	return p, nil
 }
 
 // List returns reports visible to the caller.
@@ -160,7 +204,7 @@ func (s *ExpenseService) List(ctx context.Context, c *services.Caller, f ReportF
 	if c.IsAdmin {
 		return listReports(ctx, s.pool, c.TenantID, nil, nil, f)
 	}
-	return listReports(ctx, s.pool, c.TenantID, &c.UserID, c.RoleIDs, f)
+	return listReports(ctx, s.pool, c.TenantID, &c.UserID, c.Roles, f)
 }
 
 // Get returns a report with its items and recent activity, if readable.
@@ -197,21 +241,25 @@ func (s *ExpenseService) load(ctx context.Context, c *services.Caller, reportID 
 	return r, nil
 }
 
-// canRead: admin, the submitter, the assigned approver, or a member of the
-// owning role. The assigned approver is included so an approver outside the
-// role can still open the report they're asked to decide on.
-func (s *ExpenseService) canRead(ctx context.Context, c *services.Caller, r *Report) bool {
+// canRead: the submitter and admins always; otherwise only the report's
+// approver (the assigned person, or a member of its snapshot approver role).
+// Owning-role membership no longer grants visibility — expenses are personal,
+// seen by their owner and whoever approves them.
+func (s *ExpenseService) canRead(_ context.Context, c *services.Caller, r *Report) bool {
 	if c.IsAdmin || r.SubmitterUserID == c.UserID {
 		return true
 	}
 	if r.ApproverUserID != nil && *r.ApproverUserID == c.UserID {
 		return true
 	}
-	scope, err := getScopeRow(ctx, s.pool, c.TenantID, r.ScopeID)
-	if err != nil {
-		return false
-	}
-	return c.CanSee([]services.ScopeRef{scope})
+	return r.ApproverRole != "" && slices.Contains(c.Roles, r.ApproverRole)
+}
+
+// CanApprove reports whether the caller may act on this report right now (it's
+// submitted and they're an eligible approver). Drives the approve/reject UI so
+// non-approvers never see those controls.
+func (s *ExpenseService) CanApprove(ctx context.Context, c *services.Caller, r *Report) bool {
+	return r.Status == StatusSubmitted && s.canApprove(ctx, c, r)
 }
 
 // AddComment appends a comment to a readable report's activity log.

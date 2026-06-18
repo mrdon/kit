@@ -106,7 +106,7 @@ Kit reads the receipt with `read_attachment` (vision OCR), pulls out the vendor/
 
 > "Submit my June expenses."
 
-Lifecycle: **draft → submitted → approved / rejected → reimbursed**. On submit, Kit raises an approval **decision card**. By default you can assign a specific **approver** (any teammate) when you create or submit; if you don't, anyone in the owning role (other than you) can approve. Approvers act via the card, MCP/agent tools, or the web console — you can't approve your own report. A rejected report can be reopened, fixed, and resubmitted; an approved one can be marked reimbursed.
+Lifecycle: **draft → submitted → approved / rejected → reimbursed**. On submit, Kit raises an approval **decision card**. **Who approves is an admin setting** — in the web console's Expenses → Settings, an admin picks the approver role (e.g. "managers", "board"); until then, admins approve. Only the configured approvers (and admins) can approve, and they're also the only people besides the submitter who can see a report. Approvers act via the card, MCP/agent tools, or the web console — you can't approve your own. A rejected report can be reopened, fixed, and resubmitted; an approved one can be marked reimbursed. Spend categories are assigned automatically — no need to fill them in.
 
 Tools: `create_expense_report`, `add_expense_item`, `update_expense_item`, `remove_expense_item`, `assign_expense_approver`, `submit_expense_report`, `approve_expense_report`, `reject_expense_report`, `mark_expense_reimbursed`, `reopen_expense_report`, `list_expense_reports`, `get_expense_report`, `add_expense_comment`.
 
