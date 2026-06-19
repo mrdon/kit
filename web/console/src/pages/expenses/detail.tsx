@@ -241,7 +241,6 @@ function AddItemForm({
           setBody({});
           setOpen(false);
         }}
-        aria-label="Cancel"
       >
         Done
       </button>
