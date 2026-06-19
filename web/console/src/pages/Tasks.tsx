@@ -12,6 +12,7 @@ import TaskGrouped from './tasks/grouped';
 import TaskList from './tasks/list';
 import TaskDetail from './tasks/detail';
 import TasksChat from '../TasksChat';
+import { useDetailRoute } from '../useDetailRoute';
 import {
   DEFAULT_PRIORITY,
   PRIORITIES,
@@ -44,7 +45,7 @@ export default function Tasks() {
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<View>('grouped');
   const [filters, setFilters] = useState<TaskFilters>({ include_closed: false });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const detail = useDetailRoute('/tasks');
   const [creating, setCreating] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
@@ -220,13 +221,13 @@ export default function Tasks() {
           onClaim={claim}
           onResolve={(id) => act(id, { status: 'done' }, 'Resolved task')}
           onReopen={(id) => act(id, { status: 'open' }, 'Reopened task')}
-          onOpen={setOpenId}
+          onOpen={detail.open}
         />
       ) : (
         <TaskList
           tasks={tasks}
           onQuickEdit={(id, patch) => act(id, patch, 'Updated task')}
-          onOpen={setOpenId}
+          onOpen={detail.open}
         />
       )}
 
@@ -243,11 +244,11 @@ export default function Tasks() {
 
       {chatOpen && <TasksChat onClose={() => setChatOpen(false)} onTurnDone={load} />}
 
-      {openId && (
+      {detail.openId && (
         <TaskDetail
-          taskId={openId}
+          taskId={detail.openId}
           meta={meta}
-          onClose={() => setOpenId(null)}
+          onClose={detail.close}
           onChanged={load}
         />
       )}

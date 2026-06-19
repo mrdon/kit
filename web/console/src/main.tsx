@@ -28,8 +28,11 @@ createRoot(document.getElementById('root')!).render(
         <Route element={<Shell />}>
           <Route path="/" element={<Launcher />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/tasks/:id" element={<Tasks />} />
           <Route path="/expenses" element={<Expenses />} />
+          <Route path="/expenses/:id" element={<Expenses />} />
           <Route path="/vault" element={<Vault />} />
+          <Route path="/vault/:id" element={<Vault />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/expenses" element={<ExpenseSettings />} />
           <Route path="/admin/roles" element={<Roles />} />

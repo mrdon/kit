@@ -5,11 +5,13 @@ import { vaultApi, type VaultEntrySummary, type VaultStatus } from './vault/api'
 import { diceware } from './vault/crypto';
 import { connectWorker, hasKey, rotate, setupVault, unlock } from './vault/worker';
 import { AddPanel, RevealPanel } from './vault/panels';
+import { useDetailRoute } from '../useDetailRoute';
 
 type Gate = { kind: 'add' } | { kind: 'reveal'; id: string };
 
 export default function Vault() {
   const me = useMe();
+  const detail = useDetailRoute('/vault');
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [entries, setEntries] = useState<VaultEntrySummary[] | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -47,6 +49,20 @@ export default function Vault() {
       setPending(g);
     }
   };
+
+  // Bind the reveal panel to the URL (/vault/:id) so an entry is addressable —
+  // you can link or email someone straight to it. Opening the URL gates the
+  // reveal (prompting unlock if needed); navigating back closes it.
+  useEffect(() => {
+    if (!status?.set_up) return;
+    if (detail.openId) {
+      void gate({ kind: 'reveal', id: detail.openId });
+    } else {
+      setPanel((p) => (p?.kind === 'reveal' ? null : p));
+    }
+    // gate is recreated each render; we intentionally key only on the id + setup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.openId, status?.set_up]);
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -118,7 +134,7 @@ export default function Vault() {
             <ul className="entry-list">
               {shown.map((r) => (
                 <li key={r.id}>
-                  <button className="entry-link" onClick={() => gate({ kind: 'reveal', id: r.id })}>
+                  <button className="entry-link" onClick={() => detail.open(r.id)}>
                     <span className="entry-title">{r.title || '(untitled)'}</span>
                     <span className="entry-meta">
                       {[r.username, r.scope_summary].filter(Boolean).join(' — ')}
@@ -133,7 +149,10 @@ export default function Vault() {
 
       {pending && (
         <UnlockModal
-          onClose={() => setPending(null)}
+          onClose={() => {
+            setPending(null);
+            detail.close();
+          }}
           onUnlocked={() => {
             setUnlocked(true);
             const g = pending;
@@ -153,7 +172,14 @@ export default function Vault() {
         />
       )}
       {panel?.kind === 'reveal' && (
-        <RevealPanel entryId={panel.id} onClose={() => setPanel(null)} onSaved={loadEntries} />
+        <RevealPanel
+          entryId={panel.id}
+          onClose={() => {
+            setPanel(null);
+            detail.close();
+          }}
+          onSaved={loadEntries}
+        />
       )}
 
       {showRotate && <RotateModal onClose={() => setShowRotate(false)} />}

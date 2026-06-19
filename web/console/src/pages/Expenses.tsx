@@ -9,6 +9,7 @@ import {
 } from '../api';
 import ExpenseDetail from './expenses/detail';
 import { STATUS_LABEL, STATUSES, formatCents } from './expenses/common';
+import { useDetailRoute } from '../useDetailRoute';
 
 // Status order for the grouped view: actionable first.
 const GROUP_ORDER = ['submitted', 'draft', 'rejected', 'approved', 'reimbursed'];
@@ -18,7 +19,7 @@ export default function Expenses() {
   const [reports, setReports] = useState<ExpenseReport[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [filters, setFilters] = useState<ExpenseFilters>({ include_closed: true });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const detail = useDetailRoute('/expenses');
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -90,7 +91,7 @@ export default function Expenses() {
             <ul className="card-list">
               {g.items.map((r) => (
                 <li key={r.id}>
-                  <button className="row-card" onClick={() => setOpenId(r.id)}>
+                  <button className="row-card" onClick={() => detail.open(r.id)}>
                     <span className="row-card-main">
                       <span className="row-card-title">{r.title}</span>
                       {r.rejection_reason && (
@@ -106,10 +107,10 @@ export default function Expenses() {
         ))
       )}
 
-      {openId && (
+      {detail.openId && (
         <ExpenseDetail
-          reportId={openId}
-          onClose={() => setOpenId(null)}
+          reportId={detail.openId}
+          onClose={detail.close}
           onChanged={load}
         />
       )}
