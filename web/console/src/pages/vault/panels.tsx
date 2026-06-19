@@ -3,6 +3,7 @@ import { vaultApi, type Principal, type VaultEntryFull } from './api';
 import { b64ToBytes, bytesToB64, generatePassword, normalizeURL } from './crypto';
 import { decryptEntry, encryptEntry } from './worker';
 import { compactTOTP, expandTOTP, generateTOTP, parseOtpauthURI, type TotpParams } from './totp';
+import { VisibilityEditor } from './VisibilityEditor';
 
 // SecretValues is the editable shape shared by the add and edit forms.
 // password/notes/totp live inside the encrypted blob; title/username/url
@@ -309,6 +310,15 @@ export function RevealPanel({
               )}
             </dl>
             {decoded.totp && <TotpDisplay params={expandTOTP(decoded.totp)} />}
+            <VisibilityEditor
+              entryId={entryId}
+              roleId={entry?.role_id}
+              roleName={entry?.role_name}
+              onChanged={async () => {
+                await load();
+                onSaved?.();
+              }}
+            />
             <div className="drawer-actions">
               <button className="btn" onClick={() => setEditing(true)}>
                 Edit

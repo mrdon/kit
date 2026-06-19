@@ -10,6 +10,7 @@ export async function vaultApi<T = any>(
   method: string,
   path: string,
   body?: unknown,
+  opts?: { noAuthRedirect?: boolean },
 ): Promise<T> {
   const resp = await fetch(API_BASE + path, {
     method,
@@ -20,7 +21,11 @@ export async function vaultApi<T = any>(
     },
     body: body !== undefined ? JSON.stringify(body) : null,
   });
-  if (resp.status === 401) {
+  // A 401 normally means the web session lapsed, so we bounce to login.
+  // Some vault endpoints also return 401 for step-up ("recent unlock
+  // required") — callers that can handle that inline pass noAuthRedirect
+  // so they get the error instead of a surprise navigation.
+  if (resp.status === 401 && !opts?.noAuthRedirect) {
     window.location.href = `/${SLUG}/login?return_to=${encodeURIComponent(location.pathname)}`;
     throw new Error('redirecting to login');
   }
@@ -59,6 +64,8 @@ export interface VaultEntryFull {
   value_ciphertext?: string;
   ValueNonce?: string;
   value_nonce?: string;
+  role_id?: string;
+  role_name?: string;
 }
 
 export interface Principal {
