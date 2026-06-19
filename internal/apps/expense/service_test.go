@@ -242,6 +242,29 @@ func TestRejectThenReopen(t *testing.T) {
 	}
 }
 
+func TestDeleteDraftAndGuards(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	id := f.draftWithItem(t)
+
+	// Submitter deletes their draft → gone.
+	if err := f.svc.Delete(ctx, f.caller(f.alice), id); err != nil {
+		t.Fatalf("delete draft: %v", err)
+	}
+	if _, _, err := f.svc.Get(ctx, f.caller(f.alice), id); !errors.Is(err, services.ErrNotFound) {
+		t.Fatalf("report should be gone, got %v", err)
+	}
+
+	// A submitted report can't be deleted.
+	id2 := f.draftWithItem(t)
+	if _, err := f.svc.SubmitReport(ctx, f.caller(f.alice), id2); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if err := f.svc.Delete(ctx, f.caller(f.alice), id2); !errors.Is(err, ErrNotDeletable) {
+		t.Fatalf("expected ErrNotDeletable, got %v", err)
+	}
+}
+
 func TestTenantIsolation(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

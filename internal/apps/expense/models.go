@@ -268,6 +268,15 @@ func updateReport(ctx context.Context, pool *pgxpool.Pool, tenantID, reportID uu
 	return nil
 }
 
+// deleteReport removes a report; items and events cascade via FK.
+func deleteReport(ctx context.Context, pool *pgxpool.Pool, tenantID, reportID uuid.UUID) error {
+	if _, err := pool.Exec(ctx,
+		`DELETE FROM app_expense_reports WHERE tenant_id = $1 AND id = $2`, tenantID, reportID); err != nil {
+		return fmt.Errorf("deleting report: %w", err)
+	}
+	return nil
+}
+
 func nilIfEmpty(s string) *string {
 	if s == "" {
 		return nil

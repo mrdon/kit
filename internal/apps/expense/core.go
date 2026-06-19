@@ -138,6 +138,20 @@ func coreGetReport(ctx context.Context, c *services.Caller, svc *ExpenseService,
 	return FormatReportDetailed(r, events), nil
 }
 
+func coreDeleteReport(ctx context.Context, c *services.Caller, svc *ExpenseService, raw json.RawMessage) (string, error) {
+	id, msg := parseReportID(raw)
+	if msg != "" {
+		return msg, nil
+	}
+	if err := svc.Delete(ctx, c, id); err != nil {
+		if m := expenseErrMessage(err); m != "" {
+			return m, nil
+		}
+		return "", fmt.Errorf("deleting report: %w", err)
+	}
+	return "Report deleted.", nil
+}
+
 func coreAssignApprover(ctx context.Context, c *services.Caller, svc *ExpenseService, raw json.RawMessage) (string, error) {
 	var inp struct {
 		ReportID string `json:"report_id"`
@@ -241,6 +255,8 @@ func dispatchCore(ctx context.Context, c *services.Caller, svc *ExpenseService, 
 		return coreGetReport(ctx, c, svc, raw)
 	case "assign_expense_approver":
 		return coreAssignApprover(ctx, c, svc, raw)
+	case "delete_expense_report":
+		return coreDeleteReport(ctx, c, svc, raw)
 	case "add_expense_comment":
 		return coreAddComment(ctx, c, svc, raw)
 	case "submit_expense_report", "approve_expense_report", "mark_expense_reimbursed", "reopen_expense_report", "reject_expense_report":

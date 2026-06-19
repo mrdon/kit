@@ -97,6 +97,13 @@ var expenseTools = []services.ToolMeta{
 		}, "report_id"),
 	},
 	{
+		Name:        "delete_expense_report",
+		Description: "Delete a draft or rejected report (and its line items). Submitted/approved/reimbursed reports can't be deleted — reject or reopen them first.",
+		Schema: services.PropsReq(map[string]any{
+			"report_id": services.Field("string", "The report UUID"),
+		}, "report_id"),
+	},
+	{
 		Name:        "list_expense_reports",
 		Description: "List expense reports visible to you. By default shows only active (draft/submitted) reports; pass status or include_closed for decided ones.",
 		Schema: services.Props(map[string]any{

@@ -51,6 +51,21 @@ export default function ExpenseDetail({
     }
   };
 
+  // del removes the report and closes the drawer (reloading it would 404).
+  const del = async () => {
+    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.deleteExpense(reportId);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  };
+
   if (!report) {
     return (
       <div className="drawer-backdrop" onClick={onClose}>
@@ -97,7 +112,7 @@ export default function ExpenseDetail({
           <AddItemForm busy={busy} onAdd={(body) => run(() => api.addExpenseItem(reportId, body))} />
         )}
 
-        <Actions report={report} canApprove={canApprove} busy={busy} run={run} />
+        <Actions report={report} canApprove={canApprove} busy={busy} run={run} onDelete={del} />
 
         {events.length > 0 && (
           <div className="activity">
@@ -216,11 +231,13 @@ function Actions({
   canApprove,
   busy,
   run,
+  onDelete,
 }: {
   report: ExpenseReport;
   canApprove: boolean;
   busy: boolean;
   run: (fn: () => Promise<unknown>) => void;
+  onDelete: () => void;
 }) {
   const id = report.id;
   switch (report.status) {
@@ -233,6 +250,9 @@ function Actions({
             onClick={() => run(() => api.submitExpense(id))}
           >
             Submit for approval
+          </button>
+          <button className="btn btn-ghost btn-danger" disabled={busy} onClick={onDelete}>
+            Delete
           </button>
         </div>
       );
@@ -271,6 +291,9 @@ function Actions({
         <div className="drawer-actions">
           <button className="btn" disabled={busy} onClick={() => run(() => api.reopenExpense(id))}>
             Reopen to fix
+          </button>
+          <button className="btn btn-ghost btn-danger" disabled={busy} onClick={onDelete}>
+            Delete
           </button>
         </div>
       );

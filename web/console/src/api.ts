@@ -391,6 +391,7 @@ export const api = {
     apiPost<{ report: ExpenseReport }>(`/expenses/${id}/reimburse`),
   reopenExpense: (id: string) =>
     apiPost<{ report: ExpenseReport }>(`/expenses/${id}/reopen`),
+  deleteExpense: (id: string) => apiDelete<void>(`/expenses/${id}`),
   addExpenseComment: (id: string, content: string) =>
     apiPost<void>(`/expenses/${id}/comments`, { content }),
 };

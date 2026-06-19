@@ -31,6 +31,7 @@ func registerExpenseRoutes(mux *http.ServeMux, a *ExpenseApp) {
 	mux.Handle("GET /{slug}/api/expenses/policy", adminRoute(a.handleGetPolicy))
 	mux.Handle("PUT /{slug}/api/expenses/policy", adminRoute(a.handleSetPolicy))
 	mux.Handle("GET /{slug}/api/expenses/{id}", jsonRoute(a.handleGet))
+	mux.Handle("DELETE /{slug}/api/expenses/{id}", jsonRoute(a.handleDelete))
 	mux.Handle("POST /{slug}/api/expenses/{id}/approver", jsonRoute(a.handleAssignApprover))
 	mux.Handle("POST /{slug}/api/expenses/{id}/items", jsonRoute(a.handleAddItem))
 	mux.Handle("PATCH /{slug}/api/expenses/{id}/items/{itemID}", jsonRoute(a.handleUpdateItem))
@@ -162,6 +163,19 @@ func (a *ExpenseApp) handleComment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (a *ExpenseApp) handleDelete(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	id, ok := pathReportID(w, r)
+	if !ok {
+		return
+	}
+	if err := a.svc.Delete(r.Context(), caller, id); err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *ExpenseApp) handleAssignApprover(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	id, ok := pathReportID(w, r)
@@ -247,7 +261,8 @@ func statusForError(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, ErrInvalidTransition), errors.Is(err, ErrNotEditable),
 		errors.Is(err, ErrNoItems), errors.Is(err, ErrInvalidRole),
-		errors.Is(err, ErrPrimaryRoleNotSet), errors.Is(err, ErrInvalidApprover):
+		errors.Is(err, ErrPrimaryRoleNotSet), errors.Is(err, ErrInvalidApprover),
+		errors.Is(err, ErrNotDeletable):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

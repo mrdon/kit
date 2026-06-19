@@ -28,6 +28,8 @@ func expenseErrMessage(err error) string {
 		return "That action isn't allowed for the report's current status."
 	case errors.Is(err, ErrNotEditable):
 		return "This report can only be edited while it's a draft. Reopen it first if it was rejected."
+	case errors.Is(err, ErrNotDeletable):
+		return "Only draft or rejected reports can be deleted. Reject or reopen it first."
 	case errors.Is(err, ErrNoItems):
 		return "Add at least one line item before submitting."
 	case errors.Is(err, ErrInvalidRole):

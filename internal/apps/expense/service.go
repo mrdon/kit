@@ -37,6 +37,9 @@ var (
 	ErrNotEditable = errors.New("report is not editable in its current status")
 	// ErrSelfApproval blocks the submitter from approving their own report.
 	ErrSelfApproval = errors.New("you cannot approve your own report")
+	// ErrNotDeletable is returned when deleting a report that's in the approval
+	// pipeline or already a financial record (only draft/rejected can go).
+	ErrNotDeletable = errors.New("only draft or rejected reports can be deleted")
 )
 
 // NewService returns an ExpenseService bound to pool. Exported for external
@@ -260,6 +263,24 @@ func (s *ExpenseService) canRead(_ context.Context, c *services.Caller, r *Repor
 // non-approvers never see those controls.
 func (s *ExpenseService) CanApprove(ctx context.Context, c *services.Caller, r *Report) bool {
 	return r.Status == StatusSubmitted && s.canApprove(ctx, c, r)
+}
+
+// Delete removes a draft or rejected report (and its items) — for cleaning up
+// mistakes and abandoned reports. Submitted/approved/reimbursed reports can't
+// be deleted (reject or reopen them first); they're in-flight or financial
+// records. Only the submitter or an admin may delete.
+func (s *ExpenseService) Delete(ctx context.Context, c *services.Caller, reportID uuid.UUID) error {
+	r, err := s.load(ctx, c, reportID)
+	if err != nil {
+		return err
+	}
+	if !s.canWrite(c, r) {
+		return services.ErrForbidden
+	}
+	if r.Status != StatusDraft && r.Status != StatusRejected {
+		return ErrNotDeletable
+	}
+	return deleteReport(ctx, s.pool, c.TenantID, reportID)
 }
 
 // AddComment appends a comment to a readable report's activity log.
