@@ -24,13 +24,18 @@ const (
 // Report is an expense report — a titled group of line items routed for
 // approval.
 type Report struct {
-	ID              uuid.UUID  `json:"id"`
-	TenantID        uuid.UUID  `json:"tenant_id"`
-	Title           string     `json:"title"`
-	Description     string     `json:"description,omitempty"`
-	Status          string     `json:"status"`
-	ScopeID         uuid.UUID  `json:"scope_id"`
+	ID          uuid.UUID `json:"id"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Status      string    `json:"status"`
+	ScopeID     uuid.UUID `json:"scope_id"`
+	// SubmitterUserID is uuid.Nil for an anonymous public-intake report (one
+	// submitted via /{slug}/expenses/submit with no Kit account); SubmitterEmail
+	// / SubmitterName carry the payee identity in that case.
 	SubmitterUserID uuid.UUID  `json:"submitter_user_id"`
+	SubmitterEmail  string     `json:"submitter_email,omitempty"`
+	SubmitterName   string     `json:"submitter_name,omitempty"`
 	ApproverUserID  *uuid.UUID `json:"approver_user_id,omitempty"`   // assigned/policy approver (specific person)
 	ApproverRole    string     `json:"approver_role,omitempty"`      // policy approver role (snapshot at submit)
 	DecidedByUserID *uuid.UUID `json:"decided_by_user_id,omitempty"` // who approved/rejected
@@ -85,20 +90,30 @@ type ReportFilters struct {
 	IncludeClosed bool // admit approved/rejected/reimbursed when Status is empty
 }
 
-const reportColumns = `r.id, r.tenant_id, r.title, r.description, r.status, r.scope_id, r.submitter_user_id, r.approver_user_id, r.approver_role, r.decided_by_user_id, r.decision_card_id, r.rejection_reason, r.total_cents, r.currency, r.submitted_at, r.decided_at, r.reimbursed_at, r.created_at, r.updated_at`
+const reportColumns = `r.id, r.tenant_id, r.title, r.description, r.status, r.scope_id, r.submitter_user_id, r.submitter_email, r.submitter_name, r.approver_user_id, r.approver_role, r.decided_by_user_id, r.decision_card_id, r.rejection_reason, r.total_cents, r.currency, r.submitted_at, r.decided_at, r.reimbursed_at, r.created_at, r.updated_at`
 
 func scanReport(row interface{ Scan(...any) error }) (*Report, error) {
 	var r Report
-	var description, rejection, approverRole *string
+	var description, rejection, approverRole, submitterEmail, submitterName *string
+	var submitterID *uuid.UUID // NULL for anonymous public-intake reports
 	err := row.Scan(
 		&r.ID, &r.TenantID, &r.Title, &description, &r.Status,
-		&r.ScopeID, &r.SubmitterUserID, &r.ApproverUserID, &approverRole, &r.DecidedByUserID, &r.DecisionCardID,
+		&r.ScopeID, &submitterID, &submitterEmail, &submitterName, &r.ApproverUserID, &approverRole, &r.DecidedByUserID, &r.DecisionCardID,
 		&rejection, &r.TotalCents, &r.Currency,
 		&r.SubmittedAt, &r.DecidedAt, &r.ReimbursedAt,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if submitterID != nil {
+		r.SubmitterUserID = *submitterID
+	}
+	if submitterEmail != nil {
+		r.SubmitterEmail = *submitterEmail
+	}
+	if submitterName != nil {
+		r.SubmitterName = *submitterName
 	}
 	if description != nil {
 		r.Description = *description
@@ -114,10 +129,12 @@ func scanReport(row interface{ Scan(...any) error }) (*Report, error) {
 
 func createReport(ctx context.Context, pool *pgxpool.Pool, r *Report) error {
 	return pool.QueryRow(ctx, `
-		INSERT INTO app_expense_reports (tenant_id, title, description, status, scope_id, submitter_user_id, approver_user_id, currency)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO app_expense_reports (tenant_id, title, description, status, scope_id, submitter_user_id, submitter_email, submitter_name, approver_user_id, currency)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`,
-		r.TenantID, r.Title, nilIfEmpty(r.Description), r.Status, r.ScopeID, r.SubmitterUserID, r.ApproverUserID, r.Currency,
+		r.TenantID, r.Title, nilIfEmpty(r.Description), r.Status, r.ScopeID,
+		nullUUID(r.SubmitterUserID), nilIfEmpty(r.SubmitterEmail), nilIfEmpty(r.SubmitterName),
+		r.ApproverUserID, r.Currency,
 	).Scan(&r.ID, &r.CreatedAt, &r.UpdatedAt)
 }
 
@@ -282,4 +299,13 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// nullUUID returns nil for the zero UUID so an INSERT writes SQL NULL. Used for
+// submitter_user_id on anonymous public-intake reports (no Kit account).
+func nullUUID(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
 }

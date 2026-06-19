@@ -248,6 +248,8 @@ export interface ExpenseReport {
   status: string;
   scope_id: string;
   submitter_user_id: string;
+  submitter_email?: string;
+  submitter_name?: string;
   approver_user_id?: string;
   decided_by_user_id?: string;
   rejection_reason?: string;
@@ -280,6 +282,15 @@ export interface ExpensesMeta {
 export interface ExpensePolicy {
   approver_role?: string;
   approver_user_id?: string;
+  intake_enabled: boolean;
+  intake_role?: string;
+  intake_currency?: string;
+}
+
+export interface IntakeConfigBody {
+  enabled: boolean;
+  role: string;
+  currency: string;
 }
 
 export interface ExpenseFilters {
@@ -371,6 +382,8 @@ export const api = {
   expensePolicy: () => apiGet<{ policy: ExpensePolicy }>('/expenses/policy'),
   setExpensePolicy: (body: { approver_role?: string; approver?: string }) =>
     apiPut<{ policy: ExpensePolicy }>('/expenses/policy', body),
+  setExpenseIntake: (body: IntakeConfigBody) =>
+    apiPut<{ policy: ExpensePolicy }>('/expenses/intake-config', body),
   createExpense: (body: CreateExpenseBody) =>
     apiPost<{ report: ExpenseReport }>('/expenses', body),
   assignExpenseApprover: (id: string, approver: string) =>

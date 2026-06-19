@@ -178,12 +178,18 @@ type SetPolicyInput struct {
 	ApproverRef  string // a specific user (UUID, Slack ID, or name)
 }
 
-// SetPolicy configures the tenant-wide approval policy. Admin-only.
+// SetPolicy configures the tenant-wide approval routing. Admin-only. Loads the
+// existing policy first so the public-intake config is preserved.
 func (s *ExpenseService) SetPolicy(ctx context.Context, c *services.Caller, in SetPolicyInput) (Policy, error) {
 	if !c.IsAdmin {
 		return Policy{}, services.ErrForbidden
 	}
-	var p Policy
+	p, err := loadPolicy(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return Policy{}, err
+	}
+	p.ApproverRole = ""
+	p.ApproverUserID = nil
 	if strings.TrimSpace(in.ApproverRef) != "" {
 		id, err := s.resolveUser(ctx, c, in.ApproverRef)
 		if err != nil {
@@ -196,6 +202,46 @@ func (s *ExpenseService) SetPolicy(ctx context.Context, c *services.Caller, in S
 		}
 		p.ApproverRole = role
 	}
+	if err := savePolicy(ctx, s.pool, c.TenantID, p); err != nil {
+		return Policy{}, err
+	}
+	return p, nil
+}
+
+// SetIntakeInput configures the public expense-intake page. Admin-only.
+type SetIntakeInput struct {
+	Enabled  bool
+	Role     string // role that owns + approves anonymous submissions (by name)
+	Currency string // default currency for anonymous submissions
+}
+
+// SetIntakeConfig enables/disables the public intake page and its owning role.
+// Loads the existing policy first so the approval routing is preserved. When
+// enabling, the owning role must exist.
+func (s *ExpenseService) SetIntakeConfig(ctx context.Context, c *services.Caller, in SetIntakeInput) (Policy, error) {
+	if !c.IsAdmin {
+		return Policy{}, services.ErrForbidden
+	}
+	p, err := loadPolicy(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return Policy{}, err
+	}
+	role := strings.TrimSpace(in.Role)
+	if in.Enabled {
+		if role == "" {
+			return Policy{}, fmt.Errorf("public intake needs an owning role: %w", ErrInvalidRole)
+		}
+		if _, err := services.ResolveRoleID(ctx, s.pool, c.TenantID, role); err != nil {
+			return Policy{}, fmt.Errorf("%q: %w", role, ErrInvalidRole)
+		}
+	}
+	p.IntakeEnabled = in.Enabled
+	p.IntakeRole = role
+	currency := strings.ToUpper(strings.TrimSpace(in.Currency))
+	if currency == "" {
+		currency = "USD"
+	}
+	p.IntakeCurrency = currency
 	if err := savePolicy(ctx, s.pool, c.TenantID, p); err != nil {
 		return Policy{}, err
 	}

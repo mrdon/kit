@@ -32,12 +32,13 @@ func (s *ExpenseService) canApprove(_ context.Context, c *services.Caller, r *Re
 
 // applyApprovalPolicy snapshots the tenant policy's approver onto a report at
 // submit time, unless the report already carries a per-report override. Mutates
-// r in place and persists the change.
-func (s *ExpenseService) applyApprovalPolicy(ctx context.Context, c *services.Caller, r *Report) {
+// r in place and persists the change. Takes tenantID (not a Caller) so the
+// public-intake path, which has no caller, can reuse it.
+func (s *ExpenseService) applyApprovalPolicy(ctx context.Context, tenantID uuid.UUID, r *Report) {
 	if r.ApproverUserID != nil || r.ApproverRole != "" {
 		return // explicit per-report override wins
 	}
-	pol, _ := loadPolicy(ctx, s.pool, c.TenantID)
+	pol, _ := loadPolicy(ctx, s.pool, tenantID)
 	var u reportUpdate
 	switch {
 	case pol.ApproverUserID != nil:
@@ -53,7 +54,7 @@ func (s *ExpenseService) applyApprovalPolicy(ctx context.Context, c *services.Ca
 		r.ApproverRole = role
 		u.ApproverRole = &role
 	}
-	_ = updateReport(ctx, s.pool, c.TenantID, r.ID, u)
+	_ = updateReport(ctx, s.pool, tenantID, r.ID, u)
 }
 
 // SubmitReport moves a draft report to submitted and raises the approval
@@ -84,8 +85,8 @@ func (s *ExpenseService) SubmitReport(ctx context.Context, c *services.Caller, r
 	_ = appendEvent(ctx, s.pool, c.TenantID, reportID, &c.UserID, "submitted", "", StatusDraft, StatusSubmitted)
 
 	// Snapshot the tenant approval policy onto the report, then raise the card.
-	s.applyApprovalPolicy(ctx, c, r)
-	if err := s.raiseApprovalCard(ctx, c, r, items); err != nil {
+	s.applyApprovalPolicy(ctx, c.TenantID, r)
+	if err := s.raiseApprovalCard(ctx, c.TenantID, r, items); err != nil {
 		// The report is already submitted; a card failure shouldn't roll that
 		// back (an approver can still act via tool/console). Log-and-continue.
 		return getReport(ctx, s.pool, c.TenantID, reportID)
@@ -94,8 +95,9 @@ func (s *ExpenseService) SubmitReport(ctx context.Context, c *services.Caller, r
 }
 
 // raiseApprovalCard creates the decision card and records its id on the
-// report. No-op when no card surface is wired (tests / minimal builds).
-func (s *ExpenseService) raiseApprovalCard(ctx context.Context, c *services.Caller, r *Report, items []Item) error {
+// report. No-op when no card surface is wired (tests / minimal builds). Takes
+// tenantID (not a Caller) so the public-intake path can reuse it.
+func (s *ExpenseService) raiseApprovalCard(ctx context.Context, tenantID uuid.UUID, r *Report, items []Item) error {
 	if s.app == nil || s.app.cards == nil {
 		return nil
 	}
@@ -114,14 +116,14 @@ func (s *ExpenseService) raiseApprovalCard(ctx context.Context, c *services.Call
 	default:
 		return errors.New("no approver resolved for approval card")
 	}
-	cardID, err := s.app.cards.CreateApprovalDecision(ctx, c.TenantID, in)
+	cardID, err := s.app.cards.CreateApprovalDecision(ctx, tenantID, in)
 	if err != nil {
 		return err
 	}
 	if cardID == uuid.Nil {
 		return nil // no card surface created one; nothing to record
 	}
-	return updateReport(ctx, s.pool, c.TenantID, r.ID, reportUpdate{DecisionCardID: &cardID})
+	return updateReport(ctx, s.pool, tenantID, r.ID, reportUpdate{DecisionCardID: &cardID})
 }
 
 // ApproveReport moves a submitted report to approved. Idempotent: approving an

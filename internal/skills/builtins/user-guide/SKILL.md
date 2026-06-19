@@ -108,6 +108,8 @@ Kit reads the receipt with `read_attachment` (vision OCR), pulls out the vendor/
 
 Lifecycle: **draft → submitted → approved / rejected → reimbursed**. On submit, Kit raises an approval **decision card**. **Who approves is an admin setting** — in the web console's Expenses → Settings, an admin picks the approver role (e.g. "managers", "board"); until then, admins approve. Only the configured approvers (and admins) can approve, and they're also the only people besides the submitter who can see a report. Approvers act via the card, MCP/agent tools, or the web console — you can't approve your own. A rejected report can be reopened, fixed, and resubmitted; an approved one can be marked reimbursed. Spend categories are assigned automatically — no need to fill them in.
 
+**Public receipt intake.** Admins can enable a public page (Expenses → Settings) so people *without a Slack account* — volunteers, occasional helpers — can submit an expense. They open the workspace link, upload a receipt (Kit reads the vendor/date/amount for them to check), add their email, and submit. It lands as a normal submitted report owned by the role the admin chose, routed to that role for approval. Nothing is reimbursed until someone approves it, so the page is safe to share openly.
+
 Tools: `create_expense_report`, `add_expense_item`, `update_expense_item`, `remove_expense_item`, `assign_expense_approver`, `submit_expense_report`, `approve_expense_report`, `reject_expense_report`, `mark_expense_reimbursed`, `reopen_expense_report`, `delete_expense_report` (draft/rejected only), `list_expense_reports`, `get_expense_report`, `add_expense_comment`.
 
 ## Web console

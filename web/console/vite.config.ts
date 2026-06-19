@@ -28,6 +28,16 @@ export default defineConfig({
     emptyOutDir: true,
     // Inline nothing so the go:embed tree stays flat and cacheable.
     assetsInlineLimit: 0,
+    // Two entries: the authenticated console (index.html, served at
+    // /{slug}/web) and the public, no-login expense intake (intake.html,
+    // served at /{slug}/expenses/submit). Both share the hashed bundle under
+    // /console/assets/.
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        intake: path.resolve(__dirname, 'intake.html'),
+      },
+    },
   },
   server: {
     port: 5174,

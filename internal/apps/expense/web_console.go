@@ -30,6 +30,7 @@ func registerExpenseRoutes(mux *http.ServeMux, a *ExpenseApp) {
 	mux.Handle("GET /{slug}/api/expenses/meta", jsonRoute(a.handleMeta))
 	mux.Handle("GET /{slug}/api/expenses/policy", adminRoute(a.handleGetPolicy))
 	mux.Handle("PUT /{slug}/api/expenses/policy", adminRoute(a.handleSetPolicy))
+	mux.Handle("PUT /{slug}/api/expenses/intake-config", adminRoute(a.handleSetIntakeConfig))
 	mux.Handle("GET /{slug}/api/expenses/{id}", jsonRoute(a.handleGet))
 	mux.Handle("DELETE /{slug}/api/expenses/{id}", jsonRoute(a.handleDelete))
 	mux.Handle("POST /{slug}/api/expenses/{id}/approver", jsonRoute(a.handleAssignApprover))
@@ -135,6 +136,27 @@ func (a *ExpenseApp) handleSetPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	pol, err := a.svc.SetPolicy(r.Context(), caller, SetPolicyInput{
 		ApproverRole: body.ApproverRole, ApproverRef: body.Approver,
+	})
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	expenseJSON(w, http.StatusOK, map[string]any{"policy": pol})
+}
+
+func (a *ExpenseApp) handleSetIntakeConfig(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	var body struct {
+		Enabled  bool   `json:"enabled"`
+		Role     string `json:"role"`
+		Currency string `json:"currency"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		expenseErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	pol, err := a.svc.SetIntakeConfig(r.Context(), caller, SetIntakeInput{
+		Enabled: body.Enabled, Role: body.Role, Currency: body.Currency,
 	})
 	if err != nil {
 		a.serviceErr(w, err)

@@ -3,6 +3,8 @@ package expense
 import (
 	"fmt"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // formatCents renders a minor-unit amount in its currency. USD-family
@@ -62,10 +64,33 @@ func itemSummary(it *Item) string {
 	return strings.Join(parts, " — ")
 }
 
+// submitterLabel returns a human label for the submitter when a report has no
+// Kit user — i.e. an anonymous public-intake submission, where the approver
+// can't recognise it from a Slack identity. Empty for normal reports (the card
+// already routes to an approver who knows the logged-in submitter).
+func submitterLabel(r *Report) string {
+	if r.SubmitterUserID != uuid.Nil {
+		return ""
+	}
+	name := strings.TrimSpace(r.SubmitterName)
+	email := strings.TrimSpace(r.SubmitterEmail)
+	switch {
+	case name != "" && email != "":
+		return name + " (" + email + ")"
+	case name != "":
+		return name
+	default:
+		return email
+	}
+}
+
 // approvalCardBody renders the markdown shown on the approval decision card.
 func approvalCardBody(r *Report, items []Item) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "**%s** submitted for approval.\n\n", r.Title)
+	if who := submitterLabel(r); who != "" {
+		fmt.Fprintf(&b, "Submitted via public intake by %s.\n\n", who)
+	}
 	if r.Description != "" {
 		fmt.Fprintf(&b, "%s\n\n", r.Description)
 	}

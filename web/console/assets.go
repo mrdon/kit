@@ -79,6 +79,24 @@ func IndexHTML(slug, title string) ([]byte, error) {
 	return out, nil
 }
 
+// IntakeHTML returns the public expense-intake entry HTML (a second Vite
+// entry, intake.html) with the per-workspace slug and title substituted in.
+// Served unauthenticated at /{slug}/expenses/submit; shares the hashed bundle
+// under /console/assets/.
+func IntakeHTML(slug, title string) ([]byte, error) {
+	sub, err := distSubFS()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := fs.ReadFile(sub, "intake.html")
+	if err != nil {
+		return nil, err
+	}
+	out := bytes.ReplaceAll(raw, []byte(basePlaceholder), []byte("/"+slug))
+	out = bytes.ReplaceAll(out, []byte(titlePlaceholder), []byte(htmlEscape(title)))
+	return out, nil
+}
+
 // htmlEscape escapes the minimal set needed for a plain <title> body.
 func htmlEscape(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
