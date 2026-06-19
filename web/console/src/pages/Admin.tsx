@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
 import { ADMIN_SECTIONS } from '../nav';
+import { useSetChatContext } from '../chatContext';
 
 // The Admin area groups the infrequent, admin-only setup surfaces (roles,
 // integrations, website, chat widget) so they don't clutter the top nav.
 // Tiles reuse the launcher's grid; the underlying pages keep their own
 // routes and enforce admin access server-side.
 export default function Admin() {
+  useSetChatContext('the Admin area (workspace setup)');
   return (
     <div className="page">
       <div className="page-head">

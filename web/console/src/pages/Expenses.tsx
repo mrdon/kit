@@ -10,6 +10,7 @@ import {
 import ExpenseDetail from './expenses/detail';
 import { STATUS_LABEL, STATUSES, formatCents } from './expenses/common';
 import { useDetailRoute } from '../useDetailRoute';
+import { useSetChatContext } from '../chatContext';
 
 // Status order for the grouped view: actionable first.
 const GROUP_ORDER = ['submitted', 'draft', 'rejected', 'approved', 'reimbursed'];
@@ -33,6 +34,14 @@ export default function Expenses() {
       .catch((e) => setErr(e.message));
   }, [filters]);
   useEffect(load, [load]);
+
+  const openReport = detail.openId ? reports.find((r) => r.id === detail.openId) : null;
+  useSetChatContext(
+    detail.openId
+      ? `the Expenses page, viewing report ${openReport?.title ? `"${openReport.title}"` : `(id ${detail.openId})`}`
+      : 'the Expenses page',
+    load,
+  );
 
   const setFilter = (k: keyof ExpenseFilters, v: string | boolean) =>
     setFilters((f) => ({ ...f, [k]: v === '' ? undefined : v }));

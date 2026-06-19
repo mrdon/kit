@@ -100,6 +100,10 @@ type chatExecuteRequest struct {
 	// so fresh per open / multi-turn within open works without server
 	// state.
 	ClientSessionID string `json:"client_session_id,omitempty"`
+	// PageContext is an optional human-readable description of where the
+	// user is in the web console (e.g. "the Tasks page"). Quick chat only;
+	// ignored for card chat. Drives the agent's "this"/"here" resolution.
+	PageContext string `json:"page_context,omitempty"`
 }
 
 // maxAttachments caps files per chat turn (the manifest + per-image cost
@@ -145,6 +149,7 @@ func (a *CardsApp) readMultipartChatInput(w http.ResponseWriter, r *http.Request
 	}
 	req.Text = r.FormValue("text")
 	req.ClientSessionID = r.FormValue("client_session_id")
+	req.PageContext = r.FormValue("page_context")
 
 	files := r.MultipartForm.File["files"]
 	if len(files) > maxAttachments {
@@ -324,6 +329,7 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 		Card:            cardItem,
 		Text:            req.Text,
 		ClientSessionID: req.ClientSessionID,
+		PageContext:     req.PageContext,
 		Attachments:     attachments,
 	}
 	if err := chat.Execute(r.Context(), in, emit); err != nil {

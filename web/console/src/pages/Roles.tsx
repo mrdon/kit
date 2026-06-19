@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type RolesMatrix } from '../api';
+import { useSetChatContext } from '../chatContext';
 
 // Roles is the admin matrix of "who is in which role". Rows are users,
 // columns are roles; toggling a cell assigns/unassigns. Membership changes
 // apply optimistically and revert on error so the grid stays responsive.
 export default function Roles() {
+  useSetChatContext('the admin Roles page (who is in which role)');
   const [data, setData] = useState<RolesMatrix | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Cells currently mid-request, keyed `${userId}:${roleName}` — disabled

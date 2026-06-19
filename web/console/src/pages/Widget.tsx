@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type WidgetToken, type MintedToken } from '../api';
+import { useSetChatContext } from '../chatContext';
 
 export default function Widget() {
+  useSetChatContext('the admin Chat Widget page (embeddable widget tokens)');
   const [tokens, setTokens] = useState<WidgetToken[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [origin, setOrigin] = useState('');

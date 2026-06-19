@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type Integration } from '../api';
+import { useSetChatContext } from '../chatContext';
 
 export default function Integrations() {
+  useSetChatContext('the admin Integrations page (connecting external services)');
   const [rows, setRows] = useState<Integration[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 

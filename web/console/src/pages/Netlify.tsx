@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, type NetlifyStatus } from '../api';
+import { useSetChatContext } from '../chatContext';
 
 export default function Netlify() {
+  useSetChatContext('the admin Website (Netlify) page');
   const [st, setSt] = useState<NetlifyStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [siteId, setSiteId] = useState('');

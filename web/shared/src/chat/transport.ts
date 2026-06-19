@@ -37,7 +37,7 @@ export function chatTranscribe(
 export function chatExecute(
   url: string,
   text: string,
-  opts?: { clientSessionID?: string; files?: File[] },
+  opts?: { clientSessionID?: string; pageContext?: string; files?: File[] },
   signal?: AbortSignal,
 ): Promise<Response> {
   const files = opts?.files ?? [];
@@ -45,6 +45,7 @@ export function chatExecute(
     const form = new FormData();
     form.append('text', text);
     if (opts?.clientSessionID) form.append('client_session_id', opts.clientSessionID);
+    if (opts?.pageContext) form.append('page_context', opts.pageContext);
     for (const f of files) form.append('files', f, f.name);
     return fetch(url, {
       method: 'POST',
@@ -56,6 +57,7 @@ export function chatExecute(
   }
   const body: Record<string, unknown> = { text };
   if (opts?.clientSessionID) body.client_session_id = opts.clientSessionID;
+  if (opts?.pageContext) body.page_context = opts.pageContext;
   return fetch(url, {
     method: 'POST',
     credentials: 'same-origin',

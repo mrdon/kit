@@ -11,8 +11,8 @@ import {
 import TaskGrouped from './tasks/grouped';
 import TaskList from './tasks/list';
 import TaskDetail from './tasks/detail';
-import TasksChat from '../TasksChat';
 import { useDetailRoute } from '../useDetailRoute';
+import { useSetChatContext } from '../chatContext';
 import {
   DEFAULT_PRIORITY,
   PRIORITIES,
@@ -47,7 +47,6 @@ export default function Tasks() {
   const [filters, setFilters] = useState<TaskFilters>({ include_closed: false });
   const detail = useDetailRoute('/tasks');
   const [creating, setCreating] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -63,6 +62,15 @@ export default function Tasks() {
       .catch((e) => setErr(e.message));
   }, [filters]);
   useEffect(load, [load]);
+
+  // Tell the global chat launcher where we are so it can resolve "this task".
+  const openTask = detail.openId ? tasks.find((t) => t.id === detail.openId) : null;
+  useSetChatContext(
+    detail.openId
+      ? `the Tasks page, viewing task ${openTask ? `"${openTask.title}"` : `(id ${detail.openId})`}`
+      : 'the Tasks page',
+    load,
+  );
 
   const mutate = async (id: string, patch: UpdateTaskBody) => {
     setErr(null);
@@ -137,13 +145,6 @@ export default function Tasks() {
         <div className="page-head-row">
           <h1>Tasks</h1>
           <div className="page-head-actions">
-            <button
-              className="btn btn-ghost"
-              onClick={() => setChatOpen(true)}
-              title="Talk or type to Kit — add tasks, ask questions"
-            >
-              🎙 Assistant
-            </button>
             <button className="btn" onClick={() => setCreating(true)}>
               New task
             </button>
@@ -242,7 +243,6 @@ export default function Tasks() {
         </div>
       )}
 
-      {chatOpen && <TasksChat onClose={() => setChatOpen(false)} onTurnDone={load} />}
 
       {detail.openId && (
         <TaskDetail

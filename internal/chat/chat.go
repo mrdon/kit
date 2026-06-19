@@ -92,6 +92,14 @@ type ExecuteInput struct {
 	// card-scoped sessions are keyed on the card triple.
 	ClientSessionID string
 
+	// PageContext is a short human-readable description of where the user
+	// is when chatting from the web console's global launcher (e.g. "the
+	// password vault, viewing entry \"AWS root\""). It's injected into the
+	// system suffix so the agent can resolve "this"/"here" references.
+	// Only honored on the card-less (quick) path; ignored when Card is
+	// non-nil — a card already carries its own richer context suffix.
+	PageContext string
+
 	// Attachments are files uploaded with this turn (already stored by the
 	// handler). They surface to the agent as a manifest it reads on demand
 	// via the read_attachment tool.
@@ -180,6 +188,9 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		}
 	} else {
 		runInput.SystemSuffix = buildQuickSystemSuffix()
+		if in.PageContext != "" {
+			runInput.SystemSuffix += "\n\n" + buildPageContextSuffix(in.PageContext)
+		}
 		runInput.HistoryWindow = QuickHistoryWindow
 		// Use Sonnet for the quick-capture surface. Haiku was
 		// frequently hallucinating — replying "Created task X" without
@@ -329,6 +340,18 @@ func renderDecisionOptionsBlock(card *shared.StackItem) string {
 // input→tool mappings make it pattern-match to the tool call instead.
 func buildQuickSystemSuffix() string {
 	return mustRender("system_quick_suffix.tmpl", nil)
+}
+
+// buildPageContextSuffix renders the page the user is chatting from (web
+// console global launcher) as a system-prompt block. The description is
+// caller-supplied UI context that may embed user-authored titles, so it's
+// wrapped in an <untrusted> fence like the card suffix. Capped at
+// cardSuffixMaxBytes for safety though console descriptions are tiny.
+func buildPageContextSuffix(pageContext string) string {
+	rendered := mustRender("system_page_context.tmpl", map[string]any{
+		"Context": pageContext,
+	})
+	return truncateSuffix(rendered, cardSuffixMaxBytes)
 }
 
 // truncateSuffix caps s at maxBytes, appending a sentinel if it

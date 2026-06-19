@@ -54,6 +54,10 @@ export type ChatStreamOptions = {
   // Required for quick chat, ignored by card chat. The server keys the
   // session on (user, clientSessionID) when the card is absent.
   clientSessionID?: string;
+  // Optional human-readable description of where the user is (web console
+  // page). Sent with each turn so the agent can resolve "this"/"here".
+  // Quick chat only; ignored by card chat on the server.
+  pageContext?: string;
   // Fired when a turn finishes so the parent can refresh its view (the
   // agent may have created/changed data that should now appear).
   onDone?: () => void;
@@ -67,7 +71,7 @@ export type ChatStreamOptions = {
  * parsing, turn state, and abort plumbing.
  */
 export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
-  const { executeUrl, loginUrl, clientSessionID, onDone } = opts;
+  const { executeUrl, loginUrl, clientSessionID, pageContext, onDone } = opts;
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -85,7 +89,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
         const resp = await chatExecute(
           executeUrl,
           text,
-          { clientSessionID, files },
+          { clientSessionID, pageContext, files },
           ctrl.signal,
         );
         if (resp.status === 401) {
@@ -161,7 +165,7 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
         setBusy(false);
       }
     },
-    [executeUrl, loginUrl, clientSessionID, updateTurn, onDone],
+    [executeUrl, loginUrl, clientSessionID, pageContext, updateTurn, onDone],
   );
 
   const send = useCallback(

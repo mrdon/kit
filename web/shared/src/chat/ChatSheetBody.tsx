@@ -15,6 +15,9 @@ export type ChatSheetBodyProps = {
   loginUrl: string;
   // Required for quick/tasks chat, ignored for card chat.
   clientSessionID?: string;
+  // Optional description of where the user is (web console page), sent with
+  // each turn so the agent can resolve "this"/"here". Quick chat only.
+  pageContext?: string;
   // Optional placeholder override for the composer.
   placeholder?: string;
   // Dismiss the sheet.
@@ -37,6 +40,7 @@ export default function ChatSheetBody({
   transcribeUrl,
   loginUrl,
   clientSessionID,
+  pageContext,
   placeholder,
   onClose,
   onTurnDone,
@@ -46,6 +50,7 @@ export default function ChatSheetBody({
     executeUrl,
     loginUrl,
     clientSessionID,
+    pageContext,
     onDone: onTurnDone,
   });
 

@@ -6,6 +6,7 @@ import { diceware } from './vault/crypto';
 import { connectWorker, hasKey, rotate, setupVault, unlock } from './vault/worker';
 import { AddPanel, RevealPanel } from './vault/panels';
 import { useDetailRoute } from '../useDetailRoute';
+import { useSetChatContext } from '../chatContext';
 
 type Gate = { kind: 'add' } | { kind: 'reveal'; id: string };
 
@@ -63,6 +64,17 @@ export default function Vault() {
     // gate is recreated each render; we intentionally key only on the id + setup.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.openId, status?.set_up]);
+
+  // Tell the global chat launcher where we are. Only the entry *title* (a
+  // non-secret summary field) is shared — decrypted secrets live solely in
+  // RevealPanel/the worker and must never reach the agent.
+  const openEntry = detail.openId ? entries?.find((e) => e.id === detail.openId) : null;
+  useSetChatContext(
+    detail.openId
+      ? `the password vault, viewing entry ${openEntry?.title ? `"${openEntry.title}"` : `(id ${detail.openId})`}`
+      : 'the password vault',
+    loadEntries,
+  );
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
