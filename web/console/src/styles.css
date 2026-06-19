@@ -1395,37 +1395,34 @@ h2.view-title:hover {
 }
 
 /* --- Global chat launcher (FAB) --- */
-/* Persistent floating circle, bottom-right, mirroring the cards PWA FAB.
+/* Persistent floating circle, bottom-right. Deliberately understated: a
+   neutral surface with a thin line icon, not a bright accent bubble.
    Click-to-open only (the chat sheet has its own mic), so plain
    touch-action: manipulation — no long-press gesture to protect. */
 .console-chat-fab {
   position: fixed;
   right: 20px;
   bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  border: none;
-  background: var(--accent);
-  color: #ffffff;
-  font-size: 26px;
-  line-height: 1;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink-soft);
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
   z-index: 50;
   touch-action: manipulation;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: transform 0.12s ease, background 0.12s ease;
+  transition: color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .console-chat-fab:hover {
-  background: var(--accent-hover);
-  transform: scale(1.04);
-}
-.console-chat-fab:active {
-  transform: scale(0.96);
+  color: var(--ink);
+  border-color: var(--muted);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.16);
 }
 .console-chat-fab:focus-visible {
   outline: 2px solid var(--accent);
