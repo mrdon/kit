@@ -244,24 +244,35 @@ export function RevealPanel({
         {err && <p className="banner banner-error">{err}</p>}
         {!decoded && !err && <p className="muted">Decrypting…</p>}
         {decoded && editing && entry && (
-          <EditForm
-            entryId={entryId}
-            initial={{
-              title,
-              username: username || '',
-              url: url || '',
-              password: decoded.password || '',
-              notes: decoded.notes || '',
-              totp: totpToInput(decoded.totp),
-            }}
-            tags={entry.Tags || entry.tags || []}
-            onCancel={() => setEditing(false)}
-            onSaved={async () => {
-              setEditing(false);
-              await load();
-              onSaved?.();
-            }}
-          />
+          <>
+            <EditForm
+              entryId={entryId}
+              initial={{
+                title,
+                username: username || '',
+                url: url || '',
+                password: decoded.password || '',
+                notes: decoded.notes || '',
+                totp: totpToInput(decoded.totp),
+              }}
+              tags={entry.Tags || entry.tags || []}
+              onCancel={() => setEditing(false)}
+              onSaved={async () => {
+                setEditing(false);
+                await load();
+                onSaved?.();
+              }}
+            />
+            <VisibilityEditor
+              entryId={entryId}
+              roleId={entry?.role_id}
+              roleName={entry?.role_name}
+              onChanged={async () => {
+                await load();
+                onSaved?.();
+              }}
+            />
+          </>
         )}
         {decoded && !editing && (
           <>
@@ -310,15 +321,7 @@ export function RevealPanel({
               )}
             </dl>
             {decoded.totp && <TotpDisplay params={expandTOTP(decoded.totp)} />}
-            <VisibilityEditor
-              entryId={entryId}
-              roleId={entry?.role_id}
-              roleName={entry?.role_name}
-              onChanged={async () => {
-                await load();
-                onSaved?.();
-              }}
-            />
+            <p className="muted">Who can see this: {entry?.role_name === 'member' || !entry?.role_name ? 'Everyone (members)' : entry.role_name}</p>
             <div className="drawer-actions">
               <button className="btn" onClick={() => setEditing(true)}>
                 Edit
