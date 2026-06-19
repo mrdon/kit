@@ -194,19 +194,31 @@ function AddItemForm({
   busy: boolean;
   onAdd: (body: ExpenseItemBody) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [body, setBody] = useState<ExpenseItemBody>({});
   const set = (k: keyof ExpenseItemBody, v: string) => setBody((b) => ({ ...b, [k]: v }));
+
+  // Collapsed by default — the form only appears on demand so the drawer
+  // isn't cluttered with empty inputs.
+  if (!open) {
+    return (
+      <button type="button" className="add-item-toggle" onClick={() => setOpen(true)}>
+        + Add line item
+      </button>
+    );
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!body.amount) return;
     onAdd(body);
-    setBody({});
+    setBody({}); // stay open with cleared fields for entering several receipts
   };
 
   return (
     <form onSubmit={submit} className="add-item">
       <input
+        autoFocus
         placeholder="Vendor"
         value={body.vendor ?? ''}
         onChange={(e) => set('vendor', e.target.value)}
@@ -221,6 +233,17 @@ function AddItemForm({
       />
       <button className="btn btn-sm" type="submit" disabled={busy || !body.amount}>
         Add
+      </button>
+      <button
+        type="button"
+        className="add-item-cancel"
+        onClick={() => {
+          setBody({});
+          setOpen(false);
+        }}
+        aria-label="Cancel"
+      >
+        Done
       </button>
     </form>
   );

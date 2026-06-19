@@ -1365,3 +1365,31 @@ h2.view-title:hover {
   margin-right: 0.5rem;
   white-space: nowrap;
 }
+
+.add-item-toggle {
+  background: none;
+  border: 1px dashed var(--line-strong);
+  border-radius: 0.4rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.88rem;
+  padding: 0.45rem 0.75rem;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 1rem;
+}
+.add-item-toggle:hover {
+  background: var(--off-bg);
+  border-color: var(--accent);
+}
+.add-item-cancel {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+}
+.add-item-cancel:hover {
+  color: var(--ink);
+}
