@@ -487,9 +487,12 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handlePrincipals lists the roles the caller is a member of, plus the
-// tenant's default_role_id (the 'member' role that includes everyone).
-// The add/reveal pages use this for the "who can see this" selector.
+// handlePrincipals lists the roles the caller can scope a secret to,
+// plus the tenant's default_role_id (the 'member' role that includes
+// everyone). The add/reveal pages use this for the "who can see this"
+// selector. Non-admins see only roles they're a member of; admins see
+// every role in the tenant, mirroring validateRoleForCaller's admin
+// exemption so the picker can actually offer those choices.
 func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	tenant, err := models.GetTenantByID(r.Context(), a.pool, caller.TenantID)
@@ -515,7 +518,7 @@ func (a *App) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	}
 	roleList := make([]roleOut, 0, len(roles))
 	for _, role := range roles {
-		if !memberOf[role.ID] {
+		if !caller.IsAdmin && !memberOf[role.ID] {
 			continue
 		}
 		roleList = append(roleList, roleOut{ID: role.ID.String(), Name: role.Name})

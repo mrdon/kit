@@ -115,6 +115,10 @@ func toListItem(e models.VaultEntry, _ *services.Caller) EntryListItem {
 // 'member' role is implicitly held by every user (GetUserRoleIDs
 // appends DefaultRoleID), so "everyone in the workspace" is reachable
 // without joining anything explicitly.
+//
+// Admins are exempt from the membership requirement: a tenant admin can
+// scope a secret to any role in the tenant, including teams they don't
+// belong to. They still must target a real role in their own tenant.
 func (s *Service) validateRoleForCaller(ctx context.Context, c *services.Caller, roleID *uuid.UUID) error {
 	if roleID == nil {
 		return errors.New("role_id required: pick a role (use the tenant's 'member' role for everyone)")
@@ -129,7 +133,7 @@ func (s *Service) validateRoleForCaller(ctx context.Context, c *services.Caller,
 	if found == 0 {
 		return errors.New("role not in this tenant")
 	}
-	if !slices.Contains(c.RoleIDs, *roleID) {
+	if !c.IsAdmin && !slices.Contains(c.RoleIDs, *roleID) {
 		return ErrCallerNotInRole
 	}
 	return nil

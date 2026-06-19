@@ -512,6 +512,87 @@ func TestCrossTenantIsolation(t *testing.T) {
 	}
 }
 
+// TestSetEntryRoleNonMemberRejected verifies a non-admin can't re-scope
+// an entry to a role they don't belong to.
+func TestSetEntryRoleNonMemberRejected(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, userID := freshTenant(t, ctx, pool)
+	_ = seedVaultTenant(t, ctx, pool, tenantID, userID)
+	memberID := memberRoleID(t, ctx, pool, tenantID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	// A role the caller is NOT a member of.
+	otherRole, err := models.GetOrCreateRole(ctx, pool, tenantID, "engineering", "")
+	if err != nil {
+		t.Fatalf("creating role: %v", err)
+	}
+
+	// Non-admin caller holding only the implicit member role.
+	caller := &services.Caller{TenantID: tenantID, UserID: userID, IsAdmin: false, RoleIDs: []uuid.UUID{memberID}}
+	id, err := svc.CreateEntry(ctx, caller, CreateEntryParams{
+		Title:           "secret",
+		ValueCiphertext: []byte("ct"),
+		ValueNonce:      make([]byte, 12),
+		RoleID:          &memberID,
+	}, svc.AuditFromRequest(caller, r))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	err = svc.SetEntryRole(ctx, caller, id, &otherRole.ID, svc.AuditFromRequest(caller, r))
+	if !errors.Is(err, ErrCallerNotInRole) {
+		t.Fatalf("expected ErrCallerNotInRole, got %v", err)
+	}
+}
+
+// TestSetEntryRoleAdminBypass verifies an admin can re-scope an entry to
+// a role they don't belong to. Cross-role moves still require a recent
+// unlock, so the admin unlocks first.
+func TestSetEntryRoleAdminBypass(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	svc := NewService(pool)
+	tenantID, adminID := freshTenant(t, ctx, pool)
+	knownHash := seedVaultTenant(t, ctx, pool, tenantID, adminID)
+	memberID := memberRoleID(t, ctx, pool, tenantID)
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	otherRole, err := models.GetOrCreateRole(ctx, pool, tenantID, "engineering", "")
+	if err != nil {
+		t.Fatalf("creating role: %v", err)
+	}
+
+	// Admin holds only the implicit member role, not 'engineering'.
+	admin := adminCaller(tenantID, adminID, memberID)
+	id, err := svc.CreateEntry(ctx, admin, CreateEntryParams{
+		Title:           "secret",
+		ValueCiphertext: []byte("ct"),
+		ValueNonce:      make([]byte, 12),
+		RoleID:          &memberID,
+	}, svc.AuditFromRequest(admin, r))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := svc.Unlock(ctx, admin, knownHash, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+
+	if err := svc.SetEntryRole(ctx, admin, id, &otherRole.ID, svc.AuditFromRequest(admin, r)); err != nil {
+		t.Fatalf("admin re-scope to non-member role: %v", err)
+	}
+
+	got, err := models.GetVaultEntry(ctx, pool, tenantID, id, adminID, []uuid.UUID{memberID})
+	if err != nil || got == nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.RoleID == nil || *got.RoleID != otherRole.ID {
+		t.Fatalf("role not updated: got %v want %s", got.RoleID, otherRole.ID)
+	}
+}
+
 func TestNonceUniquenessAcrossEntries(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()

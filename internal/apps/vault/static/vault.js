@@ -718,6 +718,74 @@ async function wireReveal() {
     return;
   }
   renderRevealedEntry(entry, decoded);
+  wireVisibilityEditor(entry);
+}
+
+// wireVisibilityEditor hooks up the "Who can see this" section on the
+// reveal page: it shows the entry's current owning role and lets the
+// user re-scope it to another role via PUT /entries/{id}/role. The
+// server enforces who may pick which role (members of the target role,
+// or any admin) and step-up auth for cross-role moves; this just
+// surfaces those errors in friendly copy.
+function wireVisibilityEditor(entry) {
+  const display = document.getElementById("visibility-display");
+  const editBtn = document.getElementById("edit-visibility-button");
+  const form = document.getElementById("visibility-form");
+  const selector = document.getElementById("visibility-role-selector");
+  const cancelBtn = document.getElementById("cancel-visibility-edit");
+  const status = document.getElementById("visibility-status");
+  if (!display || !editBtn || !form || !selector) return;
+
+  const friendly = (name) =>
+    !name || name === "member" ? "Everyone (members)" : name;
+  let currentRoleID = entry.role_id || entry.RoleID || null;
+  display.textContent = friendly(entry.role_name || entry.RoleName);
+
+  const setVisStatus = (text, kind) => {
+    if (!status) return;
+    status.textContent = text;
+    status.className = kind || "";
+  };
+  const closeForm = () => {
+    form.hidden = true;
+    editBtn.hidden = false;
+  };
+
+  editBtn.addEventListener("click", async () => {
+    setVisStatus("");
+    await populateRoleSelector(selector, currentRoleID);
+    form.hidden = false;
+    editBtn.hidden = true;
+  });
+  if (cancelBtn) cancelBtn.addEventListener("click", closeForm);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const roleID = new FormData(form).get("role_id");
+    if (!roleID) {
+      setVisStatus("Pick a role.", "error");
+      return;
+    }
+    setVisStatus("Saving…");
+    try {
+      await api("PUT", `/entries/${VAULT.entryId}/role`, { role_id: roleID });
+    } catch (err) {
+      const msg = String(err.message || err);
+      let text = `Couldn't update: ${msg}`;
+      if (msg.includes("HTTP 401")) {
+        text = "Unlock the vault again to change who can see this.";
+      } else if (msg.includes("HTTP 403")) {
+        text = "You can only move this to a role you're in (admins can pick any role).";
+      }
+      setVisStatus(text, "error");
+      return;
+    }
+    currentRoleID = roleID;
+    const opt = selector.options[selector.selectedIndex];
+    display.textContent = opt ? opt.textContent : friendly(null);
+    setVisStatus("Saved.");
+    closeForm();
+  });
 }
 
 function renderRevealedEntry(entry, decoded) {
