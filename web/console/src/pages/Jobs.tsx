@@ -4,7 +4,7 @@ import { api, type JobView } from '../api';
 import { useDetailRoute } from '../useDetailRoute';
 import { useSetChatContext } from '../chatContext';
 import GroupedList, { groupByScope } from '../GroupedList';
-import JobDetail from './jobs/detail';
+import JobDetail, { jobTitle } from './jobs/detail';
 
 export default function Jobs() {
   const [jobs, setJobs] = useState<JobView[]>([]);
@@ -48,7 +48,7 @@ export default function Jobs() {
         renderItem={(j) => (
           <li key={j.id}>
             <button className="entry-link" onClick={() => detail.open(j.id)}>
-              <span className="entry-title">{j.description || '(untitled job)'}</span>
+              <span className="entry-title">{jobTitle(j.description)}</span>
               <span className="entry-sub">
                 {j.schedule} · {j.status}
               </span>

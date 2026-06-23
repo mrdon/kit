@@ -20,6 +20,18 @@ function fmt(ts?: string): string {
   return isNaN(d.getTime()) ? ts : d.toLocaleString();
 }
 
+// jobTitle reduces a job's description — often a long multi-line prompt — to a
+// single readable line for list rows and the drawer heading. The full text
+// stays available in the drawer's editable Description field.
+export function jobTitle(desc: string): string {
+  const first =
+    (desc || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) || '(untitled job)';
+  return first.length > 100 ? first.slice(0, 100).trimEnd() + '…' : first;
+}
+
 export default function JobDetail({ jobId, onClose, onChanged }: Props) {
   const [job, setJob] = useState<JobView | null>(null);
   const [skills, setSkills] = useState<SkillSummary[]>([]);
@@ -71,7 +83,7 @@ export default function JobDetail({ jobId, onClose, onChanged }: Props) {
           <p className="muted">Loading…</p>
         ) : (
           <>
-            <h2 className="drawer-title">{job.description || '(untitled job)'}</h2>
+            <h2 className="drawer-title">{jobTitle(job.description)}</h2>
             {!job.editable && (
               <p className="banner">Built-in job — read only.</p>
             )}
