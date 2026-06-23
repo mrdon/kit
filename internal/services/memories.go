@@ -59,7 +59,8 @@ func (s *MemoryService) Search(ctx context.Context, c *Caller, query string) ([]
 }
 
 // GetByKey fetches a single memory by its exact dedup key, within the caller's
-// scope visibility. Returns nil if no memory is stored under that key.
+// scope visibility. Returns models.ErrMemoryNotFound if nothing is stored under
+// that key.
 func (s *MemoryService) GetByKey(ctx context.Context, c *Caller, key string) (*models.Memory, error) {
 	return models.GetMemoryByKey(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs, key)
 }

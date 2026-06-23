@@ -2,11 +2,13 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -65,11 +67,11 @@ func handleGetMemory(ec *ExecContext, input json.RawMessage) (string, error) {
 		return "", err
 	}
 	m, err := ec.Svc.Memories.GetByKey(ec.Ctx, ec.Caller(), inp.Key)
+	if errors.Is(err, models.ErrMemoryNotFound) {
+		return fmt.Sprintf("No memory stored under key %q.", inp.Key), nil
+	}
 	if err != nil {
 		return "", err
-	}
-	if m == nil {
-		return fmt.Sprintf("No memory stored under key %q.", inp.Key), nil
 	}
 	return fmt.Sprintf("[%s] %s", m.ID, m.Content), nil
 }

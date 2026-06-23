@@ -2,12 +2,17 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrMemoryNotFound is returned by GetMemoryByKey when no memory is stored
+// under the given key within the caller's scope.
+var ErrMemoryNotFound = errors.New("memory not found")
 
 type Memory struct {
 	ID              uuid.UUID
@@ -71,9 +76,10 @@ func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, c
 }
 
 // GetMemoryByKey returns the single memory with the given dedup key visible to
-// the user (user-scoped + tenant-scoped + role-scoped), or nil if none. A key
-// is unique per scope, so at most one row is returned per scope; when the same
-// key exists in more than one visible scope, the most recently updated wins.
+// the user (user-scoped + tenant-scoped + role-scoped), or ErrMemoryNotFound if
+// none. A key is unique per scope, so at most one row is returned per scope;
+// when the same key exists in more than one visible scope, the most recently
+// updated wins.
 func GetMemoryByKey(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, key string) (*Memory, error) {
 	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	keyParam := 2 + len(scopeArgs)
@@ -98,7 +104,7 @@ func GetMemoryByKey(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uu
 		return nil, err
 	}
 	if len(found) == 0 {
-		return nil, nil
+		return nil, ErrMemoryNotFound
 	}
 	return &found[0], nil
 }

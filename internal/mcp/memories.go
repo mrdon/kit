@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/mcpauth"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -49,11 +51,11 @@ func memoryMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcps
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			key, _ := req.RequireString("key")
 			m, err := svc.Memories.GetByKey(ctx, caller, key)
+			if errors.Is(err, models.ErrMemoryNotFound) {
+				return mcp.NewToolResultText(fmt.Sprintf("No memory stored under key %q.", key)), nil
+			}
 			if err != nil {
 				return nil, err
-			}
-			if m == nil {
-				return mcp.NewToolResultText(fmt.Sprintf("No memory stored under key %q.", key)), nil
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("[%s] %s", m.ID, m.Content)), nil
 		})
