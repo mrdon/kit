@@ -381,7 +381,7 @@ func dispatchAddMemory(ctx context.Context, a *ActionBuiltins, deps *actionDeps,
 		scope = scopeValue
 	}
 
-	if err := deps.svc.Memories.Save(ctx, c, content, scope, uuid.Nil); err != nil {
+	if err := deps.svc.Memories.Save(ctx, c, content, scope, "", uuid.Nil); err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 	a.insertCount++

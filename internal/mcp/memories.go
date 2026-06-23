@@ -20,10 +20,11 @@ func memoryMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcps
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 			content, _ := req.RequireString("content")
 			scope := req.GetString("scope", "tenant")
+			key := req.GetString("key", "")
 			// uuid.Nil is intentional — MCP calls have no session to attribute
 			// the memory to. Agent-side save_memory passes ec.Session.ID because
 			// that path always runs inside a session.
-			if err := svc.Memories.Save(ctx, caller, content, scope, uuid.Nil); err != nil {
+			if err := svc.Memories.Save(ctx, caller, content, scope, key, uuid.Nil); err != nil {
 				return nil, err
 			}
 			return mcp.NewToolResultText("Got it, I'll remember that."), nil
@@ -43,6 +44,18 @@ func memoryMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services) mcps
 				fmt.Fprintf(&b, "- [%s] %s\n", m.ID, m.Content)
 			}
 			return mcp.NewToolResultText(b.String()), nil
+		})
+	case "get_memory":
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+			key, _ := req.RequireString("key")
+			m, err := svc.Memories.GetByKey(ctx, caller, key)
+			if err != nil {
+				return nil, err
+			}
+			if m == nil {
+				return mcp.NewToolResultText(fmt.Sprintf("No memory stored under key %q.", key)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("[%s] %s", m.ID, m.Content)), nil
 		})
 	case "forget_memory":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {

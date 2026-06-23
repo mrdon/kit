@@ -13,6 +13,7 @@ type Memory struct {
 	ID              uuid.UUID
 	TenantID        uuid.UUID
 	Content         string
+	Key             *string
 	SourceSessionID *uuid.UUID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -24,12 +25,22 @@ type Memory struct {
 // server, builder scripts) have no enclosing session and pass uuid.Nil,
 // which we translate to NULL here rather than letting the zero UUID hit
 // the FK constraint.
-func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, roleID, userID *uuid.UUID, sessionID uuid.UUID) error {
+//
+// key is an optional dedup key. When nil, the memory is append-only (the
+// classic "remember this fact" behavior — many rows accumulate). When set,
+// the write upserts on (scope_id, key): the first save inserts, later saves
+// with the same key overwrite the row's content in place. This makes a keyed
+// memory a single mutable value, suitable for cursors/watermarks.
+func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, content string, key string, roleID, userID *uuid.UUID, sessionID uuid.UUID) error {
 	var sessionArg any
 	if sessionID == uuid.Nil {
 		sessionArg = nil
 	} else {
 		sessionArg = sessionID
+	}
+	var keyArg any
+	if key != "" {
+		keyArg = key
 	}
 
 	tx, err := pool.Begin(ctx)
@@ -43,13 +54,53 @@ func CreateMemory(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, c
 		return fmt.Errorf("get-or-create scope: %w", err)
 	}
 
+	// Keyed writes upsert in place; keyless writes always insert. The
+	// ON CONFLICT target names the partial unique index's predicate so
+	// Postgres infers memories_scope_key_idx (keyless rows never conflict).
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO memories (id, tenant_id, content, scope_id, source_session_id)
-		VALUES ($1, $2, $3, $4, $5)
-	`, uuid.New(), tenantID, content, scopeID, sessionArg); err != nil {
+		INSERT INTO memories (id, tenant_id, content, key, scope_id, source_session_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (scope_id, key) WHERE key IS NOT NULL
+		DO UPDATE SET content = EXCLUDED.content,
+		             source_session_id = EXCLUDED.source_session_id,
+		             updated_at = now()
+	`, uuid.New(), tenantID, content, keyArg, scopeID, sessionArg); err != nil {
 		return fmt.Errorf("creating memory: %w", err)
 	}
 	return tx.Commit(ctx)
+}
+
+// GetMemoryByKey returns the single memory with the given dedup key visible to
+// the user (user-scoped + tenant-scoped + role-scoped), or nil if none. A key
+// is unique per scope, so at most one row is returned per scope; when the same
+// key exists in more than one visible scope, the most recently updated wins.
+func GetMemoryByKey(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, roleIDs []uuid.UUID, key string) (*Memory, error) {
+	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
+	keyParam := 2 + len(scopeArgs)
+	args := append([]any{tenantID}, scopeArgs...)
+	args = append(args, key)
+	rows, err := pool.Query(ctx, fmt.Sprintf(`
+		SELECT m.id, m.tenant_id, m.content, m.key, m.source_session_id, m.created_at, m.updated_at
+		FROM memories m
+		JOIN scopes sc ON sc.id = m.scope_id
+		WHERE m.tenant_id = $1
+		AND (%s)
+		AND m.key = $%d
+		ORDER BY m.updated_at DESC
+		LIMIT 1
+	`, scopeSQL, keyParam), args...)
+	if err != nil {
+		return nil, fmt.Errorf("getting memory by key: %w", err)
+	}
+	defer rows.Close()
+	found, err := scanMemories(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return &found[0], nil
 }
 
 func DeleteMemory(ctx context.Context, pool *pgxpool.Pool, tenantID, memoryID uuid.UUID) error {
@@ -67,7 +118,7 @@ func SearchMemories(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uu
 	args := append([]any{tenantID}, scopeArgs...)
 	args = append(args, query)
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
-		SELECT m.id, m.tenant_id, m.content, m.source_session_id, m.created_at, m.updated_at
+		SELECT m.id, m.tenant_id, m.content, m.key, m.source_session_id, m.created_at, m.updated_at
 		FROM memories m
 		JOIN scopes sc ON sc.id = m.scope_id
 		WHERE m.tenant_id = $1
@@ -90,7 +141,7 @@ func GetRecentMemories(ctx context.Context, pool *pgxpool.Pool, tenantID, userID
 	args := append([]any{tenantID}, scopeArgs...)
 	args = append(args, limit)
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
-		SELECT m.id, m.tenant_id, m.content, m.source_session_id, m.created_at, m.updated_at
+		SELECT m.id, m.tenant_id, m.content, m.key, m.source_session_id, m.created_at, m.updated_at
 		FROM memories m
 		JOIN scopes sc ON sc.id = m.scope_id
 		WHERE m.tenant_id = $1
@@ -113,7 +164,7 @@ func scanMemories(rows interface {
 	var memories []Memory
 	for rows.Next() {
 		var m Memory
-		if err := rows.Scan(&m.ID, &m.TenantID, &m.Content, &m.SourceSessionID, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.TenantID, &m.Content, &m.Key, &m.SourceSessionID, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning memory: %w", err)
 		}
 		memories = append(memories, m)

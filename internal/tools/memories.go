@@ -31,6 +31,8 @@ func memoryHandler(name string) HandlerFunc {
 		return handleSaveMemory
 	case "search_memories":
 		return handleSearchMemories
+	case "get_memory":
+		return handleGetMemory
 	case "forget_memory":
 		return handleForgetMemory
 	default:
@@ -44,14 +46,32 @@ func handleSaveMemory(ec *ExecContext, input json.RawMessage) (string, error) {
 	var inp struct {
 		Content string `json:"content"`
 		Scope   string `json:"scope"`
+		Key     string `json:"key"`
 	}
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	if err := ec.Svc.Memories.Save(ec.Ctx, ec.Caller(), inp.Content, inp.Scope, ec.Session.ID); err != nil {
+	if err := ec.Svc.Memories.Save(ec.Ctx, ec.Caller(), inp.Content, inp.Scope, inp.Key, ec.Session.ID); err != nil {
 		return "", err
 	}
 	return "Got it, I'll remember that.", nil
+}
+
+func handleGetMemory(ec *ExecContext, input json.RawMessage) (string, error) {
+	var inp struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(input, &inp); err != nil {
+		return "", err
+	}
+	m, err := ec.Svc.Memories.GetByKey(ec.Ctx, ec.Caller(), inp.Key)
+	if err != nil {
+		return "", err
+	}
+	if m == nil {
+		return fmt.Sprintf("No memory stored under key %q.", inp.Key), nil
+	}
+	return fmt.Sprintf("[%s] %s", m.ID, m.Content), nil
 }
 
 func handleSearchMemories(ec *ExecContext, input json.RawMessage) (string, error) {
