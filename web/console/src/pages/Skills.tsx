@@ -4,49 +4,8 @@ import { api, type CreateSkillBody, type SkillSummary, type SkillsMeta } from '.
 import { useDetailRoute } from '../useDetailRoute';
 import { useMe } from '../me';
 import { useSetChatContext } from '../chatContext';
-import GroupedList, { type Group } from '../GroupedList';
+import GroupedList, { groupByScope } from '../GroupedList';
 import SkillDetail from './skills/detail';
-
-// scopeLabel renders a skill's canonical scope tier as a human badge. "tenant"
-// is "Public (website)" — the only tier the anonymous website widget sees —
-// and the universal catchall role reads as "All members" (logged-in only).
-function scopeLabel(scope: string, catchall: string): string {
-  if (scope === 'tenant' || scope === '') return 'Public (website)';
-  if (scope === catchall) return 'All members';
-  return scope;
-}
-
-// groupSkills buckets each skill into exactly one group by its single
-// canonical scope (computed server-side). Order runs broadest to narrowest:
-// Public, All members, specific roles, then built-ins as their own read-only
-// group.
-function groupSkills(skills: SkillSummary[], catchall: string): Group<SkillSummary>[] {
-  const pub: SkillSummary[] = [];
-  const members: SkillSummary[] = [];
-  const builtin: SkillSummary[] = [];
-  const byRole = new Map<string, SkillSummary[]>();
-  for (const s of skills) {
-    if (s.builtin) {
-      builtin.push(s);
-    } else if (s.scope === 'tenant' || s.scope === '') {
-      pub.push(s);
-    } else if (s.scope === catchall) {
-      members.push(s);
-    } else {
-      const list = byRole.get(s.scope) ?? [];
-      list.push(s);
-      byRole.set(s.scope, list);
-    }
-  }
-  const groups: Group<SkillSummary>[] = [];
-  if (pub.length) groups.push({ key: 'public', label: 'Public (website)', items: pub });
-  if (members.length) groups.push({ key: 'members', label: 'All members', items: members });
-  for (const role of [...byRole.keys()].sort()) {
-    groups.push({ key: `role:${role}`, label: role, items: byRole.get(role)! });
-  }
-  if (builtin.length) groups.push({ key: 'builtin', label: 'Built-in', items: builtin });
-  return groups;
-}
 
 export default function Skills() {
   const me = useMe();
@@ -106,7 +65,7 @@ export default function Skills() {
       </div>
 
       <GroupedList
-        groups={groupSkills(skills, meta?.catchall_role ?? 'member')}
+        groups={groupByScope(skills)}
         empty="No skills found."
         renderItem={(s) => (
           <li key={s.id || s.name}>
@@ -114,13 +73,7 @@ export default function Skills() {
               <span className="entry-title">{s.name}</span>
               {s.description && <span className="entry-sub">{s.description}</span>}
               <span className="badge-row">
-                {s.builtin ? (
-                  <span className="badge">built-in</span>
-                ) : (
-                  <span className="badge">
-                    {scopeLabel(s.scope, meta?.catchall_role ?? 'member')}
-                  </span>
-                )}
+                <span className="badge">{s.scope_label}</span>
               </span>
             </button>
           </li>

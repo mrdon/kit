@@ -26,6 +26,52 @@ type ScopeRow struct {
 	UserID *uuid.UUID
 }
 
+// ScopeLabel is a scope row denormalized for display: a kind ("tenant",
+// "role", "user") plus a human value (role name, the owner's Slack user ID,
+// or "*" for tenant-wide). Shared across every scoped entity so ownership is
+// rendered consistently.
+type ScopeLabel struct {
+	ScopeType  ScopeType
+	ScopeValue string
+}
+
+// LoadScopeLabels batch-loads denormalized scope rows for any scoped entity's
+// join table. joinTable ("skill_scopes", "job_scopes", …) and idCol
+// ("skill_id", "job_id", …) are code-controlled, never user input. One query,
+// one source of truth for "what scope rows does this thing have."
+func LoadScopeLabels(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, joinTable, idCol string, ids []uuid.UUID) (map[uuid.UUID][]ScopeLabel, error) {
+	q := fmt.Sprintf(`
+		SELECT js.%s,
+			CASE
+				WHEN sc.role_id IS NULL AND sc.user_id IS NULL THEN 'tenant'
+				WHEN sc.role_id IS NOT NULL THEN 'role'
+				ELSE 'user'
+			END AS scope_type,
+			COALESCE(r.name, u.slack_user_id, '*') AS scope_value
+		FROM %s js
+		JOIN scopes sc ON sc.id = js.scope_id
+		LEFT JOIN roles r ON r.id = sc.role_id
+		LEFT JOIN users u ON u.id = sc.user_id
+		WHERE js.tenant_id = $1 AND js.%s = ANY($2)
+	`, idCol, joinTable, idCol)
+	rows, err := pool.Query(ctx, q, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("loading scope labels for %s: %w", joinTable, err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID][]ScopeLabel)
+	for rows.Next() {
+		var id uuid.UUID
+		var sl ScopeLabel
+		if err := rows.Scan(&id, &sl.ScopeType, &sl.ScopeValue); err != nil {
+			return nil, err
+		}
+		result[id] = append(result[id], sl)
+	}
+	return result, rows.Err()
+}
+
 // ScopeType identifies the kind of scope row used for access control.
 // The canonical values match the CHECK constraints on the *_scopes tables.
 type ScopeType string

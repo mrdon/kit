@@ -20,15 +20,6 @@ function fmt(ts?: string): string {
   return isNaN(d.getTime()) ? ts : d.toLocaleString();
 }
 
-// jobScopeValue maps a job's display scope back to the value the scope picker
-// (and the API) uses: personal → "user", a role → its name, everyone →
-// "tenant". For jobs there's no public surface, so tenant covers "everyone".
-function jobScopeValue(job: JobView): string {
-  if (job.scope_kind === 'personal') return 'user';
-  if (job.scope_kind === 'role') return job.scope_label;
-  return 'tenant';
-}
-
 export default function JobDetail({ jobId, onClose, onChanged }: Props) {
   const [job, setJob] = useState<JobView | null>(null);
   const [skills, setSkills] = useState<SkillSummary[]>([]);
@@ -123,7 +114,7 @@ export default function JobDetail({ jobId, onClose, onChanged }: Props) {
                 <label className="field">
                   <span>Who can see / manage this?</span>
                   <select
-                    value={jobScopeValue(job)}
+                    value={job.scope}
                     onChange={(e) => patch({ scope: e.target.value })}
                   >
                     <option value="user">Personal (just me)</option>

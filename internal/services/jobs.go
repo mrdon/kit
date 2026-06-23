@@ -247,12 +247,12 @@ type JobView struct {
 	Policy        *models.Policy   `json:"policy"`
 	PolicySummary string           `json:"policy_summary"`
 	Editable      bool             `json:"editable"`
-	// ScopeKind buckets the job for the console's grouped view:
-	// "builtin", "everyone" (tenant-wide), "role", or "personal".
-	// ScopeLabel is the display name (the role name, or "Everyone"/
-	// "Personal"/"Built-in").
+	// ScopeKind/ScopeLabel come from the shared ScopeTierOf; Scope is the
+	// picker value the editor round-trips ("user", "tenant", or a role name).
+	// Builtin jobs report kind "builtin".
 	ScopeKind  string    `json:"scope_kind"`
 	ScopeLabel string    `json:"scope_label"`
+	Scope      string    `json:"scope"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -274,10 +274,15 @@ func (s *JobService) enrich(ctx context.Context, tenantID uuid.UUID, jobs []mode
 	views := make([]JobView, 0, len(jobs))
 	for i := range jobs {
 		j := jobs[i]
-		kind, label := jobScopeLabel(j, scopes[j.ID])
+		tier := ScopeTier{Kind: "builtin", Label: "Built-in"}
+		if j.JobType != models.JobTypeBuiltin {
+			st, sv := FirstScope(scopes[j.ID])
+			tier = ScopeTierOf(st, sv, false) // jobs have no public surface
+		}
 		v := JobView{
-			ScopeKind:     kind,
-			ScopeLabel:    label,
+			ScopeKind:     tier.Kind,
+			ScopeLabel:    tier.Label,
+			Scope:         tier.Value,
 			ID:            j.ID,
 			Description:   j.Description,
 			JobType:       j.JobType,
@@ -311,31 +316,6 @@ func (s *JobService) enrich(ctx context.Context, tenantID uuid.UUID, jobs []mode
 		views = append(views, v)
 	}
 	return views, nil
-}
-
-// jobScopeLabel buckets a job for the console's grouped view. Builtin jobs
-// form their own group; otherwise the (single) scope row decides: a role
-// scope groups under the role name, a user scope under "Personal", and the
-// absence of any scope row means tenant-wide ("Everyone").
-func jobScopeLabel(j models.Job, scopes []models.JobScope) (kind, label string) {
-	if j.JobType == models.JobTypeBuiltin {
-		return "builtin", "Built-in"
-	}
-	for _, sc := range scopes {
-		if sc.ScopeType == models.ScopeTypeRole {
-			// Jobs have no anonymous/public surface (unlike skills via the
-			// website widget), so a job scoped to the universal "member"
-			// catchall is the same audience as a tenant-wide job: everyone.
-			if sc.ScopeValue == models.RoleMember {
-				return "everyone", "Everyone"
-			}
-			return "role", sc.ScopeValue
-		}
-		if sc.ScopeType == models.ScopeTypeUser {
-			return "personal", "Personal"
-		}
-	}
-	return "everyone", "Everyone"
 }
 
 // scheduleLabel renders a job's cadence for display: a one-time job shows

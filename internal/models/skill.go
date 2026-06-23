@@ -285,40 +285,10 @@ func SetSkillScope(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uu
 	return tx.Commit(ctx)
 }
 
-// getSkillScopesBatch returns scopes for multiple skills in one query.
-// Joins the canonical scopes table back to roles/users to recover the
-// human-readable scope_value (role name or slack_user_id) for display.
+// getSkillScopesBatch returns scopes for multiple skills, via the shared
+// scope-label loader so the denormalization lives in exactly one place.
 func getSkillScopesBatch(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID][]SkillScope, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT
-			ss.skill_id,
-			CASE
-				WHEN sc.role_id IS NULL AND sc.user_id IS NULL THEN 'tenant'
-				WHEN sc.role_id IS NOT NULL THEN 'role'
-				ELSE 'user'
-			END AS scope_type,
-			COALESCE(r.name, u.slack_user_id, '*') AS scope_value
-		FROM skill_scopes ss
-		JOIN scopes sc ON sc.id = ss.scope_id
-		LEFT JOIN roles r ON r.id = sc.role_id
-		LEFT JOIN users u ON u.id = sc.user_id
-		WHERE ss.tenant_id = $1 AND ss.skill_id = ANY($2)
-	`, tenantID, skillIDs)
-	if err != nil {
-		return nil, fmt.Errorf("batch loading skill scopes: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[uuid.UUID][]SkillScope)
-	for rows.Next() {
-		var skillID uuid.UUID
-		var sc SkillScope
-		if err := rows.Scan(&skillID, &sc.ScopeType, &sc.ScopeValue); err != nil {
-			return nil, err
-		}
-		result[skillID] = append(result[skillID], sc)
-	}
-	return result, rows.Err()
+	return LoadScopeLabels(ctx, pool, tenantID, "skill_scopes", "skill_id", skillIDs)
 }
 
 func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, description, content, source, scope string) (*Skill, error) {
@@ -363,6 +333,14 @@ func CreateSkill(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, na
 			return nil, fmt.Errorf("looking up role %q for skill scope: %w", scope, err)
 		}
 		roleID = &rid
+	}
+	// Single-owner model: a skill has exactly one scope. Clear any existing
+	// rows first so re-running create_skill with a new scope re-homes the
+	// skill instead of accumulating multiple scope rows.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM skill_scopes WHERE tenant_id = $1 AND skill_id = $2`,
+		tenantID, skill.ID); err != nil {
+		return nil, fmt.Errorf("clearing skill scopes: %w", err)
 	}
 	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, nil)
 	if err != nil {
@@ -542,11 +520,9 @@ func GetSkillReference(ctx context.Context, pool *pgxpool.Pool, tenantID, refID 
 	return ref, nil
 }
 
-// SkillScope represents a single scope row for a skill.
-type SkillScope struct {
-	ScopeType  ScopeType
-	ScopeValue string
-}
+// SkillScope is one scope row for a skill — an alias of the shared ScopeLabel
+// so skills, jobs, and future scoped entities use one type.
+type SkillScope = ScopeLabel
 
 // GetSkillScopeRefs returns the scopes table rows referenced by a skill,
 // for use with services.Caller.CanSee. Unlike GetSkillScopes (which returns

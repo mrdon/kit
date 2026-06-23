@@ -269,12 +269,9 @@ func ListAllJobs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([
 	return jobs, rows.Err()
 }
 
-// JobScope is a denormalized scope row for a job: the kind of scope plus a
-// human value (role name, the owner's Slack user ID, or "*" for tenant-wide).
-type JobScope struct {
-	ScopeType  ScopeType
-	ScopeValue string
-}
+// JobScope is one scope row for a job — an alias of the shared ScopeLabel so
+// every scoped entity denormalizes scope the same way.
+type JobScope = ScopeLabel
 
 // SetJobScope replaces a job's scope rows with a single scope: a role
 // (roleID set), a user (userID set), or tenant-wide (both nil). Atomic swap.
@@ -304,40 +301,11 @@ func SetJobScope(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.U
 	return tx.Commit(ctx)
 }
 
-// ListJobScopesBatch loads the scope rows for many jobs at once, mirroring
-// getSkillScopesBatch. A job normally has exactly one scope row; tenant-wide
+// ListJobScopesBatch loads the scope rows for many jobs, via the shared
+// scope-label loader. A job normally has exactly one scope row; tenant-wide
 // jobs have none (the absence is what makes them tenant-wide).
 func ListJobScopesBatch(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, jobIDs []uuid.UUID) (map[uuid.UUID][]JobScope, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT
-			js.job_id,
-			CASE
-				WHEN sc.role_id IS NULL AND sc.user_id IS NULL THEN 'tenant'
-				WHEN sc.role_id IS NOT NULL THEN 'role'
-				ELSE 'user'
-			END AS scope_type,
-			COALESCE(r.name, u.slack_user_id, '*') AS scope_value
-		FROM job_scopes js
-		JOIN scopes sc ON sc.id = js.scope_id
-		LEFT JOIN roles r ON r.id = sc.role_id
-		LEFT JOIN users u ON u.id = sc.user_id
-		WHERE js.tenant_id = $1 AND js.job_id = ANY($2)
-	`, tenantID, jobIDs)
-	if err != nil {
-		return nil, fmt.Errorf("batch loading job scopes: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[uuid.UUID][]JobScope)
-	for rows.Next() {
-		var jobID uuid.UUID
-		var sc JobScope
-		if err := rows.Scan(&jobID, &sc.ScopeType, &sc.ScopeValue); err != nil {
-			return nil, err
-		}
-		result[jobID] = append(result[jobID], sc)
-	}
-	return result, rows.Err()
+	return LoadScopeLabels(ctx, pool, tenantID, "job_scopes", "job_id", jobIDs)
 }
 
 // UpdateJobDescription updates a job's description. Builtin jobs cannot be updated.

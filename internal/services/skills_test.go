@@ -230,3 +230,42 @@ func TestSkillRoleScoping(t *testing.T) {
 		}
 	})
 }
+
+// TestCreateSkillSingleOwner locks in the single-owner invariant: re-running
+// create_skill on an existing skill with a different scope re-homes it rather
+// than accumulating scope rows, so a skill always has exactly one owner.
+func TestCreateSkillSingleOwner(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+
+	teamID := "T_single_" + uuid.NewString()
+	slug := models.SanitizeSlug("single-"+uuid.NewString(), teamID)
+	tenant, err := models.UpsertTenant(ctx, pool, teamID, "single-owner", "enc", slug, nil, nil)
+	if err != nil {
+		t.Fatalf("creating tenant: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
+	if _, err := models.CreateRole(ctx, pool, tenant.ID, "managers", "mgrs"); err != nil {
+		t.Fatalf("creating role: %v", err)
+	}
+
+	skill, err := models.CreateSkill(ctx, pool, tenant.ID, "ops-runbook", "d", "body", "test", "managers")
+	if err != nil {
+		t.Fatalf("create #1: %v", err)
+	}
+	// Re-create the same skill with a different scope.
+	if _, err := models.CreateSkill(ctx, pool, tenant.ID, "ops-runbook", "d", "body2", "test", "tenant"); err != nil {
+		t.Fatalf("create #2: %v", err)
+	}
+
+	scopes, err := models.GetSkillScopes(ctx, pool, tenant.ID, skill.ID)
+	if err != nil {
+		t.Fatalf("get scopes: %v", err)
+	}
+	if len(scopes) != 1 {
+		t.Fatalf("want exactly 1 scope after re-home, got %d: %+v", len(scopes), scopes)
+	}
+	if scopes[0].ScopeType != models.ScopeTypeTenant {
+		t.Errorf("want tenant scope after re-home, got %s/%s", scopes[0].ScopeType, scopes[0].ScopeValue)
+	}
+}

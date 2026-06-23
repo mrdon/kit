@@ -24,45 +24,26 @@ type skillSummaryJSON struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	// Scope is the single canonical tier ("tenant" = public, a role name,
-	// or "" for builtins). Computed the same way as the detail view so the
-	// list grouping and the drawer's picker never disagree.
-	Scope    string `json:"scope"`
-	Builtin  bool   `json:"builtin"`
-	Editable bool   `json:"editable"`
+	// Scope tier from the shared services.ScopeTierOf — the same projection
+	// the detail view and the jobs surface use, so nothing drifts. Scope is
+	// the picker value ("tenant"/role name); ScopeKind/ScopeLabel drive the
+	// grouped view. Builtins report kind "builtin".
+	Scope      string `json:"scope"`
+	ScopeKind  string `json:"scope_kind"`
+	ScopeLabel string `json:"scope_label"`
+	Builtin    bool   `json:"builtin"`
+	Editable   bool   `json:"editable"`
 }
 
-// skillScopeTier reduces a skill's (possibly multiple) scope rows to the one
-// tier the UI shows: broadest audience wins — any tenant/platform scope means
-// public; otherwise the universal "member" catchall ("All members") beats a
-// specific role; user scopes are ignored (skills are never user-scoped via any
-// create path). Defaults to "tenant". This single source keeps the list
-// grouping and the detail picker in agreement.
-func skillScopeTier(scopes []models.SkillScope) string {
-	hasMember := false
-	specificRole := ""
-	for _, sc := range scopes {
-		switch sc.ScopeType {
-		case models.ScopeTypeTenant, models.ScopeTypePlatform:
-			return string(models.ScopeTypeTenant)
-		case models.ScopeTypeRole:
-			if sc.ScopeValue == models.RoleMember {
-				hasMember = true
-			} else if specificRole == "" {
-				specificRole = sc.ScopeValue
-			}
-		case models.ScopeTypeUser:
-			// skills are never user-scoped; ignore.
-		}
+// skillTier projects a skill's single owning scope to its display tier. Skills
+// use the public tier (tenant-wide = public to the website widget; the member
+// catchall = "All members"). Builtins are their own group.
+func skillTier(scopes []models.SkillScope, builtin bool) services.ScopeTier {
+	if builtin {
+		return services.ScopeTier{Kind: "builtin", Label: "Built-in"}
 	}
-	switch {
-	case hasMember:
-		return models.RoleMember
-	case specificRole != "":
-		return specificRole
-	default:
-		return string(models.ScopeTypeTenant)
-	}
+	st, sv := services.FirstScope(scopes)
+	return services.ScopeTierOf(st, sv, true)
 }
 
 type skillDetailJSON struct {
@@ -96,14 +77,14 @@ func (a *App) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	for _, s := range skills {
 		builtin := s.ID == uuid.Nil
 		id := ""
-		scope := ""
 		if !builtin {
 			id = s.ID.String()
-			scope = skillScopeTier(s.Scopes)
 		}
+		tier := skillTier(s.Scopes, builtin)
 		out = append(out, skillSummaryJSON{
 			ID: id, Name: s.Name, Description: s.Description,
-			Scope: scope, Builtin: builtin, Editable: !builtin,
+			Scope: tier.Value, ScopeKind: tier.Kind, ScopeLabel: tier.Label,
+			Builtin: builtin, Editable: !builtin,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": out})
@@ -238,15 +219,15 @@ func (a *App) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// currentSkillScope returns the skill's single canonical scope tier for the
-// detail picker, using the same reduction as the list grouping so the two
-// always agree. Defaults to "tenant" on any read error.
+// currentSkillScope returns the skill's owning scope as the picker value,
+// using the same shared projection as the list so the two always agree.
+// Defaults to "tenant" on any read error.
 func currentSkillScope(ctx context.Context, a *App, tenantID, skillID uuid.UUID) string {
 	scopes, err := models.GetSkillScopes(ctx, a.pool, tenantID, skillID)
 	if err != nil {
 		return string(models.ScopeTypeTenant)
 	}
-	return skillScopeTier(scopes)
+	return skillTier(scopes, false).Value
 }
 
 // handleSkillDelete deletes a skill. Admin-only.

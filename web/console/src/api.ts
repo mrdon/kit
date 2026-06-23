@@ -322,9 +322,11 @@ export interface SkillSummary {
   id: string; // empty for builtins
   name: string;
   description: string;
-  // Single canonical scope tier: "tenant" (public), a role name, or "" for
-  // builtins. Matches the detail view's scope so list and drawer agree.
+  // Scope tier from the backend's shared projection. scope is the picker
+  // value ("tenant"/role name); scope_kind/scope_label drive grouping.
   scope: string;
+  scope_kind: string;
+  scope_label: string;
   builtin: boolean;
   editable: boolean;
 }
@@ -405,6 +407,7 @@ export interface JobView {
   editable: boolean;
   scope_kind: string; // "builtin" | "everyone" | "role" | "personal"
   scope_label: string;
+  scope: string; // picker value: "user" | "tenant" | role name
   created_at: string;
 }
 

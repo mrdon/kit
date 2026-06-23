@@ -18,6 +18,50 @@ import (
 // UserID nil means tenant-wide.
 type ScopeRef = models.ScopeRow
 
+// ScopeTier is the display projection of a scoped entity's single owner: a
+// stable Kind for grouping, a human Label, and the Value the scope picker
+// round-trips back to the API ("tenant", "user", or a role name).
+type ScopeTier struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// ScopeTierOf maps an entity's single owning scope to its display tier. This
+// is the ONE place scope→label/grouping lives, shared by every scoped surface.
+//
+// publicTier captures the only legitimate per-surface difference: skills set
+// it true because a tenant-wide skill is literally public (the anonymous
+// website widget sees it) and the universal "member" catchall is the narrower
+// "all logged-in members". Jobs and other surfaces have no public reader, so
+// tenant-wide and member both read as "Everyone".
+func ScopeTierOf(scopeType models.ScopeType, scopeValue string, publicTier bool) ScopeTier {
+	if scopeType == models.ScopeTypeUser {
+		return ScopeTier{Kind: "personal", Label: "Personal", Value: string(models.ScopeTypeUser)}
+	}
+	if scopeType == models.ScopeTypeRole && scopeValue != models.RoleMember {
+		return ScopeTier{Kind: "role", Label: scopeValue, Value: scopeValue}
+	}
+	// member catchall, or tenant-wide / platform / none:
+	if scopeType == models.ScopeTypeRole && scopeValue == models.RoleMember && publicTier {
+		return ScopeTier{Kind: "members", Label: "All members", Value: models.RoleMember}
+	}
+	if publicTier {
+		return ScopeTier{Kind: "public", Label: "Public (website)", Value: string(models.ScopeTypeTenant)}
+	}
+	return ScopeTier{Kind: "everyone", Label: "Everyone", Value: string(models.ScopeTypeTenant)}
+}
+
+// FirstScope returns the single owning scope of an entity (the single-owner
+// model: skills, jobs, rules, memories, tasks all carry exactly one), or a
+// tenant-wide zero value when there are no scope rows.
+func FirstScope(scopes []models.ScopeLabel) (models.ScopeType, string) {
+	if len(scopes) == 0 {
+		return models.ScopeTypeTenant, models.ScopeValueAll
+	}
+	return scopes[0].ScopeType, scopes[0].ScopeValue
+}
+
 // CanSee reports whether the caller can see an entity scoped to the given
 // scope rows. Empty scopes = invisible (default deny). Admin always wins.
 // Tenant-wide scopes (both RoleID and UserID nil) are visible to everyone in
