@@ -1428,3 +1428,50 @@ h2.view-title:hover {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+
+/* Skills + Jobs sections: secondary line and badge chips on list rows,
+ * a file row in the skill drawer, and the collapsible policy editor. */
+.entry-sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.badge {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--off-bg);
+  color: var(--off-ink);
+}
+
+.badge-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.policy-editor {
+  margin: 0.5rem 0;
+}
+.policy-editor > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

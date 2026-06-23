@@ -30,6 +30,16 @@ export const SECTIONS: Section[] = [
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',
   },
   {
+    to: '/skills',
+    label: 'Skills',
+    blurb: 'Browse the knowledge base; admins create and edit articles.',
+  },
+  {
+    to: '/jobs',
+    label: 'Jobs',
+    blurb: 'Scheduled work — review, edit, and remove your jobs.',
+  },
+  {
     to: '/admin/roles',
     label: 'Roles',
     blurb: 'See who belongs to which role and change membership.',

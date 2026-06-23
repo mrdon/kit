@@ -102,11 +102,11 @@ type Services struct {
 // TenantService.EnsureSlackDomain.
 func New(pool *pgxpool.Pool, enc *crypto.Encryptor, baseURL string, teamInfo SlackTeamInfoFetcher) *Services {
 	return &Services{
-		Skills:          &SkillService{pool: pool},
+		Skills:          NewSkillService(pool),
 		Rules:           &RuleService{pool: pool},
 		Memories:        &MemoryService{pool: pool},
 		Roles:           NewRoleService(pool),
-		Jobs:            &JobService{pool: pool},
+		Jobs:            NewJobService(pool),
 		Tenants:         &TenantService{pool: pool, enc: enc, teamInfo: teamInfo},
 		Users:           &UserService{pool: pool},
 		Sessions:        &SessionService{pool: pool},

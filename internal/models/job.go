@@ -240,6 +240,35 @@ func ListJobsForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, userI
 	return jobs, rows.Err()
 }
 
+// ListAllJobs returns every job in the tenant, ignoring scope. This is the
+// admin-superuser path: callers must have already established the caller is
+// an admin (the service layer owns that check). Mirrors ListJobsForContext
+// minus the job_scopes/scopes join.
+func ListAllJobs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Job, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
+			channel_id, run_once, job_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, skill_id, created_at
+		FROM jobs
+		WHERE tenant_id = $1
+		ORDER BY created_at
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing all jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []Job
+	for rows.Next() {
+		var t Job
+		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
+			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.JobType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.SkillID, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning job: %w", err)
+		}
+		jobs = append(jobs, t)
+	}
+	return jobs, rows.Err()
+}
+
 // UpdateJobDescription updates a job's description. Builtin jobs cannot be updated.
 func UpdateJobDescription(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID, description string) error {
 	tag, err := pool.Exec(ctx, `

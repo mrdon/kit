@@ -38,4 +38,25 @@ func registerConsoleRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("GET /{slug}/api/roles", adminJSON(a.handleRoles))
 	mux.Handle("POST /{slug}/api/roles/assign", adminJSON(a.handleRoleAssign))
 	mux.Handle("POST /{slug}/api/roles/unassign", adminJSON(a.handleRoleUnassign))
+
+	// Skills. Listing/loading is scope-filtered by the service and open to
+	// any caller; mutations + file management are admin-only (AdminJSON here
+	// AND independently enforced by SkillService).
+	mux.Handle("GET /{slug}/api/skills", jsonRoute(a.handleSkillsList))
+	mux.Handle("GET /{slug}/api/skills/meta", jsonRoute(a.handleSkillsMeta))
+	mux.Handle("POST /{slug}/api/skills", adminJSON(a.handleSkillCreate))
+	mux.Handle("GET /{slug}/api/skills/{id}", jsonRoute(a.handleSkillGet))
+	mux.Handle("PATCH /{slug}/api/skills/{id}", adminJSON(a.handleSkillUpdate))
+	mux.Handle("DELETE /{slug}/api/skills/{id}", adminJSON(a.handleSkillDelete))
+	mux.Handle("GET /{slug}/api/skills/{id}/files", adminJSON(a.handleSkillFilesList))
+	mux.Handle("POST /{slug}/api/skills/{id}/files", adminJSON(a.handleSkillFileAdd))
+	mux.Handle("DELETE /{slug}/api/skills/files/{fileId}", adminJSON(a.handleSkillFileDelete))
+
+	// Jobs. Visibility + the right to manage a given job are enforced by
+	// JobService (non-admins scope-limited, admins tenant-wide), so these are
+	// plain JSON routes — never AdminJSON.
+	mux.Handle("GET /{slug}/api/jobs", jsonRoute(a.handleJobsList))
+	mux.Handle("GET /{slug}/api/jobs/{id}", jsonRoute(a.handleJobGet))
+	mux.Handle("PATCH /{slug}/api/jobs/{id}", jsonRoute(a.handleJobUpdate))
+	mux.Handle("DELETE /{slug}/api/jobs/{id}", jsonRoute(a.handleJobDelete))
 }

@@ -68,6 +68,13 @@ type JobService struct {
 	pool *pgxpool.Pool
 }
 
+// NewJobService constructs a JobService. Mirrors NewRoleService so
+// surfaces outside the services package (e.g. the web console) can build
+// one without reaching the unexported pool field.
+func NewJobService(pool *pgxpool.Pool) *JobService {
+	return &JobService{pool: pool}
+}
+
 // CreateInput bundles the arguments for JobService.Create. Policy is
 // optional; nil means "no capability restrictions," matching today's
 // behaviour for every job that predates the policy feature.
@@ -141,13 +148,147 @@ func (s *JobService) Create(ctx context.Context, c *Caller, in CreateInput) (*mo
 	return job, nil
 }
 
-// List returns jobs visible to the caller through normal scope filtering:
-// jobs scoped to them personally, to roles they hold, or to the tenant.
-// Admins are not granted extra visibility into other users' personal jobs —
-// those run with the creator's identity (email, memories) and the admin is
-// not that user.
+// List returns jobs the caller may manage. Admins are superusers: they see
+// every job in the tenant (CRUD over a job's config leaks none of the
+// owner's private data — that lives in run-time identity and session
+// traces, which stay scoped elsewhere). Non-admins see only jobs in their
+// scope: their own personal jobs, role jobs for roles they hold, and
+// tenant-wide jobs.
 func (s *JobService) List(ctx context.Context, c *Caller) ([]models.Job, error) {
+	if c.IsAdmin {
+		return models.ListAllJobs(ctx, s.pool, c.TenantID)
+	}
 	return models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+}
+
+// canManage reports whether the caller may view/edit/delete the given job,
+// returning the job when allowed. This is the single authorization gate for
+// per-job operations: admins are authorized against the whole tenant;
+// non-admins must have the job in their visible scope. Returns ErrNotFound
+// when the job doesn't exist (in tenant) or isn't visible to the caller —
+// the two are deliberately indistinguishable so a non-admin can't probe for
+// the existence of other users' jobs.
+func (s *JobService) canManage(ctx context.Context, c *Caller, jobID uuid.UUID) (*models.Job, error) {
+	if c.IsAdmin {
+		job, err := models.GetJob(ctx, s.pool, c.TenantID, jobID)
+		if err != nil {
+			return nil, fmt.Errorf("getting job: %w", err)
+		}
+		if job == nil {
+			return nil, ErrNotFound
+		}
+		return job, nil
+	}
+	visible, err := models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing visible jobs: %w", err)
+	}
+	for i := range visible {
+		if visible[i].ID == jobID {
+			return &visible[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+// Get returns a single job the caller may manage, enriched for display.
+func (s *JobService) Get(ctx context.Context, c *Caller, jobID uuid.UUID) (*JobView, error) {
+	job, err := s.canManage(ctx, c, jobID)
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.enrich(ctx, c.TenantID, []models.Job{*job})
+	if err != nil {
+		return nil, err
+	}
+	return &views[0], nil
+}
+
+// ListViews returns the caller's manageable jobs enriched for display.
+func (s *JobService) ListViews(ctx context.Context, c *Caller) ([]JobView, error) {
+	jobs, err := s.List(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return s.enrich(ctx, c.TenantID, jobs)
+}
+
+// JobView is the display-ready projection of a job for the web console: the
+// raw fields plus a resolved skill name, a human schedule label, the parsed
+// policy (for editing) and its compact summary (for lists). Built in the
+// service so every surface renders jobs identically.
+type JobView struct {
+	ID            uuid.UUID        `json:"id"`
+	Description   string           `json:"description"`
+	JobType       models.JobType   `json:"job_type"`
+	Status        models.JobStatus `json:"status"`
+	Schedule      string           `json:"schedule"`
+	CronExpr      string           `json:"cron_expr"`
+	RunOnce       bool             `json:"run_once"`
+	Timezone      string           `json:"timezone"`
+	ChannelID     string           `json:"channel_id"`
+	NextRunAt     time.Time        `json:"next_run_at"`
+	LastRunAt     *time.Time       `json:"last_run_at"`
+	LastError     *string          `json:"last_error"`
+	Model         string           `json:"model"`
+	SkillID       *uuid.UUID       `json:"skill_id"`
+	SkillName     string           `json:"skill_name"`
+	Policy        *models.Policy   `json:"policy"`
+	PolicySummary string           `json:"policy_summary"`
+	Editable      bool             `json:"editable"`
+	CreatedAt     time.Time        `json:"created_at"`
+}
+
+// enrich projects jobs into JobViews, resolving each linked skill's current
+// slug name. Builtin jobs are marked non-editable (the model layer refuses
+// to mutate them).
+func (s *JobService) enrich(ctx context.Context, tenantID uuid.UUID, jobs []models.Job) ([]JobView, error) {
+	views := make([]JobView, 0, len(jobs))
+	for i := range jobs {
+		j := jobs[i]
+		v := JobView{
+			ID:            j.ID,
+			Description:   j.Description,
+			JobType:       j.JobType,
+			Status:        j.Status,
+			Schedule:      scheduleLabel(j),
+			CronExpr:      j.CronExpr,
+			RunOnce:       j.RunOnce,
+			Timezone:      j.Timezone,
+			ChannelID:     j.ChannelID,
+			NextRunAt:     j.NextRunAt,
+			LastRunAt:     j.LastRunAt,
+			LastError:     j.LastError,
+			Model:         j.Model,
+			SkillID:       j.SkillID,
+			PolicySummary: FormatTaskPolicySummary(j.Config),
+			Editable:      j.JobType != models.JobTypeBuiltin,
+			CreatedAt:     j.CreatedAt,
+		}
+		if policy, err := models.ParseConfigPolicy(j.Config); err == nil {
+			v.Policy = policy
+		}
+		if j.SkillID != nil {
+			skill, err := models.GetSkill(ctx, s.pool, tenantID, *j.SkillID, false)
+			if err != nil {
+				return nil, fmt.Errorf("resolving job skill: %w", err)
+			}
+			if skill != nil {
+				v.SkillName = skill.Name
+			}
+		}
+		views = append(views, v)
+	}
+	return views, nil
+}
+
+// scheduleLabel renders a job's cadence for display: a one-time job shows
+// its run time, a recurring job shows its cron expression.
+func scheduleLabel(j models.Job) string {
+	if j.RunOnce {
+		return "once: " + j.NextRunAt.Format("Mon Jan 2 3:04 PM")
+	}
+	return "cron: " + j.CronExpr
 }
 
 // UpdateInput bundles the optional fields a job update can change. Nil
@@ -163,24 +304,13 @@ type UpdateInput struct {
 	Policy      *models.Policy
 }
 
-// Update updates a job's description and/or policy. The caller must
-// have the job in their visible scope; admins don't bypass this for
-// other users' personal jobs. Fields with nil pointers are left
-// untouched. A non-nil Policy replaces the job's policy wholesale.
+// Update updates a job's description, linked skill and/or policy. The
+// caller must be allowed to manage the job (canManage): admins tenant-wide,
+// non-admins only within their visible scope. Fields with nil pointers are
+// left untouched. A non-nil Policy replaces the job's policy wholesale.
 func (s *JobService) Update(ctx context.Context, c *Caller, jobID uuid.UUID, in UpdateInput) error {
-	visible, err := models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
-	if err != nil {
-		return fmt.Errorf("listing visible jobs: %w", err)
-	}
-	found := false
-	for _, t := range visible {
-		if t.ID == jobID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return ErrNotFound
+	if _, err := s.canManage(ctx, c, jobID); err != nil {
+		return err
 	}
 	if in.Description != nil {
 		if err := models.UpdateJobDescription(ctx, s.pool, c.TenantID, jobID, *in.Description); err != nil {
@@ -212,19 +342,13 @@ func (s *JobService) Update(ctx context.Context, c *Caller, jobID uuid.UUID, in 
 	return nil
 }
 
-// Delete deletes a job in the caller's visible scope. Admins don't bypass
-// this for other users' personal jobs.
+// Delete deletes a job the caller is allowed to manage (canManage): admins
+// tenant-wide, non-admins only within their visible scope.
 func (s *JobService) Delete(ctx context.Context, c *Caller, jobID uuid.UUID) error {
-	visible, err := models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
-	if err != nil {
-		return fmt.Errorf("listing visible jobs: %w", err)
+	if _, err := s.canManage(ctx, c, jobID); err != nil {
+		return err
 	}
-	for _, t := range visible {
-		if t.ID == jobID {
-			return models.DeleteJob(ctx, s.pool, c.TenantID, jobID)
-		}
-	}
-	return ErrNotFound
+	return models.DeleteJob(ctx, s.pool, c.TenantID, jobID)
 }
 
 // FormatTaskPolicySummary renders a compact description of a job's

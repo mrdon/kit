@@ -318,6 +318,91 @@ export interface ExpenseItemBody {
   attachment_id?: string;
 }
 
+export interface SkillScope {
+  type: string;
+  value: string;
+}
+
+export interface SkillSummary {
+  id: string; // empty for builtins
+  name: string;
+  description: string;
+  scopes: SkillScope[];
+  builtin: boolean;
+  editable: boolean;
+}
+
+export interface SkillFile {
+  id: string;
+  filename: string;
+}
+
+export interface SkillDetail {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  builtin: boolean;
+  editable: boolean;
+  files: SkillFile[];
+}
+
+export interface SkillsMeta {
+  roles: string[];
+  is_admin: boolean;
+}
+
+export interface CreateSkillBody {
+  name: string;
+  description: string;
+  content: string;
+  scope?: string;
+}
+
+export interface UpdateSkillBody {
+  name?: string;
+  description?: string;
+  content?: string;
+}
+
+// JobPolicy mirrors models.Policy — every field optional; it only ever
+// constrains a scheduled agent (allow-list, force-gate, pinned args).
+export interface JobPolicy {
+  allowed_tools?: string[];
+  force_gate?: string[];
+  pinned_args?: Record<string, Record<string, unknown>>;
+}
+
+export interface JobView {
+  id: string;
+  description: string;
+  job_type: string;
+  status: string;
+  schedule: string;
+  cron_expr: string;
+  run_once: boolean;
+  timezone: string;
+  channel_id: string;
+  next_run_at: string;
+  last_run_at?: string;
+  last_error?: string;
+  model: string;
+  skill_id?: string;
+  skill_name: string;
+  policy: JobPolicy | null;
+  policy_summary: string;
+  editable: boolean;
+  created_at: string;
+}
+
+export interface UpdateJobBody {
+  description?: string;
+  // "" clears the linked skill; omit to leave it unchanged.
+  skill_name?: string;
+  // A provided object replaces the policy wholesale; omit to leave unchanged.
+  policy?: JobPolicy;
+}
+
 function taskQuery(f: TaskFilters): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(f)) {
@@ -407,6 +492,31 @@ export const api = {
   deleteExpense: (id: string) => apiDelete<void>(`/expenses/${id}`),
   addExpenseComment: (id: string, content: string) =>
     apiPost<void>(`/expenses/${id}/comments`, { content }),
+
+  skillsMeta: () => apiGet<SkillsMeta>('/skills/meta'),
+  listSkills: (search = '') =>
+    apiGet<{ skills: SkillSummary[] }>(
+      `/skills${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+    ),
+  getSkill: (id: string) =>
+    apiGet<{ skill: SkillDetail }>(`/skills/${encodeURIComponent(id)}`),
+  createSkill: (body: CreateSkillBody) =>
+    apiPost<{ skill: { id: string } }>('/skills', body),
+  updateSkill: (id: string, body: UpdateSkillBody) =>
+    apiPatch<void>(`/skills/${id}`, body),
+  deleteSkill: (id: string) => apiDelete<void>(`/skills/${id}`),
+  listSkillFiles: (id: string) =>
+    apiGet<{ files: SkillFile[] }>(`/skills/${id}/files`),
+  addSkillFile: (id: string, filename: string, content: string) =>
+    apiPost<{ file: SkillFile }>(`/skills/${id}/files`, { filename, content }),
+  deleteSkillFile: (fileId: string) =>
+    apiDelete<void>(`/skills/files/${fileId}`),
+
+  listJobs: () => apiGet<{ jobs: JobView[] }>('/jobs'),
+  getJob: (id: string) => apiGet<{ job: JobView }>(`/jobs/${id}`),
+  updateJob: (id: string, body: UpdateJobBody) =>
+    apiPatch<{ job: JobView }>(`/jobs/${id}`, body),
+  deleteJob: (id: string) => apiDelete<void>(`/jobs/${id}`),
 };
 
 function expenseQuery(f: ExpenseFilters): string {

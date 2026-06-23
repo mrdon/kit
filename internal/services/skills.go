@@ -39,6 +39,13 @@ type SkillService struct {
 	pool *pgxpool.Pool
 }
 
+// NewSkillService constructs a SkillService. Mirrors NewRoleService so
+// surfaces outside the services package (e.g. the web console) can build
+// one without reaching the unexported pool field.
+func NewSkillService(pool *pgxpool.Pool) *SkillService {
+	return &SkillService{pool: pool}
+}
+
 // Search searches skills visible to the caller. When the caller has
 // HideJobReferencedSkills set, the underlying SQL excludes skills
 // wired into any scheduled job (these are tenant-internal workflows,

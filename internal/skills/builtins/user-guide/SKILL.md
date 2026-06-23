@@ -119,6 +119,8 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 - **Tasks** — a priority-banded list (Blocker / High / Normal) grouped by an auto-assigned topic category. Drag a task between bands to reprioritize, tap "I'm on it" to claim it (which reserves it so teammates skip it) or the checkbox to resolve. Also a flat List view, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
 - **Expenses** — reports grouped by status; open one to add or remove line items, assign an approver, and submit/approve/reject/reimburse. Receipts attached in chat show on their line items.
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
+- **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
+- **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
 - **Integrations / Website / Chat widget** — admin-only setup pages for Netlify, GitHub, and the website chat widget.
 
 It works alongside Slack and the feed, not instead of them.
