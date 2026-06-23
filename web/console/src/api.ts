@@ -392,6 +392,8 @@ export interface JobView {
   policy: JobPolicy | null;
   policy_summary: string;
   editable: boolean;
+  scope_kind: string; // "builtin" | "everyone" | "role" | "personal"
+  scope_label: string;
   created_at: string;
 }
 

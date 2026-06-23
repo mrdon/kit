@@ -4,7 +4,45 @@ import { api, type CreateSkillBody, type SkillSummary, type SkillsMeta } from '.
 import { useDetailRoute } from '../useDetailRoute';
 import { useMe } from '../me';
 import { useSetChatContext } from '../chatContext';
+import GroupedList, { type Group } from '../GroupedList';
 import SkillDetail from './skills/detail';
+
+// groupSkills buckets skills by scope for the grouped view: built-ins first as
+// their own group, tenant/platform skills under "Everyone", role-scoped skills
+// under each owning role, and user-scoped ones under "Personal". A skill with
+// several scopes shows in each matching group.
+function groupSkills(skills: SkillSummary[]): Group<SkillSummary>[] {
+  const everyone: SkillSummary[] = [];
+  const builtin: SkillSummary[] = [];
+  const personal: SkillSummary[] = [];
+  const byRole = new Map<string, SkillSummary[]>();
+  for (const s of skills) {
+    if (s.builtin) {
+      builtin.push(s);
+      continue;
+    }
+    if (s.scopes.length === 0) everyone.push(s);
+    for (const sc of s.scopes) {
+      if (sc.type === 'role') {
+        const list = byRole.get(sc.value) ?? [];
+        list.push(s);
+        byRole.set(sc.value, list);
+      } else if (sc.type === 'user') {
+        personal.push(s);
+      } else {
+        everyone.push(s);
+      }
+    }
+  }
+  const groups: Group<SkillSummary>[] = [];
+  if (everyone.length) groups.push({ key: 'everyone', label: 'Everyone', items: everyone });
+  for (const role of [...byRole.keys()].sort()) {
+    groups.push({ key: `role:${role}`, label: role, items: byRole.get(role)! });
+  }
+  if (personal.length) groups.push({ key: 'personal', label: 'Personal', items: personal });
+  if (builtin.length) groups.push({ key: 'builtin', label: 'Built-in', items: builtin });
+  return groups;
+}
 
 export default function Skills() {
   const me = useMe();
@@ -63,8 +101,10 @@ export default function Skills() {
         />
       </div>
 
-      <ul className="entry-list">
-        {skills.map((s) => (
+      <GroupedList
+        groups={groupSkills(skills)}
+        empty="No skills found."
+        renderItem={(s) => (
           <li key={s.id || s.name}>
             <button className="entry-link" onClick={() => detail.open(s.id || s.name)}>
               <span className="entry-title">{s.name}</span>
@@ -79,9 +119,8 @@ export default function Skills() {
               </span>
             </button>
           </li>
-        ))}
-        {skills.length === 0 && <li className="muted">No skills found.</li>}
-      </ul>
+        )}
+      />
 
       {detail.openId && (
         <SkillDetail

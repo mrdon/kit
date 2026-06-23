@@ -1475,3 +1475,48 @@ h2.view-title:hover {
   color: var(--muted);
   font-size: 0.9rem;
 }
+
+/* Grouped-list filter chips + section headers (Skills, Jobs). */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--line-strong);
+}
+.chip-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip-count {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.group + .group {
+  margin-top: 1.5rem;
+}
+
+.group-head {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
