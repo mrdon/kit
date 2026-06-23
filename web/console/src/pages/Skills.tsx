@@ -7,12 +7,24 @@ import { useSetChatContext } from '../chatContext';
 import GroupedList, { type Group } from '../GroupedList';
 import SkillDetail from './skills/detail';
 
-// groupSkills buckets skills by scope for the grouped view: built-ins first as
-// their own group, tenant/platform skills under "Everyone", role-scoped skills
-// under each owning role, and user-scoped ones under "Personal". A skill with
-// several scopes shows in each matching group.
-function groupSkills(skills: SkillSummary[]): Group<SkillSummary>[] {
-  const everyone: SkillSummary[] = [];
+// scopeLabel renders one scope as a human badge. tenant:* is "Public
+// (website)" — it's the only tier the anonymous website widget can see — and
+// the universal catchall role reads as "All members" (logged-in, not public).
+function scopeLabel(sc: { type: string; value: string }, catchall: string): string {
+  if (sc.type === 'tenant' || sc.type === 'platform') return 'Public (website)';
+  if (sc.type === 'user') return 'Personal';
+  if (sc.type === 'role' && sc.value === catchall) return 'All members';
+  return sc.value;
+}
+
+// groupSkills buckets skills by audience tier. The order runs broadest to
+// narrowest: Public (tenant:* — also visible to the website widget), then All
+// members (the catchall role), then each specific role, then Personal, then
+// built-ins as their own read-only group. A skill with several scopes shows
+// in each matching group.
+function groupSkills(skills: SkillSummary[], catchall: string): Group<SkillSummary>[] {
+  const pub: SkillSummary[] = [];
+  const members: SkillSummary[] = [];
   const builtin: SkillSummary[] = [];
   const personal: SkillSummary[] = [];
   const byRole = new Map<string, SkillSummary[]>();
@@ -21,21 +33,24 @@ function groupSkills(skills: SkillSummary[]): Group<SkillSummary>[] {
       builtin.push(s);
       continue;
     }
-    if (s.scopes.length === 0) everyone.push(s);
+    if (s.scopes.length === 0) pub.push(s);
     for (const sc of s.scopes) {
-      if (sc.type === 'role') {
+      if (sc.type === 'tenant' || sc.type === 'platform') {
+        pub.push(s);
+      } else if (sc.type === 'user') {
+        personal.push(s);
+      } else if (sc.value === catchall) {
+        members.push(s);
+      } else {
         const list = byRole.get(sc.value) ?? [];
         list.push(s);
         byRole.set(sc.value, list);
-      } else if (sc.type === 'user') {
-        personal.push(s);
-      } else {
-        everyone.push(s);
       }
     }
   }
   const groups: Group<SkillSummary>[] = [];
-  if (everyone.length) groups.push({ key: 'everyone', label: 'Everyone', items: everyone });
+  if (pub.length) groups.push({ key: 'public', label: 'Public (website)', items: pub });
+  if (members.length) groups.push({ key: 'members', label: 'All members', items: members });
   for (const role of [...byRole.keys()].sort()) {
     groups.push({ key: `role:${role}`, label: role, items: byRole.get(role)! });
   }
@@ -102,7 +117,7 @@ export default function Skills() {
       </div>
 
       <GroupedList
-        groups={groupSkills(skills)}
+        groups={groupSkills(skills, meta?.catchall_role ?? 'member')}
         empty="No skills found."
         renderItem={(s) => (
           <li key={s.id || s.name}>
@@ -111,11 +126,12 @@ export default function Skills() {
               {s.description && <span className="entry-sub">{s.description}</span>}
               <span className="badge-row">
                 {s.builtin && <span className="badge">built-in</span>}
-                {s.scopes.map((sc, i) => (
-                  <span key={i} className="badge">
-                    {sc.type === 'platform' ? 'everyone' : `${sc.type}:${sc.value}`}
-                  </span>
-                ))}
+                {!s.builtin &&
+                  s.scopes.map((sc, i) => (
+                    <span key={i} className="badge">
+                      {scopeLabel(sc, meta?.catchall_role ?? 'member')}
+                    </span>
+                  ))}
               </span>
             </button>
           </li>
@@ -155,11 +171,14 @@ function CreateSkill({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  // Default to the catchall "All members" tier (logged-in only), never the
+  // public website scope — publishing to the widget should be deliberate.
+  const catchall = meta?.catchall_role ?? 'member';
   const [body, setBody] = useState<CreateSkillBody>({
     name: '',
     description: '',
     content: '',
-    scope: 'tenant',
+    scope: catchall,
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -204,15 +223,23 @@ function CreateSkill({
             <input required onChange={(e) => set('description', e.target.value)} />
           </label>
           <label className="field">
-            <span>Scope</span>
+            <span>Who can see this?</span>
             <select value={body.scope} onChange={(e) => set('scope', e.target.value)}>
-              <option value="tenant">Everyone (tenant)</option>
-              {meta?.roles.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
+              <option value={catchall}>All members (your workspace)</option>
+              <option value="tenant">Public — shown on your website ⚠</option>
+              {meta?.roles
+                .filter((r) => r !== catchall)
+                .map((r) => (
+                  <option key={r} value={r}>
+                    Role: {r}
+                  </option>
+                ))}
             </select>
+            {body.scope === 'tenant' && (
+              <span className="field-hint">
+                Public skills are visible to anyone on your website chat widget.
+              </span>
+            )}
           </label>
           <label className="field">
             <span>Content (markdown)</span>

@@ -350,6 +350,9 @@ export interface SkillDetail {
 export interface SkillsMeta {
   roles: string[];
   is_admin: boolean;
+  // The universal catchall role every member holds; the UI shows skills
+  // scoped to it as "All members" (vs tenant:* which is also public).
+  catchall_role: string;
 }
 
 export interface CreateSkillBody {

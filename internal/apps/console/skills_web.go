@@ -84,7 +84,14 @@ func (a *App) handleSkillsMeta(w http.ResponseWriter, r *http.Request) {
 	if roles == nil {
 		roles = []string{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"roles": roles, "is_admin": caller.IsAdmin})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"roles":    roles,
+		"is_admin": caller.IsAdmin,
+		// The catchall role every user holds. The UI presents a skill
+		// scoped to it as "All members" (distinct from tenant:* which is
+		// also public to the website widget).
+		"catchall_role": models.RoleMember,
+	})
 }
 
 // handleSkillGet returns one skill with its files. The {id} segment may be a

@@ -39,9 +39,15 @@ func BuildKnowledgeContext(ctx context.Context, pool *pgxpool.Pool, c *Caller, t
 		}
 	}
 
-	// Skill catalog (scope-filtered + built-ins)
+	// Skill catalog (scope-filtered + built-ins). HideBuiltinSkills (set by
+	// the anonymous website widget) must suppress built-ins here too — the
+	// tool path honours it, and this prompt-injection path has to match, or
+	// Kit's own product docs leak into public widget answers.
 	dbSkills, _ := models.GetSkillCatalog(ctx, pool, c.TenantID, c.UserID, c.RoleIDs)
-	builtinSkills := skills.VisibleBuiltins(c.IsAdmin)
+	var builtinSkills []skills.BuiltinSkill
+	if !c.HideBuiltinSkills {
+		builtinSkills = skills.VisibleBuiltins(c.IsAdmin)
+	}
 	if len(dbSkills) > 0 || len(builtinSkills) > 0 {
 		parts = append(parts, buildSkillCatalog(dbSkills, builtinSkills))
 	}

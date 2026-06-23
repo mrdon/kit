@@ -312,6 +312,12 @@ func jobScopeLabel(j models.Job, scopes []models.JobScope) (kind, label string) 
 	}
 	for _, sc := range scopes {
 		if sc.ScopeType == models.ScopeTypeRole {
+			// Jobs have no anonymous/public surface (unlike skills via the
+			// website widget), so a job scoped to the universal "member"
+			// catchall is the same audience as a tenant-wide job: everyone.
+			if sc.ScopeValue == models.RoleMember {
+				return "everyone", "Everyone"
+			}
 			return "role", sc.ScopeValue
 		}
 		if sc.ScopeType == models.ScopeTypeUser {

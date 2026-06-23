@@ -1520,3 +1520,9 @@ h2.view-title:hover {
   font-size: 0.95rem;
   color: var(--muted);
 }
+
+.field-hint {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--error-ink);
+}
