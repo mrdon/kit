@@ -256,6 +256,35 @@ func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 	return skills, nil
 }
 
+// SetSkillScope replaces a skill's scope rows with a single scope: a role
+// (roleID set), a user (userID set), or tenant-wide (both nil). Runs in a
+// transaction so the swap is atomic. Authorization is the service layer's
+// job — this only writes.
+func SetSkillScope(ctx context.Context, pool *pgxpool.Pool, tenantID, skillID uuid.UUID, roleID, userID *uuid.UUID) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM skill_scopes WHERE tenant_id = $1 AND skill_id = $2`,
+		tenantID, skillID); err != nil {
+		return fmt.Errorf("clearing skill scopes: %w", err)
+	}
+	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
+	if err != nil {
+		return fmt.Errorf("get-or-create scope: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO skill_scopes (tenant_id, skill_id, scope_id)
+		VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
+	`, tenantID, skillID, scopeID); err != nil {
+		return fmt.Errorf("setting skill scope: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
 // getSkillScopesBatch returns scopes for multiple skills in one query.
 // Joins the canonical scopes table back to roles/users to recover the
 // human-readable scope_value (role name or slack_user_id) for display.

@@ -199,6 +199,24 @@ func stripSkillFrontmatter(content string) string {
 	return body
 }
 
+// SetScope replaces a skill's scope. Admin only (same guard as every other
+// skill mutation). scope is "tenant" (public — also the website widget),
+// "" (treated as tenant), or a role name; admins may scope to any role.
+func (s *SkillService) SetScope(ctx context.Context, c *Caller, skillID uuid.UUID, scope string) error {
+	if !c.IsAdmin {
+		return ErrForbidden
+	}
+	var roleID *uuid.UUID
+	if scope != "" && scope != string(models.ScopeTypeTenant) {
+		rid, err := ResolveRoleID(ctx, s.pool, c.TenantID, scope)
+		if err != nil {
+			return err
+		}
+		roleID = &rid
+	}
+	return models.SetSkillScope(ctx, s.pool, c.TenantID, skillID, roleID, nil)
+}
+
 // Delete deletes a skill. Admin only.
 func (s *SkillService) Delete(ctx context.Context, c *Caller, skillID uuid.UUID) error {
 	if !c.IsAdmin {

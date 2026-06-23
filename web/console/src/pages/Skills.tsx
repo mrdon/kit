@@ -142,6 +142,7 @@ export default function Skills() {
         <SkillDetail
           skillId={detail.openId}
           isAdmin={isAdmin}
+          meta={meta}
           onClose={detail.close}
           onChanged={load}
         />

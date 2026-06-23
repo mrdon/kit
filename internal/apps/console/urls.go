@@ -56,6 +56,7 @@ func registerConsoleRoutes(mux *http.ServeMux, a *App) {
 	// JobService (non-admins scope-limited, admins tenant-wide), so these are
 	// plain JSON routes — never AdminJSON.
 	mux.Handle("GET /{slug}/api/jobs", jsonRoute(a.handleJobsList))
+	mux.Handle("GET /{slug}/api/jobs/meta", jsonRoute(a.handleJobsMeta))
 	mux.Handle("GET /{slug}/api/jobs/{id}", jsonRoute(a.handleJobGet))
 	mux.Handle("PATCH /{slug}/api/jobs/{id}", jsonRoute(a.handleJobUpdate))
 	mux.Handle("DELETE /{slug}/api/jobs/{id}", jsonRoute(a.handleJobDelete))

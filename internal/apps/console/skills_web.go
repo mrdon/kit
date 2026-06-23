@@ -1,6 +1,7 @@
 package console
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -34,13 +35,17 @@ type skillSummaryJSON struct {
 }
 
 type skillDetailJSON struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Content     string          `json:"content"`
-	Builtin     bool            `json:"builtin"`
-	Editable    bool            `json:"editable"`
-	Files       []skillFileJSON `json:"files"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+	Builtin     bool   `json:"builtin"`
+	Editable    bool   `json:"editable"`
+	// Scope is the current scope tier as a value the scope picker can
+	// preselect and round-trip: "tenant" (public), a role name, or "" for
+	// builtins. Multi-scope skills report their first scope.
+	Scope string          `json:"scope"`
+	Files []skillFileJSON `json:"files"`
 }
 
 type skillFileJSON struct {
@@ -80,9 +85,17 @@ func (a *App) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 // gating). Pure caller data — no business logic.
 func (a *App) handleSkillsMeta(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
-	roles := caller.Roles
-	if roles == nil {
-		roles = []string{}
+	// All tenant roles (not just the caller's): skill scoping is admin-only,
+	// and an admin must be able to scope a skill to any role, including ones
+	// they don't personally hold.
+	roleRows, err := models.ListRoles(r.Context(), a.pool, caller.TenantID)
+	if err != nil {
+		writeSkillErr(w, err)
+		return
+	}
+	roles := make([]string, 0, len(roleRows))
+	for _, ro := range roleRows {
+		roles = append(roles, ro.Name)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"roles":    roles,
@@ -124,6 +137,7 @@ func (a *App) handleSkillGet(w http.ResponseWriter, r *http.Request) {
 	}
 	if !builtin {
 		detail.ID = skill.ID.String()
+		detail.Scope = currentSkillScope(r.Context(), a, caller.TenantID, skill.ID)
 	}
 	for _, f := range files {
 		detail.Files = append(detail.Files, skillFileJSON{ID: f.ID.String(), Filename: f.Filename})
@@ -163,9 +177,13 @@ type skillUpdateBody struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	Content     *string `json:"content"`
+	// Scope, when non-nil, re-scopes the skill: "tenant" (public) or a
+	// role name. Admin-only, like every other skill mutation.
+	Scope *string `json:"scope"`
 }
 
-// handleSkillUpdate updates a skill's name/description/content. Admin-only.
+// handleSkillUpdate updates a skill's name/description/content and/or scope.
+// Admin-only (AdminJSON route + SkillService guards).
 func (a *App) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	id, ok := skillID(w, r)
@@ -177,12 +195,34 @@ func (a *App) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 		return
 	}
-	if err := services.NewSkillService(a.pool).Update(
-		r.Context(), caller, id, body.Name, body.Description, body.Content); err != nil {
+	svc := services.NewSkillService(a.pool)
+	if err := svc.Update(r.Context(), caller, id, body.Name, body.Description, body.Content); err != nil {
 		writeSkillErr(w, err)
 		return
 	}
+	if body.Scope != nil {
+		if err := svc.SetScope(r.Context(), caller, id, *body.Scope); err != nil {
+			writeSkillErr(w, err)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// currentSkillScope reduces a DB skill's scope rows to a single picker value:
+// a role name when role-scoped, otherwise "tenant" (public). Defaults to
+// "tenant" on any read error so the editor still renders.
+func currentSkillScope(ctx context.Context, a *App, tenantID, skillID uuid.UUID) string {
+	scopes, err := models.GetSkillScopes(ctx, a.pool, tenantID, skillID)
+	if err != nil {
+		return string(models.ScopeTypeTenant)
+	}
+	for _, sc := range scopes {
+		if sc.ScopeType == models.ScopeTypeRole {
+			return sc.ScopeValue
+		}
+	}
+	return string(models.ScopeTypeTenant)
 }
 
 // handleSkillDelete deletes a skill. Admin-only.

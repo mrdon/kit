@@ -20,6 +20,35 @@ import (
 // No create-from-scratch here (the agent owns scheduling); the console edits
 // existing jobs' description, linked skill, and policy.
 
+// handleJobsMeta returns the scope picker's options: the role names the
+// caller may scope a job to (all tenant roles for admins, the caller's own
+// roles otherwise — matching JobService's resolveScope guards) plus is_admin
+// (gates the tenant-wide "Everyone" option) and the catchall role name.
+func (a *App) handleJobsMeta(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	var names []string
+	if caller.IsAdmin {
+		roleRows, err := models.ListRoles(r.Context(), a.pool, caller.TenantID)
+		if err != nil {
+			writeJobErr(w, err)
+			return
+		}
+		for _, ro := range roleRows {
+			names = append(names, ro.Name)
+		}
+	} else {
+		names = caller.Roles
+	}
+	if names == nil {
+		names = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"roles":         names,
+		"is_admin":      caller.IsAdmin,
+		"catchall_role": models.RoleMember,
+	})
+}
+
 // handleJobsList returns the caller's manageable jobs, enriched for display.
 func (a *App) handleJobsList(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
@@ -53,6 +82,9 @@ type jobUpdateBody struct {
 	Description *string         `json:"description"`
 	SkillName   *string         `json:"skill_name"`
 	Policy      json.RawMessage `json:"policy"`
+	// Scope, when non-nil, re-scopes the job: "user", "tenant" (admin
+	// only), or a role name. JobService enforces the guards.
+	Scope *string `json:"scope"`
 }
 
 // handleJobUpdate edits a job's description, linked skill, and/or policy.
@@ -70,7 +102,7 @@ func (a *App) handleJobUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 		return
 	}
-	in := services.UpdateInput{Description: body.Description, SkillName: body.SkillName}
+	in := services.UpdateInput{Description: body.Description, SkillName: body.SkillName, Scope: body.Scope}
 	if len(body.Policy) > 0 && string(body.Policy) != "null" {
 		policy, msg := parseJobPolicy(body.Policy)
 		if msg != "" {

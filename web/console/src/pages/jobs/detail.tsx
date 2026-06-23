@@ -3,6 +3,7 @@ import {
   api,
   type JobPolicy,
   type JobView,
+  type ScopeMeta,
   type SkillSummary,
   type UpdateJobBody,
 } from '../../api';
@@ -19,9 +20,19 @@ function fmt(ts?: string): string {
   return isNaN(d.getTime()) ? ts : d.toLocaleString();
 }
 
+// jobScopeValue maps a job's display scope back to the value the scope picker
+// (and the API) uses: personal → "user", a role → its name, everyone →
+// "tenant". For jobs there's no public surface, so tenant covers "everyone".
+function jobScopeValue(job: JobView): string {
+  if (job.scope_kind === 'personal') return 'user';
+  if (job.scope_kind === 'role') return job.scope_label;
+  return 'tenant';
+}
+
 export default function JobDetail({ jobId, onClose, onChanged }: Props) {
   const [job, setJob] = useState<JobView | null>(null);
   const [skills, setSkills] = useState<SkillSummary[]>([]);
+  const [meta, setMeta] = useState<ScopeMeta | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = () => {
@@ -33,6 +44,7 @@ export default function JobDetail({ jobId, onClose, onChanged }: Props) {
   useEffect(load, [jobId]);
   useEffect(() => {
     api.listSkills().then((r) => setSkills(r.skills)).catch(() => {});
+    api.jobsMeta().then(setMeta).catch(() => {});
   }, []);
 
   const patch = async (body: UpdateJobBody) => {
@@ -105,6 +117,29 @@ export default function JobDetail({ jobId, onClose, onChanged }: Props) {
                           {s.name}
                         </option>
                       ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Who can see / manage this?</span>
+                  <select
+                    value={jobScopeValue(job)}
+                    onChange={(e) => patch({ scope: e.target.value })}
+                  >
+                    <option value="user">Personal (just me)</option>
+                    {(meta?.roles ?? [])
+                      .filter((r) => r !== (meta?.catchall_role ?? 'member'))
+                      .map((r) => (
+                        <option key={r} value={r}>
+                          Role: {r}
+                        </option>
+                      ))}
+                    {/* Everyone is admin-only to set; render it disabled for
+                        non-admins so an existing tenant-scoped job still shows
+                        its real scope rather than silently mislabeling it. */}
+                    <option value="tenant" disabled={!meta?.is_admin}>
+                      Everyone (workspace)
+                    </option>
                   </select>
                 </label>
 

@@ -95,33 +95,44 @@ type CreateInput struct {
 	Policy    *models.Policy
 }
 
+// resolveScope maps a scope string to (roleID, userID), enforcing the
+// authorization guards shared by Create and Update: "user" (default) → the
+// caller; "tenant" → admin only; a role name → the caller must be an admin or
+// a member of that role. This is the single place those rules live, so the
+// scope editor can never grant something the create path forbids.
+func (s *JobService) resolveScope(ctx context.Context, c *Caller, scope string) (roleID, userID *uuid.UUID, err error) {
+	if scope == "" {
+		scope = string(models.ScopeTypeUser)
+	}
+	switch scope {
+	case string(models.ScopeTypeUser):
+		uid := c.UserID
+		return nil, &uid, nil
+	case string(models.ScopeTypeTenant):
+		if !c.IsAdmin {
+			return nil, nil, ErrForbidden
+		}
+		return nil, nil, nil // tenant-wide
+	default:
+		if !c.IsAdmin && !hasRole(c, scope) {
+			return nil, nil, ErrForbidden
+		}
+		rid, rerr := ResolveRoleID(ctx, s.pool, c.TenantID, scope)
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		return &rid, nil, nil
+	}
+}
+
 // Create creates a scheduled job with scope resolution.
 // in.Scope: "user" (default), "tenant" (admin only), or a role name.
 // in.Model is the tier name ("haiku" | "sonnet") picked by the
 // classifier in the tool layer; empty defaults to Haiku at the DB level.
 func (s *JobService) Create(ctx context.Context, c *Caller, in CreateInput) (*models.Job, error) {
-	scope := in.Scope
-	if scope == "" {
-		scope = string(models.ScopeTypeUser)
-	}
-	var roleID, userID *uuid.UUID
-	switch scope {
-	case string(models.ScopeTypeUser):
-		userID = &c.UserID
-	case string(models.ScopeTypeTenant):
-		if !c.IsAdmin {
-			return nil, ErrForbidden
-		}
-		// roleID and userID stay nil → tenant-wide
-	default:
-		if !c.IsAdmin && !hasRole(c, scope) {
-			return nil, ErrForbidden
-		}
-		rid, err := ResolveRoleID(ctx, s.pool, c.TenantID, scope)
-		if err != nil {
-			return nil, err
-		}
-		roleID = &rid
+	roleID, userID, err := s.resolveScope(ctx, c, in.Scope)
+	if err != nil {
+		return nil, err
 	}
 	var skillID *uuid.UUID
 	if in.SkillName != "" {
@@ -347,6 +358,9 @@ type UpdateInput struct {
 	Description *string
 	SkillName   *string
 	Policy      *models.Policy
+	// Scope, when non-nil, re-scopes the job: "user", "tenant" (admin
+	// only), or a role name. Resolved through the same guards as Create.
+	Scope *string
 }
 
 // Update updates a job's description, linked skill and/or policy. The
@@ -381,6 +395,15 @@ func (s *JobService) Update(ctx context.Context, c *Caller, jobID uuid.UUID, in 
 	}
 	if in.Policy != nil {
 		if err := models.UpdateJobPolicy(ctx, s.pool, c.TenantID, jobID, in.Policy); err != nil {
+			return err
+		}
+	}
+	if in.Scope != nil {
+		roleID, userID, err := s.resolveScope(ctx, c, *in.Scope)
+		if err != nil {
+			return err
+		}
+		if err := models.SetJobScope(ctx, s.pool, c.TenantID, jobID, roleID, userID); err != nil {
 			return err
 		}
 	}

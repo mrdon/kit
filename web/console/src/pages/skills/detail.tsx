@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api, type SkillDetail as Skill, type UpdateSkillBody } from '../../api';
+import { api, type SkillDetail as Skill, type SkillsMeta, type UpdateSkillBody } from '../../api';
 
 interface Props {
   skillId: string;
   isAdmin: boolean;
+  meta: SkillsMeta | null;
   onClose: () => void;
   onChanged: () => void;
 }
 
-export default function SkillDetail({ skillId, isAdmin, onClose, onChanged }: Props) {
+export default function SkillDetail({ skillId, isAdmin, meta, onClose, onChanged }: Props) {
   const [skill, setSkill] = useState<Skill | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -77,6 +78,29 @@ export default function SkillDetail({ skillId, isAdmin, onClose, onChanged }: Pr
               editable={editable}
               onSave={(v) => patch({ content: v })}
             />
+            {editable && (
+              <label className="field">
+                <span>Who can see this?</span>
+                <select value={skill.scope} onChange={(e) => patch({ scope: e.target.value })}>
+                  <option value={meta?.catchall_role ?? 'member'}>
+                    All members (your workspace)
+                  </option>
+                  <option value="tenant">Public — shown on your website ⚠</option>
+                  {(meta?.roles ?? [])
+                    .filter((r) => r !== (meta?.catchall_role ?? 'member'))
+                    .map((r) => (
+                      <option key={r} value={r}>
+                        Role: {r}
+                      </option>
+                    ))}
+                </select>
+                {skill.scope === 'tenant' && (
+                  <span className="field-hint">
+                    Visible to anyone on your website chat widget.
+                  </span>
+                )}
+              </label>
+            )}
             {!skill.builtin && (
               <Files
                 skillId={skill.id}

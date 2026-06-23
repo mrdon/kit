@@ -276,6 +276,34 @@ type JobScope struct {
 	ScopeValue string
 }
 
+// SetJobScope replaces a job's scope rows with a single scope: a role
+// (roleID set), a user (userID set), or tenant-wide (both nil). Atomic swap.
+// Authorization (who may scope a job where) is the service layer's job.
+func SetJobScope(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID, roleID, userID *uuid.UUID) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM job_scopes WHERE tenant_id = $1 AND job_id = $2`,
+		tenantID, jobID); err != nil {
+		return fmt.Errorf("clearing job scopes: %w", err)
+	}
+	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
+	if err != nil {
+		return fmt.Errorf("get-or-create scope: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO job_scopes (tenant_id, job_id, scope_id)
+		VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
+	`, tenantID, jobID, scopeID); err != nil {
+		return fmt.Errorf("setting job scope: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
 // ListJobScopesBatch loads the scope rows for many jobs at once, mirroring
 // getSkillScopesBatch. A job normally has exactly one scope row; tenant-wide
 // jobs have none (the absence is what makes them tenant-wide).

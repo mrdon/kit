@@ -344,6 +344,8 @@ export interface SkillDetail {
   content: string;
   builtin: boolean;
   editable: boolean;
+  // Current scope tier: "tenant" (public) or a role name.
+  scope: string;
   files: SkillFile[];
 }
 
@@ -366,6 +368,15 @@ export interface UpdateSkillBody {
   name?: string;
   description?: string;
   content?: string;
+  // "tenant" (public) or a role name. Omit to leave scope unchanged.
+  scope?: string;
+}
+
+// Shared shape for the Skills and Jobs scope pickers.
+export interface ScopeMeta {
+  roles: string[];
+  is_admin: boolean;
+  catchall_role: string;
 }
 
 // JobPolicy mirrors models.Policy — every field optional; it only ever
@@ -406,6 +417,8 @@ export interface UpdateJobBody {
   skill_name?: string;
   // A provided object replaces the policy wholesale; omit to leave unchanged.
   policy?: JobPolicy;
+  // "user", "tenant" (admin only), or a role name. Omit to leave unchanged.
+  scope?: string;
 }
 
 function taskQuery(f: TaskFilters): string {
@@ -517,6 +530,7 @@ export const api = {
   deleteSkillFile: (fileId: string) =>
     apiDelete<void>(`/skills/files/${fileId}`),
 
+  jobsMeta: () => apiGet<ScopeMeta>('/jobs/meta'),
   listJobs: () => apiGet<{ jobs: JobView[] }>('/jobs'),
   getJob: (id: string) => apiGet<{ job: JobView }>(`/jobs/${id}`),
   updateJob: (id: string, body: UpdateJobBody) =>
