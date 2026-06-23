@@ -318,16 +318,13 @@ export interface ExpenseItemBody {
   attachment_id?: string;
 }
 
-export interface SkillScope {
-  type: string;
-  value: string;
-}
-
 export interface SkillSummary {
   id: string; // empty for builtins
   name: string;
   description: string;
-  scopes: SkillScope[];
+  // Single canonical scope tier: "tenant" (public), a role name, or "" for
+  // builtins. Matches the detail view's scope so list and drawer agree.
+  scope: string;
   builtin: boolean;
   editable: boolean;
 }

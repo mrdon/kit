@@ -7,45 +7,35 @@ import { useSetChatContext } from '../chatContext';
 import GroupedList, { type Group } from '../GroupedList';
 import SkillDetail from './skills/detail';
 
-// scopeLabel renders one scope as a human badge. tenant:* is "Public
-// (website)" — it's the only tier the anonymous website widget can see — and
-// the universal catchall role reads as "All members" (logged-in, not public).
-function scopeLabel(sc: { type: string; value: string }, catchall: string): string {
-  if (sc.type === 'tenant' || sc.type === 'platform') return 'Public (website)';
-  if (sc.type === 'user') return 'Personal';
-  if (sc.type === 'role' && sc.value === catchall) return 'All members';
-  return sc.value;
+// scopeLabel renders a skill's canonical scope tier as a human badge. "tenant"
+// is "Public (website)" — the only tier the anonymous website widget sees —
+// and the universal catchall role reads as "All members" (logged-in only).
+function scopeLabel(scope: string, catchall: string): string {
+  if (scope === 'tenant' || scope === '') return 'Public (website)';
+  if (scope === catchall) return 'All members';
+  return scope;
 }
 
-// groupSkills buckets skills by audience tier. The order runs broadest to
-// narrowest: Public (tenant:* — also visible to the website widget), then All
-// members (the catchall role), then each specific role, then Personal, then
-// built-ins as their own read-only group. A skill with several scopes shows
-// in each matching group.
+// groupSkills buckets each skill into exactly one group by its single
+// canonical scope (computed server-side). Order runs broadest to narrowest:
+// Public, All members, specific roles, then built-ins as their own read-only
+// group.
 function groupSkills(skills: SkillSummary[], catchall: string): Group<SkillSummary>[] {
   const pub: SkillSummary[] = [];
   const members: SkillSummary[] = [];
   const builtin: SkillSummary[] = [];
-  const personal: SkillSummary[] = [];
   const byRole = new Map<string, SkillSummary[]>();
   for (const s of skills) {
     if (s.builtin) {
       builtin.push(s);
-      continue;
-    }
-    if (s.scopes.length === 0) pub.push(s);
-    for (const sc of s.scopes) {
-      if (sc.type === 'tenant' || sc.type === 'platform') {
-        pub.push(s);
-      } else if (sc.type === 'user') {
-        personal.push(s);
-      } else if (sc.value === catchall) {
-        members.push(s);
-      } else {
-        const list = byRole.get(sc.value) ?? [];
-        list.push(s);
-        byRole.set(sc.value, list);
-      }
+    } else if (s.scope === 'tenant' || s.scope === '') {
+      pub.push(s);
+    } else if (s.scope === catchall) {
+      members.push(s);
+    } else {
+      const list = byRole.get(s.scope) ?? [];
+      list.push(s);
+      byRole.set(s.scope, list);
     }
   }
   const groups: Group<SkillSummary>[] = [];
@@ -54,7 +44,6 @@ function groupSkills(skills: SkillSummary[], catchall: string): Group<SkillSumma
   for (const role of [...byRole.keys()].sort()) {
     groups.push({ key: `role:${role}`, label: role, items: byRole.get(role)! });
   }
-  if (personal.length) groups.push({ key: 'personal', label: 'Personal', items: personal });
   if (builtin.length) groups.push({ key: 'builtin', label: 'Built-in', items: builtin });
   return groups;
 }
@@ -125,13 +114,13 @@ export default function Skills() {
               <span className="entry-title">{s.name}</span>
               {s.description && <span className="entry-sub">{s.description}</span>}
               <span className="badge-row">
-                {s.builtin && <span className="badge">built-in</span>}
-                {!s.builtin &&
-                  s.scopes.map((sc, i) => (
-                    <span key={i} className="badge">
-                      {scopeLabel(sc, meta?.catchall_role ?? 'member')}
-                    </span>
-                  ))}
+                {s.builtin ? (
+                  <span className="badge">built-in</span>
+                ) : (
+                  <span className="badge">
+                    {scopeLabel(s.scope, meta?.catchall_role ?? 'member')}
+                  </span>
+                )}
               </span>
             </button>
           </li>

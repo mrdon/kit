@@ -20,18 +20,49 @@ import (
 // These handlers are thin: all authorization and scope logic lives in
 // services.SkillService, shared with the MCP/agent tools.
 
-type skillScopeJSON struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
+type skillSummaryJSON struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Scope is the single canonical tier ("tenant" = public, a role name,
+	// or "" for builtins). Computed the same way as the detail view so the
+	// list grouping and the drawer's picker never disagree.
+	Scope    string `json:"scope"`
+	Builtin  bool   `json:"builtin"`
+	Editable bool   `json:"editable"`
 }
 
-type skillSummaryJSON struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Scopes      []skillScopeJSON `json:"scopes"`
-	Builtin     bool             `json:"builtin"`
-	Editable    bool             `json:"editable"`
+// skillScopeTier reduces a skill's (possibly multiple) scope rows to the one
+// tier the UI shows: broadest audience wins — any tenant/platform scope means
+// public; otherwise the universal "member" catchall ("All members") beats a
+// specific role; user scopes are ignored (skills are never user-scoped via any
+// create path). Defaults to "tenant". This single source keeps the list
+// grouping and the detail picker in agreement.
+func skillScopeTier(scopes []models.SkillScope) string {
+	hasMember := false
+	specificRole := ""
+	for _, sc := range scopes {
+		switch sc.ScopeType {
+		case models.ScopeTypeTenant, models.ScopeTypePlatform:
+			return string(models.ScopeTypeTenant)
+		case models.ScopeTypeRole:
+			if sc.ScopeValue == models.RoleMember {
+				hasMember = true
+			} else if specificRole == "" {
+				specificRole = sc.ScopeValue
+			}
+		case models.ScopeTypeUser:
+			// skills are never user-scoped; ignore.
+		}
+	}
+	switch {
+	case hasMember:
+		return models.RoleMember
+	case specificRole != "":
+		return specificRole
+	default:
+		return string(models.ScopeTypeTenant)
+	}
 }
 
 type skillDetailJSON struct {
@@ -64,17 +95,15 @@ func (a *App) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	out := make([]skillSummaryJSON, 0, len(skills))
 	for _, s := range skills {
 		builtin := s.ID == uuid.Nil
-		scopes := make([]skillScopeJSON, 0, len(s.Scopes))
-		for _, sc := range s.Scopes {
-			scopes = append(scopes, skillScopeJSON{Type: string(sc.ScopeType), Value: sc.ScopeValue})
-		}
 		id := ""
+		scope := ""
 		if !builtin {
 			id = s.ID.String()
+			scope = skillScopeTier(s.Scopes)
 		}
 		out = append(out, skillSummaryJSON{
 			ID: id, Name: s.Name, Description: s.Description,
-			Scopes: scopes, Builtin: builtin, Editable: !builtin,
+			Scope: scope, Builtin: builtin, Editable: !builtin,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"skills": out})
@@ -209,20 +238,15 @@ func (a *App) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// currentSkillScope reduces a DB skill's scope rows to a single picker value:
-// a role name when role-scoped, otherwise "tenant" (public). Defaults to
-// "tenant" on any read error so the editor still renders.
+// currentSkillScope returns the skill's single canonical scope tier for the
+// detail picker, using the same reduction as the list grouping so the two
+// always agree. Defaults to "tenant" on any read error.
 func currentSkillScope(ctx context.Context, a *App, tenantID, skillID uuid.UUID) string {
 	scopes, err := models.GetSkillScopes(ctx, a.pool, tenantID, skillID)
 	if err != nil {
 		return string(models.ScopeTypeTenant)
 	}
-	for _, sc := range scopes {
-		if sc.ScopeType == models.ScopeTypeRole {
-			return sc.ScopeValue
-		}
-	}
-	return string(models.ScopeTypeTenant)
+	return skillScopeTier(scopes)
 }
 
 // handleSkillDelete deletes a skill. Admin-only.
