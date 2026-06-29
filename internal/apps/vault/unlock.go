@@ -275,9 +275,9 @@ func (s *Service) fireVaultNukedBriefing(ctx context.Context, actor *services.Ca
 	actorName = sanitizeMarkdownInline(actorName)
 
 	tenant, _ := models.GetTenantByID(ctx, s.pool, actor.TenantID)
-	setupURL := "/apps/vault/setup"
+	setupURL := "/web/vault"
 	if tenant != nil {
-		setupURL = fmt.Sprintf("/%s/apps/vault/setup", tenant.Slug)
+		setupURL = fmt.Sprintf("/%s/web/vault", tenant.Slug)
 	}
 
 	body := fmt.Sprintf(

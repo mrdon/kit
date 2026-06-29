@@ -6,5 +6,5 @@ Stores passwords / accounts / logins. "List my passwords/accounts/logins", "find
 - To save a new secret, call `start_add_secret` and copy its returned URL **verbatim** into your reply. Do not paraphrase it as "that link" or "the form" — the user needs the URL to click. Never ask the user to paste a password into chat.
 - Every entry is scoped to one role; visibility = role membership. `scope_summary` is the role name. Don't say "yours" — there is no per-user ownership concept.
 - `set_secret_role` and `delete_secret` are gated (confirmation card).
-- Zero matches: suggest `/{slug}/apps/vault/add` rather than speculating.
-- For "show me everything I have" or "let me browse", offer the web list page: `/{slug}/apps/vault/list`. It's session-gated only (no master password needed to see metadata) and has filter + add affordances.
+- Zero matches: suggest the vault web UI at `/{slug}/web/vault` rather than speculating.
+- For "show me everything I have" or "let me browse", offer the vault web UI: `/{slug}/web/vault`. It's session-gated only (no master password needed to see metadata) and has filter, add, and reveal affordances.

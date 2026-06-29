@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -137,7 +136,7 @@ func mcpViewSecret(svc *Service) mcpserver.ToolHandlerFunc {
 		if err != nil || slug == "" {
 			return mcp.NewToolResultError("could not build reveal URL"), nil
 		}
-		return mcp.NewToolResultText("Reveal URL: " + svc.absURL(fmt.Sprintf("/%s/apps/vault/reveal/%s", slug, entryID))), nil
+		return mcp.NewToolResultText("Reveal URL: " + svc.absURL(fmt.Sprintf("/%s/web/vault/%s", slug, entryID))), nil
 	})
 }
 
@@ -154,7 +153,7 @@ func adminVaultURL(svc *Service, action string) mcpserver.ToolHandlerFunc {
 		if err != nil || slug == "" {
 			return mcp.NewToolResultError("could not build " + action + " URL"), nil
 		}
-		return mcp.NewToolResultText("Open in your browser: " + svc.absURL(fmt.Sprintf("/%s/apps/vault/%s", slug, action))), nil
+		return mcp.NewToolResultText("Open in your browser: " + svc.absURL(fmt.Sprintf("/%s/web/vault", slug))), nil
 	})
 }
 
@@ -178,30 +177,17 @@ func mcpNukeVault(svc *Service) mcpserver.ToolHandlerFunc {
 		// Lead with the warning so a careless MCP-driven workflow surfaces
 		// the destructiveness before the link.
 		body := "**WARNING:** opening this URL will permanently delete every secret in the tenant vault. There is no undo. Use only if the master password is unrecoverable.\n\n"
-		body += svc.absURL(fmt.Sprintf("/%s/apps/vault/nuke", slug))
+		body += svc.absURL(fmt.Sprintf("/%s/web/vault", slug))
 		return mcp.NewToolResultText(body), nil
 	})
 }
 
 func mcpStartAddSecret(svc *Service) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		title := req.GetString("title", "")
-		url := req.GetString("url", "")
+	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		slug, err := svc.tenantSlug(ctx, caller.TenantID)
 		if err != nil || slug == "" {
 			return mcp.NewToolResultError("could not build add URL"), nil
 		}
-		out := fmt.Sprintf("/%s/apps/vault/add", slug)
-		params := []string{}
-		if title != "" {
-			params = append(params, "title="+queryEscape(title))
-		}
-		if url != "" {
-			params = append(params, "url="+queryEscape(url))
-		}
-		if len(params) > 0 {
-			out += "?" + strings.Join(params, "&")
-		}
-		return mcp.NewToolResultText("Add URL: " + svc.absURL(out)), nil
+		return mcp.NewToolResultText("Add URL: " + svc.absURL(fmt.Sprintf("/%s/web/vault", slug))), nil
 	})
 }

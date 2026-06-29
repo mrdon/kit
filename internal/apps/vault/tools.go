@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"net/url"
 	"strings"
 	"time"
 
@@ -48,10 +47,7 @@ var vaultToolMetas = []services.ToolMeta{
 	{
 		Name:        "start_add_secret",
 		Description: "Return a URL the user can open to capture a new secret in their browser. The browser encrypts the value before sending it to the server. Use when the user wants to save a password or other secret. NEVER ask the user to paste their password into the chat.",
-		Schema: services.Props(map[string]any{
-			"title": services.Field("string", "Optional pre-fill for the title"),
-			"url":   services.Field("string", "Optional pre-fill for the URL field"),
-		}),
+		Schema:      services.Props(map[string]any{}),
 	},
 	{
 		Name:        "set_secret_role",
@@ -234,7 +230,12 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 			}
 			return "", err
 		}
-		basePath := fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID)
+		// tokenPath is the deep-link bridge: a one-shot token-consuming
+		// route whose only job is to mint a session (no OAuth round-trip)
+		// and 303 into the React vault entry. webPath is the plain React
+		// URL used when there's no token to mint (MCP / non-Slack).
+		tokenPath := fmt.Sprintf("/%s/apps/vault/reveal/%s", tenantSlug(ec), entryID)
+		webPath := fmt.Sprintf("/%s/web/vault/%s", tenantSlug(ec), entryID)
 
 		// Slack-mediated path: sign a one-shot token, post the URL as
 		// an ephemeral message in the same thread (visible only to the
@@ -246,7 +247,7 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 		if slackOut && svc.deepLinks != nil && ec.User != nil {
 			token, signErr := svc.deepLinks.Sign(ec.User.ID, caller.TenantID, entryID, deepLinkTTL)
 			if signErr == nil {
-				rawURL := svc.absURL(basePath + "?t=" + token)
+				rawURL := svc.absURL(tokenPath + "?t=" + token)
 				title := entry.Title
 				if title == "" {
 					title = "your vault entry"
@@ -266,7 +267,7 @@ func handleAgentViewSecret(svc *Service) tools.HandlerFunc {
 		// this becomes the rendered result; in the Slack path the
 		// terminal flag swallows it, so we also post it to the thread
 		// when we can.
-		fallback := "Open in your browser to view: " + svc.absURL(basePath)
+		fallback := "Open in your browser to view: " + svc.absURL(webPath)
 		return viewSecretReply(ec, slackOut, fallback)
 	}
 }
@@ -290,27 +291,11 @@ func viewSecretReply(ec *tools.ExecContext, slackOut bool, text string) (string,
 const deepLinkTTL = 2 * time.Minute
 
 func handleAgentStartAddSecret(svc *Service) tools.HandlerFunc {
-	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
-		var inp struct {
-			Title string `json:"title"`
-			URL   string `json:"url"`
-		}
-		_ = json.Unmarshal(input, &inp)
-		q := ""
-		if inp.Title != "" || inp.URL != "" {
-			parts := []string{}
-			if inp.Title != "" {
-				parts = append(parts, "title="+queryEscape(inp.Title))
-			}
-			if inp.URL != "" {
-				parts = append(parts, "url="+queryEscape(inp.URL))
-			}
-			q = "?" + strings.Join(parts, "&")
-		}
-		url := svc.absURL(fmt.Sprintf("/%s/apps/vault/add%s", tenantSlug(ec), q))
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
+		url := svc.absURL(fmt.Sprintf("/%s/web/vault", tenantSlug(ec)))
 		// URL on its own line so the LLM is more likely to keep it
 		// verbatim in the reply instead of paraphrasing it away.
-		return url + "\n\nOpen this in your browser to capture the secret. The browser encrypts the value before sending it to Kit.", nil
+		return url + "\n\nOpen this in your browser, then use \"Add secret\" to capture it. The browser encrypts the value before sending it to Kit.", nil
 	}
 }
 
@@ -356,7 +341,7 @@ func handleAgentSetupVault(svc *Service) tools.HandlerFunc {
 		if !caller.IsAdmin {
 			return "Only admins can set up the vault.", nil
 		}
-		setupURL := svc.absURL(fmt.Sprintf("/%s/apps/vault/setup", tenantSlug(ec)))
+		setupURL := svc.absURL(fmt.Sprintf("/%s/web/vault", tenantSlug(ec)))
 		return setupURL + "\n\nOpen this in your browser to choose a master password and initialize the vault. The password should be shared with the team out-of-band (the same way you share other shared-team passwords).", nil
 	}
 }
@@ -367,7 +352,7 @@ func handleAgentRotateVaultPassword(svc *Service) tools.HandlerFunc {
 		if !caller.IsAdmin {
 			return "Only admins can rotate the vault password.", nil
 		}
-		rotateURL := svc.absURL(fmt.Sprintf("/%s/apps/vault/rotate", tenantSlug(ec)))
+		rotateURL := svc.absURL(fmt.Sprintf("/%s/web/vault", tenantSlug(ec)))
 		return rotateURL + "\n\nOpen this in your browser to change the shared vault master password. You will need both the old and new password — rotation re-wraps the existing vault key, so existing entries continue to work under the new password.", nil
 	}
 }
@@ -378,7 +363,7 @@ func handleAgentNukeVault(svc *Service) tools.HandlerFunc {
 		if !caller.IsAdmin {
 			return "Only admins can destroy the vault.", nil
 		}
-		nukeURL := svc.absURL(fmt.Sprintf("/%s/apps/vault/nuke", tenantSlug(ec)))
+		nukeURL := svc.absURL(fmt.Sprintf("/%s/web/vault", tenantSlug(ec)))
 		return "**Warning:** opening this URL will let an admin permanently delete every stored secret in the tenant's vault. There is no undo. Use this only if the master password has been lost and the team is willing to start over.\n\n" + nukeURL, nil
 	}
 }
@@ -443,5 +428,3 @@ func tenantSlug(ec *tools.ExecContext) string {
 	}
 	return ec.Tenant.Slug
 }
-
-func queryEscape(s string) string { return url.QueryEscape(s) }

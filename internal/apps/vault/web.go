@@ -1,181 +1,32 @@
 package vault
 
 import (
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
-	"io/fs"
 	"log/slog"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
-	"github.com/mrdon/kit/internal/web/chrome"
 )
 
-//go:embed templates/*.html
-var templatesFS embed.FS
+// ===== reveal deep-link bridge =====
 
-//go:embed static/*
-var staticFS embed.FS
-
-// pageTmpl is the vault template set with the shared chrome header
-// partial mixed in. We clone chrome.Tmpl() (don't ParseFS into it
-// directly — Clone is the documented way to extend a parsed template
-// with another file set) so the {{ template "chrome_header" . }} call
-// inside each vault template resolves.
-var pageTmpl = template.Must(chrome.Tmpl().ParseFS(templatesFS, "templates/*.html"))
-
-// pageData is the render struct for vault HTML pages.
-type pageData struct {
-	TenantSlug string
-	EntryID    string
-	StaticBase string
-	APIBase    string
-	ChromeCSS  string
-	Title      string
-	Header     chrome.Header
-	// EntryCount is rendered on /nuke so the admin can see exactly how
-	// many secrets they're about to destroy.
-	EntryCount int
-}
-
-// basePageData returns common page-render fields populated from the
-// request context, including the shared chrome header.
-func (a *App) basePageData(r *http.Request) pageData {
+// handleRevealPage is the terminal handler on the reveal route. By the
+// time it runs, the deep-link middleware has already consumed any one-shot
+// token and minted a /{slug}/ session cookie (or the request arrived with
+// an existing cookie). Its only job is to bounce the now-authenticated
+// browser into the React vault entry, which lives under the same cookie
+// path. There is no vault HTML left to render here — this route exists
+// purely to turn a Slack one-shot token into a console session.
+func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
-		return pageData{}
-	}
-	homeURL := fmt.Sprintf("/%s/apps/vault", tenant.Slug)
-	return pageData{
-		TenantSlug: tenant.Slug,
-		StaticBase: fmt.Sprintf("/%s/apps/vault/static", tenant.Slug),
-		APIBase:    fmt.Sprintf("/%s/apps/vault/api", tenant.Slug),
-		ChromeCSS:  chrome.HeaderCSSPath,
-		Header:     chrome.For(r, a.pool, homeURL),
-	}
-}
-
-// ===== headers =====
-
-// applySecurityHeaders sets the strict CSP + cross-origin headers on
-// every vault page.
-func applySecurityHeaders(w http.ResponseWriter) {
-	h := w.Header()
-	h.Set("Content-Security-Policy",
-		"default-src 'none'; "+
-			"script-src 'self'; "+
-			"style-src 'self'; "+
-			"connect-src 'self'; "+
-			"img-src 'self' data:; "+
-			"worker-src 'self'; "+
-			"form-action 'self'; "+
-			"frame-ancestors 'none'; "+
-			"base-uri 'none'")
-	h.Set("Cross-Origin-Opener-Policy", "same-origin")
-	h.Set("Cross-Origin-Embedder-Policy", "require-corp")
-	h.Set("Cross-Origin-Resource-Policy", "same-origin")
-	h.Set("Referrer-Policy", "no-referrer")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Cache-Control", "no-store")
-	h.Set("Permissions-Policy", "clipboard-write=(self), clipboard-read=()")
-}
-
-// ===== HTML pages =====
-
-func (a *App) handleSetupPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	caller := auth.CallerFromContext(r.Context())
-	if caller == nil || !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Set up vault"
-	renderPage(w, "setup.html", pd)
-}
-
-func (a *App) handleRotatePage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	caller := auth.CallerFromContext(r.Context())
-	if caller == nil || !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Rotate vault password"
-	renderPage(w, "rotate.html", pd)
-}
-
-func (a *App) handleNukePage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	caller := auth.CallerFromContext(r.Context())
-	if caller == nil || !caller.IsAdmin {
-		http.Error(w, "admin only", http.StatusForbidden)
-		return
-	}
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	// Count entries so the warning screen can show the real number.
-	if err := a.pool.QueryRow(r.Context(),
-		`SELECT count(*) FROM app_vault_entries WHERE tenant_id = $1`,
-		caller.TenantID,
-	).Scan(&pd.EntryCount); err != nil {
-		slog.Error("vault: counting entries for nuke page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Destroy vault"
-	renderPage(w, "nuke.html", pd)
-}
-
-func (a *App) handleListPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Your secrets"
-	renderPage(w, "list.html", pd)
-}
-
-func (a *App) handleAddPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	pd.Title = "Add a secret"
-	renderPage(w, "add.html", pd)
-}
-
-func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
 		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
 		return
 	}
@@ -184,17 +35,7 @@ func (a *App) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad entry id", http.StatusBadRequest)
 		return
 	}
-	pd.EntryID = entryID
-	pd.Title = "Reveal secret"
-	renderPage(w, "reveal.html", pd)
-}
-
-// deepLinkErrorPageData is the render struct for the deep-link error
-// page. Carries the user-facing reason copy in addition to the standard
-// chrome fields.
-type deepLinkErrorPageData struct {
-	pageData
-	ReasonMessage string
+	http.Redirect(w, r, fmt.Sprintf("/%s/web/vault/%s", tenant.Slug, entryID), http.StatusSeeOther)
 }
 
 // handleDeepLinkSuccess is the OnSuccess callback wired into the
@@ -250,75 +91,40 @@ func (a *App) handleDeepLinkError(w http.ResponseWriter, r *http.Request, reason
 		}
 	}
 
-	applySecurityHeaders(w)
-	pd := a.basePageData(r)
-	if pd.TenantSlug == "" {
+	// The token was consumed (or never valid); there's nothing to render
+	// here anymore. Bounce the user into the React vault with a reason
+	// code so the page can explain why their tap didn't open the secret.
+	// Errors that never resolved a tenant fall back to a bare 403 since we
+	// have no slug to redirect under.
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
 		http.Error(w, "deep-link rejected", http.StatusForbidden)
 		return
 	}
-	pd.Title = "Reveal link unavailable"
-	data := deepLinkErrorPageData{
-		pageData:      pd,
-		ReasonMessage: deepLinkErrorMessage(reason),
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusForbidden)
-	if err := pageTmpl.ExecuteTemplate(w, "deeplink_error.html", data); err != nil {
-		slog.Error("vault: rendering deeplink_error template", "error", err)
-	}
+	dest := fmt.Sprintf("/%s/web/vault?reveal_error=%s", tenant.Slug, deepLinkErrorCode(reason))
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
-// deepLinkErrorMessage maps a structured reason to user-facing copy.
-// Kept narrow on purpose — every variant says "ask for a fresh link"
-// without hinting at internal verification mechanics that could help
-// an attacker probe.
-func deepLinkErrorMessage(reason auth.DeepLinkReason) string {
+// deepLinkErrorCode maps a structured reason to the short code carried on
+// the React vault's ?reveal_error query. Kept narrow on purpose — the
+// human-facing copy lives in the console (revealErrorCopy) and every
+// variant resolves to "ask for a fresh link" without leaking verification
+// mechanics that could help an attacker probe.
+func deepLinkErrorCode(reason auth.DeepLinkReason) string {
 	switch reason {
 	case auth.DeepLinkExpired:
-		return "This Reveal link has expired. Reveal links are only valid for 2 minutes after Kit sends them."
+		return "expired"
 	case auth.DeepLinkConsumed:
-		return "This Reveal link has already been used. Each link works only once."
-	case auth.DeepLinkEntryMismatch, auth.DeepLinkTenantMismatch:
-		return "This Reveal link points to the wrong workspace or entry. Ask Kit for a fresh link."
+		return "consumed"
+	case auth.DeepLinkEntryMismatch:
+		return "entry_mismatch"
+	case auth.DeepLinkTenantMismatch:
+		return "tenant_mismatch"
 	case auth.DeepLinkBadSig, auth.DeepLinkMalformed:
-		return "This Reveal link is no longer valid. Ask Kit for a fresh link."
+		return "invalid"
+	default:
+		return "invalid"
 	}
-	return "This Reveal link is no longer valid. Ask Kit for a fresh link."
-}
-
-func renderPage(w http.ResponseWriter, name string, data pageData) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := pageTmpl.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("vault: rendering template", "name", name, "error", err)
-	}
-}
-
-// ===== static =====
-
-func (a *App) handleStatic(w http.ResponseWriter, r *http.Request) {
-	tenant := auth.TenantFromContext(r.Context())
-	if tenant == nil {
-		http.Error(w, "tenant not resolved", http.StatusInternalServerError)
-		return
-	}
-	prefix := fmt.Sprintf("/%s/apps/vault/static/", tenant.Slug)
-	rel := strings.TrimPrefix(r.URL.Path, prefix)
-	if rel == "" || strings.Contains(rel, "..") {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	body, err := fs.ReadFile(staticFS, "static/"+rel)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if mt := mime.TypeByExtension(filepath.Ext(rel)); mt != "" {
-		w.Header().Set("Content-Type", mt)
-	} else {
-		w.Header().Set("Content-Type", "application/octet-stream")
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(body)
 }
 
 // ===== JSON API =====

@@ -1,12 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMe } from '../me';
+import { SLUG } from '../workspace';
 import { vaultApi, type VaultEntrySummary, type VaultStatus } from './vault/api';
 import { diceware } from './vault/crypto';
-import { connectWorker, hasKey, rotate, setupVault, unlock } from './vault/worker';
+import { connectWorker, hasKey, nukeVault, rotate, setupVault, unlock } from './vault/worker';
 import { AddPanel, RevealPanel } from './vault/panels';
 import { useDetailRoute } from '../useDetailRoute';
 import { useSetChatContext } from '../chatContext';
+
+// revealErrorCopy maps the reason code carried on the ?reveal_error query
+// (set by the Slack reveal bridge when a one-shot token is rejected) to
+// user-facing copy. The bridge consumes the token server-side then lands
+// the user here, so this is the only place that explains why the tap
+// didn't open the secret.
+function revealErrorCopy(reason: string): string {
+  switch (reason) {
+    case 'expired':
+      return 'That reveal link expired — they are only valid for 2 minutes. Ask Kit to reveal the secret again.';
+    case 'consumed':
+      return 'That reveal link was already used. Each link works only once — ask Kit for a fresh one.';
+    case 'entry_mismatch':
+    case 'tenant_mismatch':
+      return 'That reveal link pointed somewhere unexpected. Ask Kit for a fresh link.';
+    default:
+      return 'That reveal link is no longer valid. Ask Kit for a fresh link.';
+  }
+}
 
 type Gate = { kind: 'add' } | { kind: 'reveal'; id: string };
 
@@ -22,6 +42,21 @@ export default function Vault() {
   const [pending, setPending] = useState<Gate | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [showRotate, setShowRotate] = useState(false);
+  const [showNuke, setShowNuke] = useState(false);
+
+  // A rejected Slack reveal link lands here with ?reveal_error=<reason>.
+  // Surface it as a dismissible banner, then strip the param so a refresh
+  // doesn't re-show it.
+  const [params, setParams] = useSearchParams();
+  const [revealError, setRevealError] = useState<string | null>(null);
+  useEffect(() => {
+    const reason = params.get('reveal_error');
+    if (!reason) return;
+    setRevealError(revealErrorCopy(reason));
+    params.delete('reveal_error');
+    setParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     connectWorker();
@@ -107,11 +142,24 @@ export default function Vault() {
                   Rotate password
                 </button>
               )}
+              {me?.is_admin && (
+                <button className="btn btn-ghost btn-danger" onClick={() => setShowNuke(true)}>
+                  Destroy vault
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
+      {revealError && (
+        <p className="banner banner-error" role="alert">
+          {revealError}{' '}
+          <button className="btn btn-ghost" onClick={() => setRevealError(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
       {err && <p className="banner banner-error">{err}</p>}
       {!status && !err && <p className="muted">Loading…</p>}
 
@@ -195,6 +243,19 @@ export default function Vault() {
       )}
 
       {showRotate && <RotateModal onClose={() => setShowRotate(false)} />}
+      {showNuke && (
+        <NukeModal
+          entryCount={entries?.length ?? 0}
+          onClose={() => setShowNuke(false)}
+          onNuked={() => {
+            setShowNuke(false);
+            setUnlocked(false);
+            setEntries(null);
+            setPanel(null);
+            vaultApi<VaultStatus>('GET', '/status').then(setStatus);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -395,6 +456,69 @@ function RotateModal({ onClose }: { onClose: () => void }) {
             </form>
           </>
         )}
+      </aside>
+    </div>
+  );
+}
+
+// NukeModal — admin-only destruction of the whole vault. The server gates
+// on confirm_slug === workspace slug and admin; we mirror that gate in the
+// UI by requiring the slug to be typed before enabling the button. There
+// is no undo, so the copy leans hard on that.
+function NukeModal({
+  entryCount,
+  onClose,
+  onNuked,
+}: {
+  entryCount: number;
+  onClose: () => void;
+  onNuked: () => void;
+}) {
+  const [confirm, setConfirm] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const matches = confirm === SLUG;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!matches) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await nukeVault(confirm);
+      onNuked();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const plural = entryCount === 1 ? '' : 's';
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+        <button className="drawer-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+        <h2 className="panel-title">Destroy the vault</h2>
+        <p className="banner banner-error">
+          This permanently deletes all {entryCount} secret{plural}. They cannot be recovered —
+          not even with the master password. Use this only if the master password is lost and the
+          team is starting over from an empty vault.
+        </p>
+        {err && <p className="banner banner-error">{err}</p>}
+        <form onSubmit={submit} className="stack-form">
+          <label className="field">
+            <span>
+              Type your workspace slug <code>{SLUG}</code> to confirm
+            </span>
+            <input value={confirm} autoComplete="off" onChange={(e) => setConfirm(e.target.value)} />
+          </label>
+          <div className="drawer-actions">
+            <button className="btn btn-danger" type="submit" disabled={busy || !matches}>
+              {busy ? 'Destroying…' : `Destroy ${entryCount} secret${plural} permanently`}
+            </button>
+          </div>
+        </form>
       </aside>
     </div>
   );

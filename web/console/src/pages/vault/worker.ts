@@ -223,6 +223,22 @@ export async function rotate(oldPassword: string, newPassword: string): Promise<
   });
 }
 
+// ---- nuke ----
+
+// nukeVault permanently destroys the tenant vault (admin-only, enforced
+// server-side). confirmSlug must equal the workspace slug or the server
+// rejects it. After the server wipes everything we drop our local key and
+// cached wrap so the browser doesn't hold stale crypto for a vault that no
+// longer exists.
+export async function nukeVault(confirmSlug: string): Promise<number> {
+  const resp = await vaultApi<{ ok: boolean; entries_destroyed: number }>('POST', '/nuke', {
+    confirm_slug: confirmSlug,
+  });
+  if (await hasKey()) await lock();
+  await dbWipe();
+  return resp.entries_destroyed | 0;
+}
+
 // ---- entry encrypt/decrypt via the worker ----
 
 export async function encryptEntry(plaintext: Uint8Array): Promise<{ ciphertext: Uint8Array; nonce: Uint8Array }> {

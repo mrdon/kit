@@ -27,8 +27,10 @@ func init() {
 
 // App is the password-vault feature for Kit. See package doc for the full
 // trust model. The app exposes:
-//   - HTTP routes under /{slug}/apps/vault/... for register, unlock, add,
-//     reveal, and grant flows (all authenticated via the session cookie).
+//   - JSON API routes under /{slug}/apps/vault/api/... that the React
+//     console vault (/{slug}/web/vault) posts to, plus a reveal bridge
+//     route that turns a Slack one-shot token into a console session
+//     (all authenticated via the session cookie).
 //   - Agent + MCP tools for find/list/view/add/scope-update/delete that
 //     return URLs (never values) and apply the per-user/role authz filter.
 //   - Decision cards for tenant admins on grant requests / password resets.

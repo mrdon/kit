@@ -48,14 +48,14 @@ type Header struct {
 	// /{slug}/logout in cards/web.go.
 	LogoutURL string
 	// HomeURL is the brand link's destination — consumer-specific.
-	// Vault points it at /{slug}/apps/vault; an integration page
-	// might point it at the integrations index. Empty string renders
-	// the brand as plain text instead of a link.
+	// An integration page might point it at the integrations index;
+	// the console points it at /{slug}/web. Empty string renders the
+	// brand as plain text instead of a link.
 	HomeURL string
 }
 
 // For populates a Header from the request's tenant + caller context.
-// homeURL is consumer-specific (e.g., /{slug}/apps/vault). Returns
+// homeURL is consumer-specific (e.g., /{slug}/web). Returns
 // a zero Header (renders as a degraded but non-broken bar) if the
 // request has no tenant resolved.
 //

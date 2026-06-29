@@ -44,11 +44,12 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 
 	tenantMW := auth.TenantFromPath(a.pool)
 
-	// HTML pages: tenant + session, but no JSON / CSRF gate. Wrapped in
+	// Page-style route (tenant + session, no JSON / CSRF gate), wrapped in
 	// auth.PageRoute so any auth failure (missing cookie, stale cookie,
 	// wrong tenant) becomes a 303 to /{slug}/login with return_to — users
-	// landing here from an agent-issued deep link expect to "just log in",
-	// not see a bare 401.
+	// landing on the reveal bridge from an agent-issued deep link expect
+	// to "just log in", not see a bare 401. Now used only as the base for
+	// the reveal bridge below.
 	page := func(h http.HandlerFunc) http.Handler {
 		return auth.PageRoute(tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
 	}
@@ -86,18 +87,11 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
 	}
 
-	// Static asset GET: tenant + session (so we don't serve to anonymous
-	// browsers; refusing to leak our app shell unauthenticated).
-	static := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
-	}
-
-	// Admin-only setup, rotate, nuke pages (browser-driven crypto)
-	mux.Handle("GET /{slug}/apps/vault/setup", page(a.handleSetupPage))
+	// Admin-only setup, rotate, nuke (browser-driven crypto). The UI for
+	// these lives in the React console (/{slug}/web/vault); only the JSON
+	// API the console posts to lives here.
 	mux.Handle("POST /{slug}/apps/vault/api/setup", wrap(a.handleSetupPost))
-	mux.Handle("GET /{slug}/apps/vault/rotate", page(a.handleRotatePage))
 	mux.Handle("POST /{slug}/apps/vault/api/rotate", wrap(a.handleRotatePost))
-	mux.Handle("GET /{slug}/apps/vault/nuke", page(a.handleNukePage))
 	mux.Handle("POST /{slug}/apps/vault/api/nuke", wrap(a.handleNukePost))
 
 	// Unlock / lock / status
@@ -106,23 +100,13 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("GET /{slug}/apps/vault/api/status", get(a.handleStatus))
 
 	// Principal listing — populates the "who can see this" selector
-	// on the add / reveal pages.
+	// in the React add / reveal panels.
 	mux.Handle("GET /{slug}/apps/vault/api/principals", get(a.handlePrincipals))
 
-	// Capture
-	mux.Handle("GET /{slug}/apps/vault/add", page(a.handleAddPage))
-
-	// List (browse all secrets the caller can view). The canonical
-	// path is /{slug}/apps/vault; the /list suffix stays as a
-	// 301 redirect so existing bookmarks and chat messages survive.
-	mux.Handle("GET /{slug}/apps/vault", page(a.handleListPage))
-	mux.Handle("GET /{slug}/apps/vault/list", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slug := r.PathValue("slug")
-		http.Redirect(w, r, "/"+slug+"/apps/vault", http.StatusMovedPermanently)
-	}))
-
-	// Reveal — uses the deep-link-aware page wrapper so Slack-issued
-	// tokens can authenticate without an OAuth round-trip.
+	// Reveal bridge — the deep-link-aware wrapper lets a Slack-issued
+	// one-shot token mint a session without an OAuth round-trip, then
+	// the handler bounces into the React vault entry. This is the only
+	// surviving non-API route; it renders no HTML of its own.
 	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", revealPage(a.handleRevealPage))
 
 	// Entries CRUD (browser-driven; ciphertext on the wire)
@@ -132,9 +116,6 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleUpdateEntry))
 	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}/role", wrap(a.handleSetEntryRole))
 	mux.Handle("DELETE /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleDeleteEntry))
-
-	// Static
-	mux.Handle("GET /{slug}/apps/vault/static/", static(a.handleStatic))
 }
 
 // requireJSON rejects state-changing requests that lack BOTH the

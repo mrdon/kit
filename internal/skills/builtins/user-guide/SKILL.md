@@ -208,9 +208,9 @@ Kit's vault stores team logins — POS accounts, SaaS dashboards, Mailchimp, Squ
 
 The vault is locked behind **one shared master password per workspace** — the same model your members-only website probably uses. Anyone on your team who knows the password can unlock the vault; share it out-of-band the same way you share that website password. Each entry is also scoped to one role, so role membership decides who sees which entries even after unlocking. The "member" role includes everyone in the workspace; smaller roles like `managers` or `kitchen-staff` restrict visibility.
 
-**First-time setup.** An admin opens `/{workspace-slug}/apps/vault/setup` and picks a master password (Kit suggests a strong passphrase — accept it or type your own). The setup page shows it once; copy it, share it with at least one teammate via your usual out-of-band channel, and write it down somewhere safe. **Kit cannot recover this password if it's forgotten by everyone.**
+**First-time setup.** An admin opens the vault at `/{workspace-slug}/web/vault`; with no vault yet, the page offers a setup card to pick a master password (Kit suggests a strong passphrase — accept it or type your own). Copy it, share it with at least one teammate via your usual out-of-band channel, and write it down somewhere safe. **Kit cannot recover this password if it's forgotten by everyone.**
 
-**Unlocking.** Every user types the same shared password at `/{workspace-slug}/apps/vault/unlock`. Unlock lasts for the browser session (idle-times out after 10 minutes of no activity, hard-locks after 30 minutes total).
+**Unlocking.** Every user unlocks with the same shared password at `/{workspace-slug}/web/vault` — the page prompts for it the first time you take an action that needs the key. Unlock lasts for the browser session (idle-times out after 10 minutes of no activity, hard-locks after 30 minutes total).
 
 **Saving a secret.** Ask Kit, and Kit hands back a URL to a browser form — you type the password there, the browser encrypts it client-side, and the ciphertext is what hits the server. Kit will not accept a password pasted into chat:
 
@@ -221,13 +221,13 @@ The vault is locked behind **one shared master password per workspace** — the 
 > "What's the login for our POS?"
 > "Find the Mailchimp password."
 
-**Browsing.** The list page at `/{workspace-slug}/apps/vault/list` shows every entry you can see, with filters and an add button. Tools work the same: `list_secrets` (optionally `role_id`-filtered), `find_secret` for fuzzy lookup by name, `view_secret` for a reveal URL, `start_add_secret` for the add URL.
+**Browsing.** The vault web UI at `/{workspace-slug}/web/vault` shows every entry you can see, with filters and an add button. Tools work the same: `list_secrets` (optionally `role_id`-filtered), `find_secret` for fuzzy lookup by name, `view_secret` for a reveal URL, `start_add_secret` for the add URL.
 
 **Re-scoping or deleting.** `set_secret_role` changes which role owns an entry; `delete_secret` removes it (no undo — recoverable only by re-adding from another source). Both are gated through a confirmation card before they take effect.
 
-**Rotating the password.** When you need to change the shared password (e.g. after an employee departure), an admin opens `/{workspace-slug}/apps/vault/rotate`. Rotation requires the **old** password — the browser unwraps the existing vault key under it and re-wraps under the new one, so every stored secret keeps working. After rotation, share the new password out-of-band; open tabs on other devices re-lock automatically.
+**Rotating the password.** When you need to change the shared password (e.g. after an employee departure), an admin opens `/{workspace-slug}/web/vault` and uses **Rotate password**. Rotation requires the **old** password — the browser unwraps the existing vault key under it and re-wraps under the new one, so every stored secret keeps working. After rotation, share the new password out-of-band; open tabs on other devices re-lock automatically.
 
-**If the master password is lost.** There is no recovery — the master password is the only thing that can decrypt the vault. If nobody remembers it, an admin can open `/{workspace-slug}/apps/vault/nuke` to permanently destroy every stored secret and start over with a fresh setup. The nuke page makes you re-type the workspace slug as a confirmation gate; there is no undo. The agent tool `nuke_vault` and MCP tool of the same name return this URL but never run the destruction themselves.
+**If the master password is lost.** There is no recovery — the master password is the only thing that can decrypt the vault. If nobody remembers it, an admin can open `/{workspace-slug}/web/vault` and use **Destroy vault** to permanently delete every stored secret and start over with a fresh setup. It makes you re-type the workspace slug as a confirmation gate; there is no undo. The agent tool `nuke_vault` and MCP tool of the same name return this URL but never run the destruction themselves.
 
 ## Decisions and briefings (card stack)
 
