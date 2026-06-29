@@ -201,6 +201,7 @@ export default function Vault() {
 
 function UnlockModal({ onClose, onUnlocked }: { onClose: () => void; onUnlocked: () => void }) {
   const [pw, setPw] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
@@ -225,16 +226,29 @@ function UnlockModal({ onClose, onUnlocked }: { onClose: () => void; onUnlocked:
         <h2 className="panel-title">Unlock vault</h2>
         <p className="muted">Enter the shared master password your team uses.</p>
         {err && <p className="banner banner-error">{err}</p>}
-        <form onSubmit={submit} className="stack-form">
+        {/* autoComplete="off" + a non-login field name keep the browser's
+            password manager from autofilling this shared master-password box
+            with the user's saved site/login credential — a silent wrong value
+            that reads as "incorrect password". The show toggle lets the user
+            confirm exactly what will be submitted. */}
+        <form onSubmit={submit} className="stack-form" autoComplete="off">
           <label className="field">
             <span>Master password</span>
             <input
-              type="password"
+              type={showPw ? 'text' : 'password'}
+              name="vault-master-password"
               autoFocus
-              autoComplete="current-password"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               value={pw}
               onChange={(e) => setPw(e.target.value)}
             />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input type="checkbox" checked={showPw} onChange={(e) => setShowPw(e.target.checked)} />
+            <span>Show password</span>
           </label>
           <div className="drawer-actions">
             <button className="btn" type="submit" disabled={busy}>
