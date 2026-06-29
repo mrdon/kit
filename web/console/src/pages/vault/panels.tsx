@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { vaultApi, type Principal, type VaultEntryFull } from './api';
 import { b64ToBytes, bytesToB64, generatePassword, normalizeURL } from './crypto';
 import { decryptEntry, encryptEntry } from './worker';
@@ -316,7 +318,9 @@ export function RevealPanel({
               {decoded.notes && (
                 <>
                   <dt>Notes</dt>
-                  <dd>{decoded.notes}</dd>
+                  <dd className="md-body markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{decoded.notes}</ReactMarkdown>
+                  </dd>
                 </>
               )}
             </dl>
