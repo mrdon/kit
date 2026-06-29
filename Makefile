@@ -196,7 +196,7 @@ tidy: ## Tidy go.mod
 init: ## Initialize development environment (install tools, download deps)
 	@echo "Initializing development environment..."
 	@echo "Installing golangci-lint..."
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$$(go env GOPATH)/bin" v2.8.0
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 	@echo "Downloading dependencies..."
 	@go mod download
 	@echo ""

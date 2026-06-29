@@ -442,17 +442,34 @@ func (a *App) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrUnlockMismatch):
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			// Wrong master password. This is NOT a web-session failure:
+			// the handler only runs behind requireCaller, so the caller is
+			// authenticated. Return 403 (never 401) so the client shows
+			// "incorrect password" inline instead of bouncing a logged-in
+			// user to the login page. The console vaultApi maps 401 — and
+			// only 401 — to a login redirect.
+			slog.Info("vault: unlock rejected — bad password",
+				"tenant_id", caller.TenantID, "user_id", caller.UserID)
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error": "Incorrect vault password.",
+			})
 		case errors.Is(err, ErrUnlockLocked):
-			http.Error(w, "too many attempts", http.StatusTooManyRequests)
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{
+				"error": "Too many unlock attempts. Wait a moment and try again.",
+			})
 		case errors.Is(err, ErrUnlockNotSetUp):
-			http.Error(w, "vault not set up", http.StatusNotFound)
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"error": "This workspace has no vault yet. Ask an admin to set one up.",
+			})
 		default:
 			slog.Error("vault: unlock", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "Internal error unlocking the vault.",
+			})
 		}
 		return
 	}
+	slog.Info("vault: unlock ok", "tenant_id", caller.TenantID, "user_id", caller.UserID)
 	writeJSON(w, http.StatusOK, res)
 }
 

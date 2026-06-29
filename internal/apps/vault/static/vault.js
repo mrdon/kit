@@ -144,8 +144,16 @@ async function api(method, path, body) {
     body: body !== undefined ? JSON.stringify(body) : null,
   });
   if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`HTTP ${resp.status}: ${text || resp.statusText}`);
+    // Prefer the server's JSON {error} message (e.g. a 403 "Incorrect
+    // vault password.") over a raw "HTTP 403" string.
+    let msg = "";
+    try {
+      const body = await resp.json();
+      if (body && body.error) msg = body.error;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(msg || `HTTP ${resp.status}: ${resp.statusText}`);
   }
   if (resp.status === 204) return null;
   return resp.json();

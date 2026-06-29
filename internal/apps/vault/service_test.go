@@ -3,16 +3,19 @@ package vault
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/testdb"
@@ -210,6 +213,61 @@ func TestUnlockWrongPasswordReturnsMismatch(t *testing.T) {
 	_, err := svc.Unlock(ctx, c, make([]byte, 32), svc.AuditFromRequest(c, r))
 	if !errors.Is(err, ErrUnlockMismatch) {
 		t.Fatalf("expected ErrUnlockMismatch, got %v", err)
+	}
+}
+
+// A wrong master password must surface as 403 — NEVER 401 — so the
+// authenticated console client shows "incorrect password" inline instead
+// of mistaking it for a lapsed web session and bouncing the user to the
+// login page. (handleUnlock only runs behind requireCaller, so a genuine
+// session failure is a 401 from the middleware and never reaches here.)
+func TestHandleUnlockWrongPasswordReturns403(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID, adminID := freshTenant(t, ctx, pool)
+	_ = seedVaultTenant(t, ctx, pool, tenantID, adminID)
+
+	a := &App{pool: pool, svc: NewService(pool)}
+	c := &services.Caller{TenantID: tenantID, UserID: adminID}
+	body := `{"auth_hash":"` + base64.StdEncoding.EncodeToString(make([]byte, 32)) + `"}`
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	r = r.WithContext(auth.WithCaller(ctx, c))
+	w := httptest.NewRecorder()
+
+	a.handleUnlock(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding body %q: %v", w.Body.String(), err)
+	}
+	if resp.Error == "" {
+		t.Errorf("expected a human-readable error message, got empty body")
+	}
+}
+
+// The happy path still returns 200 with the wrapped-key payload.
+func TestHandleUnlockCorrectPasswordReturns200(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID, adminID := freshTenant(t, ctx, pool)
+	knownHash := seedVaultTenant(t, ctx, pool, tenantID, adminID)
+
+	a := &App{pool: pool, svc: NewService(pool)}
+	c := &services.Caller{TenantID: tenantID, UserID: adminID}
+	body := `{"auth_hash":"` + base64.StdEncoding.EncodeToString(knownHash) + `"}`
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	r = r.WithContext(auth.WithCaller(ctx, c))
+	w := httptest.NewRecorder()
+
+	a.handleUnlock(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
 	}
 }
 

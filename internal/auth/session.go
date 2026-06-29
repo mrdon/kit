@@ -183,6 +183,12 @@ func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.H
 // redirect to the tenant login page (for HTML navigations). Returns
 // 401 if the tenant slug can't be resolved from the path.
 func (s *SessionSigner) denyOrRedirect(w http.ResponseWriter, r *http.Request) {
+	// Debug aid: a logged-in user should never reach here on an API call.
+	// Logging the path lets us tell a genuine session lapse apart from a
+	// bad-vault-password 403 (which never hits this code) in prod logs.
+	_, hadCookie := s.extractToken(r)
+	slog.Info("auth: session denied",
+		"path", r.URL.Path, "had_cookie", hadCookie, "redirect", shouldRedirectToLogin(r))
 	if !shouldRedirectToLogin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return

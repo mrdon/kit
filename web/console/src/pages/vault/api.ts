@@ -30,8 +30,17 @@ export async function vaultApi<T = any>(
     throw new Error('redirecting to login');
   }
   if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${text || resp.statusText}`);
+    // The server sends a JSON {error} body for cases worth showing a human
+    // (e.g. a 403 "Incorrect vault password." — NOT a 401, so we never
+    // bounced to login above). Prefer it over a raw "HTTP 403" string.
+    let msg = '';
+    try {
+      const body = await resp.json();
+      if (body?.error) msg = body.error;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(msg || `HTTP ${resp.status}: ${resp.statusText}`);
   }
   if (resp.status === 204) return null as T;
   return resp.json() as Promise<T>;
