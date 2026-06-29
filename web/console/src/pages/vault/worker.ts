@@ -110,17 +110,17 @@ export function dbWipe(): Promise<void> {
 export async function unlock(password: string): Promise<void> {
   if (await hasKey()) return;
 
-  let kdfParams;
-  const cached = await dbGet();
-  if (cached && cached.kdfParams) {
-    kdfParams = cached.kdfParams;
-  } else {
-    const st = await vaultApi<VaultStatus>('GET', '/status');
-    if (!st || !st.set_up) {
-      throw new Error('Vault is not set up yet. Ask an admin to set it up.');
-    }
-    kdfParams = st.kdf_params!;
+  // Always derive against the server's CURRENT kdf_params. A cached salt
+  // can go stale (e.g. the tenant vault was nuked and re-created with a
+  // fresh salt) — deriving against it yields an auth_hash that never
+  // matches, surfacing as a permanent bogus "incorrect password" until
+  // the user clears local storage. The /unlock round-trip is unavoidable
+  // anyway, so trusting the cache saves nothing.
+  const st = await vaultApi<VaultStatus>('GET', '/status');
+  if (!st || !st.set_up) {
+    throw new Error('Vault is not set up yet. Ask an admin to set it up.');
   }
+  const kdfParams = st.kdf_params!;
 
   const salt = b64ToBytes(kdfParams.salt);
   const { encKey, authHash } = await deriveKeys(password, salt);
