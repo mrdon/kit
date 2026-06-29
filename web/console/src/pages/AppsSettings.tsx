@@ -85,6 +85,7 @@ export default function AppsSettings() {
               {app.description && (
                 <span className="card-desc">{app.description}</span>
               )}
+              {app.usage && <span className="card-detail">{app.usage}</span>}
             </div>
             <div className="card-side">
               <label className="check">

@@ -16,6 +16,9 @@ type appRow struct {
 	DisplayName string `json:"display_name"`
 	Description string `json:"description"`
 	Enabled     bool   `json:"enabled"`
+	// Usage is a short tenant-scoped "how much is this used" hint (e.g.
+	// "8 secrets"), empty when the app reports none.
+	Usage string `json:"usage"`
 }
 
 func (a *App) handleAppsList(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +40,7 @@ func (a *App) handleAppsList(w http.ResponseWriter, r *http.Request) {
 			DisplayName: info.DisplayName,
 			Description: info.Description,
 			Enabled:     !disabled[info.Name],
+			Usage:       apps.AppUsage(r.Context(), caller.TenantID, info.Name),
 		})
 	}
 	writeJSON(w, http.StatusOK, rows)

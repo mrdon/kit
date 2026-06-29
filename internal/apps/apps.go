@@ -3,6 +3,7 @@ package apps
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -40,6 +41,53 @@ type Mux interface {
 type DescribableApp interface {
 	DisplayName() string
 	Description() string
+}
+
+// UsageReporter is an optional interface a feature app can implement to show an
+// admin a one-line, tenant-scoped summary of how much it's being used (e.g.
+// "8 secrets", "3 open tasks") — so they can judge whether disabling it is
+// safe. Keep the implementation to a single cheap, indexed count: it runs
+// synchronously when the Apps settings page loads. Return "" for "nothing yet".
+type UsageReporter interface {
+	Usage(ctx context.Context, tenantID uuid.UUID) (string, error)
+}
+
+// CountLabel formats a count with a singular/plural unit for usage summaries:
+// CountLabel(0, "secret", "secrets") == "No secrets"; CountLabel(1, ...) ==
+// "1 secret"; CountLabel(8, ...) == "8 secrets". Always non-empty, so a usage
+// reporter that returns it always shows a line (an empty AppUsage means the app
+// doesn't report usage at all, and the UI shows nothing).
+func CountLabel(n int, singular, plural string) string {
+	switch {
+	case n <= 0:
+		return "No " + plural
+	case n == 1:
+		return "1 " + singular
+	default:
+		return fmt.Sprintf("%d %s", n, plural)
+	}
+}
+
+// AppUsage returns a feature app's one-line usage summary for the tenant, or ""
+// if the app doesn't report usage. Errors are logged and swallowed — usage is
+// advisory chrome and must never fail the Apps page.
+func AppUsage(ctx context.Context, tenantID uuid.UUID, name string) string {
+	for _, a := range registry {
+		if a.Name() != name {
+			continue
+		}
+		r, ok := a.(UsageReporter)
+		if !ok {
+			return ""
+		}
+		summary, err := r.Usage(ctx, tenantID)
+		if err != nil {
+			slog.Warn("app usage report failed", "app", name, "error", err)
+			return ""
+		}
+		return summary
+	}
+	return ""
 }
 
 // App defines the interface for a modular feature that contributes tools,

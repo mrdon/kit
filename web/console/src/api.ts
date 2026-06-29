@@ -438,6 +438,8 @@ export interface WorkspaceApp {
   display_name: string;
   description: string;
   enabled: boolean;
+  // Short "how much is this used" hint (e.g. "8 secrets"); empty if none.
+  usage: string;
 }
 
 export const api = {
