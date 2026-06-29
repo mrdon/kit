@@ -11,7 +11,6 @@ package netlify
 import (
 	"context"
 	_ "embed"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -98,6 +97,10 @@ func (a *App) Service() *Service { return a.svc }
 
 func (a *App) Name() string { return "netlify" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *App) DisplayName() string { return "Netlify" }
+func (a *App) Description() string { return "Request and publish website changes through Netlify." }
+
 func (a *App) SystemPrompt() string { return systemPromptText }
 
 func (a *App) ToolMetas() []services.ToolMeta { return netlifyTools }
@@ -117,7 +120,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return buildNetlifyMCPTools(a.svc)
 }
 
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.svc == nil || a.pool == nil || a.signer == nil {
 		return
 	}

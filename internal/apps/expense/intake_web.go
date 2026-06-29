@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/attachment"
 	"github.com/mrdon/kit/internal/auth"
 	consoleweb "github.com/mrdon/kit/web/console"
@@ -20,7 +21,7 @@ import (
 // comes from the {slug} path (no session), so these use TenantFromPath only —
 // NOT console.JSON. The page is a clean, listed URL anyone can load; the
 // approval swipe, not URL secrecy, is the control.
-func registerIntakeRoutes(mux *http.ServeMux, a *ExpenseApp) {
+func registerIntakeRoutes(mux apps.Mux, a *ExpenseApp) {
 	tenantMW := auth.TenantFromPath(a.svc.pool)
 	pub := func(h http.HandlerFunc) http.Handler { return tenantMW(h) }
 	mux.Handle("GET /{slug}/expenses/submit", pub(a.handleIntakePage))

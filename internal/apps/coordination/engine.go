@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services/messenger"
 )
@@ -27,6 +28,13 @@ type Engine struct {
 
 func newEngine(pool *pgxpool.Pool, app *CoordinationApp) *Engine {
 	return &Engine{pool: pool, app: app, now: time.Now}
+}
+
+// appEnabled reports whether the coordination app is on for the tenant. The
+// sweep runs process-wide across all tenants, so each item is gated by its
+// own tenant — a tenant that disabled coordination gets no nudges or cards.
+func (e *Engine) appEnabled(ctx context.Context, tenantID uuid.UUID) bool {
+	return apps.IsEnabled(ctx, tenantID, AppName)
 }
 
 // Tick is the cron entry point. Performs three scans:
@@ -78,6 +86,9 @@ func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
 		if coord == nil {
 			continue
 		}
+		if !e.appEnabled(ctx, coord.TenantID) {
+			continue
+		}
 		if coord.Config.AbandonmentCardOpen {
 			continue
 		}
@@ -122,6 +133,9 @@ func (e *Engine) sweepReadyParticipants(ctx context.Context, now time.Time) erro
 		coord, err := GetCoordination(ctx, e.pool, k.tenantID, k.coordID)
 		if err != nil || coord == nil {
 			slog.Error("loading coord for sweep", "error", err, "id", k.coordID)
+			continue
+		}
+		if !e.appEnabled(ctx, k.tenantID) {
 			continue
 		}
 		if coord.Status != StatusActive {
@@ -429,6 +443,9 @@ func (e *Engine) sweepConvergence(ctx context.Context) error {
 	for _, c := range cells {
 		coord, err := GetCoordination(ctx, e.pool, c.tenant, c.id)
 		if err != nil || coord == nil {
+			continue
+		}
+		if !e.appEnabled(ctx, c.tenant) {
 			continue
 		}
 		parts, err := ListParticipants(ctx, e.pool, c.tenant, coord.ID)

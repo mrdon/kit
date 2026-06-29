@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -276,7 +275,7 @@ func buildMetaAppMCPHandler(pool *pgxpool.Pool, name string) mcpserver.ToolHandl
 }
 
 // RegisterRoutes is a no-op for now; builder admin UI routes land later.
-func (a *App) RegisterRoutes(_ *http.ServeMux) {}
+func (a *App) RegisterRoutes(_ apps.Mux) {}
 
 // CronJobs returns nil; scheduled scripts plug in once the runtime is
 // wired to the scheduler.

@@ -2,7 +2,6 @@ package voting
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,7 +50,17 @@ func (a *VotingApp) Init(pool *pgxpool.Pool) {
 	a.engine = newEngine(pool, a)
 }
 
-func (a *VotingApp) Name() string { return "voting" }
+// AppName is the registry identifier, shared by Name() and the
+// per-tenant enablement checks elsewhere in the package.
+const AppName = "voting"
+
+func (a *VotingApp) Name() string { return AppName }
+
+// DisplayName and Description feed the admin Apps settings page.
+func (a *VotingApp) DisplayName() string { return "Voting" }
+func (a *VotingApp) Description() string {
+	return "Run group votes and surface the tally to the organizer."
+}
 
 func (a *VotingApp) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
@@ -70,7 +79,7 @@ func (a *VotingApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mc
 	return buildVotingMCPTools(a.svc)
 }
 
-func (a *VotingApp) RegisterRoutes(_ *http.ServeMux) {
+func (a *VotingApp) RegisterRoutes(_ apps.Mux) {
 	// No HTTP routes for voting.
 }
 

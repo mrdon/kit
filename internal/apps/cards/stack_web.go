@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/cards/shared"
 	"github.com/mrdon/kit/internal/auth"
@@ -36,7 +38,7 @@ const defaultGlobalLimit = 100
 // then the session middleware, then AssertTenantMatch (which 403s if
 // caller.TenantID differs from the path tenant — defense in depth
 // against session-tenant-vs-URL-tenant mismatches).
-func registerStackRoutes(mux *http.ServeMux, a *CardsApp) {
+func registerStackRoutes(mux apps.Mux, a *CardsApp) {
 	if a.signer == nil {
 		return
 	}
@@ -85,7 +87,7 @@ func handleStackList(w http.ResponseWriter, r *http.Request) {
 	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultGlobalLimit)
 	cursors := decodeStackCursor(r.URL.Query().Get("cursor"))
 
-	providers := apps.CardProviders()
+	providers := enabledCardProviders(r.Context(), caller)
 	type result struct {
 		sourceApp string
 		page      shared.StackPage
@@ -200,7 +202,7 @@ func handleStackItemDetail(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	id := r.PathValue("id")
 	p := providerByName(sourceApp)
-	if p == nil {
+	if p == nil || !providerEnabled(r.Context(), caller, p) {
 		writeErr(w, http.StatusNotFound, errors.New("unknown source_app"))
 		return
 	}
@@ -223,7 +225,7 @@ func handleStackItemAction(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	id := r.PathValue("id")
 	p := providerByName(sourceApp)
-	if p == nil {
+	if p == nil || !providerEnabled(r.Context(), caller, p) {
 		writeErr(w, http.StatusNotFound, errors.New("unknown source_app"))
 		return
 	}
@@ -251,6 +253,28 @@ func providerByName(name string) apps.CardProvider {
 		}
 	}
 	return nil
+}
+
+// enabledCardProviders returns only the providers whose app is enabled for the
+// caller's tenant, so a disabled app contributes no cards to the swipe stack.
+func enabledCardProviders(ctx context.Context, caller *services.Caller) []apps.CardProvider {
+	var out []apps.CardProvider
+	for _, p := range apps.CardProviders() {
+		if providerEnabled(ctx, caller, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// providerEnabled reports whether a single provider's app is enabled for the
+// caller's tenant. Used to 404 item/action requests against a disabled app.
+func providerEnabled(ctx context.Context, caller *services.Caller, p apps.CardProvider) bool {
+	var tenantID uuid.UUID
+	if caller != nil {
+		tenantID = caller.TenantID
+	}
+	return apps.IsEnabled(ctx, tenantID, p.SourceApp())
 }
 
 func writeStackErr(w http.ResponseWriter, err error) {

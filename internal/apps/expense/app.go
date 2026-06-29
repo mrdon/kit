@@ -2,7 +2,6 @@ package expense
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,6 +81,12 @@ func (a *ExpenseApp) Init(pool *pgxpool.Pool) {
 
 func (a *ExpenseApp) Name() string { return "expense" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *ExpenseApp) DisplayName() string { return "Expenses" }
+func (a *ExpenseApp) Description() string {
+	return "Submit, approve, and reimburse expense reports with receipt intake."
+}
+
 func (a *ExpenseApp) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
 }
@@ -99,7 +104,7 @@ func (a *ExpenseApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []m
 	return buildExpenseMCPTools(a.svc)
 }
 
-func (a *ExpenseApp) RegisterRoutes(mux *http.ServeMux) {
+func (a *ExpenseApp) RegisterRoutes(mux apps.Mux) {
 	if a.svc == nil {
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 )
 
@@ -34,7 +35,7 @@ const csrfHeader = "X-Kit-Vault"
 //
 // HTML page routes (GET /vault/register etc.) skip the JSON / CSRF gate
 // since they're plain navigations.
-func registerVaultRoutes(mux *http.ServeMux, a *App) {
+func registerVaultRoutes(mux apps.Mux, a *App) {
 	if a.signer == nil {
 		// Without a signer we can't authenticate anything; refuse to
 		// register routes so 404 is the user-visible behaviour rather

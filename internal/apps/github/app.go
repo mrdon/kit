@@ -12,7 +12,6 @@ package github
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -93,6 +92,10 @@ func GetService() *Service {
 
 func (a *App) Name() string { return "github" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *App) DisplayName() string { return "GitHub" }
+func (a *App) Description() string { return "Connect repositories and drive coding agents from tasks." }
+
 func (a *App) SystemPrompt() string { return "" }
 
 func (a *App) ToolMetas() []services.ToolMeta { return nil }
@@ -104,7 +107,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return nil
 }
 
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.svc == nil || a.pool == nil || a.signer == nil {
 		return
 	}

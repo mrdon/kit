@@ -2,7 +2,6 @@ package calendar
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,7 +27,17 @@ func (a *CalendarApp) Init(pool *pgxpool.Pool) {
 	a.svc = &CalendarService{pool: pool}
 }
 
-func (a *CalendarApp) Name() string { return "calendar" }
+// AppName is the registry identifier, shared by Name() and the
+// per-tenant enablement checks elsewhere in the package.
+const AppName = "calendar"
+
+func (a *CalendarApp) Name() string { return AppName }
+
+// DisplayName and Description feed the admin Apps settings page.
+func (a *CalendarApp) DisplayName() string { return "Calendar" }
+func (a *CalendarApp) Description() string {
+	return "Sync iCal feeds so the agent can answer questions about upcoming events."
+}
 
 func (a *CalendarApp) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
@@ -47,7 +56,7 @@ func (a *CalendarApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []
 	return buildCalendarMCPTools(a.svc)
 }
 
-func (a *CalendarApp) RegisterRoutes(_ *http.ServeMux) {}
+func (a *CalendarApp) RegisterRoutes(_ apps.Mux) {}
 
 func (a *CalendarApp) CronJobs() []apps.CronJob {
 	return []apps.CronJob{

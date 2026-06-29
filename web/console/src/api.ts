@@ -431,9 +431,21 @@ function taskQuery(f: TaskFilters): string {
   return qs ? `?${qs}` : '';
 }
 
+export interface WorkspaceApp {
+  name: string;
+  display_name: string;
+  description: string;
+  enabled: boolean;
+  core: boolean;
+}
+
 export const api = {
   me: () => apiGet<Me>('/me'),
   integrations: () => apiGet<Integration[]>('/integrations'),
+
+  apps: () => apiGet<WorkspaceApp[]>('/apps'),
+  setApp: (name: string, enabled: boolean) =>
+    apiPut<{ enabled: boolean }>(`/apps/${encodeURIComponent(name)}`, { enabled }),
 
   roles: () => apiGet<RolesMatrix>('/roles'),
   assignRole: (slackUserID: string, roleName: string) =>

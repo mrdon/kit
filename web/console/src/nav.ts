@@ -52,6 +52,12 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
   {
+    to: '/admin/apps',
+    label: 'Apps',
+    blurb: 'Turn features like the vault, expenses, or voting on or off.',
+    admin: true,
+  },
+  {
     to: '/admin/integrations',
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',

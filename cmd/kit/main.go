@@ -420,7 +420,7 @@ func main() {
 	mux.HandleFunc("GET /oauth/callback", oauthServer.HandleCallback)
 
 	// App routes
-	apps.RegisterAllRoutes(mux)
+	apps.RegisterAllRoutes(mux, pool)
 
 	// Shared chrome (header CSS) for non-card-UI HTML pages
 	chrome.RegisterRoutes(mux)

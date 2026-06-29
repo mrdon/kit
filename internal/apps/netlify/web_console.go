@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/auth"
 )
@@ -17,7 +18,7 @@ import (
 // Website settings page (/{slug}/web/admin/netlify). The OAuth connect/callback
 // dance stays as full-page routes in urls.go; only status + the two
 // state-changing actions are JSON here. All admin-only.
-func registerConsoleRoutes(mux *http.ServeMux, a *App) {
+func registerConsoleRoutes(mux apps.Mux, a *App) {
 	adminJSON := func(h http.HandlerFunc) http.Handler {
 		return console.AdminJSON(a.pool, a.signer, h)
 	}

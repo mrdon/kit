@@ -4,10 +4,11 @@ package console
 import (
 	"net/http"
 
+	"github.com/mrdon/kit/internal/apps"
 	consoleweb "github.com/mrdon/kit/web/console"
 )
 
-func registerConsoleRoutes(mux *http.ServeMux, a *App) {
+func registerConsoleRoutes(mux apps.Mux, a *App) {
 	page := func(h http.HandlerFunc) http.Handler { return PageRoute(a.pool, a.signer, h) }
 	jsonRoute := func(h http.HandlerFunc) http.Handler { return JSON(a.pool, a.signer, h) }
 	adminJSON := func(h http.HandlerFunc) http.Handler { return AdminJSON(a.pool, a.signer, h) }
@@ -32,6 +33,11 @@ func registerConsoleRoutes(mux *http.ServeMux, a *App) {
 	// Feature apps register their own /{slug}/api/... routes the same way.
 	mux.Handle("GET /{slug}/api/me", jsonRoute(a.handleMe))
 	mux.Handle("GET /{slug}/api/integrations", adminJSON(a.handleIntegrations))
+
+	// App enable/disable. Admin-only: an admin turns feature apps on or off
+	// for the whole workspace. Core apps (console, admin) reject the PUT.
+	mux.Handle("GET /{slug}/api/apps", adminJSON(a.handleAppsList))
+	mux.Handle("PUT /{slug}/api/apps/{name}", adminJSON(a.handleAppSet))
 
 	// Role membership matrix. Admin-only: the page reveals every user and
 	// lets an admin change who is in which role.

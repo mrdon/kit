@@ -5,7 +5,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mrdon/kit/internal/apps"
 )
 
 // Engine is the cron-driven sweep that surfaces the organizer digest
@@ -19,6 +22,13 @@ type Engine struct {
 
 func newEngine(pool *pgxpool.Pool, app *VotingApp) *Engine {
 	return &Engine{pool: pool, app: app, now: time.Now}
+}
+
+// appEnabled reports whether the voting app is on for the tenant. The sweep
+// runs process-wide, so each vote is gated by its own tenant — a tenant that
+// disabled voting gets no organizer digest cards.
+func (e *Engine) appEnabled(ctx context.Context, tenantID uuid.UUID) bool {
+	return apps.IsEnabled(ctx, tenantID, AppName)
 }
 
 // Tick runs the two voting sweeps. Cheap when there are no active
@@ -44,6 +54,9 @@ func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
 	}
 	for i := range votes {
 		v := votes[i]
+		if !e.appEnabled(ctx, v.TenantID) {
+			continue
+		}
 		if v.DeadlineAt.After(now) {
 			continue
 		}
@@ -64,6 +77,9 @@ func (e *Engine) sweepCompletion(ctx context.Context) error {
 	}
 	for i := range votes {
 		v := votes[i]
+		if !e.appEnabled(ctx, v.TenantID) {
+			continue
+		}
 		parts, err := ListParticipants(ctx, e.pool, v.TenantID, v.ID)
 		if err != nil {
 			slog.Error("listing participants for completion check", "error", err, "vote", v.ID)

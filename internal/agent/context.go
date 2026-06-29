@@ -82,8 +82,8 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 	// Job scheduling guidance (Slack-specific)
 	parts = append(parts, mustRender("system_scheduling_guidance.tmpl", nil))
 
-	// App system prompts
-	if appPrompts := apps.SystemPrompts(); appPrompts != "" {
+	// App system prompts (only for apps enabled for this tenant)
+	if appPrompts := apps.SystemPromptsFor(ctx, tenant.ID); appPrompts != "" {
 		parts = append(parts, appPrompts)
 	}
 

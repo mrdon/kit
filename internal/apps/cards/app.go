@@ -3,7 +3,6 @@ package cards
 import (
 	"context"
 	"log/slog"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool" //nolint:goimports
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -204,7 +203,7 @@ func (a *CardsApp) RegisterMCPTools(_ *pgxpool.Pool, svc *services.Services) []m
 	return buildCardsMCPTools(a.svc)
 }
 
-func (a *CardsApp) RegisterRoutes(mux *http.ServeMux) {
+func (a *CardsApp) RegisterRoutes(mux apps.Mux) {
 	registerCardsRoutes(mux, a)
 }
 

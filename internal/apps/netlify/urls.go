@@ -5,6 +5,7 @@ package netlify
 import (
 	"net/http"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 )
 
@@ -30,7 +31,7 @@ import (
 // one who configures the connection. Once role-gated requesting lands
 // (v2), individual change requests may open up to a wider role; the
 // settings page stays admin-only.
-func registerNetlifyRoutes(mux *http.ServeMux, a *App) {
+func registerNetlifyRoutes(mux apps.Mux, a *App) {
 	tenantMW := auth.TenantFromPath(a.pool)
 
 	page := func(h http.HandlerFunc) http.Handler {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
@@ -16,7 +17,7 @@ import (
 // role-scoped (any role member can see/edit), so these use console.JSON
 // (caller required, not admin-only). The shared parse/error-map helpers
 // (console_shared.go) keep wording identical to the MCP surface.
-func registerTaskRoutes(mux *http.ServeMux, a *TaskApp) {
+func registerTaskRoutes(mux apps.Mux, a *TaskApp) {
 	jsonRoute := func(h http.HandlerFunc) http.Handler {
 		return console.JSON(a.svc.pool, a.signer, h)
 	}

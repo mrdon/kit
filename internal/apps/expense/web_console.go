@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
@@ -16,7 +17,7 @@ import (
 // registerExpenseRoutes wires the console JSON API. Reports are role-scoped
 // (any member can read; submitter/admin edits), so these use console.JSON
 // (caller required, not admin-only).
-func registerExpenseRoutes(mux *http.ServeMux, a *ExpenseApp) {
+func registerExpenseRoutes(mux apps.Mux, a *ExpenseApp) {
 	jsonRoute := func(h http.HandlerFunc) http.Handler {
 		return console.JSON(a.svc.pool, a.signer, h)
 	}

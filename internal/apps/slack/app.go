@@ -2,7 +2,6 @@ package slack
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -28,6 +27,10 @@ func (a *SlackApp) Init(pool *pgxpool.Pool) {
 
 func (a *SlackApp) Name() string { return "slack" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *SlackApp) DisplayName() string { return "Slack search" }
+func (a *SlackApp) Description() string { return "Search messages in configured Slack channels." }
+
 func (a *SlackApp) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
 }
@@ -45,7 +48,7 @@ func (a *SlackApp) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services) 
 	return buildSlackMCPTools(pool, svc, a.svc)
 }
 
-func (a *SlackApp) RegisterRoutes(_ *http.ServeMux) {}
+func (a *SlackApp) RegisterRoutes(_ apps.Mux) {}
 
 func (a *SlackApp) CronJobs() []apps.CronJob { return nil }
 

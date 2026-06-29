@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Shell from './Shell';
 import Launcher from './Launcher';
 import Integrations from './pages/Integrations';
+import AppsSettings from './pages/AppsSettings';
 import Netlify from './pages/Netlify';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
@@ -40,6 +41,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/admin/apps" element={<AppsSettings />} />
           <Route path="/admin/expenses" element={<ExpenseSettings />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />

@@ -3,7 +3,6 @@ package vault
 import (
 	"context"
 	_ "embed"
-	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -142,6 +141,12 @@ func (a *App) Service() *Service { return a.svc }
 
 func (a *App) Name() string { return "vault" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *App) DisplayName() string { return "Vault" }
+func (a *App) Description() string {
+	return "Encrypted store for shared secrets, passwords, and sensitive notes."
+}
+
 //go:embed prompts/system_vault.tmpl
 var systemPromptText string
 
@@ -164,7 +169,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return buildVaultMCPTools(a.svc)
 }
 
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.svc == nil || a.pool == nil {
 		return
 	}

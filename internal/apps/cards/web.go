@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	webapp "github.com/mrdon/kit/web/app"
@@ -25,7 +26,7 @@ var cardsPageTmpl = template.Must(template.ParseFS(cardsTemplatesFS, "templates/
 //
 // The /app/assets/ prefix serves the shared Vite bundle (absolute asset
 // paths baked into the build). Everything else moved under /{slug}/.
-func registerCardsRoutes(mux *http.ServeMux, a *CardsApp) {
+func registerCardsRoutes(mux apps.Mux, a *CardsApp) {
 	if a.signer == nil {
 		slog.Warn("cards: session signer not configured, skipping HTTP route registration")
 		return

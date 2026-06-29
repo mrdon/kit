@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/web/chrome"
@@ -65,7 +66,7 @@ func (a *App) fillChrome(r *http.Request, m *formModel) {
 	m.Header = chrome.For(r, a.pool, "")
 }
 
-func (a *App) registerRoutes(mux *http.ServeMux) {
+func (a *App) registerRoutes(mux apps.Mux) {
 	if a.pool == nil {
 		slog.Warn("integrations: pool not set at route registration; routes skipped")
 		return

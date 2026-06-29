@@ -5,6 +5,7 @@ package github
 import (
 	"net/http"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 )
 
@@ -13,7 +14,7 @@ import (
 // surface of its own — the install button is rendered by whichever
 // app (today: netlify) needs GitHub access; it links here with
 // `return_to=<that-app's-settings-url>`.
-func registerGitHubRoutes(mux *http.ServeMux, a *App) {
+func registerGitHubRoutes(mux apps.Mux, a *App) {
 	page := func(h http.HandlerFunc) http.Handler {
 		tenantMW := auth.TenantFromPath(a.pool)
 		return auth.PageRoute(tenantMW(a.signer.Middleware(a.pool,

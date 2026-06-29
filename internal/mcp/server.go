@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,6 +41,10 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 	adminOnly, roleGated := collectToolVisibility()
 
+	// Populated by buildAllTools below; read at request time by the tool
+	// filter to hide a disabled app's tools from tools/list per tenant.
+	var appByTool map[string]string
+
 	// Builder-published tools ride on per-session tool maps
 	// (SessionWithTools) — the register/unregister hooks seed + tear down
 	// those maps, and publish/revoke fan-outs push list_changed
@@ -66,6 +71,9 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 						continue
 					}
 				}
+				if app := appByTool[t.Name]; app != "" && caller != nil && !apps.IsEnabled(ctx, caller.TenantID, app) {
+					continue
+				}
 				filtered = append(filtered, t)
 			}
 			return filtered
@@ -74,7 +82,8 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 
 	registerResources(sh.Server, pool, svc)
 
-	tools := buildAllTools(pool, svc, a, enc, sched, a.LLM())
+	tools, abt := buildAllTools(pool, svc, a, enc, sched, a.LLM())
+	appByTool = abt
 	sh.Server.AddTools(tools...)
 
 	toolNames := make([]string, len(tools))
@@ -90,7 +99,7 @@ func NewServer(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *
 // slice for server-level registration. Handlers resolve the caller per request.
 // llm is threaded in for handlers that do one-shot Claude calls (e.g. the
 // create_task classifier); groups that don't need it ignore the param.
-func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler, llm *anthropic.Client) []mcpserver.ServerTool {
+func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, enc *crypto.Encryptor, sched *scheduler.Scheduler, llm *anthropic.Client) ([]mcpserver.ServerTool, map[string]string) {
 	type handlerFn func(string, *pgxpool.Pool, *services.Services) mcpserver.ToolHandlerFunc
 	// Uniform shim so every handler can be invoked with the same arg set,
 	// regardless of whether it uses llm. Special-cased groups (JobTools)
@@ -128,17 +137,19 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 		}
 	}
 	// App-contributed tools already have their own schemas; inject + wrap
-	// them too so require_approval works consistently across surfaces.
-	for _, t := range apps.BuildMCPTools(pool, svc) {
-		out = append(out, wrapAppTool(t))
+	// them too so require_approval works consistently across surfaces. The
+	// appName threads per-tenant enablement gating into each handler.
+	appTools, appByTool := apps.BuildMCPTools(pool, svc)
+	for _, t := range appTools {
+		out = append(out, wrapAppTool(t, appByTool[t.Tool.Name]))
 	}
 
 	// run_task needs agent + enc + scheduler, registered separately from the standard loop
-	out = append(out, wrapAppTool(buildRunTaskTool(pool, svc, a, enc, sched)))
+	out = append(out, wrapAppTool(buildRunTaskTool(pool, svc, a, enc, sched), ""))
 	// get_job_status reads the session log a run_job call writes to.
-	out = append(out, wrapAppTool(buildGetJobStatusTool(pool, svc)))
+	out = append(out, wrapAppTool(buildGetJobStatusTool(pool, svc), ""))
 
-	return out
+	return out, appByTool
 }
 
 // wrapAppTool re-marshals the tool's already-registered schema with the
@@ -147,7 +158,7 @@ func buildAllTools(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent, e
 // RawInputSchema by mcp.NewToolWithRawSchema) rather than the typed
 // InputSchema struct, so we read RawInputSchema first and fall back to
 // marshaling InputSchema for tools built with mcp.NewTool.
-func wrapAppTool(t mcpserver.ServerTool) mcpserver.ServerTool {
+func wrapAppTool(t mcpserver.ServerTool, appName string) mcpserver.ServerTool {
 	var schemaBytes []byte
 	if len(t.Tool.RawInputSchema) > 0 {
 		schemaBytes = t.Tool.RawInputSchema
@@ -168,8 +179,25 @@ func wrapAppTool(t mcpserver.ServerTool) mcpserver.ServerTool {
 			}
 		}
 	}
-	t.Handler = gatedMCP(t.Tool.Name, t.Handler)
+	t.Handler = gatedMCP(t.Tool.Name, gateAppEnablement(appName, t.Handler))
 	return t
+}
+
+// gateAppEnablement rejects an app tool when the app is disabled for the
+// caller's tenant — call-time enforcement so disabling an app blocks its MCP
+// tools even if a client cached them from a stale tools/list. appName "" means
+// the tool isn't app-scoped (core scheduling tools), so it always runs.
+func gateAppEnablement(appName string, inner mcpserver.ToolHandlerFunc) mcpserver.ToolHandlerFunc {
+	if appName == "" || apps.IsCoreApp(appName) {
+		return inner
+	}
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		caller := auth.CallerFromContext(ctx)
+		if caller != nil && !apps.IsEnabled(ctx, caller.TenantID, appName) {
+			return mcp.NewToolResultError(fmt.Sprintf("the %s app is disabled for this workspace", appName)), nil
+		}
+		return inner(ctx, req)
+	}
 }
 
 // collectToolVisibility walks every core service ToolMeta group plus each

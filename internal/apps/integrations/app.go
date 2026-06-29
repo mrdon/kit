@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,6 +61,12 @@ func (a *App) Init(pool *pgxpool.Pool) {
 
 func (a *App) Name() string { return "integrations" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *App) DisplayName() string { return "Integrations" }
+func (a *App) Description() string {
+	return "Connect third-party services (Google, QuickBooks, and more)."
+}
+
 func (a *App) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
 }
@@ -82,7 +87,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return buildMCPTools(a)
 }
 
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	a.registerRoutes(mux)
 }
 

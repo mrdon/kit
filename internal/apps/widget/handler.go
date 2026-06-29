@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+
+	"github.com/mrdon/kit/internal/apps"
 )
 
 //go:embed static/*
@@ -27,7 +29,7 @@ func NewHandler(svc *Service) *Handler {
 
 // Register wires the widget routes onto the given mux. Call once at
 // startup after the service is constructed.
-func (h *Handler) Register(mux *http.ServeMux) {
+func (h *Handler) Register(mux apps.Mux) {
 	mux.Handle("GET /widget.js", h.staticAsset("static/widget.js", "application/javascript; charset=utf-8"))
 	mux.Handle("GET /widget.css", h.staticAsset("static/widget.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /widget/api/health", h.handleHealth)
@@ -94,6 +96,10 @@ func (h *Handler) handleOpen(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, err)
 		return
 	}
+	if !widgetEnabled(r, auth) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if err := h.Service.Open(r.Context(), OpenInput{
 		Auth:           auth,
 		ConversationID: req.ConversationID,
@@ -120,6 +126,10 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	auth, err := h.Service.Authenticate(r.Context(), req.Token, origin)
 	if err != nil {
 		writeAuthError(w, err)
+		return
+	}
+	if !widgetEnabled(r, auth) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -155,6 +165,16 @@ func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Warn("widget chat failed", "error", err)
 	}
+}
+
+// widgetEnabled reports whether the widget app is on for the token's tenant.
+// The public widget routes have no {slug}, so the generic route gate can't
+// reach them — this is where a disabled widget app stops serving its embed.
+func widgetEnabled(r *http.Request, auth *AuthResult) bool {
+	if auth == nil || auth.Tenant == nil {
+		return false
+	}
+	return apps.IsEnabled(r.Context(), auth.Tenant.ID, AppName)
 }
 
 func (h *Handler) handleCORSPreflight(w http.ResponseWriter, r *http.Request) {

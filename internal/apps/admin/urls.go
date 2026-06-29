@@ -5,10 +5,11 @@ package admin
 import (
 	"net/http"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 )
 
-func registerAdminRoutes(mux *http.ServeMux, a *App) {
+func registerAdminRoutes(mux apps.Mux, a *App) {
 	tenantMW := auth.TenantFromPath(a.pool)
 
 	// The integrations index moved into the React console at

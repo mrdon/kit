@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -215,6 +216,11 @@ func (s *CalendarService) SyncAllCalendars(ctx context.Context) error {
 	}
 	for i := range cals {
 		cal := cals[i]
+		// The sync runs process-wide; skip calendars whose tenant has
+		// disabled the calendar app.
+		if !apps.IsEnabled(ctx, cal.TenantID, AppName) {
+			continue
+		}
 		syncErr := s.syncOne(ctx, &cal)
 		if recErr := recordSyncResult(ctx, s.pool, cal.TenantID, cal.ID, syncErr); recErr != nil {
 			slog.Error("recording calendar sync result", "calendar_id", cal.ID, "error", recErr)

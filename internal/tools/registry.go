@@ -322,8 +322,17 @@ func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool
 	registerJobTools(r, isAdmin)
 	registerUserTools(r)
 
-	// App tools
+	// App tools — skip apps disabled for this tenant so the agent can't call
+	// them. caller may be nil in tests; IsEnabled treats the zero tenant as
+	// "everything enabled".
+	var tenantID uuid.UUID
+	if caller != nil {
+		tenantID = caller.TenantID
+	}
 	for _, a := range apps.All() {
+		if !apps.IsEnabled(ctx, tenantID, a.Name()) {
+			continue
+		}
 		a.RegisterAgentTools(ctx, r, caller, isAdmin)
 	}
 

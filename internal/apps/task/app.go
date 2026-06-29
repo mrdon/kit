@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -56,6 +55,10 @@ func (a *TaskApp) Init(pool *pgxpool.Pool) {
 
 func (a *TaskApp) Name() string { return "task" }
 
+// DisplayName and Description feed the admin Apps settings page.
+func (a *TaskApp) DisplayName() string { return "Tasks" }
+func (a *TaskApp) Description() string { return "Role-owned tasks, briefings, and the swipe feed." }
+
 func (a *TaskApp) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
 }
@@ -73,7 +76,7 @@ func (a *TaskApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcps
 	return buildTaskMCPTools(a.svc)
 }
 
-func (a *TaskApp) RegisterRoutes(mux *http.ServeMux) {
+func (a *TaskApp) RegisterRoutes(mux apps.Mux) {
 	if a.svc == nil || a.signer == nil {
 		return
 	}

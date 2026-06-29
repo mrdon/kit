@@ -94,6 +94,6 @@ func (a *App) RegisterMCPTools(pool *pgxpool.Pool, _ *services.Services) []mcpse
 	return buildMCPTools(a)
 }
 
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	mux.Handle("GET /{slug}/apps/attachment/{id}", http.HandlerFunc(a.handleServe))
 }

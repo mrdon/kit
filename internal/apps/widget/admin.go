@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
@@ -34,7 +35,7 @@ func NewAdminHandler(pool *pgxpool.Pool, signer *auth.SessionSigner, svc *servic
 
 // Register wires the console JSON routes onto the mux. All are admin-only
 // (console.AdminJSON enforces 401/403 + the X-Kit-Web CSRF header).
-func (h *AdminHandler) Register(mux *http.ServeMux) {
+func (h *AdminHandler) Register(mux apps.Mux) {
 	if h.signer == nil {
 		slog.Warn("widget admin handler: no session signer; routes not registered")
 		return

@@ -7,7 +7,6 @@ package email
 import (
 	"context"
 	"log/slog"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -51,6 +50,10 @@ func (a *App) Init(pool *pgxpool.Pool) {
 }
 
 func (a *App) Name() string { return "email" }
+
+// DisplayName and Description feed the admin Apps settings page.
+func (a *App) DisplayName() string { return "Email" }
+func (a *App) Description() string { return "Read and search a connected mailbox from the agent." }
 
 func (a *App) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
@@ -99,7 +102,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return buildEmailMCPTools(a)
 }
 
-func (a *App) RegisterRoutes(_ *http.ServeMux) {}
+func (a *App) RegisterRoutes(_ apps.Mux) {}
 
 func (a *App) CronJobs() []apps.CronJob { return nil }
 

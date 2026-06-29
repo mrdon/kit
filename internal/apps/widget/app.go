@@ -8,7 +8,6 @@ package widget
 import (
 	"context"
 	"log/slog"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -63,7 +62,17 @@ func (a *App) Init(pool *pgxpool.Pool) {
 // The widget's public surface lives at the top level (no slug prefix
 // since the tenant is in the token), and its admin surface lives at
 // /{slug}/widget — both wired in RegisterRoutes directly.
-func (a *App) Name() string { return "widget" }
+// AppName is the registry identifier, shared by Name() and the
+// per-tenant enablement checks elsewhere in the package.
+const AppName = "widget"
+
+func (a *App) Name() string { return AppName }
+
+// DisplayName and Description feed the admin Apps settings page.
+func (a *App) DisplayName() string { return "Website widget" }
+func (a *App) Description() string {
+	return "Embeddable chat widget that answers visitor questions on your site."
+}
 
 // SystemPrompt contributes nothing to the global agent prompt — the
 // widget agent has its own dedicated system prompt assembled via
@@ -100,7 +109,7 @@ func (a *App) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcp
 // (/widget.js, /widget/api/*) and the Slack-OAuth-gated admin routes
 // (/{slug}/widget*). Done in one place so main.go doesn't need to
 // know the widget package's URL structure.
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.agent == nil {
 		slog.Warn("widget app: agent not configured; routes not registered")
 		return

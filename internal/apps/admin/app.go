@@ -8,7 +8,6 @@ package admin
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -37,7 +36,7 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 }
 
-func (a *App) Name() string { return "admin" }
+func (a *App) Name() string { return apps.AppAdmin }
 
 func (a *App) SystemPrompt() string { return "" }
 
@@ -50,7 +49,7 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return nil
 }
 
-func (a *App) RegisterRoutes(mux *http.ServeMux) {
+func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.pool == nil {
 		return
 	}

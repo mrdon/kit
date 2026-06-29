@@ -2,7 +2,6 @@ package coordination
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -89,7 +88,17 @@ func (a *CoordinationApp) Init(pool *pgxpool.Pool) {
 	a.engine = newEngine(pool, a)
 }
 
-func (a *CoordinationApp) Name() string { return "coordination" }
+// AppName is the registry identifier, shared by Name() and the
+// per-tenant enablement checks elsewhere in the package.
+const AppName = "coordination"
+
+func (a *CoordinationApp) Name() string { return AppName }
+
+// DisplayName and Description feed the admin Apps settings page.
+func (a *CoordinationApp) DisplayName() string { return "Coordination" }
+func (a *CoordinationApp) Description() string {
+	return "Schedule meetings by polling participants for availability."
+}
 
 func (a *CoordinationApp) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
@@ -108,7 +117,7 @@ func (a *CoordinationApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services
 	return buildCoordinationMCPTools(a.svc)
 }
 
-func (a *CoordinationApp) RegisterRoutes(_ *http.ServeMux) {
+func (a *CoordinationApp) RegisterRoutes(_ apps.Mux) {
 	// No HTTP routes for coordination.
 }
 

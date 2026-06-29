@@ -8,12 +8,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps/cards/shared"
 	"github.com/mrdon/kit/internal/crypto"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -21,6 +23,23 @@ import (
 // Defined here to avoid an import cycle between apps and tools.
 type AgentToolRegisterer interface {
 	RegisterDef(name, description string, schema map[string]any, adminOnly bool, handler any)
+}
+
+// Mux is the subset of *http.ServeMux that apps use to register routes.
+// RegisterAllRoutes passes a per-tenant enablement-gating wrapper instead of
+// the raw mux so disabling an app cuts off every route it contributes.
+// *http.ServeMux satisfies this directly.
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
+// DescribableApp is an optional interface an App can implement to provide
+// human-facing metadata for the admin apps-settings UI. Apps that don't
+// implement it fall back to a title-cased Name() with no description.
+type DescribableApp interface {
+	DisplayName() string
+	Description() string
 }
 
 // App defines the interface for a modular feature that contributes tools,
@@ -55,7 +74,13 @@ type App interface {
 	// /{slug}/apps/<app>/... is reserved for non-page, non-data endpoints
 	// (OAuth/redirect bridges, binary serves). The prefix isn't enforced —
 	// each app builds its own paths and middleware chain.
-	RegisterRoutes(mux *http.ServeMux)
+	//
+	// The mux is a per-tenant enablement gate (see RegisterAllRoutes): any
+	// pattern containing {slug} is automatically 404'd for tenants that have
+	// disabled this app. Public, tenant-less routes (no {slug}) pass through
+	// ungated — apps that serve those must enforce enablement themselves once
+	// they resolve a tenant (e.g. the widget from its token).
+	RegisterRoutes(mux Mux)
 
 	// CronJobs returns periodic jobs this app needs. Nil if none.
 	CronJobs() []CronJob
@@ -117,8 +142,10 @@ func All() []App {
 	return registry
 }
 
-// Init lets all registered apps initialize their services after DB is ready.
+// Init lets all registered apps initialize their services after DB is ready,
+// and wires the per-tenant enablement gate.
 func Init(pool *pgxpool.Pool) {
+	initEnablement(pool)
 	for _, a := range registry {
 		if initer, ok := a.(interface{ Init(pool *pgxpool.Pool) }); ok {
 			initer.Init(pool)
@@ -126,23 +153,75 @@ func Init(pool *pgxpool.Pool) {
 	}
 }
 
-// RegisterAllRoutes registers HTTP routes for all apps on the given mux.
-func RegisterAllRoutes(mux *http.ServeMux) {
+// RegisterAllRoutes registers HTTP routes for all apps on the given mux. Each
+// app's routes are wrapped in a gatingMux so that {slug}-scoped patterns are
+// 404'd for tenants that have disabled the app — guaranteeing every route an
+// app registers (now or later) honours enablement without per-app changes.
+// Core apps register on the raw mux (never gated).
+func RegisterAllRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
 	for _, a := range registry {
-		a.RegisterRoutes(mux)
+		if CoreApps[a.Name()] {
+			a.RegisterRoutes(mux)
+			continue
+		}
+		a.RegisterRoutes(&gatingMux{real: mux, pool: pool, appName: a.Name()})
 	}
+}
+
+// gatingMux wraps a real mux. For patterns that carry a {slug} (tenant-scoped),
+// it interposes a handler that resolves the tenant and returns 404 when the app
+// is disabled for that tenant. Tenant-less patterns are registered unchanged.
+type gatingMux struct {
+	real    *http.ServeMux
+	pool    *pgxpool.Pool
+	appName string
+}
+
+func (g *gatingMux) Handle(pattern string, handler http.Handler) {
+	g.real.Handle(pattern, g.gate(pattern, handler))
+}
+
+func (g *gatingMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	g.real.Handle(pattern, g.gate(pattern, http.HandlerFunc(handler)))
+}
+
+func (g *gatingMux) gate(pattern string, next http.Handler) http.Handler {
+	if !strings.Contains(pattern, "{slug}") {
+		return next // tenant-less route: can't resolve a tenant here, pass through
+	}
+	appName := g.appName
+	pool := g.pool
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		tenant, err := models.GetTenantBySlug(r.Context(), pool, slug)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		// Unknown slug falls through to the handler's own middleware, which
+		// 404s consistently. Only a known-but-disabled tenant is gated here.
+		if tenant != nil && !IsEnabled(r.Context(), tenant.ID, appName) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // BuildMCPTools builds MCP tools from all apps. Tools are caller-agnostic
 // at registration — each handler resolves the caller from ctx per request.
-func BuildMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool {
+// It also returns a toolName→appName map so the MCP server can hide and reject
+// an app's tools for tenants that have disabled it (discovery + call-time).
+func BuildMCPTools(pool *pgxpool.Pool, svc *services.Services) ([]mcpserver.ServerTool, map[string]string) {
 	slog.Info("building app MCP tools", "registered_apps", len(registry))
 	var allTools []mcpserver.ServerTool
+	appByTool := make(map[string]string)
 	for _, a := range registry {
 		appTools := a.RegisterMCPTools(pool, svc)
 		toolNames := make([]string, len(appTools))
 		for i, t := range appTools {
 			toolNames[i] = t.Tool.Name
+			appByTool[t.Tool.Name] = a.Name()
 		}
 		slog.Info("app MCP tools registered",
 			"app", a.Name(),
@@ -151,13 +230,18 @@ func BuildMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.Serve
 		)
 		allTools = append(allTools, appTools...)
 	}
-	return allTools
+	return allTools, appByTool
 }
 
-// SystemPrompts returns concatenated system prompt contributions from all apps.
-func SystemPrompts() string {
+// SystemPromptsFor returns concatenated system prompt contributions from every
+// app enabled for the given tenant. Disabled apps contribute nothing, so the
+// agent is never told about tools it can't call.
+func SystemPromptsFor(ctx context.Context, tenantID uuid.UUID) string {
 	var b strings.Builder
 	for _, a := range registry {
+		if !IsEnabled(ctx, tenantID, a.Name()) {
+			continue
+		}
 		if p := a.SystemPrompt(); p != "" {
 			b.WriteString("\n\n")
 			b.WriteString(p)
