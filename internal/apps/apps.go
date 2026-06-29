@@ -50,7 +50,11 @@ type App interface {
 	// server startup instead of per session.
 	RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services) []mcpserver.ServerTool
 
-	// RegisterRoutes adds HTTP routes (convention: /apps/{name}/...).
+	// RegisterRoutes adds HTTP routes. Conventions: SPA pages live in the
+	// React console at /{slug}/web/...; JSON APIs at /{slug}/api/<app>/...;
+	// /{slug}/apps/<app>/... is reserved for non-page, non-data endpoints
+	// (OAuth/redirect bridges, binary serves). The prefix isn't enforced —
+	// each app builds its own paths and middleware chain.
 	RegisterRoutes(mux *http.ServeMux)
 
 	// CronJobs returns periodic jobs this app needs. Nil if none.

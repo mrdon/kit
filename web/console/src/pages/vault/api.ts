@@ -1,10 +1,10 @@
 import { SLUG } from '../../workspace';
 
-// The vault JSON API is unchanged from the vanilla client: it lives at
-// /{slug}/apps/vault/api/* and gates on the X-Kit-Vault CSRF header (NOT
-// X-Kit-Web — these are the existing vault endpoints). The console reuses
-// them as-is; only the rendering moved to React.
-const API_BASE = `/${SLUG}/apps/vault/api`;
+// The vault JSON API lives under the shared /{slug}/api/... namespace
+// (like every other feature app) and gates on the X-Kit-Vault CSRF header
+// (NOT X-Kit-Web — vault keeps its own header). Only the reveal bridge
+// still lives under /apps/vault.
+const API_BASE = `/${SLUG}/api/vault`;
 
 export async function vaultApi<T = any>(
   method: string,

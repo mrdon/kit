@@ -87,35 +87,39 @@ func registerVaultRoutes(mux *http.ServeMux, a *App) {
 		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
 	}
 
-	// Admin-only setup, rotate, nuke (browser-driven crypto). The UI for
-	// these lives in the React console (/{slug}/web/vault); only the JSON
-	// API the console posts to lives here.
-	mux.Handle("POST /{slug}/apps/vault/api/setup", wrap(a.handleSetupPost))
-	mux.Handle("POST /{slug}/apps/vault/api/rotate", wrap(a.handleRotatePost))
-	mux.Handle("POST /{slug}/apps/vault/api/nuke", wrap(a.handleNukePost))
+	// The vault UI lives in the React console (/{slug}/web/vault); only
+	// the JSON API the console posts to lives here. It sits under the
+	// shared /{slug}/api/... namespace like every other feature app's
+	// API (task, expense, netlify, widget) — NOT under /apps/. The one
+	// exception is the reveal bridge below, which is a redirect, not API.
+
+	// Admin-only setup, rotate, nuke (browser-driven crypto).
+	mux.Handle("POST /{slug}/api/vault/setup", wrap(a.handleSetupPost))
+	mux.Handle("POST /{slug}/api/vault/rotate", wrap(a.handleRotatePost))
+	mux.Handle("POST /{slug}/api/vault/nuke", wrap(a.handleNukePost))
 
 	// Unlock / lock / status
-	mux.Handle("POST /{slug}/apps/vault/api/unlock", wrap(a.handleUnlock))
-	mux.Handle("POST /{slug}/apps/vault/lock", wrap(a.handleLock))
-	mux.Handle("GET /{slug}/apps/vault/api/status", get(a.handleStatus))
+	mux.Handle("POST /{slug}/api/vault/unlock", wrap(a.handleUnlock))
+	mux.Handle("POST /{slug}/api/vault/lock", wrap(a.handleLock))
+	mux.Handle("GET /{slug}/api/vault/status", get(a.handleStatus))
 
 	// Principal listing — populates the "who can see this" selector
 	// in the React add / reveal panels.
-	mux.Handle("GET /{slug}/apps/vault/api/principals", get(a.handlePrincipals))
+	mux.Handle("GET /{slug}/api/vault/principals", get(a.handlePrincipals))
 
 	// Reveal bridge — the deep-link-aware wrapper lets a Slack-issued
 	// one-shot token mint a session without an OAuth round-trip, then
 	// the handler bounces into the React vault entry. This is the only
-	// surviving non-API route; it renders no HTML of its own.
+	// route still under /apps/vault; it renders no HTML of its own.
 	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", revealPage(a.handleRevealPage))
 
 	// Entries CRUD (browser-driven; ciphertext on the wire)
-	mux.Handle("GET /{slug}/apps/vault/api/entries", get(a.handleListEntries))
-	mux.Handle("POST /{slug}/apps/vault/api/entries", wrap(a.handleCreateEntry))
-	mux.Handle("GET /{slug}/apps/vault/api/entries/{entry_id}", get(a.handleGetEntry))
-	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleUpdateEntry))
-	mux.Handle("PUT /{slug}/apps/vault/api/entries/{entry_id}/role", wrap(a.handleSetEntryRole))
-	mux.Handle("DELETE /{slug}/apps/vault/api/entries/{entry_id}", wrap(a.handleDeleteEntry))
+	mux.Handle("GET /{slug}/api/vault/entries", get(a.handleListEntries))
+	mux.Handle("POST /{slug}/api/vault/entries", wrap(a.handleCreateEntry))
+	mux.Handle("GET /{slug}/api/vault/entries/{entry_id}", get(a.handleGetEntry))
+	mux.Handle("PUT /{slug}/api/vault/entries/{entry_id}", wrap(a.handleUpdateEntry))
+	mux.Handle("PUT /{slug}/api/vault/entries/{entry_id}/role", wrap(a.handleSetEntryRole))
+	mux.Handle("DELETE /{slug}/api/vault/entries/{entry_id}", wrap(a.handleDeleteEntry))
 }
 
 // requireJSON rejects state-changing requests that lack BOTH the

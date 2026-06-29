@@ -61,7 +61,7 @@ type Service struct {
 	cards CardSurface
 
 	// baseURL is Kit's external origin (e.g. "https://kit.twdata.org"),
-	// wired via Configure. Tool handlers prepend it to /{slug}/apps/vault/*
+	// wired via Configure. Tool handlers prepend it to /{slug}/web/vault
 	// paths so the agent's response includes a fully-qualified URL —
 	// without it the LLM may hallucinate a host when rendering the path.
 	baseURL string

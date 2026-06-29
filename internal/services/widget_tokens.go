@@ -137,7 +137,7 @@ func (s *WidgetTokenService) Revoke(ctx context.Context, c *Caller, tokenID uuid
 // parameter so the form pre-fills.
 func (s *WidgetTokenService) AdminURL(tenantSlug, origin string) string {
 	base := strings.TrimRight(s.baseURL, "/")
-	u := base + "/" + tenantSlug + "/apps/widget"
+	u := base + "/" + tenantSlug + "/web/admin/widget"
 	if origin != "" {
 		u += "?origin=" + url.QueryEscape(origin)
 	}
