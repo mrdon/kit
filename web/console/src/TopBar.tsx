@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useMe } from './me';
-import { ADMIN_SECTIONS, PRIMARY_SECTIONS } from './nav';
+import { ADMIN_SECTIONS, PRIMARY_SECTIONS, visibleSections } from './nav';
 
 // TopBar is the console's persistent chrome — an indigo bar with the
 // workspace identity + section nav on the left and the signed-in user +
@@ -9,7 +9,9 @@ import { ADMIN_SECTIONS, PRIMARY_SECTIONS } from './nav';
 // console feels like the same product.
 export default function TopBar() {
   const me = useMe();
-  const showAdmin = me?.is_admin && ADMIN_SECTIONS.length > 0;
+  const primary = visibleSections(PRIMARY_SECTIONS, me?.disabled_apps);
+  const adminSections = visibleSections(ADMIN_SECTIONS, me?.disabled_apps);
+  const showAdmin = me?.is_admin && adminSections.length > 0;
 
   return (
     <header className="topbar">
@@ -30,7 +32,7 @@ export default function TopBar() {
           <NavLink to="/" end className="topbar-link">
             Home
           </NavLink>
-          {PRIMARY_SECTIONS.map((s) => (
+          {primary.map((s) => (
             <NavLink key={s.to} to={s.to} className="topbar-link">
               {s.label}
             </NavLink>

@@ -6,3 +6,10 @@ import type { Me } from './api';
 export const MeContext = createContext<Me | null>(null);
 
 export const useMe = (): Me | null => useContext(MeContext);
+
+// MeRefreshContext exposes a re-fetch of /me so a page that changes workspace
+// state (e.g. toggling apps on the Apps settings page) can refresh the shared
+// `me` — updating nav/launcher live without a full page reload.
+export const MeRefreshContext = createContext<() => void>(() => {});
+
+export const useRefreshMe = (): (() => void) => useContext(MeRefreshContext);

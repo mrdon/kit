@@ -82,6 +82,8 @@ export interface Me {
   workspace_name: string;
   workspace_icon_url: string;
   logout_url: string;
+  // App names disabled for this workspace — drives nav/launcher filtering.
+  disabled_apps: string[];
 }
 
 export interface Integration {

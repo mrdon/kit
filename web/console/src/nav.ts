@@ -11,6 +11,10 @@ export interface Section {
   label: string;
   blurb: string;
   admin?: boolean;
+  // app is the registry name of the feature app this section belongs to.
+  // When that app is disabled for the workspace, the section is hidden.
+  // Omit for core surfaces (Skills, Jobs, Roles, Apps) that are always shown.
+  app?: string;
 }
 
 export const SECTIONS: Section[] = [
@@ -18,16 +22,19 @@ export const SECTIONS: Section[] = [
     to: '/tasks',
     label: 'Tasks',
     blurb: 'List and board for everything your roles own.',
+    app: 'task',
   },
   {
     to: '/expenses',
     label: 'Expenses',
     blurb: 'File and approve expense reports with receipts.',
+    app: 'expense',
   },
   {
     to: '/vault',
     label: 'Vault',
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',
+    app: 'vault',
   },
   {
     to: '/skills',
@@ -50,6 +57,7 @@ export const SECTIONS: Section[] = [
     label: 'Expense settings',
     blurb: 'Choose which role approves expense reports.',
     admin: true,
+    app: 'expense',
   },
   {
     to: '/admin/apps',
@@ -62,20 +70,34 @@ export const SECTIONS: Section[] = [
     label: 'Integrations',
     blurb: 'Connect Netlify, GitHub, and other services.',
     admin: true,
+    app: 'integrations',
   },
   {
     to: '/admin/netlify',
     label: 'Website',
     blurb: 'Connect Netlify + GitHub so the team can request site changes.',
     admin: true,
+    app: 'netlify',
   },
   {
     to: '/admin/widget',
     label: 'Chat widget',
     blurb: 'Mint and revoke embed tokens for the website chat widget.',
     admin: true,
+    app: 'widget',
   },
 ];
+
+// visibleSections drops sections whose owning app is disabled for the
+// workspace. Core sections (no `app`) always pass. The caller passes the
+// `disabled_apps` list from /me.
+export function visibleSections(
+  sections: Section[],
+  disabledApps: string[] | undefined,
+): Section[] {
+  const disabled = new Set(disabledApps ?? []);
+  return sections.filter((s) => !s.app || !disabled.has(s.app));
+}
 
 // The top nav and home launcher show only the primary sections; the
 // admin-only ones (roles, integrations, …) are infrequent setup, so they're

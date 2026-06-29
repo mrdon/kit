@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
@@ -39,12 +40,13 @@ func (a *App) handleShell(w http.ResponseWriter, r *http.Request) {
 // the logout URL feed the top bar (mirrors the chrome.Header the vanilla
 // pages render).
 type meResponse struct {
-	UserID        string `json:"user_id"`
-	DisplayName   string `json:"display_name"`
-	IsAdmin       bool   `json:"is_admin"`
-	WorkspaceName string `json:"workspace_name"`
-	WorkspaceIcon string `json:"workspace_icon_url"`
-	LogoutURL     string `json:"logout_url"`
+	UserID        string   `json:"user_id"`
+	DisplayName   string   `json:"display_name"`
+	IsAdmin       bool     `json:"is_admin"`
+	WorkspaceName string   `json:"workspace_name"`
+	WorkspaceIcon string   `json:"workspace_icon_url"`
+	LogoutURL     string   `json:"logout_url"`
+	DisabledApps  []string `json:"disabled_apps"`
 }
 
 func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +66,15 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	if wsName == "" {
 		wsName = tenant.Slug
 	}
+	// Disabled apps drive client-side nav/launcher filtering so a turned-off
+	// app's tiles and links disappear for everyone (server still 404s its
+	// routes regardless). Best-effort: on error we just show everything.
+	disabled := make([]string, 0)
+	if set, err := apps.DisabledApps(r.Context(), caller.TenantID); err == nil {
+		for name := range set {
+			disabled = append(disabled, name)
+		}
+	}
 	writeJSON(w, http.StatusOK, meResponse{
 		UserID:        caller.UserID.String(),
 		DisplayName:   name,
@@ -71,6 +82,7 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 		WorkspaceName: wsName,
 		WorkspaceIcon: "/" + tenant.Slug + "/icon-192.png",
 		LogoutURL:     "/" + tenant.Slug + "/logout",
+		DisabledApps:  disabled,
 	})
 }
 

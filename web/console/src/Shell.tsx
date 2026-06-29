@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { api, type Me } from './api';
-import { MeContext } from './me';
+import { MeContext, MeRefreshContext } from './me';
 import TopBar from './TopBar';
 import ConsoleChat from './ConsoleChat';
 import { ChatContextProvider } from './chatContext';
@@ -13,19 +13,25 @@ import { ChatContextProvider } from './chatContext';
 export default function Shell() {
   const [me, setMe] = useState<Me | null>(null);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     api.me().then(setMe).catch(() => setMe(null));
   }, []);
 
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   return (
     <MeContext.Provider value={me}>
-      <ChatContextProvider>
-        <TopBar />
-        <main className="content">
-          <Outlet />
-        </main>
-        <ConsoleChat />
-      </ChatContextProvider>
+      <MeRefreshContext.Provider value={refresh}>
+        <ChatContextProvider>
+          <TopBar />
+          <main className="content">
+            <Outlet />
+          </main>
+          <ConsoleChat />
+        </ChatContextProvider>
+      </MeRefreshContext.Provider>
     </MeContext.Provider>
   );
 }

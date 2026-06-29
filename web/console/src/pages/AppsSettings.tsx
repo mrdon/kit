@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type WorkspaceApp } from '../api';
+import { useRefreshMe } from '../me';
 import { useSetChatContext } from '../chatContext';
 
 // Admin-only page: turn feature apps on or off for the whole workspace.
@@ -8,9 +9,12 @@ import { useSetChatContext } from '../chatContext';
 // just its UI. Core apps (console, admin) are always on and not shown here.
 export default function AppsSettings() {
   useSetChatContext('the admin Apps page (enable/disable features per workspace)');
+  const refreshMe = useRefreshMe();
   const [rows, setRows] = useState<WorkspaceApp[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     api
@@ -18,6 +22,13 @@ export default function AppsSettings() {
       .then((all) => setRows(all.filter((a) => !a.core)))
       .catch((e) => setErr(e.message));
   }, []);
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 3000);
+  };
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   const toggle = async (app: WorkspaceApp) => {
     const next = !app.enabled;
@@ -29,6 +40,9 @@ export default function AppsSettings() {
     );
     try {
       await api.setApp(app.name, next);
+      flash(`${app.display_name} turned ${next ? 'on' : 'off'}.`);
+      // Refresh shared /me so the top nav + launcher update live.
+      refreshMe();
     } catch (e) {
       setErr((e as Error).message);
       setRows((rs) =>
@@ -60,6 +74,7 @@ export default function AppsSettings() {
       </div>
 
       {err && <p className="banner banner-error">{err}</p>}
+      {toast && <p className="banner banner-ok">{toast}</p>}
       {!rows && !err && <p className="muted">Loading…</p>}
 
       <section className="card-list">

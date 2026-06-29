@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
-import { ADMIN_SECTIONS } from '../nav';
+import { ADMIN_SECTIONS, visibleSections } from '../nav';
+import { useMe } from '../me';
 import { useSetChatContext } from '../chatContext';
 
 // The Admin area groups the infrequent, admin-only setup surfaces (roles,
@@ -8,6 +9,8 @@ import { useSetChatContext } from '../chatContext';
 // routes and enforce admin access server-side.
 export default function Admin() {
   useSetChatContext('the Admin area (workspace setup)');
+  const me = useMe();
+  const sections = visibleSections(ADMIN_SECTIONS, me?.disabled_apps);
   return (
     <div className="page">
       <div className="page-head">
@@ -22,7 +25,7 @@ export default function Admin() {
         </p>
       </div>
       <section className="tile-grid">
-        {ADMIN_SECTIONS.map((s) => (
+        {sections.map((s) => (
           <Link key={s.to} to={s.to} className="tile">
             <span className="tile-title">{s.label}</span>
             <span className="tile-blurb">{s.blurb}</span>

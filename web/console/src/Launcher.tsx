@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useMe } from './me';
-import { ADMIN_SECTIONS, PRIMARY_SECTIONS } from './nav';
+import { ADMIN_SECTIONS, PRIMARY_SECTIONS, visibleSections } from './nav';
 import { useSetChatContext } from './chatContext';
 
 // The launcher renders a tile per primary section, plus a single Admin tile
@@ -9,7 +9,9 @@ import { useSetChatContext } from './chatContext';
 export default function Launcher() {
   useSetChatContext('the console home page');
   const me = useMe();
-  const showAdmin = me?.is_admin && ADMIN_SECTIONS.length > 0;
+  const primary = visibleSections(PRIMARY_SECTIONS, me?.disabled_apps);
+  const adminSections = visibleSections(ADMIN_SECTIONS, me?.disabled_apps);
+  const showAdmin = me?.is_admin && adminSections.length > 0;
 
   return (
     <div className="page">
@@ -20,7 +22,7 @@ export default function Launcher() {
         </p>
       </div>
       <section className="tile-grid">
-        {PRIMARY_SECTIONS.map((s) => (
+        {primary.map((s) => (
           <Link key={s.to} to={s.to} className="tile">
             <span className="tile-title">{s.label}</span>
             <span className="tile-blurb">{s.blurb}</span>
