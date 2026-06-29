@@ -116,6 +116,13 @@ func (a *App) Init(pool *pgxpool.Pool) {
 
 func (a *App) Name() string { return "builder" }
 
+// DisplayName and Description mark builder as a toggleable feature — an admin
+// can turn off in-tenant app-building entirely. They also feed the Apps page.
+func (a *App) DisplayName() string { return "App builder" }
+func (a *App) Description() string {
+	return "Let admins build tenant-scoped apps from sandboxed scripts and schedules."
+}
+
 // SystemPrompt is intentionally empty. Two reasons:
 //   - Builder apps run as tenant-scoped scripts and should not leak into
 //     every user's agent turn (prompt bloat, cross-tenant noise).

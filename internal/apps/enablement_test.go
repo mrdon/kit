@@ -24,10 +24,23 @@ func enablementTenant(t *testing.T, ctx context.Context, pool *pgxpool.Pool) uui
 	return tenant.ID
 }
 
+// withFeatures sets the toggleable-feature set for a test (the apps package
+// unit test has an empty registry, so initEnablement leaves it empty) and
+// restores it afterward.
+func withFeatures(t *testing.T, names ...string) {
+	t.Helper()
+	featureApps = make(map[string]bool, len(names))
+	for _, n := range names {
+		featureApps[n] = true
+	}
+	t.Cleanup(func() { featureApps = nil })
+}
+
 func TestIsEnabledDefaultsOn(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	initEnablement(pool)
+	withFeatures(t, "vault")
 	t.Cleanup(func() { enablement = nil })
 
 	tenantID := enablementTenant(t, ctx, pool)
@@ -42,6 +55,7 @@ func TestSetEnabledDisableAndReenable(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	initEnablement(pool)
+	withFeatures(t, "vault", "expense")
 	t.Cleanup(func() { enablement = nil })
 
 	tenantID := enablementTenant(t, ctx, pool)
@@ -69,28 +83,30 @@ func TestSetEnabledDisableAndReenable(t *testing.T) {
 	}
 }
 
-func TestCoreAppsAlwaysEnabled(t *testing.T) {
+func TestNonFeatureAppsAlwaysEnabled(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	initEnablement(pool)
+	withFeatures(t, "vault") // only vault is a feature; console/attachment are core
 	t.Cleanup(func() { enablement = nil })
 
 	tenantID := enablementTenant(t, ctx, pool)
 
-	// Core apps cannot be disabled.
-	if err := SetEnabled(ctx, tenantID, AppConsole, false); !errors.Is(err, ErrCoreApp) {
-		t.Fatalf("expected ErrCoreApp disabling console, got %v", err)
+	// A non-feature (core) app cannot be toggled and is always enabled.
+	if err := SetEnabled(ctx, tenantID, AppConsole, false); !errors.Is(err, ErrNotToggleable) {
+		t.Fatalf("expected ErrNotToggleable disabling console, got %v", err)
 	}
 	if !IsEnabled(ctx, tenantID, AppConsole) {
 		t.Fatal("console must always be enabled")
 	}
-	if !IsEnabled(ctx, tenantID, AppAdmin) {
-		t.Fatal("admin must always be enabled")
+	if !IsEnabled(ctx, tenantID, "attachment") {
+		t.Fatal("attachment (core) must always be enabled")
 	}
 }
 
 func TestIsEnabledZeroTenantAndUnconfigured(t *testing.T) {
 	ctx := context.Background()
+	withFeatures(t, "vault") // vault IS a feature, so we exercise the real paths
 	// Unconfigured gate (no Init) → everything enabled so test paths work.
 	enablement = nil
 	if !IsEnabled(ctx, uuid.New(), "vault") {
@@ -99,6 +115,7 @@ func TestIsEnabledZeroTenantAndUnconfigured(t *testing.T) {
 
 	pool := testdb.Open(t)
 	initEnablement(pool)
+	withFeatures(t, "vault") // initEnablement rebuilt the (empty) set; restore vault
 	t.Cleanup(func() { enablement = nil })
 	// Zero tenant (no caller) → enabled.
 	if !IsEnabled(ctx, uuid.Nil, "vault") {

@@ -121,7 +121,7 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
 - **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
-- **Apps** — admin-only page to turn features (vault, expenses, voting, calendar, and so on) on or off for the whole workspace. Disabling an app removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. The console and admin tooling can't be disabled.
+- **Apps** — admin-only page to turn features (vault, expenses, voting, calendar, app builder, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
 - **Integrations / Website / Chat widget** — admin-only setup pages for Netlify, GitHub, and the website chat widget.
 
 It works alongside Slack and the feed, not instead of them.

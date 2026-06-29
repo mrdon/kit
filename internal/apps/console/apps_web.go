@@ -9,14 +9,13 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 )
 
-// appRow is the JSON shape the console Apps settings page renders. Core apps
-// (console, admin) are always enabled and not toggleable — the UI greys them.
+// appRow is the JSON shape the console Apps settings page renders. The list is
+// only toggleable feature apps; core infrastructure is omitted by Catalog.
 type appRow struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	Description string `json:"description"`
 	Enabled     bool   `json:"enabled"`
-	Core        bool   `json:"core"`
 }
 
 func (a *App) handleAppsList(w http.ResponseWriter, r *http.Request) {
@@ -37,8 +36,7 @@ func (a *App) handleAppsList(w http.ResponseWriter, r *http.Request) {
 			Name:        info.Name,
 			DisplayName: info.DisplayName,
 			Description: info.Description,
-			Enabled:     info.Core || !disabled[info.Name],
-			Core:        info.Core,
+			Enabled:     !disabled[info.Name],
 		})
 	}
 	writeJSON(w, http.StatusOK, rows)
@@ -61,7 +59,7 @@ func (a *App) handleAppSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := apps.SetEnabled(r.Context(), caller.TenantID, name, req.Enabled); err != nil {
-		if errors.Is(err, apps.ErrCoreApp) {
+		if errors.Is(err, apps.ErrNotToggleable) {
 			http.Error(w, "this app cannot be disabled", http.StatusBadRequest)
 			return
 		}

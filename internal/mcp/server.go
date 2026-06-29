@@ -185,10 +185,10 @@ func wrapAppTool(t mcpserver.ServerTool, appName string) mcpserver.ServerTool {
 
 // gateAppEnablement rejects an app tool when the app is disabled for the
 // caller's tenant — call-time enforcement so disabling an app blocks its MCP
-// tools even if a client cached them from a stale tools/list. appName "" means
-// the tool isn't app-scoped (core scheduling tools), so it always runs.
+// tools even if a client cached them from a stale tools/list. Tools belonging
+// to non-toggleable (core) apps or to no app at all always run.
 func gateAppEnablement(appName string, inner mcpserver.ToolHandlerFunc) mcpserver.ToolHandlerFunc {
-	if appName == "" || apps.IsCoreApp(appName) {
+	if !apps.IsToggleable(appName) {
 		return inner
 	}
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

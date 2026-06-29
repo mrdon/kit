@@ -153,14 +153,14 @@ func Init(pool *pgxpool.Pool) {
 	}
 }
 
-// RegisterAllRoutes registers HTTP routes for all apps on the given mux. Each
-// app's routes are wrapped in a gatingMux so that {slug}-scoped patterns are
-// 404'd for tenants that have disabled the app — guaranteeing every route an
-// app registers (now or later) honours enablement without per-app changes.
-// Core apps register on the raw mux (never gated).
+// RegisterAllRoutes registers HTTP routes for all apps on the given mux.
+// Toggleable feature apps get their routes wrapped in a gatingMux so that
+// {slug}-scoped patterns are 404'd for tenants that have disabled the app —
+// guaranteeing every route the app registers (now or later) honours enablement
+// without per-app changes. Core infrastructure apps register on the raw mux.
 func RegisterAllRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
 	for _, a := range registry {
-		if CoreApps[a.Name()] {
+		if !IsToggleable(a.Name()) {
 			a.RegisterRoutes(mux)
 			continue
 		}

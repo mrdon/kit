@@ -438,7 +438,6 @@ export interface WorkspaceApp {
   display_name: string;
   description: string;
   enabled: boolean;
-  core: boolean;
 }
 
 export const api = {

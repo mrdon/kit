@@ -19,7 +19,7 @@ export default function AppsSettings() {
   useEffect(() => {
     api
       .apps()
-      .then((all) => setRows(all.filter((a) => !a.core)))
+      .then(setRows)
       .catch((e) => setErr(e.message));
   }, []);
 

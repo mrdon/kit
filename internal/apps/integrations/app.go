@@ -61,11 +61,9 @@ func (a *App) Init(pool *pgxpool.Pool) {
 
 func (a *App) Name() string { return "integrations" }
 
-// DisplayName and Description feed the admin Apps settings page.
-func (a *App) DisplayName() string { return "Integrations" }
-func (a *App) Description() string {
-	return "Connect third-party services (Google, QuickBooks, and more)."
-}
+// integrations is core infrastructure — the host registry other apps register
+// connectors into — so it deliberately does NOT implement DescribableApp and is
+// never shown as a toggleable feature.
 
 func (a *App) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)

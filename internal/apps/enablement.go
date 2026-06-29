@@ -13,32 +13,34 @@ import (
 	"github.com/mrdon/kit/internal/models"
 )
 
-// ErrCoreApp is returned when a caller tries to toggle a core app.
-var ErrCoreApp = errors.New("core apps cannot be disabled")
+// ErrNotToggleable is returned when a caller tries to enable/disable an app
+// that isn't a user-facing feature (core infrastructure like console, admin,
+// attachment, cards, integrations).
+var ErrNotToggleable = errors.New("app is not toggleable")
 
 // ErrEnablementUnconfigured is returned when SetEnabled runs before Init.
 var ErrEnablementUnconfigured = errors.New("app enablement is not configured")
 
-// Core app names. These host the web console and the admin tooling (including
-// the apps-enablement page itself), so they can never be disabled. The owning
-// packages reference these in their Name() to keep a single source of truth.
+// Canonical core app names, referenced by the owning packages' Name() so the
+// strings live in one place. These are core infrastructure (never toggleable),
+// but so are attachment/cards/integrations — coreness is determined by NOT
+// declaring feature metadata (see featureApps), not by this list.
 const (
 	AppConsole = "console"
 	AppAdmin   = "admin"
 )
 
-// CoreApps are never disableable. IsEnabled always reports them enabled, and
-// SetEnabled refuses to write them.
-var CoreApps = map[string]bool{
-	AppConsole: true,
-	AppAdmin:   true,
-}
+// featureApps is the set of toggleable app names. An app is a user-facing
+// feature iff it implements DescribableApp (declares DisplayName/Description);
+// everything else is core infrastructure that is always on and never shown in
+// the Apps settings page. Built once in initEnablement from the registry.
+var featureApps map[string]bool
 
-// IsCoreApp reports whether an app is load-bearing and cannot be toggled.
-func IsCoreApp(name string) bool { return CoreApps[name] }
+// IsToggleable reports whether an app can be enabled/disabled per tenant.
+func IsToggleable(name string) bool { return featureApps[name] }
 
 // enablementService caches each tenant's explicitly-disabled app set. Default
-// is enabled (opt-out): an app is on unless an explicit disabled row exists.
+// is enabled (opt-out): a feature is on unless an explicit disabled row exists.
 // The cache is busted on SetEnabled; in a single web process (the Dokku
 // deploy) every write goes through here, so the cache stays consistent.
 type enablementService struct {
@@ -51,21 +53,29 @@ type enablementService struct {
 // enablement is the package-level singleton, wired in Init.
 var enablement *enablementService
 
-// initEnablement is called from Init once the pool is available.
+// initEnablement is called from Init once the pool is available. It also
+// computes the toggleable-feature set from the registered apps.
 func initEnablement(pool *pgxpool.Pool) {
 	enablement = &enablementService{
 		pool:     pool,
 		disabled: make(map[uuid.UUID]map[string]bool),
 	}
+	featureApps = make(map[string]bool)
+	for _, a := range registry {
+		if _, ok := a.(DescribableApp); ok {
+			featureApps[a.Name()] = true
+		}
+	}
 }
 
-// IsEnabled reports whether appName is enabled for the tenant. Core apps are
-// always enabled. When the gate is unconfigured (test paths that skip Init) or
-// the tenant is the zero UUID (no caller), everything is treated as enabled so
-// non-tenant contexts behave as before. DB errors fail open (logged) — a
-// transient lookup failure must not make a tenant's apps vanish.
+// IsEnabled reports whether appName is enabled for the tenant. Non-feature
+// (core) apps are always enabled. When the gate is unconfigured (test paths
+// that skip Init) or the tenant is the zero UUID (no caller), everything is
+// treated as enabled so non-tenant contexts behave as before. DB errors fail
+// open (logged) — a transient lookup failure must not make a tenant's apps
+// vanish.
 func IsEnabled(ctx context.Context, tenantID uuid.UUID, appName string) bool {
-	if CoreApps[appName] {
+	if !featureApps[appName] {
 		return true
 	}
 	if enablement == nil || tenantID == uuid.Nil {
@@ -121,24 +131,22 @@ func DisabledApps(ctx context.Context, tenantID uuid.UUID) (map[string]bool, err
 	return enablement.load(ctx, tenantID)
 }
 
-// AppInfo describes a registered app for the admin enablement UI.
+// AppInfo describes a toggleable feature app for the admin enablement UI.
 type AppInfo struct {
 	Name        string
 	DisplayName string
 	Description string
-	Core        bool
 }
 
-// Catalog returns metadata for every registered app, using DescribableApp
-// when an app implements it and falling back to a title-cased Name otherwise.
+// Catalog returns metadata for every toggleable feature app (those declaring
+// DescribableApp). Core infrastructure apps are intentionally omitted.
 func Catalog() []AppInfo {
 	out := make([]AppInfo, 0, len(registry))
 	for _, a := range registry {
-		info := AppInfo{
-			Name:        a.Name(),
-			DisplayName: titleCase(a.Name()),
-			Core:        CoreApps[a.Name()],
+		if !featureApps[a.Name()] {
+			continue
 		}
+		info := AppInfo{Name: a.Name(), DisplayName: titleCase(a.Name())}
 		if d, ok := a.(DescribableApp); ok {
 			if dn := d.DisplayName(); dn != "" {
 				info.DisplayName = dn
@@ -161,10 +169,10 @@ func titleCase(name string) string {
 }
 
 // SetEnabled persists an admin's toggle and busts the tenant's cache. Refuses
-// core apps so the console/admin surfaces can never be turned off.
+// non-feature (core) apps so infrastructure can never be turned off.
 func SetEnabled(ctx context.Context, tenantID uuid.UUID, appName string, enabled bool) error {
-	if CoreApps[appName] {
-		return ErrCoreApp
+	if !featureApps[appName] {
+		return ErrNotToggleable
 	}
 	if enablement == nil {
 		return ErrEnablementUnconfigured
