@@ -114,6 +114,29 @@ func registerVaultRoutes(mux apps.Mux, a *App) {
 	// route still under /apps/vault; it renders no HTML of its own.
 	mux.Handle("GET /{slug}/apps/vault/reveal/{entry_id}", revealPage(a.handleRevealPage))
 
+	// Legacy redirects. The old server-rendered vault pages (add, setup,
+	// rotate, nuke, list, and the bare /apps/vault index) were removed
+	// when the UI moved to the React console at /{slug}/web/vault. Slack
+	// messages and bookmarks still point at the old paths, so without
+	// these redirects the request falls through to the cards SPA catch-all
+	// (GET /{slug}/) and silently lands the user on the root card feed
+	// instead of the vault. 301 so browsers and chat unfurls cache the new
+	// location. The reveal bridge above is a more specific pattern, so it
+	// still wins over these.
+	vaultRedirect := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/"+r.PathValue("slug")+"/web/vault", http.StatusMovedPermanently)
+	})
+	for _, p := range []string{
+		"GET /{slug}/apps/vault",
+		"GET /{slug}/apps/vault/add",
+		"GET /{slug}/apps/vault/list",
+		"GET /{slug}/apps/vault/setup",
+		"GET /{slug}/apps/vault/rotate",
+		"GET /{slug}/apps/vault/nuke",
+	} {
+		mux.Handle(p, vaultRedirect)
+	}
+
 	// Entries CRUD (browser-driven; ciphertext on the wire)
 	mux.Handle("GET /{slug}/api/vault/entries", get(a.handleListEntries))
 	mux.Handle("POST /{slug}/api/vault/entries", wrap(a.handleCreateEntry))
