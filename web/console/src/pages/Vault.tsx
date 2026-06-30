@@ -8,6 +8,7 @@ import { connectWorker, hasKey, nukeVault, rotate, setupVault, unlock } from './
 import { AddPanel, RevealPanel } from './vault/panels';
 import { useDetailRoute } from '../useDetailRoute';
 import { useSetChatContext } from '../chatContext';
+import ActionMenu from '../ActionMenu';
 
 // revealErrorCopy maps the reason code carried on the ?reveal_error query
 // (set by the Slack reveal bridge when a one-shot token is rejected) to
@@ -133,19 +134,18 @@ export default function Vault() {
         <div className="page-head-row">
           <h1>Vault</h1>
           {status?.set_up && (
-            <div className="drawer-actions" style={{ margin: 0 }}>
+            <div className="page-head-actions">
               <button className="btn" onClick={() => gate({ kind: 'add' })}>
                 Add secret
               </button>
               {me?.is_admin && (
-                <button className="btn btn-ghost" onClick={() => setShowRotate(true)}>
-                  Rotate password
-                </button>
-              )}
-              {me?.is_admin && (
-                <button className="btn btn-ghost btn-danger" onClick={() => setShowNuke(true)}>
-                  Destroy vault
-                </button>
+                <ActionMenu
+                  label="Vault settings"
+                  items={[
+                    { label: 'Rotate password', onClick: () => setShowRotate(true) },
+                    { label: 'Destroy vault', onClick: () => setShowNuke(true), danger: true },
+                  ]}
+                />
               )}
             </div>
           )}

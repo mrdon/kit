@@ -296,6 +296,76 @@ code {
   margin-top: 0.75rem;
 }
 
+/* --- Action menu (cog dropdown for secondary / destructive page actions) --- */
+
+.action-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--off-bg);
+  color: var(--ink);
+}
+
+.action-menu-pop {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 30;
+  min-width: 11rem;
+  padding: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.action-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action-menu-item:hover {
+  background: var(--off-bg);
+}
+
+.action-menu-item-danger {
+  color: var(--error-ink);
+}
+
+.action-menu-item-danger:hover {
+  background: var(--error-bg);
+}
+
 .snippet-box {
   margin-top: 0.85rem;
 }
