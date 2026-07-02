@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/agent"
@@ -33,6 +34,44 @@ const (
 	// emailIntakeFirstRunWindow bounds the first-ever scan for a user.
 	emailIntakeFirstRunWindow = 7 * 24 * time.Hour
 )
+
+// errIntakeBusy means a scan is already running for the row (claimed by the
+// cron or a prior manual trigger). errIntakeUnavailable means the agent isn't
+// wired (should not happen in production).
+var (
+	errIntakeBusy        = errors.New("email intake scan already running")
+	errIntakeUnavailable = errors.New("email intake unavailable")
+)
+
+// triggerEmailIntakeNow runs a one-off scan for a single user, bypassing the
+// schedule and the enabled flag (so it works for testing before opt-in) but
+// honoring the claim so it can't race the cron. It launches the scan in the
+// background and returns once the claim is staked: nil = started,
+// errIntakeBusy = already running, models.ErrEmailIntakeNotFound = no saved row.
+func (a *TaskApp) triggerEmailIntakeNow(ctx context.Context, tenantID, userID uuid.UUID) error {
+	if a.agent == nil {
+		return errIntakeUnavailable
+	}
+	row, err := models.GetEmailIntake(ctx, a.svc.pool, tenantID, userID)
+	if err != nil {
+		return err // includes ErrEmailIntakeNotFound
+	}
+	tenant, err := models.GetTenantByID(ctx, a.svc.pool, tenantID)
+	if err != nil || tenant == nil {
+		return fmt.Errorf("loading tenant for manual intake: %w", err)
+	}
+	claimed, err := models.ClaimEmailIntake(ctx, a.svc.pool, tenantID, row.ID, time.Now().Add(-emailIntakeClaimLease))
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		return errIntakeBusy
+	}
+	// Detach from the request: the scan (IMAP + an agent run) outlives the
+	// HTTP response. runEmailIntakeForUser releases/advances the claim itself.
+	go a.runEmailIntakeForUser(context.Background(), a.svc.pool, a.enc, *tenant, *row)
+	return nil
+}
 
 // emailIntakeCron is the task app's periodic email→task sweep. It is the only
 // place the whole feature runs; the scheduler is untouched. The closure holds

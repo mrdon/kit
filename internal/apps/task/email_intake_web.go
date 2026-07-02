@@ -93,6 +93,25 @@ func (a *TaskApp) handlePutEmailIntake(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRunEmailIntake triggers a one-off scan for the caller's mailbox now,
+// for testing. Runs in the background; the response only confirms it started.
+func (a *TaskApp) handleRunEmailIntake(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	err := a.triggerEmailIntakeNow(r.Context(), caller.TenantID, caller.UserID)
+	switch {
+	case errors.Is(err, models.ErrEmailIntakeNotFound):
+		taskErr(w, http.StatusBadRequest, "Save your intake settings first, then run a scan.")
+	case errors.Is(err, errIntakeBusy):
+		taskErr(w, http.StatusConflict, "A scan is already running — give it a moment.")
+	case errors.Is(err, errIntakeUnavailable):
+		taskErr(w, http.StatusServiceUnavailable, "Email intake isn’t available right now.")
+	case err != nil:
+		taskErr(w, http.StatusInternalServerError, "internal error")
+	default:
+		taskJSON(w, http.StatusAccepted, map[string]any{"status": "started"})
+	}
+}
+
 // callerHasMailbox reports whether the caller has an email integration
 // configured — the panel uses it to nudge them to set one up first.
 func (a *TaskApp) callerHasMailbox(r *http.Request, tenantID, userID uuid.UUID) bool {

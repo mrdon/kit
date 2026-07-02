@@ -97,10 +97,13 @@ func ListEnabledEmailIntakes(ctx context.Context, pool *pgxpool.Pool, tenantID u
 // reclaimable. Cleared on success (AdvanceEmailIntakeWatermark) or failure
 // (ReleaseEmailIntakeClaim).
 func ClaimEmailIntake(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, leaseCutoff time.Time) (bool, error) {
+	// No enabled filter here: the cron already claims only rows it listed as
+	// enabled, and the manual "scan now" path deliberately runs a disabled row
+	// for testing. The claim's only job is mutual exclusion.
 	tag, err := pool.Exec(ctx, `
 		UPDATE app_task_email_intake
 		SET claimed_at = now(), updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND enabled = true
+		WHERE tenant_id = $1 AND id = $2
 		  AND (claimed_at IS NULL OR claimed_at < $3)`,
 		tenantID, id, leaseCutoff)
 	if err != nil {

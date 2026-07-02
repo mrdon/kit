@@ -497,6 +497,8 @@ export const api = {
   emailIntake: () => apiGet<EmailIntake>('/email-intake'),
   setEmailIntake: (body: EmailIntakeBody) =>
     apiPut<EmailIntake>('/email-intake', body),
+  runEmailIntake: () =>
+    apiPost<{ status: string }>('/email-intake/run'),
 
   widgetTokens: () => apiGet<{ tokens: WidgetToken[] }>('/widget/tokens'),
   mintWidgetToken: (origin: string) =>

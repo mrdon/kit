@@ -18,6 +18,8 @@ export default function EmailIntakeSettings() {
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -54,6 +56,20 @@ export default function EmailIntakeSettings() {
     }
   };
 
+  const scanNow = async () => {
+    setScanning(true);
+    setErr(null);
+    setScanMsg(null);
+    try {
+      await api.runEmailIntake();
+      setScanMsg('Scan started — new tasks will show up in a minute or two.');
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-head">
@@ -75,6 +91,7 @@ export default function EmailIntakeSettings() {
 
       {err && <p className="banner banner-error">{err}</p>}
       {saved && <p className="banner banner-ok">Saved.</p>}
+      {scanMsg && <p className="banner banner-ok">{scanMsg}</p>}
 
       {loaded && !hasMailbox && (
         <p className="banner banner-error" style={{ maxWidth: '32rem' }}>
@@ -132,6 +149,17 @@ export default function EmailIntakeSettings() {
         <div className="drawer-actions">
           <button className="btn" type="submit" disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={scanNow}
+            disabled={scanning || !hasMailbox}
+            title={
+              hasMailbox ? 'Run a scan right now' : 'Connect a mailbox first'
+            }
+          >
+            {scanning ? 'Starting…' : 'Scan now'}
           </button>
         </div>
       </form>
