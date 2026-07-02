@@ -106,6 +106,7 @@ export default function EmailIntakeSettings() {
           <input
             type="checkbox"
             checked={enabled}
+            disabled={!hasMailbox && !enabled}
             onChange={(e) => setEnabled(e.target.checked)}
           />
           <span className="switch-track" aria-hidden="true" />

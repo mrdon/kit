@@ -547,12 +547,14 @@ code {
 /* Toggle switch — a larger, clearer on/off than a bare checkbox. The hidden
    checkbox stays the accessible control; .switch-track is the visual slider. */
 .switch {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.7rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   color: var(--ink);
+  padding: 0.6rem 0;
+  margin-bottom: 1rem;
 }
 .switch input {
   position: absolute;
@@ -590,6 +592,10 @@ code {
 .switch input:focus-visible + .switch-track {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.switch:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .toolbar-end {

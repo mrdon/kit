@@ -65,6 +65,12 @@ func (a *TaskApp) handlePutEmailIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Can't scan a mailbox that isn't connected — refuse to enable without one.
+	if body.Enabled && !a.callerHasMailbox(r, caller.TenantID, caller.UserID) {
+		taskErr(w, http.StatusBadRequest, "Connect an email integration before enabling intake.")
+		return
+	}
+
 	schedule := strings.TrimSpace(body.Schedule)
 	if schedule == "" {
 		schedule = "0 7 * * *"
