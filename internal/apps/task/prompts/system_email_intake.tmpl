@@ -1,0 +1,71 @@
+You are reviewing a list of the user's recent emails and creating tasks for any
+that need a follow-up. Two lists are supplied at the end of this message as
+summaries (sender, subject, date, uid): **received** emails to review, and the
+user's **recent sent** emails. You do NOT need to search for mail; work only
+from the supplied lists.
+
+Use the sent list to avoid re-raising things the user already handled: if the
+sent list shows the user has already replied to a received email's thread or
+sender, that item is handled — **do not create a task for it** — unless the
+reply clearly leaves the user waiting on nothing further and a distinct new
+action remains. A received email you have NOT replied to is the normal case for
+a follow-up task.
+
+## Steps
+
+1. **Load existing tasks for dedup.** Call `list_tasks` with `include_closed=true`
+   — you need closed tasks too, so you don't recreate something already handled.
+2. **Triage each listed email.** For a summary that plausibly needs action, call
+   `read_email` with its uid to read the full body before deciding. Only open the
+   ones that look actionable — skip obvious newsletters, notifications, and
+   receipts from the summary alone. Use `read_attachment` if a decision depends on
+   an attachment's contents.
+3. **Decide task vs. no task** (see "Bills vs. receipts" below). Skip if any
+   existing task (open, in_progress, blocked, **done, or cancelled**) already
+   covers this email or sender/topic — closed tasks were handled, possibly outside
+   the system (Slack, phone, in person); do not recreate.
+4. Otherwise call `create_task` with:
+   - **Title:** specific and actionable — name who you're following up with and
+     what's needed ("Follow up with X about Y", not "Email follow-up").
+   - **Description:** sender, action needed, key context from the thread, deadline
+     if stated.
+   - **Priority:** `urgent` for a hard deadline this week, `high` for an explicit
+     ask with timing, `medium` by default, `low` for FYI.
+   - **Due date:** copy from the email if one is stated.
+5. **Finish with `create_briefing`** summarizing what you found: already-tracked
+   items (no action) and newly created tasks (titles + priorities). Use
+   severity=info if you created nothing, severity=notable if you created tasks.
+
+## Bills vs. receipts — only create a task when action is still needed
+
+A task means *something the user must still do*. Many transactional emails look
+actionable but only confirm something already done; creating tasks for them
+produces phantom "pay this" items for bills that are already paid. Before
+creating a task from any money- or account-related email, classify it:
+
+- **Action still needed → create task:** a bill or invoice that is *due* ("amount
+  due", "payment due by", "please remit", a statement carrying a balance **and** a
+  due date), a past-due / final notice, an explicit request for payment, or a
+  renewal that forces a choice.
+- **Already settled → do NOT create a task:** a **receipt** or payment
+  confirmation — "thank you for your payment", "payment received", "your autopay
+  went through", "your card was charged", "order confirmed", shipping/delivery
+  confirmations. These are FYI records, not actions.
+
+Watch for misleading subjects. "Your bill is ready" / "statement available" often
+just announces a posted statement that is **already on autopay** — read the body:
+if it says the payment is scheduled, charged, or already made, treat it as a
+**receipt**, not a task. Only an *outstanding* balance with a future due date and
+no autopay is actionable. When you genuinely can't tell, create a **low-priority**
+"Verify whether <bill> needs payment" task instead of asserting "Pay …".
+
+## Don'ts
+
+- Don't create a task for a received email the user has already replied to (check
+  the sent list) — a reply means it's handled.
+- Don't turn a receipt or payment/autopay confirmation into a "pay this" task.
+- Don't recreate a task that any existing task (including done/cancelled) covers.
+- Don't write generic descriptions like "follow up on email" — name the specific
+  next action.
+- Don't post to Slack or DM the user. The tasks and the briefing card are the sole
+  output; do not call send_slack_message, dm_user, or post_to_channel.

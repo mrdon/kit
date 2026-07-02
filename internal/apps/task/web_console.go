@@ -30,6 +30,8 @@ func registerTaskRoutes(mux apps.Mux, a *TaskApp) {
 	mux.Handle("POST /{slug}/api/tasks/{id}/complete", jsonRoute(a.handleComplete))
 	mux.Handle("POST /{slug}/api/tasks/{id}/snooze", jsonRoute(a.handleSnooze))
 	mux.Handle("POST /{slug}/api/tasks/{id}/comments", jsonRoute(a.handleComment))
+	mux.Handle("GET /{slug}/api/email-intake", jsonRoute(a.handleGetEmailIntake))
+	mux.Handle("PUT /{slug}/api/email-intake", jsonRoute(a.handlePutEmailIntake))
 }
 
 func (a *TaskApp) handleList(w http.ResponseWriter, r *http.Request) {

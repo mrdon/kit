@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
@@ -28,15 +29,17 @@ type TaskApp struct {
 	taskSvc *services.JobService
 	enc     *crypto.Encryptor
 	signer  *auth.SessionSigner
+	agent   *agent.Agent
 }
 
 // Configure wires the anthropic client (for the resolution suggester),
 // the JobService (for spawning jobs when a user taps a resolution
-// chip), and the encryptor (for decrypting the tenant bot token to open
-// a DM at resolve time). Call once from main.go after services.New.
-// Safe to omit in tests: missing llm silently skips the suggester;
-// missing taskSvc/enc fails any chip tap with a clear error.
-func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.Encryptor, signer *auth.SessionSigner) {
+// chip), the encryptor (for decrypting the tenant bot token to open a DM
+// at resolve time and to reach mailbox credentials for email intake), and
+// the agent (for running the email-intake sweep). Call once from main.go
+// after services.New. Safe to omit in tests: missing llm silently skips
+// the suggester; missing agent disables the intake sweep.
+func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.Encryptor, signer *auth.SessionSigner, ag *agent.Agent) {
 	if instance == nil {
 		return
 	}
@@ -44,6 +47,7 @@ func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.
 	instance.taskSvc = taskSvc
 	instance.enc = enc
 	instance.signer = signer
+	instance.agent = ag
 }
 
 // Init sets up the service after DB is available and registers this
@@ -84,7 +88,7 @@ func (a *TaskApp) RegisterRoutes(mux apps.Mux) {
 }
 
 func (a *TaskApp) CronJobs() []apps.CronJob {
-	return nil
+	return []apps.CronJob{a.emailIntakeCron()}
 }
 
 var taskTools = []services.ToolMeta{

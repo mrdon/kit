@@ -145,6 +145,9 @@ export default function Tasks() {
         <div className="page-head-row">
           <h1>Tasks</h1>
           <div className="page-head-actions">
+            <Link className="btn btn-ghost" to="/tasks/email-intake">
+              Email intake
+            </Link>
             <button className="btn" onClick={() => setCreating(true)}>
               New task
             </button>

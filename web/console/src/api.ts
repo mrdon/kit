@@ -195,6 +195,21 @@ export interface TasksMeta {
   categories: string[];
 }
 
+export interface EmailIntake {
+  enabled: boolean;
+  schedule: string;
+  extra_instructions: string;
+  last_scanned_at: string | null;
+  has_mailbox: boolean;
+  default_instructions: string;
+}
+
+export interface EmailIntakeBody {
+  enabled: boolean;
+  schedule: string;
+  extra_instructions: string;
+}
+
 export interface TaskFilters {
   status?: string;
   priority?: string;
@@ -478,6 +493,10 @@ export const api = {
     apiPost<{ task: Task }>(`/tasks/${id}/snooze`, { days }),
   addTaskComment: (id: string, content: string) =>
     apiPost<void>(`/tasks/${id}/comments`, { content }),
+
+  emailIntake: () => apiGet<EmailIntake>('/email-intake'),
+  setEmailIntake: (body: EmailIntakeBody) =>
+    apiPut<EmailIntake>('/email-intake', body),
 
   widgetTokens: () => apiGet<{ tokens: WidgetToken[] }>('/widget/tokens'),
   mintWidgetToken: (origin: string) =>

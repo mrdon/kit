@@ -174,9 +174,6 @@ func main() {
 	// taps a resolution chip, and the encryptor for decrypting the
 	// tenant bot token at DM-open time.
 	sessionSigner, err := auth.NewSessionSigner(sessionSecret)
-	// The task app needs the signer for its console HTTP routes; wired
-	// here (after the signer is constructed) alongside its other deps.
-	task.Configure(builderLLM, svc.Jobs, enc, sessionSigner)
 	if err != nil {
 		slog.Warn("session signer not configured — PWA endpoints disabled", "error", err)
 		sessionSigner = nil
@@ -221,6 +218,11 @@ func main() {
 		slog.Warn("whisper transcription disabled", "error", err)
 	}
 	cards.ConfigureChat(app.Agent, enc, transcriber)
+
+	// The task app needs the signer (console routes), the encryptor + agent
+	// (email-intake sweep), the JobService and LLM (resolution chips). Wired
+	// here, after the agent and signer exist.
+	task.Configure(builderLLM, svc.Jobs, enc, sessionSigner, app.Agent)
 
 	// Widget app needs the agent (for chat dispatch), the session signer
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for

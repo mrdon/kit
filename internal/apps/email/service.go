@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -63,6 +64,45 @@ func LoadAccount(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor,
 		return nil, fmt.Errorf("email integration %s missing smtp_host", integ.ID)
 	}
 	return acct, nil
+}
+
+// SearchSince returns envelope-only summaries in the given folder received
+// on/after since, newest-first up to limit. It is the discovery primitive
+// for scheduled callers (e.g. the task app's email-intake sweep) that own a
+// watermark and want the candidate set without pulling bodies. Returns
+// ErrNotConfigured when the user has no email integration, so callers can
+// skip that user cleanly.
+func SearchSince(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor, tenantID, userID uuid.UUID, folder string, since time.Time, limit int) ([]Summary, error) {
+	acct, err := LoadAccount(ctx, pool, enc, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return imapSearch(ctx, acct, "", folder, since, false, limit)
+}
+
+// sentFolderNames are the common IMAP sent-folder names, tried in order. IMAP
+// has no standard name for the sent mailbox, so the well-known variants are
+// probed until one selects (Gmail exposes "[Gmail]/Sent Mail", most others
+// "Sent" or "Sent Items").
+var sentFolderNames = []string{"Sent", "[Gmail]/Sent Mail", "Sent Items", "Sent Messages"}
+
+// SearchSentSince returns envelope-only summaries from the user's sent mailbox
+// received on/after since. It exists so a scheduled triage can tell whether the
+// user already replied to an inbound thread. Because sent-folder naming isn't
+// standardized, it tries the common names and uses the first that selects;
+// returns an empty slice (no error) if none can be opened.
+func SearchSentSince(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor, tenantID, userID uuid.UUID, since time.Time, limit int) ([]Summary, error) {
+	acct, err := LoadAccount(ctx, pool, enc, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range sentFolderNames {
+		sums, serr := imapSearch(ctx, acct, "", f, since, false, limit)
+		if serr == nil {
+			return sums, nil
+		}
+	}
+	return nil, nil
 }
 
 // sendOnce is the idempotency boundary for send_email. It stamps a claim
