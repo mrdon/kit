@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import ActionMenu from '../ActionMenu';
 import {
   api,
   type CreateTaskBody,
@@ -39,6 +40,7 @@ function inversePatch(prev: Task, patch: UpdateTaskBody): UpdateTaskBody {
 }
 
 export default function Tasks() {
+  const navigate = useNavigate();
   const [meta, setMeta] = useState<TasksMeta | null>(null);
   const [meId, setMeId] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -145,12 +147,18 @@ export default function Tasks() {
         <div className="page-head-row">
           <h1>Tasks</h1>
           <div className="page-head-actions">
-            <Link className="btn btn-ghost" to="/tasks/email-intake">
-              Email intake
-            </Link>
             <button className="btn" onClick={() => setCreating(true)}>
               New task
             </button>
+            <ActionMenu
+              label="Task settings"
+              items={[
+                {
+                  label: 'Email intake',
+                  onClick: () => navigate('/tasks/email-intake'),
+                },
+              ]}
+            />
           </div>
         </div>
       </div>

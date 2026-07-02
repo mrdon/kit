@@ -85,13 +85,14 @@ export default function EmailIntakeSettings() {
       )}
 
       <form onSubmit={save} className="stack-form" style={{ maxWidth: '32rem' }}>
-        <label className="check">
+        <label className="switch">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
           />
-          Scan my email for tasks
+          <span className="switch-track" aria-hidden="true" />
+          <span>Scan my email for tasks</span>
         </label>
 
         <label className="field">
