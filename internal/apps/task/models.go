@@ -3,12 +3,14 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
@@ -55,6 +57,11 @@ type Task struct {
 	CreatedAt      time.Time    `json:"created_at"`
 	UpdatedAt      time.Time    `json:"updated_at"`
 	ClosedAt       *time.Time   `json:"closed_at,omitempty"`
+	// DedupKey, when set, makes creation idempotent via a tenant-wide unique
+	// index that spans all statuses. Set by the email-intake path (derived
+	// from the source email) so repeated scans never spawn duplicate tasks.
+	// Not selected back by list/get queries — it is write-only provenance.
+	DedupKey string `json:"dedup_key,omitempty"`
 }
 
 // TaskEvent represents an entry in the activity log.
@@ -146,14 +153,38 @@ func scanTask(row interface{ Scan(...any) error }) (*Task, error) {
 	return &t, nil
 }
 
-func createTask(ctx context.Context, pool *pgxpool.Pool, t *Task) error {
-	return pool.QueryRow(ctx, `
-		INSERT INTO app_tasks (tenant_id, title, description, status, priority, scope_id, assignee_user_id, due_date)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+// createTask inserts a new task. When t.DedupKey is set the insert is
+// idempotent: the app_tasks_dedup_key_unique index (migration 068) spans every
+// status, so a source that already produced a task — even one since cancelled —
+// collides. On collision DO NOTHING suppresses the insert; we load the existing
+// row into t and report existed=true so the caller points at the original
+// instead of creating a duplicate. Tasks without a key are never constrained.
+func createTask(ctx context.Context, pool *pgxpool.Pool, t *Task) (existed bool, err error) {
+	err = pool.QueryRow(ctx, `
+		INSERT INTO app_tasks (tenant_id, title, description, status, priority, scope_id, assignee_user_id, due_date, dedup_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (tenant_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
 		RETURNING id, created_at, updated_at`,
 		t.TenantID, t.Title, nilIfEmpty(t.Description), t.Status, t.Priority,
-		t.ScopeID, t.AssigneeUserID, t.DueDate,
+		t.ScopeID, t.AssigneeUserID, t.DueDate, nilIfEmpty(t.DedupKey),
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// DO NOTHING suppressed the insert: a task with this dedup_key already
+		// exists. Load it so the caller can reference the original.
+		row := pool.QueryRow(ctx,
+			`SELECT `+taskColumns+` FROM app_tasks t WHERE t.tenant_id = $1 AND t.dedup_key = $2`,
+			t.TenantID, t.DedupKey)
+		existing, e := scanTask(row)
+		if e != nil {
+			return false, fmt.Errorf("loading existing task for dedup key: %w", e)
+		}
+		*t = *existing
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func getTask(ctx context.Context, pool *pgxpool.Pool, tenantID, taskID uuid.UUID) (*Task, error) {

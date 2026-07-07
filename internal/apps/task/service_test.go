@@ -470,3 +470,73 @@ func containsTask(tasks []Task, id uuid.UUID) bool {
 	}
 	return false
 }
+
+// TestCreateDedupKey: a DedupKey makes Create idempotent. A second create with
+// the same key returns the original task + ErrDuplicateTask and inserts no new
+// row — and this holds even after the original is cancelled, which is the whole
+// point: a duplicate the user killed must not be resurrected by the next scan.
+func TestCreateDedupKey(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c := f.caller(t, f.alice)
+
+	countByKey := func(key string) int {
+		var n int
+		if err := f.pool.QueryRow(ctx,
+			"SELECT count(*) FROM app_tasks WHERE tenant_id = $1 AND dedup_key = $2",
+			f.tenant.ID, key).Scan(&n); err != nil {
+			t.Fatalf("counting rows: %v", err)
+		}
+		return n
+	}
+
+	key := "email:" + f.alice.ID.String() + ":42"
+
+	first, err := f.svc.Create(ctx, c, CreateInput{Title: "Pay Square bill", DedupKey: key})
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	// Second create, same key, different title → dedup hit returning the original.
+	dup, err := f.svc.Create(ctx, c, CreateInput{Title: "Pay Square bill (again)", DedupKey: key})
+	if !errors.Is(err, ErrDuplicateTask) {
+		t.Fatalf("expected ErrDuplicateTask, got %v", err)
+	}
+	if dup == nil || dup.ID != first.ID {
+		t.Fatalf("expected the original task back, got %+v", dup)
+	}
+	if dup.Title != "Pay Square bill" {
+		t.Fatalf("expected original title preserved, got %q", dup.Title)
+	}
+	if n := countByKey(key); n != 1 {
+		t.Fatalf("expected exactly 1 row for the key, got %d", n)
+	}
+
+	// Cancel the original, then try again — a cancelled duplicate must stay dead.
+	if _, err := f.svc.Cancel(ctx, c, first.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	after, err := f.svc.Create(ctx, c, CreateInput{Title: "Pay Square bill (third try)", DedupKey: key})
+	if !errors.Is(err, ErrDuplicateTask) {
+		t.Fatalf("expected ErrDuplicateTask after cancel, got %v", err)
+	}
+	if after == nil || after.ID != first.ID || after.Status != "cancelled" {
+		t.Fatalf("expected the cancelled original back, got %+v", after)
+	}
+	if n := countByKey(key); n != 1 {
+		t.Fatalf("expected still exactly 1 row after cancel+recreate, got %d", n)
+	}
+
+	// Sanity: tasks without a key are never constrained — two succeed distinctly.
+	a, err := f.svc.Create(ctx, c, CreateInput{Title: "keyless one"})
+	if err != nil {
+		t.Fatalf("keyless create a: %v", err)
+	}
+	b, err := f.svc.Create(ctx, c, CreateInput{Title: "keyless two"})
+	if err != nil {
+		t.Fatalf("keyless create b: %v", err)
+	}
+	if a.ID == b.ID {
+		t.Fatalf("keyless creates collided: %s", a.ID)
+	}
+}
