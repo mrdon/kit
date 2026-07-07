@@ -479,7 +479,7 @@ func TestListTasksLimit(t *testing.T) {
 	ctx := context.Background()
 	c := f.caller(t, f.alice)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := f.svc.Create(ctx, c, CreateInput{Title: "task"}); err != nil {
 			t.Fatalf("create: %v", err)
 		}
