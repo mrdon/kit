@@ -95,7 +95,21 @@ type TaskFilters struct {
 	// ClosedSince window already implies the caller wants closed rows, so
 	// this flag is only consulted for the unfiltered case.
 	IncludeClosed bool
+	// Limit caps the number of rows returned. 0 means the default
+	// (defaultListLimit); values above maxListLimit are clamped. Raising it is
+	// how the email-intake dedup read sees the full task set — including
+	// cancelled rows — instead of a truncated first page.
+	Limit int
 }
+
+const (
+	// defaultListLimit bounds a normal list_tasks call so browsing doesn't drag
+	// the full history into agent context.
+	defaultListLimit = 50
+	// maxListLimit is the hard ceiling any caller can request — high enough for
+	// a complete dedup view of a real tenant, low enough to stay sane.
+	maxListLimit = 500
+)
 
 // TaskUpdates holds optional fields for updating a task.
 type TaskUpdates struct {
@@ -289,7 +303,17 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 	}
 
 	b.WriteString(` ORDER BY CASE t.priority WHEN 'blocker' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 END, t.due_date ASC NULLS LAST, t.created_at DESC`)
-	b.WriteString(` LIMIT 50`)
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+	argN++
+	b.WriteString(fmt.Sprintf(` LIMIT $%d`, argN))
+	args = append(args, limit)
 
 	return b.String(), args
 }

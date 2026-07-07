@@ -136,6 +136,7 @@ func handleListTasks(svc *TaskService) tools.HandlerFunc {
 			Overdue       bool   `json:"overdue"`
 			ClosedSince   string `json:"closed_since"`
 			IncludeClosed bool   `json:"include_closed"`
+			Limit         int    `json:"limit"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
@@ -151,6 +152,7 @@ func handleListTasks(svc *TaskService) tools.HandlerFunc {
 			Search:        inp.Search,
 			Overdue:       inp.Overdue,
 			IncludeClosed: inp.IncludeClosed,
+			Limit:         inp.Limit,
 		}
 
 		if inp.Assignee != "" {
