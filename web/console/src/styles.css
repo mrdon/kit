@@ -1047,6 +1047,48 @@ h2.view-title:hover {
   overflow-x: auto;
 }
 .markdown pre code { background: none; padding: 0; }
+
+/* --- Connect AI tools page --- */
+.connect-card { flex-direction: column; align-items: stretch; }
+.connect-block { margin-top: 0.5rem; }
+.connect-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+.connect-code { position: relative; }
+.connect-code pre {
+  background: var(--off-bg);
+  color: var(--ink);
+  padding: 0.6rem 4rem 0.6rem 0.75rem;
+  border-radius: 0.4rem;
+  overflow-x: auto;
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: pre;
+}
+.connect-copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.connect-copy:hover { background: var(--off-bg); }
+.connect-open {
+  display: inline-block;
+  margin-top: 0.6rem;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.connect-open:hover { color: var(--accent-hover); }
 .markdown blockquote {
   margin: 0 0 0.6rem;
   padding-left: 0.75rem;

@@ -21,24 +21,44 @@
   .btn-app:hover { background: #374151; }
   code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
   pre { background: #f0f0f0; padding: 16px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; margin-bottom: 16px; }
-  .tab-bar { display: flex; gap: 0; margin-bottom: 0; }
-  .tab { padding: 8px 16px; background: #e0e0e0; border: none; cursor: pointer; font-size: 0.9rem; font-family: inherit; border-radius: 6px 6px 0 0; }
-  .tab.active { background: #f0f0f0; font-weight: 600; }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
-  .tab-content pre { border-radius: 0 6px 6px 6px; margin-bottom: 0; }
   details { margin-bottom: 12px; }
   details summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
   details summary:hover { color: #4A154B; }
   details[open] summary { margin-bottom: 8px; }
   details .answer { padding: 0 0 8px 16px; line-height: 1.6; }
   details .answer pre { margin-top: 8px; }
+  .ws-list { display: flex; flex-direction: column; gap: 8px; }
+  .ws-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #fff; border: 1px solid #e6e6ec; border-radius: 8px; }
+  .ws-main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-decoration: none; color: inherit; }
+  .ws-main:hover .ws-name { color: #4A154B; }
+  .ws-icon { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; object-fit: cover; background: #f0f0f0; }
+  .ws-icon-fallback { display: flex; align-items: center; justify-content: center; font-weight: 700; color: #611f69; background: #efe6f0; }
+  .ws-name { font-weight: 600; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws-cards { padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem; color: #374151; background: #f0f0f0; flex-shrink: 0; }
+  .ws-cards:hover { background: #e4e4ea; }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>Kit</h1>
   <p class="tagline">Your team's knowledge and automation — accessible from Slack, AI tools, or anything you build.</p>
+
+  {{if .Workspaces}}
+  <div class="section">
+    <h2>Your workspaces</h2>
+    <div class="ws-list">
+    {{range .Workspaces}}
+      <div class="ws-row">
+        <a class="ws-main" href="/{{.Slug}}/web">
+          {{if .HasIcon}}<img class="ws-icon" src="/{{.Slug}}/icon-192.png" alt="">{{else}}<span class="ws-icon ws-icon-fallback">{{.Initial}}</span>{{end}}
+          <span class="ws-name">{{.Name}}</span>
+        </a>
+        <a class="ws-cards" href="/{{.Slug}}/">Cards</a>
+      </div>
+    {{end}}
+    </div>
+  </div>
+  {{end}}
 
   <div class="section">
     <p>Every team has answers trapped in docs, threads, and people's heads. Kit puts it all in one place and makes it available everywhere your team already works.</p>
@@ -84,36 +104,8 @@
 
   <div class="section">
     <h2>Connect Your AI Tools</h2>
-    <p>Use Kit from any MCP-compatible AI client. Create skills, manage rules, and access your team's knowledge without leaving your editor.</p>
-
-    <p>Each Slack workspace has its own MCP endpoint at <code>{{.BaseURL}}/<em>your-slug</em>/mcp</code>. After you install Kit, Kit DMs you your exact URL in Slack. Lost it? Just ask Kit <em>"what's my MCP URL?"</em> in a DM.</p>
-
-    <div class="tab-bar">
-      <button class="tab active" onclick="showTab('claude-code')">Claude Code</button>
-      <button class="tab" onclick="showTab('cursor')">Cursor</button>
-    </div>
-
-    <div id="claude-code" class="tab-content active">
-      <pre>claude mcp add --transport http kit {{.BaseURL}}/your-slug/mcp</pre>
-    </div>
-
-    <div id="cursor" class="tab-content">
-      <pre>// Add to .cursor/mcp.json — one entry per Slack workspace
-{
-  "mcpServers": {
-    "kit-acme": {
-      "type": "streamable-http",
-      "url": "{{.BaseURL}}/acme/mcp"
-    },
-    "kit-teamb": {
-      "type": "streamable-http",
-      "url": "{{.BaseURL}}/teamb/mcp"
-    }
-  }
-}</pre>
-    </div>
-
-    <p>On first connect, you'll sign in with Slack — same identity, no extra accounts. If you land on the wrong workspace, Kit refuses the token and tells you which one the URL is bound to.</p>
+    <p>Use Kit from any MCP-compatible AI client — Claude Code, Cursor, and more. Create skills, manage rules, and access your team's knowledge without leaving your editor.</p>
+    <p>Your workspace's exact endpoint and ready-to-paste setup for each client live in the web console under <strong>Connect AI tools</strong> (<code>{{.BaseURL}}/<em>your-slug</em>/web/connect</code>) — open your workspace above. On first connect you'll sign in with Slack, same identity, no extra accounts.</p>
   </div>
 
   <div class="section">
@@ -264,14 +256,5 @@
     </details>
   </div>
 </div>
-
-<script>
-function showTab(id) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  event.target.classList.add('active');
-}
-</script>
 </body>
 </html>

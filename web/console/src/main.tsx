@@ -16,6 +16,7 @@ import Admin from './pages/Admin';
 import Vault from './pages/Vault';
 import Skills from './pages/Skills';
 import Jobs from './pages/Jobs';
+import Connect from './pages/Connect';
 import { BASENAME } from './workspace';
 import './styles.css';
 import '@chat/chat.css';
@@ -42,6 +43,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/skills/:id" element={<Skills />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />
+          <Route path="/connect" element={<Connect />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/apps" element={<AppsSettings />} />
           <Route path="/admin/expenses" element={<ExpenseSettings />} />

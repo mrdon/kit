@@ -428,7 +428,7 @@ func main() {
 	chrome.RegisterRoutes(mux)
 
 	// Landing page
-	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL))
+	mux.HandleFunc("GET /{$}", web.NewLandingHandler(cfg.BaseURL, pool))
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

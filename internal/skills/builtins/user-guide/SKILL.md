@@ -64,6 +64,7 @@ Each Slack workspace has its own MCP endpoint URL of the form `{base-url}/{works
 
 - Right after you install Kit, Kit DMs you the exact URL. If you kept that message, copy-paste it into your client.
 - Lost it? Message Kit in a DM: *"what's my MCP URL?"* and Kit will repeat it.
+- Or open the web console's **Connect AI tools** page (`/{workspace-slug}/web/connect`) — it shows your workspace's endpoint plus copy-paste setup for Claude Code and Cursor.
 
 If you belong to more than one Slack workspace with Kit installed, add one MCP entry per workspace — each URL binds its access token to exactly one workspace, and signing into the wrong one during the OAuth handshake returns a clear error rather than silently issuing a token against the wrong tenant.
 

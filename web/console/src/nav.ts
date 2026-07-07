@@ -47,6 +47,11 @@ export const SECTIONS: Section[] = [
     blurb: 'Scheduled work — review, edit, and remove your jobs.',
   },
   {
+    to: '/connect',
+    label: 'Connect AI tools',
+    blurb: 'Your MCP endpoint for Claude Code, Cursor, and other AI clients.',
+  },
+  {
     to: '/admin/roles',
     label: 'Roles',
     blurb: 'See who belongs to which role and change membership.',
