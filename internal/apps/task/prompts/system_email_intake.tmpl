@@ -14,7 +14,10 @@ a follow-up task.
 ## Steps
 
 1. **Load existing tasks for dedup.** Call `list_tasks` with `include_closed=true`
-   — you need closed tasks too, so you don't recreate something already handled.
+   and `limit=500` — you need closed tasks too (a task the user **cancelled** must
+   not be recreated), and the default 50-row page can hide them. If a tenant has
+   many tasks, also narrow with `search` on the sender or topic so the matching
+   ones can't fall outside the page.
 2. **Triage each listed email.** For a summary that plausibly needs action, call
    `read_email` with its uid to read the full body before deciding. Only open the
    ones that look actionable — skip obvious newsletters, notifications, and

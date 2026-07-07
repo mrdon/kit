@@ -471,6 +471,39 @@ func containsTask(tasks []Task, id uuid.UUID) bool {
 	return false
 }
 
+// TestListTasksLimit: the limit is parameterized — callers can request more
+// than the default page (the intake dedup read needs the full set), and a
+// small limit truncates as asked.
+func TestListTasksLimit(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c := f.caller(t, f.alice)
+
+	for i := 0; i < 3; i++ {
+		if _, err := f.svc.Create(ctx, c, CreateInput{Title: "task"}); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+
+	// Default (Limit 0) returns all three.
+	all, err := f.svc.List(ctx, c, TaskFilters{})
+	if err != nil {
+		t.Fatalf("list default: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 tasks at default limit, got %d", len(all))
+	}
+
+	// An explicit small limit truncates.
+	capped, err := f.svc.List(ctx, c, TaskFilters{Limit: 2})
+	if err != nil {
+		t.Fatalf("list limited: %v", err)
+	}
+	if len(capped) != 2 {
+		t.Fatalf("expected 2 tasks at limit=2, got %d", len(capped))
+	}
+}
+
 // TestCreateDedupKey: a DedupKey makes Create idempotent. A second create with
 // the same key returns the original task + ErrDuplicateTask and inserts no new
 // row — and this holds even after the original is cancelled, which is the whole

@@ -120,6 +120,7 @@ var taskTools = []services.ToolMeta{
 			"overdue":        map[string]any{"type": "boolean", "description": "Only show overdue tasks (past due date, not done or cancelled)"},
 			"closed_since":   services.Field("string", "Show tasks closed since this date (YYYY-MM-DD)"),
 			"include_closed": map[string]any{"type": "boolean", "description": "Include done/cancelled tasks alongside active ones. Default false. Only needed when no `status` is specified — an explicit status (or `closed_since`) already controls inclusion."},
+			"limit":          map[string]any{"type": "integer", "description": "Max rows to return (default 50, max 500). Raise it when you need a complete view rather than the first page — e.g. deduping against every existing task with include_closed=true."},
 		}),
 	},
 	{
