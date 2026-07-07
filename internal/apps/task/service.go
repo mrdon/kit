@@ -39,6 +39,12 @@ var ErrPrimaryRoleNotSet = errors.New("primary role not set")
 // violation into a clean 400 across every surface (console + agent + MCP).
 var ErrInvalidPriority = errors.New("invalid priority")
 
+// ErrDuplicateTask is returned by Create when the new task's DedupKey matches
+// an existing task (any status, including cancelled). The existing task is
+// returned alongside the error and no new row is created. Only the email-intake
+// path sets a DedupKey, so hand/MCP/console creates never trigger this.
+var ErrDuplicateTask = errors.New("task already exists for this source")
+
 // NewService returns a TaskService bound to pool. Exported so builder-app
 // bridges (and other external wiring) can construct a service without going
 // through the app init path.
@@ -59,6 +65,12 @@ type CreateInput struct {
 
 	AssigneeUserID *uuid.UUID // optional; orthogonal to RoleName
 	RoleName       string     // optional; resolver fills in caller's primary if empty
+
+	// DedupKey, when non-empty, makes creation idempotent: a Create whose key
+	// matches an existing task returns that task + ErrDuplicateTask instead of
+	// inserting a duplicate. Set by the email-intake path (derived from the
+	// source email); empty for hand/MCP/console creates.
+	DedupKey string
 }
 
 // UpdateInput mirrors CreateInput but is sparse — set only the fields you
@@ -112,6 +124,7 @@ func (s *TaskService) Create(ctx context.Context, c *services.Caller, in CreateI
 		ScopeID:        scopeID,
 		AssigneeUserID: in.AssigneeUserID,
 		DueDate:        in.DueDate,
+		DedupKey:       in.DedupKey,
 	}
 	if t.Status == "" {
 		t.Status = "open"
@@ -123,8 +136,15 @@ func (s *TaskService) Create(ctx context.Context, c *services.Caller, in CreateI
 		return nil, fmt.Errorf("%q: %w", t.Priority, ErrInvalidPriority)
 	}
 
-	if err := createTask(ctx, s.pool, t); err != nil {
+	existed, err := createTask(ctx, s.pool, t)
+	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
+	}
+	if existed {
+		// A task from this same source already exists (possibly cancelled).
+		// Return it with a sentinel so the caller reports the dup rather than
+		// treating it as new — and skip the create-time side effects below.
+		return t, ErrDuplicateTask
 	}
 
 	_ = appendEvent(ctx, s.pool, c.TenantID, t.ID, &c.UserID, "comment", "Created task", "", "")

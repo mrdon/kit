@@ -32,6 +32,12 @@ a follow-up task.
    - **Priority:** `urgent` for a hard deadline this week, `high` for an explicit
      ask with timing, `medium` by default, `low` for FYI.
    - **Due date:** copy from the email if one is stated.
+   - **source_email_uid:** ALWAYS pass the `uid` of the email this task comes
+     from (from its summary line). This is the hard backstop against duplicates:
+     the system refuses to create a second task for an email that already
+     produced one — **even if that earlier task was cancelled or done** — so a
+     duplicate you or the user killed stays dead across future scans. If it
+     reports the task already exists, that's expected — move on.
 5. **Finish with `create_briefing`** summarizing what you found: already-tracked
    items (no action) and newly created tasks (titles + priorities). Use
    severity=info if you created nothing, severity=notable if you created tasks.

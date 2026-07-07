@@ -94,14 +94,15 @@ func (a *TaskApp) CronJobs() []apps.CronJob {
 var taskTools = []services.ToolMeta{
 	{
 		Name:        "create_task",
-		Description: "Create a new task. Every task belongs to a role (the team/project that owns it); pass role_scope or rely on the caller's primary role. Anyone in the role can see and edit; assignee is optional and orthogonal — it's just whose desk the task is on.",
+		Description: "Create a new task. Every task belongs to a role (the team/project that owns it); pass role_scope or rely on the caller's primary role. Anyone in the role can see and edit; assignee is optional and orthogonal — it's just whose desk the task is on. When creating from an email-intake summary, pass source_email_uid so repeat scans don't create duplicates.",
 		Schema: services.PropsReq(map[string]any{
-			"title":       services.Field("string", "Short title for the task"),
-			"description": services.Field("string", "Detailed description"),
-			"priority":    services.Field("string", "Priority: blocker, high, normal (default normal). A topical category is assigned automatically — don't pass one here."),
-			"assignee":    services.Field("string", "Optional assignee. Accepts a kit UUID, Slack user ID (e.g. U09AN7KJU3G), or a unique display-name fragment. Leave empty for the team backlog. Use find_user if unsure."),
-			"role_scope":  services.Field("string", "Role name that owns this task (e.g. bartender). Required unless caller has only one role or has a primary role set. Anyone in this role can see and edit the task."),
-			"due_date":    services.Field("string", "Due date in YYYY-MM-DD format"),
+			"title":            services.Field("string", "Short title for the task"),
+			"description":      services.Field("string", "Detailed description"),
+			"priority":         services.Field("string", "Priority: blocker, high, normal (default normal). A topical category is assigned automatically — don't pass one here."),
+			"assignee":         services.Field("string", "Optional assignee. Accepts a kit UUID, Slack user ID (e.g. U09AN7KJU3G), or a unique display-name fragment. Leave empty for the team backlog. Use find_user if unsure."),
+			"role_scope":       services.Field("string", "Role name that owns this task (e.g. bartender). Required unless caller has only one role or has a primary role set. Anyone in this role can see and edit the task."),
+			"due_date":         services.Field("string", "Due date in YYYY-MM-DD format"),
+			"source_email_uid": map[string]any{"type": "integer", "description": "Email-intake only: the uid of the source email summary this task comes from. The system derives a per-user dedup key from it and refuses to create a second task for the same email — even if a prior one was cancelled — so recurring scans don't pile up duplicates. Always pass it when creating a task from an email."},
 		}, "title"),
 	},
 	{

@@ -54,12 +54,13 @@ func taskAgentHandler(name string, svc *TaskService) tools.HandlerFunc {
 func handleCreateTask(svc *TaskService) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			Title       string `json:"title"`
-			Description string `json:"description"`
-			Priority    string `json:"priority"`
-			Assignee    string `json:"assignee"`
-			RoleScope   string `json:"role_scope"`
-			DueDate     string `json:"due_date"`
+			Title          string `json:"title"`
+			Description    string `json:"description"`
+			Priority       string `json:"priority"`
+			Assignee       string `json:"assignee"`
+			RoleScope      string `json:"role_scope"`
+			DueDate        string `json:"due_date"`
+			SourceEmailUID uint32 `json:"source_email_uid"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
@@ -70,6 +71,14 @@ func handleCreateTask(svc *TaskService) tools.HandlerFunc {
 			Description: inp.Description,
 			Priority:    inp.Priority,
 			RoleName:    inp.RoleScope,
+		}
+
+		// Email-intake dedup: key the task to its source email so repeated
+		// scans (retries, overlapping runs) can't spawn a second task for the
+		// same message — and a task the user cancelled stays gone. Namespaced
+		// per user since IMAP uids are only unique within a mailbox.
+		if inp.SourceEmailUID != 0 {
+			in.DedupKey = fmt.Sprintf("email:%s:%d", ec.Caller().UserID.String(), inp.SourceEmailUID)
 		}
 
 		if inp.Assignee != "" {
@@ -91,6 +100,9 @@ func handleCreateTask(svc *TaskService) tools.HandlerFunc {
 		caller := ec.Caller()
 		t, err := svc.Create(ec.Ctx, caller, in)
 		if err != nil {
+			if errors.Is(err, ErrDuplicateTask) {
+				return fmt.Sprintf("Skipped — a task already exists for this email (uid %d): [%s] %s (status: %s). Not creating a duplicate.", inp.SourceEmailUID, t.ID, t.Title, t.Status), nil
+			}
 			if errors.Is(err, ErrPrimaryRoleNotSet) {
 				return primaryRoleNotSetMessage(caller), nil
 			}
