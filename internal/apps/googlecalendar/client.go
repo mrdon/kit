@@ -153,11 +153,13 @@ func (c *Client) InsertEvent(ctx context.Context, calendarID string, event *Even
 	return &out, nil
 }
 
-// PatchEvent partially updates an existing event by id.
-func (c *Client) PatchEvent(ctx context.Context, calendarID, eventID string, event *Event) (*Event, error) {
+// UpdateEvent fully replaces an existing event by id (PUT). A full replace
+// (vs a partial patch) is used so representation changes — e.g. converting a
+// timed event to an all-day one — apply cleanly.
+func (c *Client) UpdateEvent(ctx context.Context, calendarID, eventID string, event *Event) (*Event, error) {
 	var out Event
 	path := fmt.Sprintf("/calendars/%s/events/%s", url.PathEscape(calendarID), url.PathEscape(eventID))
-	if err := c.doJSON(ctx, http.MethodPatch, path, event, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, path, event, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -181,7 +183,7 @@ func (c *Client) UpsertEvent(ctx context.Context, calendarID string, event *Even
 	out, err := c.InsertEvent(ctx, calendarID, event)
 	var apiErr *APIError
 	if asAPIError(err, &apiErr) && apiErr.IsConflict() {
-		return c.PatchEvent(ctx, calendarID, event.ID, event)
+		return c.UpdateEvent(ctx, calendarID, event.ID, event)
 	}
 	return out, err
 }

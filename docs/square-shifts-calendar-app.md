@@ -262,10 +262,12 @@ The `squareshifts` feature's `admin.Integration` Manage page shows:
   landing page when shipping.
 
 ### Remaining minor decisions (safe defaults chosen)
-1. **Per-shift event granularity:** one event per published shift (default). Breaks/notes go
-   in the event description; ignore break sub-structure for v1.
-2. **Event title:** `"<job title> — <team member name>"` (e.g. "Barista — Alice"), needing
-   the team-member + job caches. Fine to start with just the name.
+1. **Per-shift event granularity:** one **all-day** event per published shift, on the
+   shift's start date (teams consume the schedule as a "who's on" banner, not timed blocks).
+   Switching to timed blocks is a one-line change in `buildEvent`. Breaks/notes go in the
+   event description; ignore break sub-structure for v1.
+2. **Event title:** the team member's name (job-title prefix like "Barista — Alice" is a
+   later enhancement needing the job cache).
 3. **Poll-only vs webhooks:** poll every 15 min for v1; Square scheduled-shift webhooks are
    Beta — add later as a latency optimization behind a reconciliation sweep.
 4. **Multi-location:** all locations into the one target calendar for v1; per-location

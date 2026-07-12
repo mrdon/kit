@@ -29,8 +29,13 @@ func TestBuildEventStampsAndID(t *testing.T) {
 	if ev.Location != "Front counter" {
 		t.Fatalf("location = %q", ev.Location)
 	}
-	if ev.Start == nil || ev.Start.DateTime != shift.StartAt || ev.Start.TimeZone != "America/Denver" {
+	// All-day event: Start.Date is the shift's local date, End.Date the next
+	// day (exclusive); no DateTime.
+	if ev.Start == nil || ev.Start.Date != "2026-07-15" || ev.Start.DateTime != "" {
 		t.Fatalf("start = %+v", ev.Start)
+	}
+	if ev.End == nil || ev.End.Date != "2026-07-16" {
+		t.Fatalf("end = %+v", ev.End)
 	}
 	priv := ev.ExtendedProperties.Private
 	if priv["squareShiftId"] != "SHIFT123" || priv["source"] != "square" || priv["kitTenantId"] != tenant.String() {
@@ -48,9 +53,9 @@ func TestContentHashChangesWithFields(t *testing.T) {
 	h1 := contentHash(buildEvent(base, tenant))
 
 	moved := base
-	moved.EndAt = "2026-07-15T18:00:00Z"
+	moved.StartAt = "2026-07-16T09:00:00Z"
 	if contentHash(buildEvent(moved, tenant)) == h1 {
-		t.Fatal("hash unchanged after end time changed")
+		t.Fatal("hash unchanged after shift date changed")
 	}
 
 	renamed := base
