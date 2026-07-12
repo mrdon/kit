@@ -472,7 +472,10 @@ func displayFieldLabel(f FieldSpec) string {
 func (a *App) renderForm(w http.ResponseWriter, r *http.Request, m formModel) {
 	a.fillChrome(r, &m)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := setupTmpl.Execute(w, m); err != nil {
+	// Execute the named page template, not the set's root — chrome.Tmpl()'s
+	// root is header.html (just the chrome_header define), so a bare Execute
+	// renders an empty body.
+	if err := setupTmpl.ExecuteTemplate(w, "integration_setup.html", m); err != nil {
 		slog.Error("rendering integration_setup template", "error", err)
 	}
 }
