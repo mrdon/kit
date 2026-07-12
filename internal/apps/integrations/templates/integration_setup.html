@@ -42,6 +42,7 @@
         <div class="success-icon">&#10003;</div>
         <h2>{{.DisplayName}} is configured</h2>
         <p>{{.SuccessNote}}</p>
+        {{if .BackURL}}<p><a href="{{.BackURL}}">← Back to Integrations</a></p>{{end}}
       </div>
     </div>
   {{else}}

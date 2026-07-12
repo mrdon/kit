@@ -49,6 +49,10 @@ type formModel struct {
 	Error          string
 	Success        bool
 	SuccessNote    string
+	// BackURL, when set, renders a link back to the console (shown on the
+	// success screen). The setup form is reached from the Integrations page
+	// in the same tab, so "return here" beats "close this tab".
+	BackURL string
 	// UpdateMode is true when the submitter is editing an existing
 	// integration row. The form shows a banner and relaxes the required
 	// flag on secret fields.
@@ -253,7 +257,8 @@ func (a *App) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 		DisplayName: spec.DisplayName,
 		Scope:       string(spec.Scope),
 		Success:     true,
-		SuccessNote: "You can close this tab and return to your chat.",
+		SuccessNote: "It's connected and ready to use.",
+		BackURL:     "/" + tenant.Slug + "/web/admin/integrations",
 	})
 }
 
