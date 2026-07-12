@@ -30,7 +30,11 @@ func (a *App) RunReconcile(ctx context.Context, tenantID uuid.UUID) (SyncSummary
 		a.auditFailed(ctx, tenantID, "reconcile", err, time.Since(started))
 		return sum, err
 	}
-	a.auditCompleted(ctx, tenantID, "reconcile", sum, time.Since(started))
+	// Only record a reconcile that actually repaired drift; a clean pass
+	// (the normal case) leaves no audit noise.
+	if sum.changed() {
+		a.auditCompleted(ctx, tenantID, "reconcile", sum, time.Since(started))
+	}
 	return sum, nil
 }
 

@@ -26,6 +26,9 @@ type SyncSummary struct {
 	Deleted int
 }
 
+// changed reports whether the run touched any events.
+func (s SyncSummary) changed() bool { return s.Created+s.Updated+s.Deleted > 0 }
+
 // RunSync executes a sync for one tenant and records the outcome to
 // audit_events. triggeredBy is "schedule" or "manual".
 func (a *App) RunSync(ctx context.Context, tenantID uuid.UUID, triggeredBy string) (SyncSummary, error) {
@@ -35,7 +38,12 @@ func (a *App) RunSync(ctx context.Context, tenantID uuid.UUID, triggeredBy strin
 		a.auditFailed(ctx, tenantID, triggeredBy, err, time.Since(started))
 		return sum, err
 	}
-	a.auditCompleted(ctx, tenantID, triggeredBy, sum, time.Since(started))
+	// Record manual runs (the user wants the feedback) and any run that
+	// changed something; skip no-op scheduled runs so audit_events doesn't
+	// fill with "0/0/0" noise every 15 minutes.
+	if triggeredBy == "manual" || sum.changed() {
+		a.auditCompleted(ctx, tenantID, triggeredBy, sum, time.Since(started))
+	}
 	return sum, nil
 }
 
