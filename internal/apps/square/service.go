@@ -36,9 +36,6 @@ func (a *App) LoadClient(ctx context.Context, tenantID uuid.UUID) (*Client, erro
 	if a.enc == nil {
 		return nil, ErrNotReady
 	}
-	if a.clientID == "" || a.clientSecret == "" {
-		return nil, ErrNotReady
-	}
 
 	integ, err := models.GetIntegration(ctx, a.pool, tenantID, Provider, AuthType, nil)
 	if err != nil {
@@ -67,7 +64,10 @@ func (a *App) LoadClient(ctx context.Context, tenantID uuid.UUID) (*Client, erro
 	}
 
 	c := &Client{apiBase: a.apiBase, accessToken: accessToken}
-	if refreshToken != "" {
+	// Auto-refresh needs both a refresh token and the app's OAuth
+	// credentials. A non-expiring personal access token (no refresh token)
+	// is used as-is, which is the simplest single-team setup.
+	if refreshToken != "" && a.clientID != "" && a.clientSecret != "" {
 		c.refreshAndPersist = a.refreshHook(tenantID, integ.ID, refreshToken, integ.Config)
 	}
 	return c, nil

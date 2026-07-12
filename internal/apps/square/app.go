@@ -101,11 +101,11 @@ func typeSpec() integrations.TypeSpec {
 		Provider:    Provider,
 		AuthType:    AuthType,
 		DisplayName: "Square",
-		Description: "Connect Square to sync the published staff schedule. Obtain an OAuth access + refresh token with scopes TIMECARDS_READ, EMPLOYEES_READ, MERCHANT_PROFILE_READ.",
+		Description: "Connect Square to sync the published staff schedule. Needs scopes TIMECARDS_READ, EMPLOYEES_READ, MERCHANT_PROFILE_READ. Simplest: paste your app's non-expiring Production Access Token (Developer Dashboard → Credentials) and leave the refresh token blank.",
 		Scope:       integrations.ScopeTenant,
 		Fields: []integrations.FieldSpec{
-			{Name: "access_token", Label: "Access token", InputType: "password", Target: integrations.TargetPrimaryToken, Required: true, Help: "Square OAuth access token."},
-			{Name: "refresh_token", Label: "Refresh token", InputType: "password", Target: integrations.TargetSecondaryToken, Required: true, Help: "Square OAuth refresh token — used to keep the connection alive."},
+			{Name: "access_token", Label: "Access token", InputType: "password", Target: integrations.TargetPrimaryToken, Required: true, Help: "A Square Production Access Token, or an OAuth access token."},
+			{Name: "refresh_token", Label: "Refresh token (optional)", InputType: "password", Target: integrations.TargetSecondaryToken, Required: false, Help: "Only for expiring OAuth tokens — Kit uses it to auto-renew. Leave blank for a non-expiring personal access token."},
 		},
 	}
 }
