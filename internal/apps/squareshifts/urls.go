@@ -18,4 +18,5 @@ func registerSquareShiftsRoutes(mux apps.Mux, a *App) {
 	}
 	mux.Handle("GET /{slug}/api/square-shifts/status", adminJSON(a.handleStatusJSON))
 	mux.Handle("POST /{slug}/api/square-shifts/sync", adminJSON(a.handleSyncJSON))
+	mux.Handle("POST /{slug}/api/square-shifts/connect", adminJSON(a.handleConnectJSON))
 }

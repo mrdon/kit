@@ -531,6 +531,8 @@ export const api = {
 
   squareShiftsStatus: () => apiGet<SquareShiftsStatus>('/square-shifts/status'),
   squareShiftsSync: () => apiPost<SquareShiftsStatus>('/square-shifts/sync'),
+  squareShiftsConnect: (target: 'square' | 'google') =>
+    apiPost<{ url: string }>('/square-shifts/connect', { target }),
 
   expensesMeta: () => apiGet<ExpensesMeta>('/expenses/meta'),
   listExpenses: (f: ExpenseFilters = {}) =>

@@ -108,6 +108,44 @@ func agentHandler(a *App, name string) tools.HandlerFunc {
 	return nil
 }
 
+// MintSetupURL creates a pending integration for (provider, authType) scoped
+// to the caller and returns a single-use setup URL where the secret fields
+// are entered. It's the programmatic entry point behind a "Connect" button on
+// an app's admin page — same pending-row + signed-URL flow as
+// configure_integration, minus the chat-formatted message. Enforces the same
+// scope/admin rules: tenant-scoped types require an admin caller
+// (services.ErrForbidden otherwise).
+func MintSetupURL(ctx context.Context, caller *services.Caller, provider, authType string) (string, error) {
+	if instance == nil || instance.pool == nil {
+		return "", errors.New("integrations app not initialized")
+	}
+	provider = strings.TrimSpace(provider)
+	authType = strings.TrimSpace(authType)
+	spec, ok := LookupTypeSpec(provider, authType)
+	if !ok {
+		return "", fmt.Errorf("no integration type %q registered", typeKey(provider, authType))
+	}
+	if spec.Scope == ScopeTenant && !caller.IsAdmin {
+		return "", services.ErrForbidden
+	}
+	var targetUser *uuid.UUID
+	if spec.Scope == ScopeUser {
+		uid := caller.UserID
+		targetUser = &uid
+	}
+	p, err := models.CreatePendingIntegration(
+		ctx, instance.pool,
+		caller.TenantID, caller.UserID,
+		spec.Provider, spec.AuthType,
+		targetUser,
+		instance.tokenTTL(),
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating pending integration: %w", err)
+	}
+	return instance.buildSetupURL(ctx, p)
+}
+
 // configureIntegration validates the request, creates a pending row, and
 // returns a user-facing message containing the signed URL and pending_id.
 func (a *App) configureIntegration(ctx context.Context, caller *services.Caller, provider, authType string) (string, error) {
