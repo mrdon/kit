@@ -288,6 +288,38 @@ func GetIntegrationTokens(
 	return primaryEnc, secondaryEnc, nil
 }
 
+// UpdateIntegrationTokens overwrites the encrypted token columns (and
+// replaces config) for a live integration, tenant-scoped. Used by OAuth
+// integrations to persist refreshed access/refresh tokens. Unlike the
+// pending-completion upsert, both ciphertext arguments are written as-is
+// (pass the current value to leave a token unchanged) — this is a
+// programmatic refresh path, not a partial form submission.
+func UpdateIntegrationTokens(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	tenantID, integrationID uuid.UUID,
+	primaryEnc, secondaryEnc string,
+	config map[string]any,
+) error {
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	ct, err := pool.Exec(ctx, `
+		UPDATE integrations
+		SET primary_token = $3, secondary_token = $4, config = $5, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID, integrationID, primaryEnc, secondaryEnc, configJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("updating integration tokens: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("integration %s not found", integrationID)
+	}
+	return nil
+}
+
 // ListIntegrations returns integrations visible to the caller. When
 // includeAll is true (admin caller), every row in the tenant is returned.
 // Otherwise: tenant-scoped rows (user_id IS NULL) plus the caller's own

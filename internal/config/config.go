@@ -32,6 +32,15 @@ type Config struct {
 	NetlifyClientID     string // Netlify OAuth app client_id
 	NetlifyClientSecret string // Netlify OAuth app client_secret
 
+	// Square OAuth app credentials. Drive the Square integration at
+	// internal/apps/square (shift sync today; sales stats tomorrow).
+	// Application-level: per-tenant access/refresh tokens live in the
+	// integrations row; these app credentials refresh them. Unset values
+	// leave the Square connection unavailable rather than crashing.
+	SquareApplicationID     string // Square OAuth application_id (client_id)
+	SquareApplicationSecret string // Square OAuth application_secret (client_secret)
+	SquareEnvironment       string // "production" (default) or "sandbox"
+
 	// Kit GitHub App credentials. The GitHub App is workspace-scoped
 	// and shared across every Kit feature that ever touches GitHub
 	// (today: netlify; tomorrow: PR-decisions, issue-tasks, etc.).
@@ -63,6 +72,14 @@ func Load() (*Config, error) {
 		NetlifyClientID:     os.Getenv("NETLIFY_CLIENT_ID"),
 		NetlifyClientSecret: os.Getenv("NETLIFY_CLIENT_SECRET"),
 		GitHubAppSlug:       os.Getenv("KIT_GITHUB_APP_SLUG"),
+
+		SquareApplicationID:     os.Getenv("SQUARE_APPLICATION_ID"),
+		SquareApplicationSecret: os.Getenv("SQUARE_APPLICATION_SECRET"),
+		SquareEnvironment:       os.Getenv("SQUARE_ENVIRONMENT"),
+	}
+
+	if cfg.SquareEnvironment == "" {
+		cfg.SquareEnvironment = "production"
 	}
 
 	if v := os.Getenv("KIT_GITHUB_APP_ID"); v != "" {

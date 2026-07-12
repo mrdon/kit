@@ -85,6 +85,13 @@ export const SECTIONS: Section[] = [
     app: 'netlify',
   },
   {
+    to: '/admin/square-shifts',
+    label: 'Square Shift Sync',
+    blurb: 'Mirror your published Square schedule into a Google Calendar.',
+    admin: true,
+    app: 'square_shifts',
+  },
+  {
     to: '/admin/widget',
     label: 'Chat widget',
     blurb: 'Mint and revoke embed tokens for the website chat widget.',

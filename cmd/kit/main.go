@@ -28,9 +28,12 @@ import (
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/expense"
 	"github.com/mrdon/kit/internal/apps/github"
+	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/apps/netlify"
 	_ "github.com/mrdon/kit/internal/apps/slack"
+	"github.com/mrdon/kit/internal/apps/square"
+	"github.com/mrdon/kit/internal/apps/squareshifts"
 	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/apps/vault"
 	"github.com/mrdon/kit/internal/apps/voting"
@@ -169,6 +172,8 @@ func main() {
 	// same fallback chain.
 	integrations.Configure(enc, cfg.BaseURL, sessionSecret)
 	email.Configure(enc)
+	square.Configure(enc, cfg.SquareApplicationID, cfg.SquareApplicationSecret, cfg.SquareEnvironment)
+	googlecalendar.Configure(enc)
 	// Wire the todo app's resolution-suggester deps: the LLM for the
 	// Haiku suggester, the JobService for spawning jobs when the user
 	// taps a resolution chip, and the encryptor for decrypting the
@@ -223,6 +228,9 @@ func main() {
 	// (email-intake sweep), the JobService and LLM (resolution chips). Wired
 	// here, after the agent and signer exist.
 	task.Configure(builderLLM, svc.Jobs, enc, sessionSigner, app.Agent)
+
+	// Square shift sync needs the signer for its admin Manage page.
+	squareshifts.Configure(enc, sessionSigner)
 
 	// Widget app needs the agent (for chat dispatch), the session signer
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for

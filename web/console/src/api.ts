@@ -138,6 +138,24 @@ export interface NetlifyStatus {
   github_disconnect_url: string;
 }
 
+export interface SquareShiftRun {
+  status: string; // "completed" | "failed"
+  triggered_by: string;
+  created: number;
+  updated: number;
+  deleted: number;
+  duration_ms: number;
+  error: string;
+  at: string;
+}
+
+export interface SquareShiftsStatus {
+  square_connected: boolean;
+  google_connected: boolean;
+  enabled: boolean;
+  recent: SquareShiftRun[];
+}
+
 export interface RoleInfo {
   name: string;
   description: string;
@@ -510,6 +528,9 @@ export const api = {
   netlifyPickSite: (siteId: string) =>
     apiPost<{ message: string }>('/netlify/site', { site_id: siteId }),
   netlifyDisconnect: () => apiPost<void>('/netlify/disconnect'),
+
+  squareShiftsStatus: () => apiGet<SquareShiftsStatus>('/square-shifts/status'),
+  squareShiftsSync: () => apiPost<SquareShiftsStatus>('/square-shifts/sync'),
 
   expensesMeta: () => apiGet<ExpensesMeta>('/expenses/meta'),
   listExpenses: (f: ExpenseFilters = {}) =>
