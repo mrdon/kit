@@ -18,9 +18,18 @@ import (
 // (matching how teams typically consume a "who's on" schedule), not a timed
 // block.
 func buildEvent(shift square.EnrichedShift, tenantID uuid.UUID) *googlecalendar.Event {
-	summary := shift.Member
+	// First name keeps the schedule informal; fall back to full name.
+	summary := shift.MemberFirst
+	if summary == "" {
+		summary = shift.Member
+	}
 	if summary == "" {
 		summary = "Shift"
+	}
+	// All-day events lose the shift hours, so append them to the title —
+	// that's what tells opener from closer when several people work a day.
+	if clock := shiftClock(shift.StartAt, shift.EndAt); clock != "" {
+		summary = summary + " · " + clock
 	}
 	desc := "Synced from Square."
 	if shift.Notes != "" {
@@ -40,6 +49,19 @@ func buildEvent(shift square.EnrichedShift, tenantID uuid.UUID) *googlecalendar.
 			"kitTenantId":   tenantID.String(),
 		}},
 	}
+}
+
+// shiftClock renders a shift's local hours as "6:00am–2:00pm" for the
+// all-day event title. RFC 3339 start/end carry their local offset, so
+// formatting them directly yields the wall-clock time. Returns "" if either
+// timestamp doesn't parse.
+func shiftClock(startAt, endAt string) string {
+	s, serr := time.Parse(time.RFC3339, startAt)
+	e, eerr := time.Parse(time.RFC3339, endAt)
+	if serr != nil || eerr != nil {
+		return ""
+	}
+	return s.Format("3:04pm") + "–" + e.Format("3:04pm")
 }
 
 // shiftDates returns the all-day start date and (exclusive) end date for a

@@ -151,9 +151,12 @@ type EnrichedShift struct {
 	StartAt  string
 	EndAt    string
 	Timezone string
-	Member   string
-	Location string
-	Notes    string
+	Member   string // full display name, e.g. "Alice Ng"
+	// MemberFirst is the given name ("Alice"), falling back to Member. Used
+	// for the informal calendar-event title.
+	MemberFirst string
+	Location    string
+	Notes       string
 }
 
 // ListPublishedShifts pulls PUBLISHED shifts in [start, end) and decorates
@@ -190,23 +193,30 @@ func (a *App) ListPublishedShifts(ctx context.Context, tenantID uuid.UUID, start
 			continue
 		}
 		member := d.TeamMemberID
+		memberFirst := member
 		if m, ok := members[d.TeamMemberID]; ok {
 			member = m.DisplayName()
+			memberFirst = m.GivenName
+			if memberFirst == "" {
+				memberFirst = member
+			}
 		} else if d.TeamMemberID == "" {
 			member = "(open shift)"
+			memberFirst = member
 		}
 		location := d.LocationID
 		if name, ok := locByID[d.LocationID]; ok {
 			location = name
 		}
 		out = append(out, EnrichedShift{
-			ShiftID:  s.ID,
-			StartAt:  d.StartAt,
-			EndAt:    d.EndAt,
-			Timezone: d.Timezone,
-			Member:   member,
-			Location: location,
-			Notes:    d.Notes,
+			ShiftID:     s.ID,
+			StartAt:     d.StartAt,
+			EndAt:       d.EndAt,
+			Timezone:    d.Timezone,
+			Member:      member,
+			MemberFirst: memberFirst,
+			Location:    location,
+			Notes:       d.Notes,
 		})
 	}
 	return out, nil

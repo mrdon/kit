@@ -13,17 +13,19 @@ import (
 func TestBuildEventStampsAndID(t *testing.T) {
 	tenant := uuid.New()
 	shift := square.EnrichedShift{
-		ShiftID:  "SHIFT123",
-		StartAt:  "2026-07-15T09:00:00-06:00",
-		EndAt:    "2026-07-15T17:00:00-06:00",
-		Timezone: "America/Denver",
-		Member:   "Alice Ng",
-		Location: "Front counter",
-		Notes:    "cover for Sam",
+		ShiftID:     "SHIFT123",
+		StartAt:     "2026-07-15T09:00:00-06:00",
+		EndAt:       "2026-07-15T17:00:00-06:00",
+		Timezone:    "America/Denver",
+		Member:      "Alice Ng",
+		MemberFirst: "Alice",
+		Location:    "Front counter",
+		Notes:       "cover for Sam",
 	}
 	ev := buildEvent(shift, tenant)
 
-	if ev.Summary != "Alice Ng" {
+	// Informal first name + shift hours for opener/closer context.
+	if ev.Summary != "Alice · 9:00am–5:00pm" {
 		t.Fatalf("summary = %q", ev.Summary)
 	}
 	if ev.Location != "Front counter" {
