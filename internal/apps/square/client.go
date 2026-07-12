@@ -245,7 +245,9 @@ func (c *Client) SearchPublishedShifts(ctx context.Context, locationIDs []string
 			"filter": filter,
 			"sort":   map[string]string{"field": "START_AT", "order": "ASC"},
 		}
-		reqBody := map[string]any{"query": query, "limit": 200}
+		// The scheduled-shifts search caps limit at 50 (unlike timecards/
+		// team-members at 200); we page through the cursor for the rest.
+		reqBody := map[string]any{"query": query, "limit": 50}
 		if cursor != "" {
 			reqBody["cursor"] = cursor
 		}
