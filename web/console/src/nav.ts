@@ -71,10 +71,12 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
   {
+    // Not admin-gated: user-scoped connectors (personal email) are
+    // self-service. Workspace-wide connectors are marked admin-only on the
+    // page itself and their Connect button 403s for non-admins.
     to: '/admin/integrations',
     label: 'Integrations',
-    blurb: 'Connect Netlify, GitHub, and other services.',
-    admin: true,
+    blurb: 'Connect email, Square, Google Calendar, and other services.',
     app: 'integrations',
   },
   {

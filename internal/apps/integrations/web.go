@@ -342,7 +342,7 @@ func (a *App) verifyAndLoad(ctx context.Context, tenantID uuid.UUID, token strin
 	if payload.TenantID != tenantID {
 		return nil, TypeSpec{}, errors.New("token tenant mismatch")
 	}
-	p, err := loadPendingAny(ctx, a.pool, tenantID, payload.PendingID)
+	p, err := models.GetPendingIntegration(ctx, a.pool, tenantID, payload.PendingID)
 	if err != nil {
 		return nil, TypeSpec{}, err
 	}

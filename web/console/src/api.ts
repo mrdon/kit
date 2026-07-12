@@ -96,6 +96,19 @@ export interface Integration {
   manage_url: string;
 }
 
+// IntegrationType is one registered connector plus this caller's connection
+// state, from the integration catalog. Drives the connect/delete UI.
+export interface IntegrationType {
+  provider: string;
+  auth_type: string;
+  display_name: string;
+  description: string;
+  scope: string; // "tenant" | "user"
+  connected: boolean;
+  integration_id: string;
+  can_manage: boolean;
+}
+
 export interface WidgetToken {
   id: string;
   placeholder: string;
@@ -478,6 +491,14 @@ export interface WorkspaceApp {
 export const api = {
   me: () => apiGet<Me>('/me'),
   integrations: () => apiGet<Integration[]>('/integrations'),
+  integrationCatalog: () => apiGet<IntegrationType[]>('/integration-catalog'),
+  integrationConnect: (provider: string, authType: string) =>
+    apiPost<{ url: string }>('/integration-catalog/connect', {
+      provider,
+      auth_type: authType,
+    }),
+  integrationDelete: (id: string) =>
+    apiDelete<void>(`/integrations/${encodeURIComponent(id)}`),
 
   apps: () => apiGet<WorkspaceApp[]>('/apps'),
   setApp: (name: string, enabled: boolean) =>
@@ -531,8 +552,6 @@ export const api = {
 
   squareShiftsStatus: () => apiGet<SquareShiftsStatus>('/square-shifts/status'),
   squareShiftsSync: () => apiPost<SquareShiftsStatus>('/square-shifts/sync'),
-  squareShiftsConnect: (target: 'square' | 'google') =>
-    apiPost<{ url: string }>('/square-shifts/connect', { target }),
 
   expensesMeta: () => apiGet<ExpensesMeta>('/expenses/meta'),
   listExpenses: (f: ExpenseFilters = {}) =>

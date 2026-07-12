@@ -38,16 +38,6 @@ export default function SquareShifts() {
     }
   };
 
-  const connect = async (target: 'square' | 'google') => {
-    setErr(null);
-    try {
-      const { url } = await api.squareShiftsConnect(target);
-      window.location.href = url;
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  };
-
   const ready = st?.square_connected && st?.google_connected;
 
   return (
@@ -83,26 +73,21 @@ export default function SquareShifts() {
               {st.square_connected ? (
                 <span className="pill pill-ok">Square connected</span>
               ) : (
-                <>
-                  <span className="pill pill-off">Square not connected</span>{' '}
-                  <button className="btn" onClick={() => connect('square')}>
-                    Connect Square
-                  </button>
-                </>
-              )}
-            </p>
-            <p className="status-line">
+                <span className="pill pill-off">Square not connected</span>
+              )}{' '}
               {st.google_connected ? (
                 <span className="pill pill-ok">Google Calendar connected</span>
               ) : (
-                <>
-                  <span className="pill pill-off">Google Calendar not connected</span>{' '}
-                  <button className="btn" onClick={() => connect('google')}>
-                    Connect Google Calendar
-                  </button>
-                </>
+                <span className="pill pill-off">Google Calendar not connected</span>
               )}
             </p>
+            {!ready && (
+              <p className="muted">
+                Connect both on the{' '}
+                <Link to="/admin/integrations">Integrations</Link> page to enable
+                syncing.
+              </p>
+            )}
             {ready && !st.enabled && (
               <p className="muted">
                 Both connected, but the feature is turned off. Enable{' '}

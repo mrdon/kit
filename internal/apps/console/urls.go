@@ -34,6 +34,13 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/me", jsonRoute(a.handleMe))
 	mux.Handle("GET /{slug}/api/integrations", adminJSON(a.handleIntegrations))
 
+	// Integration connect/manage. Caller-scoped (not admin-only) so
+	// user-scoped connectors (email) can be self-served; MintSetupURL and
+	// the delete ownership check enforce admin for workspace-wide types.
+	mux.Handle("GET /{slug}/api/integration-catalog", jsonRoute(a.handleIntegrationCatalog))
+	mux.Handle("POST /{slug}/api/integration-catalog/connect", jsonRoute(a.handleIntegrationConnect))
+	mux.Handle("DELETE /{slug}/api/integrations/{id}", jsonRoute(a.handleIntegrationDelete))
+
 	// App enable/disable. Admin-only: an admin turns feature apps on or off
 	// for the whole workspace. Core apps (console, admin) reject the PUT.
 	mux.Handle("GET /{slug}/api/apps", adminJSON(a.handleAppsList))

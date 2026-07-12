@@ -84,7 +84,7 @@ func emailAgentHandler(name string, a *App) tools.HandlerFunc {
 	}
 }
 
-const notConfiguredMsg = "Your email account isn't configured. Ask me to set it up with configure_integration(provider=\"email\", auth_type=\"imap_smtp\")."
+const notConfiguredMsg = "Your email account isn't configured. Open the Integrations page in the Kit web console and connect your mailbox there."
 
 func handleSearchEmails(a *App) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {

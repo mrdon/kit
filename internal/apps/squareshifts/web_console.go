@@ -3,7 +3,6 @@ package squareshifts
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -11,11 +10,9 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
-	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/apps/square"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
-	"github.com/mrdon/kit/internal/services"
 )
 
 // runJSON is one row in the Manage page's history table.
@@ -111,45 +108,6 @@ func (a *App) handleSyncJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
-}
-
-// handleConnectJSON mints a single-use integration setup URL for the Square
-// or Google Calendar connector and returns it, so the Manage page's Connect
-// buttons can send the admin straight to the secret-entry form.
-func (a *App) handleConnectJSON(w http.ResponseWriter, r *http.Request) {
-	caller := auth.CallerFromContext(r.Context())
-	if caller == nil {
-		writeErr(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	var body struct {
-		Target string `json:"target"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body")
-		return
-	}
-	var provider, authType string
-	switch body.Target {
-	case "square":
-		provider, authType = square.Provider, square.AuthType
-	case "google":
-		provider, authType = googlecalendar.Provider, googlecalendar.AuthType
-	default:
-		writeErr(w, http.StatusBadRequest, "unknown target")
-		return
-	}
-	url, err := integrations.MintSetupURL(r.Context(), caller, provider, authType)
-	if err != nil {
-		if errors.Is(err, services.ErrForbidden) {
-			writeErr(w, http.StatusForbidden, "admin only")
-			return
-		}
-		slog.Error("squareshifts: minting setup url", "target", body.Target, "error", err)
-		writeErr(w, http.StatusInternalServerError, "could not start setup")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"url": url})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

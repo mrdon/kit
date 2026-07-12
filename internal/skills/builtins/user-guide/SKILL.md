@@ -123,7 +123,8 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 - **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
 - **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
 - **Apps** — admin-only page to turn features (vault, expenses, voting, calendar, app builder, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
-- **Integrations / Website / Chat widget** — admin-only setup pages for Netlify, GitHub, Square, Google Calendar, and the website chat widget.
+- **Integrations** — connect external services from one page: click **Connect** and enter the secret on a secure one-time form (it never passes through the assistant). Personal email is self-service for any user; workspace-wide services (Square, Google Calendar, Netlify, GitHub) are admin-only.
+- **Website / Chat widget** — admin-only setup pages for Netlify/GitHub site changes and the website chat widget.
 
 It works alongside Slack and the feed, not instead of them.
 
@@ -155,9 +156,9 @@ Calendars are scoped to roles like other Kit resources. Use `list_calendars` to 
 
 If you run staff scheduling in Square, Kit can mirror your **published** schedule into a Google Calendar your team already subscribes to — so shifts show up in everyone's calendar automatically. It's admin-only setup and then runs itself (a background sync every 15 minutes).
 
-Two one-time connections (both via the admin Integrations page):
+Two one-time connections, both on the **Integrations** page in the web console (click **Connect** on each):
 
-- **Square** — connect with an OAuth access + refresh token (scopes `TIMECARDS_READ`, `EMPLOYEES_READ`, `MERCHANT_PROFILE_READ`). Once connected, `square_list_shifts` lists the upcoming published schedule so you can confirm the pull.
+- **Square** — paste a Square Production Access Token (Developer Dashboard → Credentials; scopes `TIMECARDS_READ`, `EMPLOYEES_READ`, `MERCHANT_PROFILE_READ`). Leave the refresh token blank — a Production token doesn't expire. Once connected, `square_list_shifts` lists the upcoming published schedule so you can confirm the pull.
 - **Google Calendar** — create a Google service account, download its JSON key, and **share your target calendar with the service account's email as a writer**. Paste the key + the calendar's ID. Then `gcal_check` writes and deletes a probe event to confirm write access. (A service account has no per-seat cost and needs no admin domain setup.)
 
 Enable the **Square Shift Sync** feature on the Apps page and it starts syncing. Each published shift becomes a calendar event (titled with the team member, at their location, in the shift's timezone); cancelled shifts are removed on the next sweep. Run `squareshifts_sync_now` to sync on demand and `squareshifts_status` to see the last run. Kit only reads Square's *published* schedule — it doesn't build schedules (Square's API doesn't expose staff availability or time-off).
@@ -166,11 +167,7 @@ Enable the **Square Shift Sync** feature on the Apps page and it starts syncing.
 
 Connect any IMAP + SMTP mailbox so Kit can read your inbox and draft replies on your behalf. Gmail works via an app password (enable 2FA, then generate one at https://myaccount.google.com/apppasswords). iCloud, Yahoo, Fastmail, and self-hosted IMAP work with their normal passwords. Microsoft 365 / Outlook.com aren't supported yet — they require OAuth.
 
-Credentials go through the shared integrations flow — Kit mints a one-time URL, you enter your password in a browser form, and the LLM never sees it:
-
-> "Set up my email."
-
-(Kit calls `configure_integration(provider="email", auth_type="imap_smtp")` and relays the URL.)
+Connect it on the **Integrations** page in the web console: find the "Email — personal" connector and click **Connect**. You enter your password on a secure one-time form in the browser — it never passes through the assistant. (Email is self-service: any user can connect their own mailbox.)
 
 Once configured, ask:
 

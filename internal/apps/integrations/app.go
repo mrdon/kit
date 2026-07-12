@@ -14,7 +14,6 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
-	"github.com/mrdon/kit/internal/tools"
 )
 
 // defaultTokenTTL is the setup URL's time-to-live. Short enough that a
@@ -69,20 +68,16 @@ func (a *App) SystemPrompt() string {
 	return mustRender("system_prompt.tmpl", nil)
 }
 
-func (a *App) ToolMetas() []services.ToolMeta {
-	return services.IntegrationTools
-}
+// Integration configuration is web-only (the console Integrations page),
+// so the app exposes no agent/MCP tools — secrets never route through the
+// LLM, and the agent context stays lean. The signed-URL setup form and the
+// console connect/catalog/delete endpoints are the whole surface.
+func (a *App) ToolMetas() []services.ToolMeta { return nil }
 
-func (a *App) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, _ bool) {
-	r, ok := registerer.(*tools.Registry)
-	if !ok {
-		return
-	}
-	registerIntegrationAgentTools(r, a)
-}
+func (a *App) RegisterAgentTools(_ context.Context, _ any, _ *services.Caller, _ bool) {}
 
 func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
-	return buildMCPTools(a)
+	return nil
 }
 
 func (a *App) RegisterRoutes(mux apps.Mux) {

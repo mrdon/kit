@@ -288,13 +288,19 @@ The `squareshifts` feature's `admin.Integration` Manage page shows:
    `squareshifts_status`; run summaries → `audit_events`; docs (user guide + landing).
 
 Admin UI (built):
-- A **Square Shift Sync** card on the admin Integrations index (`admin.Integration`) shows
-  readiness + last-sync summary.
-- A full **Manage page** in the React console (`/{slug}/web/admin/square-shifts`,
-  `web/console/src/pages/SquareShifts.tsx`) with connection pills, a **Sync now** button,
-  and a **recent-runs table** — backed by JSON handlers (`internal/apps/squareshifts/`
-  `urls.go` + `web_console.go`) via `console.AdminJSON`, plus agent/MCP `squareshifts_*`
-  tools.
+- **Connecting Square + Google Calendar is done on the console Integrations page**, not a
+  chat tool. Integration config is web-only: the console shows a catalog of registered
+  connectors with **Connect / Reconnect / Disconnect** buttons that mint the same signed
+  setup URL (`integrations.MintSetupURL` + console `/api/integration-catalog*` endpoints).
+  The old `configure_integration`/`check_integration_status`/`list_integrations`/
+  `delete_integration`/`list_integration_types` agent+MCP tools were removed — secrets never
+  route through the LLM and the agent context stays lean. Email stays self-service (user
+  scope); Square/Google are admin-only (tenant scope), enforced by `MintSetupURL`.
+- A **Manage page** in the React console (`/{slug}/web/admin/square-shifts`,
+  `web/console/src/pages/SquareShifts.tsx`) with connection status, a **Sync now** button,
+  and a **recent-runs table** — backed by JSON handlers via `console.AdminJSON`, plus
+  agent/MCP `squareshifts_sync_now` / `squareshifts_status` tools. When a dependency isn't
+  connected it links to the Integrations page.
 
 Scheduling uses `apps.CronJob` (the process-wide interval ticker, same as the calendar
 app) — **not** the DB-backed `internal/scheduler`/`jobs` system, which is for per-tenant

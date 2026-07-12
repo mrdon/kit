@@ -16,7 +16,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
-	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
@@ -50,7 +49,6 @@ func Configure(enc *crypto.Encryptor) {
 		return
 	}
 	instance.enc = enc
-	admin.RegisterIntegration(&googleCalendarIntegration{app: instance})
 }
 
 func (a *App) Name() string { return "google_calendar" }

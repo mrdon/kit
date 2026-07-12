@@ -15,7 +15,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
-	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
@@ -41,17 +40,15 @@ type App struct {
 // Init caches the pool. Called by apps.Init().
 func (a *App) Init(pool *pgxpool.Pool) { a.pool = pool }
 
-// Configure wires the PWA session signer (for the admin Manage page) and
-// registers the admin integrations-index card. The sync pulls its clients
-// from the square and googlecalendar singletons, so there's nothing else to
-// wire beyond the pool (set in Init). enc is accepted to match the wiring
-// convention and reserved for future direct use.
+// Configure wires the PWA session signer (for the admin Manage page). The
+// sync pulls its clients from the square and googlecalendar singletons, so
+// there's nothing else to wire beyond the pool (set in Init). enc is accepted
+// to match the wiring convention and reserved for future direct use.
 func Configure(_ *crypto.Encryptor, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
-	admin.RegisterIntegration(&squareShiftsIntegration{app: instance})
 }
 
 func (a *App) Name() string { return AppName }

@@ -65,8 +65,8 @@ func (a *App) ToolMetas() []services.ToolMeta {
 
 // RegisterAgentTools only registers the email tools if the caller has
 // an email integration row configured. An unconfigured user gets a
-// registry with no search/read/send tools — they route through the
-// always-available configure_integration flow instead.
+// registry with no search/read/send tools — they connect their mailbox
+// on the web console's Integrations page instead.
 func (a *App) RegisterAgentTools(ctx context.Context, registerer any, caller *services.Caller, _ bool) {
 	r, ok := registerer.(*tools.Registry)
 	if !ok {
