@@ -1,10 +1,14 @@
 package googlecalendar
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestDeterministicIDValidAndStable(t *testing.T) {
@@ -42,6 +46,36 @@ func TestParseServiceAccountKey(t *testing.T) {
 	}
 	if _, err := parseServiceAccountKey(`not json`); err == nil {
 		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestOwnerPropsDistinguishesApps(t *testing.T) {
+	tenant := uuid.New()
+	shifts := OwnerProps("square_shifts", tenant)
+	events := OwnerProps("events", tenant)
+
+	if shifts[PropApp] != "square_shifts" || shifts[PropTenant] != tenant.String() {
+		t.Fatalf("stamp = %+v", shifts)
+	}
+	// Two features on one calendar must not claim each other's events.
+	if shifts[PropApp] == events[PropApp] {
+		t.Fatal("distinct apps produced the same ownership stamp")
+	}
+	// Nor may one tenant's sweep see another's.
+	if OwnerProps("square_shifts", uuid.New())[PropTenant] == shifts[PropTenant] {
+		t.Fatal("distinct tenants produced the same ownership stamp")
+	}
+}
+
+// An unfiltered list would hand a cleanup sweep the entire calendar, so an
+// empty props map must be an error rather than a match-everything query.
+func TestListEventsByPrivatePropertiesRejectsEmptyFilter(t *testing.T) {
+	c := &Client{accessToken: "t", tokenExpiry: time.Now().Add(time.Hour)}
+	if _, err := c.ListEventsByPrivateProperties(context.Background(), "cal", nil); err == nil {
+		t.Fatal("expected error for empty property filter")
+	}
+	if _, err := c.ListEventsByPrivateProperties(context.Background(), "cal", map[string]string{}); err == nil {
+		t.Fatal("expected error for empty property filter")
 	}
 }
 

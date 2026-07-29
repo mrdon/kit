@@ -40,8 +40,14 @@ func TestBuildEventStampsAndID(t *testing.T) {
 		t.Fatalf("end = %+v", ev.End)
 	}
 	priv := ev.ExtendedProperties.Private
-	if priv["squareShiftId"] != "SHIFT123" || priv["source"] != "square" || priv["kitTenantId"] != tenant.String() {
+	if priv["squareShiftId"] != "SHIFT123" || priv["source"] != "square" {
 		t.Fatalf("private props = %+v", priv)
+	}
+	// Ownership stamp: app + tenant. The reconcile sweep filters on exactly
+	// this pair, so a missing kitApp would let it claim other features'
+	// events on a shared calendar.
+	if priv[googlecalendar.PropApp] != AppName || priv[googlecalendar.PropTenant] != tenant.String() {
+		t.Fatalf("ownership stamp = %+v", priv)
 	}
 	// Deterministic id: same shift → same id across builds.
 	if buildEvent(shift, tenant).ID != ev.ID {
@@ -82,10 +88,10 @@ func TestFormatSummary(t *testing.T) {
 
 func TestEventStartsInWindow(t *testing.T) {
 	start := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(0, 0, 21)
+	end := start.AddDate(0, syncWindowMonths, 0)
 	inWindow := googlecalendar.Event{Start: &googlecalendar.EventDateTime{DateTime: "2026-07-15T09:00:00-06:00"}}
 	past := googlecalendar.Event{Start: &googlecalendar.EventDateTime{DateTime: "2026-07-01T09:00:00Z"}}
-	future := googlecalendar.Event{Start: &googlecalendar.EventDateTime{DateTime: "2026-09-01T09:00:00Z"}}
+	future := googlecalendar.Event{Start: &googlecalendar.EventDateTime{DateTime: "2026-11-01T09:00:00Z"}}
 	noStart := googlecalendar.Event{}
 
 	if !eventStartsInWindow(inWindow, start, end) {
@@ -99,6 +105,44 @@ func TestEventStartsInWindow(t *testing.T) {
 	}
 	if eventStartsInWindow(noStart, start, end) {
 		t.Error("event with no start must not be deletable")
+	}
+}
+
+// The sync writes all-day events (Start.Date, no DateTime). A window check
+// that only understood DateTime silently spared every real event from the
+// orphan sweep, so cover the all-day shape explicitly.
+func TestEventStartsInWindowAllDay(t *testing.T) {
+	start := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, syncWindowMonths, 0)
+
+	cases := []struct {
+		name string
+		date string
+		want bool
+	}{
+		{"first day of window", "2026-07-12", true},
+		{"mid window", "2026-08-03", true},
+		{"day before window", "2026-07-11", false},
+		{"last day in window", "2026-09-11", true},
+		{"first day past window", "2026-09-12", false},
+		{"unparseable", "not-a-date", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := googlecalendar.Event{Start: &googlecalendar.EventDateTime{Date: c.date}}
+			if got := eventStartsInWindow(e, start, end); got != c.want {
+				t.Errorf("date %q: got %v want %v", c.date, got, c.want)
+			}
+		})
+	}
+
+	// An event built by the real sync must be visible to the sweep — this is
+	// the regression that mattered.
+	ev := buildEvent(square.EnrichedShift{
+		ShiftID: "S1", StartAt: "2026-07-15T09:00:00-06:00", EndAt: "2026-07-15T17:00:00-06:00", Member: "A",
+	}, uuid.New())
+	if !eventStartsInWindow(*ev, start, end) {
+		t.Fatalf("sync-authored all-day event not seen as in-window: start = %+v", ev.Start)
 	}
 }
 

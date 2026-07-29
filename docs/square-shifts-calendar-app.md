@@ -165,12 +165,33 @@ optimization, always backed by a periodic full reconciliation sweep.
   through), plus:
   ```json
   "extendedProperties": { "private": {
-    "squareShiftId": "SHIFT123", "source": "square", "kitTenantId": "<uuid>" } }
+    "kitApp": "square_shifts", "kitTenantId": "<uuid>",
+    "squareShiftId": "SHIFT123", "source": "square" } }
   ```
+  `kitApp` + `kitTenantId` are the **ownership stamp** (`googlecalendar.OwnerProps`);
+  `squareShiftId`/`source` are for humans debugging the calendar.
 - Reconcile / find-orphans:
-  `GET .../events?privateExtendedProperty=source%3Dsquare&privateExtendedProperty=kitTenantId%3D<uuid>`.
+  `GET .../events?privateExtendedProperty=kitApp%3Dsquare_shifts&privateExtendedProperty=kitTenantId%3D<uuid>`.
 - Throttle < 600 req/min/user; retry `403 rateLimitExceeded`/`429`/`5xx` with
   `min((2^n)+jitter, 64s)` backoff. Do not retry `400/404/409/410`.
+
+### Deletion safety: ownership vs staleness
+
+A sweep may only delete an event that passes **both** tests, kept deliberately separate:
+
+| Test | Answered by | Failure mode if skipped |
+|---|---|---|
+| **Ownership** — did this app write it for this tenant? | `kitApp` + `kitTenantId` stamp, queried via `ListEventsByPrivateProperties(OwnerProps(...))` | Deleting a human's meeting, or another Kit feature's event, off a shared calendar |
+| **Staleness** — is it still backed by a published shift? | absent from `desired` (this run's Square pull) | Stale events linger after a shift is unpublished |
+
+Two guards make the staleness test safe to act on:
+- **Past events are never deleted** — they're history, and they fall out of the window anyway.
+- **Events beyond the window are never deleted** — we didn't ask Square about that range, so
+  their absence from `desired` carries no information. Window membership uses the event's own
+  start, which for these all-day events is `start.date` (not `start.dateTime`).
+
+Any future feature writing to the same calendar must stamp `OwnerProps(itsAppName, tenantID)`
+and filter on the same pair. That's the whole contract.
 
 ### ⚠️ Lifecycle risk to design around
 Google is removing the secondary-calendar auto-reassignment safety net: personal accounts
@@ -272,7 +293,7 @@ The `squareshifts` feature's `admin.Integration` Manage page shows:
    Beta — add later as a latency optimization behind a reconciliation sweep.
 4. **Multi-location:** all locations into the one target calendar for v1; per-location
    calendars later if the team wants separation.
-5. **Sync window:** rolling e.g. now → +21 days; re-sync overwrites, past events age out.
+5. **Sync window:** rolling now → +2 months; re-sync overwrites, past events age out.
 
 ### Build order / status
 1. ✅ Square client + token store + `scheduled_shifts/search` behind read-only
@@ -283,7 +304,7 @@ The `squareshifts` feature's `admin.Integration` Manage page shows:
    (migration 069) + windowed delete detection (`internal/apps/squareshifts/`).
 4. ✅ `apps.CronJob` (15 min) sync loop + `apps.IsEnabled` gating + rolling 21-day window.
 5. ✅ Reconciliation sweep — second `apps.CronJob` (`reconcile_square_shifts`, every 12h)
-   lists actual Kit-authored events via `ListEventsByPrivateProperty(kitTenantId)`, recreates
+   lists this app's own events via `ListEventsByPrivateProperties(OwnerProps(...))`, recreates
    desired events missing from the calendar (heals out-of-band deletions), and deletes
    in-window orphans. Records to `audit_events` with `triggered_by="reconcile"`.
 6. ✅ Config/status tools (agent + MCP parity): `squareshifts_sync_now`,

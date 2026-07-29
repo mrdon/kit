@@ -14,10 +14,18 @@ import (
 	"github.com/mrdon/kit/internal/apps/square"
 )
 
-// syncWindowDays is the rolling horizon synced each run: from the start of
+// syncWindowMonths is the rolling horizon synced each run: from the start of
 // today (UTC) forward. Past shifts fall out of the window and their events
 // age out naturally rather than being pruned.
-const syncWindowDays = 21
+const syncWindowMonths = 2
+
+// syncWindow returns the rolling [start, end) horizon for a run: midnight UTC
+// today through syncWindowMonths later.
+func syncWindow() (start, end time.Time) {
+	now := time.Now().UTC()
+	start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	return start, start.AddDate(0, syncWindowMonths, 0)
+}
 
 // SyncSummary counts what one run changed.
 type SyncSummary struct {
@@ -54,9 +62,7 @@ func (a *App) RunSync(ctx context.Context, tenantID uuid.UUID, triggeredBy strin
 func (a *App) syncTenant(ctx context.Context, tenantID uuid.UUID) (SyncSummary, error) {
 	var sum SyncSummary
 
-	now := time.Now().UTC()
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(0, 0, syncWindowDays)
+	start, end := syncWindow()
 
 	shifts, err := square.Instance().ListPublishedShifts(ctx, tenantID, start, end)
 	if err != nil {

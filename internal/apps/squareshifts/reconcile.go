@@ -47,9 +47,7 @@ func (a *App) RunReconcile(ctx context.Context, tenantID uuid.UUID) (SyncSummary
 func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSummary, error) {
 	var sum SyncSummary
 
-	now := time.Now().UTC()
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(0, 0, syncWindowDays)
+	start, end := syncWindow()
 
 	shifts, err := square.Instance().ListPublishedShifts(ctx, tenantID, start, end)
 	if err != nil {
@@ -70,8 +68,11 @@ func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSumm
 		desired[ev.ID] = desiredShift{shift: s, event: ev}
 	}
 
-	// actual: every event on the calendar this tenant's sync authored.
-	actual, err := gcal.ListEventsByPrivateProperty(ctx, calendarID, "kitTenantId", tenantID.String())
+	// actual: every event on the calendar this app authored for this tenant.
+	// Filtering on the full ownership stamp (not just the tenant) is what
+	// keeps the orphan sweep below off other features' events on a shared
+	// calendar — and off everything a human put there.
+	actual, err := gcal.ListEventsByPrivateProperties(ctx, calendarID, googlecalendar.OwnerProps(AppName, tenantID))
 	if err != nil {
 		return sum, fmt.Errorf("listing calendar events: %w", err)
 	}
@@ -98,8 +99,12 @@ func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSumm
 		sum.Created++
 	}
 
-	// Delete in-window events that no longer back a published shift. Past
-	// events (start < window) are history and left untouched.
+	// Delete stale events: ones we own (the list above is already filtered to
+	// those) that no longer back a published shift. Past events (start <
+	// window) are history and left untouched, and events beyond the window
+	// are spared too — we didn't ask Square about that range, so their
+	// absence from `desired` says nothing about whether the shift still
+	// exists.
 	for id, e := range actualByID {
 		if _, want := desired[id]; want {
 			continue
@@ -148,15 +153,36 @@ func (a *App) ReconcileAllTenants(ctx context.Context) error {
 // [start, end). Unparseable/missing starts return false so we never delete
 // an event we can't place.
 func eventStartsInWindow(e googlecalendar.Event, start, end time.Time) bool {
-	if e.Start == nil || e.Start.DateTime == "" {
+	t, ok := eventStart(e)
+	if !ok {
 		return false
 	}
-	t, err := time.Parse(time.RFC3339, e.Start.DateTime)
-	if err != nil {
-		return false
-	}
-	t = t.UTC()
 	return !t.Before(start) && t.Before(end)
+}
+
+// eventStart returns an event's start instant. Timed events carry an RFC 3339
+// DateTime; all-day events (what this sync writes) carry only a "2006-01-02"
+// Date, which we place at UTC midnight — precise enough to decide window
+// membership over a multi-week horizon.
+func eventStart(e googlecalendar.Event) (time.Time, bool) {
+	if e.Start == nil {
+		return time.Time{}, false
+	}
+	if e.Start.DateTime != "" {
+		t, err := time.Parse(time.RFC3339, e.Start.DateTime)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t.UTC(), true
+	}
+	if e.Start.Date != "" {
+		t, err := time.Parse("2006-01-02", e.Start.Date)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t, true // time.Parse of a bare date yields UTC
+	}
+	return time.Time{}, false
 }
 
 // privateProp reads one private extended property off an event, "" if absent.

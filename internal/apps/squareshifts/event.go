@@ -36,18 +36,20 @@ func buildEvent(shift square.EnrichedShift, tenantID uuid.UUID) *googlecalendar.
 		desc = shift.Notes + "\n\n" + desc
 	}
 	startDate, endDate := shiftDates(shift.StartAt)
+	// Ownership stamp (kitApp + kitTenantId) is what the reconcile sweep
+	// filters on, so it only ever considers events this app wrote for this
+	// tenant. squareShiftId/source are for humans debugging the calendar.
+	props := googlecalendar.OwnerProps(AppName, tenantID)
+	props["squareShiftId"] = shift.ShiftID
+	props["source"] = "square"
 	return &googlecalendar.Event{
-		ID:          googlecalendar.DeterministicID("square:" + shift.ShiftID),
-		Summary:     summary,
-		Location:    shift.Location,
-		Description: desc,
-		Start:       &googlecalendar.EventDateTime{Date: startDate},
-		End:         &googlecalendar.EventDateTime{Date: endDate},
-		ExtendedProperties: &googlecalendar.ExtendedProperties{Private: map[string]string{
-			"squareShiftId": shift.ShiftID,
-			"source":        "square",
-			"kitTenantId":   tenantID.String(),
-		}},
+		ID:                 googlecalendar.DeterministicID("square:" + shift.ShiftID),
+		Summary:            summary,
+		Location:           shift.Location,
+		Description:        desc,
+		Start:              &googlecalendar.EventDateTime{Date: startDate},
+		End:                &googlecalendar.EventDateTime{Date: endDate},
+		ExtendedProperties: &googlecalendar.ExtendedProperties{Private: props},
 	}
 }
 

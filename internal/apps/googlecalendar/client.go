@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
 )
 
@@ -188,15 +190,32 @@ func (c *Client) UpsertEvent(ctx context.Context, calendarID string, event *Even
 	return out, err
 }
 
-// ListEventsByPrivateProperty returns events stamped with the given
-// private extended property (name=value), paging through nextPageToken.
-// Used by the reconciliation sweep to find events this integration owns.
-func (c *Client) ListEventsByPrivateProperty(ctx context.Context, calendarID, name, value string) ([]Event, error) {
+// ListEventsByPrivateProperties returns events carrying ALL of the given
+// private extended properties (the API ANDs repeated privateExtendedProperty
+// params), paging through nextPageToken. This is how a reconciliation sweep
+// finds exactly the events it owns — pass OwnerProps(appName, tenantID).
+//
+// An empty props map is rejected rather than treated as "match everything":
+// callers use this to decide what may be deleted, and an unfiltered list
+// would hand them the whole calendar.
+func (c *Client) ListEventsByPrivateProperties(ctx context.Context, calendarID string, props map[string]string) ([]Event, error) {
+	if len(props) == 0 {
+		return nil, errors.New("listing events by private properties: at least one property required")
+	}
+	// Sorted so the query string is stable regardless of map iteration order.
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	var out []Event
 	pageToken := ""
 	for {
 		q := url.Values{}
-		q.Set("privateExtendedProperty", name+"="+value)
+		for _, k := range keys {
+			q.Add("privateExtendedProperty", k+"="+props[k])
+		}
 		q.Set("showDeleted", "false")
 		q.Set("maxResults", "2500")
 		if pageToken != "" {
