@@ -308,7 +308,8 @@ The `squareshifts` feature's `admin.Integration` Manage page shows:
    desired events missing from the calendar (heals out-of-band deletions), and deletes
    in-window orphans. Records to `audit_events` with `triggered_by="reconcile"`.
 6. ✅ Config/status tools (agent + MCP parity): `squareshifts_sync_now`,
-   `squareshifts_status`; run summaries → `audit_events`; docs (user guide + landing).
+   `squareshifts_reconcile` (with `dry_run` preview), `squareshifts_status`; run summaries →
+   `audit_events`; docs (user guide + landing).
 
 Admin UI (built):
 - **Connecting Square + Google Calendar is done on the console Integrations page**, not a

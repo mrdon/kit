@@ -1,6 +1,7 @@
 package squareshifts
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,43 @@ func TestEventStartsInWindowAllDay(t *testing.T) {
 	}, uuid.New())
 	if !eventStartsInWindow(*ev, start, end) {
 		t.Fatalf("sync-authored all-day event not seen as in-window: start = %+v", ev.Start)
+	}
+}
+
+func TestFormatReconcilePlan(t *testing.T) {
+	if got := formatReconcilePlan(reconcilePlan{}); !strings.Contains(got, "no drift") {
+		t.Fatalf("empty plan = %q", got)
+	}
+
+	ev := buildEvent(square.EnrichedShift{
+		ShiftID: "S1", StartAt: "2026-08-20T09:00:00-06:00", EndAt: "2026-08-20T17:00:00-06:00", MemberFirst: "Alice",
+	}, uuid.New())
+	plan := reconcilePlan{
+		Create: []desiredShift{{shift: square.EnrichedShift{ShiftID: "S1"}, event: ev}},
+		Delete: []googlecalendar.Event{{
+			ID: "abc", Summary: "Bob · 9:00am–5:00pm",
+			Start: &googlecalendar.EventDateTime{Date: "2026-08-25"},
+		}},
+	}
+	got := formatReconcilePlan(plan)
+
+	// A preview must itemize deletions by date + title, not just count them —
+	// that's the whole point of previewing a destructive sweep.
+	for _, want := range []string{"1 event(s) would be created, 1 deleted", "Nothing has changed yet", "2026-08-20", "Alice", "DELETE", "2026-08-25", "Bob"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("plan output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestEventDateLabel(t *testing.T) {
+	allDay := &googlecalendar.Event{Start: &googlecalendar.EventDateTime{Date: "2026-08-25"}}
+	timed := &googlecalendar.Event{Start: &googlecalendar.EventDateTime{DateTime: "2026-08-25T09:00:00-06:00"}}
+	if eventDateLabel(allDay) != "2026-08-25" || eventDateLabel(timed) != "2026-08-25" {
+		t.Fatal("both event shapes should label as the same date")
+	}
+	if eventDateLabel(nil) != "(no date)" || eventDateLabel(&googlecalendar.Event{}) != "(no date)" {
+		t.Fatal("missing start should not panic or fabricate a date")
 	}
 }
 

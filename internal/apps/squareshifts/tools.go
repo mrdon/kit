@@ -3,10 +3,12 @@ package squareshifts
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -19,11 +21,64 @@ var squareShiftsTools = []services.ToolMeta{
 		Schema:      services.Props(map[string]any{}),
 	},
 	{
+		Name:        "squareshifts_reconcile",
+		Description: "Run the drift-repair reconciliation for this workspace: recreate shift events deleted out-of-band in Google, and delete events this sync owns that no longer back a published shift. Pass dry_run true first to preview exactly what would change — this is the only operation that deletes calendar events.",
+		AdminOnly:   true,
+		Schema: services.Props(map[string]any{
+			"dry_run": services.Field("boolean", "Preview the changes without touching the calendar. Strongly recommended before a real run."),
+		}),
+	},
+	{
 		Name:        "squareshifts_status",
 		Description: "Show the result of the most recent Square shift sync (when it ran, how many events changed, any error).",
 		AdminOnly:   true,
 		Schema:      services.Props(map[string]any{}),
 	},
+}
+
+// reconcileArgs is the shared input shape for squareshifts_reconcile, parsed
+// by both the agent and MCP handlers.
+type reconcileArgs struct {
+	DryRun bool `json:"dry_run"`
+}
+
+// formatReconcilePlan renders a dry run. Deletions are itemized rather than
+// counted: this is the one sweep that removes entries from a calendar real
+// people rely on, so an operator should see which ones before approving.
+func formatReconcilePlan(p reconcilePlan) string {
+	if p.empty() {
+		return "Dry run: no drift — the calendar already matches Square's published schedule. Nothing would change."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Dry run: %d event(s) would be created, %d deleted. Nothing has changed yet.\n", len(p.Create), len(p.Delete))
+	if len(p.Create) > 0 {
+		fmt.Fprintf(&b, "\nWould create (missing from the calendar):\n")
+		for _, d := range p.Create {
+			fmt.Fprintf(&b, "  + %s — %s\n", eventDateLabel(d.event), d.event.Summary)
+		}
+	}
+	if len(p.Delete) > 0 {
+		fmt.Fprintf(&b, "\nWould DELETE (owned by this sync, no longer a published shift):\n")
+		for _, e := range p.Delete {
+			fmt.Fprintf(&b, "  - %s — %s\n", eventDateLabel(&e), e.Summary)
+		}
+	}
+	return b.String()
+}
+
+// eventDateLabel is the event's start date for operator-facing listings,
+// handling both the all-day (Date) and timed (DateTime) shapes.
+func eventDateLabel(e *googlecalendar.Event) string {
+	if e == nil || e.Start == nil {
+		return "(no date)"
+	}
+	if e.Start.Date != "" {
+		return e.Start.Date
+	}
+	if len(e.Start.DateTime) >= 10 {
+		return e.Start.DateTime[:10]
+	}
+	return "(no date)"
 }
 
 // formatSummary renders a sync result. Shared by both surfaces.

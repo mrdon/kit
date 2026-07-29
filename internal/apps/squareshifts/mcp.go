@@ -27,6 +27,8 @@ func squareShiftsMCPHandler(name string, a *App) mcpserver.ToolHandlerFunc {
 	switch name {
 	case "squareshifts_sync_now":
 		return mcpSyncNow(a)
+	case "squareshifts_reconcile":
+		return mcpReconcile(a)
 	case "squareshifts_status":
 		return mcpStatus(a)
 	default:
@@ -37,6 +39,23 @@ func squareShiftsMCPHandler(name string, a *App) mcpserver.ToolHandlerFunc {
 func mcpSyncNow(a *App) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
 		sum, err := a.RunSync(ctx, caller.TenantID, "manual")
+		if err != nil {
+			return mcp.NewToolResultError(syncErrorMessage(err)), nil
+		}
+		return mcp.NewToolResultText(formatSummary(sum)), nil
+	})
+}
+
+func mcpReconcile(a *App) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if req.GetBool("dry_run", false) {
+			plan, err := a.PreviewReconcile(ctx, caller.TenantID)
+			if err != nil {
+				return mcp.NewToolResultError(syncErrorMessage(err)), nil
+			}
+			return mcp.NewToolResultText(formatReconcilePlan(plan)), nil
+		}
+		sum, err := a.RunReconcile(ctx, caller.TenantID)
 		if err != nil {
 			return mcp.NewToolResultError(syncErrorMessage(err)), nil
 		}

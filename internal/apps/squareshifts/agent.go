@@ -26,6 +26,8 @@ func squareShiftsAgentHandler(name string, a *App) tools.HandlerFunc {
 	switch name {
 	case "squareshifts_sync_now":
 		return handleSyncNow(a)
+	case "squareshifts_reconcile":
+		return handleReconcile(a)
 	case "squareshifts_status":
 		return handleStatus(a)
 	default:
@@ -38,6 +40,30 @@ func squareShiftsAgentHandler(name string, a *App) tools.HandlerFunc {
 func handleSyncNow(a *App) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
 		sum, err := a.RunSync(ec.Ctx, ec.Caller().TenantID, "manual")
+		if err != nil {
+			return syncErrorMessage(err), nil
+		}
+		return formatSummary(sum), nil
+	}
+}
+
+func handleReconcile(a *App) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+		var args reconcileArgs
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return "", fmt.Errorf("parsing reconcile args: %w", err)
+			}
+		}
+		tenantID := ec.Caller().TenantID
+		if args.DryRun {
+			plan, err := a.PreviewReconcile(ec.Ctx, tenantID)
+			if err != nil {
+				return syncErrorMessage(err), nil
+			}
+			return formatReconcilePlan(plan), nil
+		}
+		sum, err := a.RunReconcile(ec.Ctx, tenantID)
 		if err != nil {
 			return syncErrorMessage(err), nil
 		}

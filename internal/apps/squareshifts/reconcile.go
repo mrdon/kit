@@ -21,6 +21,27 @@ import (
 // cheap (one extra Google list call) so the interval is conservative.
 const reconcileInterval = 12 * time.Hour
 
+// reconcilePlan is what a sweep would change: events to (re)create, and owned
+// events to delete. Building it is read-only, so it doubles as the dry run.
+// The Google handles are carried along so applying doesn't reload them.
+type reconcilePlan struct {
+	Create []desiredShift
+	Delete []googlecalendar.Event
+
+	gcal        *googlecalendar.Client
+	calendarID  string
+	windowStart time.Time
+}
+
+func (p reconcilePlan) empty() bool { return len(p.Create) == 0 && len(p.Delete) == 0 }
+
+// PreviewReconcile computes what a reconcile would do without touching the
+// calendar or writing an audit row. Use it before RunReconcile on a live
+// calendar — it's the only way to see which events a sweep would delete.
+func (a *App) PreviewReconcile(ctx context.Context, tenantID uuid.UUID) (reconcilePlan, error) {
+	return a.planReconcile(ctx, tenantID)
+}
+
 // RunReconcile runs a reconciliation sweep for one tenant and records the
 // outcome to audit_events with triggered_by "reconcile".
 func (a *App) RunReconcile(ctx context.Context, tenantID uuid.UUID) (SyncSummary, error) {
@@ -45,17 +66,29 @@ func (a *App) RunReconcile(ctx context.Context, tenantID uuid.UUID) (SyncSummary
 // Unlike the regular sync it consults Google's real state rather than the
 // mapping table, so it heals out-of-band deletions.
 func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSummary, error) {
-	var sum SyncSummary
+	plan, err := a.planReconcile(ctx, tenantID)
+	if err != nil {
+		return SyncSummary{}, err
+	}
+	return a.applyReconcile(ctx, tenantID, plan)
+}
+
+// planReconcile computes the drift between Square and the calendar without
+// changing anything. Read-only by construction: it issues no writes, so a
+// caller can show the plan to an operator before applying it.
+func (a *App) planReconcile(ctx context.Context, tenantID uuid.UUID) (reconcilePlan, error) {
+	var plan reconcilePlan
 
 	start, end := syncWindow()
+	plan.windowStart = start
 
 	shifts, err := square.Instance().ListPublishedShifts(ctx, tenantID, start, end)
 	if err != nil {
-		return sum, fmt.Errorf("pulling square shifts: %w", err)
+		return plan, fmt.Errorf("pulling square shifts: %w", err)
 	}
-	gcal, calendarID, err := googlecalendar.Instance().LoadClient(ctx, tenantID)
+	plan.gcal, plan.calendarID, err = googlecalendar.Instance().LoadClient(ctx, tenantID)
 	if err != nil {
-		return sum, fmt.Errorf("loading google calendar: %w", err)
+		return plan, fmt.Errorf("loading google calendar: %w", err)
 	}
 
 	// desired: event id → the shift + event we want on the calendar.
@@ -72,9 +105,9 @@ func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSumm
 	// Filtering on the full ownership stamp (not just the tenant) is what
 	// keeps the orphan sweep below off other features' events on a shared
 	// calendar — and off everything a human put there.
-	actual, err := gcal.ListEventsByPrivateProperties(ctx, calendarID, googlecalendar.OwnerProps(AppName, tenantID))
+	actual, err := plan.gcal.ListEventsByPrivateProperties(ctx, plan.calendarID, googlecalendar.OwnerProps(AppName, tenantID))
 	if err != nil {
-		return sum, fmt.Errorf("listing calendar events: %w", err)
+		return plan, fmt.Errorf("listing calendar events: %w", err)
 	}
 	actualByID := make(map[string]googlecalendar.Event, len(actual))
 	for _, e := range actual {
@@ -83,20 +116,9 @@ func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSumm
 
 	// Recreate desired events missing from the calendar (healed deletions).
 	for id, d := range desired {
-		if _, present := actualByID[id]; present {
-			continue
+		if _, present := actualByID[id]; !present {
+			plan.Create = append(plan.Create, d)
 		}
-		if _, err := gcal.UpsertEvent(ctx, calendarID, d.event); err != nil {
-			return sum, fmt.Errorf("recreating event for shift %s: %w", d.shift.ShiftID, err)
-		}
-		startAt, perr := time.Parse(time.RFC3339, d.shift.StartAt)
-		if perr != nil {
-			startAt = start
-		}
-		if err := upsertMapping(ctx, a.pool, tenantID, d.shift.ShiftID, id, startAt, 0, contentHash(d.event)); err != nil {
-			return sum, err
-		}
-		sum.Created++
 	}
 
 	// Delete stale events: ones we own (the list above is already filtered to
@@ -112,8 +134,32 @@ func (a *App) reconcileTenant(ctx context.Context, tenantID uuid.UUID) (SyncSumm
 		if !eventStartsInWindow(e, start, end) {
 			continue
 		}
-		if err := gcal.DeleteEvent(ctx, calendarID, id); err != nil {
-			return sum, fmt.Errorf("deleting orphan event %s: %w", id, err)
+		plan.Delete = append(plan.Delete, e)
+	}
+	return plan, nil
+}
+
+// applyReconcile executes a plan against Google Calendar and the mapping
+// table. Every deletion here has already passed both the ownership and
+// staleness tests in planReconcile.
+func (a *App) applyReconcile(ctx context.Context, tenantID uuid.UUID, plan reconcilePlan) (SyncSummary, error) {
+	var sum SyncSummary
+	for _, d := range plan.Create {
+		if _, err := plan.gcal.UpsertEvent(ctx, plan.calendarID, d.event); err != nil {
+			return sum, fmt.Errorf("recreating event for shift %s: %w", d.shift.ShiftID, err)
+		}
+		startAt, perr := time.Parse(time.RFC3339, d.shift.StartAt)
+		if perr != nil {
+			startAt = plan.windowStart
+		}
+		if err := upsertMapping(ctx, a.pool, tenantID, d.shift.ShiftID, d.event.ID, startAt, 0, contentHash(d.event)); err != nil {
+			return sum, err
+		}
+		sum.Created++
+	}
+	for _, e := range plan.Delete {
+		if err := plan.gcal.DeleteEvent(ctx, plan.calendarID, e.ID); err != nil {
+			return sum, fmt.Errorf("deleting orphan event %s: %w", e.ID, err)
 		}
 		if sid := privateProp(e, "squareShiftId"); sid != "" {
 			_ = deleteMapping(ctx, a.pool, tenantID, sid)
