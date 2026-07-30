@@ -97,9 +97,14 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return buildMCPTools(a.svc)
 }
 
-// RegisterRoutes mounts the console API and the website feed. Both land in
-// later stages; the events app has no HTTP surface until then.
-func (a *App) RegisterRoutes(_ apps.Mux) {}
+// RegisterRoutes mounts the public website feed. The console API joins it in
+// a later stage.
+func (a *App) RegisterRoutes(mux apps.Mux) {
+	if a.pool == nil {
+		return
+	}
+	a.registerFeedRoutes(mux)
+}
 
 // CronJobs runs the regular sync every 15 minutes and a slower reconciliation
 // every 12 hours. The sync trusts its stored content hash and skips unchanged
