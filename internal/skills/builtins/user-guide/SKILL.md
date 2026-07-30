@@ -163,6 +163,40 @@ Two one-time connections, both on the **Integrations** page in the web console (
 
 Enable the **Square Shift Sync** feature on the Apps page and it starts syncing. Each published shift becomes an **all-day** calendar event on the shift's date, titled with the team member's first name and shift hours (e.g. "Alice · 6:00am–2:00pm") so it stays unobtrusive when layered over a personal calendar while still showing who opens and closes; cancelled shifts are removed on the next sweep. Run `squareshifts_sync_now` to sync on demand and `squareshifts_status` to see the last run. If the calendar has drifted — someone deleted synced events by hand, or stale ones linger — `squareshifts_reconcile` repairs it against Square; pass `dry_run: true` first to see exactly what it would add or remove before it touches anything. Kit only reads Square's *published* schedule — it doesn't build schedules (Square's API doesn't expose staff availability or time-off).
 
+## Events
+
+Enter an event once and Kit fans it out: it lands on the team's Google Calendar, and public events also reach the website. Anyone in the workspace can author events; the calendar and website setup is admin-only.
+
+Create one from chat, or from the **Events** page in the web console:
+
+> "Create an event for Trivia Night on Tuesday 14th at 7pm, repeating weekly"
+> "Add a private booking for Sarah's 40th, Saturday 6-9pm in the back room, about 30 people"
+> "We're pouring at the Denver Beer Fest on the 22nd — that's offsite and public"
+
+**Two things are separate, and it matters.** *Status* is whether an event is settled: draft → published → cancelled. *Visibility* is whether the outside world may see it: public or private. So a confirmed private booking is **published and private** — on the team calendar the moment it's booked, and never on the website. Publishing does not make something public.
+
+Events start **private**, so nothing reaches the website unless someone says it should. A draft appears nowhere at all — not on the calendar, not on the site — so you can rewrite it as many times as you like before anyone sees it.
+
+Three things describe an event, and they're independent rather than one "type":
+
+- **visibility** — `public` (website + feed) or `private` (internal only)
+- **venue** — `onsite`, or `offsite` for a festival you're attending. An offsite event can still be public: "come see us there" belongs on the site.
+- **space impact** — whether it reserves part of the room, so whoever's working knows
+
+**Staff notes** go on the calendar entry, where the bartender working that night is already looking. They never appear on the website.
+
+**Repeats are weekly only**, for a standing night like trivia. A run of different acts — live music with a different band each week — isn't a repeat: create one event per night, since each has its own name and description.
+
+**Cancel rather than delete.** Cancelling removes an event from the calendar and the website but keeps the record, so the calendar entry gets cleaned up and the web address is never reused for different content. Web addresses are frozen once an event is published, because links to them may already be in a social post or newsletter.
+
+Admin setup, on the **Events** page under Admin:
+
+- **Pick the calendar.** Connect Google Calendar on the Integrations page first (a service account — see Square shift sync below for the same setup), then share your events calendar with the service account's email and choose it from the dropdown. If the dropdown is empty, the calendar hasn't been shared with the service account yet.
+- **Set the website URL pattern**, e.g. `https://www.example.com/events/{slug}`. Each event's public link is built from this, so changing your domain later doesn't mean rewriting past events.
+- **Copy the feed URL and token** into your website's build. The site fetches published public events from it and generates a page for each.
+
+Kit syncs to the calendar every 15 minutes. Use **Sync now** to push immediately, and **Check for drift** if the calendar has got out of step — someone deleted an entry by hand, say. That shows exactly what it would change before touching anything, and only ever touches entries Kit created.
+
 ## Email
 
 Connect any IMAP + SMTP mailbox so Kit can read your inbox and draft replies on your behalf. Gmail works via an app password (enable 2FA, then generate one at https://myaccount.google.com/apppasswords). iCloud, Yahoo, Fastmail, and self-hosted IMAP work with their normal passwords. Microsoft 365 / Outlook.com aren't supported yet — they require OAuth.
