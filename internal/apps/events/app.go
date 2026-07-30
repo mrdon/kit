@@ -18,7 +18,9 @@ package events
 
 import (
 	"context"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -44,6 +46,10 @@ type App struct {
 	pool   *pgxpool.Pool
 	signer *auth.SessionSigner
 	svc    *Service
+
+	// resolveWriter overrides how the calendar client is obtained. Nil in
+	// production; tests set it to inject a fake calendar. See writerFor.
+	resolveWriter func(ctx context.Context, tenantID uuid.UUID) (calendarWriter, Settings, error)
 }
 
 // Instance exposes the registered app for callers that need it outside the
@@ -95,5 +101,25 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 // later stages; the events app has no HTTP surface until then.
 func (a *App) RegisterRoutes(_ apps.Mux) {}
 
-// CronJobs is empty until the calendar sync lands.
-func (a *App) CronJobs() []apps.CronJob { return nil }
+// CronJobs runs the regular sync every 15 minutes and a slower reconciliation
+// every 12 hours. The sync trusts its stored content hash and skips unchanged
+// events, which makes it cheap but blind to edits made directly in Google; the
+// reconcile pass compares against the calendar's actual state to heal those.
+func (a *App) CronJobs() []apps.CronJob {
+	return []apps.CronJob{
+		{
+			Name:     "sync_events",
+			Interval: 15 * time.Minute,
+			Run: func(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
+				return a.SyncAllTenants(ctx)
+			},
+		},
+		{
+			Name:     "reconcile_events",
+			Interval: reconcileInterval,
+			Run: func(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
+				return a.ReconcileAllTenants(ctx)
+			},
+		},
+	}
+}

@@ -39,6 +39,10 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreGet(ctx, caller, svc, raw)
 	case "events_status":
 		return coreStatus(ctx, caller, svc)
+	case "events_sync_now":
+		return coreSyncNow(ctx, caller)
+	case "events_reconcile":
+		return coreReconcile(ctx, caller, raw)
 	default:
 		return "", fmt.Errorf("events: unknown tool %q", name)
 	}
@@ -268,7 +272,61 @@ func coreStatus(ctx context.Context, caller *services.Caller, svc *Service) (str
 	if err != nil {
 		return "", err
 	}
-	return FormatSettings(settings), nil
+	out := FormatSettings(settings)
+	if app := Instance(); app != nil && app.pool != nil {
+		runs, err := app.ListRecentRuns(ctx, caller.TenantID, 5)
+		if err != nil {
+			return "", err
+		}
+		out += FormatRuns(runs)
+	}
+	return out, nil
+}
+
+func coreSyncNow(ctx context.Context, caller *services.Caller) (string, error) {
+	app := Instance()
+	if app == nil {
+		return "", errors.New("events app not available")
+	}
+	sum, err := app.SyncNow(ctx, caller.TenantID)
+	if errors.Is(err, ErrNoCalendar) {
+		return "No calendar is selected yet, so there is nothing to sync. Pick one on the Events settings page.", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return "Calendar sync finished: " + sum.String() + ".", nil
+}
+
+func coreReconcile(ctx context.Context, caller *services.Caller, raw json.RawMessage) (string, error) {
+	var in struct {
+		DryRun bool `json:"dry_run"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return "", fmt.Errorf("parsing input: %w", err)
+	}
+	app := Instance()
+	if app == nil {
+		return "", errors.New("events app not available")
+	}
+	if in.DryRun {
+		plan, err := app.PreviewReconcile(ctx, caller.TenantID)
+		if errors.Is(err, ErrNoCalendar) {
+			return "No calendar is selected yet, so there is nothing to reconcile.", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return FormatReconcilePlan(plan), nil
+	}
+	sum, err := app.RunReconcile(ctx, caller.TenantID)
+	if errors.Is(err, ErrNoCalendar) {
+		return "No calendar is selected yet, so there is nothing to reconcile.", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return "Reconcile finished: " + sum.String() + ".", nil
 }
 
 func parseEventID(raw json.RawMessage) (uuid.UUID, string, bool) {

@@ -127,4 +127,20 @@ var eventsTools = []services.ToolMeta{
 		Schema:      services.Props(map[string]any{}),
 		AdminOnly:   true,
 	},
+	{
+		Name:        "events_sync_now",
+		Description: "Push pending event changes to Google Calendar immediately instead of waiting for the next scheduled sync.",
+		Schema:      services.Props(map[string]any{}),
+		AdminOnly:   true,
+	},
+	{
+		Name: "events_reconcile",
+		Description: "Compare the calendar against Kit and repair drift — restoring entries deleted directly in Google " +
+			"and removing ones that should no longer be there. Pass dry_run first to see exactly what would change; " +
+			"this is the only operation that deletes calendar entries. Only entries this app created are ever touched.",
+		Schema: services.Props(map[string]any{
+			"dry_run": services.Field("boolean", "Preview the changes without applying them."),
+		}),
+		AdminOnly: true,
+	},
 }
