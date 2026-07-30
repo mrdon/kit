@@ -2,6 +2,7 @@ package googlecalendar
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -76,6 +77,52 @@ func TestListEventsByPrivatePropertiesRejectsEmptyFilter(t *testing.T) {
 	}
 	if _, err := c.ListEventsByPrivateProperties(context.Background(), "cal", map[string]string{}); err == nil {
 		t.Fatal("expected error for empty property filter")
+	}
+}
+
+// Recurrence must survive the round trip and stay absent when unset — a
+// stray "recurrence": null would turn a one-off into a malformed request.
+func TestEventRecurrenceMarshalling(t *testing.T) {
+	withRule, err := json.Marshal(Event{
+		Summary:    "Trivia",
+		Recurrence: []string{"RRULE:FREQ=WEEKLY;BYDAY=TU"},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(withRule), `"recurrence":["RRULE:FREQ=WEEKLY;BYDAY=TU"]`) {
+		t.Fatalf("recurrence missing from payload: %s", withRule)
+	}
+
+	plain, err := json.Marshal(Event{Summary: "One-off"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(plain), "recurrence") {
+		t.Fatalf("non-recurring event emitted a recurrence field: %s", plain)
+	}
+
+	// Clearing a rule must drop the field so a full PUT resets Google's copy.
+	var got Event
+	if err := json.Unmarshal(withRule, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Recurrence) != 1 || got.Recurrence[0] != "RRULE:FREQ=WEEKLY;BYDAY=TU" {
+		t.Fatalf("round trip lost recurrence: %+v", got.Recurrence)
+	}
+}
+
+func TestCalendarListEntryWritable(t *testing.T) {
+	for role, want := range map[string]bool{
+		"owner":          true,
+		"writer":         true,
+		"reader":         false,
+		"freeBusyReader": false,
+		"":               false,
+	} {
+		if got := (CalendarListEntry{AccessRole: role}).Writable(); got != want {
+			t.Fatalf("accessRole %q: Writable() = %v, want %v", role, got, want)
+		}
 	}
 }
 

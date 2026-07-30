@@ -74,6 +74,15 @@ type Event struct {
 	ExtendedProperties *ExtendedProperties `json:"extendedProperties,omitempty"`
 	Status             string              `json:"status,omitempty"`
 	HTMLLink           string              `json:"htmlLink,omitempty"`
+
+	// Recurrence holds RFC 5545 recurrence lines, e.g.
+	// ["RRULE:FREQ=WEEKLY;BYDAY=TU"]. Google expands them into instances, so
+	// one recurring event beats writing N copies.
+	//
+	// A recurring *timed* event MUST carry Start.TimeZone / End.TimeZone (a
+	// named IANA zone, not a UTC offset). Without it Google expands in the
+	// calendar's own default zone, which silently drifts an hour at DST.
+	Recurrence []string `json:"recurrence,omitempty"`
 }
 
 // ensureToken mints an access token if none is cached or it's near expiry.
@@ -228,6 +237,56 @@ func (c *Client) ListEventsByPrivateProperties(ctx context.Context, calendarID s
 		}
 		if err := c.doJSON(ctx, http.MethodGet, path, nil, &resp); err != nil {
 			return nil, err
+		}
+		out = append(out, resp.Items...)
+		if resp.NextPageToken == "" {
+			break
+		}
+		pageToken = resp.NextPageToken
+	}
+	return out, nil
+}
+
+// CalendarListEntry is one calendar the service account can see, as returned
+// by calendarList.list. AccessRole is "owner", "writer", "reader", or
+// "freeBusyReader" — only owner/writer can be written to.
+type CalendarListEntry struct {
+	ID          string `json:"id"`
+	Summary     string `json:"summary"`
+	Description string `json:"description,omitempty"`
+	TimeZone    string `json:"timeZone,omitempty"`
+	AccessRole  string `json:"accessRole,omitempty"`
+	Primary     bool   `json:"primary,omitempty"`
+}
+
+// Writable reports whether the service account can create events here.
+func (e CalendarListEntry) Writable() bool {
+	return e.AccessRole == "owner" || e.AccessRole == "writer"
+}
+
+// ListCalendars returns every calendar on the service account's calendar list,
+// paging through nextPageToken.
+//
+// A service account only sees calendars explicitly shared with it, so an empty
+// result is the expected state for a freshly created one — not an error. Tell
+// the admin to share the target calendar with the service account's email
+// rather than presenting an empty picker as a failure.
+func (c *Client) ListCalendars(ctx context.Context) ([]CalendarListEntry, error) {
+	var out []CalendarListEntry
+	pageToken := ""
+	for {
+		q := url.Values{}
+		q.Set("maxResults", "250")
+		q.Set("showHidden", "true")
+		if pageToken != "" {
+			q.Set("pageToken", pageToken)
+		}
+		var resp struct {
+			Items         []CalendarListEntry `json:"items"`
+			NextPageToken string              `json:"nextPageToken"`
+		}
+		if err := c.doJSON(ctx, http.MethodGet, "/users/me/calendarList?"+q.Encode(), nil, &resp); err != nil {
+			return nil, fmt.Errorf("listing calendars: %w", err)
 		}
 		out = append(out, resp.Items...)
 		if resp.NextPageToken == "" {

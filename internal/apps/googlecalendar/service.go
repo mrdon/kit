@@ -29,42 +29,66 @@ var ErrNotReady = errors.New("google calendar app not configured")
 // returns it alongside the configured target calendar id. It decrypts the
 // service-account key and wires a mint hook so access tokens are obtained
 // lazily and refreshed on expiry/401.
+//
+// The returned calendar id is the integration-level default, which belongs to
+// whichever feature was set up first (today: the Square shift sync). An app
+// that targets its own calendar should call LoadClientOnly instead — every
+// write method takes calendarID per call, so the default is not load-bearing.
 func (a *App) LoadClient(ctx context.Context, tenantID uuid.UUID) (*Client, string, error) {
-	if a.enc == nil {
-		return nil, "", ErrNotReady
-	}
-	integ, err := models.GetIntegration(ctx, a.pool, tenantID, Provider, AuthType, nil)
+	c, integ, err := a.loadClient(ctx, tenantID)
 	if err != nil {
-		return nil, "", fmt.Errorf("loading google calendar integration: %w", err)
-	}
-	if integ == nil {
-		return nil, "", ErrNotConfigured
+		return nil, "", err
 	}
 	calendarID, _ := integ.Config["calendar_id"].(string)
 	if calendarID == "" {
 		return nil, "", fmt.Errorf("google calendar integration %s missing calendar_id", integ.ID)
 	}
+	return c, calendarID, nil
+}
+
+// LoadClientOnly builds the authenticated client without requiring the
+// integration to carry a calendar_id. Use it when the caller supplies its own
+// calendar (see LoadClient's note); the credential is shared, the target is not.
+func (a *App) LoadClientOnly(ctx context.Context, tenantID uuid.UUID) (*Client, error) {
+	c, _, err := a.loadClient(ctx, tenantID)
+	return c, err
+}
+
+// loadClient does the credential half: fetch the integration row, decrypt the
+// service-account key, and wire the token-mint hook. It deliberately does not
+// look at calendar_id — that is the caller's concern.
+func (a *App) loadClient(ctx context.Context, tenantID uuid.UUID) (*Client, *models.Integration, error) {
+	if a.enc == nil {
+		return nil, nil, ErrNotReady
+	}
+	integ, err := models.GetIntegration(ctx, a.pool, tenantID, Provider, AuthType, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading google calendar integration: %w", err)
+	}
+	if integ == nil {
+		return nil, nil, ErrNotConfigured
+	}
 
 	primaryEnc, _, err := models.GetIntegrationTokens(ctx, a.pool, tenantID, integ.ID)
 	if err != nil {
-		return nil, "", fmt.Errorf("loading google calendar key: %w", err)
+		return nil, nil, fmt.Errorf("loading google calendar key: %w", err)
 	}
 	if primaryEnc == "" {
-		return nil, "", fmt.Errorf("google calendar integration %s has no service account key", integ.ID)
+		return nil, nil, fmt.Errorf("google calendar integration %s has no service account key", integ.ID)
 	}
 	keyJSON, err := a.enc.Decrypt(primaryEnc)
 	if err != nil {
-		return nil, "", fmt.Errorf("decrypting service account key: %w", err)
+		return nil, nil, fmt.Errorf("decrypting service account key: %w", err)
 	}
 	key, err := parseServiceAccountKey(keyJSON)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	c := &Client{mint: func(ctx context.Context) (string, time.Time, error) {
 		return mintAccessToken(ctx, key)
 	}}
-	return c, calendarID, nil
+	return c, integ, nil
 }
 
 // CheckWriteAccess verifies the service account can write to the configured
