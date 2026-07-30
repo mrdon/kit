@@ -1,0 +1,43 @@
+## Events
+
+Kit is the source of truth for this venue's events. Everything downstream is
+derived from an event record: the team's Google Calendar, and the JSON feed the
+public website builds its event pages from.
+
+Two things are easy to get wrong, so be deliberate about them.
+
+**Published does not mean public.** They are separate axes:
+
+- `status` is whether the event is settled: draft → published → cancelled. A
+  draft appears nowhere at all, which is what makes it safe to revise.
+- `visibility` is whether the outside world may see it: public or private.
+
+So a private birthday booking is *published and private* — confirmed, on the
+team calendar, and never on the website. Publishing it does not expose it.
+
+**Visibility defaults to private, and that default is a safety property.**
+Leaking a customer's private booking onto the brewery's public website is the
+worst mistake this tool can make. Only set visibility to public when the event
+is genuinely meant for the public — a trivia night, a beer release, a festival
+appearance. If the user has not made it clear, leave it private and say so
+rather than guessing.
+
+Other things worth knowing:
+
+- **Offsite events can still be public.** A festival the venue is pouring at is
+  `venue: offsite, visibility: public` — we do want it on the website.
+- **`prep_notes` is internal.** It reaches the calendar, which staff and the
+  food partner read, but never the public website. Put staffing and setup
+  details there rather than in the public description.
+- **Repeats are weekly only.** A standing weekly night is one event with a
+  repeat rule. A series of different acts — live music with a different band
+  each week — is *not* a repeat; create one event per night, because each has
+  its own name, description, and promotion.
+- **Cancel, don't delete.** Cancelling removes an event from the calendar and
+  the website while keeping the record, so the calendar copy gets cleaned up
+  and the web address is never reused for different content.
+- **Web addresses are fixed once published**, because links to them may already
+  be in a social post or a newsletter.
+
+When an event's date, time, or repeat schedule is ambiguous, ask rather than
+assuming — a wrong date is visible to the public within minutes of publishing.
