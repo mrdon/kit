@@ -298,3 +298,18 @@ func listEvents(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f L
 	}
 	return out, rows.Err()
 }
+
+// countEventsOnCalendar reports how many events still hold a handle on a given
+// calendar. Used when an admin repoints the app at a different one, to warn
+// about entries that would otherwise be left behind.
+func countEventsOnCalendar(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, calendarID string) (int, error) {
+	var n int
+	err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM app_events
+		WHERE tenant_id = $1 AND gcal_calendar_id = $2 AND gcal_event_id <> ''`,
+		tenantID, calendarID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting events on calendar: %w", err)
+	}
+	return n, nil
+}

@@ -10,6 +10,8 @@ import SquareShifts from './pages/SquareShifts';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
+import Events from './pages/Events';
+import EventsSettingsPage from './pages/EventsSettings';
 import Expenses from './pages/Expenses';
 import ExpenseSettings from './pages/ExpenseSettings';
 import Roles from './pages/Roles';
@@ -42,11 +44,13 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/vault/:id" element={<Vault />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/skills/:id" element={<Skills />} />
+          <Route path="/events" element={<Events />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />
           <Route path="/connect" element={<Connect />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/apps" element={<AppsSettings />} />
+          <Route path="/admin/events" element={<EventsSettingsPage />} />
           <Route path="/admin/expenses" element={<ExpenseSettings />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />

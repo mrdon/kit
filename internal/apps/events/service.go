@@ -365,3 +365,7 @@ func firstNonEmptySpace(a, fallback SpaceImpact) SpaceImpact {
 	}
 	return a
 }
+
+// timeNow is the clock. A variable so tests can pin it if they ever need to;
+// production never reassigns it.
+var timeNow = time.Now

@@ -488,6 +488,116 @@ export interface WorkspaceApp {
   usage: string;
 }
 
+// ---------------------------------------------------------------- events
+
+export interface EventRecord {
+  id: string;
+  title: string;
+  slug: string;
+  summary?: string;
+  description?: string;
+  prep_notes?: string;
+  location?: string;
+  starts_at: string;
+  ends_at?: string;
+  all_day: boolean;
+  timezone: string;
+  rrule?: string;
+  // Two orthogonal axes, not one. `status` is whether the event is settled;
+  // `visibility` is whether the public may see it. A confirmed private booking
+  // is published AND private.
+  status: 'draft' | 'published' | 'cancelled';
+  visibility: 'public' | 'private';
+  venue: 'onsite' | 'offsite';
+  space_impact: 'none' | 'partial';
+  notify_food_partner: boolean;
+  price_cents?: number;
+  currency: string;
+  capacity?: number;
+  expected_attendance?: number;
+  registration_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventsSettingsSummary {
+  timezone: string;
+  calendar_configured: boolean;
+  public_url_template: string;
+}
+
+export interface EventsMeta {
+  statuses: string[];
+  visibilities: string[];
+  venues: string[];
+  space_impacts: string[];
+  settings: EventsSettingsSummary;
+}
+
+export interface EventsCalendarOption {
+  id: string;
+  name: string;
+  writable: boolean;
+  primary: boolean;
+}
+
+export interface EventsRun {
+  at: string;
+  ok: boolean;
+  triggered_by: string;
+  created: number;
+  updated: number;
+  deleted: number;
+  error?: string;
+}
+
+export interface EventsSettings {
+  calendar_id: string;
+  timezone: string;
+  public_url_template: string;
+  feed_token?: string;
+  feed_url?: string;
+  google_connected: boolean;
+  calendars: EventsCalendarOption[];
+  calendars_error?: string;
+  recent: EventsRun[];
+}
+
+// Every field optional: the console PATCHes only what changed, so an edit made
+// here cannot silently revert one made in chat against the same event.
+export interface EventInput {
+  title?: string;
+  summary?: string;
+  description?: string;
+  prep_notes?: string;
+  location?: string;
+  starts_at?: string;
+  ends_at?: string;
+  all_day?: boolean;
+  timezone?: string;
+  repeat_rule?: string;
+  visibility?: string;
+  venue?: string;
+  space_impact?: string;
+  price_cents?: number;
+  clear_price?: boolean;
+  currency?: string;
+  capacity?: number;
+  clear_capacity?: boolean;
+  expected_attendance?: number;
+  registration_url?: string;
+  notify_food_partner?: boolean;
+  slug?: string;
+}
+
+export interface EventsReconcilePlan {
+  dry_run: boolean;
+  empty?: boolean;
+  removals?: string[];
+  restores?: string[];
+  message: string;
+}
+
 export const api = {
   me: () => apiGet<Me>('/me'),
   integrations: () => apiGet<Integration[]>('/integrations'),
@@ -549,6 +659,46 @@ export const api = {
   netlifyPickSite: (siteId: string) =>
     apiPost<{ message: string }>('/netlify/site', { site_id: siteId }),
   netlifyDisconnect: () => apiPost<void>('/netlify/disconnect'),
+
+  eventsMeta: () => apiGet<EventsMeta>('/events/meta'),
+  listEvents: (opts: { status?: string; include_past?: boolean } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.status) q.set('status', opts.status);
+    if (opts.include_past) q.set('include_past', 'true');
+    const qs = q.toString();
+    return apiGet<{ events: EventRecord[]; settings: EventsSettingsSummary }>(
+      `/events${qs ? `?${qs}` : ''}`,
+    );
+  },
+  getEvent: (id: string) =>
+    apiGet<{ event: EventRecord; occurrences: string[] | null; canonicalURL: string }>(
+      `/events/${encodeURIComponent(id)}`,
+    ),
+  createEvent: (body: EventInput) => apiPost<{ event: EventRecord }>('/events', body),
+  updateEvent: (id: string, body: EventInput) =>
+    apiPatch<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}`, body),
+  publishEvent: (id: string) =>
+    apiPost<{ event: EventRecord; warnings: string[] | null }>(
+      `/events/${encodeURIComponent(id)}/publish`,
+    ),
+  unpublishEvent: (id: string) =>
+    apiPost<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}/unpublish`),
+  cancelEvent: (id: string) =>
+    apiPost<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}/cancel`),
+  reopenEvent: (id: string) =>
+    apiPost<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}/reopen`),
+
+  eventsSettings: () => apiGet<EventsSettings>('/events/settings'),
+  saveEventsSettings: (body: {
+    calendar_id?: string;
+    timezone?: string;
+    public_url_template?: string;
+  }) => apiPut<{ settings: EventsSettings; warning: string }>('/events/settings', body),
+  rotateEventsFeedToken: () =>
+    apiPost<{ settings: EventsSettings; warning: string }>('/events/settings/feed-token'),
+  eventsSyncNow: () => apiPost<{ message: string }>('/events/sync'),
+  eventsReconcile: (apply: boolean) =>
+    apiPost<EventsReconcilePlan>(`/events/reconcile${apply ? '?apply=true' : ''}`),
 
   squareShiftsStatus: () => apiGet<SquareShiftsStatus>('/square-shifts/status'),
   squareShiftsSync: () => apiPost<SquareShiftsStatus>('/square-shifts/sync'),

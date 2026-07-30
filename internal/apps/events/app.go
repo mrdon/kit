@@ -97,13 +97,17 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 	return buildMCPTools(a.svc)
 }
 
-// RegisterRoutes mounts the public website feed. The console API joins it in
-// a later stage.
+// RegisterRoutes mounts the public website feed plus the console API. The feed
+// authenticates with a bearer token (a site build has no Kit session); the
+// console routes carry the usual session + CSRF contract, with configuration
+// gated on admin at the middleware rather than in the handler.
 func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.pool == nil {
 		return
 	}
 	a.registerFeedRoutes(mux)
+	registerConsoleRoutes(mux, a)
+	registerSettingsRoutes(mux, a)
 }
 
 // CronJobs runs the regular sync every 15 minutes and a slower reconciliation

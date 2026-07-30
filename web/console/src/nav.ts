@@ -25,6 +25,12 @@ export const SECTIONS: Section[] = [
     app: 'task',
   },
   {
+    to: '/events',
+    label: 'Events',
+    blurb: 'Author events once; they sync to the calendar and the website.',
+    app: 'events',
+  },
+  {
     to: '/expenses',
     label: 'Expenses',
     blurb: 'File and approve expense reports with receipts.',

@@ -26,6 +26,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/apps/coordination"
 	"github.com/mrdon/kit/internal/apps/email"
+	"github.com/mrdon/kit/internal/apps/events"
 	"github.com/mrdon/kit/internal/apps/expense"
 	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
@@ -231,6 +232,11 @@ func main() {
 
 	// Square shift sync needs the signer for its admin Manage page.
 	squareshifts.Configure(enc, sessionSigner)
+
+	// Events needs the signer for its console pages. Its calendar client comes
+	// from the googlecalendar singleton at call time, so there is nothing else
+	// to wire.
+	events.Configure(enc, sessionSigner)
 
 	// Widget app needs the agent (for chat dispatch), the session signer
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for
