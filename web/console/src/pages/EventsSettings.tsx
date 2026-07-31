@@ -141,6 +141,21 @@ export default function EventsSettingsPage() {
             )}
 
             <form onSubmit={save} className="stack-form">
+              {/* The instructions and the address sit OUTSIDE the label: a
+                  <label> contributes its whole subtree to the input's
+                  accessible name, so leaving them in made the field announce
+                  itself as three sentences and an email address. */}
+              <p className="field-note">
+                In Google Calendar, open the events calendar&apos;s settings.
+                Under <em>Share with specific people</em> add this address with{' '}
+                <em>Make changes to events</em>, then copy the{' '}
+                <em>Calendar ID</em> from further down the same page.
+              </p>
+              {st.service_account_email && (
+                <div className="snippet-box">
+                  <pre className="snippet">{st.service_account_email}</pre>
+                </div>
+              )}
               <label className="field">
                 <span>Calendar ID</span>
                 <input
@@ -149,20 +164,8 @@ export default function EventsSettingsPage() {
                   onChange={(e) => setCalendarID(e.target.value)}
                 />
                 <span className="field-note">
-                  In Google Calendar, open the events calendar&apos;s settings.
-                  Under <em>Share with specific people</em> add the address
-                  below with <em>Make changes to events</em>, then copy the{' '}
-                  <em>Calendar ID</em> from further down the same page.
-                </span>
-                {st.service_account_email && (
-                  <div className="snippet-box">
-                    <pre className="snippet">{st.service_account_email}</pre>
-                  </div>
-                )}
-                <span className="field-note">
-                  Every event goes here, private bookings included — staff and
-                  the food partner read this calendar. Only the website filters
-                  on visibility. Saving checks Kit can write to it.
+                  Every event goes here, private bookings included. Saving
+                  checks Kit can write to it.
                 </span>
               </label>
 
