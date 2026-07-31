@@ -295,7 +295,7 @@ export default function EventsSettingsPage() {
                             ? `${r.created} created, ${r.updated} updated, ${r.deleted} removed`
                             : `Failed: ${r.error}`}
                         </span>
-                        <span className="row-card-sub">
+                        <span className="row-card-meta">
                           {r.at} · {r.triggered_by}
                         </span>
                       </span>

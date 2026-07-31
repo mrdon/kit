@@ -1400,6 +1400,14 @@ h2.view-title:hover {
   font-size: 0.8rem;
   color: var(--error-ink);
 }
+
+/* Neutral sibling of .row-card-sub, for ordinary secondary text on a row
+   (a date, a count). .row-card-sub is error-coloured because its first use
+   was a rejection reason; it should stay reserved for that. */
+.row-card-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
 .row-card-amount {
   font-variant-numeric: tabular-nums;
   font-weight: 600;

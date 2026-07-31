@@ -137,7 +137,7 @@ export default function Events() {
               <button className="row-card" onClick={() => setOpen(e)}>
                 <span className="row-card-main">
                   <span className="row-card-title">{e.title}</span>
-                  <span className="row-card-sub">{formatWhen(e)}</span>
+                  <span className="row-card-meta">{formatWhen(e)}</span>
                 </span>
                 <span className="badge-row">
                   <span
