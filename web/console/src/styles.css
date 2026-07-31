@@ -1692,3 +1692,13 @@ h2.view-title:hover {
   font-size: 0.8rem;
   color: var(--error-ink);
 }
+
+/* Neutral sibling of .field-hint, for explanatory text under a field.
+   .field-hint is deliberately error-coloured and reads as a caution, so it
+   should stay reserved for warnings ("visible to anyone on your website")
+   rather than becoming the default for ordinary guidance. */
+.field-note {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}

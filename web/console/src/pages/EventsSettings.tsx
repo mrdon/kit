@@ -157,7 +157,7 @@ export default function EventsSettingsPage() {
                       </option>
                     ))}
                   </select>
-                  <span className="field-hint">
+                  <span className="field-note">
                     Every event goes here, private bookings included — staff and
                     the food partner read this calendar. Only the website
                     filters on visibility.
@@ -171,7 +171,7 @@ export default function EventsSettingsPage() {
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
                 />
-                <span className="field-hint">
+                <span className="field-note">
                   A named zone such as America/Denver, never a fixed offset —
                   the zone is what keeps a weekly 7pm event at 7pm across
                   daylight saving.
@@ -185,7 +185,7 @@ export default function EventsSettingsPage() {
                   placeholder="https://www.example.com/events/{slug}"
                   onChange={(e) => setUrlTemplate(e.target.value)}
                 />
-                <span className="field-hint">
+                <span className="field-note">
                   Must contain {'{slug}'}. Each event's public link is built
                   from this, so changing the domain never means rewriting past
                   events.

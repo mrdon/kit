@@ -310,7 +310,7 @@ function EventDrawer({
               <option value="private">Private — internal only</option>
               <option value="public">Public — website and feed</option>
             </select>
-            <span className="field-hint">
+            <span className="field-note">
               Public events appear on the website. Private ones stay on the team
               calendar.
             </span>
@@ -354,7 +354,7 @@ function EventDrawer({
               <option value="none">Does not repeat</option>
               <option value="weekly">Every week</option>
             </select>
-            <span className="field-hint">
+            <span className="field-note">
               For a standing weekly night like trivia. A run of different acts
               is not a repeat — create one event per night.
             </span>
@@ -384,7 +384,7 @@ function EventDrawer({
               value={form.prep_notes ?? ''}
               onChange={(e) => set({ prep_notes: e.target.value })}
             />
-            <span className="field-hint">
+            <span className="field-note">
               Goes on the calendar entry for whoever is working. Never appears
               on the website.
             </span>
