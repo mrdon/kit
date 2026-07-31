@@ -1,8 +1,10 @@
 package events
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -178,6 +180,16 @@ func listCalendarOptions(r *http.Request, client *googlecalendar.Client) ([]cale
 	return out, ""
 }
 
+// serviceAccountHint names the address to share with, falling back to a
+// description when it cannot be read -- the error message is more useful with
+// the address in it and still useful without.
+func serviceAccountHint(ctx context.Context, tenantID uuid.UUID) string {
+	if email, err := googlecalendar.Instance().ServiceAccountEmail(ctx, tenantID); err == nil && email != "" {
+		return email
+	}
+	return "the service account shown on this page"
+}
+
 func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	var body struct {
@@ -210,6 +222,21 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		next.PublicURLTemplate = tpl
+	}
+
+	// A calendar id is typed by hand, not picked from a list: a service
+	// account's calendarList is its own SUBSCRIPTION list, and sharing a
+	// calendar with it never adds an entry there, so ListCalendars returns
+	// nothing however many calendars are shared. A typo would therefore be
+	// accepted here and then fail silently on every sync forever. Probe it
+	// once, at the only moment a human is present to read the answer.
+	if next.CalendarID != "" && next.CalendarID != current.CalendarID {
+		if _, err := googlecalendar.Instance().CheckWriteAccessTo(r.Context(), caller.TenantID, next.CalendarID); err != nil {
+			eventsErr(w, http.StatusBadRequest, fmt.Sprintf(
+				"Kit could not write to calendar %q: %v. Check the ID, and make sure the calendar is shared with %s with \"Make changes to events\".",
+				next.CalendarID, err, serviceAccountHint(r.Context(), caller.TenantID)))
+			return
+		}
 	}
 
 	// Repointing at a different calendar strands every event already written
