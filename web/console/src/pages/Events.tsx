@@ -8,12 +8,12 @@ import {
 } from '../api';
 import { useSetChatContext } from '../chatContext';
 
-// The everyday events page: list, create, edit, publish.
+// The everyday events page: a list, with create/edit in a drawer.
 //
 // The form and the chat launcher are two ways into the same service methods,
-// not competing surfaces. A date picker beats typing "next Thursday", and chat
-// beats a form for "move it to 7pm and make the blurb punchier" — so the page
-// registers its chat context and refreshes when the agent changes something.
+// not competing surfaces. A date picker beats typing "next Thursday"; chat
+// beats a form for "move it to 7pm and tighten the blurb". So the page
+// registers its chat context and reloads when the agent changes something.
 
 const EMPTY_FORM: EventInput = {
   title: '',
@@ -30,44 +30,40 @@ const EMPTY_FORM: EventInput = {
   registration_url: '',
 };
 
+// Spelled out because "published" is routinely misread as "public". They are
+// separate axes: a confirmed private booking is published AND private.
 function describeExposure(e: EventRecord): string {
-  if (e.status === 'draft') return 'not visible anywhere yet';
-  if (e.status === 'cancelled') return 'removed from the calendar and website';
-  if (e.visibility === 'public') return 'on the calendar and the public website';
-  return 'on the team calendar only, not public';
+  if (e.status === 'draft') return 'Not visible anywhere yet';
+  if (e.status === 'cancelled') return 'Removed from the calendar and website';
+  if (e.visibility === 'public') return 'On the calendar and the public website';
+  return 'On the team calendar only, not public';
 }
 
 function formatWhen(e: EventRecord): string {
   const d = new Date(e.starts_at);
-  const opts: Intl.DateTimeFormatOptions = e.all_day
-    ? { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }
-    : {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        hour: 'numeric',
-        minute: '2-digit',
-      };
-  const base = d.toLocaleString(undefined, opts);
+  const base = d.toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(e.all_day ? {} : { hour: 'numeric', minute: '2-digit' }),
+  });
   return e.rrule ? `${base} · repeats weekly` : base;
 }
 
 export default function Events() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [settings, setSettings] = useState<EventsSettingsSummary | null>(null);
-  const [selected, setSelected] = useState<EventRecord | null>(null);
-  const [form, setForm] = useState<EventInput>(EMPTY_FORM);
+  const [open, setOpen] = useState<EventRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [includePast, setIncludePast] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     api
       .listEvents({ include_past: includePast })
       .then((r) => {
-        setEvents(r.events);
+        setEvents(r.events ?? []);
         setSettings(r.settings);
       })
       .catch((e) => setErr((e as Error).message));
@@ -75,97 +71,10 @@ export default function Events() {
 
   useEffect(load, [load]);
 
-  // Page-aware chat: the agent resolves "this" and "move it to 7pm" against
-  // whatever is open, and onTurnDone refreshes after it writes.
   useSetChatContext(
-    selected
-      ? `the Events page, viewing "${selected.title}"`
-      : 'the Events page',
+    open ? `the Events page, viewing "${open.title}"` : 'the Events page',
     load,
   );
-
-  const edit = (e: EventRecord) => {
-    setCreating(false);
-    setSelected(e);
-    setNote(null);
-    setErr(null);
-    setForm({
-      title: e.title,
-      summary: e.summary ?? '',
-      description: e.description ?? '',
-      prep_notes: e.prep_notes ?? '',
-      location: e.location ?? '',
-      starts_at: e.starts_at.slice(0, 16),
-      ends_at: e.ends_at ? e.ends_at.slice(0, 16) : '',
-      timezone: e.timezone,
-      all_day: e.all_day,
-      repeat_rule: e.rrule ?? '',
-      visibility: e.visibility,
-      venue: e.venue,
-      space_impact: e.space_impact,
-      capacity: e.capacity,
-      expected_attendance: e.expected_attendance,
-      price_cents: e.price_cents,
-      registration_url: e.registration_url ?? '',
-      notify_food_partner: e.notify_food_partner,
-    });
-  };
-
-  const startNew = () => {
-    setCreating(true);
-    setSelected(null);
-    setErr(null);
-    setNote(null);
-    setForm({ ...EMPTY_FORM, timezone: settings?.timezone });
-  };
-
-  const save = async () => {
-    setBusy(true);
-    setErr(null);
-    setNote(null);
-    try {
-      if (creating) {
-        const r = await api.createEvent(form);
-        setNote('Created as a draft — it is not visible anywhere yet.');
-        setCreating(false);
-        setSelected(r.event);
-      } else if (selected) {
-        const r = await api.updateEvent(selected.id, form);
-        setSelected(r.event);
-        setNote('Saved.');
-      }
-      load();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const runTransition = async (
-    fn: (id: string) => Promise<{ event: EventRecord; warnings?: string[] | null }>,
-    label: string,
-  ) => {
-    if (!selected) return;
-    setBusy(true);
-    setErr(null);
-    setNote(null);
-    try {
-      const r = await fn(selected.id);
-      setSelected(r.event);
-      const warnings = r.warnings?.length
-        ? ` Worth knowing: ${r.warnings.join('; ')}.`
-        : '';
-      setNote(`${label} — ${describeExposure(r.event)}.${warnings}`);
-      load();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const set = (patch: Partial<EventInput>) => setForm((f) => ({ ...f, ...patch }));
 
   return (
     <div className="page">
@@ -175,269 +84,391 @@ export default function Events() {
           <span className="crumb-sep">/</span>
           <span>Events</span>
         </nav>
-        <h1>Events</h1>
-        <p className="muted">
-          Enter an event once. Published events sync to the team calendar;
-          public ones also reach the website.
+        <div className="page-head-row">
+          <h1>Events</h1>
+          <div className="page-head-actions">
+            <button
+              className="btn"
+              onClick={() => {
+                setCreating(true);
+                setOpen(null);
+              }}
+            >
+              New event
+            </button>
+          </div>
+        </div>
+        <p className="page-sub">
+          Enter an event once. Published events go on the team calendar; public
+          ones also reach the website.
         </p>
       </div>
 
-      {err && <div className="alert alert-error">{err}</div>}
-      {note && <div className="alert">{note}</div>}
+      {note && (
+        <p className="banner banner-ok" onClick={() => setNote(null)}>
+          {note}
+        </p>
+      )}
+      {err && <p className="banner banner-error">{err}</p>}
       {settings && !settings.calendar_configured && (
-        <div className="alert">
-          No calendar is selected yet, so nothing will sync.{' '}
-          <Link to="/admin/events">Choose one in Events settings</Link>.
-        </div>
+        <p className="banner banner-error">
+          No calendar is selected, so nothing will sync.{' '}
+          <Link to="/admin/events">Choose one</Link>.
+        </p>
       )}
 
-      <div className="split">
-        <section className="list-pane">
-          <div className="inline-form">
-            <button className="btn" onClick={startNew}>
-              New event
-            </button>
-            <label className="check">
+      <div className="toolbar">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={includePast}
+            onChange={(e) => setIncludePast(e.target.checked)}
+          />
+          Show past events
+        </label>
+      </div>
+
+      {events.length === 0 ? (
+        <p className="empty">No events yet.</p>
+      ) : (
+        <ul className="card-list">
+          {events.map((e) => (
+            <li key={e.id}>
+              <button className="row-card" onClick={() => setOpen(e)}>
+                <span className="row-card-main">
+                  <span className="row-card-title">{e.title}</span>
+                  <span className="row-card-sub">{formatWhen(e)}</span>
+                </span>
+                <span className="badge-row">
+                  <span
+                    className={`pill ${
+                      e.status === 'published'
+                        ? 'pill-ok'
+                        : e.status === 'cancelled'
+                          ? 'pill-error'
+                          : 'pill-off'
+                    }`}
+                  >
+                    {e.status}
+                  </span>
+                  {e.visibility === 'public' && (
+                    <span className="pill pill-ok">public</span>
+                  )}
+                  {e.venue === 'offsite' && <span className="pill">offsite</span>}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {(creating || open) && (
+        <EventDrawer
+          event={open}
+          defaultTimezone={settings?.timezone}
+          onClose={() => {
+            setCreating(false);
+            setOpen(null);
+          }}
+          onChanged={(msg, next) => {
+            setNote(msg);
+            setOpen(next ?? null);
+            setCreating(false);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EventDrawer({
+  event,
+  defaultTimezone,
+  onClose,
+  onChanged,
+}: {
+  event: EventRecord | null;
+  defaultTimezone?: string;
+  onClose: () => void;
+  onChanged: (msg: string, next?: EventRecord) => void;
+}) {
+  const [form, setForm] = useState<EventInput>(() =>
+    event
+      ? {
+          title: event.title,
+          summary: event.summary ?? '',
+          description: event.description ?? '',
+          prep_notes: event.prep_notes ?? '',
+          location: event.location ?? '',
+          starts_at: event.starts_at.slice(0, 16),
+          ends_at: event.ends_at ? event.ends_at.slice(0, 16) : '',
+          timezone: event.timezone,
+          repeat_rule: event.rrule ?? '',
+          visibility: event.visibility,
+          venue: event.venue,
+          space_impact: event.space_impact,
+          expected_attendance: event.expected_attendance,
+          registration_url: event.registration_url ?? '',
+        }
+      : { ...EMPTY_FORM, timezone: defaultTimezone },
+  );
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const set = (patch: Partial<EventInput>) => setForm((f) => ({ ...f, ...patch }));
+
+  const guard = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = (ev: React.FormEvent) => {
+    ev.preventDefault();
+    return guard(async () => {
+      if (!event) {
+        const r = await api.createEvent(form);
+        onChanged(
+          'Created as a draft — it is not visible anywhere yet.',
+          r.event,
+        );
+      } else {
+        const r = await api.updateEvent(event.id, form);
+        onChanged('Saved.', r.event);
+      }
+    });
+  };
+
+  const transition = (
+    fn: (id: string) => Promise<{ event: EventRecord; warnings?: string[] | null }>,
+    label: string,
+  ) =>
+    guard(async () => {
+      if (!event) return;
+      const r = await fn(event.id);
+      const warnings = r.warnings?.length
+        ? ` Worth knowing: ${r.warnings.join('; ')}.`
+        : '';
+      onChanged(`${label} — ${describeExposure(r.event).toLowerCase()}.${warnings}`, r.event);
+    });
+
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside
+        className="drawer drawer-wide"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className="drawer-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+        <h2 className="drawer-title">{event ? event.title : 'New event'}</h2>
+        {event && <p className="muted">{describeExposure(event)}</p>}
+
+        {err && <p className="banner banner-error">{err}</p>}
+
+        <form onSubmit={save} className="stack-form">
+          <label className="field">
+            <span>Title</span>
+            <input
+              value={form.title ?? ''}
+              onChange={(e) => set({ title: e.target.value })}
+            />
+          </label>
+
+          <div className="field-row">
+            <label className="field">
+              <span>Starts</span>
               <input
-                type="checkbox"
-                checked={includePast}
-                onChange={(ev) => setIncludePast(ev.target.checked)}
+                type="datetime-local"
+                value={form.starts_at ?? ''}
+                onChange={(e) => set({ starts_at: e.target.value })}
               />
-              Show past
+            </label>
+            <label className="field">
+              <span>Ends</span>
+              <input
+                type="datetime-local"
+                value={form.ends_at ?? ''}
+                onChange={(e) => set({ ends_at: e.target.value })}
+              />
             </label>
           </div>
 
-          {events.length === 0 && <p className="muted">No events yet.</p>}
-          <ul className="rows">
-            {events.map((e) => (
-              <li key={e.id}>
-                <button
-                  className={`row ${selected?.id === e.id ? 'row-active' : ''}`}
-                  onClick={() => edit(e)}
-                >
-                  <span className="row-title">{e.title}</span>
-                  <span className="muted">{formatWhen(e)}</span>
-                  <span className="pills">
-                    <span className={`pill pill-${e.status}`}>{e.status}</span>
-                    {e.visibility === 'public' ? (
-                      <span className="pill pill-ok">public</span>
-                    ) : (
-                      <span className="pill">private</span>
-                    )}
-                    {e.venue === 'offsite' && <span className="pill">offsite</span>}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+          <label className="field">
+            <span>Visibility</span>
+            <select
+              value={form.visibility ?? 'private'}
+              onChange={(e) => set({ visibility: e.target.value })}
+            >
+              <option value="private">Private — internal only</option>
+              <option value="public">Public — website and feed</option>
+            </select>
+            <span className="field-hint">
+              Public events appear on the website. Private ones stay on the team
+              calendar.
+            </span>
+          </label>
 
-        <section className="detail-pane">
-          {!creating && !selected && (
-            <p className="muted">Pick an event, or create a new one.</p>
-          )}
-
-          {(creating || selected) && (
-            <>
-              <h2>{creating ? 'New event' : selected?.title}</h2>
-              {selected && (
-                <p className="muted">
-                  {selected.status} — {describeExposure(selected)}
-                </p>
-              )}
-
-              <label>
-                Title
-                <input
-                  value={form.title ?? ''}
-                  onChange={(e) => set({ title: e.target.value })}
-                />
-              </label>
-
-              <div className="field-row">
-                <label>
-                  Starts
-                  <input
-                    type="datetime-local"
-                    value={form.starts_at ?? ''}
-                    onChange={(e) => set({ starts_at: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Ends
-                  <input
-                    type="datetime-local"
-                    value={form.ends_at ?? ''}
-                    onChange={(e) => set({ ends_at: e.target.value })}
-                  />
-                </label>
-              </div>
-
-              <div className="field-row">
-                <label>
-                  Visibility
-                  <select
-                    value={form.visibility ?? 'private'}
-                    onChange={(e) => set({ visibility: e.target.value })}
-                  >
-                    <option value="private">Private — internal only</option>
-                    <option value="public">Public — website and feed</option>
-                  </select>
-                </label>
-                <label>
-                  Where
-                  <select
-                    value={form.venue ?? 'onsite'}
-                    onChange={(e) => set({ venue: e.target.value })}
-                  >
-                    <option value="onsite">Onsite</option>
-                    <option value="offsite">Offsite — an event we attend</option>
-                  </select>
-                </label>
-              </div>
-
-              {form.venue !== 'offsite' && (
-                <label>
-                  Space
-                  <select
-                    value={form.space_impact ?? 'none'}
-                    onChange={(e) => set({ space_impact: e.target.value })}
-                  >
-                    <option value="none">Whole room open as usual</option>
-                    <option value="partial">Reserves part of the room</option>
-                  </select>
-                </label>
-              )}
-
-              <label>
-                Repeat
+          <div className="field-row">
+            <label className="field">
+              <span>Where</span>
+              <select
+                value={form.venue ?? 'onsite'}
+                onChange={(e) => set({ venue: e.target.value })}
+              >
+                <option value="onsite">Onsite</option>
+                <option value="offsite">Offsite — an event we attend</option>
+              </select>
+            </label>
+            {form.venue !== 'offsite' && (
+              <label className="field">
+                <span>Space</span>
                 <select
-                  value={form.repeat_rule ? 'weekly' : 'none'}
-                  onChange={(e) =>
-                    set({
-                      repeat_rule:
-                        e.target.value === 'weekly' ? 'FREQ=WEEKLY' : '',
-                    })
-                  }
+                  value={form.space_impact ?? 'none'}
+                  onChange={(e) => set({ space_impact: e.target.value })}
                 >
-                  <option value="none">Does not repeat</option>
-                  <option value="weekly">Every week</option>
+                  <option value="none">Whole room open as usual</option>
+                  <option value="partial">Reserves part of the room</option>
                 </select>
-                <span className="hint">
-                  For a weekly night like trivia. A series of different acts is
-                  not a repeat — create one event per night.
-                </span>
               </label>
+            )}
+          </div>
 
-              <label>
-                Summary
-                <input
-                  value={form.summary ?? ''}
-                  onChange={(e) => set({ summary: e.target.value })}
-                />
-              </label>
+          <label className="field">
+            <span>Repeat</span>
+            <select
+              value={form.repeat_rule ? 'weekly' : 'none'}
+              onChange={(e) =>
+                set({
+                  repeat_rule: e.target.value === 'weekly' ? 'FREQ=WEEKLY' : '',
+                })
+              }
+            >
+              <option value="none">Does not repeat</option>
+              <option value="weekly">Every week</option>
+            </select>
+            <span className="field-hint">
+              For a standing weekly night like trivia. A run of different acts
+              is not a repeat — create one event per night.
+            </span>
+          </label>
 
-              <label>
-                Public description
-                <textarea
-                  rows={4}
-                  value={form.description ?? ''}
-                  onChange={(e) => set({ description: e.target.value })}
-                />
-              </label>
+          <label className="field">
+            <span>Summary</span>
+            <input
+              value={form.summary ?? ''}
+              onChange={(e) => set({ summary: e.target.value })}
+            />
+          </label>
 
-              <label>
-                Staff notes
-                <textarea
-                  rows={3}
-                  value={form.prep_notes ?? ''}
-                  onChange={(e) => set({ prep_notes: e.target.value })}
-                />
-                <span className="hint">
-                  Goes on the calendar entry for whoever is working. Never
-                  appears on the website.
-                </span>
-              </label>
+          <label className="field">
+            <span>Public description</span>
+            <textarea
+              rows={4}
+              value={form.description ?? ''}
+              onChange={(e) => set({ description: e.target.value })}
+            />
+          </label>
 
-              <div className="field-row">
-                <label>
-                  Location
-                  <input
-                    value={form.location ?? ''}
-                    onChange={(e) => set({ location: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Expected headcount
-                  <input
-                    type="number"
-                    value={form.expected_attendance ?? ''}
-                    onChange={(e) =>
-                      set({
-                        expected_attendance: e.target.value
-                          ? Number(e.target.value)
-                          : undefined,
-                      })
-                    }
-                  />
-                </label>
-              </div>
+          <label className="field">
+            <span>Staff notes</span>
+            <textarea
+              rows={3}
+              value={form.prep_notes ?? ''}
+              onChange={(e) => set({ prep_notes: e.target.value })}
+            />
+            <span className="field-hint">
+              Goes on the calendar entry for whoever is working. Never appears
+              on the website.
+            </span>
+          </label>
 
-              <label>
-                Ticket or RSVP link
-                <input
-                  value={form.registration_url ?? ''}
-                  onChange={(e) => set({ registration_url: e.target.value })}
-                />
-              </label>
+          <div className="field-row">
+            <label className="field">
+              <span>Location</span>
+              <input
+                value={form.location ?? ''}
+                onChange={(e) => set({ location: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Expected headcount</span>
+              <input
+                type="number"
+                value={form.expected_attendance ?? ''}
+                onChange={(e) =>
+                  set({
+                    expected_attendance: e.target.value
+                      ? Number(e.target.value)
+                      : undefined,
+                  })
+                }
+              />
+            </label>
+          </div>
 
-              <div className="actions">
-                <button className="btn" onClick={save} disabled={busy}>
-                  {busy ? 'Saving…' : creating ? 'Create draft' : 'Save'}
+          <label className="field">
+            <span>Ticket or RSVP link</span>
+            <input
+              value={form.registration_url ?? ''}
+              onChange={(e) => set({ registration_url: e.target.value })}
+            />
+          </label>
+
+          <div className="drawer-actions">
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? 'Saving…' : event ? 'Save' : 'Create draft'}
+            </button>
+            {event?.status === 'draft' && (
+              <button
+                className="btn"
+                type="button"
+                disabled={busy}
+                onClick={() => transition(api.publishEvent, 'Published')}
+              >
+                Publish
+              </button>
+            )}
+            {event?.status === 'published' && (
+              <>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => transition(api.unpublishEvent, 'Back to draft')}
+                >
+                  Unpublish
                 </button>
-                {selected?.status === 'draft' && (
-                  <button
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => runTransition(api.publishEvent, 'Published')}
-                  >
-                    Publish
-                  </button>
-                )}
-                {selected?.status === 'published' && (
-                  <>
-                    <button
-                      className="btn btn-secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        runTransition(api.unpublishEvent, 'Back to draft')
-                      }
-                    >
-                      Unpublish
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      disabled={busy}
-                      onClick={() => runTransition(api.cancelEvent, 'Cancelled')}
-                    >
-                      Cancel event
-                    </button>
-                  </>
-                )}
-                {selected?.status === 'cancelled' && (
-                  <button
-                    className="btn btn-secondary"
-                    disabled={busy}
-                    onClick={() => runTransition(api.reopenEvent, 'Reopened')}
-                  >
-                    Reopen
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </section>
-      </div>
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => transition(api.cancelEvent, 'Cancelled')}
+                >
+                  Cancel event
+                </button>
+              </>
+            )}
+            {event?.status === 'cancelled' && (
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={busy}
+                onClick={() => transition(api.reopenEvent, 'Reopened')}
+              >
+                Reopen
+              </button>
+            )}
+          </div>
+        </form>
+      </aside>
     </div>
   );
 }
