@@ -558,9 +558,11 @@ export interface EventsSettings {
   feed_token?: string;
   feed_url?: string;
   google_connected: boolean;
-  calendars: EventsCalendarOption[];
+  // Server always sends [], never null — the client stays defensive anyway,
+  // since a nil Go slice marshals to null and that crashed this page once.
+  calendars: EventsCalendarOption[] | null;
   calendars_error?: string;
-  recent: EventsRun[];
+  recent: EventsRun[] | null;
 }
 
 // Every field optional: the console PATCHes only what changed, so an edit made

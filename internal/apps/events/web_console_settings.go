@@ -51,6 +51,26 @@ type settingsPayload struct {
 	Recent []runPayload `json:"recent"`
 }
 
+// MarshalJSON guarantees the array fields serialise as `[]` rather than
+// `null`, however the payload was built.
+//
+// This is a type-level guarantee on purpose. A nil Go slice marshals to
+// `null`; a client then doing `payload.calendars.length` dies on a type error
+// and, in a React app, takes the whole page down. That happened here, in the
+// first-run state where no calendar has been shared with the service account
+// yet -- the one state every new install passes through. Relying on each
+// construction site to remember is exactly the arrangement that failed.
+func (p settingsPayload) MarshalJSON() ([]byte, error) {
+	type alias settingsPayload // shed the method, or this recurses
+	if p.Calendars == nil {
+		p.Calendars = []calendarOption{}
+	}
+	if p.Recent == nil {
+		p.Recent = []runPayload{}
+	}
+	return json.Marshal(alias(p))
+}
+
 type runPayload struct {
 	At          string `json:"at"`
 	OK          bool   `json:"ok"`
@@ -84,6 +104,8 @@ func (a *App) buildSettingsPayload(r *http.Request, tenantID uuid.UUID) (setting
 	if err != nil {
 		return settingsPayload{}, err
 	}
+	// Empty slices need no special handling here; settingsPayload.MarshalJSON
+	// guarantees they reach the client as [] rather than null.
 	payload := settingsPayload{
 		CalendarID:        settings.CalendarID,
 		Timezone:          firstNonEmpty(settings.Timezone, DefaultTimezone),
@@ -132,9 +154,9 @@ func (a *App) buildSettingsPayload(r *http.Request, tenantID uuid.UUID) (setting
 func listCalendarOptions(r *http.Request, client *googlecalendar.Client) ([]calendarOption, string) {
 	entries, err := client.ListCalendars(r.Context())
 	if err != nil {
-		return nil, "Could not list calendars: " + err.Error()
+		return []calendarOption{}, "Could not list calendars: " + err.Error()
 	}
-	var out []calendarOption
+	out := []calendarOption{}
 	for _, e := range entries {
 		out = append(out, calendarOption{
 			ID: e.ID, Name: firstNonEmpty(e.Summary, e.ID),
@@ -142,7 +164,7 @@ func listCalendarOptions(r *http.Request, client *googlecalendar.Client) ([]cale
 		})
 	}
 	if len(out) == 0 {
-		return nil, "The service account cannot see any calendars yet. In Google Calendar, share the events calendar with the service account's email address and give it 'Make changes to events'."
+		return out, "The service account cannot see any calendars yet. In Google Calendar, share the events calendar with the service account's email address and give it 'Make changes to events'."
 	}
 	return out, ""
 }

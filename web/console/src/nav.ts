@@ -94,7 +94,7 @@ export const SECTIONS: Section[] = [
   },
   {
     to: '/admin/events',
-    label: 'Events settings',
+    label: 'Events calendar & feed',
     blurb: 'Pick the calendar events sync to, and the feed your website builds from.',
     admin: true,
     app: 'events',

@@ -110,7 +110,7 @@ export default function EventsSettingsPage() {
           </p>
         )}
         {st?.calendars_error && <p className="muted">{st.calendars_error}</p>}
-        {st && st.calendars.length > 0 && (
+        {st && (st.calendars?.length ?? 0) > 0 && (
           <label>
             Calendar to write events to
             <select
@@ -118,7 +118,7 @@ export default function EventsSettingsPage() {
               onChange={(e) => setCalendarID(e.target.value)}
             >
               <option value="">Not selected — nothing will sync</option>
-              {st.calendars.map((c) => (
+              {(st.calendars ?? []).map((c) => (
                 <option key={c.id} value={c.id} disabled={!c.writable}>
                   {c.name}
                   {c.primary ? ' (primary)' : ''}
