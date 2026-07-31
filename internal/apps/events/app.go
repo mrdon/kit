@@ -25,6 +25,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/attachment"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
@@ -46,6 +47,8 @@ type App struct {
 	pool   *pgxpool.Pool
 	signer *auth.SessionSigner
 	svc    *Service
+	// enc decrypts attachment bytes; needed for event posters.
+	enc *crypto.Encryptor
 
 	// resolveWriter overrides how the calendar client is obtained. Nil in
 	// production; tests set it to inject a fake calendar. See writerFor.
@@ -65,11 +68,21 @@ func (a *App) Init(pool *pgxpool.Pool) {
 // Configure wires the console session signer. The calendar client comes from
 // the googlecalendar singleton at call time, so there is no encryptor to hold
 // here; enc is accepted to match the wiring convention used by sibling apps.
-func Configure(_ *crypto.Encryptor, signer *auth.SessionSigner) {
+func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
+	instance.enc = enc
+}
+
+// attachments builds the poster store on demand. Nil when the encryptor was
+// never wired, which the handlers report rather than panicking on.
+func (a *App) attachments() *attachment.Service {
+	if a.pool == nil || a.enc == nil {
+		return nil
+	}
+	return attachment.NewService(a.pool, a.enc)
 }
 
 func (a *App) Name() string { return AppName }

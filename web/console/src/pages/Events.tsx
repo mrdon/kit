@@ -423,6 +423,54 @@ function EventDrawer({
             />
           </label>
 
+          {event && (
+            <div className="field">
+              <span>Poster</span>
+              <span className="field-note">
+                The graphic for this event. The website downloads it at build
+                time and serves it from its own domain — nothing links back
+                here.
+              </span>
+              {event.hero_attachment_id ? (
+                <div className="poster-preview">
+                  <img
+                    src={api.eventPosterURL(event.id, event.updated_at)}
+                    alt={`Poster for ${event.title}`}
+                  />
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      guard(async () => {
+                        const r = await api.deleteEventPoster(event.id);
+                        onChanged('Poster removed.', r.event);
+                      })
+                    }
+                  >
+                    Remove poster
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  disabled={busy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    // Reset first: picking the same file twice must re-fire.
+                    e.target.value = '';
+                    guard(async () => {
+                      const r = await api.uploadEventPoster(event.id, f);
+                      onChanged('Poster uploaded.', r.event);
+                    });
+                  }}
+                />
+              )}
+            </div>
+          )}
+
           <div className="drawer-actions">
             <button className="btn" type="submit" disabled={busy}>
               {busy ? 'Saving…' : event ? 'Save' : 'Create draft'}

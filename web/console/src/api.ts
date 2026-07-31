@@ -516,6 +516,9 @@ export interface EventRecord {
   capacity?: number;
   expected_attendance?: number;
   registration_url?: string;
+  // Present when a poster has been uploaded. The id itself is not useful to
+  // the client; it is the has-a-poster flag.
+  hero_attachment_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -702,6 +705,25 @@ export const api = {
   rotateEventsFeedToken: () =>
     apiPost<{ settings: EventsSettings; warning: string }>('/events/settings/feed-token'),
   eventsSyncNow: () => apiPost<{ message: string }>('/events/sync'),
+  // Poster upload is multipart, so it bypasses the JSON helpers -- but it
+  // still needs the CSRF header and the 401 bounce.
+  uploadEventPoster: async (id: string, file: File) => {
+    const body = new FormData();
+    body.append('poster', file);
+    const r = await fetch(`${API_BASE}/events/${id}/poster`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { [CSRF_HEADER]: '1' },
+      body,
+    });
+    return parse<{ event: EventRecord }>(r);
+  },
+  deleteEventPoster: (id: string) =>
+    apiDelete<{ event: EventRecord }>(`/events/${id}/poster`),
+  // Cache-busted on the event's updated_at so a replaced poster shows at once.
+  eventPosterURL: (id: string, v?: string) =>
+    `${API_BASE}/events/${id}/poster${v ? `?v=${encodeURIComponent(v)}` : ''}`,
+
   eventsReconcile: (apply: boolean) =>
     apiPost<EventsReconcilePlan>(`/events/reconcile${apply ? '?apply=true' : ''}`),
 

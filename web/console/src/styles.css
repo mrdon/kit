@@ -1716,3 +1716,11 @@ h2.view-title:hover {
   font-size: 0.8rem;
   color: var(--muted);
 }
+
+/* Event poster preview in the drawer — capped so a tall print-shaped poster
+   doesn't push the action buttons off screen. */
+.poster-preview { margin-top: 0.5rem; }
+.poster-preview img {
+  display: block; max-width: 100%; max-height: 260px;
+  border-radius: 6px; border: 1px solid var(--line); margin-bottom: 0.6rem;
+}

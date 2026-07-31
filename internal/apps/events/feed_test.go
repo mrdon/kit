@@ -11,7 +11,7 @@ import (
 
 func (sf *syncFixture) feed(t *testing.T) Feed {
 	t.Helper()
-	f, err := sf.svc.BuildFeed(sf.ctx, sf.tenant.ID)
+	f, err := sf.svc.BuildFeed(sf.ctx, sf.tenant.ID, "")
 	if err != nil {
 		t.Fatalf("BuildFeed: %v", err)
 	}

@@ -152,6 +152,10 @@ type UpdateParams struct {
 	RegistrationURL    *string
 
 	NotifyFoodPartner *bool
+	// HeroAttachmentID sets the poster. ClearHero removes it -- a nil pointer
+	// means "leave alone", so removal needs its own flag.
+	HeroAttachmentID *uuid.UUID
+	ClearHero        bool
 	// Slug is only honoured while the event is a draft; see below.
 	Slug *string
 }
@@ -179,6 +183,11 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	}
 	if p.SpaceImpact != nil {
 		e.SpaceImpact = *p.SpaceImpact
+	}
+	if p.ClearHero {
+		e.HeroAttachmentID = nil
+	} else if p.HeroAttachmentID != nil {
+		e.HeroAttachmentID = p.HeroAttachmentID
 	}
 	if p.NotifyFoodPartner != nil {
 		e.NotifyFoodPartner = *p.NotifyFoodPartner

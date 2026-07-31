@@ -58,6 +58,10 @@ type FeedItem struct {
 	Capacity        *int   `json:"capacity,omitempty"`
 	RegistrationURL string `json:"registration_url,omitempty"`
 
+	// ImageURL is the event's poster, absent when none was uploaded. The site
+	// falls back to its own artwork rather than showing a gap.
+	ImageURL string `json:"image_url,omitempty"`
+
 	UpdatedAt string `json:"updated_at"`
 }
 
@@ -112,7 +116,12 @@ func feedType(e *Event) string {
 }
 
 // BuildFeed assembles the public feed for a tenant.
-func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID) (Feed, error) {
+//
+// posterBase is the "https://host/tenant-slug" prefix used to build absolute
+// poster URLs; pass "" and posters are simply omitted. It is a parameter
+// rather than config because only the request knows the host it was reached
+// on, and a feed consumed by an external build needs absolute URLs.
+func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID, posterBase string) (Feed, error) {
 	settings, err := getSettings(ctx, s.pool, tenantID)
 	if err != nil {
 		return Feed{}, err
@@ -141,7 +150,14 @@ func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID) (Feed, erro
 		if !e.IsPubliclyVisible() {
 			continue
 		}
-		feed.Events = append(feed.Events, feedItem(e, settings))
+		item := feedItem(e, settings)
+		// Poster URL is assembled here rather than in feedItem because only
+		// the caller knows the host. No hero, no field -- the site then falls
+		// back to its own artwork instead of requesting a 404.
+		if posterBase != "" && e.HeroAttachmentID != nil {
+			item.ImageURL = strings.TrimSuffix(posterBase, "/") + "/events/" + e.Slug + "/poster"
+		}
+		feed.Events = append(feed.Events, item)
 	}
 	return feed, nil
 }
@@ -156,6 +172,10 @@ func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID) (Feed, erro
 func (a *App) registerFeedRoutes(mux apps.Mux) {
 	mux.Handle("GET /{slug}/events/feed.json",
 		auth.TenantFromPath(a.pool)(http.HandlerFunc(a.handleFeed)))
+	// Posters ride the same public path: no session, gated only by
+	// IsPubliclyVisible. See poster.go for why they are unsigned.
+	mux.Handle("GET /{slug}/events/{event}/poster",
+		auth.TenantFromPath(a.pool)(http.HandlerFunc(a.handleServePoster)))
 }
 
 // handleFeed serves the build-time feed.
@@ -191,7 +211,7 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feed, err := a.svc.BuildFeed(ctx, tenant.ID)
+	feed, err := a.svc.BuildFeed(ctx, tenant.ID, baseURLFrom(r)+"/"+tenant.Slug)
 	if err != nil {
 		slog.Error("events feed: building", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
