@@ -99,6 +99,27 @@ func (a *App) CheckWriteAccess(ctx context.Context, tenantID uuid.UUID) (string,
 	if err != nil {
 		return "", err
 	}
+	return a.probeWrite(ctx, c, tenantID, calendarID)
+}
+
+// CheckWriteAccessTo is CheckWriteAccess against a caller-supplied calendar
+// rather than the integration's configured one.
+//
+// It exists because a service account's calendarList is its own SUBSCRIPTION
+// list, and sharing a calendar with a service account never adds it there --
+// there is no invite for a service account to accept. So a shared, writable
+// calendar is invisible to ListCalendars, and any app that lets an admin type
+// a calendar id needs a way to tell a correct id from a typo. Without a probe,
+// a wrong id fails silently on every future sync.
+func (a *App) CheckWriteAccessTo(ctx context.Context, tenantID uuid.UUID, calendarID string) (string, error) {
+	c, err := a.LoadClientOnly(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return a.probeWrite(ctx, c, tenantID, calendarID)
+}
+
+func (a *App) probeWrite(ctx context.Context, c *Client, tenantID uuid.UUID, calendarID string) (string, error) {
 	start := time.Now().Add(24 * time.Hour).Truncate(time.Hour)
 	probe := &Event{
 		ID:          probeEventID(tenantID, start),

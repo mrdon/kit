@@ -85,6 +85,8 @@ export default function EventsSettingsPage() {
       load();
     });
 
+  // Empty is the normal case for a service account, not an error, so the
+  // listing is a convenience only and its failure is never surfaced.
   const calendars = st?.calendars ?? [];
   const recent = st?.recent ?? [];
 
@@ -117,12 +119,10 @@ export default function EventsSettingsPage() {
         <>
           <section className="panel">
             <h2 className="panel-title">Google Calendar</h2>
-            {/* Two things have to be true, and they fail independently:
-                Kit must hold a working credential, AND a calendar must be
-                shared with that credential so there is somewhere to write.
-                Showing them as separate status pills read as a contradiction
-                ("connected" next to "no calendar"), so they are shown as
-                ordered steps with the blocked one carrying the fix. */}
+            {/* A service account cannot list calendars shared with it -- its
+                calendarList is its own subscription list, and there is no
+                invite for it to accept -- so the id is typed, not picked, and
+                the status has to describe that rather than imply a dropdown. */}
             {!st.google_connected ? (
               <p className="banner banner-error">
                 Google Calendar is not connected. Connect it on the{' '}
@@ -131,45 +131,49 @@ export default function EventsSettingsPage() {
             ) : st.calendar_id ? (
               <p className="status-line">
                 <span className="pill pill-ok">Syncing</span> Events are written
-                to this calendar.
-              </p>
-            ) : calendars.length > 0 ? (
-              <p className="status-line">
-                <span className="pill pill-off">Not syncing</span> Kit can reach
-                your Google Calendar. Pick which calendar to write to below.
+                to the calendar below.
               </p>
             ) : (
-              <>
-                <p className="status-line">
-                  <span className="pill pill-off">Not syncing</span> Kit can
-                  reach Google Calendar, but no calendar has been shared with it
-                  yet, so there is nothing to choose from.
-                </p>
-                {st.service_account_email && (
-                  <>
-                    <p className="field-note">
-                      In Google Calendar, open the events calendar's settings,
-                      and under <em>Share with specific people</em> add this
-                      address with <em>Make changes to events</em>. Then reload
-                      this page.
-                    </p>
-                    <div className="snippet-box">
-                      <pre className="snippet">{st.service_account_email}</pre>
-                    </div>
-                  </>
-                )}
-              </>
+              <p className="status-line">
+                <span className="pill pill-off">Not syncing</span> Kit can reach
+                Google Calendar. Point it at a calendar below to start.
+              </p>
             )}
 
             <form onSubmit={save} className="stack-form">
+              <label className="field">
+                <span>Calendar ID</span>
+                <input
+                  value={calendarID}
+                  placeholder="something@group.calendar.google.com"
+                  onChange={(e) => setCalendarID(e.target.value)}
+                />
+                <span className="field-note">
+                  In Google Calendar, open the events calendar&apos;s settings.
+                  Under <em>Share with specific people</em> add the address
+                  below with <em>Make changes to events</em>, then copy the{' '}
+                  <em>Calendar ID</em> from further down the same page.
+                </span>
+                {st.service_account_email && (
+                  <div className="snippet-box">
+                    <pre className="snippet">{st.service_account_email}</pre>
+                  </div>
+                )}
+                <span className="field-note">
+                  Every event goes here, private bookings included — staff and
+                  the food partner read this calendar. Only the website filters
+                  on visibility. Saving checks Kit can write to it.
+                </span>
+              </label>
+
               {calendars.length > 0 && (
                 <label className="field">
-                  <span>Calendar to write events to</span>
+                  <span>Or pick one Kit can see</span>
                   <select
-                    value={calendarID}
+                    value={calendars.some((c) => c.id === calendarID) ? calendarID : ''}
                     onChange={(e) => setCalendarID(e.target.value)}
                   >
-                    <option value="">Not selected — nothing will sync</option>
+                    <option value="">Choose…</option>
                     {calendars.map((c) => (
                       <option key={c.id} value={c.id} disabled={!c.writable}>
                         {c.name}
@@ -178,11 +182,6 @@ export default function EventsSettingsPage() {
                       </option>
                     ))}
                   </select>
-                  <span className="field-note">
-                    Every event goes here, private bookings included — staff and
-                    the food partner read this calendar. Only the website
-                    filters on visibility.
-                  </span>
                 </label>
               )}
 

@@ -171,9 +171,10 @@ func listCalendarOptions(r *http.Request, client *googlecalendar.Client) ([]cale
 			Writable: e.Writable(), Primary: e.Primary,
 		})
 	}
-	if len(out) == 0 {
-		return out, "no calendars shared yet"
-	}
+	// An empty list is the EXPECTED result for a service account: calendarList
+	// is its own subscription list, and sharing a calendar with it never adds
+	// an entry there. So empty is not an error and must not be reported as one
+	// -- the admin types the calendar id instead.
 	return out, ""
 }
 
