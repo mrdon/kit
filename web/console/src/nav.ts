@@ -93,6 +93,13 @@ export const SECTIONS: Section[] = [
     app: 'netlify',
   },
   {
+    to: '/admin/events',
+    label: 'Events settings',
+    blurb: 'Pick the calendar events sync to, and the feed your website builds from.',
+    admin: true,
+    app: 'events',
+  },
+  {
     to: '/admin/square-shifts',
     label: 'Square Shift Sync',
     blurb: 'Mirror your published Square schedule into a Google Calendar.',
