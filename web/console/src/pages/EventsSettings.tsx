@@ -159,14 +159,16 @@ export default function EventsSettingsPage() {
           </span>
         </label>
 
-        {st?.feed_url && (
+        {/* Always rendered, including before a token exists — otherwise an
+            admin looking for the feed URL finds nothing and no way forward. */}
+        {st?.feed_url ? (
           <>
             <label>
               Feed URL
               <input readOnly value={st.feed_url} />
               <span className="hint">
-                The website build fetches this with the token below as a bearer
-                header.
+                The website build fetches this, sending the token below as an{' '}
+                <code>Authorization: Bearer</code> header.
               </span>
             </label>
             <label>
@@ -175,6 +177,16 @@ export default function EventsSettingsPage() {
             </label>
             <button className="btn btn-secondary" onClick={rotate} disabled={busy}>
               Generate a new token
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="muted">
+              No feed token yet, so the website has nothing to fetch. Generate
+              one and copy it, with the URL, into your site's build settings.
+            </p>
+            <button className="btn" onClick={rotate} disabled={busy}>
+              Generate feed token
             </button>
           </>
         )}

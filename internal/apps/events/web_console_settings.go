@@ -210,8 +210,10 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	eventsJSON(w, http.StatusOK, map[string]any{"settings": payload, "warning": warning})
 }
 
-// handleRotateFeedToken mints a new token, which immediately invalidates the
-// old one -- the website build must be updated with it.
+// handleRotateFeedToken mints a feed token. It serves both the first
+// generation and a deliberate rotation, which are the same operation with
+// different consequences -- so the message distinguishes them rather than
+// warning about invalidating a token that never existed.
 func (a *App) handleRotateFeedToken(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	settings, err := a.svc.Settings(r.Context(), caller.TenantID)
@@ -219,6 +221,8 @@ func (a *App) handleRotateFeedToken(w http.ResponseWriter, r *http.Request) {
 		a.serviceErr(w, err)
 		return
 	}
+	replacing := settings.FeedToken != ""
+
 	token, err := NewFeedToken()
 	if err != nil {
 		a.serviceErr(w, err)
@@ -235,10 +239,11 @@ func (a *App) handleRotateFeedToken(w http.ResponseWriter, r *http.Request) {
 		a.serviceErr(w, err)
 		return
 	}
-	eventsJSON(w, http.StatusOK, map[string]any{
-		"settings": payload,
-		"warning":  "The previous token stopped working. Update the website build with the new one.",
-	})
+	msg := "Feed token created. Copy it and the feed URL into your website's build settings."
+	if replacing {
+		msg = "The previous token stopped working. Update the website build with the new one."
+	}
+	eventsJSON(w, http.StatusOK, map[string]any{"settings": payload, "warning": msg})
 }
 
 func (a *App) handleSyncNow(w http.ResponseWriter, r *http.Request) {
