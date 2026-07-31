@@ -428,6 +428,12 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  /* These are cards, not prose. Without this the <li> markers render beside
+     each card — the other list classes here (.entry-list, .activity-list,
+     .timeline) all reset it; this one was missed. */
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .card {
