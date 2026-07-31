@@ -316,30 +316,29 @@ function EventDrawer({
             </span>
           </label>
 
-          <div className="field-row">
+          <label className="field">
+            <span>Where</span>
+            <select
+              value={form.venue ?? 'onsite'}
+              onChange={(e) => set({ venue: e.target.value })}
+            >
+              <option value="onsite">At our venue</option>
+              <option value="offsite">Offsite — an event we attend</option>
+            </select>
+          </label>
+
+          {form.venue !== 'offsite' && (
             <label className="field">
-              <span>Where</span>
+              <span>Space</span>
               <select
-                value={form.venue ?? 'onsite'}
-                onChange={(e) => set({ venue: e.target.value })}
+                value={form.space_impact ?? 'none'}
+                onChange={(e) => set({ space_impact: e.target.value })}
               >
-                <option value="onsite">Onsite</option>
-                <option value="offsite">Offsite — an event we attend</option>
+                <option value="none">Whole room open as usual</option>
+                <option value="partial">Reserves part of the room</option>
               </select>
             </label>
-            {form.venue !== 'offsite' && (
-              <label className="field">
-                <span>Space</span>
-                <select
-                  value={form.space_impact ?? 'none'}
-                  onChange={(e) => set({ space_impact: e.target.value })}
-                >
-                  <option value="none">Whole room open as usual</option>
-                  <option value="partial">Reserves part of the room</option>
-                </select>
-              </label>
-            )}
-          </div>
+          )}
 
           <label className="field">
             <span>Repeat</span>
@@ -390,29 +389,31 @@ function EventDrawer({
             </span>
           </label>
 
-          <div className="field-row">
-            <label className="field">
-              <span>Location</span>
-              <input
-                value={form.location ?? ''}
-                onChange={(e) => set({ location: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              <span>Expected headcount</span>
-              <input
-                type="number"
-                value={form.expected_attendance ?? ''}
-                onChange={(e) =>
-                  set({
-                    expected_attendance: e.target.value
-                      ? Number(e.target.value)
-                      : undefined,
-                  })
-                }
-              />
-            </label>
-          </div>
+          <label className="field">
+            <span>Location</span>
+            <input
+              value={form.location ?? ''}
+              onChange={(e) => set({ location: e.target.value })}
+            />
+          </label>
+
+          <label className="field">
+            <span>Expected headcount</span>
+            <input
+              type="number"
+              value={form.expected_attendance ?? ''}
+              onChange={(e) =>
+                set({
+                  expected_attendance: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
+                })
+              }
+            />
+            <span className="field-note">
+              What the food partner plans around.
+            </span>
+          </label>
 
           <label className="field">
             <span>Ticket or RSVP link</span>
