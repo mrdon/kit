@@ -558,6 +558,9 @@ export interface EventsSettings {
   feed_token?: string;
   feed_url?: string;
   google_connected: boolean;
+  // The address a calendar must be shared with. Absent until a credential is
+  // loaded; shown so nobody has to go digging for it.
+  service_account_email?: string;
   // Server always sends [], never null — the client stays defensive anyway,
   // since a nil Go slice marshals to null and that crashed this page once.
   calendars: EventsCalendarOption[] | null;

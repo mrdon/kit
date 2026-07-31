@@ -118,3 +118,37 @@ func (a *App) CheckWriteAccess(ctx context.Context, tenantID uuid.UUID) (string,
 	}
 	return "Google Calendar write access confirmed (calendar " + calendarID + ").", nil
 }
+
+// ServiceAccountEmail returns the address a calendar must be shared with for
+// this tenant's integration to write to it.
+//
+// Not a secret — it is an email address you type into Google Calendar's
+// sharing dialog, and the private key it sits beside is never returned. It is
+// exposed because the alternative is an admin being told to "share the
+// calendar with the service account" and having no way to discover which
+// address that is.
+func (a *App) ServiceAccountEmail(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	if a.enc == nil {
+		return "", ErrNotReady
+	}
+	integ, err := models.GetIntegration(ctx, a.pool, tenantID, Provider, AuthType, nil)
+	if err != nil {
+		return "", fmt.Errorf("loading google calendar integration: %w", err)
+	}
+	if integ == nil {
+		return "", ErrNotConfigured
+	}
+	primaryEnc, _, err := models.GetIntegrationTokens(ctx, a.pool, tenantID, integ.ID)
+	if err != nil || primaryEnc == "" {
+		return "", ErrNotConfigured
+	}
+	keyJSON, err := a.enc.Decrypt(primaryEnc)
+	if err != nil {
+		return "", fmt.Errorf("decrypting service account key: %w", err)
+	}
+	key, err := parseServiceAccountKey(keyJSON)
+	if err != nil {
+		return "", err
+	}
+	return key.ClientEmail, nil
+}

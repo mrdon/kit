@@ -42,8 +42,11 @@ type settingsPayload struct {
 	FeedToken         string `json:"feed_token,omitempty"`
 	FeedURL           string `json:"feed_url,omitempty"`
 
-	GoogleConnected bool             `json:"google_connected"`
-	Calendars       []calendarOption `json:"calendars"`
+	GoogleConnected bool `json:"google_connected"`
+	// ServiceAccountEmail is the address a calendar must be shared with. Shown
+	// because "share it with the service account" is useless advice without it.
+	ServiceAccountEmail string           `json:"service_account_email,omitempty"`
+	Calendars           []calendarOption `json:"calendars"`
 	// CalendarsError explains why the picker is empty instead of leaving the
 	// admin staring at an empty dropdown with no reason given.
 	CalendarsError string `json:"calendars_error,omitempty"`
@@ -126,6 +129,11 @@ func (a *App) buildSettingsPayload(r *http.Request, tenantID uuid.UUID) (setting
 	default:
 		payload.GoogleConnected = true
 		payload.Calendars, payload.CalendarsError = listCalendarOptions(r, client)
+		// Best effort: the picker still works without it, so a failure here
+		// costs the admin a copyable address, not the page.
+		if email, err := googlecalendar.Instance().ServiceAccountEmail(ctx, tenantID); err == nil {
+			payload.ServiceAccountEmail = email
+		}
 	}
 
 	runs, err := a.ListRecentRuns(ctx, tenantID, 8)
@@ -164,7 +172,7 @@ func listCalendarOptions(r *http.Request, client *googlecalendar.Client) ([]cale
 		})
 	}
 	if len(out) == 0 {
-		return out, "The service account cannot see any calendars yet. In Google Calendar, share the events calendar with the service account's email address and give it 'Make changes to events'."
+		return out, "no calendars shared yet"
 	}
 	return out, ""
 }

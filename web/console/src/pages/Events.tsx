@@ -112,8 +112,8 @@ export default function Events() {
       {err && <p className="banner banner-error">{err}</p>}
       {settings && !settings.calendar_configured && (
         <p className="banner banner-error">
-          No calendar is selected, so nothing will sync.{' '}
-          <Link to="/admin/events">Choose one</Link>.
+          Events are not syncing to Google Calendar yet — no calendar has been
+          set up. <Link to="/admin/events">Finish setup</Link>.
         </p>
       )}
 

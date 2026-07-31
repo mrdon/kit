@@ -117,28 +117,49 @@ export default function EventsSettingsPage() {
         <>
           <section className="panel">
             <h2 className="panel-title">Google Calendar</h2>
-            <p className="status-line">
-              {st.google_connected ? (
-                <span className="pill pill-ok">Google Calendar connected</span>
-              ) : (
-                <span className="pill pill-off">
-                  Google Calendar not connected
-                </span>
-              )}{' '}
-              {st.calendar_id ? (
-                <span className="pill pill-ok">Calendar selected</span>
-              ) : (
-                <span className="pill pill-off">No calendar selected</span>
-              )}
-            </p>
-
-            {!st.google_connected && (
-              <p className="muted">
-                Connect it on the{' '}
+            {/* Two things have to be true, and they fail independently:
+                Kit must hold a working credential, AND a calendar must be
+                shared with that credential so there is somewhere to write.
+                Showing them as separate status pills read as a contradiction
+                ("connected" next to "no calendar"), so they are shown as
+                ordered steps with the blocked one carrying the fix. */}
+            {!st.google_connected ? (
+              <p className="banner banner-error">
+                Google Calendar is not connected. Connect it on the{' '}
                 <Link to="/admin/integrations">Integrations</Link> page first.
               </p>
+            ) : st.calendar_id ? (
+              <p className="status-line">
+                <span className="pill pill-ok">Syncing</span> Events are written
+                to this calendar.
+              </p>
+            ) : calendars.length > 0 ? (
+              <p className="status-line">
+                <span className="pill pill-off">Not syncing</span> Kit can reach
+                your Google Calendar. Pick which calendar to write to below.
+              </p>
+            ) : (
+              <>
+                <p className="status-line">
+                  <span className="pill pill-off">Not syncing</span> Kit can
+                  reach Google Calendar, but no calendar has been shared with it
+                  yet, so there is nothing to choose from.
+                </p>
+                {st.service_account_email && (
+                  <>
+                    <p className="field-note">
+                      In Google Calendar, open the events calendar's settings,
+                      and under <em>Share with specific people</em> add this
+                      address with <em>Make changes to events</em>. Then reload
+                      this page.
+                    </p>
+                    <div className="snippet-box">
+                      <pre className="snippet">{st.service_account_email}</pre>
+                    </div>
+                  </>
+                )}
+              </>
             )}
-            {st.calendars_error && <p className="muted">{st.calendars_error}</p>}
 
             <form onSubmit={save} className="stack-form">
               {calendars.length > 0 && (
