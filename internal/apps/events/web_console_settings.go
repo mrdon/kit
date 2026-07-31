@@ -180,6 +180,30 @@ func listCalendarOptions(r *http.Request, client *googlecalendar.Client) ([]cale
 	return out, ""
 }
 
+// explainProbeFailure turns a failed write probe into something an admin can
+// act on. The two failures that matter are indistinguishable to someone
+// reading raw Google output, and both are ordinary setup mistakes: a 404 means
+// the id is wrong OR the calendar was never shared (Google will not admit
+// which, since revealing that a calendar exists would leak its existence), and
+// a 403 means it was shared read-only. Raw API JSON is dumped only for the
+// unrecognised remainder, where something is better than nothing.
+func explainProbeFailure(calendarID, shareWith string, err error) string {
+	var apiErr *googlecalendar.APIError
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.IsNotFound():
+			return fmt.Sprintf(
+				"No calendar %q is visible to Kit. Either the ID is wrong, or the calendar has not been shared with %s yet. Google reports both the same way, so check the sharing first — it is the more common of the two.",
+				calendarID, shareWith)
+		case apiErr.StatusCode == http.StatusForbidden:
+			return fmt.Sprintf(
+				"Calendar %q is shared with %s, but not with permission to change it. In Google Calendar, set that access to \"Make changes to events\".",
+				calendarID, shareWith)
+		}
+	}
+	return fmt.Sprintf("Kit could not write to calendar %q: %v", calendarID, err)
+}
+
 // serviceAccountHint names the address to share with, falling back to a
 // description when it cannot be read -- the error message is more useful with
 // the address in it and still useful without.
@@ -232,9 +256,8 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// once, at the only moment a human is present to read the answer.
 	if next.CalendarID != "" && next.CalendarID != current.CalendarID {
 		if _, err := googlecalendar.Instance().CheckWriteAccessTo(r.Context(), caller.TenantID, next.CalendarID); err != nil {
-			eventsErr(w, http.StatusBadRequest, fmt.Sprintf(
-				"Kit could not write to calendar %q: %v. Check the ID, and make sure the calendar is shared with %s with \"Make changes to events\".",
-				next.CalendarID, err, serviceAccountHint(r.Context(), caller.TenantID)))
+			eventsErr(w, http.StatusBadRequest, explainProbeFailure(
+				next.CalendarID, serviceAccountHint(r.Context(), caller.TenantID), err))
 			return
 		}
 	}
