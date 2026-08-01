@@ -48,7 +48,14 @@ func (s *Service) Publish(ctx context.Context, tenantID, id uuid.UUID) (*Result,
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Event: saved, Warnings: publishWarnings(saved, settings)}, nil
+	warnings := publishWarnings(saved, settings)
+	// Publishing IS the intent to put it on the calendar, so do it now. A
+	// failure joins the warnings rather than failing the publish -- the event
+	// is saved and the cron will retry.
+	if w := s.pushCalendar(ctx, saved); w != "" {
+		warnings = append(warnings, w)
+	}
+	return &Result{Event: saved, Warnings: warnings}, nil
 }
 
 // Unpublish returns a published event to draft, pulling it off the calendar
@@ -114,5 +121,12 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id uuid.UUID, status 
 	if err := validateEvent(e); err != nil {
 		return nil, err
 	}
-	return updateEvent(ctx, s.pool, e)
+	saved, err := updateEvent(ctx, s.pool, e)
+	if err != nil {
+		return nil, err
+	}
+	// Cancelling and unpublishing both mean "take it off the calendar", and
+	// that should happen now rather than at the next cron tick.
+	s.pushCalendar(ctx, saved)
+	return saved, nil
 }

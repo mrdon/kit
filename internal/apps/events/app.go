@@ -63,6 +63,7 @@ func Instance() *App { return instance }
 func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = &Service{pool: pool}
+	a.installSyncHook()
 }
 
 // Configure wires the console session signer. The calendar client comes from

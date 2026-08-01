@@ -14,6 +14,8 @@ import (
 // cannot drift between them.
 type Service struct {
 	pool *pgxpool.Pool
+	// push writes an event's calendar copy immediately; see push.go.
+	push syncHook
 }
 
 // NewService builds a service over the pool.
@@ -215,7 +217,14 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	if err := validateEvent(e); err != nil {
 		return nil, err
 	}
-	return updateEvent(ctx, s.pool, e)
+	saved, err := updateEvent(ctx, s.pool, e)
+	if err != nil {
+		return nil, err
+	}
+	// An edit to a live event should reach the calendar now, not in fifteen
+	// minutes -- a time change that staff read late is worse than none.
+	s.pushCalendar(ctx, saved)
+	return saved, nil
 }
 
 func applyStrings(e *Event, p UpdateParams) {
