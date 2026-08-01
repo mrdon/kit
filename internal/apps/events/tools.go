@@ -95,6 +95,15 @@ var eventsTools = []services.ToolMeta{
 		}, "event_id"),
 	},
 	{
+		Name: "delete_event",
+		Description: "Permanently erase an event and its record. Only possible once the event is cancelled (or still a draft) " +
+			"and its calendar entry has already been removed by a sync — otherwise the calendar copy would be left behind. " +
+			"Use cancel_event to call an event off; this is for tidying away rows that are no longer needed.",
+		Schema: services.PropsReq(map[string]any{
+			"event_id": services.Field("string", "Event id."),
+		}, "event_id"),
+	},
+	{
 		Name:        "reopen_event",
 		Description: "Restore a cancelled event to draft, keeping its original web address.",
 		Schema: services.PropsReq(map[string]any{

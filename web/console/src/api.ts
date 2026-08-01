@@ -718,6 +718,7 @@ export const api = {
     });
     return parse<{ event: EventRecord }>(r);
   },
+  deleteEvent: (id: string) => apiDelete<{ deleted: boolean }>(`/events/${id}`),
   deleteEventPoster: (id: string) =>
     apiDelete<{ event: EventRecord }>(`/events/${id}/poster`),
   // Cache-busted on the event's updated_at so a replaced poster shows at once.

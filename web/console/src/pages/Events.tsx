@@ -30,6 +30,30 @@ const EMPTY_FORM: EventInput = {
   registration_url: '',
 };
 
+// The API returns an instant in UTC; <input type="datetime-local"> holds a
+// naive wall-clock, and the server parses what it gets back in the EVENT'S
+// timezone. So the value has to be rendered in that zone -- slicing the ISO
+// string instead shows the UTC wall time, and saving any other field then
+// writes that wrong time back and silently moves the event. That is a data
+// bug, not a display one.
+function toLocalInput(iso: string | undefined, tz: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz || undefined,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+    .formatToParts(d)
+    .reduce<Record<string, string>>((a, x) => ((a[x.type] = x.value), a), {});
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 // Spelled out because "published" is routinely misread as "public". They are
 // separate axes: a confirmed private booking is published AND private.
 function describeExposure(e: EventRecord): string {
@@ -42,6 +66,9 @@ function describeExposure(e: EventRecord): string {
 function formatWhen(e: EventRecord): string {
   const d = new Date(e.starts_at);
   const base = d.toLocaleString(undefined, {
+    // The event's own zone, not the reader's: a manager checking the roster
+    // from another state still needs the time the doors actually open.
+    timeZone: e.timezone || undefined,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -151,10 +178,16 @@ export default function Events() {
                   >
                     {e.status}
                   </span>
-                  {e.visibility === 'public' && (
+                  {/* Visibility is moot once cancelled — the event is off the
+                      calendar and off the website — so showing a green
+                      "public" pill next to a red "cancelled" one just reads as
+                      a contradiction. */}
+                  {e.status !== 'cancelled' && e.visibility === 'public' && (
                     <span className="pill pill-ok">public</span>
                   )}
-                  {e.venue === 'offsite' && <span className="pill">offsite</span>}
+                  {e.status !== 'cancelled' && e.venue === 'offsite' && (
+                    <span className="pill">offsite</span>
+                  )}
                 </span>
               </button>
             </li>
@@ -201,8 +234,8 @@ function EventDrawer({
           description: event.description ?? '',
           prep_notes: event.prep_notes ?? '',
           location: event.location ?? '',
-          starts_at: event.starts_at.slice(0, 16),
-          ends_at: event.ends_at ? event.ends_at.slice(0, 16) : '',
+          starts_at: toLocalInput(event.starts_at, event.timezone),
+          ends_at: toLocalInput(event.ends_at, event.timezone),
           timezone: event.timezone,
           repeat_rule: event.rrule ?? '',
           visibility: event.visibility,
@@ -513,6 +546,24 @@ function EventDrawer({
                 onClick={() => transition(api.reopenEvent, 'Reopened')}
               >
                 Reopen
+              </button>
+            )}
+            {/* Erasing the row is only offered once it is no longer holding a
+                pending calendar deletion; the server enforces that and says so
+                if it is too early. */}
+            {event && event.status !== 'published' && (
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  guard(async () => {
+                    await api.deleteEvent(event.id);
+                    onChanged(`Deleted "${event.title}" permanently.`);
+                  })
+                }
+              >
+                Delete permanently
               </button>
             )}
           </div>

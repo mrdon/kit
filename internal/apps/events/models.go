@@ -313,3 +313,17 @@ func countEventsOnCalendar(ctx context.Context, pool *pgxpool.Pool, tenantID uui
 	}
 	return n, nil
 }
+
+// deleteEventRow destroys a row. Only Service.Delete may call it, and only
+// after checking the row is not still holding a pending calendar deletion --
+// see the note there.
+func deleteEventRow(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) error {
+	tag, err := pool.Exec(ctx, `DELETE FROM app_events WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("deleting event: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

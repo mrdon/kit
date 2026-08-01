@@ -63,6 +63,31 @@ func (s *Service) Cancel(ctx context.Context, tenantID, id uuid.UUID) (*Event, e
 	return s.setStatus(ctx, tenantID, id, StatusCancelled)
 }
 
+// Delete removes an event row for good.
+//
+// Cancelling is NOT deletion, and the difference matters: a cancelled row is a
+// tombstone that still carries gcal_event_id, which is the only record that a
+// Google entry needs removing. Delete that row before the next sync and the
+// calendar entry is orphaned -- invisible to Kit, still showing to staff.
+//
+// So the rule is: a row may be destroyed once it is no longer holding a
+// pending calendar deletion. Cancel, let one sync run, then it is just clutter
+// and deleting it is safe. A draft never reached the calendar at all, so it
+// qualifies immediately.
+func (s *Service) Delete(ctx context.Context, tenantID, id uuid.UUID) error {
+	e, err := getEvent(ctx, s.pool, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if e.Status == StatusPublished {
+		return invalid("cancel this event first — deleting it now would leave its entry behind on the calendar")
+	}
+	if e.GCalEventID != "" {
+		return invalid("this event is still on the calendar; run a sync to remove it there, then delete it here")
+	}
+	return deleteEventRow(ctx, s.pool, tenantID, id)
+}
+
 // Reopen restores a cancelled event to draft. The slug is still held by this
 // row, so the original URL is reused rather than gaining a "-2" suffix.
 func (s *Service) Reopen(ctx context.Context, tenantID, id uuid.UUID) (*Event, error) {

@@ -31,6 +31,7 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/events/meta", jsonRoute(a.handleMeta))
 	mux.Handle("GET /{slug}/api/events/{id}", jsonRoute(a.handleGet))
 	mux.Handle("PATCH /{slug}/api/events/{id}", jsonRoute(a.handleUpdate))
+	mux.Handle("DELETE /{slug}/api/events/{id}", jsonRoute(a.handleDelete))
 	mux.Handle("GET /{slug}/api/events/{id}/poster", jsonRoute(a.handleConsolePoster))
 	mux.Handle("POST /{slug}/api/events/{id}/poster", jsonRoute(a.handleUploadPoster))
 	mux.Handle("DELETE /{slug}/api/events/{id}/poster", jsonRoute(a.handleDeletePoster))
@@ -371,4 +372,20 @@ func derefOr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// handleDelete destroys an event permanently. The guard lives in the service,
+// so the agent and MCP surfaces get the same rule.
+func (a *App) handleDelete(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		eventsErr(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+	if err := a.svc.Delete(r.Context(), caller.TenantID, id); err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	eventsJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }

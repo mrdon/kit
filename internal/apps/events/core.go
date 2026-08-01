@@ -31,6 +31,8 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreSimpleTransition(ctx, caller, svc, raw, svc.Unpublish, "Moved back to draft")
 	case "cancel_event":
 		return coreSimpleTransition(ctx, caller, svc, raw, svc.Cancel, "Cancelled")
+	case "delete_event":
+		return coreDelete(ctx, caller, svc, raw)
 	case "reopen_event":
 		return coreSimpleTransition(ctx, caller, svc, raw, svc.Reopen, "Reopened as a draft")
 	case "list_events":
@@ -361,4 +363,24 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// coreDelete erases a row for good. The safety rule lives in Service.Delete so
+// the console, the agent and MCP cannot drift apart on it.
+func coreDelete(ctx context.Context, caller *services.Caller, svc *Service, raw json.RawMessage) (string, error) {
+	id, msg, ok := parseEventID(raw)
+	if !ok {
+		return msg, nil
+	}
+	// Read the title before destroying the row, so the confirmation names what
+	// went rather than echoing back a uuid.
+	e, err := svc.Get(ctx, caller.TenantID, id)
+	if err != nil {
+		return userError(err)
+	}
+	title := e.Title
+	if err := svc.Delete(ctx, caller.TenantID, id); err != nil {
+		return userError(err)
+	}
+	return fmt.Sprintf("Deleted %q permanently.", title), nil
 }
