@@ -95,12 +95,26 @@ func buildSummary(e *Event) string {
 
 // buildDescription assembles the calendar body.
 //
-// prep_notes belongs here: the calendar is an internal and partner surface,
-// and the bartender working the shift is already looking at it. It must never
-// reach the public feed -- see feed.go, which builds its payload from a
-// different function for exactly this reason.
+// This is the bartender's briefing. Whoever is on shift opens the calendar to
+// see their shift anyway, so everything they need to run the night has to be
+// here and readable on a phone: where it happens, how much room to hold, how
+// many people to expect, whether money changes hands.
+//
+// The operational facts go FIRST, as a scannable block. The marketing blurb is
+// for customers and can wait -- burying "reserve the back room for 30" under
+// two paragraphs of copy is how it gets missed.
+//
+// prep_notes belongs here too: the calendar is an internal and partner
+// surface. It must never reach the public feed -- see feed.go, which builds
+// its payload from a different function for exactly this reason.
 func buildDescription(e *Event) string {
 	var b strings.Builder
+	for _, line := range briefingLines(e) {
+		b.WriteString(line + "\n")
+	}
+	if b.Len() > 0 {
+		b.WriteString("\n")
+	}
 	if s := strings.TrimSpace(e.Summary); s != "" {
 		b.WriteString(s + "\n\n")
 	}
@@ -110,23 +124,48 @@ func buildDescription(e *Event) string {
 	if n := strings.TrimSpace(e.PrepNotes); n != "" {
 		b.WriteString("Staff notes:\n" + n + "\n\n")
 	}
-	if e.SpaceImpact == SpaceImpactPartial {
-		b.WriteString("Reserves part of the room.\n")
+	b.WriteString("Managed by Kit — edits made here are overwritten on the next sync.")
+	return b.String()
+}
+
+// briefingLines is the operational block: the things someone working the shift
+// has to act on, one per line, most physical first.
+func briefingLines(e *Event) []string {
+	var out []string
+	add := func(format string, args ...any) {
+		out = append(out, fmt.Sprintf(format, args...))
 	}
-	if e.ExpectedAttendance != nil {
-		fmt.Fprintf(&b, "Expected: ~%d people.\n", *e.ExpectedAttendance)
+
+	if loc := strings.TrimSpace(e.Location); loc != "" {
+		add("Where: %s", loc)
+	}
+	if e.Venue == VenueOffsite {
+		add("Offsite — not at the taproom.")
+	}
+
+	// Space and headcount answer the same practical question ("how much room
+	// do I hold, and for how many?"), so they sit together.
+	switch {
+	case e.SpaceImpact == SpaceImpactPartial && e.ExpectedAttendance != nil:
+		add("Reserve: part of the room, for ~%d people.", *e.ExpectedAttendance)
+	case e.SpaceImpact == SpaceImpactPartial:
+		add("Reserve: part of the room.")
+	case e.ExpectedAttendance != nil:
+		add("Expect: ~%d people. Room stays open as usual.", *e.ExpectedAttendance)
 	}
 	if e.Capacity != nil {
-		fmt.Fprintf(&b, "Capacity: %d.\n", *e.Capacity)
+		add("Places: %d.", *e.Capacity)
 	}
 	if p := formatPrice(e); p != "" {
-		fmt.Fprintf(&b, "Price: %s.\n", p)
+		add("Cost: %s.", p)
 	}
 	if u := strings.TrimSpace(e.RegistrationURL); u != "" {
-		fmt.Fprintf(&b, "Tickets: %s\n", u)
+		add("Tickets: %s", u)
 	}
-	b.WriteString("\nManaged by Kit — edits made here are overwritten on the next sync.")
-	return b.String()
+	if e.RRule != "" {
+		add("Repeats weekly.")
+	}
+	return out
 }
 
 // contentHash digests everything a write would send, so an unchanged event is
