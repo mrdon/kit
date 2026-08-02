@@ -29,6 +29,7 @@ const EMPTY_FORM: EventInput = {
   space_impact: 'none',
   repeat_rule: '',
   registration_url: '',
+  featured: false,
 };
 
 // The API returns an instant in UTC; <input type="datetime-local"> holds a
@@ -363,6 +364,7 @@ function EventDrawer({
           space_impact: event.space_impact,
           expected_attendance: event.expected_attendance,
           registration_url: event.registration_url ?? '',
+          featured: event.featured,
         }
       : { ...EMPTY_FORM, timezone: defaultTimezone },
   );
@@ -468,6 +470,20 @@ function EventDrawer({
               calendar.
             </span>
           </label>
+
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={form.featured ?? false}
+              onChange={(e) => set({ featured: e.target.checked })}
+            />
+            Lead with this on the website
+          </label>
+          <span className="field-note">
+            The website shows one event up top. Without this it picks whatever
+            is soonest, which is usually right — tick this when something
+            further off matters more. If several are ticked, the soonest wins.
+          </span>
 
           <label className="field">
             <span>Where</span>

@@ -511,6 +511,8 @@ export interface EventRecord {
   venue: 'onsite' | 'offsite';
   space_impact: 'none' | 'partial';
   notify_food_partner: boolean;
+  // Editorial: the website leads with this one.
+  featured: boolean;
   price_cents?: number;
   currency: string;
   capacity?: number;
@@ -595,6 +597,7 @@ export interface EventsSettings {
 // here cannot silently revert one made in chat against the same event.
 export interface EventInput {
   title?: string;
+  featured?: boolean;
   summary?: string;
   description?: string;
   prep_notes?: string;

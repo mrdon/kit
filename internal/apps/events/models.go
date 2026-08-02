@@ -46,6 +46,9 @@ type Event struct {
 	SpaceImpact SpaceImpact `json:"space_impact"`
 
 	NotifyFoodPartner bool `json:"notify_food_partner"`
+	// Featured marks the event the website should lead with. Editorial rather
+	// than operational -- see migration 072.
+	Featured bool `json:"featured"`
 
 	PriceCents         *int64 `json:"price_cents,omitempty"`
 	Currency           string `json:"currency"`
@@ -112,7 +115,7 @@ const eventColumns = `
 	id, tenant_id, title, slug, summary, description, prep_notes,
 	starts_at, ends_at, all_day, timezone, rrule,
 	location, hero_attachment_id,
-	status, visibility, venue, space_impact, notify_food_partner,
+	status, visibility, venue, space_impact, notify_food_partner, featured,
 	price_cents, currency, capacity, expected_attendance,
 	registration_url, square_variation_id,
 	gcal_event_id, gcal_calendar_id, gcal_content_hash,
@@ -125,7 +128,7 @@ func scanEvent(row pgx.Row) (*Event, error) {
 		&e.ID, &e.TenantID, &e.Title, &e.Slug, &e.Summary, &e.Description, &e.PrepNotes,
 		&e.StartsAt, &e.EndsAt, &e.AllDay, &e.Timezone, &rrule,
 		&e.Location, &e.HeroAttachmentID,
-		&e.Status, &e.Visibility, &e.Venue, &e.SpaceImpact, &e.NotifyFoodPartner,
+		&e.Status, &e.Visibility, &e.Venue, &e.SpaceImpact, &e.NotifyFoodPartner, &e.Featured,
 		&e.PriceCents, &e.Currency, &e.Capacity, &e.ExpectedAttendance,
 		&registrationURL, &squareVariationID,
 		&e.GCalEventID, &e.GCalCalendarID, &e.GCalContentHash,
@@ -162,22 +165,22 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			tenant_id, title, slug, summary, description, prep_notes,
 			starts_at, ends_at, all_day, timezone, rrule,
 			location, hero_attachment_id,
-			status, visibility, venue, space_impact, notify_food_partner,
+			status, visibility, venue, space_impact, notify_food_partner, featured,
 			price_cents, currency, capacity, expected_attendance,
 			registration_url, square_variation_id, created_by
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11,
 			$12, $13,
-			$14, $15, $16, $17, $18,
-			$19, $20, $21, $22,
-			$23, $24, $25
+			$14, $15, $16, $17, $18, $19,
+			$20, $21, $22, $23,
+			$24, $25, $26
 		)
 		RETURNING `+eventColumns,
 		e.TenantID, e.Title, e.Slug, e.Summary, e.Description, e.PrepNotes,
 		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule),
 		e.Location, e.HeroAttachmentID,
-		e.Status, e.Visibility, e.Venue, e.SpaceImpact, e.NotifyFoodPartner,
+		e.Status, e.Visibility, e.Venue, e.SpaceImpact, e.NotifyFoodPartner, e.Featured,
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID), e.CreatedBy,
 	)
@@ -198,9 +201,9 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			starts_at = $8, ends_at = $9, all_day = $10, timezone = $11, rrule = $12,
 			location = $13, hero_attachment_id = $14,
 			status = $15, visibility = $16, venue = $17, space_impact = $18,
-			notify_food_partner = $19,
-			price_cents = $20, currency = $21, capacity = $22, expected_attendance = $23,
-			registration_url = $24, square_variation_id = $25,
+			notify_food_partner = $19, featured = $20,
+			price_cents = $21, currency = $22, capacity = $23, expected_attendance = $24,
+			registration_url = $25, square_variation_id = $26,
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 		RETURNING `+eventColumns,
@@ -209,7 +212,7 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule),
 		e.Location, e.HeroAttachmentID,
 		e.Status, e.Visibility, e.Venue, e.SpaceImpact,
-		e.NotifyFoodPartner,
+		e.NotifyFoodPartner, e.Featured,
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID),
 	)

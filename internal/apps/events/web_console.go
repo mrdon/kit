@@ -139,6 +139,7 @@ type eventBody struct {
 	ExpectedAttendance *int    `json:"expected_attendance"`
 	RegistrationURL    *string `json:"registration_url"`
 	NotifyFoodPartner  *bool   `json:"notify_food_partner"`
+	Featured           *bool   `json:"featured"`
 	Slug               *string `json:"slug"`
 }
 
@@ -177,6 +178,7 @@ func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ExpectedAttendance: body.ExpectedAttendance,
 		RegistrationURL:    derefOr(body.RegistrationURL),
 		NotifyFoodPartner:  body.NotifyFoodPartner,
+		Featured:           body.Featured,
 	}
 	if caller.UserID != uuid.Nil {
 		id := caller.UserID
@@ -211,6 +213,7 @@ func (a *App) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		ExpectedAttendance: body.ExpectedAttendance,
 		RegistrationURL:    body.RegistrationURL,
 		NotifyFoodPartner:  body.NotifyFoodPartner,
+		Featured:           body.Featured,
 		Slug:               body.Slug,
 	}
 	if body.Visibility != nil {

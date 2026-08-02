@@ -58,6 +58,10 @@ type FeedItem struct {
 	Capacity        *int   `json:"capacity,omitempty"`
 	RegistrationURL string `json:"registration_url,omitempty"`
 
+	// Featured asks the site to lead with this one. The site decides how to
+	// use it -- Kit only says which event matters most.
+	Featured bool `json:"featured,omitempty"`
+
 	// ImageURL is the event's poster, absent when none was uploaded. The site
 	// falls back to its own artwork rather than showing a gap.
 	ImageURL string `json:"image_url,omitempty"`
@@ -89,6 +93,7 @@ func feedItem(e *Event, s Settings) FeedItem {
 		AllDay:          e.AllDay,
 		Timezone:        e.Timezone,
 		Recurrence:      e.RRule,
+		Featured:        e.Featured,
 		Location:        e.Location,
 		CanonicalURL:    s.CanonicalURL(e.Slug),
 		PriceCents:      e.PriceCents,
