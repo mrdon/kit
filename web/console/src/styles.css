@@ -1724,3 +1724,20 @@ h2.view-title:hover {
   display: block; max-width: 100%; max-height: 260px;
   border-radius: 6px; border: 1px solid var(--line); margin-bottom: 0.6rem;
 }
+
+/* Count badge inside a button — e.g. "Review & publish (3)". Sized to sit on
+   the button's baseline without changing its height. */
+.btn-badge {
+  display: inline-block;
+  min-width: 1.35rem;
+  margin-left: 0.45rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  /* Inverted against the filled button so the count reads at a glance. */
+  background: #fff;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35rem;
+  text-align: center;
+}

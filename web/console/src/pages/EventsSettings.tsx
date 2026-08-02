@@ -32,6 +32,7 @@ export default function EventsSettingsPage() {
   const [plan, setPlan] = useState<EventsReconcilePlan | null>(null);
   const [site, setSite] = useState<EventsSiteStatus | null>(null);
   const [hook, setHook] = useState('');
+  const [reviewing, setReviewing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -103,6 +104,7 @@ export default function EventsSettingsPage() {
     run(async () => {
       const r = await api.eventsPublishSite();
       setSite(r);
+      setReviewing(false);
       setNote('The website is rebuilding — it usually takes a minute or two.');
     });
 
@@ -311,21 +313,6 @@ export default function EventsSettingsPage() {
 
             {site && (
               <>
-                <p className="status-line">
-                  {pendingCount === 0 ? (
-                    <>
-                      <span className="pill pill-ok">Up to date</span> The
-                      website matches Kit.
-                    </>
-                  ) : (
-                    <>
-                      <span className="pill pill-off">
-                        {pendingCount} waiting
-                      </span>{' '}
-                      Changes are ready to go out.
-                    </>
-                  )}
-                </p>
                 <p className="field-note">
                   {site.built_at
                     ? `Last rebuilt ${new Date(site.built_at).toLocaleString()}${
@@ -333,40 +320,26 @@ export default function EventsSettingsPage() {
                       }.`
                     : 'Never rebuilt from Kit.'}
                 </p>
-
-                {pendingCount > 0 && (
-                  <ul className="card-list">
-                    {(site.pending ?? []).map((c, i) => (
-                      <li key={i}>
-                        <div className="row-card">
-                          <span className="row-card-main">
-                            <span className="row-card-title">
-                              {c.title} {verbFor(c.action)}
-                            </span>
-                            <span className="row-card-meta">
-                              {new Date(c.at).toLocaleString()}
-                              {c.actor ? ` · ${c.actor}` : ''}
-                            </span>
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                    {site.pending_truncated && (
-                      <li>
-                        <span className="row-card-meta">…and more.</span>
-                      </li>
-                    )}
-                  </ul>
-                )}
-
                 <div className="drawer-actions">
+                  {/* The list lives behind this button rather than on the
+                      page: on a normal day there is nothing to see, and an
+                      empty list is noise. The badge carries the only thing
+                      worth knowing at a glance. */}
                   <button
                     className="btn"
-                    onClick={publishSite}
-                    disabled={busy || !site.hook_configured}
+                    onClick={() => setReviewing(true)}
+                    disabled={busy || pendingCount === 0}
                   >
-                    {busy ? 'Publishing…' : 'Publish to website'}
+                    Review &amp; publish
+                    {pendingCount > 0 && (
+                      <span className="btn-badge">{pendingCount}</span>
+                    )}
                   </button>
+                  {pendingCount === 0 && (
+                    <span className="field-note">
+                      The website matches Kit — nothing to publish.
+                    </span>
+                  )}
                 </div>
                 {!site.hook_configured && (
                   <p className="field-hint">
@@ -470,6 +443,66 @@ export default function EventsSettingsPage() {
             )}
           </section>
         </>
+      )}
+
+      {reviewing && site && (
+        <div className="drawer-backdrop" onClick={() => setReviewing(false)}>
+          <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="drawer-close"
+              onClick={() => setReviewing(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2 className="drawer-title">Waiting for the website</h2>
+            <p className="field-note">
+              These are the changes the public would see. Private bookings,
+              drafts and staff notes are not listed — they never reach the
+              website.
+            </p>
+
+            <ul className="card-list">
+              {(site.pending ?? []).map((c, i) => (
+                <li key={i}>
+                  <div className="row-card">
+                    <span className="row-card-main">
+                      <span className="row-card-title">
+                        {c.title} {verbFor(c.action)}
+                      </span>
+                      <span className="row-card-meta">
+                        {new Date(c.at).toLocaleString()}
+                        {c.actor ? ` · ${c.actor}` : ''}
+                      </span>
+                    </span>
+                  </div>
+                </li>
+              ))}
+              {site.pending_truncated && (
+                <li>
+                  <span className="row-card-meta">…and more.</span>
+                </li>
+              )}
+            </ul>
+
+            <div className="drawer-actions">
+              <button
+                className="btn"
+                onClick={publishSite}
+                disabled={busy || !site.hook_configured}
+              >
+                {busy ? 'Publishing…' : 'Publish to website'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setReviewing(false)}
+                disabled={busy}
+              >
+                Not yet
+              </button>
+            </div>
+          </aside>
+        </div>
       )}
     </div>
   );
