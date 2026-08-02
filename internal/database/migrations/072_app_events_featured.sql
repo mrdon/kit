@@ -12,10 +12,11 @@
 -- price is an attribute. This is a judgement call by whoever runs the events,
 -- so it gets its own flag rather than being inferred from any of those.
 --
--- A boolean, not a priority number: "is this the one to lead with?" is the
+-- A boolean, not a priority number: "does this deserve the top slot?" is the
 -- only question being asked, and ranks invite fiddling without answering it
--- any better. When several are flagged the soonest wins, so the flag can be
--- left on a run of events without needing to be reshuffled.
+-- any better. Several may be flagged at once -- the site leads with the NEXT
+-- featured event -- so a season of highlights can be marked up front and left
+-- alone rather than reshuffled as each one passes.
 
 ALTER TABLE app_events
     ADD COLUMN featured BOOLEAN NOT NULL DEFAULT false;

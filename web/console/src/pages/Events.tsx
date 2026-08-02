@@ -477,12 +477,11 @@ function EventDrawer({
               checked={form.featured ?? false}
               onChange={(e) => set({ featured: e.target.checked })}
             />
-            Lead with this on the website
+            Featured
           </label>
           <span className="field-note">
-            The website shows one event up top. Without this it picks whatever
-            is soonest, which is usually right — tick this when something
-            further off matters more. If several are ticked, the soonest wins.
+            The website leads with the next featured event, so several can be
+            marked at once. With none marked it shows whatever is soonest.
           </span>
 
           <label className="field">
