@@ -31,9 +31,14 @@ type Settings struct {
 	// PublicURLTemplate contains a {slug} placeholder, e.g.
 	// "https://example.com/events/{slug}". Canonical URLs are derived from it
 	// at read time so changing the domain never requires a data migration.
-	PublicURLTemplate string    `json:"public_url_template"`
-	FeedToken         string    `json:"-"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	PublicURLTemplate string `json:"public_url_template"`
+	FeedToken         string `json:"-"`
+	// SiteBuildHookURL carries its own secret in the path, so it is never
+	// serialised back to the browser -- the UI only learns whether one is set.
+	SiteBuildHookURL string     `json:"-"`
+	SiteBuiltAt      *time.Time `json:"site_built_at,omitempty"`
+	SiteBuiltBy      string     `json:"site_built_by,omitempty"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // CalendarConfigured reports whether the sync has somewhere to write.
@@ -65,9 +70,11 @@ func (s Settings) Loc() *time.Location {
 func getSettings(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (Settings, error) {
 	var s Settings
 	err := pool.QueryRow(ctx, `
-		SELECT tenant_id, calendar_id, timezone, public_url_template, feed_token, updated_at
+		SELECT tenant_id, calendar_id, timezone, public_url_template, feed_token,
+		       site_build_hook_url, site_built_at, site_built_by, updated_at
 		FROM app_event_settings WHERE tenant_id = $1`, tenantID).
-		Scan(&s.TenantID, &s.CalendarID, &s.Timezone, &s.PublicURLTemplate, &s.FeedToken, &s.UpdatedAt)
+		Scan(&s.TenantID, &s.CalendarID, &s.Timezone, &s.PublicURLTemplate, &s.FeedToken,
+			&s.SiteBuildHookURL, &s.SiteBuiltAt, &s.SiteBuiltBy, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Unconfigured is a normal state, not an error.
 		return Settings{TenantID: tenantID, Timezone: DefaultTimezone}, nil
@@ -85,18 +92,21 @@ func upsertSettings(ctx context.Context, pool *pgxpool.Pool, s Settings) (Settin
 	}
 	var out Settings
 	err := pool.QueryRow(ctx, `
-		INSERT INTO app_event_settings (tenant_id, calendar_id, timezone, public_url_template, feed_token, updated_at)
-		VALUES ($1, $2, $3, $4, $5, now())
+		INSERT INTO app_event_settings (tenant_id, calendar_id, timezone, public_url_template, feed_token, site_build_hook_url, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
 			calendar_id = EXCLUDED.calendar_id,
 			timezone = EXCLUDED.timezone,
 			public_url_template = EXCLUDED.public_url_template,
 			feed_token = EXCLUDED.feed_token,
+			site_build_hook_url = EXCLUDED.site_build_hook_url,
 			updated_at = now()
-		RETURNING tenant_id, calendar_id, timezone, public_url_template, feed_token, updated_at`,
+		RETURNING tenant_id, calendar_id, timezone, public_url_template, feed_token,
+		          site_build_hook_url, site_built_at, site_built_by, updated_at`,
 		s.TenantID, strings.TrimSpace(s.CalendarID), tz,
-		strings.TrimSpace(s.PublicURLTemplate), s.FeedToken).
-		Scan(&out.TenantID, &out.CalendarID, &out.Timezone, &out.PublicURLTemplate, &out.FeedToken, &out.UpdatedAt)
+		strings.TrimSpace(s.PublicURLTemplate), s.FeedToken, strings.TrimSpace(s.SiteBuildHookURL)).
+		Scan(&out.TenantID, &out.CalendarID, &out.Timezone, &out.PublicURLTemplate, &out.FeedToken,
+			&out.SiteBuildHookURL, &out.SiteBuiltAt, &out.SiteBuiltBy, &out.UpdatedAt)
 	if err != nil {
 		return Settings{}, fmt.Errorf("saving event settings: %w", err)
 	}
@@ -111,4 +121,17 @@ func NewFeedToken() (string, error) {
 		return "", fmt.Errorf("generating feed token: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
+}
+
+// setSiteBuilt stamps a completed website build. Separate from upsertSettings
+// so recording a build can never clobber a concurrent settings edit.
+func setSiteBuilt(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, at time.Time, by string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE app_event_settings
+		SET site_built_at = $2, site_built_by = $3
+		WHERE tenant_id = $1`, tenantID, at, by)
+	if err != nil {
+		return fmt.Errorf("recording website build: %w", err)
+	}
+	return nil
 }

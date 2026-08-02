@@ -120,7 +120,14 @@ func (s *Service) Create(ctx context.Context, tenantID uuid.UUID, p CreateParams
 	if e.Slug, err = UniqueSlug(ctx, s.pool, tenantID, e.Title, nil); err != nil {
 		return nil, err
 	}
-	return insertEvent(ctx, s.pool, e)
+	created, err := insertEvent(ctx, s.pool, e)
+	if err != nil {
+		return nil, err
+	}
+	// A new event is always a draft, so this is recorded but will not be
+	// flagged as site-affecting until it is published.
+	recordChange(ctx, s.pool, actionEventCreated, nil, created)
+	return created, nil
 }
 
 // UpdateParams is a partial patch: a nil field is left alone. Pointers rather
@@ -172,6 +179,7 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	if err != nil {
 		return nil, err
 	}
+	before := *e
 
 	applyStrings(e, p)
 	if p.AllDay != nil {
@@ -221,6 +229,7 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	if err != nil {
 		return nil, err
 	}
+	recordChange(ctx, s.pool, actionEventUpdated, &before, saved)
 	// An edit to a live event should reach the calendar now, not in fifteen
 	// minutes -- a time change that staff read late is worse than none.
 	s.pushCalendar(ctx, saved)

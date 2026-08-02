@@ -1,10 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type EventsReconcilePlan, type EventsSettings } from '../api';
+import {
+  api,
+  type EventsReconcilePlan,
+  type EventsSettings,
+  type EventsSiteStatus,
+} from '../api';
 import { useSetChatContext } from '../chatContext';
 
 // Admin configuration for the events app: which calendar to write to, the
 // website URL pattern and feed token, and the sync controls.
+
+// Mirrors PendingChange.Verb() on the server so both surfaces use the same
+// words for the same action.
+const VERBS: Record<string, string> = {
+  'events.event_created': 'added',
+  'events.event_updated': 'edited',
+  'events.event_published': 'published',
+  'events.event_unpublished': 'unpublished',
+  'events.event_cancelled': 'cancelled',
+  'events.event_deleted': 'deleted',
+};
+const verbFor = (action: string) => VERBS[action] ?? 'changed';
 
 export default function EventsSettingsPage() {
   useSetChatContext('the admin Events calendar & feed page');
@@ -13,6 +30,8 @@ export default function EventsSettingsPage() {
   const [timezone, setTimezone] = useState('');
   const [urlTemplate, setUrlTemplate] = useState('');
   const [plan, setPlan] = useState<EventsReconcilePlan | null>(null);
+  const [site, setSite] = useState<EventsSiteStatus | null>(null);
+  const [hook, setHook] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,6 +48,10 @@ export default function EventsSettingsPage() {
       .eventsSettings()
       .then(apply)
       .catch((e) => setErr((e as Error).message));
+    api
+      .eventsSiteStatus()
+      .then(setSite)
+      .catch(() => setSite(null));
   };
   useEffect(load, []);
 
@@ -52,7 +75,11 @@ export default function EventsSettingsPage() {
         calendar_id: calendarID,
         timezone,
         public_url_template: urlTemplate,
+        // Only sent when the admin typed one; an empty box must not wipe a
+        // hook that is already stored (the server never sends it back).
+        ...(hook.trim() ? { site_build_hook_url: hook.trim() } : {}),
       });
+      setHook('');
       apply(r.settings);
       setNote(r.warning || 'Saved.');
     });
@@ -72,6 +99,13 @@ export default function EventsSettingsPage() {
       load();
     });
 
+  const publishSite = () =>
+    run(async () => {
+      const r = await api.eventsPublishSite();
+      setSite(r);
+      setNote('The website is rebuilding — it usually takes a minute or two.');
+    });
+
   const preview = () =>
     run(async () => {
       setPlan(await api.eventsReconcile(false));
@@ -87,6 +121,7 @@ export default function EventsSettingsPage() {
 
   // Empty is the normal case for a service account, not an error, so the
   // listing is a convenience only and its failure is never surfaced.
+  const pendingCount = (site?.pending ?? []).length;
   const calendars = st?.calendars ?? [];
   const recent = st?.recent ?? [];
 
@@ -263,6 +298,109 @@ export default function EventsSettingsPage() {
                 </div>
               </>
             )}
+          </section>
+
+          <section className="panel">
+            <h2 className="panel-title">Website</h2>
+            <p className="field-note">
+              The website is a static site: it shows whatever it was last built
+              with, so events changed here stay off the web until it is rebuilt.
+              Only changes the public would see are counted — private bookings,
+              drafts and staff notes never need a rebuild.
+            </p>
+
+            {site && (
+              <>
+                <p className="status-line">
+                  {pendingCount === 0 ? (
+                    <>
+                      <span className="pill pill-ok">Up to date</span> The
+                      website matches Kit.
+                    </>
+                  ) : (
+                    <>
+                      <span className="pill pill-off">
+                        {pendingCount} waiting
+                      </span>{' '}
+                      Changes are ready to go out.
+                    </>
+                  )}
+                </p>
+                <p className="field-note">
+                  {site.built_at
+                    ? `Last rebuilt ${new Date(site.built_at).toLocaleString()}${
+                        site.built_by ? ` (${site.built_by})` : ''
+                      }.`
+                    : 'Never rebuilt from Kit.'}
+                </p>
+
+                {pendingCount > 0 && (
+                  <ul className="card-list">
+                    {(site.pending ?? []).map((c, i) => (
+                      <li key={i}>
+                        <div className="row-card">
+                          <span className="row-card-main">
+                            <span className="row-card-title">
+                              {c.title} {verbFor(c.action)}
+                            </span>
+                            <span className="row-card-meta">
+                              {new Date(c.at).toLocaleString()}
+                              {c.actor ? ` · ${c.actor}` : ''}
+                            </span>
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                    {site.pending_truncated && (
+                      <li>
+                        <span className="row-card-meta">…and more.</span>
+                      </li>
+                    )}
+                  </ul>
+                )}
+
+                <div className="drawer-actions">
+                  <button
+                    className="btn"
+                    onClick={publishSite}
+                    disabled={busy || !site.hook_configured}
+                  >
+                    {busy ? 'Publishing…' : 'Publish to website'}
+                  </button>
+                </div>
+                {!site.hook_configured && (
+                  <p className="field-hint">
+                    No build hook is set, so Kit cannot trigger a rebuild. In
+                    Netlify: Site configuration → Build &amp; deploy → Build
+                    hooks → Add build hook, then paste the URL below and save.
+                  </p>
+                )}
+              </>
+            )}
+
+            <form onSubmit={save} className="stack-form">
+              <label className="field">
+                <span>Netlify build hook URL</span>
+                <input
+                  value={hook}
+                  placeholder={
+                    site?.hook_configured
+                      ? 'A hook is saved — type a new one to replace it'
+                      : 'https://api.netlify.com/build_hooks/…'
+                  }
+                  onChange={(e) => setHook(e.target.value)}
+                />
+                <span className="field-note">
+                  Stored like a password and never shown again, because the URL
+                  is itself the secret that can start a build.
+                </span>
+              </label>
+              <div className="drawer-actions">
+                <button className="btn btn-ghost" type="submit" disabled={busy}>
+                  Save build hook
+                </button>
+              </div>
+            </form>
           </section>
 
           <section className="panel">

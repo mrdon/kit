@@ -25,6 +25,8 @@ func registerSettingsRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/events/settings", adminRoute(a.handleGetSettings))
 	mux.Handle("PUT /{slug}/api/events/settings", adminRoute(a.handleSaveSettings))
 	mux.Handle("POST /{slug}/api/events/settings/feed-token", adminRoute(a.handleRotateFeedToken))
+	mux.Handle("GET /{slug}/api/events/site", adminRoute(a.handleSiteStatus))
+	mux.Handle("POST /{slug}/api/events/site/publish", adminRoute(a.handleSitePublish))
 	mux.Handle("POST /{slug}/api/events/sync", adminRoute(a.handleSyncNow))
 	mux.Handle("POST /{slug}/api/events/reconcile", adminRoute(a.handleReconcile))
 }
@@ -220,6 +222,7 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		CalendarID        *string `json:"calendar_id"`
 		Timezone          *string `json:"timezone"`
 		PublicURLTemplate *string `json:"public_url_template"`
+		SiteBuildHookURL  *string `json:"site_build_hook_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		eventsErr(w, http.StatusBadRequest, "invalid JSON body")
@@ -246,6 +249,16 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		next.PublicURLTemplate = tpl
+	}
+	if body.SiteBuildHookURL != nil {
+		hook := strings.TrimSpace(*body.SiteBuildHookURL)
+		// A build hook is a POST-only URL that starts a deploy. Anything that
+		// is not https is either a typo or a downgrade, and this is a secret.
+		if hook != "" && !strings.HasPrefix(hook, "https://") {
+			eventsErr(w, http.StatusBadRequest, "the build hook must be an https:// URL")
+			return
+		}
+		next.SiteBuildHookURL = hook
 	}
 
 	// A calendar id is typed by hand, not picked from a list: a service
@@ -394,4 +407,24 @@ func baseURLFrom(r *http.Request) string {
 		host = fwd
 	}
 	return scheme + "://" + host
+}
+
+func (a *App) handleSiteStatus(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	st, err := a.svc.SiteStatus(r.Context(), caller.TenantID)
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	eventsJSON(w, http.StatusOK, st)
+}
+
+func (a *App) handleSitePublish(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	st, err := a.svc.PublishSite(r.Context(), caller.TenantID, "console")
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	eventsJSON(w, http.StatusOK, st)
 }

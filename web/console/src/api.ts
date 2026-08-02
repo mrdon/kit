@@ -523,6 +523,23 @@ export interface EventRecord {
   updated_at: string;
 }
 
+export interface EventsPendingChange {
+  action: string;
+  title: string;
+  slug: string;
+  actor?: string;
+  at: string;
+}
+
+export interface EventsSiteStatus {
+  hook_configured: boolean;
+  built_at?: string;
+  built_by?: string;
+  // Server always sends [], never null.
+  pending: EventsPendingChange[] | null;
+  pending_truncated: boolean;
+}
+
 export interface EventsSettingsSummary {
   timezone: string;
   calendar_configured: boolean;
@@ -564,6 +581,9 @@ export interface EventsSettings {
   // The address a calendar must be shared with. Absent until a credential is
   // loaded; shown so nobody has to go digging for it.
   service_account_email?: string;
+  // Never returned — the hook URL carries its own secret. The UI only learns
+  // whether one is set, via EventsSiteStatus.hook_configured.
+  site_build_hook_url?: string;
   // Server always sends [], never null — the client stays defensive anyway,
   // since a nil Go slice marshals to null and that crashed this page once.
   calendars: EventsCalendarOption[] | null;
@@ -725,6 +745,8 @@ export const api = {
   eventPosterURL: (id: string, v?: string) =>
     `${API_BASE}/events/${id}/poster${v ? `?v=${encodeURIComponent(v)}` : ''}`,
 
+  eventsSiteStatus: () => apiGet<EventsSiteStatus>('/events/site'),
+  eventsPublishSite: () => apiPost<EventsSiteStatus>('/events/site/publish'),
   eventsReconcile: (apply: boolean) =>
     apiPost<EventsReconcilePlan>(`/events/reconcile${apply ? '?apply=true' : ''}`),
 

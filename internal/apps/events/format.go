@@ -206,3 +206,42 @@ func firstLine(s string) string {
 	}
 	return strings.TrimSpace(s)
 }
+
+// FormatSiteStatus renders website publish state for the agent and MCP
+// surfaces. Lives here, beside the other formatters, so the console and the
+// chat surfaces describe the same state in the same words.
+func FormatSiteStatus(st SiteStatus) string {
+	var b strings.Builder
+
+	if st.BuiltAt == nil {
+		b.WriteString("The website has not been rebuilt from Kit yet.\n")
+	} else {
+		fmt.Fprintf(&b, "Website last rebuilt %s", st.BuiltAt.Format("2 Jan 2006 15:04 MST"))
+		if st.BuiltBy != "" {
+			fmt.Fprintf(&b, " (%s)", st.BuiltBy)
+		}
+		b.WriteString(".\n")
+	}
+	if !st.HookConfigured {
+		b.WriteString("No build hook is set, so Kit cannot trigger a rebuild yet.\n")
+	}
+
+	if len(st.Pending) == 0 {
+		b.WriteString("\nNothing is waiting: the website matches Kit.")
+		return b.String()
+	}
+
+	n := len(st.Pending)
+	word := "changes"
+	if n == 1 {
+		word = "change"
+	}
+	fmt.Fprintf(&b, "\n%d %s waiting to go out:\n", n, word)
+	for _, c := range st.Pending {
+		fmt.Fprintf(&b, "  • %s %s — %s\n", c.Title, c.Verb(), c.CreatedAt.Format("2 Jan 15:04"))
+	}
+	if st.PendingTruncated {
+		b.WriteString("  … and more.\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}

@@ -104,6 +104,20 @@ var eventsTools = []services.ToolMeta{
 		}, "event_id"),
 	},
 	{
+		Name: "events_site_status",
+		Description: "Report what has changed since the website was last rebuilt, and when that was. " +
+			"The website is a static site, so events edited in Kit are not visible on the web until it is rebuilt.",
+		Schema:    services.Props(map[string]any{}),
+		AdminOnly: true,
+	},
+	{
+		Name: "events_publish_site",
+		Description: "Rebuild the public website so it picks up the latest events. " +
+			"Only needed when changes are pending; check events_site_status first.",
+		Schema:    services.Props(map[string]any{}),
+		AdminOnly: true,
+	},
+	{
 		Name:        "reopen_event",
 		Description: "Restore a cancelled event to draft, keeping its original web address.",
 		Schema: services.PropsReq(map[string]any{

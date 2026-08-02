@@ -31,6 +31,10 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreSimpleTransition(ctx, caller, svc, raw, svc.Unpublish, "Moved back to draft")
 	case "cancel_event":
 		return coreSimpleTransition(ctx, caller, svc, raw, svc.Cancel, "Cancelled")
+	case "events_site_status":
+		return coreSiteStatus(ctx, caller, svc)
+	case "events_publish_site":
+		return corePublishSite(ctx, caller, svc)
 	case "delete_event":
 		return coreDelete(ctx, caller, svc, raw)
 	case "reopen_event":
@@ -383,4 +387,22 @@ func coreDelete(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		return userError(err)
 	}
 	return fmt.Sprintf("Deleted %q permanently.", title), nil
+}
+
+// coreSiteStatus and corePublishSite back the agent and MCP surfaces. Both
+// render through FormatSiteStatus so every surface says the same thing.
+func coreSiteStatus(ctx context.Context, caller *services.Caller, svc *Service) (string, error) {
+	st, err := svc.SiteStatus(ctx, caller.TenantID)
+	if err != nil {
+		return userError(err)
+	}
+	return FormatSiteStatus(st), nil
+}
+
+func corePublishSite(ctx context.Context, caller *services.Caller, svc *Service) (string, error) {
+	st, err := svc.PublishSite(ctx, caller.TenantID, "agent")
+	if err != nil {
+		return userError(err)
+	}
+	return "The website is rebuilding; it usually takes a minute or two.\n\n" + FormatSiteStatus(st), nil
 }

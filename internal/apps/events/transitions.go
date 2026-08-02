@@ -48,6 +48,7 @@ func (s *Service) Publish(ctx context.Context, tenantID, id uuid.UUID) (*Result,
 	if err != nil {
 		return nil, err
 	}
+	recordChange(ctx, s.pool, actionEventPublished, e, saved)
 	warnings := publishWarnings(saved, settings)
 	// Publishing IS the intent to put it on the calendar, so do it now. A
 	// failure joins the warnings rather than failing the publish -- the event
@@ -92,7 +93,11 @@ func (s *Service) Delete(ctx context.Context, tenantID, id uuid.UUID) error {
 	if e.GCalEventID != "" {
 		return invalid("this event is still on the calendar; run a sync to remove it there, then delete it here")
 	}
-	return deleteEventRow(ctx, s.pool, tenantID, id)
+	if err := deleteEventRow(ctx, s.pool, tenantID, id); err != nil {
+		return err
+	}
+	recordChange(ctx, s.pool, actionEventDeleted, e, e)
+	return nil
 }
 
 // Reopen restores a cancelled event to draft. The slug is still held by this
@@ -117,6 +122,7 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id uuid.UUID, status 
 	if e.Status == status {
 		return e, nil
 	}
+	before := *e
 	e.Status = status
 	if err := validateEvent(e); err != nil {
 		return nil, err
@@ -125,6 +131,18 @@ func (s *Service) setStatus(ctx context.Context, tenantID, id uuid.UUID, status 
 	if err != nil {
 		return nil, err
 	}
+	action := actionEventUpdated
+	switch status {
+	case StatusCancelled:
+		action = actionEventCancelled
+	case StatusDraft:
+		action = actionEventUnpublished
+	case StatusPublished:
+		// Publish has its own path (it also emits warnings), so it never
+		// reaches setStatus. Named for exhaustiveness.
+		action = actionEventPublished
+	}
+	recordChange(ctx, s.pool, action, &before, saved)
 	// Cancelling and unpublishing both mean "take it off the calendar", and
 	// that should happen now rather than at the next cron tick.
 	s.pushCalendar(ctx, saved)
