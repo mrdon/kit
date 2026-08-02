@@ -137,14 +137,19 @@ func (s *Service) PendingChanges(ctx context.Context, tenantID uuid.UUID, since 
 	if since != nil {
 		cutoff = *since
 	}
+	// Join users for a readable name: the audit row stores the caller's
+	// identity, which for Slack is an opaque id like "U0B0H2SEYTC" -- accurate
+	// and useless in a review list. Left join because the actor may be a
+	// system action, or a user since removed.
 	rows, err := s.pool.Query(ctx, `
-		SELECT action, metadata, created_at
-		FROM audit_events
-		WHERE tenant_id = $1
-		  AND action LIKE 'events.event_%'
-		  AND created_at > $2
-		  AND metadata->>'affects_site' = 'true'
-		ORDER BY created_at DESC
+		SELECT a.action, a.metadata, a.created_at, COALESCE(u.display_name, '')
+		FROM audit_events a
+		LEFT JOIN users u ON u.id = a.actor_user_id
+		WHERE a.tenant_id = $1
+		  AND a.action LIKE 'events.event_%'
+		  AND a.created_at > $2
+		  AND a.metadata->>'affects_site' = 'true'
+		ORDER BY a.created_at DESC
 		LIMIT $3`, tenantID, cutoff, limit)
 	if err != nil {
 		return nil, err
@@ -157,10 +162,17 @@ func (s *Service) PendingChanges(ctx context.Context, tenantID uuid.UUID, since 
 			c    PendingChange
 			meta changeMetadata
 		)
-		if err := rows.Scan(&c.Action, &meta, &c.CreatedAt); err != nil {
+		var displayName string
+		if err := rows.Scan(&c.Action, &meta, &c.CreatedAt, &displayName); err != nil {
 			return nil, err
 		}
-		c.Title, c.Slug, c.Actor = meta.Title, meta.Slug, meta.Actor
+		c.Title, c.Slug = meta.Title, meta.Slug
+		// Prefer the resolved name; fall back to the stored identity so an
+		// action is never left looking anonymous.
+		c.Actor = displayName
+		if c.Actor == "" {
+			c.Actor = meta.Actor
+		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
