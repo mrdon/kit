@@ -25,8 +25,6 @@ func registerSettingsRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/events/settings", adminRoute(a.handleGetSettings))
 	mux.Handle("PUT /{slug}/api/events/settings", adminRoute(a.handleSaveSettings))
 	mux.Handle("POST /{slug}/api/events/settings/feed-token", adminRoute(a.handleRotateFeedToken))
-	mux.Handle("GET /{slug}/api/events/site", adminRoute(a.handleSiteStatus))
-	mux.Handle("POST /{slug}/api/events/site/publish", adminRoute(a.handleSitePublish))
 	mux.Handle("POST /{slug}/api/events/sync", adminRoute(a.handleSyncNow))
 	mux.Handle("POST /{slug}/api/events/reconcile", adminRoute(a.handleReconcile))
 }

@@ -1733,11 +1733,18 @@ h2.view-title:hover {
   margin-left: 0.45rem;
   padding: 0 0.35rem;
   border-radius: 999px;
-  /* Inverted against the filled button so the count reads at a glance. */
-  background: #fff;
-  color: var(--accent);
+  /* Inverted against a filled button; on a ghost button the accent fill is
+     what stands out. Set per-variant rather than assuming one button style. */
+  background: var(--accent);
+  color: #fff;
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.35rem;
   text-align: center;
+}
+
+/* On a filled button the badge inverts instead. */
+.btn:not(.btn-ghost):not(.btn-danger) .btn-badge {
+  background: #fff;
+  color: var(--accent);
 }

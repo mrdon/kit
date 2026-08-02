@@ -5,6 +5,7 @@ import {
   type EventInput,
   type EventRecord,
   type EventsSettingsSummary,
+  type EventsSiteStatus,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
 
@@ -54,6 +55,18 @@ function toLocalInput(iso: string | undefined, tz: string | undefined): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 
+// Mirrors PendingChange.Verb() on the server so both surfaces use the same
+// words for the same action.
+const VERBS: Record<string, string> = {
+  'events.event_created': 'added',
+  'events.event_updated': 'edited',
+  'events.event_published': 'published',
+  'events.event_unpublished': 'unpublished',
+  'events.event_cancelled': 'cancelled',
+  'events.event_deleted': 'deleted',
+};
+const verbFor = (action: string) => VERBS[action] ?? 'changed';
+
 // Spelled out because "published" is routinely misread as "public". They are
 // separate axes: a confirmed private booking is published AND private.
 function describeExposure(e: EventRecord): string {
@@ -85,6 +98,9 @@ export default function Events() {
   const [includePast, setIncludePast] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [site, setSite] = useState<EventsSiteStatus | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -94,9 +110,31 @@ export default function Events() {
         setSettings(r.settings);
       })
       .catch((e) => setErr((e as Error).message));
+    // Website state is advisory: a failure here must not break the list.
+    api
+      .eventsSiteStatus()
+      .then(setSite)
+      .catch(() => setSite(null));
   }, [includePast]);
 
   useEffect(load, [load]);
+
+  const pendingCount = (site?.pending ?? []).length;
+
+  const publishSite = async () => {
+    setPublishing(true);
+    setErr(null);
+    try {
+      const r = await api.eventsPublishSite();
+      setSite(r);
+      setReviewing(false);
+      setNote('The website is rebuilding — it usually takes a minute or two.');
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   useSetChatContext(
     open ? `the Events page, viewing "${open.title}"` : 'the Events page',
@@ -114,6 +152,20 @@ export default function Events() {
         <div className="page-head-row">
           <h1>Events</h1>
           <div className="page-head-actions">
+            {/* Publishing pushes events to the public website. The calendar is
+                always current, so this button is only ever about the web --
+                hence the title, and the badge for the count waiting. */}
+            <button
+              className="btn btn-ghost"
+              title="Publish events to the public website. The team calendar is always up to date and needs no action."
+              onClick={() => setReviewing(true)}
+              disabled={pendingCount === 0}
+            >
+              Publish
+              {pendingCount > 0 && (
+                <span className="btn-badge">{pendingCount}</span>
+              )}
+            </button>
             <button
               className="btn"
               onClick={() => {
@@ -193,6 +245,74 @@ export default function Events() {
             </li>
           ))}
         </ul>
+      )}
+
+      {reviewing && site && (
+        <div className="drawer-backdrop" onClick={() => setReviewing(false)}>
+          <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="drawer-close"
+              onClick={() => setReviewing(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2 className="drawer-title">Publish to the website</h2>
+            <p className="field-note">
+              These are the changes the public would see. Private bookings,
+              drafts and staff notes are not listed — they never reach the
+              website. The team calendar is already up to date either way.
+            </p>
+
+            <ul className="card-list">
+              {(site.pending ?? []).map((c, i) => (
+                <li key={i}>
+                  <div className="row-card">
+                    <span className="row-card-main">
+                      <span className="row-card-title">
+                        {c.title} {verbFor(c.action)}
+                      </span>
+                      <span className="row-card-meta">
+                        {new Date(c.at).toLocaleString()}
+                        {c.actor ? ` · ${c.actor}` : ''}
+                      </span>
+                    </span>
+                  </div>
+                </li>
+              ))}
+              {site.pending_truncated && (
+                <li>
+                  <span className="row-card-meta">…and more.</span>
+                </li>
+              )}
+            </ul>
+
+            {!site.hook_configured && (
+              <p className="field-hint">
+                No build hook is set up yet, so the website cannot be rebuilt.
+                An admin can add one on the{' '}
+                <Link to="/admin/events">Events calendar &amp; feed</Link> page.
+              </p>
+            )}
+
+            <div className="drawer-actions">
+              <button
+                className="btn"
+                onClick={publishSite}
+                disabled={publishing || !site.hook_configured}
+              >
+                {publishing ? 'Publishing…' : 'Publish to website'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setReviewing(false)}
+                disabled={publishing}
+              >
+                Not yet
+              </button>
+            </div>
+          </aside>
+        </div>
       )}
 
       {(creating || open) && (

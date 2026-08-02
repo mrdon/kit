@@ -29,6 +29,11 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/events", jsonRoute(a.handleList))
 	mux.Handle("POST /{slug}/api/events", jsonRoute(a.handleCreate))
 	mux.Handle("GET /{slug}/api/events/meta", jsonRoute(a.handleMeta))
+	// Not admin-gated: anyone who can publish an event can put it on the
+	// website. Configuring the build hook stays admin-only -- that is a
+	// credential, this is the everyday action it enables.
+	mux.Handle("GET /{slug}/api/events/site", jsonRoute(a.handleSiteStatus))
+	mux.Handle("POST /{slug}/api/events/site/publish", jsonRoute(a.handleSitePublish))
 	mux.Handle("GET /{slug}/api/events/{id}", jsonRoute(a.handleGet))
 	mux.Handle("PATCH /{slug}/api/events/{id}", jsonRoute(a.handleUpdate))
 	mux.Handle("DELETE /{slug}/api/events/{id}", jsonRoute(a.handleDelete))

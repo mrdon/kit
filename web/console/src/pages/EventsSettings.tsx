@@ -11,18 +11,6 @@ import { useSetChatContext } from '../chatContext';
 // Admin configuration for the events app: which calendar to write to, the
 // website URL pattern and feed token, and the sync controls.
 
-// Mirrors PendingChange.Verb() on the server so both surfaces use the same
-// words for the same action.
-const VERBS: Record<string, string> = {
-  'events.event_created': 'added',
-  'events.event_updated': 'edited',
-  'events.event_published': 'published',
-  'events.event_unpublished': 'unpublished',
-  'events.event_cancelled': 'cancelled',
-  'events.event_deleted': 'deleted',
-};
-const verbFor = (action: string) => VERBS[action] ?? 'changed';
-
 export default function EventsSettingsPage() {
   useSetChatContext('the admin Events calendar & feed page');
   const [st, setSt] = useState<EventsSettings | null>(null);
@@ -32,7 +20,6 @@ export default function EventsSettingsPage() {
   const [plan, setPlan] = useState<EventsReconcilePlan | null>(null);
   const [site, setSite] = useState<EventsSiteStatus | null>(null);
   const [hook, setHook] = useState('');
-  const [reviewing, setReviewing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,14 +87,6 @@ export default function EventsSettingsPage() {
       load();
     });
 
-  const publishSite = () =>
-    run(async () => {
-      const r = await api.eventsPublishSite();
-      setSite(r);
-      setReviewing(false);
-      setNote('The website is rebuilding — it usually takes a minute or two.');
-    });
-
   const preview = () =>
     run(async () => {
       setPlan(await api.eventsReconcile(false));
@@ -123,7 +102,6 @@ export default function EventsSettingsPage() {
 
   // Empty is the normal case for a service account, not an error, so the
   // listing is a convenience only and its failure is never surfaced.
-  const pendingCount = (site?.pending ?? []).length;
   const calendars = st?.calendars ?? [];
   const recent = st?.recent ?? [];
 
@@ -312,43 +290,15 @@ export default function EventsSettingsPage() {
             </p>
 
             {site && (
-              <>
-                <p className="field-note">
-                  {site.built_at
-                    ? `Last rebuilt ${new Date(site.built_at).toLocaleString()}${
-                        site.built_by ? ` (${site.built_by})` : ''
-                      }.`
-                    : 'Never rebuilt from Kit.'}
-                </p>
-                <div className="drawer-actions">
-                  {/* The list lives behind this button rather than on the
-                      page: on a normal day there is nothing to see, and an
-                      empty list is noise. The badge carries the only thing
-                      worth knowing at a glance. */}
-                  <button
-                    className="btn"
-                    onClick={() => setReviewing(true)}
-                    disabled={busy || pendingCount === 0}
-                  >
-                    Review &amp; publish
-                    {pendingCount > 0 && (
-                      <span className="btn-badge">{pendingCount}</span>
-                    )}
-                  </button>
-                  {pendingCount === 0 && (
-                    <span className="field-note">
-                      The website matches Kit — nothing to publish.
-                    </span>
-                  )}
-                </div>
-                {!site.hook_configured && (
-                  <p className="field-hint">
-                    No build hook is set, so Kit cannot trigger a rebuild. In
-                    Netlify: Site configuration → Build &amp; deploy → Build
-                    hooks → Add build hook, then paste the URL below and save.
-                  </p>
-                )}
-              </>
+              <p className="field-note">
+                {site.built_at
+                  ? `Last rebuilt ${new Date(site.built_at).toLocaleString()}${
+                      site.built_by ? ` (${site.built_by})` : ''
+                    }.`
+                  : 'Never rebuilt from Kit.'}{' '}
+                Publishing is done from the{' '}
+                <Link to="/events">Events</Link> page.
+              </p>
             )}
 
             <form onSubmit={save} className="stack-form">
@@ -445,65 +395,6 @@ export default function EventsSettingsPage() {
         </>
       )}
 
-      {reviewing && site && (
-        <div className="drawer-backdrop" onClick={() => setReviewing(false)}>
-          <aside className="drawer" onClick={(e) => e.stopPropagation()}>
-            <button
-              className="drawer-close"
-              onClick={() => setReviewing(false)}
-              aria-label="Close"
-            >
-              ×
-            </button>
-            <h2 className="drawer-title">Waiting for the website</h2>
-            <p className="field-note">
-              These are the changes the public would see. Private bookings,
-              drafts and staff notes are not listed — they never reach the
-              website.
-            </p>
-
-            <ul className="card-list">
-              {(site.pending ?? []).map((c, i) => (
-                <li key={i}>
-                  <div className="row-card">
-                    <span className="row-card-main">
-                      <span className="row-card-title">
-                        {c.title} {verbFor(c.action)}
-                      </span>
-                      <span className="row-card-meta">
-                        {new Date(c.at).toLocaleString()}
-                        {c.actor ? ` · ${c.actor}` : ''}
-                      </span>
-                    </span>
-                  </div>
-                </li>
-              ))}
-              {site.pending_truncated && (
-                <li>
-                  <span className="row-card-meta">…and more.</span>
-                </li>
-              )}
-            </ul>
-
-            <div className="drawer-actions">
-              <button
-                className="btn"
-                onClick={publishSite}
-                disabled={busy || !site.hook_configured}
-              >
-                {busy ? 'Publishing…' : 'Publish to website'}
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={() => setReviewing(false)}
-                disabled={busy}
-              >
-                Not yet
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
     </div>
   );
 }
