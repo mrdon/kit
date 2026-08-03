@@ -63,6 +63,7 @@ type createDecisionInput struct {
 	RecommendedOptionID string           `json:"recommended_option_id"`
 	Priority            string           `json:"priority"`
 	RoleScopes          []string         `json:"role_scopes"`
+	TTLDays             *float64         `json:"ttl_days,omitempty"`
 }
 
 func handleCreateDecision(svc *CardService) tools.HandlerFunc {
@@ -80,6 +81,7 @@ func handleCreateDecision(svc *CardService) tools.HandlerFunc {
 			Title:      inp.Title,
 			Body:       inp.Context,
 			RoleScopes: inp.RoleScopes,
+			ExpiresAt:  ttlExpiry(inp.TTLDays),
 			Decision: &DecisionCreateInput{
 				Priority:            DecisionPriority(inp.Priority),
 				RecommendedOptionID: inp.RecommendedOptionID,
@@ -100,6 +102,7 @@ type createBriefingInput struct {
 	Body       string   `json:"body"`
 	Severity   string   `json:"severity"`
 	RoleScopes []string `json:"role_scopes"`
+	TTLDays    *float64 `json:"ttl_days,omitempty"`
 }
 
 func handleCreateBriefing(svc *CardService) tools.HandlerFunc {
@@ -112,6 +115,7 @@ func handleCreateBriefing(svc *CardService) tools.HandlerFunc {
 			Title:      inp.Title,
 			Body:       inp.Body,
 			RoleScopes: inp.RoleScopes,
+			ExpiresAt:  ttlExpiry(inp.TTLDays),
 			Briefing:   &BriefingCreateInput{Severity: BriefingSeverity(inp.Severity)},
 		})
 		if err != nil {
@@ -130,6 +134,7 @@ type updateDecisionInput struct {
 	Options             *[]DecisionOption `json:"options,omitempty"`
 	State               *string           `json:"state,omitempty"`
 	RoleScopes          *[]string         `json:"role_scopes,omitempty"`
+	TTLDays             *float64          `json:"ttl_days,omitempty"`
 }
 
 func handleUpdateDecision(svc *CardService) tools.HandlerFunc {
@@ -155,6 +160,7 @@ func handleUpdateDecision(svc *CardService) tools.HandlerFunc {
 			}
 			u.Decision = d
 		}
+		applyTTLDays(&u, inp.TTLDays)
 		card, err := svc.Update(ec.Ctx, ec.Caller(), cardID, u)
 		if err != nil {
 			return handleServiceErr(err, "updating decision")
@@ -164,12 +170,13 @@ func handleUpdateDecision(svc *CardService) tools.HandlerFunc {
 }
 
 type updateBriefingInput struct {
-	CardID     string    `json:"card_id"`
-	Title      *string   `json:"title,omitempty"`
-	Body       *string   `json:"body,omitempty"`
-	Severity   *string   `json:"severity,omitempty"`
-	State      *string   `json:"state,omitempty"`
-	RoleScopes *[]string `json:"role_scopes,omitempty"`
+	CardIDs    CardIDList `json:"card_ids"`
+	Title      *string    `json:"title,omitempty"`
+	Body       *string    `json:"body,omitempty"`
+	Severity   *string    `json:"severity,omitempty"`
+	State      *string    `json:"state,omitempty"`
+	RoleScopes *[]string  `json:"role_scopes,omitempty"`
+	TTLDays    *float64   `json:"ttl_days,omitempty"`
 }
 
 func handleUpdateBriefing(svc *CardService) tools.HandlerFunc {
@@ -178,9 +185,9 @@ func handleUpdateBriefing(svc *CardService) tools.HandlerFunc {
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
-		cardID, err := uuid.Parse(inp.CardID)
+		cardIDs, err := parseCardIDList(inp.CardIDs)
 		if err != nil {
-			return "Invalid card_id.", nil
+			return err.Error(), nil
 		}
 		u := CardUpdates{Title: inp.Title, Body: inp.Body, RoleScopes: inp.RoleScopes}
 		if inp.State != nil {
@@ -191,11 +198,19 @@ func handleUpdateBriefing(svc *CardService) tools.HandlerFunc {
 			sev := BriefingSeverity(*inp.Severity)
 			u.Briefing = &BriefingUpdates{Severity: &sev}
 		}
-		card, err := svc.Update(ec.Ctx, ec.Caller(), cardID, u)
-		if err != nil {
-			return handleServiceErr(err, "updating briefing")
+		applyTTLDays(&u, inp.TTLDays)
+		if len(cardIDs) == 1 {
+			card, err := svc.Update(ec.Ctx, ec.Caller(), cardIDs[0], u)
+			if err != nil {
+				return handleServiceErr(err, "updating briefing")
+			}
+			return fmt.Sprintf("Updated briefing [%s]: %s", card.ID, card.Title), nil
 		}
-		return fmt.Sprintf("Updated briefing [%s]: %s", card.ID, card.Title), nil
+		updated, failures, err := svc.UpdateMany(ec.Ctx, ec.Caller(), cardIDs, u)
+		if err != nil {
+			return handleServiceErr(err, "updating briefings")
+		}
+		return formatBulkResult("Updated", len(updated), failures, "briefings"), nil
 	}
 }
 
@@ -238,24 +253,37 @@ func handleListBriefings(svc *CardService) tools.HandlerFunc {
 func handleAckBriefing(svc *CardService) tools.HandlerFunc {
 	return func(ec *tools.ExecContext, input json.RawMessage) (string, error) {
 		var inp struct {
-			CardID string `json:"card_id"`
-			Kind   string `json:"kind"`
+			CardIDs CardIDList `json:"card_ids"`
+			Kind    string     `json:"kind"`
 		}
 		if err := json.Unmarshal(input, &inp); err != nil {
 			return "", fmt.Errorf("parsing input: %w", err)
 		}
-		cardID, err := uuid.Parse(inp.CardID)
+		cardIDs, err := parseCardIDList(inp.CardIDs)
 		if err != nil {
-			return "Invalid card_id.", nil
+			return err.Error(), nil
 		}
-		card, err := svc.AckBriefing(ec.Ctx, ec.Caller(), cardID, BriefingAckKind(inp.Kind))
-		if err != nil {
-			if errors.Is(err, ErrAlreadyTerminal) {
-				return "That briefing has already been acknowledged.", nil
+		kind := BriefingAckKind(inp.Kind)
+
+		if len(cardIDs) == 1 {
+			card, err := svc.AckBriefing(ec.Ctx, ec.Caller(), cardIDs[0], kind)
+			if err != nil {
+				if errors.Is(err, ErrAlreadyTerminal) {
+					return "That briefing has already been acknowledged.", nil
+				}
+				return handleServiceErr(err, "acknowledging briefing")
 			}
-			return handleServiceErr(err, "acknowledging briefing")
+			// Report the ack kind, not card.State. An ack is per-user and
+			// leaves the card's own state alone, so echoing State here read
+			// as "marked pending" and looked like the write hadn't landed.
+			return fmt.Sprintf("Briefing [%s] acked as %s; cleared from your stack.", card.ID, kind), nil
 		}
-		return fmt.Sprintf("Briefing [%s] marked %s.", card.ID, card.State), nil
+
+		acked, failures, err := svc.AckManyBriefings(ec.Ctx, ec.Caller(), cardIDs, kind)
+		if err != nil {
+			return handleServiceErr(err, "acknowledging briefings")
+		}
+		return formatBulkResult("Acked", len(acked), failures, "briefings"), nil
 	}
 }
 

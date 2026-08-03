@@ -25,18 +25,19 @@ func createCardTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, i
 
 	cardID := uuid.New()
 	card := &Card{
-		ID:       cardID,
-		TenantID: tenantID,
-		Kind:     in.Kind,
-		Title:    in.Title,
-		Body:     in.Body,
-		State:    CardStatePending,
+		ID:        cardID,
+		TenantID:  tenantID,
+		Kind:      in.Kind,
+		Title:     in.Title,
+		Body:      in.Body,
+		State:     CardStatePending,
+		ExpiresAt: in.ExpiresAt,
 	}
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO app_cards (id, tenant_id, kind, title, body, state)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO app_cards (id, tenant_id, kind, title, body, state, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING created_at, updated_at`,
-		cardID, tenantID, in.Kind, in.Title, in.Body, CardStatePending,
+		cardID, tenantID, in.Kind, in.Title, in.Body, CardStatePending, in.ExpiresAt,
 	).Scan(&card.CreatedAt, &card.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("inserting card: %w", err)
 	}

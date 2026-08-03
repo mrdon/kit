@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -63,10 +65,12 @@ func mcpCreateDecision(svc *CardService) mcpserver.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		roleScopes := parseStringArray(req, "role_scopes")
+		expiresAt := expiryArg(req.GetArguments())
 		card, err := svc.CreateDecision(ctx, caller, CardCreateInput{
 			Title:      title,
 			Body:       body,
 			RoleScopes: roleScopes,
+			ExpiresAt:  expiresAt,
 			Decision: &DecisionCreateInput{
 				Priority:            DecisionPriority(priority),
 				RecommendedOptionID: recommended,
@@ -86,10 +90,12 @@ func mcpCreateBriefing(svc *CardService) mcpserver.ToolHandlerFunc {
 		body, _ := req.RequireString("body")
 		severity := req.GetString("severity", "")
 		roleScopes := parseStringArray(req, "role_scopes")
+		expiresAt := expiryArg(req.GetArguments())
 		card, err := svc.CreateBriefing(ctx, caller, CardCreateInput{
 			Title:      title,
 			Body:       body,
 			RoleScopes: roleScopes,
+			ExpiresAt:  expiresAt,
 			Briefing:   &BriefingCreateInput{Severity: BriefingSeverity(severity)},
 		})
 		if err != nil {
@@ -146,6 +152,7 @@ func mcpUpdateDecision(svc *CardService) mcpserver.ToolHandlerFunc {
 			}
 			u.Decision.Options = &opts
 		}
+		applyTTLDays(&u, ttlDaysArg(args))
 
 		card, err := svc.Update(ctx, caller, cardID, u)
 		if err != nil {
@@ -157,12 +164,11 @@ func mcpUpdateDecision(svc *CardService) mcpserver.ToolHandlerFunc {
 
 func mcpUpdateBriefing(svc *CardService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("card_id")
-		cardID, err := uuid.Parse(idStr)
-		if err != nil {
-			return mcp.NewToolResultError("Invalid card_id."), nil
-		}
 		args := req.GetArguments()
+		cardIDs, err := parseCardIDs(args)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 		u := CardUpdates{}
 		if v, ok := args["title"].(string); ok {
 			u.Title = &v
@@ -182,11 +188,23 @@ func mcpUpdateBriefing(svc *CardService) mcpserver.ToolHandlerFunc {
 			arr := toStringSlice(v)
 			u.RoleScopes = &arr
 		}
-		card, err := svc.Update(ctx, caller, cardID, u)
+		applyTTLDays(&u, ttlDaysArg(args))
+
+		// Single id keeps its original, more informative reply. Only the
+		// bulk form needs the counts-and-failures summary.
+		if len(cardIDs) == 1 {
+			card, err := svc.Update(ctx, caller, cardIDs[0], u)
+			if err != nil {
+				return mcpErrResult(err)
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("Updated briefing [%s]: %s", card.ID, card.Title)), nil
+		}
+
+		updated, failures, err := svc.UpdateMany(ctx, caller, cardIDs, u)
 		if err != nil {
 			return mcpErrResult(err)
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Updated briefing [%s]: %s", card.ID, card.Title)), nil
+		return mcp.NewToolResultText(formatBulkResult("Updated", len(updated), failures, "briefings")), nil
 	})
 }
 
@@ -218,20 +236,32 @@ func mcpListBriefings(svc *CardService) mcpserver.ToolHandlerFunc {
 
 func mcpAckBriefing(svc *CardService) mcpserver.ToolHandlerFunc {
 	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		idStr, _ := req.RequireString("card_id")
-		cardID, err := uuid.Parse(idStr)
+		cardIDs, err := parseCardIDs(req.GetArguments())
 		if err != nil {
-			return mcp.NewToolResultError("Invalid card_id."), nil
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		kindStr, _ := req.RequireString("kind")
-		card, err := svc.AckBriefing(ctx, caller, cardID, BriefingAckKind(kindStr))
-		if err != nil {
-			if errors.Is(err, ErrAlreadyTerminal) {
-				return mcp.NewToolResultError("Briefing already acknowledged."), nil
+		kind := BriefingAckKind(kindStr)
+
+		if len(cardIDs) == 1 {
+			card, err := svc.AckBriefing(ctx, caller, cardIDs[0], kind)
+			if err != nil {
+				if errors.Is(err, ErrAlreadyTerminal) {
+					return mcp.NewToolResultError("Briefing already acknowledged."), nil
+				}
+				return mcpErrResult(err)
 			}
+			// Report the ack kind, not card.State. An ack is per-user and
+			// leaves the card's own state alone, so echoing State here read
+			// as "marked pending" and looked like the write hadn't landed.
+			return mcp.NewToolResultText(fmt.Sprintf("Briefing [%s] acked as %s; cleared from your stack.", card.ID, kind)), nil
+		}
+
+		acked, failures, err := svc.AckManyBriefings(ctx, caller, cardIDs, kind)
+		if err != nil {
 			return mcpErrResult(err)
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Briefing [%s] marked %s.", card.ID, card.State)), nil
+		return mcp.NewToolResultText(formatBulkResult("Acked", len(acked), failures, "briefings")), nil
 	})
 }
 
@@ -327,6 +357,63 @@ func toStringSlice(in []any) []string {
 		}
 	}
 	return out
+}
+
+// ttlDaysArg pulls ttl_days out of raw MCP arguments. JSON numbers arrive
+// as float64; anything absent or of another type reads as unset so a
+// malformed value can't silently expire a card.
+func ttlDaysArg(args map[string]any) *float64 {
+	days, ok := args["ttl_days"].(float64)
+	if !ok {
+		return nil
+	}
+	return &days
+}
+
+// expiryArg is the create-side shorthand: ttl_days straight to a deadline.
+func expiryArg(args map[string]any) *time.Time {
+	return ttlExpiry(ttlDaysArg(args))
+}
+
+// parseCardIDs is the MCP-argument form: card_ids arrives already decoded
+// into `any`, so the string-or-array choice is a type switch here rather
+// than the custom unmarshaller the agent surface uses. Both funnel into
+// parseCardIDList so they accept and reject exactly the same inputs.
+func parseCardIDs(args map[string]any) ([]uuid.UUID, error) {
+	switch v := args["card_ids"].(type) {
+	case string:
+		return parseCardIDList([]string{v})
+	case []any:
+		many := make([]string, 0, len(v))
+		for _, e := range v {
+			s, ok := e.(string)
+			if !ok {
+				return nil, fmt.Errorf("card_ids entries must be strings, got %T", e)
+			}
+			many = append(many, s)
+		}
+		return parseCardIDList(many)
+	case nil:
+		return nil, errors.New("card_ids is required: a card id, or an array of card ids")
+	default:
+		return nil, fmt.Errorf("card_ids must be a card id or an array of card ids, got %T", v)
+	}
+}
+
+// formatBulkResult renders a bulk result, e.g. ("Updated", 3, nil,
+// "briefings") to "Updated 3 briefings.". Failures are listed rather than
+// merely counted so a partial success is actionable without a second call
+// to work out which ones didn't take.
+func formatBulkResult(verb string, succeeded int, failures []BulkCardFailure, noun string) string {
+	if len(failures) == 0 {
+		return fmt.Sprintf("%s %d %s.", verb, succeeded, noun)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %d %s, %d failed:\n", verb, succeeded, noun, len(failures))
+	for _, f := range failures {
+		fmt.Fprintf(&b, "- [%s] %v\n", f.CardID, f.Err)
+	}
+	return b.String()
 }
 
 func mcpErrResult(err error) (*mcp.CallToolResult, error) {

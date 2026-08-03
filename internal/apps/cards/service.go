@@ -313,6 +313,52 @@ func (s *CardService) Update(ctx context.Context, c *services.Caller, cardID uui
 	return card, nil
 }
 
+// MaxBulkCards caps how many cards one bulk update may touch. High
+// enough for any real backlog cleanup, low enough that a malformed id list
+// can't turn into an unbounded write loop.
+const MaxBulkCards = 500
+
+// BulkCardFailure records one card a bulk update couldn't apply, so a
+// partial success tells the caller exactly what to look at rather than
+// just a smaller number than they expected.
+type BulkCardFailure struct {
+	CardID uuid.UUID
+	Err    error
+}
+
+// UpdateMany applies the same CardUpdates to several cards and returns the
+// ones that succeeded alongside per-card failures.
+//
+// Deliberately not one transaction. Each card goes through the full Update
+// path (visibility, write permission, enum validation) and those verdicts
+// are per-card by nature. One card the caller can't see shouldn't roll back
+// the other 91, so this reports partial success instead.
+func (s *CardService) UpdateMany(ctx context.Context, c *services.Caller, cardIDs []uuid.UUID, u CardUpdates) ([]*Card, []BulkCardFailure, error) {
+	if len(cardIDs) == 0 {
+		return nil, nil, errors.New("no card ids supplied")
+	}
+	if len(cardIDs) > MaxBulkCards {
+		return nil, nil, fmt.Errorf("too many cards: %d (max %d)", len(cardIDs), MaxBulkCards)
+	}
+	var updated []*Card
+	var failures []BulkCardFailure
+	seen := make(map[uuid.UUID]bool, len(cardIDs))
+	for _, id := range cardIDs {
+		// A repeated id would otherwise be updated twice and double-counted.
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		card, err := s.Update(ctx, c, id, u)
+		if err != nil {
+			failures = append(failures, BulkCardFailure{CardID: id, Err: err})
+			continue
+		}
+		updated = append(updated, card)
+	}
+	return updated, failures, nil
+}
+
 // CreateGateCard implements tools.GateCreator. When Registry.Execute
 // intercepts a PolicyGate tool call without an approval token, it
 // calls this to mint the decision card the user will approve. The
@@ -971,6 +1017,41 @@ func (s *CardService) AckBriefing(ctx context.Context, c *services.Caller, cardI
 		return nil, err
 	}
 	return out, nil
+}
+
+// AckManyBriefings acknowledges several briefings with the same kind and
+// returns the ones that took alongside per-card failures.
+//
+// Same partial-success shape as UpdateMany, and for the same reason: acks
+// are per-card and per-caller, so one already-acked or invisible card
+// shouldn't sink the rest of the batch.
+func (s *CardService) AckManyBriefings(ctx context.Context, c *services.Caller, cardIDs []uuid.UUID, kind BriefingAckKind) ([]*Card, []BulkCardFailure, error) {
+	if !kind.Valid() {
+		return nil, nil, fmt.Errorf("invalid ack kind %q", kind)
+	}
+	if len(cardIDs) == 0 {
+		return nil, nil, errors.New("no card ids supplied")
+	}
+	if len(cardIDs) > MaxBulkCards {
+		return nil, nil, fmt.Errorf("too many cards: %d (max %d)", len(cardIDs), MaxBulkCards)
+	}
+	var acked []*Card
+	var failures []BulkCardFailure
+	seen := make(map[uuid.UUID]bool, len(cardIDs))
+	for _, id := range cardIDs {
+		// A repeated id would otherwise be acked twice and double-counted.
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		card, err := s.AckBriefing(ctx, c, id, kind)
+		if err != nil {
+			failures = append(failures, BulkCardFailure{CardID: id, Err: err})
+			continue
+		}
+		acked = append(acked, card)
+	}
+	return acked, failures, nil
 }
 
 // callerCanSee returns true if the caller's scopes include the card. Used

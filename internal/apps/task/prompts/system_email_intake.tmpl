@@ -44,6 +44,10 @@ a follow-up task.
 5. **Finish with `create_briefing`** summarizing what you found: already-tracked
    items (no action) and newly created tasks (titles + priorities). Use
    severity=info if you created nothing, severity=notable if you created tasks.
+   **Always pass `ttl_days=3`.** This runs daily, and a scan summary is worthless
+   once the next few have landed on top of it. The TTL retires the card
+   automatically so the stack holds recent scans only. The tasks are the durable
+   output; the briefing is not.
 
 ## Bills vs. receipts — only create a task when action is still needed
 

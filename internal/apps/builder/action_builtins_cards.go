@@ -54,6 +54,11 @@ func dispatchCreateDecision(ctx context.Context, a *ActionBuiltins, deps *action
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
 
+	ttlDays, err := argOptionalFloat(call.Args, "ttl_days")
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", call.Name, err)
+	}
+
 	options, err := parseDecisionOptions(optionList)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
@@ -68,6 +73,7 @@ func dispatchCreateDecision(ctx context.Context, a *ActionBuiltins, deps *action
 		Title:      title,
 		Body:       body,
 		RoleScopes: roleScopes,
+		ExpiresAt:  cards.ExpiryFromTTLDays(ttlDays),
 		Decision: &cards.DecisionCreateInput{
 			Priority: cards.DecisionPriority(priority),
 			Options:  options,
@@ -102,6 +108,10 @@ func dispatchCreateBriefing(ctx context.Context, a *ActionBuiltins, deps *action
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", call.Name, err)
 	}
+	ttlDays, err := argOptionalFloat(call.Args, "ttl_days")
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", call.Name, err)
+	}
 
 	c, err := deps.caller(ctx)
 	if err != nil {
@@ -112,6 +122,7 @@ func dispatchCreateBriefing(ctx context.Context, a *ActionBuiltins, deps *action
 		Title:      title,
 		Body:       body,
 		RoleScopes: roleScopes,
+		ExpiresAt:  cards.ExpiryFromTTLDays(ttlDays),
 		Briefing:   &cards.BriefingCreateInput{Severity: cards.BriefingSeverity(severity)},
 	})
 	if err != nil {

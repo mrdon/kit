@@ -2,7 +2,10 @@ package cards
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool" //nolint:goimports
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -139,15 +142,83 @@ func SweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+// SweepExpiredCards archives every pending card past its expires_at, so a
+// card with a stated shelf life leaves the stack on its own. Cards without
+// an expires_at are untouched, which is the default.
+//
+// Invoked by the scheduler every 60s alongside the stuck-resolving sweep.
+// Tests call this directly with the test pool.
+func SweepExpiredCards(ctx context.Context, pool *pgxpool.Pool) error {
+	n, err := sweepExpiredCards(ctx, pool)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		slog.Info("archived expired cards", "count", n)
+	}
+	return nil
+}
+
+// ArchivedCardRetention is how long an archived card survives before the
+// purge deletes it outright. Expiry archives, this reclaims.
+const ArchivedCardRetention = 90 * 24 * time.Hour
+
+// archivedPurgeInterval throttles the purge to roughly nightly. The expiry
+// sweep is cheap enough to run every tick; a full-table delete is not, and
+// nothing depends on a 90-day boundary being enforced to the minute.
+const archivedPurgeInterval = 24 * time.Hour
+
+// lastArchivedPurge gates PurgeArchivedCards to archivedPurgeInterval. In
+// process, so a restart re-arms it. Harmless, since the delete is
+// idempotent and a second run in the same day finds nothing new.
+var (
+	lastArchivedPurge   time.Time
+	lastArchivedPurgeMu sync.Mutex
+)
+
+// PurgeArchivedCards deletes archived cards older than ArchivedCardRetention,
+// at most once per archivedPurgeInterval. Child rows go with them via
+// ON DELETE CASCADE.
+//
+// Returns nil without doing anything when called again inside the interval.
+// Tests wanting a deterministic run call purgeArchivedCards directly.
+func PurgeArchivedCards(ctx context.Context, pool *pgxpool.Pool) error {
+	lastArchivedPurgeMu.Lock()
+	if !lastArchivedPurge.IsZero() && time.Since(lastArchivedPurge) < archivedPurgeInterval {
+		lastArchivedPurgeMu.Unlock()
+		return nil
+	}
+	lastArchivedPurge = time.Now()
+	lastArchivedPurgeMu.Unlock()
+
+	n, err := purgeArchivedCards(ctx, pool, ArchivedCardRetention)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		slog.Info("purged archived cards", "count", n, "older_than", ArchivedCardRetention)
+	}
+	return nil
+}
+
 // sweepFromInstance is the periodic-sweep adapter registered with
 // scheduler.RegisterPeriodicSweep. It pulls the pool off the package
 // singleton; if the cards app was never initialized (e.g. during a
 // misconfigured startup) it's a no-op.
+//
+// Runs all three housekeeping passes. Each is independent, so a failure in
+// one is logged and the rest still run. errors.Join hands the scheduler
+// every problem rather than only the first.
 func sweepFromInstance(ctx context.Context) error {
 	if instance == nil || instance.pool == nil {
 		return nil
 	}
-	return SweepStuckResolvingCards(ctx, instance.pool)
+	pool := instance.pool
+	return errors.Join(
+		SweepStuckResolvingCards(ctx, pool),
+		SweepExpiredCards(ctx, pool),
+		PurgeArchivedCards(ctx, pool),
+	)
 }
 
 // PeriodicSweep returns the closure main.go should register with
@@ -266,6 +337,10 @@ var cardsTools = []services.ToolMeta{
 			},
 			"recommended_option_id": services.Field("string", "Which option the user should swipe-right for"),
 			"priority":              services.Field("string", "Priority: low, medium, high"),
+			"ttl_days": services.Field("number",
+				"Shelf life in days, after which the decision is archived unanswered and leaves the stack. "+
+					"Only for a choice that genuinely stops mattering (an RSVP whose event has passed). "+
+					"Omit (the default) for anything that still needs an answer however late it comes."),
 			"role_scopes": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
@@ -280,6 +355,10 @@ var cardsTools = []services.ToolMeta{
 			"title":    services.Field("string", "Short heading"),
 			"body":     services.Field("string", "Markdown body"),
 			"severity": services.Field("string", "Severity: info, notable, important"),
+			"ttl_days": services.Field("number",
+				"Shelf life in days. After this the briefing is archived automatically and leaves the stack, "+
+					"so recurring summaries don't pile up unread. Set it whenever the content goes stale on its own "+
+					"(a daily digest is worthless a week later, so use 3). Omit for a briefing that should stay until acked."),
 			"role_scopes": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
@@ -304,6 +383,8 @@ var cardsTools = []services.ToolMeta{
 				"items":       map[string]any{"type": "object"},
 			},
 			"state": services.Field("string", "pending, resolved, cancelled"),
+			"ttl_days": services.Field("number",
+				"New shelf life in days, counted from now. 0 removes the expiry so the decision stays until resolved."),
 			"role_scopes": map[string]any{
 				"type":  "array",
 				"items": map[string]any{"type": "string"},
@@ -311,19 +392,29 @@ var cardsTools = []services.ToolMeta{
 		}, "card_id"),
 	},
 	{
-		Name:        ToolUpdateBriefing,
-		Description: "Update fields on a briefing. Supply only fields you want to change.",
+		Name: ToolUpdateBriefing,
+		Description: "Update fields on a briefing. Supply only fields you want to change. " +
+			"card_ids takes an array as readily as a single id, so the same call clears a whole backlog " +
+			"(e.g. state=archived over a stack of stale summaries) without one round trip per card.",
 		Schema: services.PropsReq(map[string]any{
-			"card_id":  services.Field("string", "Card UUID"),
+			"card_ids": map[string]any{
+				"anyOf": []any{
+					map[string]any{"type": "string"},
+					map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"description": "One card UUID, or an array of them to apply the same update to every one. Max 500.",
+			},
 			"title":    services.Field("string", "New title"),
 			"body":     services.Field("string", "New markdown body"),
 			"severity": services.Field("string", "info, notable, important"),
 			"state":    services.Field("string", "pending, archived, dismissed, saved"),
+			"ttl_days": services.Field("number",
+				"New shelf life in days, counted from now. 0 removes the expiry so the briefing stays until acked."),
 			"role_scopes": map[string]any{
 				"type":  "array",
 				"items": map[string]any{"type": "string"},
 			},
-		}, "card_id"),
+		}, "card_ids"),
 	},
 	{
 		Name:        ToolListDecisions,
@@ -342,12 +433,21 @@ var cardsTools = []services.ToolMeta{
 		}),
 	},
 	{
-		Name:        ToolAckBriefing,
-		Description: "Acknowledge a briefing, moving it out of the pending stack. kind is archived (seen, useful), dismissed (seen, not useful), or saved (flag for later).",
+		Name: ToolAckBriefing,
+		Description: "Acknowledge a briefing, moving it out of your pending stack. kind is archived (seen, useful), dismissed (seen, not useful), or saved (flag for later). " +
+			"card_ids takes an array as readily as a single id, so a backlog clears in one call. " +
+			"Note this is per-user: it removes the briefing from YOUR stack and does not change the card's own state, " +
+			"so other people still see it. To retire a briefing for everyone, set state on update_briefing instead.",
 		Schema: services.PropsReq(map[string]any{
-			"card_id": services.Field("string", "Briefing card UUID"),
-			"kind":    services.Field("string", "archived, dismissed, saved"),
-		}, "card_id", "kind"),
+			"card_ids": map[string]any{
+				"anyOf": []any{
+					map[string]any{"type": "string"},
+					map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"description": "One briefing card UUID, or an array of them to ack every one. Max 500.",
+			},
+			"kind": services.Field("string", "archived, dismissed, saved"),
+		}, "card_ids", "kind"),
 	},
 	{
 		Name: ToolResolveDecision,

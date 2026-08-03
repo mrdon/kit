@@ -114,6 +114,16 @@ func buildCardSets(u CardUpdates) ([]string, []any) {
 			sets = append(sets, "terminal_at = now()")
 		}
 	}
+	// ClearExpiresAt wins over ExpiresAt so a caller that sets both gets the
+	// unambiguous outcome (no expiry) rather than a silent ordering surprise.
+	switch {
+	case u.ClearExpiresAt:
+		sets = append(sets, "expires_at = NULL")
+	case u.ExpiresAt != nil:
+		argN++
+		sets = append(sets, fmt.Sprintf("expires_at = $%d", argN))
+		args = append(args, *u.ExpiresAt)
+	}
 	return sets, args
 }
 
@@ -429,6 +439,52 @@ func sweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool) (int, err
 		return 0, fmt.Errorf("committing sweep: %w", err)
 	}
 	return recovered, nil
+}
+
+// sweepExpiredCards archives every pending card whose expires_at has passed,
+// across all tenants. Returns the number archived.
+//
+// Restricted to state='pending' on purpose. A card in 'resolving' has a gated
+// tool mid-flight and must be left to sweepStuckResolvingCards; anything
+// already terminal has an outcome we'd be overwriting. Expiry only ever
+// retires a card nobody got to in time.
+//
+// terminal_at is stamped so the expired card ages the same way an acked one
+// does, which is what purgeArchivedCards measures against.
+func sweepExpiredCards(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+	tag, err := pool.Exec(ctx, `
+		UPDATE app_cards
+		SET state = 'archived', terminal_at = now(), updated_at = now()
+		WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at < now()`,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("archiving expired cards: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// purgeArchivedCards deletes archived cards that went terminal more than
+// retention ago, across all tenants. Child rows (decisions, briefings,
+// options, scopes, acks) go with them via ON DELETE CASCADE.
+//
+// Only 'archived' is purged. dismissed / saved / resolved / cancelled are
+// deliberate user outcomes and keep their audit value, so they stay until
+// there's a stated retention policy for them too.
+//
+// COALESCE(terminal_at, updated_at) because terminal_at was only stamped on
+// transitions out of pending from the beginning; the fallback keeps any row
+// predating that from being immortal.
+func purgeArchivedCards(ctx context.Context, pool *pgxpool.Pool, retention time.Duration) (int, error) {
+	cutoff := time.Now().Add(-retention)
+	tag, err := pool.Exec(ctx, `
+		DELETE FROM app_cards
+		WHERE state = 'archived' AND COALESCE(terminal_at, updated_at) < $1`,
+		cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("purging archived cards: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // beginResolveDecision locks the card and its chosen option, returning them

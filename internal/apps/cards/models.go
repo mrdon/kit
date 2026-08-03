@@ -120,6 +120,9 @@ type Card struct {
 	TerminalBy *uuid.UUID `json:"terminal_by,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
+	// ExpiresAt, when set, is the deadline past which the periodic sweep
+	// archives this card. NULL (the default) means it never expires.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 
 	// Decision is non-nil when Kind == CardKindDecision.
 	Decision *DecisionData `json:"decision,omitempty"`
@@ -228,6 +231,13 @@ type CardCreateInput struct {
 	// tripwires. Best-effort: missing notifier just skips the push.
 	Urgent bool
 
+	// ExpiresAt, when non-nil, sets the card's expiry deadline. Once it
+	// passes, the periodic sweep archives the card so it leaves the stack
+	// without anyone having to ack it. Nil means the card never expires.
+	// Use for cards with a natural shelf life. A daily summary is stale
+	// the next day; a decision awaiting a human is not.
+	ExpiresAt *time.Time
+
 	// Required when Kind == CardKindDecision.
 	Decision *DecisionCreateInput
 	// Required when Kind == CardKindBriefing.
@@ -267,6 +277,13 @@ type CardUpdates struct {
 
 	Decision *DecisionUpdates
 	Briefing *BriefingUpdates
+
+	// ExpiresAt sets a new expiry deadline when non-nil. Because the column
+	// is nullable, "leave alone" and "clear" can't both be expressed by a
+	// nil pointer. ClearExpiresAt is the explicit clear, and wins over
+	// ExpiresAt if both are set.
+	ExpiresAt      *time.Time
+	ClearExpiresAt bool
 
 	// If non-nil, replaces the card's scope rows with these. Empty slice
 	// (or nil) removes all role-based rows. UserScopes follows the same
