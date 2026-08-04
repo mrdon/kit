@@ -57,19 +57,23 @@ func collectJobs(rows pgx.Rows) ([]Job, error) {
 	return jobs, rows.Err()
 }
 
-// ClaimDueTasks atomically claims up to `limit` active jobs whose
-// next_run_at has passed. Claim = flip status from 'active' to 'running'
-// under SELECT FOR UPDATE SKIP LOCKED, so multiple scheduler instances
-// (e.g. during a rolling deploy) never pick up the same job.
+// ClaimDueTasks atomically claims up to `limit` active jobs in one lane
+// whose next_run_at has passed. Claim = flip status from 'active' to
+// 'running' under SELECT FOR UPDATE SKIP LOCKED, so multiple scheduler
+// instances (e.g. during a rolling deploy) never pick up the same job.
+//
+// The lane filter is what keeps a slow agent run from starving a due
+// calendar sync: each lane claims from its own queue, so a full agent lane
+// is invisible to the function lane.
 //
 // After the returned jobs finish, the caller must set status to
 // 'completed' (one-time) or back to 'active' with a new next_run_at
 // (recurring) — see CompleteTask / UpdateJobAfterRun.
-func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Job, error) {
+func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, lane JobLane, limit int) ([]Job, error) {
 	rows, err := pool.Query(ctx, `
 		WITH claimed AS (
 			SELECT id FROM jobs
-			WHERE status = $2 AND next_run_at <= now()
+			WHERE lane = $4 AND status = $2 AND next_run_at <= now()
 			ORDER BY next_run_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
@@ -79,9 +83,9 @@ func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Job, e
 		FROM claimed c
 		WHERE t.id = c.id
 		RETURNING `+jobColumnsT,
-		limit, JobStatusActive, JobStatusRunning)
+		limit, JobStatusActive, JobStatusRunning, lane)
 	if err != nil {
-		return nil, fmt.Errorf("claiming due jobs: %w", err)
+		return nil, fmt.Errorf("claiming due jobs in lane %q: %w", lane, err)
 	}
 	return collectJobs(rows)
 }
@@ -89,11 +93,11 @@ func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Job, e
 // ClaimDueTasksForTenant is a tenant-scoped claim variant used by tests
 // so parallel-running fixtures don't steal each other's due rows.
 // Production code should always call ClaimDueTasks.
-func ClaimDueTasksForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, limit int) ([]Job, error) {
+func ClaimDueTasksForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, lane JobLane, limit int) ([]Job, error) {
 	rows, err := pool.Query(ctx, `
 		WITH claimed AS (
 			SELECT id FROM jobs
-			WHERE tenant_id = $1 AND status = $3 AND next_run_at <= now()
+			WHERE tenant_id = $1 AND lane = $5 AND status = $3 AND next_run_at <= now()
 			ORDER BY next_run_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT $2
@@ -103,9 +107,9 @@ func ClaimDueTasksForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uu
 		FROM claimed c
 		WHERE t.id = c.id AND t.tenant_id = $1
 		RETURNING `+jobColumnsT,
-		tenantID, limit, JobStatusActive, JobStatusRunning)
+		tenantID, limit, JobStatusActive, JobStatusRunning, lane)
 	if err != nil {
-		return nil, fmt.Errorf("claiming due jobs for tenant: %w", err)
+		return nil, fmt.Errorf("claiming due jobs for tenant in lane %q: %w", lane, err)
 	}
 	return collectJobs(rows)
 }

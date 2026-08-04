@@ -438,9 +438,9 @@ func UpsertBuilderScriptTask(
 			UPDATE jobs
 			SET status = $3, cron_expr = $4, timezone = $5,
 			    next_run_at = $6, last_error = NULL,
-			    description = $7, created_by = $8
+			    description = $7, created_by = $8, lane = $9
 			WHERE tenant_id = $1 AND id = $2
-		`, tenantID, existingID, JobStatusActive, cronExpr, tz, nextRun, description, createdBy)
+		`, tenantID, existingID, JobStatusActive, cronExpr, tz, nextRun, description, createdBy, JobLaneFunction)
 		if err != nil {
 			return uuid.Nil, fmt.Errorf("reviving builder_script job: %w", err)
 		}
@@ -453,14 +453,17 @@ func UpsertBuilderScriptTask(
 	// Fresh insert. The partial unique index rejects a second active row
 	// for the same (script_id, fn_name) — surfaced as a Postgres error
 	// which the caller translates to "already scheduled".
+	// lane is set explicitly: the column defaults to 'agent' (correct for
+	// user-created jobs), but a builder script is native work and belongs
+	// in the function lane even though it can call the LLM from inside.
 	jobID := uuid.New()
 	_, err = pool.Exec(ctx, `
 		INSERT INTO jobs (
 			id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, job_type, status, next_run_at, config
-		) VALUES ($1, $2, $3, $4, $5, $6, '', $7, $8, $9, $10::jsonb)
+			channel_id, job_type, status, next_run_at, config, lane
+		) VALUES ($1, $2, $3, $4, $5, $6, '', $7, $8, $9, $10::jsonb, $11)
 	`, jobID, tenantID, createdBy, description, cronExpr, tz,
-		JobTypeBuilderScript, JobStatusActive, nextRun, configJSON)
+		JobTypeBuilderScript, JobStatusActive, nextRun, configJSON, JobLaneFunction)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("inserting builder_script job: %w", err)
 	}
