@@ -15,34 +15,6 @@ import (
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
-// ExecPolicy is how one lane is executed. Lanes exist because the reason
-// scheduled work is serialized applies to only some of it: every tenant's
-// agent shares one Anthropic org-wide rate limit, so two agent runs racing
-// in the same minute can mutually 429 each other on requests that would
-// individually fit. A calendar sync has no such constraint and should never
-// have been queued behind one.
-//
-// Policy hangs off the lane rather than the JobRunner because lane is a
-// property of the row, not of job_type: a builtin registration that calls
-// the LLM has to be serialized alongside agent runs even though its handler
-// is native Go.
-type ExecPolicy struct {
-	Lane         models.JobLane
-	MaxParallel  int
-	PollInterval time.Duration
-}
-
-// lanePolicies is the execution plan, one entry per lane.
-//
-// Both lanes are held at MaxParallel 1 for now. The agent lane stays there
-// until there is a rate limiter in internal/anthropic — today the only thing
-// bounding LLM concurrency is this number, and it does not cover interactive
-// Slack or card-chat traffic hitting the same org limit.
-var lanePolicies = []ExecPolicy{
-	{Lane: models.JobLaneAgent, MaxParallel: 1, PollInterval: 60 * time.Second},
-	{Lane: models.JobLaneFunction, MaxParallel: 1, PollInterval: 60 * time.Second},
-}
-
 // PeriodicSweep is a background job invoked on every poll tick.
 // Intended for housekeeping like the stuck-resolving card recovery in
 // the cards app; decoupled via a function pointer so the scheduler
@@ -67,21 +39,18 @@ type Scheduler struct {
 	pool  *pgxpool.Pool
 	enc   *crypto.Encryptor
 	agent *agent.Agent
-	// kickChans has one channel per lane. A kick has to reach every lane:
-	// the caller (decision resolution) knows a job became due, not which
-	// pool it will be claimed from.
-	kickChans []chan struct{}
+	// lanes is one runner per execution pool, built from lanePolicies.
+	lanes []*laneRunner
 }
 
 // New creates a new Scheduler.
 func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 	// Buffered so Kick never blocks; if a kick is already pending, extra
 	// kicks coalesce into that one run.
-	kicks := make([]chan struct{}, len(lanePolicies))
-	for i := range kicks {
-		kicks[i] = make(chan struct{}, 1)
+	s := &Scheduler{pool: pool, enc: enc, agent: a}
+	for _, policy := range lanePolicies {
+		s.lanes = append(s.lanes, newLaneRunner(s, policy))
 	}
-	s := &Scheduler{pool: pool, enc: enc, agent: a, kickChans: kicks}
 	// Register the baseline runners for agent + builtin task_types. Each
 	// wraps Scheduler methods, so s must exist before registration.
 	// Idempotent: repeat constructions in tests replace the runner
@@ -99,9 +68,9 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 // within a second of the user tapping, not up to 60s later. Non-blocking
 // — concurrent kicks coalesce into a single extra claim cycle.
 func (s *Scheduler) Kick() {
-	for _, ch := range s.kickChans {
+	for _, lane := range s.lanes {
 		select {
-		case ch <- struct{}{}:
+		case lane.kick <- struct{}{}:
 		default:
 		}
 	}
@@ -119,10 +88,10 @@ func (s *Scheduler) Start(ctx context.Context) {
 	} else if n > 0 {
 		slog.Info("recovered stuck jobs", "count", n)
 	}
-	for i, policy := range lanePolicies {
-		slog.Info("starting job lane", "lane", policy.Lane,
-			"max_parallel", policy.MaxParallel, "poll", policy.PollInterval)
-		go s.runLaneLoop(ctx, policy, s.kickChans[i])
+	for _, lane := range s.lanes {
+		slog.Info("starting job lane", "lane", lane.policy.Lane,
+			"max_parallel", lane.policy.MaxParallel, "poll", lane.policy.PollInterval)
+		go lane.run(ctx)
 	}
 	go s.runSweepLoop(ctx)
 	go s.runRegistryReconcileLoop(ctx)
@@ -153,35 +122,6 @@ func (s *Scheduler) runRegistryReconcileLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.reconcileRegistry(ctx)
-		}
-	}
-}
-
-// runLaneLoop claims and dispatches one lane's due work until ctx ends.
-// One goroutine per lane, each with its own claim query, so a saturated
-// lane is invisible to the others.
-func (s *Scheduler) runLaneLoop(ctx context.Context, policy ExecPolicy, kick <-chan struct{}) {
-	ticker := time.NewTicker(policy.PollInterval)
-	defer ticker.Stop()
-
-	process := func() {
-		s.processDueTasks(ctx, policy)
-		// Reset so a kick both runs now AND pushes the next natural
-		// tick a full interval out, guaranteeing ≥ PollInterval between
-		// runs (no redundant back-to-back scans).
-		ticker.Reset(policy.PollInterval)
-	}
-
-	process()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			process()
-		case <-kick:
-			process()
 		}
 	}
 }
@@ -220,15 +160,17 @@ func (s *Scheduler) runPeriodicSweeps(ctx context.Context) {
 	}
 }
 
-// ProcessDueTasksForTest drives one iteration of every lane from outside
-// the package. Production uses per-lane ticker loops; tests need a
-// deterministic single-shot tick that doesn't care which lane a row is in.
+// ProcessDueTasksForTest drives one poll of every lane and waits for the
+// work to finish. Production never waits; tests need a deterministic
+// single-shot tick that doesn't care which lane a row landed in.
 //
-// Not part of the package's external API — do not call from non-test
-// code.
+// Not part of the package's external API — do not call from non-test code.
 func (s *Scheduler) ProcessDueTasksForTest(ctx context.Context) {
-	for _, policy := range lanePolicies {
-		s.processDueTasks(ctx, policy)
+	for _, lane := range s.lanes {
+		lane.claimAndDispatch(ctx, nil)
+	}
+	for _, lane := range s.lanes {
+		lane.drain()
 	}
 }
 
@@ -236,55 +178,14 @@ func (s *Scheduler) ProcessDueTasksForTest(ctx context.Context) {
 // so fixtures running in parallel against the shared Postgres don't claim
 // each other's rows.
 //
-// Not part of the package's external API — do not call from non-test
-// code.
+// Not part of the package's external API — do not call from non-test code.
 func (s *Scheduler) ProcessDueTasksForTenantForTest(ctx context.Context, tenantID uuid.UUID) {
-	for _, policy := range lanePolicies {
-		s.processDueTasksForTenant(ctx, tenantID, policy)
+	for _, lane := range s.lanes {
+		lane.claimAndDispatch(ctx, &tenantID)
 	}
-}
-
-func (s *Scheduler) processDueTasks(ctx context.Context, policy ExecPolicy) {
-	// ClaimDueTasks atomically flips status to 'running' under SKIP LOCKED,
-	// so concurrent schedulers (e.g. during a rolling deploy) never run the
-	// same job twice.
-	jobs, err := models.ClaimDueTasks(ctx, s.pool, policy.Lane, policy.MaxParallel)
-	if err != nil {
-		slog.Error("claiming due jobs", "lane", policy.Lane, "error", err)
-		return
+	for _, lane := range s.lanes {
+		lane.drain()
 	}
-	s.fanOutClaimed(ctx, jobs, policy.MaxParallel)
-}
-
-// processDueTasksForTenant is the tenant-scoped claim variant used by
-// tests. Production code always calls processDueTasks.
-func (s *Scheduler) processDueTasksForTenant(ctx context.Context, tenantID uuid.UUID, policy ExecPolicy) {
-	jobs, err := models.ClaimDueTasksForTenant(ctx, s.pool, tenantID, policy.Lane, policy.MaxParallel)
-	if err != nil {
-		slog.Error("claiming due jobs for tenant", "lane", policy.Lane, "error", err)
-		return
-	}
-	s.fanOutClaimed(ctx, jobs, policy.MaxParallel)
-}
-
-// fanOutClaimed dispatches each claimed job through the runner registry,
-// bounded by the lane's parallelism.
-func (s *Scheduler) fanOutClaimed(ctx context.Context, jobs []models.Job, maxParallel int) {
-	if len(jobs) == 0 {
-		return
-	}
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxParallel)
-	for i := range jobs {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(t models.Job) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			s.dispatchTask(ctx, &t)
-		}(jobs[i])
-	}
-	wg.Wait()
 }
 
 func (s *Scheduler) syncTenantProfiles(ctx context.Context, tenant models.Tenant) {

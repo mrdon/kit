@@ -5,11 +5,83 @@
 package scheduler
 
 import (
+	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mrdon/kit/internal/models"
 )
+
+// TestLaneBoundsConcurrencyNotBatchSize pins what MaxParallel means. Claiming
+// MaxParallel rows every poll regardless of what is still running would let a
+// lane with slow jobs accumulate work without limit; the in-flight count is
+// what makes it a ceiling on concurrent work instead.
+func TestLaneBoundsConcurrencyNotBatchSize(t *testing.T) {
+	f := newRegistryFixture(t)
+
+	// dispatchTask resolves a runner by job_type; the fixture's bare
+	// Scheduler has none registered.
+	RegisterJobRunner(&builtinRunner{s: f.sched})
+	t.Cleanup(func() { ClearJobRunnerForTest(string(models.JobTypeBuiltin)) })
+
+	var started atomic.Int64
+	release := make(chan struct{})
+	for _, key := range []string{"test.slow.a", "test.slow.b", "test.slow.c"} {
+		RegisterScheduledTask(ScheduledTask{
+			Key: key, Description: "Slow " + key, DefaultCron: "*/5 * * * *",
+			Run: func(context.Context, models.Job) error {
+				started.Add(1)
+				<-release
+				return nil
+			},
+		})
+	}
+	f.reconcile(t)
+	if _, err := f.pool.Exec(f.ctx, `
+		UPDATE jobs SET next_run_at = now() - interval '1 minute'
+		WHERE tenant_id = $1 AND builtin_key IS NOT NULL
+	`, f.tenant.ID); err != nil {
+		t.Fatalf("backdating: %v", err)
+	}
+
+	lane := newLaneRunner(f.sched, ExecPolicy{
+		Lane: models.JobLaneFunction, MaxParallel: 2, PollInterval: time.Hour,
+	})
+
+	lane.claimAndDispatch(f.ctx, &f.tenant.ID)
+	waitFor(t, func() bool { return started.Load() == 2 }, "two jobs to start")
+
+	// A second poll while both slots are occupied must claim nothing.
+	lane.claimAndDispatch(f.ctx, &f.tenant.ID)
+	if free := lane.free(); free != 0 {
+		t.Fatalf("free = %d while at capacity, want 0", free)
+	}
+	if n := started.Load(); n != 2 {
+		t.Fatalf("%d jobs started while MaxParallel is 2 — batch size, not a bound", n)
+	}
+
+	close(release)
+	lane.drain()
+
+	// With the slots freed, the third row is picked up.
+	lane.claimAndDispatch(f.ctx, &f.tenant.ID)
+	waitFor(t, func() bool { return started.Load() == 3 }, "the third job to start")
+	lane.drain()
+}
+
+// waitFor polls cond until it holds or the test times out.
+func waitFor(t *testing.T, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
 
 // TestClaimIsLaneIsolated asserts each lane claims only its own rows, so a
 // saturated agent lane is invisible to the function lane.

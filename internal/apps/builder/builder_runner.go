@@ -44,6 +44,17 @@ type builderRunner struct {
 	deps *scriptRunDeps
 }
 
+// maxConcurrentScripts caps how many Monty WASM instances run at once.
+//
+// Builder scripts share the scheduler's function lane with cheap IO-bound
+// work like calendar syncs, and that lane is sized for the IO. A WASM
+// instance costs far more memory than an HTTP call, so the constraint is
+// capped here rather than by shrinking the lane and slowing everything else
+// down to the most expensive thing in it.
+const maxConcurrentScripts = 2
+
+var scriptSlots = make(chan struct{}, maxConcurrentScripts)
+
 // WireJobRunners installs the builder's JobRunner into the scheduler.
 // Idempotent — calling twice just replaces the previous registration.
 // Passing a nil pool/deps clears the registration so the scheduler stops
@@ -67,6 +78,16 @@ func (r *builderRunner) JobType() string {
 func (r *builderRunner) Run(ctx context.Context, job *models.Job) error {
 	if r.deps == nil || r.deps.Engine == nil {
 		return errors.New("builder runner: engine not wired")
+	}
+
+	// Wait for a WASM slot. The row is already claimed, so blocking here
+	// holds one of the lane's dispatch goroutines rather than the poll
+	// loop — other function-lane work keeps flowing.
+	select {
+	case scriptSlots <- struct{}{}:
+		defer func() { <-scriptSlots }()
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	scriptID, fnName, err := parseBuilderScriptTaskConfig(job)
