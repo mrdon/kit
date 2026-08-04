@@ -31,15 +31,19 @@ func (e *Engine) appEnabled(ctx context.Context, tenantID uuid.UUID) bool {
 	return apps.IsEnabled(ctx, tenantID, AppName)
 }
 
-// Tick runs the two voting sweeps. Cheap when there are no active
-// votes — both queries hit indexed paths.
-func (e *Engine) Tick(ctx context.Context) error {
+// Tick runs the two voting sweeps for one tenant. Cheap when there are no
+// active votes — both queries hit indexed paths.
+//
+// Scoped to a single tenant: these scans previously ran across the whole
+// table at once, which broke the rule that every query on a tenant-scoped
+// table filters by tenant_id.
+func (e *Engine) Tick(ctx context.Context, tenantID uuid.UUID) error {
 	now := e.now()
-	if err := e.sweepDeadlines(ctx, now); err != nil {
-		slog.Error("vote deadline sweep", "error", err)
+	if err := e.sweepDeadlines(ctx, tenantID, now); err != nil {
+		slog.Error("vote deadline sweep", "tenant_id", tenantID, "error", err)
 	}
-	if err := e.sweepCompletion(ctx); err != nil {
-		slog.Error("vote completion sweep", "error", err)
+	if err := e.sweepCompletion(ctx, tenantID); err != nil {
+		slog.Error("vote completion sweep", "tenant_id", tenantID, "error", err)
 	}
 	return nil
 }
@@ -47,8 +51,8 @@ func (e *Engine) Tick(ctx context.Context) error {
 // sweepDeadlines finds active votes whose deadline has passed and
 // surfaces the organizer digest card. The card is idempotent — it
 // won't be surfaced twice if outcome.tally is already set.
-func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
-	votes, err := ListActiveVotes(ctx, e.pool)
+func (e *Engine) sweepDeadlines(ctx context.Context, tenantID uuid.UUID, now time.Time) error {
+	votes, err := ListActiveVotes(ctx, e.pool, tenantID)
 	if err != nil {
 		return err
 	}
@@ -70,8 +74,8 @@ func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
 // sweepCompletion finds active votes where every participant has
 // resolved their card and surfaces the organizer digest card. Same
 // idempotency as the deadline path.
-func (e *Engine) sweepCompletion(ctx context.Context) error {
-	votes, err := ListActiveVotes(ctx, e.pool)
+func (e *Engine) sweepCompletion(ctx context.Context, tenantID uuid.UUID) error {
+	votes, err := ListActiveVotes(ctx, e.pool, tenantID)
 	if err != nil {
 		return err
 	}

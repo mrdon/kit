@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,25 +13,6 @@ import (
 	"github.com/mrdon/kit/internal/models"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
-
-// PeriodicSweep is a background job invoked on every poll tick.
-// Intended for housekeeping like the stuck-resolving card recovery in
-// the cards app; decoupled via a function pointer so the scheduler
-// package doesn't need to import cards. Callers register via
-// RegisterPeriodicSweep.
-type PeriodicSweep func(ctx context.Context) error
-
-var periodicSweeps []PeriodicSweep
-var periodicSweepsMu sync.Mutex
-
-// RegisterPeriodicSweep adds a job to run on every scheduler poll
-// tick. Safe to call at startup (wiring) only; not safe under
-// concurrent Start() calls.
-func RegisterPeriodicSweep(s PeriodicSweep) {
-	periodicSweepsMu.Lock()
-	defer periodicSweepsMu.Unlock()
-	periodicSweeps = append(periodicSweeps, s)
-}
 
 // Scheduler runs due jobs and syncs user profiles on a schedule.
 type Scheduler struct {
@@ -93,7 +73,6 @@ func (s *Scheduler) Start(ctx context.Context) {
 			"max_parallel", lane.policy.MaxParallel, "poll", lane.policy.PollInterval)
 		go lane.run(ctx)
 	}
-	go s.runSweepLoop(ctx)
 	go s.runRegistryReconcileLoop(ctx)
 }
 
@@ -122,40 +101,6 @@ func (s *Scheduler) runRegistryReconcileLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.reconcileRegistry(ctx)
-		}
-	}
-}
-
-// runSweepLoop drives the legacy per-tick sweep hook on its own timer.
-//
-// It used to piggyback on the single job loop's tick. Now that lanes poll at
-// their own rates, giving it a dedicated ticker keeps its cadence fixed
-// instead of quietly following whatever the function lane is set to. Goes
-// away once the remaining sweeps become registered tasks.
-func (s *Scheduler) runSweepLoop(ctx context.Context) {
-	ticker := time.NewTicker(60 * time.Second)
-	defer ticker.Stop()
-	s.runPeriodicSweeps(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.runPeriodicSweeps(ctx)
-		}
-	}
-}
-
-// runPeriodicSweeps invokes every registered periodic sweep, logging
-// errors and continuing. Isolated from processDueTasks so a sweep
-// failure can't poison job execution. Called once per tick.
-func (s *Scheduler) runPeriodicSweeps(ctx context.Context) {
-	periodicSweepsMu.Lock()
-	sweeps := append([]PeriodicSweep(nil), periodicSweeps...)
-	periodicSweepsMu.Unlock()
-	for _, sweep := range sweeps {
-		if err := sweep(ctx); err != nil {
-			slog.Warn("periodic sweep failed", "error", err)
 		}
 	}
 }

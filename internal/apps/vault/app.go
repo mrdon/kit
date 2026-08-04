@@ -175,5 +175,3 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	}
 	registerVaultRoutes(mux, a)
 }
-
-func (a *App) CronJobs() []apps.CronJob { return nil }

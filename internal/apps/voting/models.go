@@ -110,14 +110,14 @@ func GetVote(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) (*
 
 // ListActiveVotes returns all active votes across all tenants. Used by
 // the cron sweeper.
-func ListActiveVotes(ctx context.Context, pool *pgxpool.Pool) ([]Vote, error) {
+func ListActiveVotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Vote, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, organizer_id, title, proposal_text, context_notes,
 		       status, deadline_at, outcome, created_at, updated_at
 		FROM app_votes
-		WHERE status = 'active'
-		ORDER BY tenant_id, created_at
-	`)
+		WHERE tenant_id = $1 AND status = 'active'
+		ORDER BY created_at
+	`, tenantID)
 	if err != nil {
 		return nil, err
 	}

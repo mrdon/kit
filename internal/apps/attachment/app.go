@@ -58,7 +58,6 @@ func (a *App) Init(pool *pgxpool.Pool) { a.pool = pool }
 func (a *App) Name() string                   { return "attachment" }
 func (a *App) SystemPrompt() string           { return "" }
 func (a *App) ToolMetas() []services.ToolMeta { return attachmentTools }
-func (a *App) CronJobs() []apps.CronJob       { return nil }
 
 // service builds an attachment store on demand. Returns nil until both the
 // pool (Init) and encryptor (Configure) are wired.

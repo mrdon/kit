@@ -283,7 +283,3 @@ func buildMetaAppMCPHandler(pool *pgxpool.Pool, name string) mcpserver.ToolHandl
 
 // RegisterRoutes is a no-op for now; builder admin UI routes land later.
 func (a *App) RegisterRoutes(_ apps.Mux) {}
-
-// CronJobs returns nil; scheduled scripts plug in once the runtime is
-// wired to the scheduler.
-func (a *App) CronJobs() []apps.CronJob { return nil }

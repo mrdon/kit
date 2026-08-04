@@ -16,13 +16,11 @@ import (
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/scheduler"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
 const (
-	// emailIntakeInterval is how often the sweep wakes. Actual per-user
-	// cadence is each row's cron schedule, checked against last_scanned_at.
-	emailIntakeInterval = 15 * time.Minute
 	// emailIntakeClaimLease bounds how long a claim is honored before another
 	// instance may reclaim a row whose sweep crashed mid-run.
 	emailIntakeClaimLease = 30 * time.Minute
@@ -73,61 +71,80 @@ func (a *TaskApp) triggerEmailIntakeNow(ctx context.Context, tenantID, userID uu
 	return nil
 }
 
-// emailIntakeCron is the task app's periodic email→task sweep. It is the only
-// place the whole feature runs; the scheduler is untouched. The closure holds
-// the app (agent, enc, pool), so it can run agent sessions without any
-// scheduler plumbing.
-func (a *TaskApp) emailIntakeCron() apps.CronJob {
-	return apps.CronJob{
-		Name:     "email_intake",
-		Interval: emailIntakeInterval,
-		Run: func(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor) error {
-			return a.runEmailIntakeSweep(ctx, pool, enc)
+// registerEmailIntakeTask declares the intake sweep.
+//
+// LLMBound because runEmailIntakeForUser runs a full agent loop: this has to
+// be claimed into the serialized agent lane, or a fleet of tenants sweeping
+// at once would multiply LLM concurrency by the width of the function lane.
+func (a *TaskApp) registerEmailIntakeTask() {
+	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
+		Key:         "task.email_intake",
+		Description: "Scan connected mailboxes for tasks",
+		DefaultCron: "6,21,36,51 * * * *",
+		LLMBound:    true,
+		AppliesTo:   a.hasEmailIntake,
+		Run: func(ctx context.Context, job models.Job) error {
+			return a.runEmailIntakeForTenant(ctx, job.TenantID)
 		},
-	}
+	})
 }
 
-// runEmailIntakeSweep scans every enabled, due intake row across tenants whose
-// Tasks app is enabled. Per-user failures are logged and skipped so one bad
-// mailbox never stalls the sweep.
-func (a *TaskApp) runEmailIntakeSweep(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor) error {
+// hasEmailIntake reports whether this tenant has the app enabled and at
+// least one mailbox wired up.
+func (a *TaskApp) hasEmailIntake(ctx context.Context, tenantID uuid.UUID) bool {
+	if a.svc == nil || a.svc.pool == nil || a.agent == nil {
+		return false
+	}
+	if !apps.IsEnabled(ctx, tenantID, a.Name()) {
+		return false
+	}
+	intakes, err := models.ListEnabledEmailIntakes(ctx, a.svc.pool, tenantID)
+	return err == nil && len(intakes) > 0
+}
+
+// runEmailIntakeForTenant scans one tenant's enabled, due intake rows.
+// Per-user failures are logged and skipped so one bad mailbox never stalls
+// the rest.
+//
+// The outer per-tenant loop this used to carry is now the scheduler's job:
+// each tenant has its own row, so a tenant whose mailbox auth has expired
+// carries that failure itself instead of it disappearing into a fleet sweep.
+func (a *TaskApp) runEmailIntakeForTenant(ctx context.Context, tenantID uuid.UUID) error {
 	if a.agent == nil {
 		return nil // not configured (e.g. tests) — nothing to run
 	}
-	tenants, err := models.ListAllTenants(ctx, pool)
+	pool := a.svc.pool
+	tenant, err := models.GetTenantByID(ctx, pool, tenantID)
 	if err != nil {
-		return fmt.Errorf("listing tenants for email intake: %w", err)
+		return fmt.Errorf("looking up tenant for email intake: %w", err)
+	}
+	if tenant == nil {
+		return errors.New("tenant not found")
+	}
+
+	intakes, err := models.ListEnabledEmailIntakes(ctx, pool, tenantID)
+	if err != nil {
+		return fmt.Errorf("listing email intake rows: %w", err)
 	}
 	now := time.Now()
-	for i := range tenants {
-		tenant := tenants[i]
-		if !apps.IsEnabled(ctx, tenant.ID, a.Name()) {
+	ran := 0
+	for _, in := range intakes {
+		if ran >= emailIntakeMaxUsers {
+			break
+		}
+		if !emailIntakeDue(in, tenant.Timezone, now) {
 			continue
 		}
-		intakes, err := models.ListEnabledEmailIntakes(ctx, pool, tenant.ID)
+		claimed, err := models.ClaimEmailIntake(ctx, pool, tenantID, in.ID, now.Add(-emailIntakeClaimLease))
 		if err != nil {
-			slog.Warn("email intake: listing rows", "tenant_id", tenant.ID, "error", err)
+			slog.Warn("email intake: claiming row", "tenant_id", tenantID, "user_id", in.UserID, "error", err)
 			continue
 		}
-		ran := 0
-		for _, in := range intakes {
-			if ran >= emailIntakeMaxUsers {
-				break
-			}
-			if !emailIntakeDue(in, tenant.Timezone, now) {
-				continue
-			}
-			claimed, err := models.ClaimEmailIntake(ctx, pool, tenant.ID, in.ID, now.Add(-emailIntakeClaimLease))
-			if err != nil {
-				slog.Warn("email intake: claiming row", "tenant_id", tenant.ID, "user_id", in.UserID, "error", err)
-				continue
-			}
-			if !claimed {
-				continue // another instance owns it this cycle
-			}
-			ran++
-			a.runEmailIntakeForUser(ctx, pool, enc, tenant, in)
+		if !claimed {
+			continue // another instance owns it this cycle
 		}
+		ran++
+		a.runEmailIntakeForUser(ctx, pool, a.enc, *tenant, in)
 	}
 	return nil
 }

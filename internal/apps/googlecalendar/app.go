@@ -73,8 +73,6 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 
 func (a *App) RegisterRoutes(_ apps.Mux) {}
 
-func (a *App) CronJobs() []apps.CronJob { return nil }
-
 // typeSpec declares the integrations TypeSpec for
 // ("google_calendar", "service_account"). Tenant-scoped: the admin pastes
 // the service-account JSON key and the target calendar id.

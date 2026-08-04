@@ -2,11 +2,10 @@ package cards
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool" //nolint:goimports
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -122,112 +121,25 @@ func ServiceForGating() *CardService {
 	return instance.svc
 }
 
-// SweepStuckResolvingCards flips any app_card_decisions row in
-// 'resolving' past its deadline back to 'pending' with a last_error
-// note, so the user can re-approve. The gated-tool handler's
-// resolve_token dedupe prevents double-execution if the original call
-// actually succeeded after timeout.
-//
-// Invoked by the scheduler every 60s (via the package-level adapter
-// RegisterSweepWithScheduler). Tests call this directly with the
-// test pool.
-func SweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool) error {
-	n, err := sweepStuckResolvingCards(ctx, pool)
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		slog.Info("recovered stuck resolving cards", "count", n)
-	}
-	return nil
-}
-
-// SweepExpiredCards archives every pending card past its expires_at, so a
-// card with a stated shelf life leaves the stack on its own. Cards without
-// an expires_at are untouched, which is the default.
-//
-// Invoked by the scheduler every 60s alongside the stuck-resolving sweep.
-// Tests call this directly with the test pool.
-func SweepExpiredCards(ctx context.Context, pool *pgxpool.Pool) error {
-	n, err := sweepExpiredCards(ctx, pool)
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		slog.Info("archived expired cards", "count", n)
-	}
-	return nil
-}
-
 // ArchivedCardRetention is how long an archived card survives before the
 // purge deletes it outright. Expiry archives, this reclaims.
 const ArchivedCardRetention = 90 * 24 * time.Hour
 
-// archivedPurgeInterval throttles the purge to roughly nightly. The expiry
-// sweep is cheap enough to run every tick; a full-table delete is not, and
-// nothing depends on a 90-day boundary being enforced to the minute.
-const archivedPurgeInterval = 24 * time.Hour
-
-// lastArchivedPurge gates PurgeArchivedCards to archivedPurgeInterval. In
-// process, so a restart re-arms it. Harmless, since the delete is
-// idempotent and a second run in the same day finds nothing new.
-var (
-	lastArchivedPurge   time.Time
-	lastArchivedPurgeMu sync.Mutex
-)
-
-// PurgeArchivedCards deletes archived cards older than ArchivedCardRetention,
-// at most once per archivedPurgeInterval. Child rows go with them via
-// ON DELETE CASCADE.
+// SweepStuckResolvingCards flips any app_card_decisions row in 'resolving'
+// past its deadline back to 'pending' with a last_error note, so the user
+// can re-approve. The gated-tool handler's resolve_token dedupe prevents
+// double-execution if the original call actually succeeded after timeout.
 //
-// Returns nil without doing anything when called again inside the interval.
-// Tests wanting a deterministic run call purgeArchivedCards directly.
-func PurgeArchivedCards(ctx context.Context, pool *pgxpool.Pool) error {
-	lastArchivedPurgeMu.Lock()
-	if !lastArchivedPurge.IsZero() && time.Since(lastArchivedPurge) < archivedPurgeInterval {
-		lastArchivedPurgeMu.Unlock()
-		return nil
-	}
-	lastArchivedPurge = time.Now()
-	lastArchivedPurgeMu.Unlock()
-
-	n, err := purgeArchivedCards(ctx, pool, ArchivedCardRetention)
+// Exported for the gated-tools tests, which drive it directly.
+func SweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) error {
+	n, err := sweepStuckResolvingCards(ctx, pool, tenantID)
 	if err != nil {
 		return err
 	}
 	if n > 0 {
-		slog.Info("purged archived cards", "count", n, "older_than", ArchivedCardRetention)
+		slog.Info("recovered stuck resolving cards", "tenant_id", tenantID, "count", n)
 	}
 	return nil
-}
-
-// sweepFromInstance is the periodic-sweep adapter registered with
-// scheduler.RegisterPeriodicSweep. It pulls the pool off the package
-// singleton; if the cards app was never initialized (e.g. during a
-// misconfigured startup) it's a no-op.
-//
-// Runs all three housekeeping passes. Each is independent, so a failure in
-// one is logged and the rest still run. errors.Join hands the scheduler
-// every problem rather than only the first.
-func sweepFromInstance(ctx context.Context) error {
-	if instance == nil || instance.pool == nil {
-		return nil
-	}
-	pool := instance.pool
-	return errors.Join(
-		SweepStuckResolvingCards(ctx, pool),
-		SweepExpiredCards(ctx, pool),
-		PurgeArchivedCards(ctx, pool),
-	)
-}
-
-// PeriodicSweep returns the closure main.go should register with
-// scheduler.RegisterPeriodicSweep. Kept as a function rather than a
-// bare variable so startup ordering (which may Init the cards app
-// after main registers sweeps) stays correct — the returned closure
-// reads instance at invocation time.
-func PeriodicSweep() func(context.Context) error {
-	return sweepFromInstance
 }
 
 // CardsApp is the decisions/briefings swipe-stack app.
@@ -276,10 +188,6 @@ func (a *CardsApp) RegisterMCPTools(_ *pgxpool.Pool, svc *services.Services) []m
 
 func (a *CardsApp) RegisterRoutes(mux apps.Mux) {
 	registerCardsRoutes(mux, a)
-}
-
-func (a *CardsApp) CronJobs() []apps.CronJob {
-	return nil
 }
 
 // Tool names exposed by this app. Kept as constants so the switch in

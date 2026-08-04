@@ -55,6 +55,7 @@ func Configure(llm *anthropic.Client, taskSvc *services.JobService, enc *crypto.
 func (a *TaskApp) Init(pool *pgxpool.Pool) {
 	a.svc = &TaskService{pool: pool, app: a}
 	apps.RegisterCardProvider(&cardProvider{app: a})
+	a.registerEmailIntakeTask()
 }
 
 func (a *TaskApp) Name() string { return "task" }
@@ -85,10 +86,6 @@ func (a *TaskApp) RegisterRoutes(mux apps.Mux) {
 		return
 	}
 	registerTaskRoutes(mux, a)
-}
-
-func (a *TaskApp) CronJobs() []apps.CronJob {
-	return []apps.CronJob{a.emailIntakeCron()}
 }
 
 var taskTools = []services.ToolMeta{

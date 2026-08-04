@@ -2,14 +2,12 @@ package voting
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/cards"
-	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -48,6 +46,7 @@ func (a *VotingApp) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = newService(pool, a)
 	a.engine = newEngine(pool, a)
+	a.registerScheduledTasks()
 }
 
 // AppName is the registry identifier, shared by Name() and the
@@ -81,21 +80,4 @@ func (a *VotingApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mc
 
 func (a *VotingApp) RegisterRoutes(_ apps.Mux) {
 	// No HTTP routes for voting.
-}
-
-func (a *VotingApp) CronJobs() []apps.CronJob {
-	return []apps.CronJob{
-		{
-			Name:     "voting_sweep",
-			Interval: 60 * time.Second,
-			Run:      a.cronSweep,
-		},
-	}
-}
-
-func (a *VotingApp) cronSweep(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
-	if a.engine == nil {
-		return nil
-	}
-	return a.engine.Tick(ctx)
 }

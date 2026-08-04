@@ -2,7 +2,6 @@ package coordination
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,7 +10,6 @@ import (
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/cards"
-	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/services/messenger"
 	"github.com/mrdon/kit/internal/tools"
@@ -86,6 +84,7 @@ func (a *CoordinationApp) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = newService(pool, a)
 	a.engine = newEngine(pool, a)
+	a.registerScheduledTasks()
 }
 
 // AppName is the registry identifier, shared by Name() and the
@@ -119,23 +118,4 @@ func (a *CoordinationApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services
 
 func (a *CoordinationApp) RegisterRoutes(_ apps.Mux) {
 	// No HTTP routes for coordination.
-}
-
-func (a *CoordinationApp) CronJobs() []apps.CronJob {
-	return []apps.CronJob{
-		{
-			Name:     "coordination_sweep",
-			Interval: 60 * time.Second,
-			Run:      a.cronSweep,
-		},
-	}
-}
-
-// cronSweep is the cron handler. Loads active coordinations across all
-// tenants and ticks the engine for each.
-func (a *CoordinationApp) cronSweep(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
-	if a.engine == nil {
-		return nil
-	}
-	return a.engine.Tick(ctx)
 }

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,7 +14,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps/cards/shared"
-	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -129,16 +127,6 @@ type App interface {
 	// ungated — apps that serve those must enforce enablement themselves once
 	// they resolve a tenant (e.g. the widget from its token).
 	RegisterRoutes(mux Mux)
-
-	// CronJobs returns periodic jobs this app needs. Nil if none.
-	CronJobs() []CronJob
-}
-
-// CronJob defines a periodic background task for an app.
-type CronJob struct {
-	Name     string
-	Interval time.Duration
-	Run      func(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor) error
 }
 
 // CardProvider is an optional interface an App can implement to contribute
@@ -296,43 +284,6 @@ func SystemPromptsFor(ctx context.Context, tenantID uuid.UUID) string {
 		}
 	}
 	return b.String()
-}
-
-// RunCronJobs starts a goroutine for each cron job declared by every registered
-// app. Each goroutine ticks at the job's Interval until ctx is cancelled. Errors
-// and panics from individual runs are logged but never bring the process down.
-func RunCronJobs(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor) {
-	for _, a := range registry {
-		jobs := a.CronJobs()
-		for _, job := range jobs {
-			slog.Info("starting app cron job", "app", a.Name(), "job", job.Name, "interval", job.Interval)
-			go runCronLoop(ctx, a.Name(), job, pool, enc)
-		}
-	}
-}
-
-func runCronLoop(ctx context.Context, appName string, job CronJob, pool *pgxpool.Pool, enc *crypto.Encryptor) {
-	ticker := time.NewTicker(job.Interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runCronOnce(ctx, appName, job, pool, enc)
-		}
-	}
-}
-
-func runCronOnce(ctx context.Context, appName string, job CronJob, pool *pgxpool.Pool, enc *crypto.Encryptor) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("app cron job panicked", "app", appName, "job", job.Name, "panic", r)
-		}
-	}()
-	if err := job.Run(ctx, pool, enc); err != nil {
-		slog.Error("app cron job failed", "app", appName, "job", job.Name, "error", err)
-	}
 }
 
 // MCPToolFromMeta creates an mcpserver.ServerTool from a ToolMeta and handler.

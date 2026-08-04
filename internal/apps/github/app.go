@@ -113,5 +113,3 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	}
 	registerGitHubRoutes(mux, a)
 }
-
-func (a *App) CronJobs() []apps.CronJob { return nil }

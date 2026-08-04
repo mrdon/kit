@@ -84,8 +84,6 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	a.registerRoutes(mux)
 }
 
-func (a *App) CronJobs() []apps.CronJob { return nil }
-
 // tokenTTL returns the configured TTL with a sane default.
 func (a *App) tokenTTL() time.Duration {
 	if a.ttl > 0 {

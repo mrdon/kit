@@ -387,7 +387,7 @@ func TestSweepRecoversStuckResolving(t *testing.T) {
 	}
 
 	// Run the sweep the scheduler would run.
-	if err := cards.SweepStuckResolvingCards(f.ctx, f.pool); err != nil {
+	if err := cards.SweepStuckResolvingCards(f.ctx, f.pool, f.tenantID); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
 

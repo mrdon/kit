@@ -57,10 +57,6 @@ func (a *CalendarApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []
 
 func (a *CalendarApp) RegisterRoutes(_ apps.Mux) {}
 
-// CronJobs is unused: this app declares its recurring work via
-// scheduler.RegisterScheduledTask in Init (see schedule.go).
-func (a *CalendarApp) CronJobs() []apps.CronJob { return nil }
-
 var calendarTools = []services.ToolMeta{
 	{
 		Name:        "configure_calendar",

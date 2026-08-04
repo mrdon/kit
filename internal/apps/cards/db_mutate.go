@@ -376,7 +376,7 @@ func abortResolvingCardTx(
 // tempting but Postgres' visibility rules between data-modifying
 // CTEs aren't worth the subtle footguns here — two updates inside a
 // tx is clear and correct.
-func sweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+func sweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (int, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("begin sweep tx: %w", err)
@@ -391,8 +391,9 @@ func sweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool) (int, err
 		    resolving_deadline = NULL,
 		    resolve_token      = NULL,
 		    last_error         = 'timed out while resolving; requeued for retry'
-		WHERE resolving_deadline IS NOT NULL AND resolving_deadline < now()
+		WHERE tenant_id = $1 AND resolving_deadline IS NOT NULL AND resolving_deadline < now()
 		RETURNING tenant_id, card_id`,
+		tenantID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("clearing stuck decision fields: %w", err)
@@ -451,11 +452,12 @@ func sweepStuckResolvingCards(ctx context.Context, pool *pgxpool.Pool) (int, err
 //
 // terminal_at is stamped so the expired card ages the same way an acked one
 // does, which is what purgeArchivedCards measures against.
-func sweepExpiredCards(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+func sweepExpiredCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (int, error) {
 	tag, err := pool.Exec(ctx, `
 		UPDATE app_cards
 		SET state = 'archived', terminal_at = now(), updated_at = now()
-		WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at < now()`,
+		WHERE tenant_id = $1 AND state = 'pending' AND expires_at IS NOT NULL AND expires_at < now()`,
+		tenantID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("archiving expired cards: %w", err)
@@ -464,7 +466,7 @@ func sweepExpiredCards(ctx context.Context, pool *pgxpool.Pool) (int, error) {
 }
 
 // purgeArchivedCards deletes archived cards that went terminal more than
-// retention ago, across all tenants. Child rows (decisions, briefings,
+// retention ago. Child rows (decisions, briefings,
 // options, scopes, acks) go with them via ON DELETE CASCADE.
 //
 // Only 'archived' is purged. dismissed / saved / resolved / cancelled are
@@ -474,12 +476,12 @@ func sweepExpiredCards(ctx context.Context, pool *pgxpool.Pool) (int, error) {
 // COALESCE(terminal_at, updated_at) because terminal_at was only stamped on
 // transitions out of pending from the beginning; the fallback keeps any row
 // predating that from being immortal.
-func purgeArchivedCards(ctx context.Context, pool *pgxpool.Pool, retention time.Duration) (int, error) {
+func purgeArchivedCards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, retention time.Duration) (int, error) {
 	cutoff := time.Now().Add(-retention)
 	tag, err := pool.Exec(ctx, `
 		DELETE FROM app_cards
-		WHERE state = 'archived' AND COALESCE(terminal_at, updated_at) < $1`,
-		cutoff,
+		WHERE tenant_id = $2 AND state = 'archived' AND COALESCE(terminal_at, updated_at) < $1`,
+		cutoff, tenantID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("purging archived cards: %w", err)

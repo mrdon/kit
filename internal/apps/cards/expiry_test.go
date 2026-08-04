@@ -14,9 +14,10 @@ import (
 	"github.com/mrdon/kit/internal/testdb"
 )
 
-// newExpiryTenant creates an isolated tenant so a sweep in one test can't
-// observe another's rows. The sweeps are deliberately cross-tenant, so every
-// assertion here reads back a specific card id rather than counting rows.
+// newExpiryTenant creates an isolated tenant, which is also what each sweep
+// is pointed at. Assertions still read back specific card ids rather than
+// counting rows, so a scoping regression shows up as a wrong state rather
+// than a wrong total.
 func newExpiryTenant(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
@@ -80,7 +81,7 @@ func TestSweepExpiredCardsArchivesOnlyPastDuePending(t *testing.T) {
 	// real user outcome with 'archived'.
 	dismissed := insertCardRow(t, pool, tenantID, CardStateDismissed, &past, ptr(time.Now()))
 
-	if _, err := sweepExpiredCards(ctx, pool); err != nil {
+	if _, err := sweepExpiredCards(ctx, pool, tenantID); err != nil {
 		t.Fatalf("sweepExpiredCards: %v", err)
 	}
 
@@ -115,7 +116,7 @@ func TestSweepExpiredCardsStampsTerminalAt(t *testing.T) {
 	tenantID := newExpiryTenant(t, pool)
 
 	id := insertCardRow(t, pool, tenantID, CardStatePending, ptr(time.Now().Add(-time.Hour)), nil)
-	if _, err := sweepExpiredCards(ctx, pool); err != nil {
+	if _, err := sweepExpiredCards(ctx, pool, tenantID); err != nil {
 		t.Fatalf("sweepExpiredCards: %v", err)
 	}
 
@@ -144,7 +145,7 @@ func TestPurgeArchivedCardsRespectsRetentionAndState(t *testing.T) {
 	oldDismissed := insertCardRow(t, pool, tenantID, CardStateDismissed, nil, &old)
 	oldResolved := insertCardRow(t, pool, tenantID, CardStateResolved, nil, &old)
 
-	if _, err := purgeArchivedCards(ctx, pool, 90*24*time.Hour); err != nil {
+	if _, err := purgeArchivedCards(ctx, pool, tenantID, 90*24*time.Hour); err != nil {
 		t.Fatalf("purgeArchivedCards: %v", err)
 	}
 
@@ -178,7 +179,7 @@ func TestPurgeArchivedCardsFallsBackToUpdatedAt(t *testing.T) {
 		t.Fatalf("backdating updated_at: %v", err)
 	}
 
-	if _, err := purgeArchivedCards(ctx, pool, 90*24*time.Hour); err != nil {
+	if _, err := purgeArchivedCards(ctx, pool, tenantID, 90*24*time.Hour); err != nil {
 		t.Fatalf("purgeArchivedCards: %v", err)
 	}
 	if _, ok := cardState(t, pool, id); ok {

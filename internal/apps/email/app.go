@@ -104,8 +104,6 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 
 func (a *App) RegisterRoutes(_ apps.Mux) {}
 
-func (a *App) CronJobs() []apps.CronJob { return nil }
-
 // typeSpec declares the integrations TypeSpec for ("email", "imap_smtp").
 // Called at init(). The form that renders from this is handled entirely
 // by the integrations substrate.

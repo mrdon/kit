@@ -334,9 +334,10 @@ func main() {
 	kitmcp.SetGateCreator(cards.ServiceForGating())
 	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher, builderLLM))
 
-	// Stuck-resolving sweep: every scheduler tick (60s) any card stuck
-	// in 'resolving' past its deadline gets flipped back to 'pending'.
-	scheduler.RegisterPeriodicSweep(cards.PeriodicSweep())
+	// Card housekeeping: stuck-resolve recovery and expiry every minute,
+	// the retention purge nightly. Registered here rather than in the app's
+	// Init because the handlers read the cards singleton's pool.
+	cards.RegisterScheduledTasks()
 
 	sched.Start(ctx)
 	// Let ResolveDecision wake the scheduler immediately on resume so
@@ -345,7 +346,6 @@ func main() {
 	cards.ConfigureKicker(sched)
 
 	// App-level periodic jobs (e.g. calendar sync)
-	apps.RunCronJobs(ctx, pool, enc)
 
 	// Slack event handler
 	slackHandler := kitslack.NewHandler(cfg.SlackSigningSecret, app.HandleSlackEvent)

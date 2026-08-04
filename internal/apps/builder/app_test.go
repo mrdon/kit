@@ -45,9 +45,6 @@ func TestAppPhase4Contract(t *testing.T) {
 			t.Errorf("meta-tool %q has AdminOnly=false; all meta-tools must be admin-only", m.Name)
 		}
 	}
-	if jobs := a.CronJobs(); jobs != nil {
-		t.Errorf("CronJobs() = %v, want nil", jobs)
-	}
 	// RegisterAgentTools and RegisterRoutes must not panic on nil args or
 	// for a non-admin caller.
 	a.RegisterAgentTools(context.TODO(), nil, nil, false)

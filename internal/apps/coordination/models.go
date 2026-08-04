@@ -342,16 +342,17 @@ func GetParticipant(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.U
 // elapsed, ordered for the cron sweep. Includes pending (initial
 // outreach), contacted (nudges), and responded (re-engagements after
 // recompute set next_nudge_at = now()).
-func ListReadyParticipants(ctx context.Context, pool *pgxpool.Pool, now time.Time) ([]Participant, error) {
+func ListReadyParticipants(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, now time.Time) ([]Participant, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, tenant_id, coordination_id, identifier, user_id, session_id, channel,
 		       status, rounds, constraints, availability, accepted_time, nudge_count, next_nudge_at, created_at, updated_at
 		FROM app_coordination_participants
-		WHERE status IN ('pending','contacted','responded')
+		WHERE tenant_id = $2
+		  AND status IN ('pending','contacted','responded')
 		  AND next_nudge_at IS NOT NULL
 		  AND next_nudge_at <= $1
-		ORDER BY tenant_id, coordination_id, next_nudge_at
-	`, now)
+		ORDER BY coordination_id, next_nudge_at
+	`, now, tenantID)
 	if err != nil {
 		return nil, err
 	}

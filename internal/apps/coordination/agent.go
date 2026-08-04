@@ -182,9 +182,9 @@ func startCoordinationHandler(svc *Service) tools.HandlerFunc {
 		}
 		// Drive the engine immediately so the organizer sees the
 		// first approval card (or first outbound, if auto-approved)
-		// without waiting up to 60s for the next cron tick.
+		// without waiting for the next scheduled tick.
 		if svc.app != nil && svc.app.engine != nil {
-			_ = svc.app.engine.Tick(ec.Ctx)
+			_ = svc.app.engine.Tick(ec.Ctx, ec.Caller().TenantID)
 		}
 		gateMsg := "you'll get an approval card in your swipe stack with the drafted DMs before they go out"
 		if inp.AutoApprove {

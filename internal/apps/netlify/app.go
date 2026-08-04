@@ -126,5 +126,3 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	}
 	registerNetlifyRoutes(mux, a)
 }
-
-func (a *App) CronJobs() []apps.CronJob { return nil }

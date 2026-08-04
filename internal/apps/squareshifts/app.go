@@ -84,7 +84,3 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	}
 	registerSquareShiftsRoutes(mux, a)
 }
-
-// CronJobs is unused: this app declares its recurring work via
-// scheduler.RegisterScheduledTask in Init (see schedule.go).
-func (a *App) CronJobs() []apps.CronJob { return nil }

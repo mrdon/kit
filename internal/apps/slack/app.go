@@ -50,8 +50,6 @@ func (a *SlackApp) RegisterMCPTools(pool *pgxpool.Pool, svc *services.Services) 
 
 func (a *SlackApp) RegisterRoutes(_ apps.Mux) {}
 
-func (a *SlackApp) CronJobs() []apps.CronJob { return nil }
-
 var slackTools = []services.ToolMeta{
 	{
 		Name:        "configure_slack_channel",

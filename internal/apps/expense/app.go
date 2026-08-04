@@ -115,7 +115,3 @@ func (a *ExpenseApp) RegisterRoutes(mux apps.Mux) {
 	}
 	registerExpenseRoutes(mux, a)
 }
-
-func (a *ExpenseApp) CronJobs() []apps.CronJob {
-	return nil
-}

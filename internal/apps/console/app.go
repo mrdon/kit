@@ -74,5 +74,3 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	}
 	registerConsoleRoutes(mux, a)
 }
-
-func (a *App) CronJobs() []apps.CronJob { return nil }

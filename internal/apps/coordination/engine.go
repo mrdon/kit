@@ -37,33 +37,37 @@ func (e *Engine) appEnabled(ctx context.Context, tenantID uuid.UUID) bool {
 	return apps.IsEnabled(ctx, tenantID, AppName)
 }
 
-// Tick is the cron entry point. Performs three scans:
+// Tick is the scheduled entry point for one tenant. Performs three scans:
 //  1. Deadline expirations on active coordinations.
 //  2. Nudge/re-engagement sends for participants whose next_nudge_at has
 //     elapsed.
 //  3. Convergence detection on coordinations where all responses are in.
-func (e *Engine) Tick(ctx context.Context) error {
+//
+// Scoped to a single tenant: these scans previously ran across the whole
+// table at once, which broke the rule that every query on a tenant-scoped
+// table filters by tenant_id.
+func (e *Engine) Tick(ctx context.Context, tenantID uuid.UUID) error {
 	now := e.now()
 
-	if err := e.sweepDeadlines(ctx, now); err != nil {
-		slog.Error("deadline sweep", "error", err)
+	if err := e.sweepDeadlines(ctx, tenantID, now); err != nil {
+		slog.Error("deadline sweep", "tenant_id", tenantID, "error", err)
 	}
-	if err := e.sweepReadyParticipants(ctx, now); err != nil {
-		slog.Error("ready-participants sweep", "error", err)
+	if err := e.sweepReadyParticipants(ctx, tenantID, now); err != nil {
+		slog.Error("ready-participants sweep", "tenant_id", tenantID, "error", err)
 	}
-	if err := e.sweepConvergence(ctx); err != nil {
-		slog.Error("convergence sweep", "error", err)
+	if err := e.sweepConvergence(ctx, tenantID); err != nil {
+		slog.Error("convergence sweep", "tenant_id", tenantID, "error", err)
 	}
 	return nil
 }
 
 // sweepDeadlines surfaces a deadline decision card for any coordination
 // whose deadline_at has passed and is still active.
-func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
+func (e *Engine) sweepDeadlines(ctx context.Context, tenantID uuid.UUID, now time.Time) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT id, tenant_id FROM app_coordinations
-		WHERE status = 'active' AND deadline_at IS NOT NULL AND deadline_at <= $1
-	`, now)
+		WHERE tenant_id = $2 AND status = 'active' AND deadline_at IS NOT NULL AND deadline_at <= $1
+	`, now, tenantID)
 	if err != nil {
 		return err
 	}
@@ -105,8 +109,8 @@ func (e *Engine) sweepDeadlines(ctx context.Context, now time.Time) error {
 // sweepReadyParticipants picks participants whose next_nudge_at has
 // elapsed and processes them. Groups by coordination so an initial wave
 // of N participants is batched into a single approval card.
-func (e *Engine) sweepReadyParticipants(ctx context.Context, now time.Time) error {
-	parts, err := ListReadyParticipants(ctx, e.pool, now)
+func (e *Engine) sweepReadyParticipants(ctx context.Context, tenantID uuid.UUID, now time.Time) error {
+	parts, err := ListReadyParticipants(ctx, e.pool, tenantID, now)
 	if err != nil {
 		return fmt.Errorf("listing ready participants: %w", err)
 	}
@@ -422,11 +426,11 @@ func (e *Engine) sendOne(ctx context.Context, coord *Coordination, p Participant
 //
 // Phase 1 stub: detects convergence and logs; decision card creation
 // is wired in a subsequent commit.
-func (e *Engine) sweepConvergence(ctx context.Context) error {
+func (e *Engine) sweepConvergence(ctx context.Context, tenantID uuid.UUID) error {
 	rows, err := e.pool.Query(ctx, `
 		SELECT DISTINCT tenant_id, id FROM app_coordinations
-		WHERE status = 'active'
-	`)
+		WHERE tenant_id = $1 AND status = 'active'
+	`, tenantID)
 	if err != nil {
 		return err
 	}

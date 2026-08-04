@@ -87,8 +87,6 @@ func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserve
 
 func (a *App) RegisterRoutes(_ apps.Mux) {}
 
-func (a *App) CronJobs() []apps.CronJob { return nil }
-
 // typeSpec declares the integrations TypeSpec for ("square", "oauth2").
 // Tenant-scoped, single connection per workspace. For v1 the admin pastes
 // an access + refresh token obtained once via Square's OAuth; a dedicated

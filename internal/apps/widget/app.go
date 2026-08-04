@@ -119,6 +119,3 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	NewHandler(publicSvc).Register(mux)
 	NewAdminHandler(a.pool, a.signer, svc, a.baseURL).Register(mux)
 }
-
-// CronJobs has nothing to schedule.
-func (a *App) CronJobs() []apps.CronJob { return nil }
