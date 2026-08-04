@@ -35,10 +35,13 @@ func (a *App) registerScheduledTasks() {
 		},
 	})
 
+	// Once nightly, staggered off the events reconcile. Drift here is a
+	// synced entry someone deleted or moved by hand, which is rare and
+	// self-corrects the next morning.
 	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
 		Key:         "squareshifts.reconcile",
 		Description: "Reconcile Square shifts with Google Calendar",
-		DefaultCron: "41 5,17 * * *",
+		DefaultCron: "41 4 * * *",
 		AppliesTo:   a.squareConnected,
 		Run: func(ctx context.Context, job models.Job) error {
 			_, err := a.RunReconcile(ctx, job.TenantID)

@@ -40,12 +40,15 @@ func (a *App) registerScheduledTasks() {
 
 	// The sync trusts its stored content hash and skips unchanged events,
 	// which makes it cheap but blind to edits made directly in Google. This
-	// pass compares against the calendar's actual state to heal those, so it
-	// is deliberately much less frequent.
+	// pass compares against the calendar's actual state to heal those.
+	//
+	// Once nightly. It costs an extra list call per tenant, and drift here
+	// is someone editing the calendar by hand — rare, and not urgent enough
+	// to chase more often than that.
 	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
 		Key:         "events.reconcile",
 		Description: "Reconcile events with Google Calendar",
-		DefaultCron: "17 4,16 * * *",
+		DefaultCron: "17 4 * * *",
 		AppliesTo:   a.calendarConfigured,
 		Run: func(ctx context.Context, job models.Job) error {
 			_, err := a.RunReconcile(ctx, job.TenantID)
