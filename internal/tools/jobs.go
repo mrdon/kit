@@ -234,35 +234,21 @@ func resolveTimezone(ec *ExecContext) string {
 	return "UTC"
 }
 
-func handleListTasks(ec *ExecContext, _ json.RawMessage) (string, error) {
-	jobs, err := ec.Svc.Jobs.List(ec.Ctx, ec.Caller())
+func handleListTasks(ec *ExecContext, input json.RawMessage) (string, error) {
+	var args struct {
+		IncludeSystem bool `json:"include_system"`
+	}
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &args); err != nil {
+			return "", fmt.Errorf("parsing list_jobs input: %w", err)
+		}
+	}
+	caller := ec.Caller()
+	jobs, err := ec.Svc.Jobs.List(ec.Ctx, caller, args.IncludeSystem)
 	if err != nil {
 		return "", err
 	}
-	if len(jobs) == 0 {
-		return "No scheduled jobs.", nil
-	}
-
-	var b strings.Builder
-	b.WriteString("Scheduled jobs:\n")
-	for _, t := range jobs {
-		status := string(t.Status)
-		if t.LastError != nil {
-			status += " (last error: " + *t.LastError + ")"
-		}
-		next := t.NextRunAt.Format("Mon Jan 2 3:04 PM")
-		schedule := "cron: `" + t.CronExpr + "`"
-		if t.RunOnce {
-			schedule = "one-time"
-		}
-		fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s",
-			t.ID, t.Description, schedule, next, status)
-		if policySummary := services.FormatTaskPolicySummary(t.Config); policySummary != "" {
-			fmt.Fprintf(&b, " | %s", policySummary)
-		}
-		b.WriteByte('\n')
-	}
-	return b.String(), nil
+	return services.FormatJobList(jobs, caller.Location()), nil
 }
 
 func handleUpdateTask(ec *ExecContext, input json.RawMessage, reg *Registry) (string, error) {

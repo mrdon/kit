@@ -13,6 +13,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -66,6 +67,22 @@ func runnerFor(jobType string) JobRunner {
 	runnerMu.RLock()
 	defer runnerMu.RUnlock()
 	return runnerByTT[jobType]
+}
+
+// RunJobNow executes one already-loaded job through its registered runner,
+// synchronously and outside the claim loop. This is the manual-trigger path
+// (the run_job tool); callers must have authorized the request themselves.
+//
+// Exists so no surface has to re-implement dispatch. The MCP tool used to
+// special-case builtin jobs and let every other non-agent type fall through
+// to the agent path, which meant a scheduled builder script triggered by
+// hand ran as if its description were an LLM prompt.
+func RunJobNow(ctx context.Context, job *models.Job) error {
+	r := runnerFor(string(job.JobType))
+	if r == nil {
+		return fmt.Errorf("no runner registered for job type %q", job.JobType)
+	}
+	return r.Run(ctx, job)
 }
 
 // dispatchTask resolves the runner and invokes Run. Returns an error only

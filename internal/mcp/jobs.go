@@ -31,33 +31,12 @@ func jobMCPHandler(name string, _ *pgxpool.Pool, svc *services.Services, llm *an
 			return handleMCPCreateTask(ctx, req, caller, svc, llm)
 		})
 	case "list_jobs":
-		return mcpauth.WithCaller(func(ctx context.Context, _ mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-			jobs, err := svc.Jobs.List(ctx, caller)
+		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+			jobs, err := svc.Jobs.List(ctx, caller, req.GetBool("include_system", false))
 			if err != nil {
 				return nil, err
 			}
-			if len(jobs) == 0 {
-				return mcp.NewToolResultText("No scheduled jobs."), nil
-			}
-			var b strings.Builder
-			b.WriteString("Scheduled jobs:\n")
-			for _, t := range jobs {
-				status := string(t.Status)
-				if t.LastError != nil {
-					status += " (error: " + *t.LastError + ")"
-				}
-				schedule := "cron: `" + t.CronExpr + "`"
-				if t.RunOnce {
-					schedule = "one-time"
-				}
-				fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s",
-					t.ID, t.Description, schedule, t.NextRunAt.In(caller.Location()).Format("Mon Jan 2 3:04 PM MST"), status)
-				if policySummary := services.FormatTaskPolicySummary(t.Config); policySummary != "" {
-					fmt.Fprintf(&b, " | %s", policySummary)
-				}
-				b.WriteByte('\n')
-			}
-			return mcp.NewToolResultText(b.String()), nil
+			return mcp.NewToolResultText(services.FormatJobList(jobs, caller.Location())), nil
 		})
 	case "update_job":
 		return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
@@ -143,17 +122,28 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		// their integrations, memories, and email credentials. Admins don't
 		// get to stand in for another user; cross-user debugging is an
 		// operator/SRE concern, handled via DB/CLI, not the customer MCP.
-		if job.CreatedBy != caller.UserID {
+		//
+		// System rows are the exception: they run native code under no
+		// user's identity, and created_by is just whichever admin the
+		// reconciler happened to name. Gating on it would mean only that
+		// one person could ever trigger a sync by hand.
+		adminRunningSystemRow := job.IsSystem() && caller.IsAdmin
+		if job.CreatedBy != caller.UserID && !adminRunningSystemRow {
 			return mcp.NewToolResultError("You can only run jobs you created."), nil
 		}
 
-		// Builtin jobs run native code, not the LLM agent
-		if job.JobType == models.JobTypeBuiltin {
+		// Anything that isn't an agent job runs native code. Route it
+		// through the same runner the claim loop uses rather than
+		// re-implementing dispatch here — builder_script rows previously
+		// fell past this check and were run as if they were agent prompts.
+		if job.JobType != models.JobTypeAgent {
 			if dryRun {
-				return mcp.NewToolResultText(fmt.Sprintf("Dry run: builtin job %q would execute native handler.", job.Description)), nil
+				return mcp.NewToolResultText(fmt.Sprintf("Dry run: %s job %q would execute its native handler.", job.JobType, job.Description)), nil
 			}
-			sched.ExecuteBuiltinTask(ctx, *job)
-			return mcp.NewToolResultText(fmt.Sprintf("Builtin job %q executed.", job.Description)), nil
+			if err := scheduler.RunJobNow(ctx, job); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Job %q failed: %v", job.Description, err)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("Job %q executed.", job.Description)), nil
 		}
 
 		tenant, err := models.GetTenantByID(ctx, pool, job.TenantID)

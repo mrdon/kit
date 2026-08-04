@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,7 +24,9 @@ var JobTools = []ToolMeta{
 		"scope":       field("string", "Scope: 'user' (default), 'tenant' (admin only), or a role name"),
 		"policy":      policyField(),
 	}, "description")},
-	{Name: "list_jobs", Description: "List scheduled jobs visible to the current user.", Schema: props(map[string]any{})},
+	{Name: "list_jobs", Description: "List scheduled jobs visible to the current user.", Schema: props(map[string]any{
+		"include_system": field("boolean", "Admins only: also list Kit's own infrastructure jobs (calendar syncs, sweeps, profile sync). Defaults to false — these are plumbing and would otherwise bury the jobs people created."),
+	})},
 	{Name: "update_job", Description: "Update or delete a scheduled job. Provide description to change it, skill_name to change which skill runs (empty string to clear and fall back to the description prompt), policy to replace its capability manifest, or set delete=true to remove the job. See the `creating-jobs` skill for policy shape.", Schema: propsReq(map[string]any{
 		"id":          field("string", "The job UUID"),
 		"description": field("string", "New job description (optional)"),
@@ -165,11 +168,36 @@ func (s *JobService) Create(ctx context.Context, c *Caller, in CreateInput) (*mo
 // traces, which stay scoped elsewhere). Non-admins see only jobs in their
 // scope: their own personal jobs, role jobs for roles they hold, and
 // tenant-wide jobs.
-func (s *JobService) List(ctx context.Context, c *Caller) ([]models.Job, error) {
-	if c.IsAdmin {
-		return models.ListAllJobs(ctx, s.pool, c.TenantID)
+//
+// includeSystem controls whether code-registered infrastructure rows (event
+// syncs, sweeps, profile sync) come back. They are plumbing, and there are
+// enough of them per tenant to bury the two or three jobs a person actually
+// created, so listings ask for them explicitly. Only admins ever get them:
+// non-admin listing goes through job_scopes, and system rows have no scope
+// row at all.
+func (s *JobService) List(ctx context.Context, c *Caller, includeSystem bool) ([]models.Job, error) {
+	if !c.IsAdmin {
+		return models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
 	}
-	return models.ListJobsForContext(ctx, s.pool, c.TenantID, c.UserID, c.RoleIDs)
+	jobs, err := models.ListAllJobs(ctx, s.pool, c.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !includeSystem {
+		kept := jobs[:0]
+		for _, j := range jobs {
+			if !j.IsSystem() {
+				kept = append(kept, j)
+			}
+		}
+		return kept, nil
+	}
+	// System rows sort last so a listing still leads with the jobs someone
+	// chose to create. Stable, so each group keeps its created_at order.
+	sort.SliceStable(jobs, func(i, k int) bool {
+		return !jobs[i].IsSystem() && jobs[k].IsSystem()
+	})
+	return jobs, nil
 }
 
 // canManage reports whether the caller may view/edit/delete the given job,
@@ -216,12 +244,51 @@ func (s *JobService) Get(ctx context.Context, c *Caller, jobID uuid.UUID) (*JobV
 }
 
 // ListViews returns the caller's manageable jobs enriched for display.
+// The web console has room to show system rows and is where an operator
+// goes to check whether the plumbing ran, so it always includes them.
 func (s *JobService) ListViews(ctx context.Context, c *Caller) ([]JobView, error) {
-	jobs, err := s.List(ctx, c)
+	jobs, err := s.List(ctx, c, true)
 	if err != nil {
 		return nil, err
 	}
 	return s.enrich(ctx, c.TenantID, jobs)
+}
+
+// FormatJobList renders a job listing for the text surfaces.
+//
+// Lives here rather than in each handler because the agent tool and the MCP
+// tool must produce the same text — they previously drifted on the error
+// label and the timestamp format, and a system marker rendered on only one
+// of them would be a worse version of the same bug.
+func FormatJobList(jobs []models.Job, loc *time.Location) string {
+	if len(jobs) == 0 {
+		return "No scheduled jobs."
+	}
+	var b strings.Builder
+	b.WriteString("Scheduled jobs:\n")
+	for _, t := range jobs {
+		status := string(t.Status)
+		if t.LastError != nil {
+			status += " (error: " + *t.LastError + ")"
+		}
+		schedule := "cron: `" + t.CronExpr + "`"
+		if t.RunOnce {
+			schedule = "one-time"
+		}
+		label := t.Description
+		if t.IsSystem() {
+			// Marked so an admin can tell at a glance which rows are Kit's
+			// own plumbing and not something a colleague scheduled.
+			label += " [system]"
+		}
+		fmt.Fprintf(&b, "- [%s] %s | %s | next: %s | status: %s",
+			t.ID, label, schedule, t.NextRunAt.In(loc).Format("Mon Jan 2 3:04 PM MST"), status)
+		if policySummary := FormatTaskPolicySummary(t.Config); policySummary != "" {
+			fmt.Fprintf(&b, " | %s", policySummary)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // JobView is the display-ready projection of a job for the web console: the
