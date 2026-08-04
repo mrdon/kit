@@ -27,6 +27,7 @@ func RegisterScheduledTasks() {
 		Key:         "cards.sweep",
 		Description: "Recover stuck cards and archive expired ones",
 		DefaultCron: "* * * * *",
+		AppliesTo:   hasSweepableCards,
 		Run: func(ctx context.Context, job models.Job) error {
 			if instance == nil || instance.pool == nil {
 				return nil
@@ -48,6 +49,7 @@ func RegisterScheduledTasks() {
 		Key:         "cards.purge",
 		Description: "Delete archived cards past their retention window",
 		DefaultCron: "34 3 * * *",
+		AppliesTo:   hasArchivedCards,
 		Run: func(ctx context.Context, job models.Job) error {
 			if instance == nil || instance.pool == nil {
 				return nil
@@ -63,6 +65,38 @@ func RegisterScheduledTasks() {
 			return nil
 		},
 	})
+}
+
+// hasSweepableCards keeps the every-minute row off tenants with nothing it
+// could act on. Both sweeps only ever touch a card that is mid-resolve or
+// carrying a deadline, so a tenant with neither has nothing to look at.
+func hasSweepableCards(ctx context.Context, tenantID uuid.UUID) bool {
+	if instance == nil || instance.pool == nil {
+		return false
+	}
+	var exists bool
+	err := instance.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM app_cards
+			WHERE tenant_id = $1 AND state = 'pending' AND expires_at IS NOT NULL
+		) OR EXISTS(
+			SELECT 1 FROM app_card_decisions
+			WHERE tenant_id = $1 AND resolving_deadline IS NOT NULL
+		)`, tenantID).Scan(&exists)
+	return err == nil && exists
+}
+
+// hasArchivedCards keeps the nightly purge off tenants with nothing archived.
+func hasArchivedCards(ctx context.Context, tenantID uuid.UUID) bool {
+	if instance == nil || instance.pool == nil {
+		return false
+	}
+	var exists bool
+	err := instance.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM app_cards WHERE tenant_id = $1 AND state = 'archived'
+		)`, tenantID).Scan(&exists)
+	return err == nil && exists
 }
 
 // archiveExpiredCards retires every pending card past its expires_at, so a
