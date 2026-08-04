@@ -61,6 +61,9 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
 	// pointers but preserve the map keys.
 	RegisterJobRunner(&agentRunner{s: s})
 	RegisterJobRunner(&builtinRunner{s: s})
+	// Must precede the first reconcile pass in Start, or the scheduler's
+	// own rows would be retired as unregistered on startup.
+	s.registerSystemTasks()
 	return s
 }
 
@@ -78,7 +81,7 @@ func (s *Scheduler) Kick() {
 // Start launches the job runner. Builtin jobs (like profile sync) are ensured
 // on startup and run via the same job loop as user-created jobs.
 func (s *Scheduler) Start(ctx context.Context) {
-	s.ensureBuiltinTasks(ctx)
+	s.reconcileRegistry(ctx)
 	// Jobs left in 'running' by a previous crash get reclaimed. Use a
 	// generous cutoff so we don't race a sibling scheduler that is still
 	// running the job in a rolling-deploy window.
@@ -88,6 +91,36 @@ func (s *Scheduler) Start(ctx context.Context) {
 		slog.Info("recovered stuck jobs", "count", n)
 	}
 	go s.runJobLoop(ctx)
+	go s.runRegistryReconcileLoop(ctx)
+}
+
+// registryReconcileInterval is how often the code registry is re-converged
+// with the jobs table. It is what picks up a tenant installed since startup,
+// an app toggled on or off, and a task whose prerequisite changed — so it
+// wants to be short enough that none of those feel stuck. Every operation in
+// a pass is idempotent, so repeating it costs a handful of queries.
+const registryReconcileInterval = 15 * time.Minute
+
+// runRegistryReconcileLoop re-converges the registry on a ticker.
+//
+// This is deliberately a plain ticker rather than a jobs row: a per-tenant
+// row can only exist for a tenant the reconciler has already visited, so a
+// tenant created after startup would have nothing to create its rows. It is
+// also not hooked to tenant creation — internal/scheduler already imports
+// internal/slack, so a hook in the OAuth handler would be an import cycle,
+// and at UpsertTenant time the tenant has no users for jobs.created_by to
+// reference anyway.
+func (s *Scheduler) runRegistryReconcileLoop(ctx context.Context) {
+	ticker := time.NewTicker(registryReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.reconcileRegistry(ctx)
+		}
+	}
 }
 
 func (s *Scheduler) runJobLoop(ctx context.Context) {

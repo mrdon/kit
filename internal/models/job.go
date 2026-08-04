@@ -33,6 +33,22 @@ const (
 	JobTypeBuilderScript JobType = "builder_script" // scheduled builder script; config carries {script_id, fn_name}
 )
 
+// JobLane is the execution pool a job is claimed into. Deliberately not
+// derived from JobType: some builtin registrations call the LLM (the task
+// app's email intake runs a full agent loop; the coordination sweep calls
+// the Messages API directly) and must stay serialized alongside agent runs,
+// while the remaining builtins are IO-bound and safe to run wide.
+type JobLane string
+
+const (
+	// JobLaneAgent is serialized — everything in it shares the Anthropic
+	// org rate limit.
+	JobLaneAgent JobLane = "agent"
+	// JobLaneFunction is native work: syncs, reconciles, sweeps, and
+	// builder scripts. Bounded by Postgres and outbound HTTP, not tokens.
+	JobLaneFunction JobLane = "function"
+)
+
 // Tier names persisted in jobs.model. Picked at create_task time by a
 // Haiku classifier pass; the scheduler resolves the tier to an Anthropic
 // model ID via JobModelID before calling agent.Run. Kept as short tier
@@ -89,7 +105,23 @@ type Job struct {
 	// name at fire time so skill renames don't break the prompt.
 	SkillID   *uuid.UUID
 	CreatedAt time.Time
+	// BuiltinKey is the stable identity of a code-registered job (e.g.
+	// "events.reconcile"). Nil for user-created agent jobs and for
+	// builder_script rows. Handler lookup keys on this, never on
+	// Description — a description is a label and may be edited or
+	// renamed in code without orphaning the row.
+	BuiltinKey *string
+	// Lane is the execution pool this row is claimed into.
+	Lane JobLane
+	// ClaimedAt is stamped when the row flips to 'running' and cleared on
+	// completion. Drives stuck-row recovery; nil when not running.
+	ClaimedAt *time.Time
 }
+
+// IsSystem reports whether this row was created by the code registry rather
+// than by a user. System rows carry no job_scopes row, which is what keeps
+// them out of scoped listings.
+func (j Job) IsSystem() bool { return j.BuiltinKey != nil && *j.BuiltinKey != "" }
 
 // NextCronRun computes the next run time for a cron expression in the given timezone.
 func NextCronRun(cronExpr, tz string, after time.Time) (time.Time, error) {
@@ -146,19 +178,17 @@ func CreateJobTx(ctx context.Context, tx pgx.Tx, tenantID, createdBy uuid.UUID, 
 		model = JobModelHaiku
 	}
 
-	job := &Job{}
 	jobID := uuid.New()
-	err := tx.QueryRow(ctx, `
+	row := tx.QueryRow(ctx, `
 		INSERT INTO jobs (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, next_run_at, model, skill_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, job_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, skill_id, created_at
-	`, jobID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun, model, skillID).Scan(
-		&job.ID, &job.TenantID, &job.CreatedBy, &job.Description, &job.CronExpr,
-		&job.Timezone, &job.ChannelID, &job.RunOnce, &job.JobType, &job.Status, &job.NextRunAt, &job.LastRunAt, &job.LastError, &job.Config, &job.ResumeSessionID, &job.Model, &job.SkillID, &job.CreatedAt,
-	)
+		RETURNING `+jobColumns,
+		jobID, tenantID, createdBy, description, cronExpr, tz, channelID, runOnce, nextRun, model, skillID)
+	created, err := scanJob(row)
 	if err != nil {
 		return nil, fmt.Errorf("creating job: %w", err)
 	}
+	job := &created
 
 	scopeID, err := GetOrCreateScopeTx(ctx, tx, tenantID, roleID, userID)
 	if err != nil {
@@ -192,21 +222,18 @@ type jobRowQuerier interface {
 }
 
 func getJobRow(ctx context.Context, q jobRowQuerier, tenantID, jobID uuid.UUID) (*Job, error) {
-	t := &Job{}
-	err := q.QueryRow(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone, channel_id, run_once, job_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, skill_id, created_at
+	row := q.QueryRow(ctx, `
+		SELECT `+jobColumns+`
 		FROM jobs WHERE tenant_id = $1 AND id = $2
-	`, tenantID, jobID).Scan(
-		&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-		&t.Timezone, &t.ChannelID, &t.RunOnce, &t.JobType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.SkillID, &t.CreatedAt,
-	)
+	`, tenantID, jobID)
+	t, err := scanJob(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting job: %w", err)
 	}
-	return t, nil
+	return &t, nil
 }
 
 // ListJobsForContext returns jobs visible to the user via scope filtering.
@@ -214,8 +241,7 @@ func ListJobsForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, userI
 	scopeSQL, scopeArgs := ScopeFilterIDs("sc", 2, userID, roleIDs)
 	args := append([]any{tenantID}, scopeArgs...)
 	rows, err := pool.Query(ctx, `
-		SELECT DISTINCT t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone,
-			t.channel_id, t.run_once, t.job_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.model, t.skill_id, t.created_at
+		SELECT DISTINCT `+jobColumnsT+`
 		FROM jobs t
 		JOIN job_scopes ts ON ts.job_id = t.id AND ts.tenant_id = t.tenant_id
 		JOIN scopes sc ON sc.id = ts.scope_id
@@ -226,18 +252,7 @@ func ListJobsForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, userI
 	if err != nil {
 		return nil, fmt.Errorf("listing jobs: %w", err)
 	}
-	defer rows.Close()
-
-	var jobs []Job
-	for rows.Next() {
-		var t Job
-		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.JobType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.SkillID, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning job: %w", err)
-		}
-		jobs = append(jobs, t)
-	}
-	return jobs, rows.Err()
+	return collectJobs(rows)
 }
 
 // ListAllJobs returns every job in the tenant, ignoring scope. This is the
@@ -246,8 +261,7 @@ func ListJobsForContext(ctx context.Context, pool *pgxpool.Pool, tenantID, userI
 // minus the job_scopes/scopes join.
 func ListAllJobs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Job, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, run_once, job_type, status, next_run_at, last_run_at, last_error, config, resume_session_id, model, skill_id, created_at
+		SELECT `+jobColumns+`
 		FROM jobs
 		WHERE tenant_id = $1
 		ORDER BY created_at
@@ -255,18 +269,7 @@ func ListAllJobs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([
 	if err != nil {
 		return nil, fmt.Errorf("listing all jobs: %w", err)
 	}
-	defer rows.Close()
-
-	var jobs []Job
-	for rows.Next() {
-		var t Job
-		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.JobType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.SkillID, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning job: %w", err)
-		}
-		jobs = append(jobs, t)
-	}
-	return jobs, rows.Err()
+	return collectJobs(rows)
 }
 
 // JobScope is one scope row for a job — an alias of the shared ScopeLabel so
@@ -482,179 +485,4 @@ func DeactivateBuilderScriptTask(ctx context.Context, pool *pgxpool.Pool, tenant
 		return false, fmt.Errorf("deactivating builder_script job: %w", err)
 	}
 	return tag.RowsAffected() > 0, nil
-}
-
-// EnsureBuiltinTask creates a builtin job if it doesn't already exist for the tenant.
-// Uses the description as a unique key per tenant (builtin jobs have fixed descriptions).
-func EnsureBuiltinTask(ctx context.Context, pool *pgxpool.Pool, tenantID, createdBy uuid.UUID, description, cronExpr, tz string) error {
-	var exists bool
-	err := pool.QueryRow(ctx, `
-		SELECT EXISTS(SELECT 1 FROM jobs WHERE tenant_id = $1 AND job_type = $3 AND description = $2)
-	`, tenantID, description, JobTypeBuiltin).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("checking builtin job: %w", err)
-	}
-	if exists {
-		return nil
-	}
-
-	nextRun, err := NextCronRun(cronExpr, tz, time.Now())
-	if err != nil {
-		return fmt.Errorf("computing next run: %w", err)
-	}
-
-	_, err = pool.Exec(ctx, `
-		INSERT INTO jobs (id, tenant_id, created_by, description, cron_expr, timezone, channel_id, job_type, next_run_at)
-		VALUES ($1, $2, $3, $4, $5, $6, '', $8, $7)
-	`, uuid.New(), tenantID, createdBy, description, cronExpr, tz, nextRun, JobTypeBuiltin)
-	if err != nil {
-		return fmt.Errorf("creating builtin job: %w", err)
-	}
-	return nil
-}
-
-// ClaimDueTasks atomically claims up to `limit` active jobs whose
-// next_run_at has passed. Claim = flip status from 'active' to 'running'
-// under SELECT FOR UPDATE SKIP LOCKED, so multiple scheduler instances
-// (e.g. during a rolling deploy) never pick up the same job.
-//
-// After the returned jobs finish, the caller must set status to
-// 'completed' (one-time) or back to 'active' with a new next_run_at
-// (recurring) — see CompleteTask / UpdateJobAfterRun.
-func ClaimDueTasks(ctx context.Context, pool *pgxpool.Pool, limit int) ([]Job, error) {
-	rows, err := pool.Query(ctx, `
-		WITH claimed AS (
-			SELECT id FROM jobs
-			WHERE status = $2 AND next_run_at <= now()
-			ORDER BY next_run_at
-			FOR UPDATE SKIP LOCKED
-			LIMIT $1
-		)
-		UPDATE jobs t
-		SET status = $3
-		FROM claimed c
-		WHERE t.id = c.id
-		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.job_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.model, t.skill_id, t.created_at
-	`, limit, JobStatusActive, JobStatusRunning)
-	if err != nil {
-		return nil, fmt.Errorf("claiming due jobs: %w", err)
-	}
-	defer rows.Close()
-
-	var jobs []Job
-	for rows.Next() {
-		var t Job
-		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.JobType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.SkillID, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning claimed job: %w", err)
-		}
-		jobs = append(jobs, t)
-	}
-	return jobs, rows.Err()
-}
-
-// ClaimDueTasksForTenant is a tenant-scoped claim variant used by tests
-// so parallel-running fixtures don't steal each other's due rows.
-// Production code should always call ClaimDueTasks.
-func ClaimDueTasksForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, limit int) ([]Job, error) {
-	rows, err := pool.Query(ctx, `
-		WITH claimed AS (
-			SELECT id FROM jobs
-			WHERE tenant_id = $1 AND status = $3 AND next_run_at <= now()
-			ORDER BY next_run_at
-			FOR UPDATE SKIP LOCKED
-			LIMIT $2
-		)
-		UPDATE jobs t
-		SET status = $4
-		FROM claimed c
-		WHERE t.id = c.id AND t.tenant_id = $1
-		RETURNING t.id, t.tenant_id, t.created_by, t.description, t.cron_expr, t.timezone, t.channel_id, t.run_once, t.job_type, t.status, t.next_run_at, t.last_run_at, t.last_error, t.config, t.resume_session_id, t.model, t.skill_id, t.created_at
-	`, tenantID, limit, JobStatusActive, JobStatusRunning)
-	if err != nil {
-		return nil, fmt.Errorf("claiming due jobs for tenant: %w", err)
-	}
-	defer rows.Close()
-
-	var jobs []Job
-	for rows.Next() {
-		var t Job
-		if err := rows.Scan(&t.ID, &t.TenantID, &t.CreatedBy, &t.Description, &t.CronExpr,
-			&t.Timezone, &t.ChannelID, &t.RunOnce, &t.JobType, &t.Status, &t.NextRunAt, &t.LastRunAt, &t.LastError, &t.Config, &t.ResumeSessionID, &t.Model, &t.SkillID, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scanning claimed job: %w", err)
-		}
-		jobs = append(jobs, t)
-	}
-	return jobs, rows.Err()
-}
-
-// RecoverStuckTasks resets any job stuck in 'running' older than the
-// cutoff back to 'active' so another scheduler can re-claim it. Runs at
-// scheduler startup to handle crashes where a previous run didn't reach
-// CompleteTask / UpdateJobAfterRun.
-func RecoverStuckTasks(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) (int64, error) {
-	cmd, err := pool.Exec(ctx, `
-		UPDATE jobs SET status = $1
-		WHERE status = $2 AND (last_run_at IS NULL OR last_run_at < now() - $3::interval)
-	`, JobStatusActive, JobStatusRunning, olderThan.String())
-	if err != nil {
-		return 0, fmt.Errorf("recovering stuck jobs: %w", err)
-	}
-	return cmd.RowsAffected(), nil
-}
-
-// CompleteTask marks a one-time job as completed after execution.
-func CompleteTask(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID, lastError *string) error {
-	_, err := pool.Exec(ctx, `
-		UPDATE jobs SET last_run_at = now(), status = $3, last_error = $4
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, jobID, JobStatusCompleted, lastError)
-	if err != nil {
-		return fmt.Errorf("completing job: %w", err)
-	}
-	return nil
-}
-
-// UpdateJobAfterRun updates last_run_at, next_run_at, and last_error
-// after execution. Flips status back to 'active' so the next cron tick
-// can re-claim this recurring job.
-func UpdateJobAfterRun(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID, nextRun time.Time, lastError *string) error {
-	_, err := pool.Exec(ctx, `
-		UPDATE jobs SET status = $5, last_run_at = now(), next_run_at = $3, last_error = $4
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, jobID, nextRun, lastError, JobStatusActive)
-	if err != nil {
-		return fmt.Errorf("updating job after run: %w", err)
-	}
-	return nil
-}
-
-// RequeueJobForResumeTx flips a job back to 'active' with next_run_at=now
-// and marks the session to resume into on the next scheduler claim. Used
-// by decision-resolution to wake a paused workflow. Runs inside the
-// caller's transaction so the event append, job flip, and resume marker
-// all land atomically.
-func RequeueJobForResumeTx(ctx context.Context, tx pgx.Tx, tenantID, jobID, resumeSessionID uuid.UUID) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE jobs SET status = $3, next_run_at = now(), resume_session_id = $4
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, jobID, JobStatusActive, resumeSessionID)
-	if err != nil {
-		return fmt.Errorf("requeuing job for resume: %w", err)
-	}
-	return nil
-}
-
-// ClearTaskResumeSession clears resume_session_id after the scheduler has
-// consumed it. Called by the scheduler after successful claim so a
-// subsequent cron tick doesn't accidentally resume into the same session.
-func ClearTaskResumeSession(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID) error {
-	_, err := pool.Exec(ctx, `
-		UPDATE jobs SET resume_session_id = NULL
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, jobID)
-	if err != nil {
-		return fmt.Errorf("clearing job resume session: %w", err)
-	}
-	return nil
 }
