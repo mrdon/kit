@@ -67,10 +67,10 @@ make db-reset    # Wipe and restart Postgres
 - `internal/database/` — pgxpool connection, goose migrations (embedded in `database/migrations/`)
 - `internal/ingest/` — File upload processing (PDF via pdftotext, DOCX, markdown, ZIP)
 - `internal/models/` — Data access layer. One file per table group (tenant, user, role, skill, rule, memory, job, session, session_event, scope)
-- `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, routes, and cron jobs.
+- `internal/apps/` — Modular feature apps (self-registering via init). Each app contributes tools, system prompt, and routes. Recurring work is declared with `scheduler.RegisterScheduledTask` from the app's `Init` (conventionally in the app's `schedule.go`) — never a goroutine ticker.
 - `internal/apps/builder/` — Scriptable app substrate. Admins use admin-only meta-tools (via MCP) to create "builder apps" — named bundles of scripts, schedules, and exposed tools. Scripts run as sandboxed Python via Monty (vendored WASM at `internal/apps/builder/runtime/monty.wasm`, Rust source under `third_party/monty-wasm/`, rebuilt via `make monty-wasm`). Data lives in `app_items` (MongoDB-shaped jsonb, tenant + builder_app scoped, with a temporal `app_items_history` trigger for rollback).
 - `third_party/monty-wasm/` — Forked Rust shim for pydantic's Monty interpreter. Regenerate `monty.wasm` via `make monty-wasm` when bumping the Monty version pinned in `crates/monty-wasm/Cargo.toml` (Docker-isolated Rust toolchain — host doesn't need Rust).
-- `internal/scheduler/` — Background job runner (cron + builtin jobs like profile sync)
+- `internal/scheduler/` — The one place scheduled work runs. Every scheduled thing is a `jobs` row, so it has run history, `last_error`, and audit. Code-defined tasks are declared via `RegisterScheduledTask` (`registry.go`) with a stable `builtin_key`; a reconciler converges them into per-tenant rows, creating where `AppliesTo` holds and retiring (never deleting) where it stops. Rows are claimed in **lanes** (`lane.go`): `agent` is serialized because everything in it shares one Anthropic rate limit — mark a task `LLMBound` to land there — while `function` runs native work several wide.
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 - `internal/sse/` — Server-Sent Events writer (used by card chat today; reusable for future ambient-feed pushes)
 - `internal/transcribe/` — Voice transcription via local whisper.cpp (optional; gated on `WHISPER_BIN`/`WHISPER_MODEL`)
