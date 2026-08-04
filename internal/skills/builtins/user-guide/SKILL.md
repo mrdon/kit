@@ -194,6 +194,7 @@ Admin setup, on the **Events** page under Admin:
 - **Pick the calendar.** Connect Google Calendar on the Integrations page first (a service account — see Square shift sync below for the same setup), then share your events calendar with the service account's email and choose it from the dropdown. If the dropdown is empty, the calendar hasn't been shared with the service account yet.
 - **Set the website URL pattern**, e.g. `https://www.example.com/events/{slug}`. Each event's public link is built from this, so changing your domain later doesn't mean rewriting past events.
 - **Copy the feed URL and token** into your website's build. The site fetches published public events from it and generates a page for each.
+- **Paste a build hook URL** (in Netlify: Site configuration → Build & deploy → Build hooks → Add build hook) if you want the website to rebuild itself. With one set, Kit publishes overnight at 2am whenever something is waiting to go out — so an event you add on Tuesday afternoon is live by Wednesday morning without anyone pressing anything. Nights where nothing changed are skipped, so it doesn't burn build minutes rebuilding an identical site. The **Publish** button on the Events page still rebuilds on demand when you don't want to wait.
 
 Kit syncs to the calendar every 15 minutes. Use **Sync now** to push immediately, and **Check for drift** if the calendar has got out of step — someone deleted an entry by hand, say. That shows exactly what it would change before touching anything, and only ever touches entries Kit created.
 

@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,6 +52,54 @@ func (a *App) registerScheduledTasks() {
 			return ignoreUnconfigured(err)
 		},
 	})
+
+	// The website is a static build, so Kit and the web are only in step
+	// just after one. A nightly build closes that gap without anyone having
+	// to remember to press publish — an event edited on Tuesday afternoon is
+	// live by Wednesday morning rather than whenever someone next notices.
+	//
+	// 2am tenant-local, clear of the 3am profile sync.
+	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
+		Key:         "events.publish_site",
+		Description: "Publish the events website overnight",
+		DefaultCron: "0 2 * * *",
+		AppliesTo:   a.buildHookConfigured,
+		Run:         a.publishSiteIfChanged,
+	})
+}
+
+// publishSiteIfChanged rebuilds the website only when something is waiting
+// to go out.
+//
+// Netlify bills build minutes, and most nights nothing has changed — a blind
+// nightly build would spend them to produce a byte-identical site. Checking
+// first costs one query.
+func (a *App) publishSiteIfChanged(ctx context.Context, job models.Job) error {
+	status, err := a.svc.SiteStatus(ctx, job.TenantID)
+	if err != nil {
+		return fmt.Errorf("checking site status: %w", err)
+	}
+	if len(status.Pending) == 0 {
+		return nil
+	}
+	if _, err := a.svc.PublishSite(ctx, job.TenantID, "schedule"); err != nil {
+		return fmt.Errorf("publishing site: %w", err)
+	}
+	return nil
+}
+
+// buildHookConfigured reports whether this tenant has somewhere to publish
+// to. Without it, every events tenant would carry a nightly row that could
+// only ever fail.
+func (a *App) buildHookConfigured(ctx context.Context, tenantID uuid.UUID) bool {
+	if a.pool == nil || !apps.IsEnabled(ctx, tenantID, AppName) {
+		return false
+	}
+	settings, err := getSettings(ctx, a.pool, tenantID)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(settings.SiteBuildHookURL) != ""
 }
 
 // calendarConfigured reports whether this tenant has events enabled and a
