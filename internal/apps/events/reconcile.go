@@ -2,24 +2,14 @@ package events
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
 )
-
-// reconcileInterval is how often the drift-repair sweep runs. The 15-minute
-// sync trusts its stored content hash, so it cannot see an entry a human
-// deleted or edited directly in Google; this pass compares against the
-// calendar's actual state. It costs one extra list call, so the interval is
-// deliberately conservative.
-const reconcileInterval = 12 * time.Hour
 
 // ReconcilePlan is what a sweep would change. Building it is read-only, so it
 // doubles as the dry run.
@@ -147,29 +137,6 @@ func (a *App) applyReconcile(ctx context.Context, writer calendarWriter, setting
 		sum.Created++
 	}
 	return sum, nil
-}
-
-// ReconcileAllTenants is the cron entry point.
-func (a *App) ReconcileAllTenants(ctx context.Context) error {
-	if a.pool == nil {
-		return nil
-	}
-	tenantIDs, err := listTenantsWithCalendar(ctx, a.pool)
-	if err != nil {
-		return err
-	}
-	for _, tid := range tenantIDs {
-		if !apps.IsEnabled(ctx, tid, AppName) {
-			continue
-		}
-		if _, err := a.RunReconcile(ctx, tid); err != nil {
-			if errors.Is(err, ErrNoCalendar) || errors.Is(err, googlecalendar.ErrNotConfigured) {
-				continue
-			}
-			slog.Error("events reconcile failed", "tenant_id", tid, "error", err)
-		}
-	}
-	return nil
 }
 
 // FormatReconcilePlan renders a dry run. Deletions are itemised by name

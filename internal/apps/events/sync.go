@@ -4,14 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/mrdon/kit/internal/apps"
-	"github.com/mrdon/kit/internal/apps/googlecalendar"
 )
 
 // ErrNoCalendar means the tenant has not picked a calendar yet. Not a failure
@@ -157,30 +153,6 @@ func (a *App) SyncNow(ctx context.Context, tenantID uuid.UUID) (Summary, error) 
 	return a.RunSync(ctx, tenantID, "manual")
 }
 
-// SyncAllTenants is the cron entry point. Tenants without a calendar are
-// skipped quietly; a failure on one tenant does not stop the sweep.
-func (a *App) SyncAllTenants(ctx context.Context) error {
-	if a.pool == nil {
-		return nil
-	}
-	tenantIDs, err := listTenantsWithCalendar(ctx, a.pool)
-	if err != nil {
-		return err
-	}
-	for _, tid := range tenantIDs {
-		if !apps.IsEnabled(ctx, tid, AppName) {
-			continue
-		}
-		if _, err := a.RunSync(ctx, tid, "schedule"); err != nil {
-			if errors.Is(err, ErrNoCalendar) || errors.Is(err, googlecalendar.ErrNotConfigured) {
-				continue
-			}
-			slog.Error("events sync failed", "tenant_id", tid, "error", err)
-		}
-	}
-	return nil
-}
-
 // listSyncCandidates returns every event whose calendar state may need work:
 // the published ones that should be present, plus any row still holding a
 // Google id that no longer should be.
@@ -225,26 +197,4 @@ func saveCalendarState(ctx context.Context, pool *pgxpool.Pool, tenantID, id uui
 // clearCalendarState forgets the Google copy after a successful delete.
 func clearCalendarState(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) error {
 	return saveCalendarState(ctx, pool, tenantID, id, "", "", "")
-}
-
-// listTenantsWithCalendar returns tenants whose events calendar is configured.
-// The sweep starts here so it never touches tenants that have not opted in by
-// picking a calendar.
-func listTenantsWithCalendar(ctx context.Context, pool *pgxpool.Pool) ([]uuid.UUID, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT tenant_id FROM app_event_settings WHERE calendar_id <> ''`)
-	if err != nil {
-		return nil, fmt.Errorf("listing event tenants: %w", err)
-	}
-	defer rows.Close()
-
-	var out []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scanning tenant id: %w", err)
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
 }

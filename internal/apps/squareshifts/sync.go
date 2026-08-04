@@ -2,14 +2,11 @@ package squareshifts
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/apps/square"
 )
@@ -126,27 +123,4 @@ func (a *App) syncTenant(ctx context.Context, tenantID uuid.UUID) (SyncSummary, 
 		sum.Deleted++
 	}
 	return sum, nil
-}
-
-// SyncAllTenants runs the sync for every enabled tenant that has a Square
-// integration. Tenants missing a Google Calendar connection (or with the
-// app disabled) are skipped quietly; other errors are logged and the sweep
-// continues to the next tenant. This is the cron entry point.
-func (a *App) SyncAllTenants(ctx context.Context) error {
-	tenantIDs, err := listSquareTenants(ctx, a.pool)
-	if err != nil {
-		return err
-	}
-	for _, tid := range tenantIDs {
-		if !apps.IsEnabled(ctx, tid, AppName) {
-			continue
-		}
-		if _, err := a.RunSync(ctx, tid, "schedule"); err != nil {
-			if errors.Is(err, googlecalendar.ErrNotConfigured) || errors.Is(err, square.ErrNotConfigured) {
-				continue
-			}
-			slog.Warn("squareshifts: tenant sync failed", "tenant_id", tid, "error", err)
-		}
-	}
-	return nil
 }

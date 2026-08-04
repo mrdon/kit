@@ -2,24 +2,14 @@ package squareshifts
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/apps/square"
 )
-
-// reconcileInterval is how often the drift-repair sweep runs. The regular
-// 15-minute sync trusts its mapping + content hash and so can't see events
-// deleted or orphaned directly in Google; this slower pass reconciles
-// against the calendar's actual state to make Square authoritative. It's
-// cheap (one extra Google list call) so the interval is conservative.
-const reconcileInterval = 12 * time.Hour
 
 // reconcilePlan is what a sweep would change: events to (re)create, and owned
 // events to delete. Building it is read-only, so it doubles as the dry run.
@@ -172,27 +162,6 @@ func (a *App) applyReconcile(ctx context.Context, tenantID uuid.UUID, plan recon
 type desiredShift struct {
 	shift square.EnrichedShift
 	event *googlecalendar.Event
-}
-
-// ReconcileAllTenants runs the sweep for every enabled, Square-connected
-// tenant. Mirrors SyncAllTenants' skip/log behaviour. Cron entry point.
-func (a *App) ReconcileAllTenants(ctx context.Context) error {
-	tenantIDs, err := listSquareTenants(ctx, a.pool)
-	if err != nil {
-		return err
-	}
-	for _, tid := range tenantIDs {
-		if !apps.IsEnabled(ctx, tid, AppName) {
-			continue
-		}
-		if _, err := a.RunReconcile(ctx, tid); err != nil {
-			if errors.Is(err, googlecalendar.ErrNotConfigured) || errors.Is(err, square.ErrNotConfigured) {
-				continue
-			}
-			slog.Warn("squareshifts: tenant reconcile failed", "tenant_id", tid, "error", err)
-		}
-	}
-	return nil
 }
 
 // eventStartsInWindow reports whether a calendar event's start falls in

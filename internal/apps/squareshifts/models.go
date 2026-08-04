@@ -95,23 +95,3 @@ func listMappingsInWindow(ctx context.Context, pool *pgxpool.Pool, tenantID uuid
 	}
 	return out, rows.Err()
 }
-
-// listSquareTenants returns tenant ids that have a Square integration —
-// the candidate set the cron sweep iterates.
-func listSquareTenants(ctx context.Context, pool *pgxpool.Pool) ([]uuid.UUID, error) {
-	rows, err := pool.Query(ctx,
-		`SELECT DISTINCT tenant_id FROM integrations WHERE provider = 'square'`)
-	if err != nil {
-		return nil, fmt.Errorf("listing square tenants: %w", err)
-	}
-	defer rows.Close()
-	var out []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scanning tenant id: %w", err)
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
-}

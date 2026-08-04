@@ -145,16 +145,31 @@ func getCalendarByID(ctx context.Context, pool *pgxpool.Pool, tenantID, calendar
 	return &c, nil
 }
 
-func listAllCalendarsAcrossTenants(ctx context.Context, pool *pgxpool.Pool) ([]Calendar, error) {
+// listCalendarsForSync returns one tenant's calendars. The sweep used to
+// select across every tenant at once, which both broke the tenant-filter
+// invariant and left nowhere to record a per-tenant result.
+func listCalendarsForSync(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]Calendar, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT `+calendarSelectCols+`
 		FROM app_calendars c
-		ORDER BY c.tenant_id, c.name`)
+		WHERE c.tenant_id = $1
+		ORDER BY c.name`, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("listing all calendars: %w", err)
+		return nil, fmt.Errorf("listing calendars for sync: %w", err)
 	}
 	defer rows.Close()
 	return scanCalendars(rows)
+}
+
+// listTenantsWithCalendars backs the schedule's AppliesTo predicate.
+func listTenantsWithCalendars(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (bool, error) {
+	var exists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM app_calendars WHERE tenant_id = $1)`, tenantID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking tenant calendars: %w", err)
+	}
+	return exists, nil
 }
 
 func scanCalendars(rows pgx.Rows) ([]Calendar, error) {

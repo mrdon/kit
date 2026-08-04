@@ -9,7 +9,6 @@ package squareshifts
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -38,7 +37,10 @@ type App struct {
 }
 
 // Init caches the pool. Called by apps.Init().
-func (a *App) Init(pool *pgxpool.Pool) { a.pool = pool }
+func (a *App) Init(pool *pgxpool.Pool) {
+	a.pool = pool
+	a.registerScheduledTasks()
+}
 
 // Configure wires the PWA session signer (for the admin Manage page). The
 // sync pulls its clients from the square and googlecalendar singletons, so
@@ -83,25 +85,6 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	registerSquareShiftsRoutes(mux, a)
 }
 
-// CronJobs runs the regular sync every 15 minutes and a slower drift-repair
-// reconciliation every 12 hours. The regular sync is cheap and fast (it skips
-// unchanged shifts); the reconcile pass consults Google's actual state to heal
-// out-of-band deletions/orphans that the regular sync can't see.
-func (a *App) CronJobs() []apps.CronJob {
-	return []apps.CronJob{
-		{
-			Name:     "sync_square_shifts",
-			Interval: 15 * time.Minute,
-			Run: func(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
-				return a.SyncAllTenants(ctx)
-			},
-		},
-		{
-			Name:     "reconcile_square_shifts",
-			Interval: reconcileInterval,
-			Run: func(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
-				return a.ReconcileAllTenants(ctx)
-			},
-		},
-	}
-}
+// CronJobs is unused: this app declares its recurring work via
+// scheduler.RegisterScheduledTask in Init (see schedule.go).
+func (a *App) CronJobs() []apps.CronJob { return nil }

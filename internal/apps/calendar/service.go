@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -207,27 +206,31 @@ func (s *CalendarService) GetEvents(ctx context.Context, c *services.Caller, opt
 	})
 }
 
-// SyncAllCalendars iterates every calendar across all tenants and syncs it.
-// Errors on individual calendars are recorded and logged but do not abort the run.
-func (s *CalendarService) SyncAllCalendars(ctx context.Context) error {
-	cals, err := listAllCalendarsAcrossTenants(ctx, s.pool)
+// SyncTenantCalendars syncs every calendar belonging to one tenant.
+//
+// A failure on one calendar is recorded against that calendar and does not
+// abort the rest — one bad feed URL should not stop the others refreshing.
+// The returned error reports how many failed so the scheduler can surface it
+// on the job row rather than leaving it only in the logs.
+func (s *CalendarService) SyncTenantCalendars(ctx context.Context, tenantID uuid.UUID) error {
+	cals, err := listCalendarsForSync(ctx, s.pool, tenantID)
 	if err != nil {
 		return err
 	}
+	var failed int
 	for i := range cals {
 		cal := cals[i]
-		// The sync runs process-wide; skip calendars whose tenant has
-		// disabled the calendar app.
-		if !apps.IsEnabled(ctx, cal.TenantID, AppName) {
-			continue
-		}
 		syncErr := s.syncOne(ctx, &cal)
 		if recErr := recordSyncResult(ctx, s.pool, cal.TenantID, cal.ID, syncErr); recErr != nil {
 			slog.Error("recording calendar sync result", "calendar_id", cal.ID, "error", recErr)
 		}
 		if syncErr != nil {
+			failed++
 			slog.Warn("calendar sync failed", "calendar_id", cal.ID, "name", cal.Name, "error", syncErr)
 		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d calendars failed to sync", failed, len(cals))
 	}
 	return nil
 }

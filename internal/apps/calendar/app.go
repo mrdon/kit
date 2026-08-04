@@ -2,13 +2,11 @@ package calendar
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
-	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -25,6 +23,7 @@ type CalendarApp struct {
 // Init sets up the service after DB is available.
 func (a *CalendarApp) Init(pool *pgxpool.Pool) {
 	a.svc = &CalendarService{pool: pool}
+	a.registerScheduledTasks()
 }
 
 // AppName is the registry identifier, shared by Name() and the
@@ -58,18 +57,9 @@ func (a *CalendarApp) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []
 
 func (a *CalendarApp) RegisterRoutes(_ apps.Mux) {}
 
-func (a *CalendarApp) CronJobs() []apps.CronJob {
-	return []apps.CronJob{
-		{
-			Name:     "sync_calendars",
-			Interval: 15 * time.Minute,
-			Run: func(ctx context.Context, pool *pgxpool.Pool, _ *crypto.Encryptor) error {
-				svc := &CalendarService{pool: pool}
-				return svc.SyncAllCalendars(ctx)
-			},
-		},
-	}
-}
+// CronJobs is unused: this app declares its recurring work via
+// scheduler.RegisterScheduledTask in Init (see schedule.go).
+func (a *CalendarApp) CronJobs() []apps.CronJob { return nil }
 
 var calendarTools = []services.ToolMeta{
 	{

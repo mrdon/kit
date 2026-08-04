@@ -18,7 +18,6 @@ package events
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -64,6 +63,7 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = &Service{pool: pool}
 	a.installSyncHook()
+	a.registerScheduledTasks()
 }
 
 // Configure wires the console session signer. The calendar client comes from
@@ -124,25 +124,6 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	registerSettingsRoutes(mux, a)
 }
 
-// CronJobs runs the regular sync every 15 minutes and a slower reconciliation
-// every 12 hours. The sync trusts its stored content hash and skips unchanged
-// events, which makes it cheap but blind to edits made directly in Google; the
-// reconcile pass compares against the calendar's actual state to heal those.
-func (a *App) CronJobs() []apps.CronJob {
-	return []apps.CronJob{
-		{
-			Name:     "sync_events",
-			Interval: 15 * time.Minute,
-			Run: func(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
-				return a.SyncAllTenants(ctx)
-			},
-		},
-		{
-			Name:     "reconcile_events",
-			Interval: reconcileInterval,
-			Run: func(ctx context.Context, _ *pgxpool.Pool, _ *crypto.Encryptor) error {
-				return a.ReconcileAllTenants(ctx)
-			},
-		},
-	}
-}
+// CronJobs is unused: this app declares its recurring work via
+// scheduler.RegisterScheduledTask in Init (see schedule.go).
+func (a *App) CronJobs() []apps.CronJob { return nil }
