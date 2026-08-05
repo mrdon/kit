@@ -38,7 +38,7 @@ export const SECTIONS: Section[] = [
   },
   {
     to: '/kiosk',
-    label: 'Kiosk screens',
+    label: 'Kiosk',
     blurb: 'Change what your wall screens show without touching the machine.',
     app: 'kiosk',
   },

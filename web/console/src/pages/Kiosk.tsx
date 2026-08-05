@@ -125,7 +125,7 @@ export default function Kiosk() {
         <nav className="crumbs">
           <Link to="/">Home</Link>
           <span className="crumb-sep">/</span>
-          <span>Kiosk screens</span>
+          <span>Kiosk</span>
         </nav>
         <h1>Kiosk screens</h1>
         <p className="page-sub">

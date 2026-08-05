@@ -119,7 +119,7 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 
 - **Tasks** — a priority-banded list (Blocker / High / Normal) grouped by an auto-assigned topic category. Drag a task between bands to reprioritize, tap "I'm on it" to claim it (which reserves it so teammates skip it) or the checkbox to resolve. Also a flat List view, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
 - **Expenses** — reports grouped by status; open one to add or remove line items, assign an approver, and submit/approve/reject/reimburse. Receipts attached in chat show on their line items.
-- **Kiosk screens** — wall-mounted screens: give each one a permanent Kit address, then change what it shows by editing its URL here. Any member can repoint a screen.
+- **Kiosk** — wall-mounted screens: give each one a permanent Kit address, then change what it shows by editing its URL here. Any member can repoint a screen.
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
 - **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
@@ -329,7 +329,7 @@ Kit calls `list_widget_conversations`, `search_widget_conversations`, and `read_
 
 For screens that just sit on a wall running a browser — a lobby TV, a shop-floor dashboard — Kit gives each one a permanent address so you never have to walk over with a keyboard to change what it shows.
 
-Set up a **board** per screen on the **Kiosk screens** page (`/<your-slug>/web/kiosk`): a name, an address key, and the URL it should display. The screen's address is `https://<your-kit>/<your-slug>/kiosk/<key>` — open that once in the kiosk's browser and it redirects to whatever the board currently points at. Later, change the URL on the page and the screen follows.
+Set up a **board** per screen on the **Kiosk** page (`/<your-slug>/web/kiosk`): a name, an address key, and the URL it should display. The screen's address is `https://<your-kit>/<your-slug>/kiosk/<key>` — open that once in the kiosk's browser and it redirects to whatever the board currently points at. Later, change the URL on the page and the screen follows.
 
 A screen only picks up changes on its own if something on the machine is watching. The setup panel on the page has a copy-paste shell loop that asks the board where to point every 30 seconds and reloads the browser when the answer changes. Without it, the screen shows whatever it loaded at boot until someone reloads it.
 
