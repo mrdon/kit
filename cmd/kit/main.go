@@ -31,6 +31,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/apps/integrations"
+	"github.com/mrdon/kit/internal/apps/kiosk"
 	"github.com/mrdon/kit/internal/apps/netlify"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/square"
@@ -242,6 +243,10 @@ func main() {
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for
 	// rendering embed snippets).
 	widgetapp.Configure(app.Agent, sessionSigner, cfg.BaseURL)
+
+	// Kiosk needs the signer for its admin console API and the base URL to
+	// render each board's copyable public link.
+	kiosk.Configure(sessionSigner, cfg.BaseURL)
 
 	// Coordination needs builderLLM, the Messenger from app, the CardService
 	// (for surfacing decision cards), and the JobService (for shepherd

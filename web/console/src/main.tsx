@@ -7,6 +7,7 @@ import Integrations from './pages/Integrations';
 import AppsSettings from './pages/AppsSettings';
 import Netlify from './pages/Netlify';
 import SquareShifts from './pages/SquareShifts';
+import Kiosk from './pages/Kiosk';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
@@ -55,6 +56,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />
           <Route path="/admin/netlify" element={<Netlify />} />
+          <Route path="/admin/kiosk" element={<Kiosk />} />
           <Route path="/admin/square-shifts" element={<SquareShifts />} />
           <Route path="/admin/widget" element={<Widget />} />
         </Route>

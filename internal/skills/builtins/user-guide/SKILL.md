@@ -125,6 +125,7 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 - **Apps** — admin-only page to turn features (vault, expenses, voting, calendar, app builder, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
 - **Integrations** — connect external services from one page: click **Connect** and enter the secret on a secure one-time form (it never passes through the assistant). Personal email is self-service for any user; workspace-wide services (Square, Google Calendar, Netlify, GitHub) are admin-only.
 - **Website / Chat widget** — admin-only setup pages for Netlify/GitHub site changes and the website chat widget.
+- **Kiosk screens** — admin-only page for wall-mounted screens: give each one a permanent Kit address, then change what it shows by editing its URL here.
 
 It works alongside Slack and the feed, not instead of them.
 
@@ -323,3 +324,15 @@ Kit returns a token (shown once — save it) and a one-line `<script>` snippet. 
 > "Show me conversations that didn't get a good answer."
 
 Kit calls `list_widget_conversations`, `search_widget_conversations`, and `read_widget_conversation` to answer. Visitor identity is anonymous (a per-browser UUID), so cross-conversation grouping works without storing personal data.
+
+## Kiosk screens
+
+For screens that just sit on a wall running a browser — a lobby TV, a shop-floor dashboard — Kit gives each one a permanent address so you never have to walk over with a keyboard to change what it shows.
+
+Set up a **board** per screen on the admin **Kiosk screens** page (`/<your-slug>/web/admin/kiosk`): a name, an address key, and the URL it should display. The screen's address is `https://<your-kit>/<your-slug>/kiosk/<key>` — open that once in the kiosk's browser and it redirects to whatever the board currently points at. Later, change the URL on the page and the screen follows.
+
+A screen only picks up changes on its own if something on the machine is watching. The setup panel on the page has a copy-paste shell loop that asks the board where to point every 30 seconds and reloads the browser when the answer changes. Without it, the screen shows whatever it loaded at boot until someone reloads it.
+
+Each board shows **Live** once a machine is polling it, so a screen that has gone dark is visible from the page rather than from someone walking past it. A board with no URL yet shows a plain "no content assigned" card on the screen instead of an error.
+
+Board addresses are **public and unauthenticated** — that's what lets a machine with no login use them. Anyone who knows the address can see where the screen points, so don't send a screen to a URL that is itself a private link.

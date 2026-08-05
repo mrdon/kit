@@ -107,6 +107,13 @@ export const SECTIONS: Section[] = [
     app: 'square_shifts',
   },
   {
+    to: '/admin/kiosk',
+    label: 'Kiosk screens',
+    blurb: 'Repoint unattended screens without touching the machine.',
+    admin: true,
+    app: 'kiosk',
+  },
+  {
     to: '/admin/widget',
     label: 'Chat widget',
     blurb: 'Mint and revoke embed tokens for the website chat widget.',

@@ -122,6 +122,28 @@ export interface MintedToken {
   allowed_origins: string[];
 }
 
+// A kiosk board: one unattended screen. `key` is baked into the machine's
+// browser homepage, so it is the stable half; `public_url` is what an admin
+// copies onto the machine. `last_seen_at` is the only health signal there is
+// — it is set by the screen's own polling.
+export interface KioskBoard {
+  id: string;
+  key: string;
+  name: string;
+  url: string;
+  notes: string;
+  public_url: string;
+  last_seen_at: string | null;
+  updated_at: string;
+}
+
+export interface KioskBoardInput {
+  key?: string;
+  name: string;
+  url: string;
+  notes: string;
+}
+
 export interface NetlifySiteOption {
   id: string;
   name: string;
@@ -679,6 +701,14 @@ export const api = {
     apiPut<EmailIntake>('/email-intake', body),
   runEmailIntake: () =>
     apiPost<{ status: string }>('/email-intake/run'),
+
+  kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
+  createKioskBoard: (body: KioskBoardInput) =>
+    apiPost<KioskBoard>('/kiosk/boards', body),
+  updateKioskBoard: (id: string, body: KioskBoardInput) =>
+    apiPatch<KioskBoard>(`/kiosk/boards/${encodeURIComponent(id)}`, body),
+  deleteKioskBoard: (id: string) =>
+    apiDelete<void>(`/kiosk/boards/${encodeURIComponent(id)}`),
 
   widgetTokens: () => apiGet<{ tokens: WidgetToken[] }>('/widget/tokens'),
   mintWidgetToken: (origin: string) =>
