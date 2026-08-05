@@ -14,16 +14,21 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 )
 
-// registerConsoleRoutes wires the admin JSON API behind /{slug}/web/admin/kiosk.
-// Admin-only: repointing a screen changes what a room full of people see.
+// registerConsoleRoutes wires the JSON API behind /{slug}/web/kiosk.
+//
+// Any member, not admin-only — same call the events app makes. Repointing a
+// screen is operational work for whoever is running the room today, and
+// making it wait on an admin is how a menu board ends up a week stale. The
+// blast radius is bounded by the app itself: a board can only ever hold a URL
+// somebody in the workspace chose.
 func registerConsoleRoutes(mux apps.Mux, a *App) {
-	adminJSON := func(h http.HandlerFunc) http.Handler {
-		return console.AdminJSON(a.pool, a.signer, h)
+	jsonRoute := func(h http.HandlerFunc) http.Handler {
+		return console.JSON(a.pool, a.signer, h)
 	}
-	mux.Handle("GET /{slug}/api/kiosk/boards", adminJSON(a.handleList))
-	mux.Handle("POST /{slug}/api/kiosk/boards", adminJSON(a.handleCreate))
-	mux.Handle("PATCH /{slug}/api/kiosk/boards/{id}", adminJSON(a.handleUpdate))
-	mux.Handle("DELETE /{slug}/api/kiosk/boards/{id}", adminJSON(a.handleDelete))
+	mux.Handle("GET /{slug}/api/kiosk/boards", jsonRoute(a.handleList))
+	mux.Handle("POST /{slug}/api/kiosk/boards", jsonRoute(a.handleCreate))
+	mux.Handle("PATCH /{slug}/api/kiosk/boards/{id}", jsonRoute(a.handleUpdate))
+	mux.Handle("DELETE /{slug}/api/kiosk/boards/{id}", jsonRoute(a.handleDelete))
 }
 
 // boardJSON is the wire shape. public_url is served rather than assembled

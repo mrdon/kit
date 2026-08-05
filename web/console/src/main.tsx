@@ -46,6 +46,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/skills" element={<Skills />} />
           <Route path="/skills/:id" element={<Skills />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/kiosk" element={<Kiosk />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />
           <Route path="/connect" element={<Connect />} />
@@ -56,7 +57,6 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />
           <Route path="/admin/netlify" element={<Netlify />} />
-          <Route path="/admin/kiosk" element={<Kiosk />} />
           <Route path="/admin/square-shifts" element={<SquareShifts />} />
           <Route path="/admin/widget" element={<Widget />} />
         </Route>

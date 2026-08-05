@@ -33,7 +33,7 @@ interface DraftState {
 const emptyDraft: DraftState = { name: '', key: '', url: '', notes: '' };
 
 export default function Kiosk() {
-  useSetChatContext('the admin Kiosk screens page');
+  useSetChatContext('the Kiosk screens page');
   const [boards, setBoards] = useState<KioskBoard[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
@@ -124,8 +124,6 @@ export default function Kiosk() {
       <div className="page-head">
         <nav className="crumbs">
           <Link to="/">Home</Link>
-          <span className="crumb-sep">/</span>
-          <Link to="/admin">Admin</Link>
           <span className="crumb-sep">/</span>
           <span>Kiosk screens</span>
         </nav>

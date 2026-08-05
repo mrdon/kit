@@ -37,6 +37,12 @@ export const SECTIONS: Section[] = [
     app: 'expense',
   },
   {
+    to: '/kiosk',
+    label: 'Kiosk screens',
+    blurb: 'Change what your wall screens show without touching the machine.',
+    app: 'kiosk',
+  },
+  {
     to: '/vault',
     label: 'Vault',
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',
@@ -105,13 +111,6 @@ export const SECTIONS: Section[] = [
     blurb: 'Mirror your published Square schedule into a Google Calendar.',
     admin: true,
     app: 'square_shifts',
-  },
-  {
-    to: '/admin/kiosk',
-    label: 'Kiosk screens',
-    blurb: 'Repoint unattended screens without touching the machine.',
-    admin: true,
-    app: 'kiosk',
   },
   {
     to: '/admin/widget',
