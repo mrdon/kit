@@ -38,6 +38,10 @@ type CreateParams struct {
 	AllDay   bool
 	Timezone string
 	RRule    string
+	// RepeatDates are ADDITIONAL dates beyond StartsAt, as raw strings parsed
+	// in the event's own zone. The earliest of the combined set becomes
+	// StartsAt, so a caller may pass them in any order.
+	RepeatDates []string
 
 	Visibility  Visibility
 	Venue       Venue
@@ -110,6 +114,12 @@ func (s *Service) Create(ctx context.Context, tenantID uuid.UUID, p CreateParams
 		e.EndsAt = &end
 	}
 
+	extra, err := parseDates(p.RepeatDates, loc)
+	if err != nil {
+		return nil, err
+	}
+	applyDates(e, extra)
+
 	if p.Featured != nil {
 		e.Featured = *p.Featured
 	}
@@ -152,6 +162,11 @@ type UpdateParams struct {
 	AllDay   *bool
 	Timezone *string
 	RRule    *string
+	// RepeatDates replaces the extra-date list wholesale. Nil leaves it alone;
+	// a non-nil empty slice clears it back to a one-off. A plain []string could
+	// not tell those apart, and "the caller omitted this" versus "the caller
+	// removed every date" are opposite intents.
+	RepeatDates *[]string
 
 	Visibility  *Visibility
 	Venue       *Venue
@@ -228,6 +243,9 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	if err := applyTimes(e, p); err != nil {
 		return nil, err
 	}
+	if err := applyRepeatDates(e, p); err != nil {
+		return nil, err
+	}
 	if err := applySlug(ctx, s.pool, e, p); err != nil {
 		return nil, err
 	}
@@ -286,10 +304,18 @@ func applyTimes(e *Event, p UpdateParams) error {
 			return err
 		}
 		if newTZ != e.Timezone {
-			e.StartsAt = rezone(e.StartsAt, e.Loc(), newLoc)
+			oldLoc := e.Loc()
+			e.StartsAt = rezone(e.StartsAt, oldLoc, newLoc)
 			if e.EndsAt != nil {
-				moved := rezone(*e.EndsAt, e.Loc(), newLoc)
+				moved := rezone(*e.EndsAt, oldLoc, newLoc)
 				e.EndsAt = &moved
+			}
+			// Every explicit date moves with the start, for the same reason:
+			// they are one series, and rezoning only its head would leave a
+			// six-date list where the first night is at 7pm and the rest are
+			// an hour out.
+			for i, d := range e.RDates {
+				e.RDates[i] = rezone(d, oldLoc, newLoc)
 			}
 			e.Timezone = newTZ
 		}
@@ -312,6 +338,34 @@ func applyTimes(e *Event, p UpdateParams) error {
 			}
 			e.EndsAt = &t
 		}
+	}
+	return nil
+}
+
+// applyRepeatDates re-folds the explicit date list.
+//
+// It runs AFTER applyTimes deliberately. Both can move starts_at, and the
+// times patch is the more specific intent -- someone who sends both a new start
+// and a date list means the list to be measured against the new start, not the
+// old one.
+//
+// It also re-folds when only the times changed, because rdates must stay
+// strictly after starts_at: pushing a start past an existing extra date would
+// otherwise leave the list out of order, and applyDates re-sorts it so the
+// event simply gains its old start as an extra date instead.
+func applyRepeatDates(e *Event, p UpdateParams) error {
+	switch {
+	case p.RepeatDates != nil:
+		extra, err := parseDates(*p.RepeatDates, e.Loc())
+		if err != nil {
+			return err
+		}
+		e.RDates = nil
+		applyDates(e, extra)
+	case len(e.RDates) > 0 && (p.StartsAt != nil || p.Timezone != nil):
+		existing := e.RDates
+		e.RDates = nil
+		applyDates(e, existing)
 	}
 	return nil
 }

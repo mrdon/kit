@@ -29,10 +29,20 @@ Other things worth knowing:
 - **`prep_notes` is internal.** It reaches the calendar, which staff and the
   food partner read, but never the public website. Put staffing and setup
   details there rather than in the public description.
-- **Repeats are weekly only.** A standing weekly night is one event with a
-  repeat rule. A series of different acts — live music with a different band
-  each week — is *not* a repeat; create one event per night, because each has
-  its own name, description, and promotion.
+- **A series is ONE event, not one per date.** Reach for `repeat_rule` when the
+  dates follow a pattern (`FREQ=WEEKLY;BYDAY=TU`, `FREQ=MONTHLY;BYDAY=1FR` for
+  the first Friday, `FREQ=MONTHLY;BYMONTHDAY=15`), and `repeat_dates` when they
+  do not — a supper club scheduled around the chef, a five-week course with a
+  gap over a holiday. Creating one event per date is the mistake to avoid: it
+  produces a separate web address and a separate poster upload for each night,
+  and the copies drift apart. The start date must itself fall on whatever
+  pattern the rule describes.
+  The exception is a run of genuinely *different* events — live music with a
+  different band each week. Those each have their own name, description and
+  promotion, so they stay separate events.
+- **Copy rather than retype.** `clone_event` duplicates an event's blurb, staff
+  notes, price, capacity and poster into a new draft. Use it for "the same
+  again"; the copy is independent of the original and gets its own web address.
 - **Cancel, don't delete.** Cancelling removes an event from the calendar and
   the website while keeping the record, so the calendar copy gets cleaned up
   and the web address is never reused for different content.

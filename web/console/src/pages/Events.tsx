@@ -8,6 +8,7 @@ import {
   type EventsSiteStatus,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
+import RepeatEditor from './EventRepeat';
 
 // The everyday events page: a list, with create/edit in a drawer.
 //
@@ -28,6 +29,7 @@ const EMPTY_FORM: EventInput = {
   venue: 'onsite',
   space_impact: 'none',
   repeat_rule: '',
+  repeat_dates: [],
   registration_url: '',
   featured: false,
 };
@@ -77,6 +79,23 @@ function describeExposure(e: EventRecord): string {
   return 'On the team calendar only, not public';
 }
 
+// A short gloss of a stored rule for the list line. Deliberately coarse — the
+// drawer shows the exact pattern, this only has to say "there is more than one
+// of these" at a glance.
+function describeRule(rule: string): string {
+  if (!/FREQ=MONTHLY/i.test(rule)) return 'repeats weekly';
+  const ord = /BYDAY=(-?\d)([A-Z]{2})/i.exec(rule);
+  if (ord) {
+    const names: Record<string, string> = {
+      SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday',
+      TH: 'Thursday', FR: 'Friday', SA: 'Saturday',
+    };
+    const which = ord[1] === '-1' ? 'last' : ['', 'first', 'second', 'third', 'fourth', 'fifth'][Number(ord[1])];
+    return `monthly, ${which} ${names[ord[2].toUpperCase()] ?? ''}`.trim();
+  }
+  return 'repeats monthly';
+}
+
 function formatWhen(e: EventRecord): string {
   const d = new Date(e.starts_at);
   const base = d.toLocaleString(undefined, {
@@ -88,7 +107,9 @@ function formatWhen(e: EventRecord): string {
     month: 'short',
     ...(e.all_day ? {} : { hour: 'numeric', minute: '2-digit' }),
   });
-  return e.rrule ? `${base} · repeats weekly` : base;
+  if (e.rrule) return `${base} · ${describeRule(e.rrule)}`;
+  const extra = e.rdates?.length ?? 0;
+  return extra > 0 ? `${base} · ${extra + 1} dates` : base;
 }
 
 export default function Events() {
@@ -359,6 +380,9 @@ function EventDrawer({
           ends_at: toLocalInput(event.ends_at, event.timezone),
           timezone: event.timezone,
           repeat_rule: event.rrule ?? '',
+          repeat_dates: (event.rdates ?? []).map((d) =>
+            toLocalInput(d, event.timezone),
+          ),
           visibility: event.visibility,
           venue: event.venue,
           space_impact: event.space_impact,
@@ -508,24 +532,13 @@ function EventDrawer({
             </label>
           )}
 
-          <label className="field">
-            <span>Repeat</span>
-            <select
-              value={form.repeat_rule ? 'weekly' : 'none'}
-              onChange={(e) =>
-                set({
-                  repeat_rule: e.target.value === 'weekly' ? 'FREQ=WEEKLY' : '',
-                })
-              }
-            >
-              <option value="none">Does not repeat</option>
-              <option value="weekly">Every week</option>
-            </select>
-            <span className="field-note">
-              For a standing weekly night like trivia. A run of different acts
-              is not a repeat — create one event per night.
-            </span>
-          </label>
+          <RepeatEditor
+            startsAt={form.starts_at}
+            rule={form.repeat_rule ?? ''}
+            dates={form.repeat_dates ?? []}
+            disabled={busy}
+            onChange={(next) => set(next)}
+          />
 
           <label className="field">
             <span>Summary</span>
@@ -651,6 +664,27 @@ function EventDrawer({
                 onClick={() => transition(api.publishEvent, 'Published')}
               >
                 Publish
+              </button>
+            )}
+            {/* Offered whatever the status: copying a cancelled event is how
+                you reinstate one without reusing its web address, and copying
+                a published one is the everyday "same again next month". */}
+            {event && (
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  guard(async () => {
+                    const r = await api.cloneEvent(event.id);
+                    onChanged(
+                      'Copied as a new draft. Set its date and publish when ready.',
+                      r.event,
+                    );
+                  })
+                }
+              >
+                Duplicate
               </button>
             )}
             {event?.status === 'published' && (

@@ -2,6 +2,17 @@ package events
 
 import "github.com/mrdon/kit/internal/services"
 
+// dateList describes a repeat-date array. Spelled out rather than built with
+// services.Field because that helper emits no "items", and a typed array
+// without one is rejected by strict MCP clients.
+func dateList(desc string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"items":       map[string]any{"type": "string"},
+		"description": desc,
+	}
+}
+
 // eventsTools is the single source of tool metadata. Both the agent registry
 // and the MCP server build their surfaces from this slice, so a field added
 // here appears on both by construction rather than by remembering to edit two
@@ -32,8 +43,16 @@ var eventsTools = []services.ToolMeta{
 			"space_impact": services.Field("string",
 				"'none' or 'partial' if it reserves an area. Onsite only."),
 			"repeat_rule": services.Field("string",
-				"Weekly repeat, e.g. 'FREQ=WEEKLY;BYDAY=TU'. Only weekly repeats are supported. "+
-					"The start date's weekday must be included in the rule."),
+				"A repeat rule, for series that follow a pattern. Weekly: 'FREQ=WEEKLY;BYDAY=TU'. "+
+					"Monthly: 'FREQ=MONTHLY;BYDAY=1FR' (first Friday), 'FREQ=MONTHLY;BYDAY=-1FR' (last Friday), "+
+					"'FREQ=MONTHLY;BYMONTHDAY=15' (the 15th). Add INTERVAL for 'every 2 weeks'/'every 3 months', "+
+					"and UNTIL or COUNT to stop it. The start date must itself fall on the pattern. "+
+					"For dates that follow no pattern, use repeat_dates instead."),
+			"repeat_dates": dateList(
+				"Extra dates this same event also happens on, e.g. ['2026-10-02 19:00', '2026-11-06 19:00']. " +
+					"Use this for a series with no pattern — dates picked around someone's availability, or a run " +
+					"with a gap over a holiday. One event, one web page, many dates; do not create one event per night. " +
+					"The earliest date given becomes the start."),
 			"price_cents":         services.Field("integer", "Ticket price in cents. Omit for a free event."),
 			"currency":            services.Field("string", "ISO currency code. Defaults to USD."),
 			"capacity":            services.Field("integer", "Hard seat limit, if any."),
@@ -48,21 +67,25 @@ var eventsTools = []services.ToolMeta{
 		Description: "Change an event. Only the fields you pass are altered. " +
 			"The web address is fixed once an event is published, because links to it may already be shared.",
 		Schema: services.PropsReq(map[string]any{
-			"event_id":            services.Field("string", "Event id."),
-			"title":               services.Field("string", "New title."),
-			"starts_at":           services.Field("string", "New start."),
-			"ends_at":             services.Field("string", "New end. Pass an empty string to clear it."),
-			"timezone":            services.Field("string", "New IANA zone. The wall-clock time is preserved."),
-			"all_day":             services.Field("boolean", "All-day flag."),
-			"featured":            services.Field("boolean", "Mark as featured. The website leads with the next featured event."),
-			"summary":             services.Field("string", "New teaser."),
-			"description":         services.Field("string", "New public description."),
-			"prep_notes":          services.Field("string", "New internal staff brief."),
-			"location":            services.Field("string", "New location."),
-			"visibility":          services.Field("string", "'public' or 'private'."),
-			"venue":               services.Field("string", "'onsite' or 'offsite'."),
-			"space_impact":        services.Field("string", "'none' or 'partial'."),
-			"repeat_rule":         services.Field("string", "Weekly repeat rule, or empty to stop repeating."),
+			"event_id":     services.Field("string", "Event id."),
+			"title":        services.Field("string", "New title."),
+			"starts_at":    services.Field("string", "New start."),
+			"ends_at":      services.Field("string", "New end. Pass an empty string to clear it."),
+			"timezone":     services.Field("string", "New IANA zone. The wall-clock time is preserved."),
+			"all_day":      services.Field("boolean", "All-day flag."),
+			"featured":     services.Field("boolean", "Mark as featured. The website leads with the next featured event."),
+			"summary":      services.Field("string", "New teaser."),
+			"description":  services.Field("string", "New public description."),
+			"prep_notes":   services.Field("string", "New internal staff brief."),
+			"location":     services.Field("string", "New location."),
+			"visibility":   services.Field("string", "'public' or 'private'."),
+			"venue":        services.Field("string", "'onsite' or 'offsite'."),
+			"space_impact": services.Field("string", "'none' or 'partial'."),
+			"repeat_rule": services.Field("string",
+				"Repeat rule (weekly or monthly, as in create_event), or empty to stop repeating."),
+			"repeat_dates": dateList(
+				"Replaces the whole list of extra dates. Pass the full list you want, not just additions; " +
+					"an empty list turns the event back into a one-off."),
 			"price_cents":         services.Field("integer", "New price in cents."),
 			"clear_price":         services.Field("boolean", "Make the event free."),
 			"capacity":            services.Field("integer", "New capacity."),
@@ -71,6 +94,18 @@ var eventsTools = []services.ToolMeta{
 			"registration_url":    services.Field("string", "New ticket/RSVP link."),
 			"notify_food_partner": services.Field("boolean", "Whether the food partner should plan for this."),
 			"slug":                services.Field("string", "Web address segment. Draft events only."),
+		}, "event_id"),
+	},
+	{
+		Name: "clone_event",
+		Description: "Copy an existing event into a new draft — same blurb, staff notes, price, capacity and poster. " +
+			"Use this for 'the same again' rather than retyping it. The copy is independent: editing one never " +
+			"changes the other, and it gets its own web address. Give starts_at to put the copy on a new date " +
+			"(which drops any extra dates the original had); omit it to duplicate the schedule exactly.",
+		Schema: services.PropsReq(map[string]any{
+			"event_id":  services.Field("string", "Event to copy."),
+			"starts_at": services.Field("string", "Start for the copy, e.g. '2026-09-11 19:00'. Defaults to the original's."),
+			"title":     services.Field("string", "Title for the copy. Defaults to the original's with '(copy)' appended."),
 		}, "event_id"),
 	},
 	{
@@ -126,8 +161,9 @@ var eventsTools = []services.ToolMeta{
 	},
 	{
 		Name: "list_events",
-		Description: "List events, soonest first. Weekly repeating events are always included regardless of date range, " +
-			"because their stored start is the first occurrence and may be long past.",
+		Description: "List events, soonest first. Rule-based repeating events are always included regardless of " +
+			"date range, because their stored start is the first occurrence and may be long past. An event with a " +
+			"list of set dates is included while any of those dates is still ahead.",
 		Schema: services.Props(map[string]any{
 			"status":     services.Field("string", "Filter: draft, published, or cancelled."),
 			"visibility": services.Field("string", "Filter: public or private."),

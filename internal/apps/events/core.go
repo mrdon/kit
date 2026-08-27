@@ -25,6 +25,8 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreCreate(ctx, caller, svc, raw)
 	case "update_event":
 		return coreUpdate(ctx, caller, svc, raw)
+	case "clone_event":
+		return coreClone(ctx, caller, svc, raw)
 	case "publish_event":
 		return corePublish(ctx, caller, svc, raw)
 	case "unpublish_event":
@@ -73,6 +75,9 @@ type eventInput struct {
 	Timezone *string `json:"timezone"`
 	// RepeatRule is the tool-facing name; "rrule" is jargon.
 	RepeatRule *string `json:"repeat_rule"`
+	// RepeatDates is a pointer so update can tell "not sent" from "cleared" --
+	// an empty list is a real instruction, meaning "back to a one-off".
+	RepeatDates *[]string `json:"repeat_dates"`
 
 	Visibility  *string `json:"visibility"`
 	Venue       *string `json:"venue"`
@@ -104,6 +109,7 @@ func coreCreate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		AllDay:             in.AllDay != nil && *in.AllDay,
 		Timezone:           deref(in.Timezone),
 		RRule:              deref(in.RepeatRule),
+		RepeatDates:        derefSlice(in.RepeatDates),
 		Visibility:         Visibility(strings.ToLower(deref(in.Visibility))),
 		Venue:              Venue(strings.ToLower(deref(in.Venue))),
 		SpaceImpact:        SpaceImpact(strings.ToLower(deref(in.SpaceImpact))),
@@ -141,7 +147,8 @@ func coreUpdate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		PrepNotes: in.PrepNotes, Location: in.Location,
 		StartsAt: in.StartsAt, EndsAt: in.EndsAt, AllDay: in.AllDay,
 		Timezone: in.Timezone, RRule: in.RepeatRule,
-		PriceCents: in.PriceCents, ClearPrice: in.ClearPrice,
+		RepeatDates: in.RepeatDates,
+		PriceCents:  in.PriceCents, ClearPrice: in.ClearPrice,
 		Currency: in.Currency, Capacity: in.Capacity, ClearCapacity: in.ClearCapacity,
 		ExpectedAttendance: in.ExpectedAttendance,
 		RegistrationURL:    in.RegistrationURL,
@@ -367,6 +374,43 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func derefSlice(s *[]string) []string {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
+// coreClone copies an event. The rules -- draft status, a fresh slug, zeroed
+// calendar state -- live in Service.Clone so the console cannot drift from the
+// agent and MCP surfaces on any of them.
+func coreClone(ctx context.Context, caller *services.Caller, svc *Service, raw json.RawMessage) (string, error) {
+	var in struct {
+		EventID  string `json:"event_id"`
+		StartsAt string `json:"starts_at"`
+		Title    string `json:"title"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return "", fmt.Errorf("parsing input: %w", err)
+	}
+	id, err := uuid.Parse(strings.TrimSpace(in.EventID))
+	if err != nil {
+		return "That does not look like an event id.", nil
+	}
+	p := CloneParams{Title: in.Title, StartsAt: in.StartsAt}
+	if caller.UserID != uuid.Nil {
+		uid := caller.UserID
+		p.CreatedBy = &uid
+	}
+	e, err := svc.Clone(ctx, caller.TenantID, id, p)
+	if err != nil {
+		return userError(err)
+	}
+	settings, _ := svc.Settings(ctx, caller.TenantID)
+	return "Copied as a new draft — it is not visible anywhere yet, and it is independent of the original. " +
+		"Publish it when confirmed.\n\n" + FormatEvent(e, settings), nil
 }
 
 // coreDelete erases a row for good. The safety rule lives in Service.Delete so

@@ -36,6 +36,10 @@ type Event struct {
 	// what keeps a weekly 7pm event at 7pm across a DST boundary.
 	Timezone string `json:"timezone"`
 	RRule    string `json:"rrule,omitempty"`
+	// RDates are the ADDITIONAL dates the event happens on, for series no rule
+	// can express. StartsAt remains the first occurrence, so these are always
+	// strictly after it -- the service normalises the combined set on write.
+	RDates []time.Time `json:"rdates,omitempty"`
 
 	Location         string     `json:"location,omitempty"`
 	HeroAttachmentID *uuid.UUID `json:"hero_attachment_id,omitempty"`
@@ -105,15 +109,35 @@ func (e *Event) Rule() *Rule {
 	return r
 }
 
+// Series bundles everything the expander needs: the anchor, the rule, and any
+// explicit extra dates.
+func (e *Event) Series() Series {
+	return Series{
+		Start:  e.StartsAt,
+		End:    e.End(),
+		Loc:    e.Loc(),
+		Rule:   e.Rule(),
+		RDates: e.RDates,
+	}
+}
+
 // Occurrences expands the event within [from, to). Non-recurring events yield
 // at most one, so callers need no special case.
 func (e *Event) Occurrences(from, to time.Time) []Occurrence {
-	return Expand(e.StartsAt, e.End(), e.Loc(), e.Rule(), from, to)
+	return e.Series().Expand(from, to)
+}
+
+// Repeats reports whether the event happens more than once, by either
+// mechanism. The two are asked about together often enough -- formatting, the
+// calendar briefing, the upcoming-list exemption -- that a single predicate
+// keeps them from being checked inconsistently.
+func (e *Event) Repeats() bool {
+	return e != nil && (e.RRule != "" || len(e.RDates) > 0)
 }
 
 const eventColumns = `
 	id, tenant_id, title, slug, summary, description, prep_notes,
-	starts_at, ends_at, all_day, timezone, rrule,
+	starts_at, ends_at, all_day, timezone, rrule, rdates,
 	location, hero_attachment_id,
 	status, visibility, venue, space_impact, notify_food_partner, featured,
 	price_cents, currency, capacity, expected_attendance,
@@ -126,7 +150,7 @@ func scanEvent(row pgx.Row) (*Event, error) {
 	var rrule, registrationURL, squareVariationID *string
 	err := row.Scan(
 		&e.ID, &e.TenantID, &e.Title, &e.Slug, &e.Summary, &e.Description, &e.PrepNotes,
-		&e.StartsAt, &e.EndsAt, &e.AllDay, &e.Timezone, &rrule,
+		&e.StartsAt, &e.EndsAt, &e.AllDay, &e.Timezone, &rrule, &e.RDates,
 		&e.Location, &e.HeroAttachmentID,
 		&e.Status, &e.Visibility, &e.Venue, &e.SpaceImpact, &e.NotifyFoodPartner, &e.Featured,
 		&e.PriceCents, &e.Currency, &e.Capacity, &e.ExpectedAttendance,
@@ -159,26 +183,36 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
+// emptyIfNil keeps the rdates column NOT NULL. A nil Go slice would be written
+// as SQL NULL, which the column refuses and which would also make every
+// cardinality() check in the queries return NULL instead of 0.
+func emptyIfNil(ts []time.Time) []time.Time {
+	if ts == nil {
+		return []time.Time{}
+	}
+	return ts
+}
+
 func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, error) {
 	row := pool.QueryRow(ctx, `
 		INSERT INTO app_events (
 			tenant_id, title, slug, summary, description, prep_notes,
-			starts_at, ends_at, all_day, timezone, rrule,
+			starts_at, ends_at, all_day, timezone, rrule, rdates,
 			location, hero_attachment_id,
 			status, visibility, venue, space_impact, notify_food_partner, featured,
 			price_cents, currency, capacity, expected_attendance,
 			registration_url, square_variation_id, created_by
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11,
-			$12, $13,
-			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23,
-			$24, $25, $26
+			$7, $8, $9, $10, $11, $12,
+			$13, $14,
+			$15, $16, $17, $18, $19, $20,
+			$21, $22, $23, $24,
+			$25, $26, $27
 		)
 		RETURNING `+eventColumns,
 		e.TenantID, e.Title, e.Slug, e.Summary, e.Description, e.PrepNotes,
-		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule),
+		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule), emptyIfNil(e.RDates),
 		e.Location, e.HeroAttachmentID,
 		e.Status, e.Visibility, e.Venue, e.SpaceImpact, e.NotifyFoodPartner, e.Featured,
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
@@ -199,17 +233,19 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		UPDATE app_events SET
 			title = $3, slug = $4, summary = $5, description = $6, prep_notes = $7,
 			starts_at = $8, ends_at = $9, all_day = $10, timezone = $11, rrule = $12,
-			location = $13, hero_attachment_id = $14,
-			status = $15, visibility = $16, venue = $17, space_impact = $18,
-			notify_food_partner = $19, featured = $20,
-			price_cents = $21, currency = $22, capacity = $23, expected_attendance = $24,
-			registration_url = $25, square_variation_id = $26,
+			rdates = $13,
+			location = $14, hero_attachment_id = $15,
+			status = $16, visibility = $17, venue = $18, space_impact = $19,
+			notify_food_partner = $20, featured = $21,
+			price_cents = $22, currency = $23, capacity = $24, expected_attendance = $25,
+			registration_url = $26, square_variation_id = $27,
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 		RETURNING `+eventColumns,
 		e.TenantID, e.ID,
 		e.Title, e.Slug, e.Summary, e.Description, e.PrepNotes,
 		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule),
+		emptyIfNil(e.RDates),
 		e.Location, e.HeroAttachmentID,
 		e.Status, e.Visibility, e.Venue, e.SpaceImpact,
 		e.NotifyFoodPartner, e.Featured,
@@ -269,17 +305,29 @@ func listEvents(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f L
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	// The (rrule IS NOT NULL OR ...) clause is load-bearing, not defensive. A
-	// weekly series stores its FIRST occurrence in starts_at, which for trivia
-	// that began years ago is far in the past -- a naive lower bound would
-	// silently drop it from every upcoming-events view forever.
+	// The recurrence exemption in the lower-bound clause is load-bearing, not
+	// defensive. A repeating event stores its FIRST occurrence in starts_at,
+	// which for trivia that began years ago is far in the past -- a naive lower
+	// bound would silently drop it from every upcoming-events view forever.
+	//
+	// A rule-based series is exempt outright, because expanding an RRULE in SQL
+	// is not on the table. An explicit date list is different: its last date is
+	// right there in the array, so the bound is applied to that instead. Being
+	// precise matters more here than it does for rules -- date lists are finite
+	// by nature, and a blanket exemption would pin every finished series to the
+	// top of the list forever.
 	rows, err := pool.Query(ctx, `
 		SELECT `+eventColumns+`
 		FROM app_events
 		WHERE tenant_id = $1
 		  AND ($2::text IS NULL OR status = $2)
 		  AND ($3::text IS NULL OR visibility = $3)
-		  AND ($4::timestamptz IS NULL OR rrule IS NOT NULL OR coalesce(ends_at, starts_at) >= $4)
+		  AND ($4::timestamptz IS NULL
+		       OR rrule IS NOT NULL
+		       OR greatest(
+		            coalesce(ends_at, starts_at),
+		            (SELECT max(d) FROM unnest(rdates) AS d)
+		          ) >= $4)
 		  AND ($5::timestamptz IS NULL OR starts_at < $5)
 		ORDER BY starts_at ASC
 		LIMIT $6`,

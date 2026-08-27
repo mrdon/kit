@@ -171,6 +171,10 @@ Enter an event once and Kit fans it out: it lands on the team's Google Calendar,
 Create one from chat, or from the **Events** page in the web console:
 
 > "Create an event for Trivia Night on Tuesday 14th at 7pm, repeating weekly"
+>
+> "Supper Club on Sept 4th, Oct 2nd and Nov 6th, 6pm, public"
+>
+> "Copy the Beer School event to January 8th"
 > "Add a private booking for Sarah's 40th, Saturday 6-9pm in the back room, about 30 people"
 > "We're pouring at the Denver Beer Fest on the 22nd — that's offsite and public"
 
@@ -186,7 +190,15 @@ Three things describe an event, and they're independent rather than one "type":
 
 **Staff notes** go on the calendar entry, where the bartender working that night is already looking. They never appear on the website.
 
-**Repeats are weekly only**, for a standing night like trivia. A run of different acts — live music with a different band each week — isn't a repeat: create one event per night, since each has its own name and description.
+**Repeats come in three shapes**, and picking the right one means one web page instead of five:
+
+- **Every week** — a standing night like trivia, same weekday as the start date.
+- **Every month** — "the first Friday", "the last Friday", or a day of the month like the 15th. Kit offers only the patterns that actually match your start date. A month with no such date is skipped rather than moved, so a series on the 31st simply doesn't run in February.
+- **On set dates** — an add-and-remove list of dates for a series that follows no pattern: a supper club scheduled around the chef, a five-week course with a gap over a holiday. One event on several dates means one web page, one poster and one set of staff notes.
+
+The exception is a run of genuinely *different* events — live music with a different band each week. Those each have their own name, description and poster, so they stay separate events.
+
+**Duplicate instead of retyping.** The **Duplicate** button on an event (or "copy that event to the 12th" in chat) makes a new draft with the same blurb, staff notes, price, capacity and poster. The copy is independent — editing one never changes the other — and it gets its own web address. Give it a new date and it becomes a one-off on that date; leave the date alone and it duplicates the schedule exactly.
 
 **Cancel rather than delete.** Cancelling removes an event from the calendar and the website but keeps the record, so the calendar entry gets cleaned up and the web address is never reused for different content. Web addresses are frozen once an event is published, because links to them may already be in a social post or newsletter.
 

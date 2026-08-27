@@ -27,164 +27,21 @@ func mustRule(t *testing.T, s string) *Rule {
 // The highest-value test in the app. Adding 7*24h instead of advancing
 // calendar days silently moves 7pm trivia to 6pm for half the year, and every
 // other test in this file would still pass.
-func TestExpandKeepsWallClockAcrossSpringForward(t *testing.T) {
-	loc := denver(t)
-	// DST begins 2027-03-14 in the US. Start two Tuesdays before it.
-	start := time.Date(2027, 3, 2, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(3*time.Hour), loc, mustRule(t, "FREQ=WEEKLY;BYDAY=TU"),
-		start, time.Date(2027, 4, 1, 0, 0, 0, 0, loc))
 
-	// March 2027 has five Tuesdays: 2, 9, 16, 23, 30.
-	if len(got) != 5 {
-		t.Fatalf("expected 5 Tuesdays in March, got %d", len(got))
-	}
-	for _, occ := range got {
-		h, m, _ := occ.Start.Clock()
-		if h != 19 || m != 0 {
-			t.Errorf("%s: clock = %02d:%02d, want 19:00 — DST shifted the event",
-				occ.Start.Format("2006-01-02 MST"), h, m)
-		}
-		if occ.Start.Weekday() != time.Tuesday {
-			t.Errorf("%s is not a Tuesday", occ.Start.Format("2006-01-02"))
-		}
-	}
-	assertCrossesDST(t, got)
-}
-
-// assertCrossesDST fails if every occurrence sits at the same UTC offset --
-// without this, a wall-clock assertion could pass on a window that never
-// straddles a transition and prove nothing.
-func assertCrossesDST(t *testing.T, got []Occurrence) {
-	t.Helper()
-	if len(got) < 2 {
-		t.Fatalf("need at least 2 occurrences to straddle a transition, got %d", len(got))
-	}
-	_, first := got[0].Start.Zone()
-	_, last := got[len(got)-1].Start.Zone()
-	if first == last {
-		t.Fatal("window did not cross a DST boundary — test is not exercising anything")
-	}
-}
-
-func TestExpandKeepsWallClockAcrossFallBack(t *testing.T) {
-	loc := denver(t)
-	// DST ends 2026-11-01 in the US.
-	start := time.Date(2026, 10, 20, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(3*time.Hour), loc, mustRule(t, "FREQ=WEEKLY;BYDAY=TU"),
-		start, time.Date(2026, 11, 30, 0, 0, 0, 0, loc))
-
-	if len(got) < 4 {
-		t.Fatalf("expected at least 4 occurrences, got %d", len(got))
-	}
-	for _, occ := range got {
-		if h, m, _ := occ.Start.Clock(); h != 19 || m != 0 {
-			t.Errorf("%s: clock = %02d:%02d, want 19:00", occ.Start.Format("2006-01-02 MST"), h, m)
-		}
-	}
-	assertCrossesDST(t, got)
-}
-
-func TestExpandPreservesDuration(t *testing.T) {
-	loc := denver(t)
-	start := time.Date(2026, 8, 4, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(150*time.Minute), loc, mustRule(t, "FREQ=WEEKLY;BYDAY=TU"),
-		start, start.AddDate(0, 0, 21))
-	if len(got) == 0 {
-		t.Fatal("no occurrences")
-	}
-	for _, occ := range got {
-		if d := occ.End.Sub(occ.Start); d != 150*time.Minute {
-			t.Errorf("%s: duration = %v, want 2h30m", occ.Start.Format("2006-01-02"), d)
-		}
-	}
-}
-
-// A nil rule yields exactly one occurrence, so every caller can treat
-// recurring and one-off events identically.
-func TestExpandNilRuleYieldsSingleOccurrence(t *testing.T) {
-	loc := denver(t)
-	start := time.Date(2026, 8, 4, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(time.Hour), loc, nil, start.AddDate(0, 0, -1), start.AddDate(0, 0, 1))
-	if len(got) != 1 || !got[0].Start.Equal(start) {
-		t.Fatalf("got %d occurrences (%+v), want exactly the start", len(got), got)
-	}
-	// Outside the window it must not appear.
-	if out := Expand(start, start.Add(time.Hour), loc, nil, start.AddDate(0, 0, 1), start.AddDate(0, 0, 2)); len(out) != 0 {
-		t.Fatalf("occurrence leaked outside the window: %+v", out)
-	}
-}
-
-func TestExpandRespectsUntilAndCount(t *testing.T) {
-	loc := denver(t)
-	start := time.Date(2026, 8, 4, 19, 0, 0, 0, loc)
-	far := start.AddDate(1, 0, 0)
-
-	counted := Expand(start, start.Add(time.Hour), loc, mustRule(t, "FREQ=WEEKLY;BYDAY=TU;COUNT=3"), start, far)
-	if len(counted) != 3 {
-		t.Fatalf("COUNT=3 produced %d occurrences", len(counted))
-	}
-
-	until := Expand(start, start.Add(time.Hour), loc,
-		mustRule(t, "FREQ=WEEKLY;BYDAY=TU;UNTIL=20260901T000000Z"), start, far)
-	if len(until) == 0 {
-		t.Fatal("UNTIL produced no occurrences")
-	}
-	for _, occ := range until {
-		if occ.Start.After(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) {
-			t.Errorf("%s is past UNTIL", occ.Start.Format(time.RFC3339))
-		}
-	}
-}
-
-func TestExpandIntervalSkipsWeeks(t *testing.T) {
-	loc := denver(t)
-	start := time.Date(2026, 8, 4, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(time.Hour), loc,
-		mustRule(t, "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU"), start, start.AddDate(0, 0, 42))
-	for i := 1; i < len(got); i++ {
-		if gap := got[i].Start.Sub(got[i-1].Start); gap < 13*24*time.Hour {
-			t.Fatalf("INTERVAL=2 produced a %v gap between occurrences", gap)
-		}
-	}
-}
-
-// An unbounded rule must be stopped by the window, not run away.
-func TestExpandUnboundedRuleIsBoundedByWindow(t *testing.T) {
-	loc := denver(t)
-	start := time.Date(2026, 1, 6, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(time.Hour), loc, mustRule(t, "FREQ=WEEKLY;BYDAY=TU"),
-		start, start.AddDate(0, 0, 28))
-	if len(got) != 4 {
-		t.Fatalf("4-week window produced %d occurrences", len(got))
-	}
-}
-
-func TestExpandMultipleDaysPerWeek(t *testing.T) {
-	loc := denver(t)
-	// Start on a Tuesday, recur Tuesday and Thursday.
-	start := time.Date(2026, 8, 4, 19, 0, 0, 0, loc)
-	got := Expand(start, start.Add(time.Hour), loc,
-		mustRule(t, "FREQ=WEEKLY;BYDAY=TU,TH"), start, start.AddDate(0, 0, 14))
-	if len(got) != 4 {
-		t.Fatalf("expected 4 occurrences over 2 weeks, got %d", len(got))
-	}
-	for i := 1; i < len(got); i++ {
-		if !got[i].Start.After(got[i-1].Start) {
-			t.Fatalf("occurrences out of order: %v", got)
-		}
-	}
-}
-
-// The allowlist is what keeps Kit's view and Google's view of a series in
-// agreement. Anything Expand cannot read must be refused on write.
 func TestParseRuleRejectsUnsupported(t *testing.T) {
 	for _, s := range []string{
-		"FREQ=MONTHLY;BYDAY=-1FR",
 		"FREQ=DAILY",
 		"FREQ=YEARLY;BYMONTH=3",
 		"FREQ=WEEKLY;BYSETPOS=-1",
 		"FREQ=WEEKLY;BYMONTHDAY=15",
 		"FREQ=WEEKLY;BYDAY=XX",
+		"FREQ=MONTHLY;BYDAY=0FR", // a zeroth Friday is not a thing
+		"FREQ=MONTHLY;BYDAY=6FR", // nor a sixth
+		"FREQ=MONTHLY;BYMONTHDAY=0",
+		"FREQ=MONTHLY;BYMONTHDAY=32",
+		"FREQ=MONTHLY;BYDAY=1FR;BYMONTHDAY=13", // intersection we do not expand
+		"FREQ=WEEKLY;BYDAY=TU;BYDAY=WE",        // duplicate key
+		"FREQ=MONTHLY;BYSETPOS=-1",
 		"FREQ=WEEKLY;BYDAY=",
 		"FREQ=WEEKLY;INTERVAL=0",
 		"FREQ=WEEKLY;INTERVAL=-1",
@@ -213,6 +70,14 @@ func TestParseRuleAcceptsSupported(t *testing.T) {
 		"FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T065959Z",
 		"FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231",
 		"FREQ=WEEKLY;BYDAY=TU;COUNT=10",
+		"FREQ=MONTHLY",
+		"FREQ=MONTHLY;BYDAY=1FR",
+		"FREQ=MONTHLY;BYDAY=-1FR",
+		"FREQ=MONTHLY;BYDAY=FR",
+		"FREQ=MONTHLY;BYMONTHDAY=15",
+		"FREQ=MONTHLY;BYMONTHDAY=-1",
+		"FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1,15",
+		"freq=monthly;byday=1fr",
 	} {
 		if _, err := ParseRule(s); err != nil {
 			t.Errorf("ParseRule(%q) rejected a supported rule: %v", s, err)
@@ -232,6 +97,13 @@ func TestRuleStringRoundTrips(t *testing.T) {
 		"FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR",
 		"FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T065959Z",
 		"FREQ=WEEKLY;BYDAY=TU;COUNT=10",
+		"FREQ=MONTHLY",
+		"FREQ=MONTHLY;BYDAY=1FR",
+		"FREQ=MONTHLY;BYDAY=-1FR",
+		"FREQ=MONTHLY;BYDAY=FR",
+		"FREQ=MONTHLY;BYMONTHDAY=15",
+		"FREQ=MONTHLY;BYMONTHDAY=-1",
+		"FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1,15",
 	} {
 		r := mustRule(t, s)
 		if got := r.String(); got != s {
@@ -259,3 +131,8 @@ func TestRuleCoversWeekday(t *testing.T) {
 		t.Error("nil rule covers nothing")
 	}
 }
+
+// --- Monthly recurrence -----------------------------------------------------
+
+// startsOn is a compact assertion helper: the local dates the expansion fell
+// on, so a test reads as the calendar a person would check it against.

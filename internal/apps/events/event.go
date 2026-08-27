@@ -64,10 +64,39 @@ func buildEvent(e *Event, tenantID uuid.UUID) *googlecalendar.Event {
 		DateTime: e.End().In(e.Loc()).Format(time.RFC3339),
 		TimeZone: e.Timezone,
 	}
+	out.Recurrence = recurrenceLines(e)
+	return out
+}
+
+// recurrenceLines renders the event's repeats as RFC 5545 content lines.
+//
+// RRULE and RDATE compose, exactly as they do in Series.Expand -- Google unions
+// them the same way we do, which is what keeps the calendar and Kit showing the
+// same dates. Order is fixed so contentHash stays stable across syncs.
+func recurrenceLines(e *Event) []string {
+	var out []string
 	if rule := e.Rule(); rule != nil {
-		out.Recurrence = []string{"RRULE:" + rule.String()}
+		out = append(out, "RRULE:"+rule.String())
+	}
+	if len(e.RDates) > 0 {
+		out = append(out, rdateLine(e.RDates, e.Loc(), e.Timezone))
 	}
 	return out
+}
+
+// rdateLine renders explicit dates as a single RDATE line.
+//
+// TZID carries the NAMED zone for the same reason start/end do: without it
+// Google reads the values as floating local time in the calendar's own default
+// zone, so every date after a DST transition lands an hour out. The values are
+// therefore written as bare local date-times -- appending a "Z" or an offset
+// here would contradict the TZID and is rejected by RFC 5545.
+func rdateLine(dates []time.Time, loc *time.Location, tz string) string {
+	stamps := make([]string, len(dates))
+	for i, d := range dates {
+		stamps[i] = d.In(loc).Format("20060102T150405")
+	}
+	return "RDATE;TZID=" + tz + ":" + strings.Join(stamps, ",")
 }
 
 // buildSummary prefixes the title by classification.
@@ -162,8 +191,8 @@ func briefingLines(e *Event) []string {
 	if u := strings.TrimSpace(e.RegistrationURL); u != "" {
 		add("Tickets: %s", u)
 	}
-	if e.RRule != "" {
-		add("Repeats weekly.")
+	if repeat := describeRepeat(e); repeat != "" {
+		add("%s", repeat)
 	}
 	return out
 }

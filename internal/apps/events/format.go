@@ -79,10 +79,47 @@ func formatWhen(e *Event) string {
 	if !e.AllDay && e.EndsAt != nil {
 		out += "–" + e.EndsAt.In(loc).Format("3:04pm")
 	}
-	if e.RRule != "" {
-		out += ", " + describeRule(e.Rule(), start)
+	if cadence := describeCadence(e); cadence != "" {
+		out += ", " + cadence
 	}
 	return out + " (" + e.Timezone + ")"
+}
+
+// describeCadence renders how often the event happens, as a clause that reads
+// on after a date. Empty for a one-off.
+//
+// Rules and explicit dates are described together because an event may carry
+// both, and because "repeats weekly" printed next to a six-date list is the
+// kind of half-truth that gets an event staffed on the wrong night.
+func describeCadence(e *Event) string {
+	var parts []string
+	if e.RRule != "" {
+		parts = append(parts, describeRule(e.Rule(), e.StartsAt.In(e.Loc())))
+	}
+	if n := len(e.RDates); n > 0 {
+		if len(parts) > 0 {
+			parts = append(parts, "plus "+plural(n, "extra date", "extra dates"))
+		} else {
+			parts = append(parts, "on "+plural(n+1, "set date", "set dates"))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// describeRepeat is the calendar briefing's sentence about repeats. Same facts
+// as describeCadence, punctuated as a standalone line for the staff brief.
+func describeRepeat(e *Event) string {
+	if c := describeCadence(e); c != "" {
+		return "Repeats " + c + "."
+	}
+	return ""
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // describeRule turns a stored RRULE back into something a human reads without
@@ -91,6 +128,22 @@ func describeRule(r *Rule, start time.Time) string {
 	if r == nil {
 		return "repeating"
 	}
+	var out string
+	if r.Freq == FreqMonthly {
+		out = describeMonthly(r, start)
+	} else {
+		out = describeWeekly(r, start)
+	}
+	switch {
+	case r.Count > 0:
+		out += fmt.Sprintf(", %d times", r.Count)
+	case !r.Until.IsZero():
+		out += ", until " + r.Until.Format("2 Jan 2006")
+	}
+	return out
+}
+
+func describeWeekly(r *Rule, start time.Time) string {
 	days := r.Days
 	if len(days) == 0 {
 		days = []time.Weekday{start.Weekday()}
@@ -103,14 +156,84 @@ func describeRule(r *Rule, start time.Time) string {
 	if r.Interval > 1 {
 		cadence = fmt.Sprintf("every %d weeks on ", r.Interval)
 	}
-	out := cadence + strings.Join(names, " and ")
-	switch {
-	case r.Count > 0:
-		out += fmt.Sprintf(", %d times", r.Count)
-	case !r.Until.IsZero():
-		out += ", until " + r.Until.Format("2 Jan 2006")
+	return cadence + strings.Join(names, " and ")
+}
+
+func describeMonthly(r *Rule, start time.Time) string {
+	every := "every month on "
+	if r.Interval > 1 {
+		every = fmt.Sprintf("every %d months on ", r.Interval)
 	}
-	return out
+
+	var which []string
+	switch {
+	case len(r.OrdDays) > 0:
+		for _, od := range r.OrdDays {
+			if od.Ord == 0 {
+				which = append(which, "every "+od.Day.String())
+				continue
+			}
+			which = append(which, "the "+ordinalWord(od.Ord)+" "+od.Day.String())
+		}
+	case len(r.MonthDays) > 0:
+		for _, d := range r.MonthDays {
+			which = append(which, "the "+monthDayWord(d))
+		}
+	default:
+		which = append(which, "the "+monthDayWord(start.Day()))
+	}
+	return every + strings.Join(which, " and ")
+}
+
+// ordinalWord names a BYDAY ordinal the way a person would say it.
+func ordinalWord(n int) string {
+	switch n {
+	case 1:
+		return "first"
+	case 2:
+		return "second"
+	case 3:
+		return "third"
+	case 4:
+		return "fourth"
+	case 5:
+		return "fifth"
+	case -1:
+		return "last"
+	case -2:
+		return "second-to-last"
+	default:
+		return fmt.Sprintf("%dth", n)
+	}
+}
+
+// monthDayWord names a BYMONTHDAY value. Negatives count back from the end,
+// where "the last day" beats "the -1st".
+func monthDayWord(d int) string {
+	switch {
+	case d == -1:
+		return "last day"
+	case d < 0:
+		return ordinalWord(-d) + "-to-last day"
+	default:
+		return ordinalSuffix(d)
+	}
+}
+
+// ordinalSuffix renders 1 as "1st", 22 as "22nd", 13 as "13th".
+func ordinalSuffix(d int) string {
+	suffix := "th"
+	if d%100 < 11 || d%100 > 13 {
+		switch d % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return fmt.Sprintf("%d%s", d, suffix)
 }
 
 func formatPrice(e *Event) string {
@@ -145,7 +268,7 @@ func FormatEventList(events []Event, s Settings) string {
 
 // FormatOccurrences lists the next few dates a repeating event falls on.
 func FormatOccurrences(e *Event, limit int) string {
-	if e.RRule == "" {
+	if !e.Repeats() {
 		return ""
 	}
 	now := time.Now()

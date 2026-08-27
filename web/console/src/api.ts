@@ -525,6 +525,9 @@ export interface EventRecord {
   all_day: boolean;
   timezone: string;
   rrule?: string;
+  // Explicit extra dates the event also happens on. `starts_at` is the first
+  // occurrence, so the full list a person sees is [starts_at, ...rdates].
+  rdates?: string[];
   // Two orthogonal axes, not one. `status` is whether the event is settled;
   // `visibility` is whether the public may see it. A confirmed private booking
   // is published AND private.
@@ -629,6 +632,9 @@ export interface EventInput {
   all_day?: boolean;
   timezone?: string;
   repeat_rule?: string;
+  // Replaces the whole extra-date list. Omit to leave it alone; send [] to
+  // turn a series back into a one-off.
+  repeat_dates?: string[];
   visibility?: string;
   venue?: string;
   space_impact?: string;
@@ -736,6 +742,8 @@ export const api = {
       `/events/${encodeURIComponent(id)}`,
     ),
   createEvent: (body: EventInput) => apiPost<{ event: EventRecord }>('/events', body),
+  cloneEvent: (id: string, body: { starts_at?: string; title?: string } = {}) =>
+    apiPost<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}/clone`, body),
   updateEvent: (id: string, body: EventInput) =>
     apiPatch<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}`, body),
   publishEvent: (id: string) =>

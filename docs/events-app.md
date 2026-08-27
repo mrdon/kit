@@ -494,6 +494,66 @@ an `exdates DATE[]` column the expander honours — an additive column, not a sc
 so there's no cost to leaving it out of v1. Just don't design the expander in a way that
 can't accept one.
 
+#### Revision (2026-08): monthly rules and explicit date lists
+
+The v1 reading above — "trivia is the only recurring event, everything else is authored one
+row per night" — held for trivia and was wrong about everything else. Authoring a five-week
+beer school as five rows produces five slugs, five public pages, five poster uploads and
+five copies of the staff notes that immediately drift apart. The v1 console said so out
+loud: *"a run of different acts is not a repeat — create one event per night."* That
+instruction was the bug.
+
+What changed, both additive:
+
+**1. `FREQ=MONTHLY` joins the allowlist.** `BYMONTHDAY` ("the 15th", `-1` for the last day)
+and ordinal `BYDAY` ("`1FR`" first Friday, "`-1FR`" last Friday), with `INTERVAL` for
+quarterly. The strict-allowlist discipline is unchanged and is the whole point — Google
+understands all of RFC 5545 and our expander understands a subset, so a rule we can render
+but not expand would draw a perfect series on the calendar while every Kit date query
+silently saw nothing. Monthly expansion resolves each month's day set fresh, which is what
+makes "the last Friday" move between the 4th and 5th week, and what makes a series on the
+31st **skip** February rather than roll into March.
+
+**2. `rdates TIMESTAMPTZ[]` holds explicit extra dates** for series no rule can express —
+dates picked around a chef's availability, a run with a gap over a holiday. This is RFC
+5545's RDATE, and it is emitted as one `RDATE;TZID=America/Denver:...` line alongside any
+RRULE, so Google unions the two exactly as `Series.Expand` does.
+
+`starts_at` remains DTSTART — the first occurrence — and the service normalises on write:
+the combined set is sorted, deduped, and the earliest becomes `starts_at`. Holding that
+invariant is what let the change stay additive. Every existing query that orders or bounds on
+`starts_at` kept working untouched, and the expander treats `rdates` as purely additive.
+
+One query did need care. The `listEvents` lower bound exempts recurring rows, because a
+series' stored start may be years past. A rule-based series stays exempt outright (expanding
+an RRULE in SQL is not on the table), but a date list is **finite**, so its bound is applied
+to `max(rdates)` instead. A blanket exemption would have pinned every finished series to the
+top of the upcoming list forever.
+
+**Still deferred: per-occurrence exceptions and overrides.** `exdates` for the skipped
+Christmas Eve, and a child override table for "the December market is the holiday market".
+Both remain additive on top of this shape. The override table is the one to reach for when a
+single date needs its own title, poster or capacity — that is a different thing from the date
+list, not a bigger version of it.
+
+### Cloning
+
+**Decided (2026-08): a copy, never a link.** Most events at a venue are variations on one
+that already happened, and the retyping is where the drift comes from — usually in the staff
+brief nobody re-reads.
+
+`Service.Clone` copies everything and then forces three things: status back to `draft`, a
+fresh slug, and zeroed `gcal_*` state. Each has a specific failure behind it. A copy that
+inherited `published` would hit the team calendar — and, if public, the website — the instant
+it was created, before anyone had corrected the date. Two rows cannot share a slug, and the
+original's may already be in a newsletter. Inherited sync state would have both rows fighting
+over one deterministic calendar id.
+
+The copy shares no state afterwards. A linked series is what the repeat rule and the date
+list are for; clone is for "like that, but". Supplying a new `starts_at` also drops the
+original's extra dates, because a clone aimed at a date is "that event, on this day" and
+carrying a previous series' leftovers onto it is never the intent.
+
 ### Where does an event's canonical link point?
 
 Every public event needs one shareable URL — for the Instagram bio, the Facebook post, the

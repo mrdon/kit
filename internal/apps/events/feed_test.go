@@ -249,3 +249,55 @@ func (a muxAdapter) Handle(pattern string, h http.Handler) { a.m.Handle(pattern,
 func (a muxAdapter) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
 	a.m.HandleFunc(pattern, h)
 }
+
+// Without this the website would publish a three-date supper club as a one-off
+// on the first of them: the site can render a list of dates but cannot expand
+// an RRULE, so the explicit list is the one thing it cannot derive.
+func TestFeedCarriesTheExplicitDateList(t *testing.T) {
+	sf := newSyncFixture(t)
+	e := sf.create(t, CreateParams{
+		Title: "Supper Club", StartsAt: "2026-09-04 18:00",
+		Visibility: VisibilityPublic, Timezone: "America/Denver",
+		RepeatDates: []string{"2026-10-02 18:00", "2026-11-06 18:00"},
+	})
+	sf.publish(t, e)
+
+	items := sf.feed(t).Events
+	// One item, not three: the whole point of the date list.
+	if len(items) != 1 {
+		t.Fatalf("expected a single feed item for the series, got %d", len(items))
+	}
+	if len(items[0].Dates) != 3 {
+		t.Fatalf("expected all 3 dates including the start, got %v", items[0].Dates)
+	}
+	if !strings.HasPrefix(items[0].Dates[0], "2026-09-04T18:00") {
+		t.Errorf("first entry should be the start in the venue's zone, got %s", items[0].Dates[0])
+	}
+	if !strings.HasPrefix(items[0].Dates[2], "2026-11-06T18:00") {
+		t.Errorf("last date wrong: %s", items[0].Dates[2])
+	}
+}
+
+// Absent, not an empty array, so the site has no special case to write.
+func TestFeedOmitsDatesForAOneOff(t *testing.T) {
+	sf := newSyncFixture(t)
+	e := sf.create(t, CreateParams{
+		Title: "Single Night", StartsAt: "2026-09-04 18:00", Visibility: VisibilityPublic,
+	})
+	sf.publish(t, e)
+
+	items := sf.feed(t).Events
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Dates != nil {
+		t.Errorf("a one-off should carry no date list, got %v", items[0].Dates)
+	}
+	blob, err := json.Marshal(items[0])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(blob), `"dates"`) {
+		t.Errorf("the dates key should be absent entirely: %s", blob)
+	}
+}

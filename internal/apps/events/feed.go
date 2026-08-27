@@ -49,6 +49,13 @@ type FeedItem struct {
 	// sending N materialised instances instead would flood the events page with
 	// near-duplicate entries and thin pages.
 	Recurrence string `json:"recurrence,omitempty"`
+	// Dates is the event's EXPLICIT date list, in full and including StartsAt,
+	// present only when the event has one. Unlike Recurrence this is not
+	// something the site could derive -- a static build can render a list of
+	// dates trivially but cannot expand an RRULE -- and without it a supper
+	// club on three dates would publish as a one-off on the first of them.
+	// Still one feed item and one page, carrying all its dates.
+	Dates []string `json:"dates,omitempty"`
 
 	Location     string `json:"location,omitempty"`
 	CanonicalURL string `json:"canonical_url,omitempty"`
@@ -93,6 +100,7 @@ func feedItem(e *Event, s Settings) FeedItem {
 		AllDay:          e.AllDay,
 		Timezone:        e.Timezone,
 		Recurrence:      e.RRule,
+		Dates:           feedDates(e),
 		Featured:        e.Featured,
 		Location:        e.Location,
 		CanonicalURL:    s.CanonicalURL(e.Slug),
@@ -244,4 +252,20 @@ func validFeedToken(r *http.Request, want string) bool {
 // FeedURL renders the URL a site build should fetch, for the admin page.
 func FeedURL(baseURL, tenantSlug string) string {
 	return fmt.Sprintf("%s/%s/events/feed.json", strings.TrimSuffix(baseURL, "/"), tenantSlug)
+}
+
+// feedDates renders the explicit date list for the website, in the event's own
+// zone so the site shows the time the doors actually open. Nil for an event
+// with no list, which keeps the field absent from the JSON entirely rather
+// than publishing an empty array the site has to special-case.
+func feedDates(e *Event) []string {
+	if len(e.RDates) == 0 {
+		return nil
+	}
+	all := e.AllDates()
+	out := make([]string, len(all))
+	for i, d := range all {
+		out[i] = d.In(e.Loc()).Format(time.RFC3339)
+	}
+	return out
 }

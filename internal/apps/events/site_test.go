@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+// dbNow reads the database's clock. See the note in
+// TestUnpublishingCountsAsAPendingChange for why the host's will not do.
+func dbNow(t *testing.T, sf *syncFixture) time.Time {
+	t.Helper()
+	var now time.Time
+	if err := sf.pool.QueryRow(sf.ctx, "SELECT now()").Scan(&now); err != nil {
+		t.Fatalf("reading the database clock: %v", err)
+	}
+	return now.UTC()
+}
+
 // The whole value of the pending list is that it only counts changes the
 // PUBLIC would see. Private bookings, drafts and staff-note edits are the bulk
 // of daily activity; counting them would nag for rebuilds that produce a
@@ -49,7 +60,13 @@ func TestUnpublishingCountsAsAPendingChange(t *testing.T) {
 	e := sf.create(t, CreateParams{Title: "Bike Night", Visibility: VisibilityPublic})
 	sf.publish(t, e)
 
-	after := time.Now().UTC()
+	// The DB's clock, not the host's. Audit rows are stamped with Postgres
+	// now(), and in a containerised Postgres the two clocks drift by tens of
+	// milliseconds in either direction -- enough to put the row a hair before a
+	// host-taken cutoff and make this test fail perhaps one run in five.
+	// Production never has this problem: it passes site_built_at, which is
+	// itself a DB timestamp, so both sides of the comparison share one clock.
+	after := dbNow(t, sf)
 	if _, err := sf.svc.Unpublish(sf.ctx, sf.tenant.ID, e.ID); err != nil {
 		t.Fatalf("Unpublish: %v", err)
 	}
@@ -69,7 +86,7 @@ func TestPendingChangesRespectsTheCutoff(t *testing.T) {
 	e := sf.create(t, CreateParams{Title: "Quiz", Visibility: VisibilityPublic})
 	sf.publish(t, e)
 
-	cutoff := time.Now().UTC().Add(time.Second)
+	cutoff := dbNow(t, sf).Add(time.Second)
 	pending, err := sf.svc.PendingChanges(sf.ctx, sf.tenant.ID, &cutoff, 50)
 	if err != nil {
 		t.Fatalf("PendingChanges: %v", err)

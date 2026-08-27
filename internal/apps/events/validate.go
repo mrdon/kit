@@ -107,6 +107,9 @@ func validateEvent(e *Event) error {
 	if err := validateURL(e.RegistrationURL, "registration link"); err != nil {
 		return err
 	}
+	if err := validateDates(e); err != nil {
+		return err
+	}
 	return validateRecurrence(e)
 }
 
@@ -127,17 +130,24 @@ func validateRecurrence(e *Event) error {
 	if rule == nil {
 		return nil
 	}
-	// RFC 5545 treats DTSTART as an occurrence even when it does not match
-	// BYDAY, which would leave Kit and Google disagreeing about a stray first
-	// instance. Refusing the mismatch keeps the two views identical.
+	// RFC 5545 treats DTSTART as an occurrence even when it does not match the
+	// rule's own selectors, which would leave Kit and Google disagreeing about
+	// a stray first instance. Refusing the mismatch keeps the two views
+	// identical.
 	loc, err := ResolveTimezone(e.Timezone)
 	if err != nil {
 		return err
 	}
-	if wd := e.StartsAt.In(loc).Weekday(); !rule.CoversWeekday(wd) {
-		return invalid("the event starts on a %s but the repeat rule does not include %s", wd, wd)
+	start := e.StartsAt.In(loc)
+	if rule.Covers(start) {
+		return nil
 	}
-	return nil
+	if rule.Freq == FreqMonthly {
+		return invalid("the event starts on the %s but the repeat rule does not fall on that day of the month",
+			ordinalSuffix(start.Day()))
+	}
+	wd := start.Weekday()
+	return invalid("the event starts on a %s but the repeat rule does not include %s", wd, wd)
 }
 
 func validateURL(raw, label string) error {

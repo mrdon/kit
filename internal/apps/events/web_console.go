@@ -36,6 +36,7 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/events/site/publish", jsonRoute(a.handleSitePublish))
 	mux.Handle("GET /{slug}/api/events/{id}", jsonRoute(a.handleGet))
 	mux.Handle("PATCH /{slug}/api/events/{id}", jsonRoute(a.handleUpdate))
+	mux.Handle("POST /{slug}/api/events/{id}/clone", jsonRoute(a.handleClone))
 	mux.Handle("DELETE /{slug}/api/events/{id}", jsonRoute(a.handleDelete))
 	mux.Handle("GET /{slug}/api/events/{id}/poster", jsonRoute(a.handleConsolePoster))
 	mux.Handle("POST /{slug}/api/events/{id}/poster", jsonRoute(a.handleUploadPoster))
@@ -126,6 +127,10 @@ type eventBody struct {
 	AllDay     *bool   `json:"all_day"`
 	Timezone   *string `json:"timezone"`
 	RepeatRule *string `json:"repeat_rule"`
+	// RepeatDates carries the whole extra-date list. Pointer for the same
+	// reason as the rest: PATCH must tell "not sent" from "cleared", and an
+	// empty list means "back to a one-off".
+	RepeatDates *[]string `json:"repeat_dates"`
 
 	Visibility  *string `json:"visibility"`
 	Venue       *string `json:"venue"`
@@ -169,6 +174,7 @@ func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
 		AllDay:             body.AllDay != nil && *body.AllDay,
 		Timezone:           derefOr(body.Timezone),
 		RRule:              derefOr(body.RepeatRule),
+		RepeatDates:        derefSlice(body.RepeatDates),
 		Visibility:         Visibility(strings.ToLower(derefOr(body.Visibility))),
 		Venue:              Venue(strings.ToLower(derefOr(body.Venue))),
 		SpaceImpact:        SpaceImpact(strings.ToLower(derefOr(body.SpaceImpact))),
@@ -208,7 +214,8 @@ func (a *App) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		PrepNotes: body.PrepNotes, Location: body.Location,
 		StartsAt: body.StartsAt, EndsAt: body.EndsAt, AllDay: body.AllDay,
 		Timezone: body.Timezone, RRule: body.RepeatRule,
-		PriceCents: body.PriceCents, ClearPrice: body.ClearPrice,
+		RepeatDates: body.RepeatDates,
+		PriceCents:  body.PriceCents, ClearPrice: body.ClearPrice,
 		Currency: body.Currency, Capacity: body.Capacity, ClearCapacity: body.ClearCapacity,
 		ExpectedAttendance: body.ExpectedAttendance,
 		RegistrationURL:    body.RegistrationURL,
@@ -322,7 +329,7 @@ func canonicalIfPublic(e *Event, s Settings) string {
 // the detail view can show them rather than leaving the reader to decode an
 // RRULE.
 func upcomingOccurrences(e *Event, limit int) []string {
-	if e.RRule == "" {
+	if !e.Repeats() {
 		return nil
 	}
 	now := timeNow()
@@ -380,6 +387,36 @@ func derefOr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// handleClone copies an event into a new draft. Every rule about what a copy
+// inherits lives in Service.Clone, so the button and the chat agent produce
+// byte-identical rows.
+func (a *App) handleClone(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	id, ok := pathUUID(w, r)
+	if !ok {
+		return
+	}
+	// A body is optional: the plain "duplicate" button sends none.
+	var body struct {
+		StartsAt string `json:"starts_at"`
+		Title    string `json:"title"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	p := CloneParams{Title: body.Title, StartsAt: body.StartsAt}
+	if caller.UserID != uuid.Nil {
+		uid := caller.UserID
+		p.CreatedBy = &uid
+	}
+	e, err := a.svc.Clone(r.Context(), caller.TenantID, id, p)
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	eventsJSON(w, http.StatusCreated, map[string]any{"event": e})
 }
 
 // handleDelete destroys an event permanently. The guard lives in the service,
