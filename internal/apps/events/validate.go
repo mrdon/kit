@@ -150,14 +150,32 @@ func validateRecurrence(e *Event) error {
 	return invalid("the event starts on a %s but the repeat rule does not include %s", wd, wd)
 }
 
+// maxURLLen is a practical ceiling. Well under what browsers accept, and far
+// above any real ticketing link -- its job is to stop a runaway paste, not to
+// police length.
+const maxURLLen = 2000
+
 func validateURL(raw, label string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}
+	if len(raw) > maxURLLen {
+		return invalid("%s is %d characters long, which is not a real link", label, len(raw))
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return invalid("%s must be a full http(s) URL", label)
+	}
+	// A second scheme inside the PATH means two links were concatenated rather
+	// than one replacing the other -- a paste that ran twice, or a caller that
+	// appended where it meant to assign. url.Parse is perfectly happy with it
+	// ("://" is legal in a path), so it validates clean and then publishes a
+	// dead link to the website: the href is syntactically fine and goes
+	// nowhere. Checked on the path only, because a URL legitimately carries
+	// another one in its QUERY -- ?redirect=https://... is normal.
+	if strings.Contains(u.Path, "://") {
+		return invalid("%s looks like two links joined together; check it is a single address", label)
 	}
 	return nil
 }

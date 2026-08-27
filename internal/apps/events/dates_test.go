@@ -1,6 +1,7 @@
 package events
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -228,5 +229,37 @@ func TestOrdinalSuffix(t *testing.T) {
 		if got := ordinalSuffix(in); got != want {
 			t.Errorf("ordinalSuffix(%d) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// --- Link validation --------------------------------------------------------
+
+// The failure this prevents is silent rather than loud. "://" is legal inside a
+// path, so a link pasted twice parses as one perfectly valid URL with a very
+// long path -- it validates clean, syncs, and publishes to the website as an
+// href that is syntactically fine and goes nowhere.
+func TestValidateURLRejectsConcatenatedLinks(t *testing.T) {
+	one := "https://www.example.com/e/2026-brewfest"
+	for _, tc := range []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{name: "single link", raw: one, ok: true},
+		{name: "pasted twice", raw: one + one},
+		{name: "pasted many times", raw: strings.Repeat(one, 48)},
+		// A URL carrying another in its QUERY is ordinary and must survive.
+		{name: "redirect param", raw: "https://tickets.example.com/buy?next=https://www.example.com/thanks", ok: true},
+		{name: "runaway length", raw: "https://example.com/" + strings.Repeat("a", maxURLLen)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateURL(tc.raw, "registration link")
+			if tc.ok && err != nil {
+				t.Fatalf("rejected a valid link: %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatalf("accepted a malformed link of %d chars", len(tc.raw))
+			}
+		})
 	}
 }

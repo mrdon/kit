@@ -49,13 +49,24 @@ type FeedItem struct {
 	// sending N materialised instances instead would flood the events page with
 	// near-duplicate entries and thin pages.
 	Recurrence string `json:"recurrence,omitempty"`
-	// Dates is the event's EXPLICIT date list, in full and including StartsAt,
-	// present only when the event has one. Unlike Recurrence this is not
-	// something the site could derive -- a static build can render a list of
-	// dates trivially but cannot expand an RRULE -- and without it a supper
-	// club on three dates would publish as a one-off on the first of them.
-	// Still one feed item and one page, carrying all its dates.
-	Dates []string `json:"dates,omitempty"`
+	// Upcoming is the next few occurrences, already expanded, in the event's
+	// own zone. It covers all three repeat mechanisms uniformly -- weekly,
+	// monthly, and an explicit date list -- so a consumer needs no recurrence
+	// logic of its own.
+	//
+	// This exists because "pass the rule through and let the site expand it"
+	// only ever worked for the weekly case. A static site generator can walk
+	// forward to the next Tuesday; it cannot reasonably work out the first
+	// Friday of next month, and it has nothing at all to go on for a list of
+	// hand-picked dates. Both would silently publish as a one-off on a start
+	// date that may be months past. Kit already owns a tested expander that
+	// handles DST, short months and fifth weekdays -- so it expands once, here,
+	// rather than being reimplemented less carefully downstream.
+	//
+	// Still ONE feed item and one page per event: these are dates, not
+	// materialised instances. Recurrence is kept alongside for consumers that
+	// want to render the cadence in words ("every Tuesday").
+	Upcoming []string `json:"upcoming,omitempty"`
 
 	Location     string `json:"location,omitempty"`
 	CanonicalURL string `json:"canonical_url,omitempty"`
@@ -100,7 +111,7 @@ func feedItem(e *Event, s Settings) FeedItem {
 		AllDay:          e.AllDay,
 		Timezone:        e.Timezone,
 		Recurrence:      e.RRule,
-		Dates:           feedDates(e),
+		Upcoming:        feedUpcoming(e),
 		Featured:        e.Featured,
 		Location:        e.Location,
 		CanonicalURL:    s.CanonicalURL(e.Slug),
@@ -254,18 +265,42 @@ func FeedURL(baseURL, tenantSlug string) string {
 	return fmt.Sprintf("%s/%s/events/feed.json", strings.TrimSuffix(baseURL, "/"), tenantSlug)
 }
 
-// feedDates renders the explicit date list for the website, in the event's own
-// zone so the site shows the time the doors actually open. Nil for an event
-// with no list, which keeps the field absent from the JSON entirely rather
-// than publishing an empty array the site has to special-case.
-func feedDates(e *Event) []string {
-	if len(e.RDates) == 0 {
+// maxFeedOccurrences caps how many dates one item carries. Enough to show a
+// season of a monthly series or a full course, short of turning the feed into
+// a calendar export.
+const maxFeedOccurrences = 12
+
+// feedUpcomingWindow is how far ahead to look. A year keeps an unbounded weekly
+// series honest without expanding it forever, and is well past the point where
+// a static site would have rebuilt anyway.
+const feedUpcomingWindow = 12 // months
+
+// feedUpcoming expands the next few occurrences in the event's own zone, so the
+// site shows the time the doors actually open.
+//
+// The window starts slightly in the past -- at the beginning of today rather
+// than at this instant -- so an event still running this evening does not
+// vanish from the site mid-afternoon. The feed is consumed by a build that may
+// happen at any hour.
+//
+// Nil for a one-off, which keeps the key absent from the JSON entirely rather
+// than publishing a single-element array every consumer has to special-case:
+// starts_at already says when a one-off happens.
+func feedUpcoming(e *Event) []string {
+	if !e.Repeats() {
 		return nil
 	}
-	all := e.AllDates()
-	out := make([]string, len(all))
-	for i, d := range all {
-		out[i] = d.In(e.Loc()).Format(time.RFC3339)
+	loc := e.Loc()
+	now := timeNow().In(loc)
+	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+
+	occ := e.Occurrences(from, from.AddDate(0, feedUpcomingWindow, 0))
+	if len(occ) > maxFeedOccurrences {
+		occ = occ[:maxFeedOccurrences]
+	}
+	out := make([]string, len(occ))
+	for i, o := range occ {
+		out[i] = o.Start.In(loc).Format(time.RFC3339)
 	}
 	return out
 }

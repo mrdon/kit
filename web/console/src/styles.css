@@ -487,12 +487,20 @@ code {
   text-decoration: underline;
 }
 
+/* The base pill carries the NEUTRAL colours rather than leaving them to be
+   inherited. A bare `.pill` used to set neither, so it took its colour from
+   whatever contained it -- and inside .row-card, a <button>, that meant the
+   UA's near-black `buttontext`, which is invisible on the dark panel. The
+   variants below override both properties, so giving the base a real pair
+   costs them nothing and makes an unmodified pill safe anywhere. */
 .pill {
   font-size: 0.75rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-weight: 600;
   white-space: nowrap;
+  background: var(--off-bg);
+  color: var(--off-ink);
 }
 
 .pill-ok {
@@ -1384,6 +1392,11 @@ h2.view-title:hover {
   gap: 1rem;
   text-align: left;
   background: var(--panel);
+  /* Explicit, because this is a <button>: without it the UA applies
+     `color: buttontext`, a system colour that does NOT follow the page theme.
+     Children that set their own colour hide the problem; any that don't
+     inherit near-black onto a dark panel. */
+  color: var(--ink);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.75rem 1rem;

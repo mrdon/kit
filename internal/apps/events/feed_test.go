@@ -251,14 +251,19 @@ func (a muxAdapter) HandleFunc(pattern string, h func(http.ResponseWriter, *http
 }
 
 // Without this the website would publish a three-date supper club as a one-off
-// on the first of them: the site can render a list of dates but cannot expand
-// an RRULE, so the explicit list is the one thing it cannot derive.
-func TestFeedCarriesTheExplicitDateList(t *testing.T) {
+// on the first of them: a static build cannot expand a recurrence, so Kit
+// hands over the dates already worked out.
+func TestFeedExpandsAnExplicitDateList(t *testing.T) {
 	sf := newSyncFixture(t)
+	// Anchored ahead of today so the expansion window always contains them.
+	base := time.Now().AddDate(0, 1, 0)
+	// Date built separately from the time: "18:00" inside a layout string is
+	// not a literal -- Go reads the 1 as the month field.
+	d := func(add int) string { return base.AddDate(0, 0, add).Format("2006-01-02") + " 18:00" }
+
 	e := sf.create(t, CreateParams{
-		Title: "Supper Club", StartsAt: "2026-09-04 18:00",
-		Visibility: VisibilityPublic, Timezone: "America/Denver",
-		RepeatDates: []string{"2026-10-02 18:00", "2026-11-06 18:00"},
+		Title: "Supper Club", StartsAt: d(0), Visibility: VisibilityPublic,
+		Timezone: "America/Denver", RepeatDates: []string{d(28), d(56)},
 	})
 	sf.publish(t, e)
 
@@ -267,19 +272,67 @@ func TestFeedCarriesTheExplicitDateList(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected a single feed item for the series, got %d", len(items))
 	}
-	if len(items[0].Dates) != 3 {
-		t.Fatalf("expected all 3 dates including the start, got %v", items[0].Dates)
+	if len(items[0].Upcoming) != 3 {
+		t.Fatalf("expected all 3 dates, got %v", items[0].Upcoming)
 	}
-	if !strings.HasPrefix(items[0].Dates[0], "2026-09-04T18:00") {
-		t.Errorf("first entry should be the start in the venue's zone, got %s", items[0].Dates[0])
-	}
-	if !strings.HasPrefix(items[0].Dates[2], "2026-11-06T18:00") {
-		t.Errorf("last date wrong: %s", items[0].Dates[2])
+	for i, got := range items[0].Upcoming {
+		want := base.AddDate(0, 0, i*28).Format("2006-01-02")
+		if !strings.HasPrefix(got, want) {
+			t.Errorf("occurrence %d = %s, want %s", i, got, want)
+		}
+		if !strings.Contains(got, "T18:00") {
+			t.Errorf("occurrence %d lost the venue's wall clock: %s", i, got)
+		}
 	}
 }
 
-// Absent, not an empty array, so the site has no special case to write.
-func TestFeedOmitsDatesForAOneOff(t *testing.T) {
+// The case the site could never have handled itself: "the first Friday" lands
+// on a different date every month, and a monthly series' stored start may be
+// long past.
+func TestFeedExpandsAMonthlyRule(t *testing.T) {
+	sf := newSyncFixture(t)
+	// A first Friday comfortably in the past, so an unexpanded feed would
+	// publish a date that has already been and gone.
+	past := time.Now().AddDate(0, -8, 0)
+	first := time.Date(past.Year(), past.Month(), 1, 18, 0, 0, 0, time.UTC)
+	for first.Weekday() != time.Friday {
+		first = first.AddDate(0, 0, 1)
+	}
+	e := sf.create(t, CreateParams{
+		Title: "First Friday", StartsAt: first.Format("2006-01-02 15:04"),
+		Visibility: VisibilityPublic, RRule: "FREQ=MONTHLY;BYDAY=1FR",
+	})
+	sf.publish(t, e)
+
+	items := sf.feed(t).Events
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	up := items[0].Upcoming
+	if len(up) == 0 {
+		t.Fatal("a monthly series published no upcoming dates")
+	}
+	// Every date must be ahead, and every one a Friday.
+	for _, got := range up {
+		when, err := time.Parse(time.RFC3339, got)
+		if err != nil {
+			t.Fatalf("unparseable date %q: %v", got, err)
+		}
+		if when.Before(time.Now().AddDate(0, 0, -1)) {
+			t.Errorf("published a past occurrence: %s", got)
+		}
+		if when.Weekday() != time.Friday {
+			t.Errorf("%s is a %s, not a Friday", got, when.Weekday())
+		}
+		if when.Day() > 7 {
+			t.Errorf("%s is not the FIRST Friday of its month", got)
+		}
+	}
+}
+
+// Absent, not an empty array, so the site has no special case to write --
+// starts_at already says when a one-off happens.
+func TestFeedOmitsUpcomingForAOneOff(t *testing.T) {
 	sf := newSyncFixture(t)
 	e := sf.create(t, CreateParams{
 		Title: "Single Night", StartsAt: "2026-09-04 18:00", Visibility: VisibilityPublic,
@@ -290,14 +343,14 @@ func TestFeedOmitsDatesForAOneOff(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
-	if items[0].Dates != nil {
-		t.Errorf("a one-off should carry no date list, got %v", items[0].Dates)
+	if items[0].Upcoming != nil {
+		t.Errorf("a one-off should carry no expansion, got %v", items[0].Upcoming)
 	}
 	blob, err := json.Marshal(items[0])
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if strings.Contains(string(blob), `"dates"`) {
-		t.Errorf("the dates key should be absent entirely: %s", blob)
+	if strings.Contains(string(blob), `"upcoming"`) {
+		t.Errorf("the upcoming key should be absent entirely: %s", blob)
 	}
 }

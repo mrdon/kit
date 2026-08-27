@@ -9,6 +9,7 @@ import {
 } from '../api';
 import { useSetChatContext } from '../chatContext';
 import RepeatEditor from './EventRepeat';
+import EventWhen, { defaultStart, addMinutes, spansDays } from './EventWhen';
 
 // The everyday events page: a list, with create/edit in a drawer.
 //
@@ -252,12 +253,16 @@ export default function Events() {
                   >
                     {e.status}
                   </span>
-                  {/* Visibility is moot once cancelled — the event is off the
-                      calendar and off the website — so showing a green
-                      "public" pill next to a red "cancelled" one just reads as
-                      a contradiction. */}
-                  {e.status !== 'cancelled' && e.visibility === 'public' && (
-                    <span className="pill pill-ok">public</span>
+                  {/* Only private is tagged. Public is the norm for anything
+                      on this page, so tagging it labelled almost every row and
+                      the badge stopped carrying information; the exception is
+                      what a reader needs to spot.
+
+                      Visibility is moot once cancelled — the event is off the
+                      calendar and off the website — so a visibility pill next
+                      to a red "cancelled" one just reads as a contradiction. */}
+                  {e.status !== 'cancelled' && e.visibility === 'private' && (
+                    <span className="pill">private</span>
                   )}
                   {e.status !== 'cancelled' && e.venue === 'offsite' && (
                     <span className="pill">offsite</span>
@@ -390,10 +395,26 @@ function EventDrawer({
           registration_url: event.registration_url ?? '',
           featured: event.featured,
         }
-      : { ...EMPTY_FORM, timezone: defaultTimezone },
+      : (() => {
+          const starts = defaultStart();
+          return {
+            ...EMPTY_FORM,
+            timezone: defaultTimezone,
+            starts_at: starts,
+            ends_at: addMinutes(starts, 120),
+          };
+        })(),
   );
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Derived from the event on open rather than stored: a festival reopens with
+  // the two-date form, everything else with the compact one.
+  const [multiDay, setMultiDay] = useState(() =>
+    spansDays(
+      toLocalInput(event?.starts_at, event?.timezone),
+      toLocalInput(event?.ends_at, event?.timezone),
+    ),
+  );
 
   const set = (patch: Partial<EventInput>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -461,24 +482,14 @@ function EventDrawer({
             />
           </label>
 
-          <div className="field-row">
-            <label className="field">
-              <span>Starts</span>
-              <input
-                type="datetime-local"
-                value={form.starts_at ?? ''}
-                onChange={(e) => set({ starts_at: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              <span>Ends</span>
-              <input
-                type="datetime-local"
-                value={form.ends_at ?? ''}
-                onChange={(e) => set({ ends_at: e.target.value })}
-              />
-            </label>
-          </div>
+          <EventWhen
+            startsAt={form.starts_at}
+            endsAt={form.ends_at}
+            multiDay={multiDay}
+            onMultiDay={setMultiDay}
+            disabled={busy}
+            onChange={(next) => set(next)}
+          />
 
           <label className="field">
             <span>Visibility</span>
