@@ -98,7 +98,12 @@ function describeRule(rule: string): string {
 }
 
 function formatWhen(e: EventRecord): string {
-  const d = new Date(e.starts_at);
+  // The NEXT date, not the first. starts_at is the first occurrence, so for a
+  // weekly quiz that began in 2024 or a class whose series started in August it
+  // is months behind — and the list is read to find out what is coming up.
+  // Falls back to starts_at once every date has passed, so a finished series
+  // still shows when it last ran rather than nothing at all.
+  const d = new Date(e.next_occurrence ?? e.starts_at);
   const base = d.toLocaleString(undefined, {
     // The event's own zone, not the reader's: a manager checking the roster
     // from another state still needs the time the doors actually open.
@@ -109,8 +114,8 @@ function formatWhen(e: EventRecord): string {
     ...(e.all_day ? {} : { hour: 'numeric', minute: '2-digit' }),
   });
   if (e.rrule) return `${base} · ${describeRule(e.rrule)}`;
-  const extra = e.rdates?.length ?? 0;
-  return extra > 0 ? `${base} · ${extra + 1} dates` : base;
+  const total = e.date_count ?? 0;
+  return total > 0 ? `${base} · ${total} dates` : base;
 }
 
 export default function Events() {

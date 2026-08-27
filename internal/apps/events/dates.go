@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -111,4 +112,64 @@ func validateDates(e *Event) error {
 		}
 	}
 	return nil
+}
+
+// NextOccurrence returns the first occurrence at or after the start of today,
+// or nil when every date is behind us.
+//
+// "Start of today" rather than "now" on purpose: an event running this
+// afternoon is still today's event at 4pm, and a list that drops it the moment
+// it begins is wrong in the one hour people are most likely to be looking.
+func (e *Event) NextOccurrence() *time.Time {
+	if e == nil {
+		return nil
+	}
+	loc := e.Loc()
+	now := timeNow().In(loc)
+	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+
+	// A year is far enough to catch any rule we can store, and bounds an
+	// otherwise unbounded weekly series.
+	occ := e.Series().Expand(from, from.AddDate(1, 0, 0))
+	if len(occ) == 0 {
+		return nil
+	}
+	next := occ[0].Start
+	return &next
+}
+
+// MarshalJSON adds the fields a caller would otherwise have to derive.
+//
+// next_occurrence exists because starts_at is the FIRST occurrence, which for
+// a repeating event is frequently in the past -- a weekly quiz started in 2024,
+// a monthly class whose series began in August. Every surface that lists events
+// wants the next one, and the alternative is each of them reimplementing the
+// expander in its own language. Kit already owns a tested one, so it answers
+// the question here rather than exporting the puzzle.
+//
+// Computed on marshal rather than stored on the struct so it cannot go stale
+// or be forgotten on a read path that builds an Event some other way.
+func (e Event) MarshalJSON() ([]byte, error) {
+	type alias Event // shed the method, or this recurses
+	return json.Marshal(struct {
+		alias
+		NextOccurrence *time.Time `json:"next_occurrence,omitempty"`
+		// The total number of dates an explicit list carries, so a caller can
+		// say "4 dates" without receiving the list itself.
+		DateCount int `json:"date_count,omitempty"`
+	}{
+		alias:          alias(e),
+		NextOccurrence: e.NextOccurrence(),
+		DateCount:      e.DateCount(),
+	})
+}
+
+// DateCount is how many dates an explicit list holds, counting starts_at. Zero
+// for an event with no list -- including a rule-driven series, which has no
+// finite count to report.
+func (e *Event) DateCount() int {
+	if e == nil || len(e.RDates) == 0 {
+		return 0
+	}
+	return len(e.RDates) + 1
 }

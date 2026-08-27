@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -261,5 +262,122 @@ func TestValidateURLRejectsConcatenatedLinks(t *testing.T) {
 				t.Fatalf("accepted a malformed link of %d chars", len(tc.raw))
 			}
 		})
+	}
+}
+
+// --- What the list surfaces -------------------------------------------------
+
+// The reason next_occurrence exists: starts_at is the FIRST occurrence, so for
+// any established series it is months behind, and an events list read to find
+// out "what's coming up" would show a date that has already been and gone.
+func TestNextOccurrenceSkipsPastDates(t *testing.T) {
+	loc := denver(t)
+	now := time.Now().In(loc)
+
+	past := now.AddDate(0, -5, 0)
+	start := time.Date(past.Year(), past.Month(), past.Day(), 13, 0, 0, 0, loc)
+	e := denverEvent(t, start)
+	e.RRule = "FREQ=MONTHLY"
+
+	next := e.NextOccurrence()
+	if next == nil {
+		t.Fatal("an ongoing monthly series has no next occurrence")
+	}
+	if next.Before(now.AddDate(0, 0, -1)) {
+		t.Errorf("next occurrence %s is in the past", next)
+	}
+	if next.In(loc).Day() != start.Day() {
+		t.Errorf("next occurrence %s is not on the series' day of the month (%d)", next, start.Day())
+	}
+}
+
+// The same for a hand-picked list: the first two dates gone, the third ahead.
+func TestNextOccurrencePicksTheFirstFutureDate(t *testing.T) {
+	loc := denver(t)
+	now := time.Now().In(loc)
+	at := func(days int) time.Time {
+		d := now.AddDate(0, 0, days)
+		return time.Date(d.Year(), d.Month(), d.Day(), 13, 0, 0, 0, loc)
+	}
+	e := denverEvent(t, at(-60), at(-30), at(30), at(60))
+
+	next := e.NextOccurrence()
+	if next == nil {
+		t.Fatal("a series with dates still ahead has no next occurrence")
+	}
+	if got, want := next.In(loc).Format("2006-01-02"), at(30).Format("2006-01-02"); got != want {
+		t.Errorf("next = %s, want %s (the first date still ahead)", got, want)
+	}
+}
+
+// An event today is still today's event at 4pm. Dropping it the moment it
+// starts is wrong in exactly the hour people are most likely to be looking.
+func TestNextOccurrenceKeepsAnEventRunningToday(t *testing.T) {
+	loc := denver(t)
+	now := time.Now().In(loc)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 30, 0, 0, loc)
+	e := denverEvent(t, start, start.AddDate(0, 0, 30))
+
+	next := e.NextOccurrence()
+	if next == nil {
+		t.Fatal("today's event was dropped")
+	}
+	if next.In(loc).Format("2006-01-02") != now.Format("2006-01-02") {
+		t.Errorf("next = %s, want today", next)
+	}
+}
+
+func TestNextOccurrenceIsNilOnceEveryDateHasPassed(t *testing.T) {
+	loc := denver(t)
+	now := time.Now().In(loc)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, loc).AddDate(0, 0, -60)
+	e := denverEvent(t, start, start.AddDate(0, 0, 10))
+
+	if next := e.NextOccurrence(); next != nil {
+		t.Errorf("a finished series reported a next occurrence: %s", next)
+	}
+}
+
+// The console reads these off the JSON, so they have to actually be on it.
+func TestEventJSONCarriesTheNextOccurrence(t *testing.T) {
+	loc := denver(t)
+	now := time.Now().In(loc)
+	at := func(days int) time.Time {
+		d := now.AddDate(0, 0, days)
+		return time.Date(d.Year(), d.Month(), d.Day(), 13, 0, 0, 0, loc)
+	}
+
+	series := denverEvent(t, at(-30), at(30), at(60))
+	blob, err := json.Marshal(series)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(blob, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	next, ok := got["next_occurrence"].(string)
+	if !ok {
+		t.Fatalf("next_occurrence missing from %s", blob)
+	}
+	if !strings.HasPrefix(next, at(30).Format("2006-01-02")) {
+		t.Errorf("next_occurrence = %s, want %s", next, at(30).Format("2006-01-02"))
+	}
+	if n, _ := got["date_count"].(float64); int(n) != 3 {
+		t.Errorf("date_count = %v, want 3 (two extras plus the start)", got["date_count"])
+	}
+
+	// A one-off carries no date_count: starts_at already answers it, and an
+	// omitted field is easier for the client than a redundant one.
+	oneOff := denverEvent(t, at(30))
+	blob, err = json.Marshal(oneOff)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(blob), `"date_count"`) {
+		t.Errorf("a one-off should carry no date_count: %s", blob)
+	}
+	if !strings.Contains(string(blob), `"next_occurrence"`) {
+		t.Errorf("an upcoming one-off should still report its date: %s", blob)
 	}
 }

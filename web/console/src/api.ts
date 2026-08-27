@@ -528,6 +528,14 @@ export interface EventRecord {
   // Explicit extra dates the event also happens on. `starts_at` is the first
   // occurrence, so the full list a person sees is [starts_at, ...rdates].
   rdates?: string[];
+  // The next occurrence at or after today, expanded server-side from whichever
+  // repeat mechanism the event uses. Absent once every date has passed.
+  // Prefer this over starts_at when showing "when is this" — starts_at is the
+  // FIRST occurrence and for a series is routinely months behind.
+  next_occurrence?: string;
+  // How many dates an explicit list holds, counting the first. 0 for a
+  // one-off, and for a rule-driven series, which has no finite count.
+  date_count?: number;
   // Two orthogonal axes, not one. `status` is whether the event is settled;
   // `visibility` is whether the public may see it. A confirmed private booking
   // is published AND private.
