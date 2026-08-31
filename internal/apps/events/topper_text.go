@@ -57,6 +57,33 @@ func fitFontSize(pdf *fpdf.Fpdf, family, s string, width, want float64) float64 
 	return minFontPt
 }
 
+// clipWordsToWidth trims a line to fit by dropping whole words, ending in an
+// ellipsis.
+//
+// Words rather than characters because this runs on the last line a band
+// prints, where the cut is what a customer reads: "ON ANY SOURDOU…" looks like
+// a printer that gave up, while "ON ANY …" looks like a line that was edited.
+// The marker is measured against the untrimmed line first, so a cut costs at
+// most the one word that would not fit -- never a whole clause.
+//
+// A line with nothing left to drop is returned unmarked: it already fits, and
+// an unmarked line beats a bullet sitting alone next to an ellipsis.
+func clipWordsToWidth(pdf *fpdf.Fpdf, s string, width float64) string {
+	const marker = " …"
+	if pdf.GetStringWidth(s+marker) <= width {
+		return s + marker
+	}
+	words := strings.Fields(s)
+	for len(words) > 2 || (len(words) == 2 && words[0] != bulletDot) {
+		words = words[:len(words)-1]
+		line := strings.TrimRight(strings.Join(words, " "), " ,;:-")
+		if pdf.GetStringWidth(line+marker) <= width {
+			return line + marker
+		}
+	}
+	return s
+}
+
 // clipToWidth trims a string to fit, ending in an ellipsis. Used where
 // shrinking is not an option because the line shares its size with siblings.
 func clipToWidth(pdf *fpdf.Fpdf, s string, width float64) string {
@@ -137,13 +164,18 @@ func clampBullets(pdf *fpdf.Fpdf, lines []bandLine, w float64, room int) []bandL
 	}
 	lines = lines[:room]
 	last := &lines[len(lines)-1]
-	last.text = clipToWidth(pdf, last.text+" \u2026", w-last.indent)
+	last.text = clipWordsToWidth(pdf, last.text, w-last.indent)
 	return lines
 }
 
+// bulletDot opens a bullet's first line. Named because clipWordsToWidth has to
+// recognise it: a line trimmed back to the dot alone prints a band that looks
+// like it lost its text, rather than one that was cut short.
+const bulletDot = "•"
+
 // bulletLines renders the bullets at the current font size as drawable lines.
 func bulletLines(pdf *fpdf.Fpdf, bullets []string, w float64) []bandLine {
-	const dot = "• "
+	dot := bulletDot + " "
 	indent := pdf.GetStringWidth(dot)
 	var out []bandLine
 	for _, b := range bullets {

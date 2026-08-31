@@ -47,6 +47,28 @@ func TestBulletsKeepTheirSizeAndLoseLines(t *testing.T) {
 	}
 }
 
+// A cut lands between words. Half a word on a card handed to a customer reads
+// as a printer that gave up rather than as a line that was edited.
+func TestBulletsCutBetweenWords(t *testing.T) {
+	pdf, w := bulletFixture(t)
+	source := "Buy one get one on any sourdough pizza from Double D's every Monday"
+	whole := map[string]bool{bulletDot: true}
+	for word := range strings.FieldsSeq(strings.ToUpper(source)) {
+		whole[word] = true
+	}
+	// Sweep the widths a real band can hand the clamp, so the assertion does
+	// not depend on the cut happening to land in a friendly place.
+	pdf.SetFont(fontText, "", minBulletPt)
+	for avail := 3.0; avail <= w; avail += 1.5 {
+		line := clipWordsToWidth(pdf, bulletLines(pdf, []string{source}, w)[0].text, avail)
+		for word := range strings.FieldsSeq(strings.TrimSuffix(line, "…")) {
+			if !whole[strings.TrimRight(word, " ,;:-")] {
+				t.Fatalf("width %.1f: line %q cuts %q mid-word", avail, line, word)
+			}
+		}
+	}
+}
+
 // Copy that fits is left alone -- no phantom ellipsis on a band that said
 // everything it had to say.
 func TestBulletsThatFitAreNotMarkedTruncated(t *testing.T) {
