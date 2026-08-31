@@ -340,15 +340,39 @@ type cryptoDecryptor interface {
 	Decrypt(ciphertext string) (string, error)
 }
 
+// StackUrgencyWindowDays is how far ahead a due date can sit and still put
+// the task in the swipe feed. Two days covers "today, tomorrow, and the day
+// after" — the horizon a person can actually act inside.
+const StackUrgencyWindowDays = 2
+
+// stackUrgencyClause is what keeps the swipe feed actionable. The feed is
+// not a task list: it is the set of things that want a decision from the
+// person holding the phone right now, so a task earns a card only by being
+// overdue, due inside the window, or a blocker (which is urgent by
+// definition — something is stopped behind it — whether or not anyone gave
+// it a date).
+//
+// Everything else is real work that simply isn't urgent, and it stays
+// exactly where it was: the web console, list_tasks, and search. Dropping
+// out of the feed is not a state change and nothing about the task row
+// moves; a card reappears on its own as its due date comes into range.
+// This deliberately does not fall back to a digest card — a "Backlog (37)"
+// footer is the same pile with an extra tap in front of it.
+var stackUrgencyClause = fmt.Sprintf(`
+		  AND (t.priority = 'blocker'
+		       OR t.due_date <= CURRENT_DATE + INTERVAL '%d days')`, StackUrgencyWindowDays)
+
 // listStackTasks restricts to the caller's personal feed: tasks assigned
 // to them, plus unassigned tasks in roles they hold. Without this filter
 // every team member's stack would balloon with every team task. Admins
 // still hit this filter — the swipe feed is personal even for admins; for
 // auditing across users, list_tasks via MCP is the path.
 //
-// snoozedOnly=false returns the active feed (currently visible); snoozedOnly=
-// true returns the snoozed pile (hidden from the feed, surfaced via the
-// digest card).
+// snoozedOnly=false returns the active feed — which is additionally
+// narrowed to urgent rows, see stackUrgencyClause. snoozedOnly=true returns
+// the snoozed pile (hidden from the feed, surfaced via the digest card),
+// and is NOT urgency-filtered: the digest's whole job is to show what you
+// deferred, including the parts that aren't due yet.
 func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int, snoozedOnly bool) ([]stackTask, error) {
 	var b strings.Builder
 	args := []any{c.TenantID}
@@ -368,6 +392,7 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	} else {
 		b.WriteString(`
 		  AND (t.snoozed_until IS NULL OR t.snoozed_until <= now())`)
+		b.WriteString(stackUrgencyClause)
 	}
 
 	// Personal feed: assigned to me OR unassigned in a role I hold.
@@ -395,13 +420,17 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 			t.snoozed_until ASC
 		LIMIT `)
 	} else {
+		// Two buckets, not three: the urgency filter already threw out
+		// everything that isn't overdue, due inside the window, or a
+		// blocker. Late still leads. Everything else — near-due rows and
+		// undated blockers alike — is "now", so they share a bucket and
+		// the priority CASE below decides between them. The old third
+		// bucket would have stranded an undated blocker beneath every
+		// dated task, which is backwards for the one priority that says
+		// somebody is stuck.
 		b.WriteString(`
 		ORDER BY
-			CASE
-				WHEN t.due_date < CURRENT_DATE THEN 0
-				WHEN t.due_date <= CURRENT_DATE + INTERVAL '3 days' THEN 1
-				ELSE 2
-			END,
+			CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
 			CASE t.priority
 				WHEN 'blocker' THEN 0
 				WHEN 'high'    THEN 1

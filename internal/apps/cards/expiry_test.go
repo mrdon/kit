@@ -237,3 +237,114 @@ func TestApplyTTLDaysTriState(t *testing.T) {
 		t.Error("zero ttl should clear expiry")
 	}
 }
+
+// TestInfoBriefingsGetDefaultExpiry pins the rule that keeps the stack from
+// filling with disposable progress notes: an info briefing that names no
+// shelf life gets one anyway, and nothing else does. The three negative
+// cases are the ways an author says "this one stays" — pick a severity above
+// info, or name your own deadline.
+func TestInfoBriefingsGetDefaultExpiry(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID := newExpiryTenant(t, pool)
+	svc := NewService(pool)
+
+	explicit := time.Now().Add(30 * 24 * time.Hour)
+	cases := []struct {
+		name     string
+		severity BriefingSeverity
+		expires  *time.Time
+		want     func(*time.Time) bool
+		describe string
+	}{
+		{
+			name:     "info with no ttl gets the default",
+			severity: BriefingSeverityInfo,
+			want: func(got *time.Time) bool {
+				if got == nil {
+					return false
+				}
+				// Wide tolerance: the point is "roughly three days out",
+				// not a timestamp the test computed twice.
+				delta := time.Until(*got) - DefaultInfoBriefingTTL
+				return delta > -time.Minute && delta < time.Minute
+			},
+			describe: "a deadline about " + DefaultInfoBriefingTTL.String() + " out",
+		},
+		{
+			name:     "notable stays until acked",
+			severity: BriefingSeverityNotable,
+			want:     func(got *time.Time) bool { return got == nil },
+			describe: "no deadline",
+		},
+		{
+			name:     "important stays until acked",
+			severity: BriefingSeverityImportant,
+			want:     func(got *time.Time) bool { return got == nil },
+			describe: "no deadline",
+		},
+		{
+			name:     "an explicit ttl wins over the default",
+			severity: BriefingSeverityInfo,
+			expires:  &explicit,
+			want: func(got *time.Time) bool {
+				return got != nil && got.Sub(explicit).Abs() < time.Second
+			},
+			describe: "the caller's own deadline",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			card, err := svc.CreateSystemBriefing(ctx, tenantID, CardCreateInput{
+				Title:     tc.name,
+				Body:      "body",
+				ExpiresAt: tc.expires,
+				Briefing:  &BriefingCreateInput{Severity: tc.severity},
+			})
+			if err != nil {
+				t.Fatalf("CreateSystemBriefing: %v", err)
+			}
+			if !tc.want(card.ExpiresAt) {
+				t.Fatalf("expected %s, got expires_at=%v", tc.describe, card.ExpiresAt)
+			}
+		})
+	}
+}
+
+// TestDefaultExpiryLandsInTheSweep closes the loop: the default deadline is
+// worth nothing unless the existing sweep acts on it. An info briefing dated
+// into the past leaves the stack without anyone touching it.
+func TestDefaultExpiryLandsInTheSweep(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenantID := newExpiryTenant(t, pool)
+	svc := NewService(pool)
+
+	card, err := svc.CreateSystemBriefing(ctx, tenantID, CardCreateInput{
+		Title:    "created 3 tasks",
+		Body:     "routine progress note",
+		Briefing: &BriefingCreateInput{Severity: BriefingSeverityInfo},
+	})
+	if err != nil {
+		t.Fatalf("CreateSystemBriefing: %v", err)
+	}
+	// Age it past its own deadline rather than waiting three days.
+	past := time.Now().Add(-time.Hour)
+	if _, err := pool.Exec(ctx,
+		`UPDATE app_cards SET expires_at = $1 WHERE tenant_id = $2 AND id = $3`,
+		past, tenantID, card.ID); err != nil {
+		t.Fatalf("ageing card: %v", err)
+	}
+
+	if _, err := sweepExpiredCards(ctx, pool, tenantID); err != nil {
+		t.Fatalf("sweepExpiredCards: %v", err)
+	}
+	state, ok := cardState(t, pool, card.ID)
+	if !ok {
+		t.Fatalf("card disappeared instead of being archived")
+	}
+	if state != CardStateArchived {
+		t.Fatalf("expected archived, got %s", state)
+	}
+}

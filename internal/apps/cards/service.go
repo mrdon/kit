@@ -207,6 +207,7 @@ func (s *CardService) createBriefingImpl(ctx context.Context, tenantID uuid.UUID
 	if !in.Briefing.Severity.Valid() {
 		return nil, fmt.Errorf("invalid severity %q", in.Briefing.Severity)
 	}
+	in.ExpiresAt = defaultBriefingExpiry(in.ExpiresAt, in.Briefing.Severity)
 	card, err := createCardTx(ctx, s.pool, tenantID, in)
 	if err != nil {
 		return nil, err

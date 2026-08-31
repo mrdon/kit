@@ -266,7 +266,9 @@ var cardsTools = []services.ToolMeta{
 			"ttl_days": services.Field("number",
 				"Shelf life in days. After this the briefing is archived automatically and leaves the stack, "+
 					"so recurring summaries don't pile up unread. Set it whenever the content goes stale on its own "+
-					"(a daily digest is worthless a week later, so use 3). Omit for a briefing that should stay until acked."),
+					"(a daily digest is worthless a week later, so use 3). Omitting it does NOT mean forever: an "+
+					"info briefing defaults to a 3-day shelf life, while notable and important stay until acked. "+
+					"Pass a large ttl_days if an info-level card really must outlive that."),
 			"role_scopes": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},

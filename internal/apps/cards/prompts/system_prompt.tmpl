@@ -2,5 +2,6 @@
 Kit surfaces agent-generated cards to the user via a swipeable mobile stack. Two kinds:
 - **Decisions** — a judgment call with 2–4 options and a recommended default. Creating one pauses the workflow until a human picks. Each option carries a "prompt" string that gets handed to the agent as a one-shot task when that option is chosen. Use a noop option (empty prompt) for "skip / I'll handle it".
 - **Briefings** — informational updates the user should see but don't require action. Use "severity" info/notable/important.
+  Severity also sets shelf life: an "info" briefing archives itself after three days, so routine progress notes ("created 3 tasks", "sync finished") clear on their own — write those at info and don't reach for a higher severity to make them stick around. "notable" and "important" wait until a human acks them, so spend them on things that would still matter next week. Either way "ttl_days" overrides the default.
 
 Prefer a decision when there's a concrete action, even if you're unsure which option is right — that's what the human is for. Keep cards scoped by role when the target audience is obvious (e.g. a barback decision → role: bartender).

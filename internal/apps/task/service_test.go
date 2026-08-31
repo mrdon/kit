@@ -322,10 +322,14 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 	ctx := context.Background()
 
 	caller := f.caller(t, f.bob)
+	// Due today so the row clears the feed's urgency bar — this test is
+	// about snoozing, not about what counts as urgent.
+	today := time.Now()
 	tk, err := f.svc.Create(ctx, caller, CreateInput{
 		Title:          "to snooze",
 		RoleName:       "founders",
 		AssigneeUserID: &f.bob.ID,
+		DueDate:        &today,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -362,9 +366,13 @@ func TestUnassignedFeed(t *testing.T) {
 	ctx := context.Background()
 
 	bobCaller := f.caller(t, f.bob)
+	// Due today so it clears the feed's urgency bar — this test is about
+	// who can see a task, not about when it's urgent.
+	today := time.Now()
 	tk, err := f.svc.Create(ctx, bobCaller, CreateInput{
 		Title:    "unassigned founders work",
 		RoleName: "founders",
+		DueDate:  &today,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -571,5 +579,105 @@ func TestCreateDedupKey(t *testing.T) {
 	}
 	if a.ID == b.ID {
 		t.Fatalf("keyless creates collided: %s", a.ID)
+	}
+}
+
+// TestFeedShowsOnlyUrgent is the contract behind the urgency filter: the
+// swipe feed carries what wants attention now, and quietly leaves the rest
+// to the console. Every row here belongs to the same caller and differs
+// only in due date and priority, so a failure points straight at the
+// clause rather than at scoping.
+func TestFeedShowsOnlyUrgent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.bob)
+
+	day := func(offset int) *time.Time {
+		d := time.Now().AddDate(0, 0, offset)
+		return &d
+	}
+	mk := func(title, priority string, due *time.Time) uuid.UUID {
+		t.Helper()
+		tk, err := f.svc.Create(ctx, caller, CreateInput{
+			Title:          title,
+			RoleName:       "founders",
+			AssigneeUserID: &f.bob.ID,
+			Priority:       priority,
+			DueDate:        due,
+		})
+		if err != nil {
+			t.Fatalf("create %q: %v", title, err)
+		}
+		return tk.ID
+	}
+
+	overdue := mk("overdue", PriorityNormal, day(-3))
+	today := mk("due today", PriorityNormal, day(0))
+	edge := mk("due at window edge", PriorityNormal, day(StackUrgencyWindowDays))
+	blocker := mk("undated blocker", PriorityBlocker, nil)
+
+	justPast := mk("just past the window", PriorityNormal, day(StackUrgencyWindowDays+1))
+	someday := mk("undated normal", PriorityNormal, nil)
+	highLater := mk("high but not due", PriorityHigh, day(30))
+
+	feed, err := listStackTasks(ctx, f.pool, caller, 50, false)
+	if err != nil {
+		t.Fatalf("listStackTasks: %v", err)
+	}
+	for _, want := range []struct {
+		id    uuid.UUID
+		label string
+	}{
+		{overdue, "overdue"},
+		{today, "due today"},
+		{edge, "due at window edge"},
+		{blocker, "undated blocker"},
+	} {
+		if !containsStackTask(feed, want.id) {
+			t.Errorf("%s should be in the feed", want.label)
+		}
+	}
+	for _, notWant := range []struct {
+		id    uuid.UUID
+		label string
+	}{
+		{justPast, "just past the window"},
+		{someday, "undated normal"},
+		{highLater, "high priority due in 30 days"},
+	} {
+		if containsStackTask(feed, notWant.id) {
+			t.Errorf("%s should NOT be in the feed", notWant.label)
+		}
+	}
+}
+
+// TestSnoozedPileIgnoresUrgency guards the asymmetry: dropping out of the
+// feed for being un-urgent must not also empty the digest. Someone who
+// snoozes a far-off task still expects to find it in the snoozed pile.
+func TestSnoozedPileIgnoresUrgency(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caller := f.caller(t, f.bob)
+
+	far := time.Now().AddDate(0, 0, 60)
+	tk, err := f.svc.Create(ctx, caller, CreateInput{
+		Title:          "far-off snoozed work",
+		RoleName:       "founders",
+		AssigneeUserID: &f.bob.ID,
+		DueDate:        &far,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Snooze(ctx, caller, tk.ID, time.Now().Add(48*time.Hour)); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+
+	pile, err := listStackTasks(ctx, f.pool, caller, 50, true)
+	if err != nil {
+		t.Fatalf("listStackTasks(snoozed): %v", err)
+	}
+	if !containsStackTask(pile, tk.ID) {
+		t.Fatalf("a snoozed non-urgent task should still appear in the snoozed pile")
 	}
 }

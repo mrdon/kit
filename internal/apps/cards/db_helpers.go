@@ -180,3 +180,27 @@ func nilIfEmptyBytes(b []byte) []byte {
 	}
 	return b
 }
+
+// DefaultInfoBriefingTTL is the shelf life an info-severity briefing gets
+// when its author didn't name one. Info is the severity a caller lands on
+// by omission, and by far the most common thing written at it is a
+// throwaway progress note — "created 3 tasks", "sync finished". Those are
+// worth reading the day they land and are pure noise a week later, so the
+// stack shouldn't need a human swipe to be rid of them.
+//
+// Only info: notable and important are deliberate choices by the author,
+// and a card someone deliberately marked as mattering stays until it is
+// acked. An author who wants an info-level card to outlive three days can
+// pass an explicit ttl_days, which always wins.
+const DefaultInfoBriefingTTL = 3 * 24 * time.Hour
+
+// defaultBriefingExpiry returns the expiry a briefing should be created
+// with, given what the caller asked for. An explicit deadline is returned
+// untouched; only an info briefing with no stated shelf life gets one.
+func defaultBriefingExpiry(requested *time.Time, sev BriefingSeverity) *time.Time {
+	if requested != nil || sev != BriefingSeverityInfo {
+		return requested
+	}
+	t := time.Now().Add(DefaultInfoBriefingTTL)
+	return &t
+}
