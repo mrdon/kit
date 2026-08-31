@@ -32,6 +32,16 @@ ALTER TABLE app_events_shift_notices
 ALTER TABLE app_events_shift_notices
     ADD COLUMN IF NOT EXISTS channel_message_id TEXT NOT NULL DEFAULT '';
 
+-- Clear the table before the new constraint goes on. Under the old scheme a
+-- day could hold one row per person, so any surviving rows would collide on
+-- (tenant_id, notice_date) and abort the migration mid-deploy.
+--
+-- Deleting rather than de-duplicating is right on the merits, not just
+-- convenient: a per-person row records "this reader was told", which says
+-- nothing about whether the channel has been posted to. The worst case is one
+-- notice re-posted on the day of the deploy.
+DELETE FROM app_events_shift_notices;
+
 ALTER TABLE app_events_shift_notices
     ADD CONSTRAINT app_events_shift_notices_tenant_date_key
     UNIQUE (tenant_id, notice_date);
