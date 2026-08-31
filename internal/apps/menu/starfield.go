@@ -40,7 +40,7 @@ func buildStarfield() string {
 	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" `+
 		`viewBox="0 0 %d %d">`, starWidth, starHeight, starWidth, starHeight)
 
-	for i := 0; i < starCount; i++ {
+	for range starCount {
 		x := rng.Float64() * starWidth
 		y := rng.Float64() * starHeight
 		// Radius and opacity move together so the small ones recede rather
@@ -52,7 +52,7 @@ func buildStarfield() string {
 
 	// A handful of brighter stars with a soft halo. Without these the field
 	// is uniform, and a uniform field reads as texture rather than as sky.
-	for i := 0; i < brightStar; i++ {
+	for range brightStar {
 		x := rng.Float64() * starWidth
 		y := rng.Float64() * starHeight
 		fmt.Fprintf(&b, `<circle cx="%.1f" cy="%.1f" r="%.2f" fill="#ffd9c9" opacity="0.16"/>`,
