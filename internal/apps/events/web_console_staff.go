@@ -32,6 +32,7 @@ func registerStaffRoutes(mux apps.Mux, a *App) {
 	}
 	mux.Handle("GET /{slug}/api/events/staff", adminRoute(a.handleGetStaff))
 	mux.Handle("PUT /{slug}/api/events/staff", adminRoute(a.handleSaveStaffMapping))
+	mux.Handle("PUT /{slug}/api/events/staff/channel", adminRoute(a.handleSaveNoticeChannel))
 	mux.Handle("POST /{slug}/api/events/staff/preview", adminRoute(a.handlePreviewNotices))
 	mux.Handle("POST /{slug}/api/events/staff/send", adminRoute(a.handleSendNotices))
 }
@@ -42,11 +43,25 @@ type slackOption struct {
 	Name        string `json:"name"`
 }
 
+// channelOption is one entry in the "where do notices go" picker.
+type channelOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// BotIsMember is why a picked channel might still not work: posting to a
+	// public channel the bot has not been invited to fails, and a picker that
+	// hides this hands you a channel you can select and then never hear from.
+	BotIsMember bool `json:"bot_is_member"`
+	IsPrivate   bool `json:"is_private"`
+}
+
 type staffPayload struct {
-	SquareConnected bool           `json:"square_connected"`
-	Staff           []StaffMember  `json:"staff"`
-	SlackUsers      []slackOption  `json:"slack_users"`
-	Mappings        []StaffMapping `json:"mappings"`
+	SquareConnected bool            `json:"square_connected"`
+	NoticeChannelID string          `json:"notice_channel_id"`
+	Channels        []channelOption `json:"channels"`
+	ChannelsError   string          `json:"channels_error,omitempty"`
+	Staff           []StaffMember   `json:"staff"`
+	SlackUsers      []slackOption   `json:"slack_users"`
+	Mappings        []StaffMapping  `json:"mappings"`
 
 	// StaffError and SlackError explain an empty dropdown rather than leaving
 	// an admin staring at one with no reason given.
@@ -70,6 +85,9 @@ func (p staffPayload) MarshalJSON() ([]byte, error) {
 	if p.Mappings == nil {
 		p.Mappings = []StaffMapping{}
 	}
+	if p.Channels == nil {
+		p.Channels = []channelOption{}
+	}
 	if p.Recent == nil {
 		p.Recent = []noticeRunPayload{}
 	}
@@ -80,8 +98,9 @@ type noticeRunPayload struct {
 	At          string `json:"at"`
 	OK          bool   `json:"ok"`
 	TriggeredBy string `json:"triggered_by"`
-	Sent        int    `json:"sent"`
-	Skipped     int    `json:"skipped"`
+	Posted      bool   `json:"posted"`
+	Skipped     bool   `json:"skipped"`
+	Mentions    int    `json:"mentions"`
 	Unmapped    int    `json:"unmapped"`
 	Error       string `json:"error,omitempty"`
 }
@@ -127,6 +146,13 @@ func (a *App) buildStaffPayload(ctx context.Context, tenantID uuid.UUID) (staffP
 		return staffPayload{}, err
 	}
 
+	settings, err := a.svc.Settings(ctx, tenantID)
+	if err != nil {
+		return staffPayload{}, err
+	}
+	payload.NoticeChannelID = settings.NoticeChannelID
+	payload.Channels, payload.ChannelsError = a.listChannelOptions(ctx, tenantID)
+
 	runs, err := a.ListRecentNoticeRuns(ctx, tenantID, 8)
 	if err != nil {
 		return staffPayload{}, err
@@ -136,8 +162,9 @@ func (a *App) buildStaffPayload(ctx context.Context, tenantID uuid.UUID) (staffP
 			At:          run.CreatedAt.Format("2006-01-02 15:04"),
 			OK:          run.Succeeded(),
 			TriggeredBy: run.Meta.TriggeredBy,
-			Sent:        run.Meta.Sent,
+			Posted:      run.Meta.Posted,
 			Skipped:     run.Meta.Skipped,
+			Mentions:    run.Meta.Mentions,
 			Unmapped:    run.Meta.Unmapped,
 			Error:       run.Meta.Error,
 		})
@@ -219,24 +246,103 @@ func (a *App) handleSaveStaffMapping(w http.ResponseWriter, r *http.Request) {
 	eventsJSON(w, http.StatusOK, payload)
 }
 
+// listChannelOptions returns the channels the notice could be posted to.
+func (a *App) listChannelOptions(ctx context.Context, tenantID uuid.UUID) ([]channelOption, string) {
+	client, err := a.slackClient(ctx, tenantID)
+	if err != nil {
+		return nil, "Could not reach Slack: " + err.Error()
+	}
+	channels, err := client.ListChannels(ctx)
+	if err != nil {
+		slog.Warn("events: listing slack channels", "tenant_id", tenantID, "error", err)
+		return nil, "Could not list Slack channels: " + err.Error()
+	}
+	out := make([]channelOption, 0, len(channels))
+	for _, c := range channels {
+		out = append(out, channelOption{
+			ID: c.ID, Name: c.Name, BotIsMember: c.IsMember, IsPrivate: c.IsPrivate,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, ""
+}
+
+// handleSaveNoticeChannel points notices at a channel, or turns them off with
+// an empty id.
+//
+// A channel the bot is not in is refused rather than saved. Slack rejects the
+// post at 8am with not_in_channel, by which point nobody is watching -- the
+// only moment this is cheap to catch is while an admin is standing here.
+func (a *App) handleSaveNoticeChannel(w http.ResponseWriter, r *http.Request) {
+	caller := auth.CallerFromContext(r.Context())
+	var body struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		eventsErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	settings, err := a.svc.Settings(r.Context(), caller.TenantID)
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	settings.TenantID = caller.TenantID
+	settings.NoticeChannelID = strings.TrimSpace(body.ChannelID)
+	settings.NoticeChannelName = ""
+
+	if settings.NoticeChannelID != "" {
+		options, listErr := a.listChannelOptions(r.Context(), caller.TenantID)
+		if listErr != "" {
+			eventsErr(w, http.StatusBadGateway, listErr)
+			return
+		}
+		var picked *channelOption
+		for i := range options {
+			if options[i].ID == settings.NoticeChannelID {
+				picked = &options[i]
+				break
+			}
+		}
+		if picked == nil {
+			eventsErr(w, http.StatusBadRequest, "That channel is not one Kit can see.")
+			return
+		}
+		if !picked.BotIsMember {
+			eventsErr(w, http.StatusBadRequest,
+				"Kit is not in #"+picked.Name+" yet, so it could not post there. Invite it with /invite @Kit and try again.")
+			return
+		}
+		settings.NoticeChannelName = picked.Name
+	}
+
+	if _, err := a.svc.SaveSettings(r.Context(), settings); err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	payload, err := a.buildStaffPayload(r.Context(), caller.TenantID)
+	if err != nil {
+		a.serviceErr(w, err)
+		return
+	}
+	eventsJSON(w, http.StatusOK, payload)
+}
+
 // handlePreviewNotices shows exactly what would go out right now, to whom.
 //
 // These messages go to real people about private bookings, so seeing the text
 // before anyone receives it is the default way to check the mapping is right.
 func (a *App) handlePreviewNotices(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
-	plans, err := a.PreviewShiftNotices(r.Context(), caller.TenantID)
+	notice, err := a.PreviewShiftNotices(r.Context(), caller.TenantID)
 	if err != nil {
 		a.serviceErr(w, err)
 		return
 	}
-	if plans == nil {
-		plans = []NoticePlan{}
-	}
 	eventsJSON(w, http.StatusOK, map[string]any{
 		"dry_run": true,
-		"plans":   plans,
-		"message": FormatNoticePreview(plans),
+		"notice":  notice,
+		"message": FormatNoticePreview(notice),
 	})
 }
 

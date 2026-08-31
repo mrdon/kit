@@ -499,3 +499,58 @@ func (c *Client) apiCall(ctx context.Context, method string, payload any) (map[s
 
 	return result, nil
 }
+
+// ChannelInfo is a channel the bot can see, for admin pickers.
+type ChannelInfo struct {
+	ID   string
+	Name string
+	// IsMember reports whether the bot is in the channel. It matters because
+	// chat.postMessage to a public channel the bot has not joined fails with
+	// not_in_channel — so a picker that hides this produces a channel you can
+	// select and then silently cannot post to.
+	IsMember  bool
+	IsPrivate bool
+}
+
+// ListChannels returns the workspace's public and private channels, paginated.
+// Needs channels:read and groups:read, both already in the install scopes.
+// Archived channels are excluded — you cannot post to one.
+func (c *Client) ListChannels(ctx context.Context) ([]ChannelInfo, error) {
+	var out []ChannelInfo
+	cursor := ""
+	for {
+		params := map[string]string{
+			"limit":            "200",
+			"exclude_archived": "true",
+			"types":            "public_channel,private_channel",
+		}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		resp, err := c.apiFormCall(ctx, "conversations.list", params)
+		if err != nil {
+			return nil, err
+		}
+		channels, _ := resp["channels"].([]any)
+		for _, raw := range channels {
+			ch, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			id, _ := ch["id"].(string)
+			name, _ := ch["name"].(string)
+			isMember, _ := ch["is_member"].(bool)
+			isPrivate, _ := ch["is_private"].(bool)
+			if id == "" {
+				continue
+			}
+			out = append(out, ChannelInfo{ID: id, Name: name, IsMember: isMember, IsPrivate: isPrivate})
+		}
+		meta, _ := resp["response_metadata"].(map[string]any)
+		cursor, _ = meta["next_cursor"].(string)
+		if cursor == "" {
+			break
+		}
+	}
+	return out, nil
+}

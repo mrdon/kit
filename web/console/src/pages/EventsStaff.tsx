@@ -2,22 +2,30 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   api,
-  type EventsNoticePlan,
+  type EventsChannelOption,
+  type EventsDayNotice,
   type EventsNoticeRun,
   type EventsStaff,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
 
-// Admin page for shift notices: pair each person on the Square schedule with
-// the Slack account Kit should DM about the events on their shifts.
+// Admin page for shift notices: pick the channel the daily post goes to, and
+// pair each person on the Square schedule with their Slack account so the post
+// can @-mention them.
 //
-// Both sides are opaque ids — Square's TM… and Slack's U… — so this page never
-// shows one. Two name-labelled dropdowns, and the ids stay behind them.
+// Every id involved is opaque — Square's TM…, Slack's U… and C… — so this page
+// never shows one. Name-labelled dropdowns, ids kept behind them.
+//
+// The mapping is optional by design. Unmapped staff are still named in the
+// post; they just are not pinged. So notices work the day the channel is set,
+// and mapping is an improvement rather than a precondition.
 
 export default function EventsStaffPage() {
   useSetChatContext('the admin Events staff notices page');
   const [st, setSt] = useState<EventsStaff | null>(null);
-  const [plans, setPlans] = useState<EventsNoticePlan[] | null>(null);
+  const [notice, setNotice] = useState<EventsDayNotice | null | undefined>(
+    undefined,
+  );
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,29 +59,37 @@ export default function EventsStaffPage() {
           slack_user_id: slackUserID,
         }),
       );
-      // A changed mapping changes who would receive what, so a preview shown
-      // against the old pairing is worse than none.
-      setPlans(null);
+      // A changed mapping changes who the post would mention, so a preview
+      // rendered against the old pairing is worse than none.
+      setNotice(undefined);
       setNote(slackUserID ? 'Mapping saved.' : 'Mapping cleared.');
+    });
+
+  const setChannel = (channelID: string) =>
+    run(async () => {
+      setSt(await api.saveEventsNoticeChannel({ channel_id: channelID }));
+      setNotice(undefined);
+      setNote(channelID ? 'Channel saved.' : 'Notices turned off.');
     });
 
   const preview = () =>
     run(async () => {
       const r = await api.previewEventsNotices();
-      setPlans(r.plans ?? []);
+      setNotice(r.notice);
     });
 
   const send = () =>
     run(async () => {
       const r = await api.sendEventsNotices();
       setSt(r.staff);
-      setPlans(null);
+      setNotice(undefined);
       setNote(r.message);
     });
 
   const staff = st?.staff ?? [];
   const slackUsers = st?.slack_users ?? [];
   const mappings = st?.mappings ?? [];
+  const channels = st?.channels ?? [];
   const recent = st?.recent ?? [];
 
   const mappedFor = (teamMemberID: string) =>
@@ -94,9 +110,9 @@ export default function EventsStaffPage() {
         </nav>
         <h1>Event staff notices</h1>
         <p className="page-sub">
-          Each morning at 8am, everyone working that day gets a DM listing
-          what&rsquo;s on — private bookings included. Pair each person on the
-          Square schedule with their Slack account so Kit knows who to message.
+          Each morning at 8am, Kit posts the day to a channel — who&rsquo;s
+          working and what&rsquo;s on, private bookings included — mentioning
+          the people on shift, with the per-event detail in a thread.
         </p>
       </div>
 
@@ -111,7 +127,33 @@ export default function EventsStaffPage() {
       {st && (
         <>
           <section className="panel">
-            <h2 className="panel-title">Who gets notified</h2>
+            <h2 className="panel-title">Where notices go</h2>
+            {st.channels_error && <p className="muted">{st.channels_error}</p>}
+            <label className="field">
+              <span>Channel</span>
+              <select
+                value={st.notice_channel_id}
+                disabled={busy || channels.length === 0}
+                onChange={(e) => setChannel(e.target.value)}
+              >
+                <option value="">Nowhere — notices are off</option>
+                {channels.map((c: EventsChannelOption) => (
+                  <option key={c.id} value={c.id} disabled={!c.bot_is_member}>
+                    {c.is_private ? '🔒 ' : '#'}
+                    {c.name}
+                    {c.bot_is_member ? '' : ' — invite Kit first'}
+                  </option>
+                ))}
+              </select>
+              <span className="field-note">
+                Kit has to be in the channel to post. If the one you want is
+                greyed out, run <code>/invite @Kit</code> there and reload.
+              </span>
+            </label>
+          </section>
+
+          <section className="panel">
+            <h2 className="panel-title">Who gets mentioned</h2>
             {st.staff_error && <p className="muted">{st.staff_error}</p>}
             {st.slack_error && <p className="muted">{st.slack_error}</p>}
 
@@ -143,7 +185,7 @@ export default function EventsStaffPage() {
                               setMapping(s.team_member_id, e.target.value)
                             }
                           >
-                            <option value="">Nobody — no notices</option>
+                            <option value="">Not mentioned</option>
                             {slackUsers.map((u) => (
                               <option key={u.slack_user_id} value={u.slack_user_id}>
                                 {u.name}
@@ -158,8 +200,8 @@ export default function EventsStaffPage() {
                 {unmapped > 0 && (
                   <p className="field-note">
                     {unmapped} {unmapped === 1 ? 'person is' : 'people are'} on
-                    the schedule with nobody selected. They&rsquo;ll work
-                    without hearing what&rsquo;s on.
+                    the schedule without a Slack account selected. They&rsquo;re
+                    still named in the post — they just won&rsquo;t be notified.
                   </p>
                 )}
               </>
@@ -169,9 +211,9 @@ export default function EventsStaffPage() {
           <section className="panel">
             <h2 className="panel-title">Today&rsquo;s notices</h2>
             <p className="field-note">
-              These messages carry private-booking details to named people, so
-              check the preview before sending. Sending twice is safe — an
-              unchanged notice already delivered isn&rsquo;t repeated.
+              The post carries private-booking detail into a room, so read the
+              preview before it goes out. Posting twice is safe — an unchanged
+              notice already posted isn&rsquo;t repeated.
             </p>
             <button className="btn" onClick={preview} disabled={busy}>
               {busy ? 'Working…' : 'Preview'}
@@ -179,7 +221,7 @@ export default function EventsStaffPage() {
             <button className="btn" onClick={send} disabled={busy}>
               Send now
             </button>
-            {plans !== null && <NoticePreview plans={plans} />}
+            {notice !== undefined && <NoticePreview notice={notice} />}
             <NoticeHistory runs={recent} />
           </section>
         </>
@@ -188,23 +230,26 @@ export default function EventsStaffPage() {
   );
 }
 
-function NoticePreview({ plans }: { plans: EventsNoticePlan[] }) {
-  if (plans.length === 0) {
-    return (
-      <p className="muted">
-        Nobody would be notified: either nobody is on the schedule today,
-        nothing is on, or the people working aren&rsquo;t mapped yet.
-      </p>
-    );
+function NoticePreview({ notice }: { notice: EventsDayNotice | null }) {
+  if (!notice) {
+    return <p className="muted">Nothing would be posted: nothing is on today.</p>;
   }
   return (
     <div>
-      {plans.map((p) => (
-        <div key={p.slack_user_id}>
-          <h3 className="panel-title">To {p.name}</h3>
-          <pre className="preview-body">{p.body}</pre>
-        </div>
-      ))}
+      <h3 className="panel-title">Posted to the channel</h3>
+      <pre className="preview-body">{notice.headline}</pre>
+      {notice.detail && (
+        <>
+          <h3 className="panel-title">In a thread under it</h3>
+          <pre className="preview-body">{notice.detail}</pre>
+        </>
+      )}
+      {notice.unmapped > 0 && (
+        <p className="field-note">
+          {notice.unmapped} working without a Slack account selected — named in
+          the post, but not notified.
+        </p>
+      )}
     </div>
   );
 }
@@ -230,7 +275,11 @@ function NoticeHistory({ runs }: { runs: EventsNoticeRun[] }) {
               {r.ok ? (
                 <>
                   <span className="pill pill-ok">OK</span>{' '}
-                  {r.sent} sent
+                  {r.posted
+                    ? `posted, ${r.mentions} mentioned`
+                    : r.skipped
+                      ? 'already current'
+                      : 'nothing on'}
                   {r.unmapped > 0 ? `, ${r.unmapped} unmapped` : ''}
                 </>
               ) : (

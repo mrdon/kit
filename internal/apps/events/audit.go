@@ -153,8 +153,9 @@ const (
 // noticeMetadata is the typed audit payload for a notice run.
 type noticeMetadata struct {
 	TriggeredBy string `json:"triggered_by"`
-	Sent        int    `json:"sent"`
-	Skipped     int    `json:"skipped"`
+	Posted      bool   `json:"posted"`
+	Skipped     bool   `json:"skipped"`
+	Mentions    int    `json:"mentions"`
 	Unmapped    int    `json:"unmapped"`
 	DurationMS  int64  `json:"duration_ms"`
 	Error       string `json:"error,omitempty"`
@@ -163,8 +164,9 @@ type noticeMetadata struct {
 func (a *App) auditNoticeCompleted(ctx context.Context, tenantID uuid.UUID, triggeredBy string, sum NoticeSummary, dur time.Duration) {
 	a.appendNoticeAudit(ctx, tenantID, actionNoticeCompleted, noticeMetadata{
 		TriggeredBy: triggeredBy,
-		Sent:        sum.Sent,
+		Posted:      sum.Posted,
 		Skipped:     sum.Skipped,
+		Mentions:    sum.Mentions,
 		Unmapped:    sum.Unmapped,
 		DurationMS:  dur.Milliseconds(),
 	})

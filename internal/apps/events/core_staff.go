@@ -100,17 +100,17 @@ func coreShiftNotices(ctx context.Context, caller *services.Caller, raw json.Raw
 		}
 	}
 	if !in.Send {
-		plans, err := app.PreviewShiftNotices(ctx, caller.TenantID)
+		notice, err := app.PreviewShiftNotices(ctx, caller.TenantID)
 		if err != nil {
 			return "", err
 		}
-		return FormatNoticePreview(plans), nil
+		return FormatNoticePreview(notice), nil
 	}
 	sum, err := app.RunShiftNotices(ctx, caller.TenantID, "manual")
 	if err != nil {
 		return "", err
 	}
-	return "Shift notices: " + sum.String() + ".", nil
+	return "Shift notice: " + sum.String() + ".", nil
 }
 
 // resolveTeamMember accepts a Square team member id or a name, so a caller who

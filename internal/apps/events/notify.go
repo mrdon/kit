@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1" //nolint:gosec // stable content digest, not security
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,48 +14,65 @@ import (
 
 	"github.com/mrdon/kit/internal/apps/square"
 	"github.com/mrdon/kit/internal/models"
-	"github.com/mrdon/kit/internal/services/messenger"
+	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
 // Shift notices.
 //
 // The calendar already carries the bartender's briefing, but reading it is an
 // act someone has to remember to perform. A notice is the same information
-// arriving unprompted on the morning it matters, to exactly the people who are
-// working -- so the person opening at 11:30 finds out about the 7pm private
-// booking before they set the room, not when thirty people walk in.
+// arriving unprompted on the morning it matters.
 //
-// Two rules shape what goes out, and both are the opposite of the website's:
+// It goes to a CHANNEL, not to each person's DMs. The information is the same
+// either way; what a channel adds is somewhere to answer a question. "Do we
+// have the second mic?" asked in a 1:1 gets answered for one person, and the
+// next person to wonder asks again. The people working are @-mentioned so the
+// notification is still targeted, and the per-event detail goes in a thread so
+// the channel's top level stays one line a day.
 //
-//   - Cancelled events are excluded and everything else is included, private
-//     bookings among them. IsPubliclyVisible is the gate for what leaves the
-//     building; this is the internal surface, and a private booking is
-//     precisely the thing a bartender must not be surprised by.
-//   - Delivery is per person, not per event. One DM lists the whole day, so
-//     someone working a five-event Saturday gets one message rather than five.
+// Two rules shape what goes out, and the first is the opposite of the
+// website's:
+//
+//   - Cancelled and draft events are excluded and everything else is included,
+//     private bookings among them. IsPubliclyVisible is the gate for what
+//     leaves the building; this is the internal surface, and a private booking
+//     is precisely the thing a bartender must not be surprised by.
+//   - The roster names everyone on the schedule, mapped or not. Someone
+//     without a Slack pairing is named in plain text rather than pinged, so an
+//     unmapped new starter is visible rather than silently missing.
 
 // NoticeSummary counts what one run did. Unmapped is the number of people
-// working who have no Kit user paired with them -- the one failure an admin
-// has to act on, so it is counted rather than merely logged.
+// working with no Slack pairing -- they are named in the post but not pinged,
+// which is the one thing an admin can act on.
 type NoticeSummary struct {
-	Sent     int
-	Skipped  int
+	Posted   bool
+	Skipped  bool
+	Mentions int
 	Unmapped int
 }
 
 func (s NoticeSummary) String() string {
-	return fmt.Sprintf("%d sent, %d already current, %d unmapped",
-		s.Sent, s.Skipped, s.Unmapped)
+	switch {
+	case s.Skipped:
+		return "already posted and unchanged, nothing to say"
+	case !s.Posted:
+		return "nothing on today, nothing posted"
+	}
+	out := fmt.Sprintf("posted, %s mentioned", plural(s.Mentions, "person", "people"))
+	if s.Unmapped > 0 {
+		out += fmt.Sprintf(", %d working without a Slack pairing", s.Unmapped)
+	}
+	return out
 }
 
 // changed reports whether the run did anything worth recording.
-func (s NoticeSummary) changed() bool { return s.Sent > 0 || s.Unmapped > 0 }
+func (s NoticeSummary) changed() bool { return s.Posted || s.Unmapped > 0 }
 
-// RunShiftNotices sends today's notices for one tenant and records the outcome.
+// RunShiftNotices posts today's notice for one tenant and records the outcome.
 // triggeredBy is "schedule" or "manual".
 func (a *App) RunShiftNotices(ctx context.Context, tenantID uuid.UUID, triggeredBy string) (NoticeSummary, error) {
 	started := timeNow()
-	sum, err := a.notifyShiftStaff(ctx, tenantID)
+	sum, err := a.postShiftNotice(ctx, tenantID)
 	if err != nil {
 		a.auditNoticeFailed(ctx, tenantID, triggeredBy, err, time.Since(started))
 		return sum, err
@@ -65,66 +83,73 @@ func (a *App) RunShiftNotices(ctx context.Context, tenantID uuid.UUID, triggered
 	return sum, nil
 }
 
-// PreviewShiftNotices builds today's notices without sending them, so an admin
-// can see who would hear what before turning the schedule on.
-func (a *App) PreviewShiftNotices(ctx context.Context, tenantID uuid.UUID) ([]NoticePlan, error) {
-	plans, _, err := a.planShiftNotices(ctx, tenantID)
-	return plans, err
+// PreviewShiftNotices builds today's notice without posting it, so an admin
+// can read the exact text before a channel full of people does.
+func (a *App) PreviewShiftNotices(ctx context.Context, tenantID uuid.UUID) (*DayNotice, error) {
+	notice, _, err := a.planShiftNotice(ctx, tenantID)
+	return notice, err
 }
 
-// NoticePlan is one person's message for one day.
-type NoticePlan struct {
-	UserID      uuid.UUID `json:"-"`
-	SlackUserID string    `json:"slack_user_id"`
-	Name        string    `json:"name"`
-	Body        string    `json:"body"`
+// DayNotice is one day's post: a headline naming who is on and what is on,
+// and the per-event detail that hangs off it in a thread.
+type DayNotice struct {
+	Headline string `json:"headline"`
+	Detail   string `json:"detail"`
+	Mentions int    `json:"mentions"`
+	Unmapped int    `json:"unmapped"`
 }
 
-// notifyShiftStaff builds and delivers the day's notices.
-func (a *App) notifyShiftStaff(ctx context.Context, tenantID uuid.UUID) (NoticeSummary, error) {
-	plans, sum, err := a.planShiftNotices(ctx, tenantID)
-	if err != nil {
+// postShiftNotice builds and delivers the day's notice.
+func (a *App) postShiftNotice(ctx context.Context, tenantID uuid.UUID) (NoticeSummary, error) {
+	notice, sum, err := a.planShiftNotice(ctx, tenantID)
+	if err != nil || notice == nil {
 		return sum, err
 	}
-	if a.msg == nil {
-		return sum, nil
-	}
-
 	settings, err := a.svc.Settings(ctx, tenantID)
 	if err != nil {
 		return sum, err
 	}
+	if settings.NoticeChannelID == "" {
+		return sum, nil // notices are off for this workspace
+	}
 	day := startOfToday(settings.Loc())
 
-	for _, p := range plans {
-		fresh, err := recordNotice(ctx, a, tenantID, p.UserID, day, hashBody(p.Body))
-		if err != nil {
-			return sum, err
-		}
-		if !fresh {
-			sum.Skipped++
-			continue
-		}
-		if _, err := a.msg.Send(ctx, messenger.SendRequest{
-			TenantID:  tenantID,
-			Channel:   "slack",
-			Recipient: messenger.Recipient{SlackUserID: p.SlackUserID},
-			UserID:    p.UserID,
-			Body:      p.Body,
-			Origin:    AppName,
-			OriginRef: day.Format("2006-01-02"),
-		}); err != nil {
-			return sum, fmt.Errorf("sending shift notice to %s: %w", p.SlackUserID, err)
-		}
-		sum.Sent++
+	fresh, err := recordNotice(ctx, a, tenantID, day, hashBody(notice.Headline+notice.Detail))
+	if err != nil {
+		return sum, err
 	}
+	if !fresh {
+		sum.Skipped = true
+		return sum, nil
+	}
+
+	client, err := a.slackClient(ctx, tenantID)
+	if err != nil {
+		return sum, err
+	}
+	ts, err := client.PostMessageReturningTS(ctx, settings.NoticeChannelID, "", notice.Headline)
+	if err != nil {
+		return sum, fmt.Errorf("posting shift notice to %s: %w", settings.NoticeChannelName, err)
+	}
+	if err := stampNoticeMessage(ctx, a, tenantID, day, ts); err != nil {
+		return sum, err
+	}
+	// The detail is a thread reply so the channel keeps one line a day. A
+	// failure here leaves the headline standing, which still names who is on
+	// and what is on -- degraded, not lost.
+	if notice.Detail != "" {
+		if err := client.PostMessage(ctx, settings.NoticeChannelID, ts, notice.Detail); err != nil {
+			return sum, fmt.Errorf("posting shift notice detail: %w", err)
+		}
+	}
+	sum.Posted = true
 	return sum, nil
 }
 
-// planShiftNotices works out who is working today, what is on today, and what
-// each person should be told. Pure apart from its reads, so the preview and
-// the real send cannot disagree about what would go out.
-func (a *App) planShiftNotices(ctx context.Context, tenantID uuid.UUID) ([]NoticePlan, NoticeSummary, error) {
+// planShiftNotice works out who is working today, what is on, and what the
+// channel should be told. Pure apart from its reads, so the preview and the
+// real post cannot disagree.
+func (a *App) planShiftNotice(ctx context.Context, tenantID uuid.UUID) (*DayNotice, NoticeSummary, error) {
 	var sum NoticeSummary
 
 	settings, err := a.svc.Settings(ctx, tenantID)
@@ -139,10 +164,8 @@ func (a *App) planShiftNotices(ctx context.Context, tenantID uuid.UUID) ([]Notic
 	if err != nil {
 		return nil, sum, err
 	}
-	// Nothing on means nobody needs telling, whether or not they are mapped.
-	// Returning here also keeps a quiet Tuesday from recording an "unmapped"
-	// count every day, which would turn a standing config gap into daily audit
-	// noise that nobody reads.
+	// Nothing on means nothing to post. A daily "nothing today" is exactly the
+	// noise that trains a channel to ignore the bot.
 	if len(todays) == 0 {
 		return nil, sum, nil
 	}
@@ -156,45 +179,152 @@ func (a *App) planShiftNotices(ctx context.Context, tenantID uuid.UUID) ([]Notic
 		return nil, sum, err
 	}
 
-	// Group shifts by person first: someone working a split day gets one
-	// notice, and their earliest start is what decides how the day reads.
+	// Group shifts by person: someone working a split day is one name on the
+	// roster with both blocks, not two entries.
 	byMember := map[string][]square.EnrichedShift{}
 	for _, s := range shifts {
 		if s.TeamMemberID == "" {
-			continue // open shift, nobody to tell
+			continue // open shift, nobody to name
 		}
 		byMember[s.TeamMemberID] = append(byMember[s.TeamMemberID], s)
 	}
 
-	memberIDs := make([]string, 0, len(byMember))
-	for id := range byMember {
-		memberIDs = append(memberIDs, id)
+	roster, mentions, unmapped, err := a.rosterMentions(ctx, tenantID, byMember, mapped, loc)
+	if err != nil {
+		return nil, sum, err
 	}
-	sort.Strings(memberIDs)
+	sum.Mentions, sum.Unmapped = mentions, unmapped
 
-	plans := []NoticePlan{}
-	for _, id := range memberIDs {
-		userID, ok := mapped[id]
-		if !ok {
-			sum.Unmapped++
-			continue
-		}
-		user, err := models.GetUserByID(ctx, a.pool, tenantID, userID)
-		if err != nil {
-			return nil, sum, fmt.Errorf("loading mapped user: %w", err)
-		}
-		if user == nil || user.SlackUserID == "" {
-			sum.Unmapped++
-			continue
-		}
-		plans = append(plans, NoticePlan{
-			UserID:      userID,
-			SlackUserID: user.SlackUserID,
-			Name:        byMember[id][0].Member,
-			Body:        buildNoticeBody(byMember[id], todays, settings, loc),
-		})
+	return &DayNotice{
+		Headline: buildHeadline(day, roster, todays, loc),
+		Detail:   buildDetail(todays, settings, loc),
+		Mentions: mentions,
+		Unmapped: unmapped,
+	}, sum, nil
+}
+
+// rosterMentions renders the roster with mapped staff as Slack mentions and
+// everyone else as plain names, and reports how many of each.
+//
+// Naming the unmapped rather than dropping them is deliberate: the roster is
+// what the team reads to know who is on, and a missing name reads as "nobody
+// is covering that" rather than "we have not finished the setup".
+func (a *App) rosterMentions(
+	ctx context.Context, tenantID uuid.UUID,
+	byMember map[string][]square.EnrichedShift, mapped map[string]uuid.UUID,
+	loc *time.Location,
+) (roster string, mentions, unmapped int, err error) {
+	type entry struct {
+		label string
+		start time.Time
 	}
-	return plans, sum, nil
+	var entries []entry
+	for id, shifts := range byMember {
+		if len(shifts) == 0 {
+			continue
+		}
+		name := shifts[0].Member
+		if userID, ok := mapped[id]; ok {
+			user, uerr := models.GetUserByID(ctx, a.pool, tenantID, userID)
+			if uerr != nil {
+				return "", 0, 0, uerr
+			}
+			if user != nil && user.SlackUserID != "" {
+				name = "<@" + user.SlackUserID + ">"
+				mentions++
+			} else {
+				unmapped++
+			}
+		} else {
+			unmapped++
+		}
+		e := entry{label: name}
+		if hours := shiftHours(shifts, loc); hours != "" {
+			e.label += " " + hours
+		}
+		if t, perr := time.Parse(time.RFC3339, shifts[0].StartAt); perr == nil {
+			e.start = t
+		}
+		entries = append(entries, e)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].start.Before(entries[j].start) })
+
+	parts := make([]string, 0, len(entries))
+	for _, e := range entries {
+		parts = append(parts, e.label)
+	}
+	return strings.Join(parts, ", "), mentions, unmapped, nil
+}
+
+// buildHeadline is the channel's top-level line: the date, who is on, and the
+// day's events in one scannable list. Everything else waits in the thread, so
+// the channel reads as one line a day.
+func buildHeadline(day time.Time, roster string, events []dayEvent, loc *time.Location) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "*%s*", day.Format("Monday 2 January"))
+	if roster != "" {
+		fmt.Fprintf(&b, " — %s", roster)
+	} else {
+		b.WriteString(" — nobody on the published schedule")
+	}
+	b.WriteString("\n")
+
+	titles := make([]string, 0, len(events))
+	for i := range events {
+		titles = append(titles, fmt.Sprintf("%s %s",
+			events[i].Event.Title, formatOccurrenceClock(events[i], loc)))
+	}
+	b.WriteString(strings.Join(titles, " · "))
+	if len(events) > 0 {
+		b.WriteString("\nDetails in thread.")
+	}
+	return b.String()
+}
+
+// buildDetail is the thread reply: the operational block per event, reusing
+// briefingLines so the notice and the calendar entry cannot drift into telling
+// two different stories.
+func buildDetail(events []dayEvent, settings Settings, loc *time.Location) string {
+	var b strings.Builder
+	for i := range events {
+		de := events[i]
+		fmt.Fprintf(&b, "*%s* — %s\n", de.Event.Title, formatOccurrenceClock(de, loc))
+		for _, line := range briefingLines(&de.Event) {
+			fmt.Fprintf(&b, "  %s\n", line)
+		}
+		if s := strings.TrimSpace(de.Event.Summary); s != "" {
+			fmt.Fprintf(&b, "  %s\n", firstLine(s))
+		}
+		if n := strings.TrimSpace(de.Event.PrepNotes); n != "" {
+			fmt.Fprintf(&b, "  Staff notes: %s\n", n)
+		}
+		if url := settings.CanonicalURL(de.Event.Slug); url != "" && de.Event.IsPubliclyVisible() {
+			fmt.Fprintf(&b, "  %s\n", url)
+		}
+		if i < len(events)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// slackClient builds a posting client for the tenant.
+func (a *App) slackClient(ctx context.Context, tenantID uuid.UUID) (*kitslack.Client, error) {
+	if a.enc == nil {
+		return nil, errors.New("slack is not configured on this deployment")
+	}
+	tenant, err := models.GetTenantByID(ctx, a.pool, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("loading tenant: %w", err)
+	}
+	if tenant == nil {
+		return nil, fmt.Errorf("tenant %s not found", tenantID)
+	}
+	botToken, err := a.enc.Decrypt(tenant.BotToken)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting bot token: %w", err)
+	}
+	return kitslack.NewClient(botToken), nil
 }
 
 // eventsOn returns the events with an occurrence inside [from, to), expanded.
@@ -242,38 +372,6 @@ type dayEvent struct {
 // in order. The per-event detail reuses briefingLines -- the same operational
 // block the calendar carries, so the DM and the calendar entry can never drift
 // into telling two different stories.
-func buildNoticeBody(shifts []square.EnrichedShift, events []dayEvent, settings Settings, loc *time.Location) string {
-	var b strings.Builder
-
-	day := startOfToday(loc)
-	fmt.Fprintf(&b, "*On today, %s*\n", day.Format("Monday 2 January"))
-	if clock := shiftHours(shifts, loc); clock != "" {
-		fmt.Fprintf(&b, "You're on %s.\n", clock)
-	}
-	b.WriteString("\n")
-
-	for i := range events {
-		de := events[i]
-		fmt.Fprintf(&b, "*%s* — %s\n", de.Event.Title, formatOccurrenceClock(de, loc))
-		for _, line := range briefingLines(&de.Event) {
-			fmt.Fprintf(&b, "  %s\n", line)
-		}
-		if s := strings.TrimSpace(de.Event.Summary); s != "" {
-			fmt.Fprintf(&b, "  %s\n", firstLine(s))
-		}
-		if n := strings.TrimSpace(de.Event.PrepNotes); n != "" {
-			fmt.Fprintf(&b, "  Staff notes: %s\n", n)
-		}
-		if url := settings.CanonicalURL(de.Event.Slug); url != "" && de.Event.IsPubliclyVisible() {
-			fmt.Fprintf(&b, "  %s\n", url)
-		}
-		if i < len(events)-1 {
-			b.WriteString("\n")
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
 // shiftHours renders the person's own hours, merging a split day into one
 // range per block rather than pretending it is continuous.
 func shiftHours(shifts []square.EnrichedShift, loc *time.Location) string {

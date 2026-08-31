@@ -369,20 +369,21 @@ func FormatSiteStatus(st SiteStatus) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// FormatNoticePreview renders a shift-notice dry run. Shared by the console,
-// agent and MCP surfaces so all three describe the same plan identically.
+// FormatNoticePreview renders a shift-notice dry run.
 //
-// The full message body is shown, not a count: these DMs carry private-booking
-// details to named people, and "3 notices would be sent" gives an admin no way
-// to notice the mapping put Saturday's brief in the wrong person's inbox.
-func FormatNoticePreview(plans []NoticePlan) string {
-	if len(plans) == 0 {
-		return "Nobody would be notified: either nobody is on the schedule today, nothing is on, or the people working are not mapped to a Slack user yet."
+// The full text is shown, not a count: this post names people and carries
+// private-booking detail into a room, and "a notice would be posted" gives an
+// admin no way to catch that it reads wrong before everyone sees it.
+func FormatNoticePreview(n *DayNotice) string {
+	if n == nil {
+		return "Nothing would be posted: nothing is on today."
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s would be sent. Nothing has been delivered yet.\n", plural(len(plans), "notice", "notices"))
-	for _, p := range plans {
-		fmt.Fprintf(&b, "\n--- to %s ---\n%s\n", p.Name, p.Body)
+	out := "This would be posted:\n\n" + n.Headline
+	if n.Detail != "" {
+		out += "\n\n--- in a thread under it ---\n" + n.Detail
 	}
-	return b.String()
+	if n.Unmapped > 0 {
+		out += fmt.Sprintf("\n\n%d working without a Slack pairing — named in the post, but not notified.", n.Unmapped)
+	}
+	return out
 }

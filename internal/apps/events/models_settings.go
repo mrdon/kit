@@ -35,10 +35,14 @@ type Settings struct {
 	FeedToken         string `json:"-"`
 	// SiteBuildHookURL carries its own secret in the path, so it is never
 	// serialised back to the browser -- the UI only learns whether one is set.
-	SiteBuildHookURL string     `json:"-"`
-	SiteBuiltAt      *time.Time `json:"site_built_at,omitempty"`
-	SiteBuiltBy      string     `json:"site_built_by,omitempty"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	SiteBuildHookURL string `json:"-"`
+	// NoticeChannelID is where the daily shift notice is posted. Empty means
+	// notices are off -- there is no safe channel to guess at.
+	NoticeChannelID   string     `json:"notice_channel_id"`
+	NoticeChannelName string     `json:"notice_channel_name"`
+	SiteBuiltAt       *time.Time `json:"site_built_at,omitempty"`
+	SiteBuiltBy       string     `json:"site_built_by,omitempty"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // CalendarConfigured reports whether the sync has somewhere to write.
@@ -71,10 +75,12 @@ func getSettings(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (S
 	var s Settings
 	err := pool.QueryRow(ctx, `
 		SELECT tenant_id, calendar_id, timezone, public_url_template, feed_token,
-		       site_build_hook_url, site_built_at, site_built_by, updated_at
+		       site_build_hook_url, site_built_at, site_built_by, updated_at,
+		       notice_channel_id, notice_channel_name
 		FROM app_event_settings WHERE tenant_id = $1`, tenantID).
 		Scan(&s.TenantID, &s.CalendarID, &s.Timezone, &s.PublicURLTemplate, &s.FeedToken,
-			&s.SiteBuildHookURL, &s.SiteBuiltAt, &s.SiteBuiltBy, &s.UpdatedAt)
+			&s.SiteBuildHookURL, &s.SiteBuiltAt, &s.SiteBuiltBy, &s.UpdatedAt,
+			&s.NoticeChannelID, &s.NoticeChannelName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Unconfigured is a normal state, not an error.
 		return Settings{TenantID: tenantID, Timezone: DefaultTimezone}, nil
@@ -92,21 +98,26 @@ func upsertSettings(ctx context.Context, pool *pgxpool.Pool, s Settings) (Settin
 	}
 	var out Settings
 	err := pool.QueryRow(ctx, `
-		INSERT INTO app_event_settings (tenant_id, calendar_id, timezone, public_url_template, feed_token, site_build_hook_url, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())
+		INSERT INTO app_event_settings (tenant_id, calendar_id, timezone, public_url_template, feed_token, site_build_hook_url, notice_channel_id, notice_channel_name, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
 			calendar_id = EXCLUDED.calendar_id,
 			timezone = EXCLUDED.timezone,
 			public_url_template = EXCLUDED.public_url_template,
 			feed_token = EXCLUDED.feed_token,
 			site_build_hook_url = EXCLUDED.site_build_hook_url,
+			notice_channel_id = EXCLUDED.notice_channel_id,
+			notice_channel_name = EXCLUDED.notice_channel_name,
 			updated_at = now()
 		RETURNING tenant_id, calendar_id, timezone, public_url_template, feed_token,
-		          site_build_hook_url, site_built_at, site_built_by, updated_at`,
+		          site_build_hook_url, site_built_at, site_built_by, updated_at,
+		          notice_channel_id, notice_channel_name`,
 		s.TenantID, strings.TrimSpace(s.CalendarID), tz,
-		strings.TrimSpace(s.PublicURLTemplate), s.FeedToken, strings.TrimSpace(s.SiteBuildHookURL)).
+		strings.TrimSpace(s.PublicURLTemplate), s.FeedToken, strings.TrimSpace(s.SiteBuildHookURL),
+		strings.TrimSpace(s.NoticeChannelID), strings.TrimSpace(s.NoticeChannelName)).
 		Scan(&out.TenantID, &out.CalendarID, &out.Timezone, &out.PublicURLTemplate, &out.FeedToken,
-			&out.SiteBuildHookURL, &out.SiteBuiltAt, &out.SiteBuiltBy, &out.UpdatedAt)
+			&out.SiteBuildHookURL, &out.SiteBuiltAt, &out.SiteBuiltBy, &out.UpdatedAt,
+			&out.NoticeChannelID, &out.NoticeChannelName)
 	if err != nil {
 		return Settings{}, fmt.Errorf("saving event settings: %w", err)
 	}

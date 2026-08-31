@@ -194,30 +194,43 @@ func staffRoster(ctx context.Context, tenantID uuid.UUID) ([]StaffMember, error)
 	return out, nil
 }
 
-// recordNotice claims the (user, date) slot for a send, returning false when
-// an identical notice already went out.
+// recordNotice claims the day for a send, returning false when an identical
+// notice has already been posted.
 //
 // The claim is the INSERT itself rather than a read-then-write, so two runs
 // racing on the same day cannot both decide they are first. A changed hash
-// updates the row and re-sends: the day's plan genuinely differs from what the
-// person was told this morning.
-func recordNotice(ctx context.Context, a *App, tenantID, userID uuid.UUID, day time.Time, hash string) (bool, error) {
+// updates the row and posts again: the day's plan genuinely differs from what
+// the channel was told this morning.
+func recordNotice(ctx context.Context, a *App, tenantID uuid.UUID, day time.Time, hash string) (bool, error) {
 	var stored string
 	err := a.pool.QueryRow(ctx, `
-		INSERT INTO app_events_shift_notices (tenant_id, user_id, notice_date, content_hash)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (tenant_id, user_id, notice_date) DO UPDATE
+		INSERT INTO app_events_shift_notices (tenant_id, notice_date, content_hash)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (tenant_id, notice_date) DO UPDATE
 			SET content_hash = EXCLUDED.content_hash, sent_at = now()
 			WHERE app_events_shift_notices.content_hash <> EXCLUDED.content_hash
 		RETURNING content_hash`,
-		tenantID, userID, day.Format("2006-01-02"), hash).Scan(&stored)
+		tenantID, day.Format("2006-01-02"), hash).Scan(&stored)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// The WHERE on the DO UPDATE suppressed the write: same hash, already
-		// sent, nothing to say.
+		// posted, nothing new to say.
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("recording shift notice: %w", err)
 	}
 	return true, nil
+}
+
+// stampNoticeMessage records the posted message's ts, which is also the thread
+// anchor its detail reply hangs from.
+func stampNoticeMessage(ctx context.Context, a *App, tenantID uuid.UUID, day time.Time, ts string) error {
+	_, err := a.pool.Exec(ctx, `
+		UPDATE app_events_shift_notices SET channel_message_id = $3
+		WHERE tenant_id = $1 AND notice_date = $2`,
+		tenantID, day.Format("2006-01-02"), ts)
+	if err != nil {
+		return fmt.Errorf("stamping shift notice: %w", err)
+	}
+	return nil
 }

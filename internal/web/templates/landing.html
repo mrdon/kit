@@ -84,6 +84,7 @@
       <li>Tap to see all options or the full body</li>
       <li>Briefings: 👍 swipe right for useful, 👎 swipe left for not useful</li>
       <li>Tap the + button for quick capture — "add a todo", "remind me to…"</li>
+      <li>Only what's actually urgent lands here: tasks due in the next couple of days, and routine updates that clear themselves after three days</li>
     </ul>
     <p>Each Slack workspace has its own card stack at <code>{{.BaseURL}}/<em>your-slug</em>/</code>. Ask Kit in a Slack DM <em>"what's my card stack URL?"</em> if you don't know your slug.</p>
   </div>
@@ -217,10 +218,10 @@
     <details>
       <summary>Tell staff what's on when they're working</summary>
       <div class="answer">
-        <p>Every morning, everyone working that day gets a direct message listing what's on — private bookings included, not just the public listings. One message per person covering the whole day, so the opener knows about the 7pm party before they set the room.</p>
-        <pre>"Preview today's shift notices"
-"Map Sean to his Slack account"</pre>
-        <p>Pair each person on your Square schedule with their Slack account once, from two dropdowns on the admin page. Kit handles the rest.</p>
+        <p>Each morning Kit posts the day to a channel — who's on and what's happening, private bookings included, not just the public listings. The people working get mentioned; the per-event detail goes in a thread, so the channel stays one line a day and questions get answered where everyone can see them.</p>
+        <pre>"Preview today's shift notice"
+"Post today's notice now"</pre>
+        <p>Pick a channel and it works. Pairing people with their Slack accounts is optional — it's what turns a name into a mention.</p>
       </div>
     </details>
 

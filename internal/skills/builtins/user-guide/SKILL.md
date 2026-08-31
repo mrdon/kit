@@ -92,7 +92,7 @@ Kit tracks tasks for your team. Create them from conversation or explicitly:
 > "Create a todo to restock the paper towels, assign it to me."
 > "What tasks are overdue?"
 
-Tasks support priorities, due dates, role scoping, and an activity log. Use `list_tasks` to see open items or `complete_task` to mark one done. Use `snooze_task` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active. To delete, set `status` to `cancelled` via `update_task` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
+Tasks support priorities, due dates, role scoping, and an activity log. Use `list_tasks` to see open items or `complete_task` to mark one done. Use `snooze_task` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active — worth doing for something urgent you've consciously deferred, since the feed shows urgent tasks only (see "Decisions and briefings"). To delete, set `status` to `cancelled` via `update_task` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
 
 ## Expense reports
 
@@ -221,11 +221,16 @@ Kit syncs to the calendar every 15 minutes. Use **Sync now** to push immediately
 
 ### Telling staff what's on when they work
 
-If you run scheduling in Square, Kit can DM everyone working each morning with what's on that day — private bookings included, so nobody sets the room five minutes before thirty people arrive. One message per person listing the whole day, at 8am in your venue's timezone.
+If you run scheduling in Square, Kit can post the day to a channel each morning: who's working and what's on, private bookings included, so nobody sets the room five minutes before thirty people arrive. The people on shift are @-mentioned, and the per-event detail goes in a thread — so the channel gets one line a day, not a wall of text.
 
-Set it up on the **Event staff notices** page under Admin. Square and Kit know people by different ids and nothing links them, so you pair them once by hand: each person on your published Square schedule gets a dropdown of your Slack members. Pick their account and you're done. Anyone left on "Nobody" simply gets no notices, and the page says how many people that is — staff who work without hearing what's on are the thing worth noticing.
+Set it up on the **Event staff notices** page under Admin.
 
-Press **Preview** to see the exact messages before anyone gets one. **Send now** delivers today's; pressing it twice is safe, because a notice already delivered unchanged isn't repeated. If the day's plan genuinely changes after the morning send, the next run picks up the difference and follows up.
+- **Pick the channel.** Kit has to be in it to post; channels it hasn't been invited to are greyed out, so run `/invite @Kit` there first. Leave it on "Nowhere" to turn notices off.
+- **Pair people with Slack accounts, optionally.** Square and Kit know people by different ids and nothing links them, so each person on your published schedule gets a dropdown of your Slack members. This is only what turns a name into a ping — anyone unpaired is still named in the post, they just aren't notified. So notices work the day you pick a channel, and pairing improves them later.
+
+Press **Preview** to see the exact post and its thread before anyone does. **Send now** posts today's; pressing it twice is safe, because an unchanged notice already posted isn't repeated. If the day's plan genuinely changes after the morning post, the next run picks up the difference.
+
+Nothing on today means nothing is posted — a daily "nothing today" is how a channel learns to ignore a bot.
 
 New hire? They appear in the dropdown once they're on the published Square schedule. You don't need them to have used Kit before — picking them creates their Kit account.
 
@@ -321,6 +326,12 @@ Two kinds of card:
   - **Tap** → open the detail view
 
 Both thumbs up and thumbs down are recorded on the card (terminal state + timestamp + user), so the signal is available if you want to tune future briefings toward what's actually useful.
+
+**What reaches the feed.** The stack is a triage queue, not a full list — it only carries what wants a decision now, so an empty feed means you're done, not that something is missing.
+
+- **Tasks** appear when they're overdue, due in the next couple of days, or marked `blocker`. Everything else is still open and still yours; it just lives in the web console and `list_tasks` until its due date comes into range, and reappears on its own when it does. Nothing is archived or changed by dropping out of the feed. If a task matters and never shows up, give it a due date or bump it to `blocker`.
+- **Briefings** at the default `info` severity clear themselves after three days, so routine "created 3 tasks" / "sync finished" notes stop costing a swipe. Mark a briefing `notable` or `important` and it waits until acked; any briefing can name its own `ttl_days` instead.
+- **Decisions** never expire on their own. Someone has to answer them.
 
 **Chat with a card.** Long-press any card (about 600ms) to open a chat panel bound to that card. Type a message or hold the mic button to talk — both land in the same conversation. Use it to modify, reschedule, or ask about the card without switching back to Slack. Follow-up messages attach to the same session, so you can say "make it high priority" and then "no, actually low" and Kit understands the correction. The panel stays open until you close it.
 

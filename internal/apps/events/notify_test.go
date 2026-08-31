@@ -26,11 +26,9 @@ func TestNoticeBodyCarriesPrivateBookings(t *testing.T) {
 		PrepNotes:          "Cash bar. They bring their own cake.",
 	}
 	start := time.Date(2026, 8, 28, 19, 0, 0, 0, loc)
-	body := buildNoticeBody(
-		[]square.EnrichedShift{shiftAt(t, loc, 14, 22)},
+	body := buildDetail(
 		[]dayEvent{{Event: private, Start: start, End: start.Add(2 * time.Hour)}},
-		Settings{Timezone: "America/Denver"},
-		loc,
+		Settings{Timezone: "America/Denver"}, loc,
 	)
 
 	for _, want := range []string{
@@ -61,7 +59,7 @@ func TestNoticeLinksOnlyPublicEvents(t *testing.T) {
 		Event: Event{Title: "Private hire", Slug: "private-hire", Status: StatusPublished, Visibility: VisibilityPrivate},
 		Start: start, End: start.Add(time.Hour),
 	}
-	if body := buildNoticeBody(nil, []dayEvent{private}, settings, loc); strings.Contains(body, "gravity.example") {
+	if body := buildDetail([]dayEvent{private}, settings, loc); strings.Contains(body, "gravity.example") {
 		t.Errorf("private event leaked a website link:\n%s", body)
 	}
 
@@ -69,7 +67,7 @@ func TestNoticeLinksOnlyPublicEvents(t *testing.T) {
 		Event: Event{Title: "Trivia", Slug: "trivia", Status: StatusPublished, Visibility: VisibilityPublic},
 		Start: start, End: start.Add(time.Hour),
 	}
-	if body := buildNoticeBody(nil, []dayEvent{public}, settings, loc); !strings.Contains(body, "gravity.example/events/trivia") {
+	if body := buildDetail([]dayEvent{public}, settings, loc); !strings.Contains(body, "gravity.example/events/trivia") {
 		t.Errorf("public event should carry its link:\n%s", body)
 	}
 }
@@ -105,11 +103,10 @@ func TestNoticeHashTracksContent(t *testing.T) {
 		Event: Event{Title: "Trivia", Status: StatusPublished, PrepNotes: "Two mics."},
 		Start: start, End: start.Add(time.Hour),
 	}}
-	shifts := []square.EnrichedShift{shiftAt(t, loc, 14, 22)}
 	settings := Settings{Timezone: "America/Denver"}
 
-	first := hashBody(buildNoticeBody(shifts, day, settings, loc))
-	second := hashBody(buildNoticeBody(shifts, day, settings, loc))
+	first := hashBody(buildDetail(day, settings, loc))
+	second := hashBody(buildDetail(day, settings, loc))
 	if first != second {
 		t.Error("the same day must hash identically, or every run re-sends the same notice")
 	}
@@ -118,7 +115,7 @@ func TestNoticeHashTracksContent(t *testing.T) {
 		Event: day[0].Event,
 		Start: start.Add(time.Hour), End: start.Add(2 * time.Hour),
 	}}
-	if hashBody(buildNoticeBody(shifts, moved, settings, loc)) == first {
+	if hashBody(buildDetail(moved, settings, loc)) == first {
 		t.Error("a moved event must change the hash, or the follow-up never goes out")
 	}
 }
@@ -192,4 +189,52 @@ func mustLoc(t *testing.T, name string) *time.Location {
 		t.Fatalf("loading %s: %v", name, err)
 	}
 	return loc
+}
+
+// The headline is what the channel sees without opening anything, so it has to
+// carry the date, who is on, and what is on. Mapped staff become pings;
+// unmapped staff are still named, because a missing name reads as "nobody is
+// covering that" rather than "setup is incomplete".
+func TestHeadlineMentionsMappedAndNamesUnmapped(t *testing.T) {
+	loc := mustLoc(t, "America/Denver")
+	restoreNow(t, time.Date(2026, 9, 2, 8, 0, 0, 0, loc))
+	day := startOfToday(loc)
+	start := time.Date(2026, 9, 2, 17, 30, 0, 0, loc)
+
+	events := []dayEvent{{
+		Event: Event{Title: "Bike Night", Status: StatusPublished},
+		Start: start, End: start.Add(2 * time.Hour),
+	}}
+	roster := "<@U123> 2:00pm–8:00pm, Coleridge Gollata 5:00pm–9:00pm"
+	got := buildHeadline(day, roster, events, loc)
+
+	if !strings.Contains(got, "<@U123>") {
+		t.Errorf("a mapped person should be mentioned:\n%s", got)
+	}
+	if !strings.Contains(got, "Coleridge Gollata") {
+		t.Errorf("an unmapped person should still be named:\n%s", got)
+	}
+	if !strings.Contains(got, "Bike Night") || !strings.Contains(got, "Wednesday 2 September") {
+		t.Errorf("headline should carry the date and the day's events:\n%s", got)
+	}
+	// The detail belongs in the thread; a headline that inlined prep notes
+	// would defeat the point of threading it.
+	if strings.Contains(got, "Staff notes") {
+		t.Errorf("detail must not leak into the headline:\n%s", got)
+	}
+}
+
+// An event with nobody rostered is exactly the thing worth surfacing, so the
+// headline says so rather than quietly omitting the roster.
+func TestHeadlineSaysWhenNobodyIsOn(t *testing.T) {
+	loc := mustLoc(t, "America/Denver")
+	restoreNow(t, time.Date(2026, 9, 2, 8, 0, 0, 0, loc))
+	start := time.Date(2026, 9, 2, 19, 0, 0, 0, loc)
+	got := buildHeadline(startOfToday(loc), "", []dayEvent{{
+		Event: Event{Title: "Quiz", Status: StatusPublished},
+		Start: start, End: start.Add(time.Hour),
+	}}, loc)
+	if !strings.Contains(got, "nobody on the published schedule") {
+		t.Errorf("an unstaffed day should say so:\n%s", got)
+	}
 }
