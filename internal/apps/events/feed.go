@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -109,7 +110,7 @@ type Feed struct {
 // brief), expected_attendance, space_impact, notify_food_partner, and the
 // created_by user. Those exist for the team, and the calendar is where the
 // team reads them.
-func feedItem(e *Event, s Settings) FeedItem {
+func feedItem(e *Event, s Settings, until time.Time) FeedItem {
 	item := FeedItem{
 		ID:              e.ID.String(),
 		Slug:            e.Slug,
@@ -121,7 +122,7 @@ func feedItem(e *Event, s Settings) FeedItem {
 		AllDay:          e.AllDay,
 		Timezone:        e.Timezone,
 		Recurrence:      e.RRule,
-		Upcoming:        feedUpcoming(e),
+		Upcoming:        feedUpcoming(e, until),
 		Featured:        e.IsFeatured(),
 		Prominence:      string(e.Prominence),
 		Location:        e.Location,
@@ -150,6 +151,25 @@ func feedType(e *Event) string {
 	return "event"
 }
 
+// feedWindowMonths is how far ahead the feed reaches.
+//
+// The website is a "what's on" page, not an archive. A visitor is deciding
+// what to do over the next few weeks, and a build handed every published event
+// renders a wall of dates nobody has planned around yet -- which is exactly
+// what happens to a venue that books a season ahead. Two months keeps the near
+// term complete, including the far side of a month boundary, and stops there.
+// Anything further out arrives on a later build, and the site rebuilds far
+// more often than two months.
+const feedWindowMonths = 2
+
+// maxFeedEvents caps the feed even inside the window, because a busy venue can
+// put forty things in eight weeks. The cut is made here, nearest first, rather
+// than left to whoever writes the site template -- the template is someone
+// else's repository, and this is the surface that knows what "soon" means.
+// Nothing is lost permanently: the events past the cut move up as the ones
+// ahead of them happen.
+const maxFeedEvents = 20
+
 // BuildFeed assembles the public feed for a tenant.
 //
 // posterBase is the "https://host/tenant-slug" prefix used to build absolute
@@ -161,21 +181,62 @@ func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID, posterBase 
 	if err != nil {
 		return Feed{}, err
 	}
-	now := time.Now()
+	now := timeNow()
+	until := now.AddDate(0, feedWindowMonths, 0)
 	events, err := listEvents(ctx, s.pool, tenantID, ListFilter{
 		Status:     StatusPublished,
 		Visibility: VisibilityPublic,
 		From:       &now,
+		To:         &until,
 		Limit:      500,
 	})
 	if err != nil {
 		return Feed{}, err
 	}
 
+	entries := selectFeedEvents(events, until)
+	if len(entries) > maxFeedEvents {
+		// Worth a line: this is the one place events silently stop reaching
+		// the website, and "why is my event missing" is otherwise unanswerable.
+		slog.Info("events feed: trimmed to the cap", "tenant_id", tenantID,
+			"kept", maxFeedEvents, "dropped", len(entries)-maxFeedEvents)
+		entries = entries[:maxFeedEvents]
+	}
+
 	feed := Feed{
 		GeneratedAt: now.UTC().Format(time.RFC3339),
-		Events:      make([]FeedItem, 0, len(events)),
+		Events:      make([]FeedItem, 0, len(entries)),
 	}
+	for _, entry := range entries {
+		item := feedItem(entry.event, settings, until)
+		// Poster URL is assembled here rather than in feedItem because only
+		// the caller knows the host. No hero, no field -- the site then falls
+		// back to its own artwork instead of requesting a 404.
+		if posterBase != "" && entry.event.HeroAttachmentID != nil {
+			item.ImageURL = strings.TrimSuffix(posterBase, "/") + "/events/" + entry.event.Slug + "/poster"
+		}
+		feed.Events = append(feed.Events, item)
+	}
+	return feed, nil
+}
+
+// feedEntry pairs an event with the date a visitor would actually turn up on,
+// which is not the same as its starts_at once recurrence is involved.
+type feedEntry struct {
+	event *Event
+	next  time.Time
+}
+
+// selectFeedEvents keeps what genuinely happens inside the window and puts it
+// in the order the site reads it: soonest first.
+//
+// Ordering by starts_at -- which is what the query gives back -- looks right
+// until a weekly series is in the list. Trivia that began in 2023 stores 2023,
+// so it sorts to the very top and, worse, would eat the cap ahead of events
+// that are actually sooner. Ordering by the next real occurrence puts every
+// kind of event on the same footing.
+func selectFeedEvents(events []Event, until time.Time) []feedEntry {
+	out := make([]feedEntry, 0, len(events))
 	for i := range events {
 		e := &events[i]
 		// Belt and braces. The query already filters, but this is the one
@@ -185,16 +246,45 @@ func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID, posterBase 
 		if !e.IsPubliclyVisible() {
 			continue
 		}
-		item := feedItem(e, settings)
-		// Poster URL is assembled here rather than in feedItem because only
-		// the caller knows the host. No hero, no field -- the site then falls
-		// back to its own artwork instead of requesting a 404.
-		if posterBase != "" && e.HeroAttachmentID != nil {
-			item.ImageURL = strings.TrimSuffix(posterBase, "/") + "/events/" + e.Slug + "/poster"
+		next, ok := feedNext(e, until)
+		if !ok {
+			continue
 		}
-		feed.Events = append(feed.Events, item)
+		out = append(out, feedEntry{event: e, next: next})
 	}
-	return feed, nil
+	sort.SliceStable(out, func(i, j int) bool { return out[i].next.Before(out[j].next) })
+	return out
+}
+
+// feedNext is the next date the event actually happens, or false when it does
+// not happen inside the window at all.
+//
+// For a one-off this is just starts_at; the query has already bounded it. A
+// repeating row is the whole reason this exists. It stores its FIRST
+// occurrence, and the query deliberately exempts repeating rows from the lower
+// bound -- so a series whose rule ran out last spring still comes back from
+// the database. Expanding is the only way to ask whether it still runs.
+func feedNext(e *Event, until time.Time) (time.Time, bool) {
+	if !e.Repeats() {
+		return e.StartsAt, true
+	}
+	occ := e.Occurrences(feedExpandFrom(e), until)
+	if len(occ) == 0 {
+		return time.Time{}, false
+	}
+	return occ[0].Start, true
+}
+
+// feedExpandFrom is the start of today in the event's own zone.
+//
+// Expanding from this instant instead would drop an event still running this
+// evening out of a build that happens mid-afternoon, which is when builds
+// happen. A few hours of slack costs nothing and removes a whole class of
+// "it vanished off the website while it was on" report.
+func feedExpandFrom(e *Event) time.Time {
+	loc := e.Loc()
+	now := timeNow().In(loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 }
 
 // registerFeedRoutes mounts the public feed.
@@ -276,36 +366,30 @@ func FeedURL(baseURL, tenantSlug string) string {
 	return fmt.Sprintf("%s/%s/events/feed.json", strings.TrimSuffix(baseURL, "/"), tenantSlug)
 }
 
-// maxFeedOccurrences caps how many dates one item carries. Enough to show a
-// season of a monthly series or a full course, short of turning the feed into
-// a calendar export.
+// maxFeedOccurrences caps how many dates one item carries. The window usually
+// binds first -- two months of a weekly series is nine dates -- so this is the
+// backstop for the daily standing offer, which would otherwise ship sixty
+// entries and read as a calendar export rather than a cadence.
 const maxFeedOccurrences = 12
 
-// feedUpcomingWindow is how far ahead to look. A year keeps an unbounded weekly
-// series honest without expanding it forever, and is well past the point where
-// a static site would have rebuilt anyway.
-const feedUpcomingWindow = 12 // months
-
-// feedUpcoming expands the next few occurrences in the event's own zone, so the
-// site shows the time the doors actually open.
+// feedUpcoming expands the occurrences that fall inside the feed's own window,
+// in the event's own zone, so the site shows the time the doors actually open.
 //
-// The window starts slightly in the past -- at the beginning of today rather
-// than at this instant -- so an event still running this evening does not
-// vanish from the site mid-afternoon. The feed is consumed by a build that may
-// happen at any hour.
+// The dates stop where the window stops, deliberately. A feed that only lists
+// events for the next two months but hands a weekly series a year of dates is
+// telling the site two different things about how far ahead it reaches, and
+// the events page ends up padded with next spring's trivia. Recurrence rides
+// alongside for consumers that want to say "every Tuesday" without a date.
 //
 // Nil for a one-off, which keeps the key absent from the JSON entirely rather
 // than publishing a single-element array every consumer has to special-case:
 // starts_at already says when a one-off happens.
-func feedUpcoming(e *Event) []string {
+func feedUpcoming(e *Event, until time.Time) []string {
 	if !e.Repeats() {
 		return nil
 	}
 	loc := e.Loc()
-	now := timeNow().In(loc)
-	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-
-	occ := e.Occurrences(from, from.AddDate(0, feedUpcomingWindow, 0))
+	occ := e.Occurrences(feedExpandFrom(e), until)
 	if len(occ) > maxFeedOccurrences {
 		occ = occ[:maxFeedOccurrences]
 	}

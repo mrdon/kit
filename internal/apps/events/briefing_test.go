@@ -3,6 +3,7 @@ package events
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The calendar body is the bartender's briefing, so the operational facts must
@@ -72,7 +73,7 @@ func TestBriefingSpaceAndHeadcountCombinations(t *testing.T) {
 // pins that prep notes never migrate into the feed payload.
 func TestPrepNotesStayOutOfTheFeedProjection(t *testing.T) {
 	e := &Event{Title: "X", Slug: "x", PrepNotes: "SECRET-STAFF-ONLY", Timezone: "UTC"}
-	item := feedItem(e, Settings{})
+	item := feedItem(e, Settings{}, time.Now().AddDate(0, feedWindowMonths, 0))
 	blob := item.Title + item.Summary + item.Description + item.Location
 	if strings.Contains(blob, "SECRET-STAFF-ONLY") {
 		t.Fatal("prep notes reached the public feed payload")

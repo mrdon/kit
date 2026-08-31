@@ -8,6 +8,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -25,6 +26,7 @@ func init() {
 type App struct {
 	pool    *pgxpool.Pool
 	svc     *Service
+	signer  *auth.SessionSigner
 	baseURL string
 }
 
@@ -34,12 +36,14 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.svc = NewService(pool)
 }
 
-// Configure wires the external base URL used to render a board's copyable
-// public link — the string an admin pastes into a kiosk board.
-func Configure(baseURL string) {
+// Configure wires the console session signer and the external base URL used
+// to render a board's copyable public link — the string an admin pastes into
+// a kiosk board.
+func Configure(signer *auth.SessionSigner, baseURL string) {
 	if instance == nil {
 		return
 	}
+	instance.signer = signer
 	instance.baseURL = baseURL
 }
 
@@ -73,12 +77,15 @@ func (a *App) Usage(ctx context.Context, tenantID uuid.UUID) (string, error) {
 	return apps.CountLabel(n, "board", "boards"), nil
 }
 
-// RegisterRoutes mounts the one public route this app exists for.
+// RegisterRoutes mounts the public board page and the console's read-only API.
 func (a *App) RegisterRoutes(mux apps.Mux) {
 	if a.pool == nil || a.svc == nil {
 		return
 	}
 	registerPublicRoutes(mux, a)
+	if a.signer != nil {
+		registerConsoleRoutes(mux, a)
+	}
 }
 
 func (a *App) ToolMetas() []services.ToolMeta { return toolMetas() }

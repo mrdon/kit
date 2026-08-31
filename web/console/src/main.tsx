@@ -8,6 +8,7 @@ import AppsSettings from './pages/AppsSettings';
 import Netlify from './pages/Netlify';
 import SquareShifts from './pages/SquareShifts';
 import Kiosk from './pages/Kiosk';
+import Menu from './pages/Menu';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
@@ -47,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/skills" element={<Skills />} />
           <Route path="/skills/:id" element={<Skills />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/menu" element={<Menu />} />
           <Route path="/kiosk" element={<Kiosk />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />

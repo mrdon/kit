@@ -1720,6 +1720,12 @@ h2.view-title:hover {
   color: var(--error-ink);
 }
 
+/* Inline error text, for a problem that belongs beside its row rather than in
+   a page-level .banner-error — e.g. one board in a list that won't render. */
+.error-text {
+  color: var(--error-ink);
+}
+
 /* Neutral sibling of .field-hint, for explanatory text under a field.
    .field-hint is deliberately error-coloured and reads as a caution, so it
    should stay reserved for warnings ("visible to anyone on your website")

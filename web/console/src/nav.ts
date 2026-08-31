@@ -37,6 +37,12 @@ export const SECTIONS: Section[] = [
     app: 'expense',
   },
   {
+    to: '/menu',
+    label: 'Menu',
+    blurb: 'Published tap lists, and the address to put one on a screen.',
+    app: 'menu',
+  },
+  {
     to: '/kiosk',
     label: 'Kiosk',
     blurb: 'Change what your wall screens show without touching the machine.',

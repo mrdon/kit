@@ -126,6 +126,20 @@ export interface MintedToken {
 // browser homepage, so it is the stable half; `public_url` is what an admin
 // copies onto the machine. `last_seen_at` is the only health signal there is
 // — it is set by the screen's own polling.
+// A published menu board. Read-only in the console: boards are authored and
+// pushed with set_menu_board, and this page only answers "what URL do I
+// paste into the screen?".
+export interface MenuBoard {
+  key: string;
+  name: string;
+  public_url: string;
+  updated_at: string;
+  taps: number;
+  panels: number;
+  /** Set when a stored board no longer parses, so the page can say so. */
+  error?: string;
+}
+
 export interface KioskUrlChange {
   url: string;
   replaced_at: string;
@@ -791,6 +805,7 @@ export const api = {
   runEmailIntake: () =>
     apiPost<{ status: string }>('/email-intake/run'),
 
+  menuBoards: () => apiGet<{ boards: MenuBoard[] }>('/menu/boards'),
   kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
   createKioskBoard: (body: KioskBoardInput) =>
     apiPost<KioskBoard>('/kiosk/boards', body),

@@ -721,6 +721,14 @@ GET /{slug}/events/feed.json   → build-time feed, Bearer token required
 (feed.ics was dropped — the Google Calendar is already the subscribe surface)
 ```
 
+**The feed is a window, not a dump.** It carries published public events starting in the
+next `feedWindowMonths` (2), capped at `maxFeedEvents` (20), ordered by the next date the
+event actually happens — not by `starts_at`, which for a weekly series is its first
+occurrence years ago and would pin the series above everything sooner. A repeating row is
+expanded to check it still runs inside the window, so a series whose rule ran out last
+spring drops off instead of sitting on the site forever. Per-item `upcoming` dates stop at
+the same window, so the feed describes one horizon rather than two.
+
 **`feed.json` should require a shared-secret bearer token** (a Netlify build env var), per
 `website/PLAN.md` Phase 3. This reverses an earlier recommendation in this doc for a
 tokenless feed — that argument assumed a *client-side* fetch, where any token is public

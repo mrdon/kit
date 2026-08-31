@@ -2,8 +2,10 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -255,15 +257,17 @@ func (a muxAdapter) HandleFunc(pattern string, h func(http.ResponseWriter, *http
 // hands over the dates already worked out.
 func TestFeedExpandsAnExplicitDateList(t *testing.T) {
 	sf := newSyncFixture(t)
-	// Anchored ahead of today so the expansion window always contains them.
-	base := time.Now().AddDate(0, 1, 0)
+	// Anchored ahead of today, and close enough together that all three fall
+	// inside the feed's own window -- the point under test is that the dates
+	// are expanded at all, not how far ahead the feed reaches.
+	base := time.Now().AddDate(0, 0, 7)
 	// Date built separately from the time: "18:00" inside a layout string is
 	// not a literal -- Go reads the 1 as the month field.
 	d := func(add int) string { return base.AddDate(0, 0, add).Format("2006-01-02") + " 18:00" }
 
 	e := sf.create(t, CreateParams{
 		Title: "Supper Club", StartsAt: d(0), Visibility: VisibilityPublic,
-		Timezone: "America/Denver", RepeatDates: []string{d(28), d(56)},
+		Timezone: "America/Denver", RepeatDates: []string{d(14), d(28)},
 	})
 	sf.publish(t, e)
 
@@ -276,7 +280,7 @@ func TestFeedExpandsAnExplicitDateList(t *testing.T) {
 		t.Fatalf("expected all 3 dates, got %v", items[0].Upcoming)
 	}
 	for i, got := range items[0].Upcoming {
-		want := base.AddDate(0, 0, i*28).Format("2006-01-02")
+		want := base.AddDate(0, 0, i*14).Format("2006-01-02")
 		if !strings.HasPrefix(got, want) {
 			t.Errorf("occurrence %d = %s, want %s", i, got, want)
 		}
@@ -352,5 +356,135 @@ func TestFeedOmitsUpcomingForAOneOff(t *testing.T) {
 	}
 	if strings.Contains(string(blob), `"upcoming"`) {
 		t.Errorf("the upcoming key should be absent entirely: %s", blob)
+	}
+}
+
+// dayOut renders a date the given number of days from now, in the format the
+// service parses. Relative rather than fixed so these tests do not quietly
+// stop testing anything the moment a hard-coded year goes past.
+func dayOut(days int) string {
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02 15:04")
+}
+
+// The website is a "what's on" page. A venue that books its autumn in July
+// would otherwise ship the whole autumn to a build that renders every item,
+// so the feed reaches two months out and no further.
+func TestFeedStopsAtTheWindow(t *testing.T) {
+	sf := newSyncFixture(t)
+
+	soon := sf.create(t, CreateParams{
+		Title: "Trivia Night", StartsAt: dayOut(21), Visibility: VisibilityPublic,
+	})
+	sf.publish(t, soon)
+
+	far := sf.create(t, CreateParams{
+		Title: "New Year's Party", StartsAt: dayOut(150), Visibility: VisibilityPublic,
+	})
+	sf.publish(t, far)
+
+	got := sf.feed(t).titles()
+	if len(got) != 1 || got[0] != "Trivia Night" {
+		t.Fatalf("feed = %v, want only the event inside the window", got)
+	}
+}
+
+// Eight weeks is enough time for a busy venue to overflow the page on its own,
+// so the window alone is not a cap. The cut is nearest-first: what is dropped
+// is always the furthest out, and it comes back as the events ahead of it pass.
+func TestFeedCapsTheNumberOfEvents(t *testing.T) {
+	sf := newSyncFixture(t)
+
+	const created = maxFeedEvents + 4
+	for i := 1; i <= created; i++ {
+		e := sf.create(t, CreateParams{
+			Title: fmt.Sprintf("Night %02d", i), StartsAt: dayOut(i * 2), Visibility: VisibilityPublic,
+		})
+		sf.publish(t, e)
+	}
+
+	got := sf.feed(t).titles()
+	if len(got) != maxFeedEvents {
+		t.Fatalf("feed has %d events, want the cap of %d", len(got), maxFeedEvents)
+	}
+	if got[0] != "Night 01" {
+		t.Errorf("feed leads with %q, want the soonest event", got[0])
+	}
+	if last := got[len(got)-1]; last != fmt.Sprintf("Night %02d", maxFeedEvents) {
+		t.Errorf("feed ends at %q, want the cut made furthest-out first", last)
+	}
+}
+
+// Ordering by starts_at is what the database hands back, and it is wrong for a
+// series: trivia that began in 2024 stores 2024, so it would sort above an
+// event happening next week and eat a slot under the cap that belongs to
+// something sooner.
+func TestFeedOrdersBySoonestOccurrence(t *testing.T) {
+	sf := newSyncFixture(t)
+
+	series := sf.create(t, CreateParams{
+		Title: "Quarterly Tasting", StartsAt: "2024-01-02 19:00",
+		RepeatDates: []string{dayOut(42)}, Visibility: VisibilityPublic,
+	})
+	sf.publish(t, series)
+
+	oneOff := sf.create(t, CreateParams{
+		Title: "Bike Night", StartsAt: dayOut(7), Visibility: VisibilityPublic,
+	})
+	sf.publish(t, oneOff)
+
+	got := sf.feed(t).titles()
+	want := []string{"Bike Night", "Quarterly Tasting"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("feed = %v, want %v (soonest occurrence first)", got, want)
+	}
+}
+
+// The lower-bound query exempts repeating rows outright, so a series whose
+// rule ran out last spring still comes back from the database. Expanding it is
+// the only thing that notices, and without that check it would sit on the
+// website forever.
+func TestFeedDropsASeriesThatHasFinished(t *testing.T) {
+	sf := newSyncFixture(t)
+
+	done := sf.create(t, CreateParams{
+		Title: "Summer Series", StartsAt: "2024-06-04 19:00",
+		RRule: "FREQ=WEEKLY;BYDAY=TU;UNTIL=20240827T190000Z", Visibility: VisibilityPublic,
+	})
+	sf.publish(t, done)
+
+	if got := sf.feed(t).titles(); len(got) != 0 {
+		t.Fatalf("feed = %v, want a finished series left off the website", got)
+	}
+}
+
+// A feed that lists events for two months but hands one of them a year of
+// dates is describing two different windows, and the site pads its page with
+// next spring.
+func TestFeedUpcomingStopsAtTheWindow(t *testing.T) {
+	sf := newSyncFixture(t)
+
+	e := sf.create(t, CreateParams{
+		Title: "Long Running Trivia", StartsAt: "2024-01-02 19:00",
+		Visibility: VisibilityPublic, RRule: "FREQ=WEEKLY;BYDAY=TU",
+	})
+	sf.publish(t, e)
+
+	items := sf.feed(t).Events
+	if len(items) != 1 {
+		t.Fatalf("feed has %d events, want 1", len(items))
+	}
+	upcoming := items[0].Upcoming
+	if len(upcoming) == 0 {
+		t.Fatal("a weekly series carried no upcoming dates")
+	}
+	limit := time.Now().AddDate(0, feedWindowMonths, 0)
+	for _, d := range upcoming {
+		at, err := time.Parse(time.RFC3339, d)
+		if err != nil {
+			t.Fatalf("parsing upcoming date %q: %v", d, err)
+		}
+		if at.After(limit) {
+			t.Errorf("upcoming date %s is past the %d-month window", d, feedWindowMonths)
+		}
 	}
 }
