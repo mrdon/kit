@@ -107,8 +107,8 @@ export const SECTIONS: Section[] = [
   },
   {
     to: '/admin/events-staff',
-    label: 'Event staff notices',
-    blurb: 'Choose who gets a morning DM about the events on their shift.',
+    label: 'Daily event notices',
+    blurb: 'Pick the Slack channel that gets the morning post, and who it mentions.',
     admin: true,
     app: 'events',
   },

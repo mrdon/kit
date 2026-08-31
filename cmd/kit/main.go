@@ -234,10 +234,11 @@ func main() {
 	// Square shift sync needs the signer for its admin Manage page.
 	squareshifts.Configure(enc, sessionSigner)
 
-	// Events needs the signer for its console pages and the Messenger to DM
-	// shift notices. Its calendar client comes from the googlecalendar
-	// singleton at call time, so there is nothing else to wire.
-	events.Configure(enc, sessionSigner, app.Messenger)
+	// Events needs the signer for its console pages. Its calendar client comes
+	// from the googlecalendar singleton at call time, and it posts notices
+	// with a Slack client it builds from the tenant's bot token, so there is
+	// nothing else to wire.
+	events.Configure(enc, sessionSigner)
 
 	// Widget app needs the agent (for chat dispatch), the session signer
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for

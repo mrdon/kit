@@ -28,7 +28,6 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
-	"github.com/mrdon/kit/internal/services/messenger"
 	"github.com/mrdon/kit/internal/tools"
 )
 
@@ -49,9 +48,6 @@ type App struct {
 	svc    *Service
 	// enc decrypts attachment bytes; needed for event posters.
 	enc *crypto.Encryptor
-	// msg delivers shift notices. Nil until Configure wires it (and in
-	// tests), in which case a notice run plans but never sends.
-	msg messenger.Messenger
 
 	// resolveWriter overrides how the calendar client is obtained. Nil in
 	// production; tests set it to inject a fake calendar. See writerFor.
@@ -70,16 +66,16 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.registerScheduledTasks()
 }
 
-// Configure wires the console session signer. The calendar client comes from
-// the googlecalendar singleton at call time, so there is no encryptor to hold
-// here; enc is accepted to match the wiring convention used by sibling apps.
-func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner, msg messenger.Messenger) {
+// Configure wires the console session signer and the encryptor. The calendar
+// client comes from the googlecalendar singleton at call time, but enc is held
+// rather than decorative: posting a shift notice and listing channels for the
+// picker both need a Slack client built from the tenant's bot token.
+func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
 	instance.enc = enc
-	instance.msg = msg
 }
 
 // attachments builds the poster store on demand. Nil when the encryptor was
