@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"math"
 	"strings"
 )
 
@@ -26,10 +27,13 @@ var boardTmpl = template.Must(
 // wrong shows up as one column overflowing into the footer.
 const headerCost = 0.65
 
-// Section is a run of taps sharing a style, as laid out on the page.
+// Section is a run of taps sharing a style, as laid out on the page. A long
+// section can continue into the second column, in which case the second piece
+// is marked Continued and repeats the heading.
 type Section struct {
-	Name string
-	Taps []Tap
+	Name      string
+	Taps      []Tap
+	Continued bool
 }
 
 // renderData is what the template sees.
@@ -61,9 +65,11 @@ type panelView struct {
 // Render produces the whole self-contained page for a board.
 //
 // assets maps an asset key to its data URI; pass nil when a board has no
-// poster panels. A panel naming a key that is not in the map renders with no
-// image rather than failing the page: one missing graphic should cost the
-// panel, not the tap list beside it.
+// images. A panel naming a key that is not in the map renders with no image
+// rather than failing the page, and a poster panel omits its <img> entirely
+// rather than emitting an empty src that paints a broken-image icon on the
+// wall. One missing graphic should cost that panel, not the tap list beside
+// it.
 func Render(b *Board, assets map[string]string, version string) (string, error) {
 	css, err := stylesheet()
 	if err != nil {
@@ -143,8 +149,14 @@ func assetDataURI(name, mime string) (string, error) {
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw), nil
 }
 
-// Columns groups taps into sections in the order given, then splits the
-// sections across the page's two columns.
+// Columns groups taps into sections in the order given, then divides them
+// across the page's two columns as evenly as it can.
+//
+// Sections may be split. Keeping every section whole reads better in the
+// abstract, but the tap list comes from Untappd and its section sizes are not
+// ours to choose: the real board divides 6 against 10 at the best whole-
+// section cut, which leaves a third of one column empty. A printed menu
+// solves this the same way — carry the heading over and continue the list.
 func Columns(taps []Tap) [][]Section {
 	var sections []Section
 	for _, t := range taps {
@@ -154,38 +166,84 @@ func Columns(taps []Tap) [][]Section {
 		last := &sections[len(sections)-1]
 		last.Taps = append(last.Taps, t)
 	}
-	left, right := splitSections(sections)
+	return balanceColumns(sections)
+}
+
+// balanceColumns picks the cut that leaves the two columns closest in height.
+//
+// Every position is tried rather than cutting at the first crossing of the
+// halfway mark, because the two candidates either side of that mark are not
+// symmetric: splitting a section adds a repeated heading to the right column,
+// so the better cut is often one row past where a running total says to stop.
+// Enumerating is exact, and at seventeen taps it is free.
+func balanceColumns(sections []Section) [][]Section {
+	if len(sections) == 0 {
+		return [][]Section{nil, nil}
+	}
+
+	// Flatten to (section index, row index) so a cut can land mid-section.
+	type pos struct{ sec, row int }
+	var rows []pos
+	for si, sec := range sections {
+		for ri := range sec.Taps {
+			rows = append(rows, pos{si, ri})
+		}
+	}
+
+	best, bestDiff := 0, math.Inf(1)
+	for cut := 1; cut < len(rows); cut++ {
+		left, right := splitAt(sections, rows[cut].sec, rows[cut].row)
+		// A heading with nothing under it reads as a section whose beers have
+		// all gone, so those cuts are not candidates at all.
+		if hasEmptySection(left) || hasEmptySection(right) {
+			continue
+		}
+		diff := math.Abs(columnHeight(left) - columnHeight(right))
+		if diff < bestDiff {
+			best, bestDiff = cut, diff
+		}
+	}
+	if math.IsInf(bestDiff, 1) {
+		return [][]Section{sections, nil} // one row: nothing to balance
+	}
+	left, right := splitAt(sections, rows[best].sec, rows[best].row)
 	return [][]Section{left, right}
 }
 
-// splitSections cuts the section list into two columns of roughly equal
-// height. A section is never split across columns: a style group broken in
-// half is worse than a column that runs slightly short, because the header
-// only sits over one of the two pieces.
-func splitSections(sections []Section) (left, right []Section) {
-	if len(sections) < 2 {
-		return sections, nil
-	}
-	cost := func(s Section) float64 { return float64(len(s.Taps)) + headerCost }
-	var total float64
-	for _, s := range sections {
-		total += cost(s)
-	}
-	half := total / 2
-
-	var running float64
-	cut := 0
+// splitAt divides the sections so that row `row` of section `sec` is the first
+// entry of the right column, repeating the heading when a section straddles.
+func splitAt(sections []Section, sec, row int) (left, right []Section) {
 	for i, s := range sections {
-		// Take the section only if its midpoint still lands in the top half,
-		// and always leave at least one for the right column.
-		if i > 0 && running+cost(s)/2 > half {
-			break
+		switch {
+		case i < sec:
+			left = append(left, s)
+		case i > sec:
+			right = append(right, s)
+		case row == 0:
+			right = append(right, s)
+		default:
+			left = append(left, Section{Name: s.Name, Taps: s.Taps[:row]})
+			right = append(right, Section{Name: s.Name, Taps: s.Taps[row:], Continued: true})
 		}
-		running += cost(s)
-		cut = i + 1
 	}
-	if cut >= len(sections) {
-		cut = len(sections) - 1
+	return left, right
+}
+
+// columnHeight is the cost model the balance is measured against: a heading
+// takes real vertical space, just less than a beer.
+func columnHeight(secs []Section) float64 {
+	var h float64
+	for _, s := range secs {
+		h += headerCost + float64(len(s.Taps))
 	}
-	return sections[:cut], sections[cut:]
+	return h
+}
+
+func hasEmptySection(secs []Section) bool {
+	for _, s := range secs {
+		if len(s.Taps) == 0 {
+			return true
+		}
+	}
+	return false
 }

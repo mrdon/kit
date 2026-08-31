@@ -27,7 +27,7 @@
       <div class="tapcol">
         {{- range . }}
         <div class="sect">
-          <p class="sect-head">{{ .Name }}</p>
+          <p class="sect-head">{{ .Name }}{{ if .Continued }} <span class="sect-cont">cont.</span>{{ end }}</p>
           {{- range .Taps }}
           <div class="tap">
             <div class="tap-l">
@@ -63,7 +63,9 @@
           {{- end }}
         </ul>
         {{- else if eq $p.Kind "poster" }}
-        <div class="poster-wrap"><img class="poster" src="{{ $p.ImageURL }}" alt="{{ $p.Alt }}"></div>
+        {{- with $p.ImageURL }}
+        <div class="poster-wrap"><img class="poster" src="{{ . }}" alt="{{ $p.Alt }}"></div>
+        {{- end }}
         {{- else }}
         <div class="cta">
           <p class="cta-head">{{ $p.Headline }}</p>

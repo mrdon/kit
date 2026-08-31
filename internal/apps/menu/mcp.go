@@ -32,6 +32,8 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 		return mcpSetAsset(pool, a)
 	case "set_menu_source":
 		return mcpSetSource(pool, a)
+	case "delete_menu_board":
+		return mcpDeleteBoard(a)
 	case "get_menu_board":
 		return mcpGetBoard(pool, a)
 	default:
@@ -78,6 +80,19 @@ func mcpSetSource(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
 		}
 		args := setSourceArgs{BoardID: req.GetString("board_id", ""), Key: req.GetString("key", "")}
 		msg, err := applySource(ctx, pool, a, caller.TenantID, args)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(msg), nil
+	})
+}
+
+func mcpDeleteBoard(a *App) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if a.svc == nil {
+			return mcp.NewToolResultError("menu app is not configured"), nil
+		}
+		msg, err := removeBoard(ctx, a, caller.TenantID, deleteBoardArgs{Key: req.GetString("key", "")})
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

@@ -33,6 +33,8 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return handleSetAsset(a)
 	case "set_menu_source":
 		return handleSetSource(a)
+	case "delete_menu_board":
+		return handleDeleteBoard(a)
 	case "get_menu_board":
 		return handleGetBoard(a)
 	default:
@@ -77,6 +79,16 @@ func handleSetSource(a *App) tools.HandlerFunc {
 			}
 		}
 		return applySource(ec.Ctx, ec.Pool, a, ec.Tenant.ID, args)
+	}
+}
+
+func handleDeleteBoard(a *App) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+		var args deleteBoardArgs
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return "", fmt.Errorf("parsing delete_menu_board arguments: %w", err)
+		}
+		return removeBoard(ec.Ctx, a, ec.Tenant.ID, args)
 	}
 }
 

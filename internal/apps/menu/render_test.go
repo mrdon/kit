@@ -10,57 +10,82 @@ func tap(section, name, size string) Tap {
 	return Tap{Section: section, Name: name, Style: "Style", ABV: "5.0%", Price: "7", Size: size}
 }
 
-func taps(section string, n int) []Tap {
-	out := make([]Tap, n)
-	for i := range out {
-		out[i] = tap(section, "Beer", DefaultPour)
+func countTaps(secs []Section) int {
+	n := 0
+	for _, s := range secs {
+		n += len(s.Taps)
+	}
+	return n
+}
+
+func sectionsFrom(spec [][2]any) []Tap {
+	var out []Tap
+	for _, s := range spec {
+		name, n := s[0].(string), s[1].(int)
+		for range n {
+			out = append(out, tap(name, "Beer", DefaultPour))
+		}
 	}
 	return out
 }
 
-func TestSplitSectionsBalancesColumns(t *testing.T) {
-	// The real board's shape: 1 + 3 + 5 on the left, 3 + 2 + 3 on the right.
-	var all []Tap
-	for _, s := range []struct {
-		name string
-		n    int
-	}{
-		{"Lagers", 1}, {"Pub Ales", 3}, {"Pale Ales & IPAs", 5},
-		{"Belgian", 3}, {"Stouts & Porters", 2}, {"Specialty", 3},
-	} {
-		all = append(all, taps(s.name, s.n)...)
-	}
-
+// The real board's shape. Kept whole, the best contiguous cut is 6 against
+// 10, which leaves a third of a column empty; splitting the long section gets
+// it to 8/8.
+func TestColumnsBalanceTheRealBoard(t *testing.T) {
+	all := sectionsFrom([][2]any{
+		{"Pub Ales", 3}, {"Belgian Styles", 3}, {"Pale Ales & IPAs", 5},
+		{"Stouts & Porters", 2}, {"Specialty", 3},
+	})
 	cols := Columns(all)
-	if len(cols) != 2 {
-		t.Fatalf("want 2 columns, got %d", len(cols))
+	left, right := countTaps(cols[0]), countTaps(cols[1])
+	if left+right != 16 {
+		t.Fatalf("lost taps: %d + %d", left, right)
 	}
-	count := func(secs []Section) int {
-		n := 0
-		for _, s := range secs {
-			n += len(s.Taps)
-		}
-		return n
-	}
-	left, right := count(cols[0]), count(cols[1])
-	if left+right != 17 {
-		t.Fatalf("lost taps in the split: %d + %d", left, right)
-	}
-	// A column running more than two beers longer than the other overflows
-	// the grid at 46px names, which is the bug this split exists to prevent.
-	if diff := left - right; diff > 2 || diff < -2 {
+	if diff := left - right; diff > 1 || diff < -1 {
 		t.Errorf("columns unbalanced: left=%d right=%d", left, right)
 	}
 }
 
-func TestSplitSectionsNeverEmptiesRightColumn(t *testing.T) {
-	// One enormous section must not take the whole page and leave column two
-	// blank; the guard clamps the cut so the right column always gets one.
-	all := taps("Everything", 12)
-	all = append(all, taps("Tail", 1)...)
+// A section carried over repeats its heading, marked as a continuation so it
+// does not read as a second section with the same name.
+func TestSplitSectionRepeatsItsHeading(t *testing.T) {
+	all := sectionsFrom([][2]any{{"Lagers", 2}, {"Pale Ales & IPAs", 10}})
 	cols := Columns(all)
-	if len(cols[1]) == 0 {
-		t.Fatal("right column is empty")
+
+	var carried *Section
+	for i := range cols[1] {
+		if cols[1][i].Continued {
+			carried = &cols[1][i]
+		}
+	}
+	if carried == nil {
+		t.Fatal("a 10-tap section should have been carried into column two")
+	}
+	if carried.Name != "Pale Ales & IPAs" {
+		t.Errorf("continuation heading = %q, want the original name", carried.Name)
+	}
+	if left, right := countTaps(cols[0]), countTaps(cols[1]); left-right > 1 || right-left > 1 {
+		t.Errorf("unbalanced after split: left=%d right=%d", left, right)
+	}
+}
+
+// A heading with nothing under it at the foot of a column reads as a section
+// whose beers have all gone.
+func TestNoStrandedHeading(t *testing.T) {
+	for _, spec := range [][][2]any{
+		{{"A", 4}, {"B", 1}, {"C", 4}},
+		{{"A", 1}, {"B", 9}},
+		{{"A", 8}, {"B", 8}},
+		{{"Only", 5}},
+	} {
+		for _, col := range Columns(sectionsFrom(spec)) {
+			for _, sec := range col {
+				if len(sec.Taps) == 0 {
+					t.Errorf("%v produced an empty section %q", spec, sec.Name)
+				}
+			}
+		}
 	}
 }
 
@@ -204,10 +229,9 @@ func TestRealBoardPayload(t *testing.T) {
 		}
 		return out
 	}
-	// The section order is chosen so this split lands 9 against 8; if it
-	// drifts the board overflows into the footer at full type size.
-	if got := strings.Join(names(cols[0]), "|"); got != "Lagers|Pub Ales|Pale Ales & IPAs" {
-		t.Errorf("left column sections changed: %s", got)
+	// Both columns should carry close to half the taps.
+	if left, right := countTaps(cols[0]), countTaps(cols[1]); left-right > 1 || right-left > 1 {
+		t.Errorf("unbalanced: left=%d right=%d (%v | %v)", left, right, names(cols[0]), names(cols[1]))
 	}
 
 	html, err := Render(b, nil, "v1")

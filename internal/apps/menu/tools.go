@@ -66,6 +66,16 @@ func toolMetas() []services.ToolMeta {
 			}),
 		},
 		{
+			Name: "delete_menu_board",
+			Description: "Delete an additional menu board by key. The workspace menu itself cannot " +
+				"be deleted — it is an address screens may already be pointed at; clear its tap " +
+				"list instead if it should show nothing.",
+			AdminOnly: true,
+			Schema: services.PropsReq(map[string]any{
+				"key": services.Field("string", "Key of the board to delete."),
+			}, "key"),
+		},
+		{
 			Name: "get_menu_board",
 			Description: "Show the workspace menu's public address and when its tap list was last " +
 				"changed, plus any additional boards. Pass key to show just one.",
@@ -121,6 +131,27 @@ func applySource(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.
 	return fmt.Sprintf("Now following Untappd board %s — pulled %d taps.\n\nShowing at: %s\n\n"+
 		"Kit re-checks every minute and updates the screen when the tap list changes.",
 		boardID, res.Taps, url), nil
+}
+
+// deleteBoardArgs is the shared input shape for delete_menu_board.
+type deleteBoardArgs struct {
+	Key string `json:"key"`
+}
+
+// removeBoard deletes an extra board.
+//
+// The workspace menu is refused rather than deleted: its address is the whole
+// contract with the screens, and a kiosk pointed at it would start serving a
+// 404 with nothing on the admin side to explain why.
+func removeBoard(ctx context.Context, a *App, tenantID uuid.UUID, args deleteBoardArgs) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(args.Key))
+	if key == "" || key == DefaultKey {
+		return "", errors.New("the workspace menu cannot be deleted — it is the address screens use")
+	}
+	if err := a.svc.Delete(ctx, tenantID, key); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Deleted the %q board. Any screen pointed at it now gets a 404.", key), nil
 }
 
 // setAssetArgs is the shared input shape for set_menu_asset.

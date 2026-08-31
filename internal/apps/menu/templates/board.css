@@ -73,6 +73,10 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 
 /* Fixed price column, not auto: "6.50" and "8" have to right-align into one
    readable column or the eye has to hunt for the number on every row. */
+/* Marks the second half of a section carried into the next column, so the
+   repeated heading reads as a continuation rather than a duplicate. */
+.sect-cont { opacity: .65; font-size: 82%; letter-spacing: .04em; }
+
 .tap { display: grid; grid-template-columns: 1fr 112px; align-items: end; gap: 20px; padding-bottom: 9px; border-bottom: 1px solid rgba(255, 255, 255, .09); min-width: 0; }
 .tap-l { min-width: 0; }
 
