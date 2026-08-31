@@ -1791,3 +1791,17 @@ h2.view-title:hover {
   background: #fff;
   color: var(--accent);
 }
+
+/* The rendered shift-notice message, shown before it is delivered. Wraps
+   rather than scrolls: this is prose a human is proofreading, not code, and a
+   horizontal scrollbar would hide the end of every line. */
+.preview-body {
+  background: var(--off-bg);
+  color: var(--ink);
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.4rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

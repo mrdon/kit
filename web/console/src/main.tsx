@@ -13,6 +13,7 @@ import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
 import Events from './pages/Events';
 import EventsSettingsPage from './pages/EventsSettings';
+import EventsStaffPage from './pages/EventsStaff';
 import Expenses from './pages/Expenses';
 import ExpenseSettings from './pages/ExpenseSettings';
 import Roles from './pages/Roles';
@@ -53,6 +54,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/apps" element={<AppsSettings />} />
           <Route path="/admin/events" element={<EventsSettingsPage />} />
+          <Route path="/admin/events-staff" element={<EventsStaffPage />} />
           <Route path="/admin/expenses" element={<ExpenseSettings />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />

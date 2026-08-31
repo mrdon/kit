@@ -18,6 +18,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
+	"github.com/mrdon/kit/internal/apps/square"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/scheduler"
 )
@@ -69,6 +70,45 @@ func (a *App) registerScheduledTasks() {
 		AppliesTo:   a.buildHookConfigured,
 		Run:         a.publishSiteIfChanged,
 	})
+
+	// Morning-of, in the venue's own zone. The notice has to land before the
+	// first person starts setting up -- told at 4pm that the room needs
+	// reserving for 30 at 7, they have already lost the afternoon -- and the
+	// opener is usually on by late morning, so 8am clears the whole day.
+	//
+	// Once daily rather than hourly: the notice is a briefing, and a second
+	// one at 9am saying the same thing trains people to ignore the first.
+	// A day whose plan genuinely changes re-sends on the next run because the
+	// notice's content hash moves; an unchanged day stays quiet.
+	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
+		Key:         "events.shift_notices",
+		Description: "DM today's events to the staff working",
+		DefaultCron: "0 8 * * *",
+		AppliesTo:   a.shiftNoticesConfigured,
+		Run: func(ctx context.Context, job models.Job) error {
+			_, err := a.RunShiftNotices(ctx, job.TenantID, "schedule")
+			return ignoreUnconfigured(err)
+		},
+	})
+}
+
+// shiftNoticesConfigured reports whether this tenant can send notices at all:
+// the app on, and Square connected to say who is working. Without the second,
+// every tenant with events would carry a daily row that could only ever fail.
+func (a *App) shiftNoticesConfigured(ctx context.Context, tenantID uuid.UUID) bool {
+	if a.pool == nil || !apps.IsEnabled(ctx, tenantID, AppName) {
+		return false
+	}
+	var exists bool
+	err := a.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM integrations
+			WHERE tenant_id = $1 AND provider = 'square'
+		)`, tenantID).Scan(&exists)
+	if err != nil {
+		return false
+	}
+	return exists
 }
 
 // publishSiteIfChanged rebuilds the website only when something is waiting
@@ -135,7 +175,8 @@ func ignoreUnconfigured(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ErrNoCalendar) || errors.Is(err, googlecalendar.ErrNotConfigured) {
+	if errors.Is(err, ErrNoCalendar) || errors.Is(err, googlecalendar.ErrNotConfigured) ||
+		errors.Is(err, square.ErrNotConfigured) {
 		return nil
 	}
 	return fmt.Errorf("events schedule: %w", err)

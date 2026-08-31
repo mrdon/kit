@@ -151,7 +151,11 @@ type EnrichedShift struct {
 	StartAt  string
 	EndAt    string
 	Timezone string
-	Member   string // full display name, e.g. "Alice Ng"
+	// TeamMemberID is Square's stable id for the person. Names are mutable
+	// and not unique, so anything that maps a shift to an identity outside
+	// Square keys on this rather than on Member.
+	TeamMemberID string
+	Member       string // full display name, e.g. "Alice Ng"
 	// MemberFirst is the given name ("Alice"), falling back to Member. Used
 	// for the informal calendar-event title.
 	MemberFirst string
@@ -209,14 +213,15 @@ func (a *App) ListPublishedShifts(ctx context.Context, tenantID uuid.UUID, start
 			location = name
 		}
 		out = append(out, EnrichedShift{
-			ShiftID:     s.ID,
-			StartAt:     d.StartAt,
-			EndAt:       d.EndAt,
-			Timezone:    d.Timezone,
-			Member:      member,
-			MemberFirst: memberFirst,
-			Location:    location,
-			Notes:       d.Notes,
+			ShiftID:      s.ID,
+			TeamMemberID: d.TeamMemberID,
+			StartAt:      d.StartAt,
+			EndAt:        d.EndAt,
+			Timezone:     d.Timezone,
+			Member:       member,
+			MemberFirst:  memberFirst,
+			Location:     location,
+			Notes:        d.Notes,
 		})
 	}
 	return out, nil

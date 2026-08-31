@@ -106,6 +106,13 @@ export const SECTIONS: Section[] = [
     app: 'events',
   },
   {
+    to: '/admin/events-staff',
+    label: 'Event staff notices',
+    blurb: 'Choose who gets a morning DM about the events on their shift.',
+    admin: true,
+    app: 'events',
+  },
+  {
     to: '/admin/square-shifts',
     label: 'Square Shift Sync',
     blurb: 'Mirror your published Square schedule into a Google Calendar.',

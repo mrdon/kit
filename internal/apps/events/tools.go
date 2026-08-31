@@ -202,4 +202,31 @@ var eventsTools = []services.ToolMeta{
 		}),
 		AdminOnly: true,
 	},
+	{
+		Name:        "events_staff_map",
+		Description: "Show which Square team members are mapped to which Slack users for shift notices, and — more usefully — who is working but NOT mapped and therefore silently receiving nothing.",
+		AdminOnly:   true,
+		Schema:      services.Props(map[string]any{}),
+	},
+	{
+		Name: "events_map_staff",
+		Description: "Map a Square team member to the Slack user Kit should DM about the events on their shifts. " +
+			"Both arguments accept a name or an id. Omit slack_user to clear the mapping and stop that person's notices. " +
+			"The Events staff page in the console does the same thing with two dropdowns, which is easier when you do not know the ids.",
+		AdminOnly: true,
+		Schema: services.PropsReq(map[string]any{
+			"square_team_member": services.Field("string", "The Square team member: their name as it appears on the schedule, or the Square team member id."),
+			"slack_user":         services.Field("string", "The Slack person to notify: their display name, or a U… Slack user id. Omit to clear the mapping."),
+		}, "square_team_member"),
+	},
+	{
+		Name: "events_shift_notices",
+		Description: "Preview or send today's shift notices — the DM each working staff member gets listing what is on today. " +
+			"Defaults to a preview showing the exact message text per person; pass send true to deliver. " +
+			"Sending twice is safe: a notice already delivered unchanged is not repeated.",
+		AdminOnly: true,
+		Schema: services.Props(map[string]any{
+			"send": services.Field("boolean", "Deliver the notices. Omit or pass false to preview the messages without sending."),
+		}),
+	},
 }

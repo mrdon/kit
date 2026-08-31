@@ -211,6 +211,16 @@ Admin setup, on the **Events** page under Admin:
 
 Kit syncs to the calendar every 15 minutes. Use **Sync now** to push immediately, and **Check for drift** if the calendar has got out of step — someone deleted an entry by hand, say. That shows exactly what it would change before touching anything, and only ever touches entries Kit created.
 
+### Telling staff what's on when they work
+
+If you run scheduling in Square, Kit can DM everyone working each morning with what's on that day — private bookings included, so nobody sets the room five minutes before thirty people arrive. One message per person listing the whole day, at 8am in your venue's timezone.
+
+Set it up on the **Event staff notices** page under Admin. Square and Kit know people by different ids and nothing links them, so you pair them once by hand: each person on your published Square schedule gets a dropdown of your Slack members. Pick their account and you're done. Anyone left on "Nobody" simply gets no notices, and the page says how many people that is — staff who work without hearing what's on are the thing worth noticing.
+
+Press **Preview** to see the exact messages before anyone gets one. **Send now** delivers today's; pressing it twice is safe, because a notice already delivered unchanged isn't repeated. If the day's plan genuinely changes after the morning send, the next run picks up the difference and follows up.
+
+New hire? They appear in the dropdown once they're on the published Square schedule. You don't need them to have used Kit before — picking them creates their Kit account.
+
 ## Email
 
 Connect any IMAP + SMTP mailbox so Kit can read your inbox and draft replies on your behalf. Gmail works via an app password (enable 2FA, then generate one at https://myaccount.google.com/apppasswords). iCloud, Yahoo, Fastmail, and self-hosted IMAP work with their normal passwords. Microsoft 365 / Outlook.com aren't supported yet — they require OAuth.

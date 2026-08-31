@@ -51,6 +51,12 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreSyncNow(ctx, caller)
 	case "events_reconcile":
 		return coreReconcile(ctx, caller, raw)
+	case "events_staff_map":
+		return coreStaffMap(ctx, caller)
+	case "events_map_staff":
+		return coreMapStaff(ctx, caller, raw)
+	case "events_shift_notices":
+		return coreShiftNotices(ctx, caller, raw)
 	default:
 		return "", fmt.Errorf("events: unknown tool %q", name)
 	}

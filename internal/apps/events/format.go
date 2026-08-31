@@ -368,3 +368,21 @@ func FormatSiteStatus(st SiteStatus) string {
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
+
+// FormatNoticePreview renders a shift-notice dry run. Shared by the console,
+// agent and MCP surfaces so all three describe the same plan identically.
+//
+// The full message body is shown, not a count: these DMs carry private-booking
+// details to named people, and "3 notices would be sent" gives an admin no way
+// to notice the mapping put Saturday's brief in the wrong person's inbox.
+func FormatNoticePreview(plans []NoticePlan) string {
+	if len(plans) == 0 {
+		return "Nobody would be notified: either nobody is on the schedule today, nothing is on, or the people working are not mapped to a Slack user yet."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s would be sent. Nothing has been delivered yet.\n", plural(len(plans), "notice", "notices"))
+	for _, p := range plans {
+		fmt.Fprintf(&b, "\n--- to %s ---\n%s\n", p.Name, p.Body)
+	}
+	return b.String()
+}

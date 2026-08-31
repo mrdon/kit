@@ -142,3 +142,92 @@ func FormatRuns(runs []Run) string {
 	}
 	return b.String()
 }
+
+// Shift-notice audit. Separate actions from the calendar sync's so the two
+// run histories stay legible side by side on the admin page.
+const (
+	actionNoticeCompleted = "events.shift_notices_completed"
+	actionNoticeFailed    = "events.shift_notices_failed"
+)
+
+// noticeMetadata is the typed audit payload for a notice run.
+type noticeMetadata struct {
+	TriggeredBy string `json:"triggered_by"`
+	Sent        int    `json:"sent"`
+	Skipped     int    `json:"skipped"`
+	Unmapped    int    `json:"unmapped"`
+	DurationMS  int64  `json:"duration_ms"`
+	Error       string `json:"error,omitempty"`
+}
+
+func (a *App) auditNoticeCompleted(ctx context.Context, tenantID uuid.UUID, triggeredBy string, sum NoticeSummary, dur time.Duration) {
+	a.appendNoticeAudit(ctx, tenantID, actionNoticeCompleted, noticeMetadata{
+		TriggeredBy: triggeredBy,
+		Sent:        sum.Sent,
+		Skipped:     sum.Skipped,
+		Unmapped:    sum.Unmapped,
+		DurationMS:  dur.Milliseconds(),
+	})
+}
+
+func (a *App) auditNoticeFailed(ctx context.Context, tenantID uuid.UUID, triggeredBy string, runErr error, dur time.Duration) {
+	a.appendNoticeAudit(ctx, tenantID, actionNoticeFailed, noticeMetadata{
+		TriggeredBy: triggeredBy,
+		DurationMS:  dur.Milliseconds(),
+		Error:       runErr.Error(),
+	})
+}
+
+func (a *App) appendNoticeAudit(ctx context.Context, tenantID uuid.UUID, action string, meta noticeMetadata) {
+	if a.pool == nil {
+		return
+	}
+	if err := models.AppendAudit(ctx, a.pool, models.AuditEvent{
+		TenantID: tenantID,
+		Action:   action,
+		Metadata: meta,
+	}); err != nil {
+		slog.Warn("events: recording notice audit failed",
+			"tenant_id", tenantID, "action", action, "error", err)
+	}
+}
+
+// NoticeRun is one recorded notice attempt, for the admin status view.
+type NoticeRun struct {
+	Action    string
+	Meta      noticeMetadata
+	CreatedAt time.Time
+}
+
+// Succeeded reports whether this run completed.
+func (r NoticeRun) Succeeded() bool { return r.Action == actionNoticeCompleted }
+
+// ListRecentNoticeRuns returns the newest notice runs first.
+func (a *App) ListRecentNoticeRuns(ctx context.Context, tenantID uuid.UUID, limit int) ([]NoticeRun, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	rows, err := a.pool.Query(ctx, `
+		SELECT action, metadata, created_at
+		FROM audit_events
+		WHERE tenant_id = $1 AND action IN ($2, $3)
+		ORDER BY created_at DESC
+		LIMIT $4`,
+		tenantID, actionNoticeCompleted, actionNoticeFailed, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing shift notice runs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []NoticeRun
+	for rows.Next() {
+		var r NoticeRun
+		var metaJSON []byte
+		if err := rows.Scan(&r.Action, &metaJSON, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning notice run: %w", err)
+		}
+		_ = json.Unmarshal(metaJSON, &r.Meta)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

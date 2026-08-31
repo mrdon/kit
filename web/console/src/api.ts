@@ -626,6 +626,58 @@ export interface EventsSettings {
   recent: EventsRun[] | null;
 }
 
+
+// One person on the upcoming published Square schedule — the left side of the
+// staff mapping. Shifts is how many they have in the window, so the admin can
+// see who matters most to map.
+export interface EventsStaffMember {
+  team_member_id: string;
+  name: string;
+  shifts: number;
+}
+
+// A Slack workspace member — the right side. Read from Slack rather than Kit's
+// user table, because staff who have never messaged the bot have no Kit row.
+export interface EventsSlackOption {
+  slack_user_id: string;
+  name: string;
+}
+
+export interface EventsStaffMapping {
+  square_team_member_id: string;
+  user_id: string;
+  slack_user_id: string;
+  display_name: string;
+}
+
+export interface EventsNoticeRun {
+  at: string;
+  ok: boolean;
+  triggered_by: string;
+  sent: number;
+  skipped: number;
+  unmapped: number;
+  error?: string;
+}
+
+export interface EventsStaff {
+  square_connected: boolean;
+  // Server always sends [], never null — the client stays defensive anyway.
+  staff: EventsStaffMember[] | null;
+  slack_users: EventsSlackOption[] | null;
+  mappings: EventsStaffMapping[] | null;
+  staff_error?: string;
+  slack_error?: string;
+  recent: EventsNoticeRun[] | null;
+}
+
+// One person's message for today, as it would be delivered.
+export interface EventsNoticePlan {
+  slack_user_id: string;
+  name: string;
+  body: string;
+}
+
 // Every field optional: the console PATCHes only what changed, so an edit made
 // here cannot silently revert one made in chat against the same event.
 export interface EventInput {
@@ -798,6 +850,20 @@ export const api = {
   eventsPublishSite: () => apiPost<EventsSiteStatus>('/events/site/publish'),
   eventsReconcile: (apply: boolean) =>
     apiPost<EventsReconcilePlan>(`/events/reconcile${apply ? '?apply=true' : ''}`),
+
+  eventsStaff: () => apiGet<EventsStaff>('/events/staff'),
+  // An empty slack_user_id clears the mapping. Returns the whole page payload
+  // so a save cannot leave the two dropdowns showing stale pairings.
+  saveEventsStaffMapping: (body: {
+    square_team_member_id: string;
+    slack_user_id: string;
+  }) => apiPut<EventsStaff>('/events/staff', body),
+  previewEventsNotices: () =>
+    apiPost<{ plans: EventsNoticePlan[] | null; message: string }>(
+      '/events/staff/preview',
+    ),
+  sendEventsNotices: () =>
+    apiPost<{ message: string; staff: EventsStaff }>('/events/staff/send'),
 
   squareShiftsStatus: () => apiGet<SquareShiftsStatus>('/square-shifts/status'),
   squareShiftsSync: () => apiPost<SquareShiftsStatus>('/square-shifts/sync'),
