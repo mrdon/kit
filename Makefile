@@ -14,6 +14,21 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
+# Pin the Go toolchain to the version CI uses.
+#
+# go.mod says `go 1.25.1`, which is a MINIMUM -- a newer local Go satisfies it
+# and gets used instead. That divergence is not cosmetic: golangci-lint is
+# pinned to v2.8.0, and on a newer Go it cannot decode the standard library's
+# export data. It then reports a single typecheck error and runs NONE of the
+# configured linters, so `make lint` fails for a reason that has nothing to do
+# with your code while quietly checking none of it. That shipped two real
+# findings to CI once; pinning here is what stops it happening again.
+#
+# Exported so every go invocation in a recipe agrees, and overridable
+# (`make lint GOTOOLCHAIN=local`) for deliberately testing a newer toolchain.
+GOTOOLCHAIN ?= go1.25.1
+export GOTOOLCHAIN
+
 # Build variables
 BINARY_NAME=kit
 MAIN_PATH=./cmd/kit

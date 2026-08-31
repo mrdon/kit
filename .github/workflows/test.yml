@@ -38,7 +38,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          # Exact patch, matching the Makefile's GOTOOLCHAIN pin. '1.25'
+          # floats to the newest 1.25.x, which can drift away from what
+          # contributors run locally and from what golangci-lint v2.8.0
+          # can decode.
+          go-version: '1.25.1'
 
       - name: Set up Node
         uses: actions/setup-node@v4
