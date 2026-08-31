@@ -373,11 +373,11 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	// Personal feed: assigned to me OR unassigned in a role I hold.
 	args = append(args, c.UserID)
 	userParam := len(args)
-	b.WriteString(fmt.Sprintf(` AND (t.assignee_user_id = $%d`, userParam))
+	fmt.Fprintf(&b, ` AND (t.assignee_user_id = $%d`, userParam)
 	if len(c.RoleIDs) > 0 {
 		args = append(args, c.RoleIDs)
 		roleParam := len(args)
-		b.WriteString(fmt.Sprintf(` OR (t.assignee_user_id IS NULL AND s.role_id = ANY($%d))`, roleParam))
+		fmt.Fprintf(&b, ` OR (t.assignee_user_id IS NULL AND s.role_id = ANY($%d))`, roleParam)
 	}
 	b.WriteString(`)`)
 

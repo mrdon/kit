@@ -169,20 +169,19 @@ func listReports(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, us
 		// Own submission, OR I'm the assigned approver, OR I'm in the report's
 		// snapshot approver role. Others' drafts have no approver snapshot, so
 		// they stay invisible.
-		b.WriteString(fmt.Sprintf(
-			` AND (r.submitter_user_id = $%d OR r.approver_user_id = $%d OR (r.approver_role IS NOT NULL AND r.approver_role = ANY($%d)))`,
-			meArg, meArg, rolesArg))
+		fmt.Fprintf(&b, ` AND (r.submitter_user_id = $%d OR r.approver_user_id = $%d OR (r.approver_role IS NOT NULL AND r.approver_role = ANY($%d)))`,
+			meArg, meArg, rolesArg)
 	}
 
 	if f.MineOnly && userID != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND r.submitter_user_id = $%d`, argN))
+		fmt.Fprintf(&b, ` AND r.submitter_user_id = $%d`, argN)
 		args = append(args, *userID)
 	}
 
 	if f.Status != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND r.status = $%d`, argN))
+		fmt.Fprintf(&b, ` AND r.status = $%d`, argN)
 		args = append(args, f.Status)
 	} else if !f.IncludeClosed {
 		b.WriteString(` AND r.status IN ('draft','submitted')`)
@@ -190,7 +189,7 @@ func listReports(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, us
 
 	if f.Search != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND to_tsvector('english', coalesce(r.title,'') || ' ' || coalesce(r.description,'')) @@ plainto_tsquery('english', $%d)`, argN))
+		fmt.Fprintf(&b, ` AND to_tsvector('english', coalesce(r.title,'') || ' ' || coalesce(r.description,'')) @@ plainto_tsquery('english', $%d)`, argN)
 		args = append(args, f.Search)
 	}
 

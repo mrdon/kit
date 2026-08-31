@@ -77,8 +77,8 @@ func SlugifyName(display string) string {
 func (s *Skill) ToSKILLMD() string {
 	var b strings.Builder
 	b.WriteString("---\n")
-	b.WriteString(fmt.Sprintf("name: %s\n", s.Name))
-	b.WriteString(fmt.Sprintf("description: %s\n", s.Description))
+	fmt.Fprintf(&b, "name: %s\n", s.Name)
+	fmt.Fprintf(&b, "description: %s\n", s.Description)
 	b.WriteString("---\n\n")
 	b.WriteString(s.Content)
 	return b.String()
@@ -196,7 +196,7 @@ func ListSkillsFiltered(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 
 	if search != "" {
 		args = append(args, "%"+strings.ToLower(search)+"%")
-		where.WriteString(fmt.Sprintf("\n\t\t\tAND (LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", len(args), len(args)))
+		fmt.Fprintf(&where, "\n\t\t\tAND (LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", len(args), len(args))
 	}
 
 	if excludeJobReferenced {

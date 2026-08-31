@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -624,8 +625,8 @@ func tailUserAssistantWindow(messages []anthropic.Message, n int) []anthropic.Me
 	// this function returns, so we want n prior pairs.
 	userSeen := 0
 	cut := 0
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
+	for i, message := range slices.Backward(messages) {
+		if message.Role == "user" {
 			userSeen++
 			if userSeen > n {
 				cut = i + 1

@@ -239,7 +239,7 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 		// nothing scoped (default deny).
 		if len(roleIDs) > 0 {
 			argN++
-			b.WriteString(fmt.Sprintf(` AND sc.role_id = ANY($%d)`, argN))
+			fmt.Fprintf(&b, ` AND sc.role_id = ANY($%d)`, argN)
 			args = append(args, roleIDs)
 		} else {
 			b.WriteString(` AND FALSE`)
@@ -248,7 +248,7 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 
 	if f.Status != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND t.status = $%d`, argN))
+		fmt.Fprintf(&b, ` AND t.status = $%d`, argN)
 		args = append(args, f.Status)
 	} else if !f.IncludeClosed && f.ClosedSince == nil {
 		b.WriteString(` AND t.status NOT IN ('done','cancelled')`)
@@ -256,23 +256,23 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 
 	if f.Priority != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND t.priority = $%d`, argN))
+		fmt.Fprintf(&b, ` AND t.priority = $%d`, argN)
 		args = append(args, f.Priority)
 	}
 
 	if f.Category != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND t.category = $%d`, argN))
+		fmt.Fprintf(&b, ` AND t.category = $%d`, argN)
 		args = append(args, f.Category)
 	}
 
 	if f.AssignedToMe && userID != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND t.assignee_user_id = $%d`, argN))
+		fmt.Fprintf(&b, ` AND t.assignee_user_id = $%d`, argN)
 		args = append(args, *userID)
 	} else if f.AssigneeUserID != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND t.assignee_user_id = $%d`, argN))
+		fmt.Fprintf(&b, ` AND t.assignee_user_id = $%d`, argN)
 		args = append(args, *f.AssigneeUserID)
 	}
 	if f.Unassigned {
@@ -281,14 +281,13 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 
 	if f.RoleName != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(
-			` AND sc.role_id = (SELECT id FROM roles WHERE tenant_id = $1 AND name = $%d)`, argN))
+		fmt.Fprintf(&b, ` AND sc.role_id = (SELECT id FROM roles WHERE tenant_id = $1 AND name = $%d)`, argN)
 		args = append(args, f.RoleName)
 	}
 
 	if f.Search != "" {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND to_tsvector('english', coalesce(t.title, '') || ' ' || coalesce(t.description, '')) @@ plainto_tsquery('english', $%d)`, argN))
+		fmt.Fprintf(&b, ` AND to_tsvector('english', coalesce(t.title, '') || ' ' || coalesce(t.description, '')) @@ plainto_tsquery('english', $%d)`, argN)
 		args = append(args, f.Search)
 	}
 
@@ -298,7 +297,7 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 
 	if f.ClosedSince != nil {
 		argN++
-		b.WriteString(fmt.Sprintf(` AND t.closed_at >= $%d`, argN))
+		fmt.Fprintf(&b, ` AND t.closed_at >= $%d`, argN)
 		args = append(args, *f.ClosedSince)
 	}
 
@@ -312,7 +311,7 @@ func buildListQuery(tenantID uuid.UUID, userID *uuid.UUID, roleIDs []uuid.UUID, 
 		limit = maxListLimit
 	}
 	argN++
-	b.WriteString(fmt.Sprintf(` LIMIT $%d`, argN))
+	fmt.Fprintf(&b, ` LIMIT $%d`, argN)
 	args = append(args, limit)
 
 	return b.String(), args
