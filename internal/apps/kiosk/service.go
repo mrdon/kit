@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -149,9 +150,17 @@ func (s *Service) Create(ctx context.Context, tenantID uuid.UUID, in BoardInput)
 // Update validates and writes an existing board. Changing the key is allowed
 // but breaks any kiosk already pointed at the old one; the console warns
 // about that at the point of edit.
+//
+// A URL change records what it displaced (see history.go) so a bad paste can
+// be undone. That read happens before the write, because afterwards the old
+// value is simply gone -- nothing else in the system remembers it.
 func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, in BoardInput) (*Board, error) {
 	in.normalize()
 	if err := in.validate(); err != nil {
+		return nil, err
+	}
+	previous, err := currentURL(ctx, s.pool, tenantID, id)
+	if err != nil {
 		return nil, err
 	}
 	out, err := UpdateBoard(ctx, s.pool, &Board{
@@ -168,7 +177,19 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, in BoardIn
 	if out == nil {
 		return nil, ErrNotFound
 	}
+	// Best-effort: the repoint is the job, the history is a convenience.
+	if previous != out.URL {
+		if err := recordURLChange(ctx, s.pool, tenantID, id, previous); err != nil {
+			slog.Warn("recording kiosk url history", "board_id", id, "error", err)
+		}
+	}
 	return out, nil
+}
+
+// History returns a board's previous URLs, newest first, for the console's
+// rollback list.
+func (s *Service) History(ctx context.Context, tenantID, id uuid.UUID) ([]URLChange, error) {
+	return ListURLHistory(ctx, s.pool, tenantID, id)
 }
 
 // Delete removes a board, reporting ErrNotFound when there was nothing to

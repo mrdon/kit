@@ -43,6 +43,22 @@ type boardJSON struct {
 	PublicURL  string     `json:"public_url"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
+	// RecentURLs is what this board pointed at before, newest first, so the
+	// console can offer a one-click undo for a bad paste.
+	RecentURLs []urlChangeJSON `json:"recent_urls"`
+}
+
+type urlChangeJSON struct {
+	URL        string    `json:"url"`
+	ReplacedAt time.Time `json:"replaced_at"`
+}
+
+func toHistoryJSON(changes []URLChange) []urlChangeJSON {
+	out := make([]urlChangeJSON, 0, len(changes))
+	for _, c := range changes {
+		out = append(out, urlChangeJSON{URL: c.URL, ReplacedAt: c.ReplacedAt})
+	}
+	return out
 }
 
 type boardInputJSON struct {
@@ -52,7 +68,7 @@ type boardInputJSON struct {
 	Notes string `json:"notes"`
 }
 
-func (a *App) toJSON(b *Board, slug string) boardJSON {
+func (a *App) toJSON(b *Board, slug string, history []URLChange) boardJSON {
 	return boardJSON{
 		ID:         b.ID.String(),
 		Key:        b.Key,
@@ -62,6 +78,7 @@ func (a *App) toJSON(b *Board, slug string) boardJSON {
 		PublicURL:  a.baseURL + PublicPath(slug, b.Key),
 		LastSeenAt: b.LastSeenAt,
 		UpdatedAt:  b.UpdatedAt,
+		RecentURLs: toHistoryJSON(history),
 	}
 }
 
@@ -72,9 +89,14 @@ func (a *App) handleList(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	history, err := ListURLHistoryByBoard(r.Context(), a.pool, tenant.ID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	out := make([]boardJSON, 0, len(boards))
 	for _, b := range boards {
-		out = append(out, a.toJSON(b, tenant.Slug))
+		out = append(out, a.toJSON(b, tenant.Slug, history[b.ID]))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"boards": out})
 }
@@ -90,7 +112,7 @@ func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.toJSON(b, tenant.Slug))
+	writeJSON(w, http.StatusOK, a.toJSON(b, tenant.Slug, nil))
 }
 
 func (a *App) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +131,12 @@ func (a *App) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, a.toJSON(b, tenant.Slug))
+	history, err := a.svc.History(r.Context(), tenant.ID, id)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, a.toJSON(b, tenant.Slug, history))
 }
 
 func (a *App) handleDelete(w http.ResponseWriter, r *http.Request) {

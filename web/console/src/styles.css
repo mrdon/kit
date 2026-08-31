@@ -1805,3 +1805,35 @@ h2.view-title:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Previous kiosk targets, offered back as a one-click undo for a bad paste.
+   The URL is allowed to truncate: these are long dashboard links and the
+   useful signal is which one it was, not reading it end to end — the full
+   value is on the element's title and lands in the field when picked. */
+.kiosk-history {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.kiosk-history li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+.kiosk-history code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+.kiosk-history-when {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

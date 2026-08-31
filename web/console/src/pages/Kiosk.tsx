@@ -229,6 +229,33 @@ export default function Kiosk() {
                       }
                     />
                   </label>
+                  {b.recent_urls && b.recent_urls.length > 0 && (
+                    <div className="field">
+                      Previously
+                      <ul className="kiosk-history">
+                        {b.recent_urls.map((h) => (
+                          <li key={h.replaced_at + h.url}>
+                            <code title={h.url}>{h.url}</code>
+                            <span className="kiosk-history-when">
+                              replaced {relative(Date.now() - new Date(h.replaced_at).getTime())} ago
+                            </span>
+                            <button
+                              className="btn btn-sm btn-ghost"
+                              type="button"
+                              disabled={busy || editDraft.url === h.url}
+                              onClick={() => setEditDraft({ ...editDraft, url: h.url })}
+                            >
+                              Use this
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <span className="field-note">
+                        The last {b.recent_urls.length === 1 ? 'address' : `${b.recent_urls.length} addresses`} this
+                        screen showed. Picking one fills the field above — you still have to Save.
+                      </span>
+                    </div>
+                  )}
                   <label className="field">
                     Notes
                     <input

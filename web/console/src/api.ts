@@ -126,6 +126,11 @@ export interface MintedToken {
 // browser homepage, so it is the stable half; `public_url` is what an admin
 // copies onto the machine. `last_seen_at` is the only health signal there is
 // — it is set by the screen's own polling.
+export interface KioskUrlChange {
+  url: string;
+  replaced_at: string;
+}
+
 export interface KioskBoard {
   id: string;
   key: string;
@@ -135,6 +140,8 @@ export interface KioskBoard {
   public_url: string;
   last_seen_at: string | null;
   updated_at: string;
+  /** What this board pointed at before, newest first. */
+  recent_urls: KioskUrlChange[] | null;
 }
 
 export interface KioskBoardInput {
