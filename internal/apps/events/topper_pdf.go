@@ -19,9 +19,8 @@ import (
 // panel is measured once, the bands are given their share, and text is fitted
 // into the space that remains.
 //
-// Two copies are printed side by side on a landscape Letter sheet, which is
-// exactly two 5.5x8.5in panels. One sheet, one cut down the middle, two
-// tables covered.
+// Two copies are printed side by side on a landscape Letter sheet. One sheet,
+// one cut down the middle plus a trim around the pair, two tables covered.
 
 //go:embed fonts/*.ttf
 var topperFonts embed.FS
@@ -38,16 +37,26 @@ const (
 	fontText    = "topper-text"
 )
 
-// Page and panel geometry, in millimetres. Letter landscape splits into two
-// half-Letter portrait panels with no gutter: the cut line is the shared edge,
-// so a slightly off-centre cut costs a millimetre of margin, not content.
+// Page and panel geometry, in millimetres.
+//
+// A panel is a 4x6in card, because that is the size the table-top frames take:
+// print, cut, slide the card in. Two sit side by side with no gutter -- the
+// cut line down the middle is the shared edge, so a slightly off-centre cut
+// costs a millimetre of margin, not content -- and the pair is centred on the
+// sheet, which leaves 38mm of paper on each side, well clear of any printer's
+// unprintable border.
+//
+// Every other measurement on the card is proportioned to this panel. Changing
+// the panel size means re-fitting them, not just these two numbers.
 const (
 	sheetW  = 279.4
 	sheetH  = 215.9
-	panelW  = sheetW / 2
-	panelH  = sheetH
-	margin  = 11.0
-	accentH = 5.0
+	panelW  = 101.6
+	panelH  = 152.4
+	originX = (sheetW - 2*panelW) / 2
+	originY = (sheetH - panelH) / 2
+	margin  = 8.0
+	accentH = 3.6
 )
 
 // Band colours, cycled down the panel. Warm and saturated so the day reads
@@ -83,10 +92,17 @@ func RenderTopperPDF(t Topper, out io.Writer) error {
 	pdf.AddPage()
 
 	registerTopperImages(pdf, t)
+	// Everything below is drawn in panel coordinates -- (0,0) is the top left
+	// of the left-hand card -- and the translation puts the pair on the sheet.
+	// Cheaper than threading an origin through every draw call, and it keeps
+	// the card's geometry readable as the card's own.
+	pdf.TransformBegin()
+	pdf.TransformTranslate(originX, originY)
 	for i := range 2 {
 		drawPanel(pdf, t, float64(i)*panelW)
 	}
-	drawCutLine(pdf)
+	drawCutLines(pdf)
+	pdf.TransformEnd()
 
 	if err := pdf.Error(); err != nil {
 		return fmt.Errorf("composing topper: %w", err)
@@ -135,12 +151,14 @@ func registerTopperImages(pdf *fpdf.Fpdf, t Topper) {
 
 func posterName(i int) string { return fmt.Sprintf("topper-poster-%d", i) }
 
-// drawCutLine marks where to cut. Dashed and pale: a guide for scissors that
-// does not read as part of either card if the sheet is used uncut.
-func drawCutLine(pdf *fpdf.Fpdf) {
+// drawCutLines marks where to cut: the trim around the pair and the split
+// between them. Dashed and pale -- a guide for scissors that does not read as
+// part of either card, and that a frame's lip hides anyway.
+func drawCutLines(pdf *fpdf.Fpdf) {
 	pdf.SetDrawColor(190, 190, 190)
 	pdf.SetLineWidth(0.2)
 	pdf.SetDashPattern([]float64{2, 2}, 0)
+	pdf.Rect(0, 0, 2*panelW, panelH, "D")
 	pdf.Line(panelW, 0, panelW, panelH)
 	pdf.SetDashPattern(nil, 0)
 }
@@ -162,27 +180,27 @@ func drawTopperHead(pdf *fpdf.Fpdf, t Topper, x0 float64) float64 {
 	inner := panelW - 2*margin
 	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
 
-	size := fitFontSize(pdf, fontDisplay, strings.ToUpper(t.Heading), inner, 34)
+	size := fitFontSize(pdf, fontDisplay, strings.ToUpper(t.Heading), inner, 25)
 	pdf.SetFont(fontDisplay, "", size)
-	y := accentH + 8 + ptToMM(size)*0.75
+	y := accentH + 4.5 + ptToMM(size)*0.75
 	centreText(pdf, x0, strings.ToUpper(t.Heading), y)
 
-	pdf.SetFont(fontText, "", 15)
-	y += 9
+	pdf.SetFont(fontText, "", 11)
+	y += 5.5
 	centreText(pdf, x0, spaced(strings.ToUpper(t.DateRange)), y)
-	return y + 8
+	return y + 4.5
 }
 
 // drawTopperFoot draws the branding strip and returns the y the bands must end
 // by.
 func drawTopperFoot(pdf *fpdf.Fpdf, t Topper, x0 float64) float64 {
-	top := panelH - accentH - 20
-	baseline := top + 12
+	top := panelH - accentH - 12
+	baseline := top + 7.5
 	if len(t.Logo) > 0 {
-		pdf.ImageOptions("topper-logo", x0+margin, baseline-9, 11, 11, false,
+		pdf.ImageOptions("topper-logo", x0+margin, baseline-6.5, 8, 8, false,
 			fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 	}
-	pdf.SetFont(fontText, "", 12)
+	pdf.SetFont(fontText, "", 9)
 	if t.Site != "" {
 		pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
 		right := strings.ToUpper(t.Site)

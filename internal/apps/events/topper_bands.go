@@ -18,9 +18,9 @@ import (
 // Band metrics as fractions of band height, so every size scales together when
 // the week is busier.
 const (
-	bandGap  = 4.0
-	bandMaxH = 34.0
-	dayColW  = 32.0
+	bandGap  = 3.0
+	bandMaxH = 25.0
+	dayColW  = 23.0
 	// Two vertical placements for the day block, with and without a time
 	// underneath it.
 	dayBaselineTimed = 0.60
@@ -76,7 +76,7 @@ func uniformBulletSize(pdf *fpdf.Fpdf, rows []TopperRow, x, w, h float64) float6
 // looks like the printer failed, and someone would go looking for the bug.
 func drawQuietWeek(pdf *fpdf.Fpdf, x0, top, height float64) {
 	pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
-	pdf.SetFont(fontText, "", 16)
+	pdf.SetFont(fontText, "", 12)
 	centreText(pdf, x0, "Nothing on the calendar this week.", top+height/2)
 }
 
@@ -89,11 +89,11 @@ func drawBand(pdf *fpdf.Fpdf, row TopperRow, i int, x, y, w, h, bulletPt float64
 	pdf.SetTextColor(255, 255, 255)
 
 	if row.Poster != nil {
-		d := h - 6
-		drawPosterCircle(pdf, posterName(i), x+w-4-d, y+3, d)
+		d := h - 4.4
+		drawPosterCircle(pdf, posterName(i), x+w-3-d, y+2.2, d)
 	}
 	textX, textRight := bandTextSpan(x, w, h, row.Poster != nil)
-	drawDayBlock(pdf, row, x+5, y, h)
+	drawDayBlock(pdf, row, x+3.6, y, h)
 	drawBandText(pdf, row, textX, textRight, y, h, bulletPt)
 }
 
@@ -101,9 +101,9 @@ func drawBand(pdf *fpdf.Fpdf, row TopperRow, i int, x, y, w, h, bulletPt float64
 // day block and, if there is one, the poster coin have taken theirs. One
 // function so the measuring pass and the drawing pass cannot disagree.
 func bandTextSpan(x, w, h float64, hasPoster bool) (float64, float64) {
-	right := x + w - 4
+	right := x + w - 3
 	if hasPoster {
-		right -= (h - 6) + 4
+		right -= (h - 4.4) + 3
 	}
 	return x + dayColW, right
 }
@@ -119,7 +119,7 @@ func drawDayBlock(pdf *fpdf.Fpdf, row TopperRow, x, y, h float64) {
 	if row.Time == "" {
 		baseline, rule = h*dayBaselinePlain, h*dayRulePlain
 	}
-	size := fitFontSize(pdf, fontDisplay, row.Day, dayColW-8, h*1.9)
+	size := fitFontSize(pdf, fontDisplay, row.Day, dayColW-6, h*1.9)
 	pdf.SetFont(fontDisplay, "", size)
 	pdf.Text(x, y+baseline, row.Day)
 	width := pdf.GetStringWidth(row.Day)
@@ -143,7 +143,7 @@ func drawDayBlock(pdf *fpdf.Fpdf, row TopperRow, x, y, h float64) {
 // thought was worth saying.
 func drawBandText(pdf *fpdf.Fpdf, row TopperRow, x, right, y, h, bulletPt float64) {
 	w := right - x
-	if w < 20 {
+	if w < 15 {
 		return
 	}
 	drawBandTitle(pdf, row.Title, x, y, w, h)
