@@ -238,3 +238,100 @@ func TestHeadlineSaysWhenNobodyIsOn(t *testing.T) {
 		t.Errorf("an unstaffed day should say so:\n%s", got)
 	}
 }
+
+// A day whose only entries are standing offers is, as far as the channel is
+// concerned, a day with nothing on. Posting "BOGO Pizza again" three mornings
+// a week is what teaches people to stop reading the bot.
+func TestNoticeSkipsBackgroundOnlyDays(t *testing.T) {
+	day := time.Date(2026, 8, 31, 16, 0, 0, 0, time.UTC)
+	bg := func(title string) dayEvent {
+		return dayEvent{
+			Event: Event{Title: title, Prominence: ProminenceBackground},
+			Start: day,
+		}
+	}
+
+	if worthNoticing([]dayEvent{bg("BOGO Pizza"), bg("Half-price Pizza")}) {
+		t.Error("a day of standing offers should not trigger a notice")
+	}
+	if worthNoticing(nil) {
+		t.Error("an empty day should not trigger a notice")
+	}
+
+	// One real one-off and the whole day becomes worth posting -- including the
+	// offers, which are useful context once something else has earned the post.
+	withReal := []dayEvent{
+		bg("BOGO Pizza"),
+		{Event: Event{Title: "Beer Release", Prominence: ProminenceNormal}, Start: day},
+	}
+	if !worthNoticing(withReal) {
+		t.Error("a real event alongside an offer should trigger a notice")
+	}
+}
+
+// The Wednesday crew knows Wednesday is trivia. Telling them again every week
+// is how the channel learns to skip the bot -- but the moment anything else is
+// on, the day is worth a post and the trivia is listed alongside it.
+func TestNoticeSkipsRoutineRepeatsButNotTheirCompany(t *testing.T) {
+	day := time.Date(2026, 9, 2, 18, 30, 0, 0, time.UTC)
+	trivia := dayEvent{
+		Event: Event{
+			Title:      "Trivia Night",
+			RRule:      "FREQ=WEEKLY;BYDAY=WE",
+			Prominence: ProminenceNormal,
+			Visibility: VisibilityPublic,
+		},
+		Start: day,
+	}
+	calzones := dayEvent{
+		Event: Event{
+			Title:      "Half-price Calzones",
+			RRule:      "FREQ=WEEKLY;BYDAY=WE",
+			Prominence: ProminenceBackground,
+			Visibility: VisibilityPublic,
+		},
+		Start: day,
+	}
+
+	if worthNoticing([]dayEvent{trivia, calzones}) {
+		t.Error("a plain weekly night plus a standing offer is a routine Wednesday")
+	}
+
+	// A one-off alongside it, and the day is news again.
+	release := dayEvent{
+		Event: Event{Title: "Beer Release", Prominence: ProminenceNormal, Visibility: VisibilityPublic},
+		Start: day,
+	}
+	if !worthNoticing([]dayEvent{trivia, calzones, release}) {
+		t.Error("a separate event on the same day should trigger a notice")
+	}
+}
+
+// The two escape hatches, and the reason "any repeat is routine" would be the
+// wrong rule: a repeat that reserves the room, or a standing private booking,
+// is exactly what the bar must not be surprised by.
+func TestNoticeStillPostsForRepeatsThatNeedDoingSomething(t *testing.T) {
+	day := time.Date(2026, 9, 2, 18, 30, 0, 0, time.UTC)
+	base := Event{
+		Title:      "Book Club",
+		RRule:      "FREQ=MONTHLY;BYDAY=1WE",
+		Prominence: ProminenceNormal,
+		Visibility: VisibilityPublic,
+	}
+
+	if worthNoticing([]dayEvent{{Event: base, Start: day}}) {
+		t.Error("a plain monthly repeat is still routine")
+	}
+
+	reservesRoom := base
+	reservesRoom.SpaceImpact = SpaceImpactPartial
+	if !worthNoticing([]dayEvent{{Event: reservesRoom, Start: day}}) {
+		t.Error("a repeat that reserves part of the room needs setting up")
+	}
+
+	standingBooking := base
+	standingBooking.Visibility = VisibilityPrivate
+	if !worthNoticing([]dayEvent{{Event: standingBooking, Start: day}}) {
+		t.Error("a standing private booking is precisely what staff must not be surprised by")
+	}
+}

@@ -164,9 +164,10 @@ func (a *App) planShiftNotice(ctx context.Context, tenantID uuid.UUID) (*DayNoti
 	if err != nil {
 		return nil, sum, err
 	}
-	// Nothing on means nothing to post. A daily "nothing today" is exactly the
-	// noise that trains a channel to ignore the bot.
-	if len(todays) == 0 {
+	// Nothing worth interrupting for means nothing to post. A daily "nothing
+	// today" is exactly the noise that trains a channel to ignore the bot, and
+	// a daily "the pizza deal is on again" is the same noise wearing a hat.
+	if !worthNoticing(todays) {
 		return nil, sum, nil
 	}
 
@@ -353,6 +354,53 @@ func (a *App) eventsOn(ctx context.Context, tenantID uuid.UUID, from, to time.Ti
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
 	return out, nil
+}
+
+// worthNoticing reports whether the day holds anything a person would want
+// interrupted for.
+//
+// Two things fail to qualify, and both are the same idea: a channel that gets
+// posted to every morning regardless stops being read, and the morning it
+// matters -- a thirty-person booking in the back room -- nobody looks.
+//
+// Standing offers never qualify. Double D's runs a pizza deal every Sunday,
+// Monday and Tuesday; "today: BOGO Pizza" three mornings a week is not news.
+//
+// Nor does a routine repeat. The Wednesday crew does not need telling that
+// Wednesday is trivia; they have worked out that much. It becomes news again
+// the moment it needs something DOING -- reserving part of the room, or a
+// private booking the bar has to be ready for -- which is why those two are
+// the exceptions rather than a flag someone has to remember to set.
+//
+// Neither rule hides anything. They decide whether the day earns a post; once
+// something else has earned it, the offers and the trivia are both listed,
+// because then they are useful context. That is the same division the table
+// topper makes when it refuses to let a pizza deal headline a bike night.
+func worthNoticing(events []dayEvent) bool {
+	for i := range events {
+		if noticeworthy(&events[i].Event) {
+			return true
+		}
+	}
+	return false
+}
+
+// noticeworthy reports whether one event, on its own, earns the day a post.
+//
+// Note what a second routine repeat does NOT do: a Wednesday with trivia and a
+// standing weekly cask tapping stays quiet, because neither is news. It is the
+// arrival of something that is not part of the usual week -- a one-off, a
+// booking, anything reserving the room -- that starts the conversation.
+func noticeworthy(e *Event) bool {
+	if e.Prominence == ProminenceBackground {
+		return false
+	}
+	if !e.Repeats() {
+		return true // a one-off is, by definition, not part of the usual week
+	}
+	// Asked positively: an unset SpaceImpact is the zero value, not "none", so
+	// "!= none" would quietly call every repeat noteworthy.
+	return e.SpaceImpact == SpaceImpactPartial || e.Visibility == VisibilityPrivate
 }
 
 // dayEvent pairs an event with the specific occurrence landing on the day.
