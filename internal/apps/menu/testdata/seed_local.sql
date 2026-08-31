@@ -19,10 +19,9 @@ ON CONFLICT (slack_team_id) DO UPDATE SET slug = EXCLUDED.slug;
 
 -- Presentation only. The taps below are a single placeholder so the payload
 -- validates; the first request replaces them with whatever Untappd has.
-INSERT INTO app_menu_boards (tenant_id, key, name, payload, source_kind, source_id)
+INSERT INTO app_menu_boards (tenant_id, name, payload, source_kind, source_id)
 SELECT
     t.id,
-    'default',
     'Menu',
     $json${
       "venue": {
@@ -57,7 +56,7 @@ SELECT
     '22128'
 FROM tenants t
 WHERE t.slack_team_id = 'T_LOCAL_MENU'
-ON CONFLICT (tenant_id, key) DO UPDATE
+ON CONFLICT (tenant_id) DO UPDATE
     SET source_kind = EXCLUDED.source_kind,
         source_id   = EXCLUDED.source_id,
         -- Clear the hash so the next request pulls rather than trusting a

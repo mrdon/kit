@@ -73,11 +73,16 @@ func (a *App) Usage(ctx context.Context, tenantID uuid.UUID) (string, error) {
 	if a.pool == nil {
 		return "", nil
 	}
-	n, err := CountBoards(ctx, a.pool, tenantID)
+	// One menu per workspace, so the useful summary is whether it is set up
+	// rather than how many there are.
+	ok, err := HasBoard(ctx, a.pool, tenantID)
 	if err != nil {
 		return "", err
 	}
-	return apps.CountLabel(n, "board", "boards"), nil
+	if !ok {
+		return "No tap list set", nil
+	}
+	return "Menu set up", nil
 }
 
 // RegisterRoutes mounts the public board page and the console's read-only API.

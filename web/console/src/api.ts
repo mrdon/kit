@@ -126,21 +126,24 @@ export interface MintedToken {
 // browser homepage, so it is the stable half; `public_url` is what an admin
 // copies onto the machine. `last_seen_at` is the only health signal there is
 // — it is set by the screen's own polling.
-// A published menu board. Read-only in the console: boards are authored and
-// pushed with set_menu_board, and this page only answers "what URL do I
-// paste into the screen?".
+// The workspace's menu board. One per workspace, read-only in the console:
+// the tap list follows Untappd and the presentation is pushed from an AI
+// client, so this page only answers "what URL do I paste into the screen?".
 export interface MenuBoard {
-  key: string;
   name: string;
   public_url: string;
-  /** Null until a tap list has been set; the address works regardless. */
+  /** Null until a tap list exists; the address works regardless. */
   updated_at: string | null;
   taps: number;
   panels: number;
   /** True before any tap list is set — the screen shows a placeholder. */
   empty: boolean;
-  /** Set when a stored board no longer parses, so the page can say so. */
-  error?: string;
+  /** Untappd board being followed; blank when set by hand. */
+  source: string;
+  synced_at: string | null;
+  sync_error?: string;
+  /** Set when the stored payload no longer parses. */
+  parse_error?: string;
 }
 
 export interface KioskUrlChange {
@@ -808,7 +811,7 @@ export const api = {
   runEmailIntake: () =>
     apiPost<{ status: string }>('/email-intake/run'),
 
-  menuBoards: () => apiGet<{ boards: MenuBoard[] }>('/menu/boards'),
+  menuBoard: () => apiGet<MenuBoard>('/menu/board'),
   kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
   createKioskBoard: (body: KioskBoardInput) =>
     apiPost<KioskBoard>('/kiosk/boards', body),

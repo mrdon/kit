@@ -17,7 +17,6 @@ const SourceUntappd = "untappd"
 
 // SyncResult is what one pull did, for the tool output and the logs.
 type SyncResult struct {
-	Key     string
 	Taps    int
 	Changed bool
 	Err     error
@@ -63,8 +62,7 @@ func (a *App) EnsureFresh(ctx context.Context, tenantID uuid.UUID, row *BoardRow
 		return row
 	}
 
-	key := tenantID.String() + "/" + row.Key
-	fresh, _, _ := pulls.Do(key, func() (any, error) {
+	fresh, _, _ := pulls.Do(tenantID.String(), func() (any, error) {
 		// Detached from the caller's deadline so one abandoned request does
 		// not cancel a pull the next caller is about to wait on.
 		pullCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
@@ -72,10 +70,10 @@ func (a *App) EnsureFresh(ctx context.Context, tenantID uuid.UUID, row *BoardRow
 
 		if res := a.syncBoard(pullCtx, tenantID, row); res.Err != nil {
 			slog.Warn("menu refresh failed, serving stored board",
-				"tenant_id", tenantID, "key", row.Key, "error", res.Err)
+				"tenant_id", tenantID, "error", res.Err)
 			return row, nil
 		}
-		updated, err := GetBoardByKey(pullCtx, a.pool, tenantID, row.Key)
+		updated, err := GetBoard(pullCtx, a.pool, tenantID)
 		if err != nil || updated == nil {
 			return row, nil
 		}
@@ -88,19 +86,6 @@ func (a *App) EnsureFresh(ctx context.Context, tenantID uuid.UUID, row *BoardRow
 	return row
 }
 
-// SyncTenant pulls every sourced board for a workspace.
-func (a *App) SyncTenant(ctx context.Context, tenantID uuid.UUID) ([]SyncResult, error) {
-	boards, err := ListSourcedBoards(ctx, a.pool, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]SyncResult, 0, len(boards))
-	for _, row := range boards {
-		out = append(out, a.syncBoard(ctx, tenantID, row))
-	}
-	return out, nil
-}
-
 // syncBoard pulls one board's tap list and merges it into the stored payload.
 //
 // Merge, not replace: only `taps` has an upstream. The wordmark, the footer
@@ -108,25 +93,25 @@ func (a *App) SyncTenant(ctx context.Context, tenantID uuid.UUID) ([]SyncResult,
 // them from, so a sync that overwrote the whole document would silently
 // delete work on every refresh.
 func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) SyncResult {
-	res := SyncResult{Key: row.Key}
+	var res SyncResult
 
 	if row.SourceKind != SourceUntappd {
 		res.Err = fmt.Errorf("unknown source kind %q", row.SourceKind)
-		a.stampError(ctx, tenantID, row.Key, res.Err)
+		a.stampError(ctx, tenantID, res.Err)
 		return res
 	}
 
 	body, hash, err := FetchUntappdBody(ctx, untappdClient(), row.SourceID)
 	if err != nil {
 		res.Err = err
-		a.stampError(ctx, tenantID, row.Key, err)
+		a.stampError(ctx, tenantID, err)
 		return res
 	}
 
 	// The cheap exit, and the reason a one-minute schedule is reasonable.
 	if hash == row.SourceHash {
-		if err := TouchSynced(ctx, a.pool, tenantID, row.Key, hash); err != nil {
-			slog.Warn("touching menu sync", "tenant_id", tenantID, "key", row.Key, "error", err)
+		if err := TouchSynced(ctx, a.pool, tenantID, hash); err != nil {
+			slog.Warn("touching menu sync", "tenant_id", tenantID, "error", err)
 		}
 		return res
 	}
@@ -135,7 +120,7 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 	if len(taps) < minPlausibleTaps {
 		res.Err = fmt.Errorf("%w: got %d from board %s",
 			ErrScrapeImplausible, len(taps), row.SourceID)
-		a.stampError(ctx, tenantID, row.Key, res.Err)
+		a.stampError(ctx, tenantID, res.Err)
 		return res
 	}
 	res.Taps = len(taps)
@@ -145,21 +130,21 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 		// A board whose stored payload no longer parses still has a usable
 		// upstream, so rebuild around the taps rather than refusing forever.
 		slog.Warn("menu payload unparseable, rebuilding from source",
-			"tenant_id", tenantID, "key", row.Key, "error", err)
+			"tenant_id", tenantID, "error", err)
 		board = &Board{}
 	}
 	board.Taps = taps
 
 	if err := board.Validate(); err != nil {
 		res.Err = err
-		a.stampError(ctx, tenantID, row.Key, err)
+		a.stampError(ctx, tenantID, err)
 		return res
 	}
 
 	payload, err := json.Marshal(board)
 	if err != nil {
 		res.Err = fmt.Errorf("encoding synced board: %w", err)
-		a.stampError(ctx, tenantID, row.Key, res.Err)
+		a.stampError(ctx, tenantID, res.Err)
 		return res
 	}
 
@@ -168,12 +153,12 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 	// new hash so the next tick exits cheaply, but leave updated_at alone so
 	// it keeps meaning "when the tap list last actually changed".
 	if bytes.Equal(normalizeJSON(row.Payload), normalizeJSON(payload)) {
-		if err := TouchSynced(ctx, a.pool, tenantID, row.Key, hash); err != nil {
-			slog.Warn("touching menu sync", "tenant_id", tenantID, "key", row.Key, "error", err)
+		if err := TouchSynced(ctx, a.pool, tenantID, hash); err != nil {
+			slog.Warn("touching menu sync", "tenant_id", tenantID, "error", err)
 		}
 		return res
 	}
-	if err := SaveSyncedTaps(ctx, a.pool, tenantID, row.Key, payload, hash); err != nil {
+	if err := SaveSyncedTaps(ctx, a.pool, tenantID, payload, hash); err != nil {
 		res.Err = err
 		return res
 	}
@@ -181,9 +166,9 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 	return res
 }
 
-func (a *App) stampError(ctx context.Context, tenantID uuid.UUID, key string, cause error) {
-	if err := RecordSyncError(ctx, a.pool, tenantID, key, cause.Error()); err != nil {
-		slog.Warn("recording menu sync error", "tenant_id", tenantID, "key", key, "error", err)
+func (a *App) stampError(ctx context.Context, tenantID uuid.UUID, cause error) {
+	if err := RecordSyncError(ctx, a.pool, tenantID, cause.Error()); err != nil {
+		slog.Warn("recording menu sync error", "tenant_id", tenantID, "error", err)
 	}
 }
 
@@ -201,21 +186,18 @@ func normalizeJSON(raw []byte) []byte {
 	return out
 }
 
-// SetSource points a board at an upstream and immediately pulls once, so
+// SetSource points the menu at an upstream and immediately pulls once, so
 // configuring it is also the test that it works.
-func (a *App) SetSource(ctx context.Context, tenantID uuid.UUID, key, kind, sourceID string) (*BoardRow, SyncResult, error) {
-	if key == "" {
-		key = DefaultKey
-	}
+func (a *App) SetSource(ctx context.Context, tenantID uuid.UUID, kind, sourceID string) (*BoardRow, SyncResult, error) {
 	if kind != SourceUntappd && kind != "" {
 		return nil, SyncResult{}, fmt.Errorf("unknown source %q (want %q)", kind, SourceUntappd)
 	}
-	row, err := SetBoardSource(ctx, a.pool, tenantID, key, kind, sourceID)
+	row, err := SetBoardSource(ctx, a.pool, tenantID, kind, sourceID)
 	if err != nil {
 		return nil, SyncResult{}, err
 	}
 	if kind == "" {
-		return row, SyncResult{Key: key}, nil
+		return row, SyncResult{}, nil
 	}
 	return row, a.syncBoard(ctx, tenantID, row), nil
 }

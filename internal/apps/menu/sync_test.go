@@ -12,7 +12,7 @@ var testTenant = uuid.New()
 // A board with no upstream is never refreshed: there is nothing to ask.
 func TestEnsureFreshIgnoresUnsourcedBoards(t *testing.T) {
 	a := &App{}
-	row := &BoardRow{Key: DefaultKey}
+	row := &BoardRow{}
 	if got := a.EnsureFresh(t.Context(), testTenant, row); got != row {
 		t.Error("a hand-set board should be returned untouched")
 	}
@@ -23,7 +23,7 @@ func TestEnsureFreshIgnoresUnsourcedBoards(t *testing.T) {
 func TestEnsureFreshHonoursTTL(t *testing.T) {
 	a := &App{} // nil pool: any real pull would panic, which is the assertion
 	just := time.Now().Add(-FreshFor / 2)
-	row := &BoardRow{Key: DefaultKey, SourceKind: SourceUntappd, SourceID: "1", SyncedAt: &just}
+	row := &BoardRow{SourceKind: SourceUntappd, SourceID: "1", SyncedAt: &just}
 	if got := a.EnsureFresh(t.Context(), testTenant, row); got != row {
 		t.Error("a board synced within the TTL should be served as-is")
 	}

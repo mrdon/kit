@@ -251,27 +251,10 @@ func TestRealBoardPayload(t *testing.T) {
 	}
 }
 
-func TestDefaultBoardHasNoKeyInItsPath(t *testing.T) {
-	// The workspace menu should be one obvious address, not one with
-	// "default" stuck on the end.
-	if got := PublicPath("gravity", DefaultKey); got != "/gravity/menu" {
-		t.Errorf("default path = %q, want /gravity/menu", got)
-	}
-	if got := PublicPath("gravity", ""); got != "/gravity/menu" {
-		t.Errorf("empty key path = %q, want /gravity/menu", got)
-	}
-	if got := PublicPath("gravity", "patio"); got != "/gravity/menu/patio" {
-		t.Errorf("keyed path = %q, want /gravity/menu/patio", got)
-	}
-}
-
-func TestBlankKeyMeansTheWorkspaceMenu(t *testing.T) {
-	// Slugifying the name here is how you end up with a fresh URL every time
-	// someone rewords the heading.
-	in := BoardInput{Name: "Taproom wall", Payload: []byte(`{"taps":[{"section":"s","name":"n"}]}`)}
-	in.normalize()
-	if in.Key != DefaultKey {
-		t.Errorf("blank key normalised to %q, want %q", in.Key, DefaultKey)
+func TestPublicPathHasNoKey(t *testing.T) {
+	// One menu per workspace, so one obvious address.
+	if got := PublicPath("gravity"); got != "/gravity/menu" {
+		t.Errorf("path = %q, want /gravity/menu", got)
 	}
 }
 

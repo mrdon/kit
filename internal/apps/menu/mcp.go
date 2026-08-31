@@ -24,91 +24,47 @@ func registerMCPTools(pool *pgxpool.Pool, _ *services.Services, a *App) []mcpser
 	return out
 }
 
+// withBoard wraps the common shape: resolve the caller, refuse when the app
+// is unconfigured, and map an error onto a tool error rather than a transport
+// one so the caller reads why.
+func withBoard(a *App, run func(context.Context, mcp.CallToolRequest, *services.Caller) (string, error)) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if a.svc == nil {
+			return mcp.NewToolResultError("menu app is not configured"), nil
+		}
+		msg, err := run(ctx, req, caller)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(msg), nil
+	})
+}
+
 func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
 	switch name {
-	case "set_menu_board":
-		return mcpSetBoard(pool, a)
-	case "set_menu_asset":
-		return mcpSetAsset(pool, a)
 	case "set_menu_source":
-		return mcpSetSource(pool, a)
-	case "delete_menu_board":
-		return mcpDeleteBoard(a)
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			return applySource(ctx, pool, a, c.TenantID, setSourceArgs{BoardID: req.GetString("board_id", "")})
+		})
+	case "set_menu_board":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			return saveBoard(ctx, pool, a, c.TenantID, setBoardArgs{
+				Name:    req.GetString("name", ""),
+				Payload: req.GetString("payload", ""),
+			})
+		})
+	case "set_menu_asset":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			return saveAsset(ctx, pool, a.fetcher, c.TenantID, setAssetArgs{
+				Key: req.GetString("key", ""),
+				URL: req.GetString("url", ""),
+			})
+		})
 	case "get_menu_board":
-		return mcpGetBoard(pool, a)
+		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
+			return describeBoard(ctx, pool, a, c.TenantID)
+		})
 	default:
 		return nil
 	}
-}
-
-func mcpSetBoard(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		if a.svc == nil {
-			return mcp.NewToolResultError("menu app is not configured"), nil
-		}
-		args := setBoardArgs{
-			Key:     req.GetString("key", ""),
-			Name:    req.GetString("name", ""),
-			Payload: req.GetString("payload", ""),
-		}
-		msg, err := saveBoard(ctx, pool, a, caller.TenantID, args)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		return mcp.NewToolResultText(msg), nil
-	})
-}
-
-func mcpSetAsset(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		if a.svc == nil {
-			return mcp.NewToolResultError("menu app is not configured"), nil
-		}
-		args := setAssetArgs{Key: req.GetString("key", ""), URL: req.GetString("url", "")}
-		msg, err := saveAsset(ctx, pool, a.fetcher, caller.TenantID, args)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		return mcp.NewToolResultText(msg), nil
-	})
-}
-
-func mcpSetSource(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		if a.svc == nil {
-			return mcp.NewToolResultError("menu app is not configured"), nil
-		}
-		args := setSourceArgs{BoardID: req.GetString("board_id", ""), Key: req.GetString("key", "")}
-		msg, err := applySource(ctx, pool, a, caller.TenantID, args)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		return mcp.NewToolResultText(msg), nil
-	})
-}
-
-func mcpDeleteBoard(a *App) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		if a.svc == nil {
-			return mcp.NewToolResultError("menu app is not configured"), nil
-		}
-		msg, err := removeBoard(ctx, a, caller.TenantID, deleteBoardArgs{Key: req.GetString("key", "")})
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		return mcp.NewToolResultText(msg), nil
-	})
-}
-
-func mcpGetBoard(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
-	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
-		if a.svc == nil {
-			return mcp.NewToolResultError("menu app is not configured"), nil
-		}
-		msg, err := listBoards(ctx, pool, a, caller.TenantID, getBoardArgs{Key: req.GetString("key", "")})
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		return mcp.NewToolResultText(msg), nil
-	})
 }
