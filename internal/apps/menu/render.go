@@ -98,6 +98,9 @@ func stylesheet() (string, error) {
 		return "", fmt.Errorf("reading board.css: %w", err)
 	}
 	var b strings.Builder
+	// The generated sky rides in as a token so board.css can compose it with
+	// the washes rather than having a data URI pasted into the file.
+	fmt.Fprintf(&b, ":root{--starfield:url(%s)}\n", starfieldURI)
 	fmt.Fprintf(&b, "@font-face{font-family:bungee;src:url(%s) format(\"woff2\");"+
 		"font-weight:400;font-style:normal;font-display:block}\n", bungee)
 	fmt.Fprintf(&b, "@font-face{font-family:exo2;src:url(%s) format(\"woff2\");"+

@@ -31,8 +31,14 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .board {
   width: 1920px; height: 1080px; padding: 34px 40px;
   display: flex; flex-direction: column; color: #fff;
+  /* Four layers, front to back: the stars, a warm glow top-right that ties
+     to the brand accent, a cool wash bottom-left so the corner opposite the
+     glow does not go flat, and the navy ground. The stars sit ON TOP of the
+     washes rather than under them, or the washes grey them out. */
   background:
-    radial-gradient(120% 80% at 82% 0%, rgba(232, 84, 58, .10) 0%, rgba(232, 84, 58, 0) 55%),
+    var(--starfield) 0 0 / cover no-repeat,
+    radial-gradient(120% 80% at 82% 0%, rgba(232, 84, 58, .12) 0%, rgba(232, 84, 58, 0) 55%),
+    radial-gradient(90% 70% at 5% 100%, rgba(122, 165, 194, .10) 0%, rgba(122, 165, 194, 0) 60%),
     linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
 }
 

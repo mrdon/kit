@@ -250,3 +250,19 @@ func TestBlankKeyMeansTheWorkspaceMenu(t *testing.T) {
 		t.Errorf("blank key normalised to %q, want %q", in.Key, DefaultKey)
 	}
 }
+
+func TestStarfieldIsStableAndEmbedded(t *testing.T) {
+	// A wall display that reloads should come back to the same sky, so the
+	// field is generated once from a fixed seed rather than per render.
+	if buildStarfield() != starfieldURI {
+		t.Error("starfield is not deterministic")
+	}
+	b := &Board{Venue: Venue{Wordmark: "G"}, Taps: []Tap{tap("Lagers", "Beer", DefaultPour)}}
+	html, err := Render(b)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(html, "--starfield:url(data:image/svg+xml;base64,") {
+		t.Error("starfield missing from the rendered page")
+	}
+}
