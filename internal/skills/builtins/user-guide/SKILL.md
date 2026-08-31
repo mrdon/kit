@@ -202,6 +202,14 @@ The exception is a run of genuinely *different* events — live music with a dif
 
 **Cancel rather than delete.** Cancelling removes an event from the calendar and the website but keeps the record, so the calendar entry gets cleaned up and the web address is never reused for different content. Web addresses are frozen once an event is published, because links to them may already be in a social post or newsletter.
 
+### The table topper
+
+The cog menu on the Events page prints the week's card for the taproom tables — **Table topper — this week** or **next week** — a coloured band per event with the day, the door time, a couple of lines about it, and the event's own poster. It's a PDF, two identical cards to a landscape sheet with a cut line down the middle, so one sheet covers two tables.
+
+Nothing to lay out: it's built from the events you already entered, and only from **published, public** ones — a private booking never appears on a card sitting in front of customers. The bullets come from the event's description (one per line if you wrote it that way) or from its summary. Repeating events show the date they land on *this* week, so a weekly quiz prints with this Wednesday on it.
+
+Pick **next week** on a Friday and the card is ready before the weekend. Seven events is the most that fits on one card; anything beyond that is counted at the bottom rather than dropped silently.
+
 Admin setup, on the **Events** page under Admin:
 
 - **Pick the calendar.** Connect Google Calendar on the Integrations page first (a service account — see Square shift sync below for the same setup), then share your events calendar with the service account's email and choose it from the dropdown. If the dropdown is empty, the calendar hasn't been shared with the service account yet.

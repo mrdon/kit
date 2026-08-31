@@ -8,6 +8,8 @@ import {
   type EventsSiteStatus,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
+import { SLUG } from '../workspace';
+import ActionMenu from '../ActionMenu';
 import RepeatEditor from './EventRepeat';
 import EventWhen, { defaultStart, addMinutes, spansDays } from './EventWhen';
 
@@ -57,6 +59,15 @@ function toLocalInput(iso: string | undefined, tz: string | undefined): string {
     .formatToParts(d)
     .reduce<Record<string, string>>((a, x) => ((a[x.type] = x.value), a), {});
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
+// openTopper opens the printable table topper in its own tab.
+//
+// A window.open rather than a fetch: the PDF belongs in the browser's own
+// viewer, where Cmd-P is already the print button, and the session cookie goes
+// along for the ride.
+function openTopper(week: 'this' | 'next') {
+  window.open(`/${SLUG}/events/topper.pdf?week=${week}`, '_blank', 'noopener');
 }
 
 // Mirrors PendingChange.Verb() on the server so both surfaces use the same
@@ -203,6 +214,21 @@ export default function Events() {
             >
               New event
             </button>
+            {/* Printing is a weekly errand, not an everyday one, so it lives
+                under the cog rather than taking a slot in the button row. */}
+            <ActionMenu
+              label="Event actions"
+              items={[
+                {
+                  label: 'Table topper — this week',
+                  onClick: () => openTopper('this'),
+                },
+                {
+                  label: 'Table topper — next week',
+                  onClick: () => openTopper('next'),
+                },
+              ]}
+            />
           </div>
         </div>
         <p className="page-sub">

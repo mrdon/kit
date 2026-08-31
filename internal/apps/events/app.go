@@ -125,6 +125,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 		return
 	}
 	a.registerFeedRoutes(mux)
+	registerTopperRoutes(mux, a)
 	registerConsoleRoutes(mux, a)
 	registerSettingsRoutes(mux, a)
 	registerStaffRoutes(mux, a)
