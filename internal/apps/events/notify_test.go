@@ -91,12 +91,35 @@ func TestNoticeRendersSplitShift(t *testing.T) {
 
 // The notice hash is what stops a second run re-DMing an unchanged day, and
 // what lets a genuinely changed day through. Both directions matter.
+//
+// The stability half builds the body twice rather than hashing one string
+// twice: the point is that buildNoticeBody itself is deterministic. Iterate a
+// map somewhere in there and the same day would hash differently on every run,
+// re-sending the same notice every morning until the events changed.
 func TestNoticeHashTracksContent(t *testing.T) {
-	if hashBody("a") == hashBody("b") {
-		t.Error("different bodies must hash differently or a changed day stays silent")
+	loc := mustLoc(t, "America/Denver")
+	restoreNow(t, time.Date(2026, 8, 28, 7, 0, 0, 0, loc))
+
+	start := time.Date(2026, 8, 28, 19, 0, 0, 0, loc)
+	day := []dayEvent{{
+		Event: Event{Title: "Trivia", Status: StatusPublished, PrepNotes: "Two mics."},
+		Start: start, End: start.Add(time.Hour),
+	}}
+	shifts := []square.EnrichedShift{shiftAt(t, loc, 14, 22)}
+	settings := Settings{Timezone: "America/Denver"}
+
+	first := hashBody(buildNoticeBody(shifts, day, settings, loc))
+	second := hashBody(buildNoticeBody(shifts, day, settings, loc))
+	if first != second {
+		t.Error("the same day must hash identically, or every run re-sends the same notice")
 	}
-	if hashBody("a") != hashBody("a") {
-		t.Error("identical bodies must hash identically or every run re-sends")
+
+	moved := []dayEvent{{
+		Event: day[0].Event,
+		Start: start.Add(time.Hour), End: start.Add(2 * time.Hour),
+	}}
+	if hashBody(buildNoticeBody(shifts, moved, settings, loc)) == first {
+		t.Error("a moved event must change the hash, or the follow-up never goes out")
 	}
 }
 

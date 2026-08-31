@@ -65,7 +65,7 @@ func coreMapStaff(ctx context.Context, caller *services.Caller, raw json.RawMess
 		if err := clearStaffMapping(ctx, app, caller.TenantID, member.TeamMemberID); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s is no longer mapped, so they will stop receiving shift notices.", member.Name), nil
+		return member.Name + " is no longer mapped, so they will stop receiving shift notices.", nil
 	}
 
 	slackID, err := app.resolveSlackUser(ctx, caller.TenantID, in.SlackUser)
