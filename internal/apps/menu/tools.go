@@ -14,30 +14,30 @@ import (
 
 // toolMetas is the shared ToolMeta list for the agent + MCP surfaces.
 //
-// Both tools are admin-only. A menu board is what a room full of customers
-// reads prices off, so changing one is a publishing act, not a note.
+// Both tools are admin-only. The tap list is what a room full of customers
+// reads prices off, so changing it is not a note-taking action.
 func toolMetas() []services.ToolMeta {
 	return []services.ToolMeta{
 		{
 			Name: "set_menu_board",
-			Description: "Publish a taproom menu board: replaces the whole board for the given key " +
-				"and returns the public URL to display it. The payload is one JSON document with " +
+			Description: "Set the taproom tap list. The workspace menu already has a permanent " +
+				"address — this replaces what it shows. The payload is one JSON document with " +
 				"`venue` (wordmark, footer lines), `taps` (section, name, style, abv, price, size) " +
-				"and `panels` (kind agenda/poster/cta) — see an existing board for the shape. " +
-				"Publishing does NOT put the board on a screen; hand the returned URL to whoever " +
-				"manages the kiosk boards.",
+				"and `panels` (kind agenda/poster/cta). Omit key unless you are maintaining a " +
+				"second, separate board. Changing the tap list changes what any screen already " +
+				"showing this menu displays; no re-pointing is needed.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{
 				"key": services.Field("string",
-					"Stable board key used in the public URL, e.g. 'taproom'. Lowercase letters, numbers and hyphens. Defaults to a slug of name."),
+					"Only for an additional board separate from the workspace menu. Lowercase letters, numbers and hyphens. Omit for the main menu."),
 				"name":    services.Field("string", "Human label for the board, e.g. 'Taproom wall'."),
 				"payload": services.Field("string", "The whole board as a JSON document."),
 			}, "payload"),
 		},
 		{
 			Name: "get_menu_board",
-			Description: "List this workspace's menu boards with their public URLs and when each was " +
-				"last published. Pass key to show just one.",
+			Description: "Show the workspace menu's public address and when its tap list was last " +
+				"changed, plus any additional boards. Pass key to show just one.",
 			AdminOnly: true,
 			Schema: services.Props(map[string]any{
 				"key": services.Field("string", "Only show the board with this key."),
@@ -77,9 +77,9 @@ func saveBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.UU
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Published %q — %d taps, %d panels.\n\nDisplay it at: %s\n\n"+
-		"To put it on a screen, set that URL as a kiosk board's URL.",
-		row.Name, len(board.Taps), len(board.Panels), url), nil
+	return fmt.Sprintf("Tap list set — %d taps, %d panels.\n\nShowing at: %s\n\n"+
+		"Any screen already pointed at that address is now showing it.",
+		len(board.Taps), len(board.Panels), url), nil
 }
 
 // listBoards renders the board listing both surfaces return.
@@ -92,7 +92,9 @@ func listBoards(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.U
 		rows = filterByKey(rows, key)
 	}
 	if len(rows) == 0 {
-		return "No menu boards yet. Publish one with set_menu_board.", nil
+		return "The workspace menu has no tap list yet, so its screen shows a " +
+			"placeholder. The address still works — set the taps with " +
+			"set_menu_board and it will appear.", nil
 	}
 	var b strings.Builder
 	for _, row := range rows {
@@ -100,8 +102,8 @@ func listBoards(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.U
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&b, "%s (%s)\n  %s\n  published %s\n",
-			row.Name, row.Key, url, row.UpdatedAt.Format("2 Jan 2006 15:04 MST"))
+		fmt.Fprintf(&b, "%s\n  %s\n  tap list set %s\n",
+			row.Name, url, row.UpdatedAt.Format("2 Jan 2006 15:04 MST"))
 		if board, err := ParseBoard(row.Payload); err == nil {
 			fmt.Fprintf(&b, "  %d taps, %d panels\n", len(board.Taps), len(board.Panels))
 		} else {

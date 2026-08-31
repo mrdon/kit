@@ -133,9 +133,12 @@ export interface MenuBoard {
   key: string;
   name: string;
   public_url: string;
-  updated_at: string;
+  /** Null until a tap list has been set; the address works regardless. */
+  updated_at: string | null;
   taps: number;
   panels: number;
+  /** True before any tap list is set — the screen shows a placeholder. */
+  empty: boolean;
   /** Set when a stored board no longer parses, so the page can say so. */
   error?: string;
 }

@@ -41,21 +41,14 @@ export default function Menu() {
         </nav>
         <h1>Menu boards</h1>
         <p className="page-sub">
-          Published tap lists. Copy a board's address and set it as a kiosk
-          screen's URL to put it on the wall.
+          Your menu has a permanent address. Paste it into a kiosk screen once;
+          after that, changing the tap list changes what the screen shows.
         </p>
       </div>
 
       {err && <p className="banner banner-error">{err}</p>}
 
       {boards === null && !err && <p className="muted">Loading…</p>}
-
-      {boards?.length === 0 && (
-        <p className="muted">
-          No boards published yet. Publish one with the <code>set_menu_board</code>{' '}
-          tool from an AI client, then its address will appear here.
-        </p>
-      )}
 
       <section className="card-list">
         {boards?.map((b) => (
@@ -68,10 +61,15 @@ export default function Menu() {
               <span className="card-desc">
                 {b.error ? (
                   <em className="error-text">Will not render: {b.error}</em>
+                ) : b.empty ? (
+                  <em>
+                    No tap list set yet — the screen shows a placeholder until
+                    there is one.
+                  </em>
                 ) : (
                   <>
-                    {b.taps} taps, {b.panels} panels · published{' '}
-                    {new Date(b.updated_at).toLocaleString()}
+                    {b.taps} taps, {b.panels} panels · updated{' '}
+                    {b.updated_at && new Date(b.updated_at).toLocaleString()}
                   </>
                 )}
               </span>

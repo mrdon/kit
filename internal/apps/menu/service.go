@@ -27,6 +27,15 @@ var (
 // so it is rejected at the door instead.
 const MaxTaps = 18
 
+// DefaultKey is the workspace's one menu. It is not something anyone creates:
+// every workspace has a menu address from the moment the app is on, served at
+// /{slug}/menu with no key in it, and setting the taps is an update to
+// content that already has a home rather than an act of publication.
+//
+// Extra keyed boards remain possible for a second screen showing something
+// different, but they are the exception and they carry their key in the path.
+const DefaultKey = "default"
+
 // keyPattern matches the kiosk app's contract: lowercase, hyphenated, no
 // slashes. A menu key ends up pasted into a kiosk board's URL field by hand.
 var keyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
@@ -51,11 +60,14 @@ type BoardInput struct {
 func (in *BoardInput) normalize() {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Key = strings.ToLower(strings.TrimSpace(in.Key))
+	// No key means the workspace's menu, not a new board named after
+	// whatever label was typed. Slugifying the name here is how you end up
+	// with a fresh URL every time someone rewords the heading.
 	if in.Key == "" {
-		in.Key = SlugifyKey(in.Name)
+		in.Key = DefaultKey
 	}
 	if in.Name == "" {
-		in.Name = in.Key
+		in.Name = "Menu"
 	}
 }
 
@@ -142,6 +154,12 @@ func (s *Service) Delete(ctx context.Context, tenantID uuid.UUID, key string) er
 
 // PublicPath is the board's display URL, relative to the deployment's base
 // URL. This is the string an admin copies into a kiosk board.
+//
+// The default board has no key in its path: a workspace with one menu should
+// have one obvious address, not one with "default" stuck on the end.
 func PublicPath(slug, key string) string {
+	if key == "" || key == DefaultKey {
+		return fmt.Sprintf("/%s/menu", slug)
+	}
 	return fmt.Sprintf("/%s/menu/%s", slug, key)
 }
