@@ -47,6 +47,9 @@ func FormatEvent(e *Event, s Settings) string {
 	if e.Summary != "" {
 		fmt.Fprintf(&b, "  summary: %s\n", e.Summary)
 	}
+	if e.Description != "" {
+		fmt.Fprintf(&b, "  description:\n%s", indentLines(e.Description, "    "))
+	}
 	if e.PrepNotes != "" {
 		fmt.Fprintf(&b, "  staff notes: %s\n", firstLine(e.PrepNotes))
 	}
@@ -319,6 +322,22 @@ func FormatSettings(s Settings) string {
 		b.WriteString("  website feed: token configured\n")
 	} else {
 		b.WriteString("  website feed: no token yet\n")
+	}
+	return b.String()
+}
+
+// indentLines prefixes every non-blank line of s with prefix, preserving the
+// author's own line breaks rather than re-wrapping -- the description is
+// hand-written marketing copy and its paragraphing is meaningful. Always ends
+// with a newline so callers can concatenate without checking.
+func indentLines(s, prefix string) string {
+	var b strings.Builder
+	for line := range strings.SplitSeq(strings.TrimRight(s, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			b.WriteString("\n")
+			continue
+		}
+		b.WriteString(prefix + strings.TrimRight(line, " \t") + "\n")
 	}
 	return b.String()
 }
