@@ -287,3 +287,68 @@ func hashURL(rawURL string) string {
 	h := sha256.Sum256([]byte(rawURL))
 	return hex.EncodeToString(h[:8])
 }
+
+// MaxImageBytes caps a fetched image. Generous enough for an event poster,
+// small enough that a mistyped URL pointing at a video cannot fill memory.
+const MaxImageBytes = 2 << 20 // 2 MiB
+
+// FetchImage retrieves a single image over the same SSRF-protected client as
+// Fetch, and returns its bytes and content type.
+//
+// It exists so callers that need raw bytes do not build their own HTTP client
+// and re-derive the SSRF rules. Everything that leaves this process on a
+// user-supplied URL should go through one of these two methods; a second
+// client is a second place for the private-IP check to be forgotten.
+//
+// The response must actually be an image. A server that answers a .png URL
+// with an HTML error page would otherwise be stored and later served to a
+// screen as a broken graphic.
+func (f *Fetcher) FetchImage(ctx context.Context, rawURL string) (data []byte, mime string, err error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if err := validateURL(u); err != nil {
+		return nil, "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Kit/1.0)")
+	req.Header.Set("Accept", "image/*")
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetching image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("HTTP %d fetching image", resp.StatusCode)
+	}
+
+	mime = resp.Header.Get("Content-Type")
+	if i := strings.IndexByte(mime, ';'); i >= 0 {
+		mime = strings.TrimSpace(mime[:i])
+	}
+	if !strings.HasPrefix(mime, "image/") {
+		return nil, "", fmt.Errorf("expected an image, got content-type %q", mime)
+	}
+
+	// One byte past the cap distinguishes "exactly at the limit" from
+	// "truncated", so an oversized file is rejected rather than stored
+	// half-read and served as a corrupt image.
+	data, err = io.ReadAll(io.LimitReader(resp.Body, MaxImageBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("reading image: %w", err)
+	}
+	if len(data) > MaxImageBytes {
+		return nil, "", fmt.Errorf("image is larger than %d bytes", MaxImageBytes)
+	}
+	if len(data) == 0 {
+		return nil, "", errors.New("image is empty")
+	}
+	return data, mime, nil
+}

@@ -39,6 +39,9 @@ type renderData struct {
 	Panels  []panelView
 	CSS     template.CSS
 	Logo    template.URL
+	// Version is what the page compares against when it polls, so a screen
+	// picks up a new tap list without anyone power-cycling the TV.
+	Version string
 }
 
 // panelView wraps Panel so the poster's data URI can cross into the template
@@ -48,10 +51,20 @@ type renderData struct {
 type panelView struct {
 	Panel
 	ImageURL template.URL
+	// PhotoClass is set on a non-poster panel carrying an image, and names a
+	// generated rule holding that image's URL. The URL cannot ride in a style
+	// attribute: html/template rewrites a data: URI in CSS context to
+	// "#ZgotmplZ", so it would silently render no background at all.
+	PhotoClass string
 }
 
 // Render produces the whole self-contained page for a board.
-func Render(b *Board) (string, error) {
+//
+// assets maps an asset key to its data URI; pass nil when a board has no
+// poster panels. A panel naming a key that is not in the map renders with no
+// image rather than failing the page: one missing graphic should cost the
+// panel, not the tap list beside it.
+func Render(b *Board, assets map[string]string, version string) (string, error) {
 	css, err := stylesheet()
 	if err != nil {
 		return "", err
@@ -62,8 +75,20 @@ func Render(b *Board) (string, error) {
 	}
 
 	panels := make([]panelView, len(b.Panels))
+	var photoCSS strings.Builder
 	for i, p := range b.Panels {
-		panels[i] = panelView{Panel: p, ImageURL: template.URL(p.Image)} //nolint:gosec // validated as a data:image/ URI in Panel.validate
+		img := p.Image
+		if key, ok := strings.CutPrefix(img, AssetRef); ok {
+			img = assets[key]
+		}
+		v := panelView{Panel: p, ImageURL: template.URL(img)} //nolint:gosec // a data:image/ URI, validated in Panel.validate or built from stored bytes
+		// A poster is the panel's content and renders as an <img>; on any
+		// other kind the photo is atmosphere behind the text.
+		if img != "" && p.Kind != PanelPoster {
+			v.PhotoClass = fmt.Sprintf("pnl-photo-%d", i)
+			fmt.Fprintf(&photoCSS, ".%s{--photo:url(%s)}\n", v.PhotoClass, img)
+		}
+		panels[i] = v
 	}
 
 	var buf bytes.Buffer
@@ -71,7 +96,8 @@ func Render(b *Board) (string, error) {
 		Venue:   b.Venue,
 		Columns: Columns(b.Taps),
 		Panels:  panels,
-		CSS:     template.CSS(css),
+		CSS:     template.CSS(css + photoCSS.String()),
+		Version: version,
 		Logo:    template.URL(logo), //nolint:gosec // locally embedded asset, not user input
 	})
 	if err != nil {

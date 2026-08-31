@@ -58,7 +58,12 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 /* Two independent columns, sections spread to fill the shorter one rather
    than leaving a block of dead space under it. */
 .taps { display: grid; grid-template-columns: 1fr 1fr; column-gap: 44px; min-height: 0; }
-.tapcol { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+/* Top-aligned with a fixed gap, not space-between. The tap list comes from
+   Untappd now, so the two columns are rarely the same length, and spreading a
+   short column to full height opens gaps that read as missing beers.
+   overflow:hidden is the backstop: if the fit pass below ever fails, a row is
+   clipped rather than printed on top of the footer. */
+.tapcol { display: flex; flex-direction: column; justify-content: flex-start; gap: 14px; min-width: 0; overflow: hidden; }
 .sect { display: flex; flex-direction: column; min-width: 0; }
 .sect-head {
   font-family: var(--display); font-size: 19px; letter-spacing: .07em; text-transform: uppercase;
@@ -77,7 +82,9 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .tap-meta { font-family: var(--beer); font-size: 19px; font-weight: 400; letter-spacing: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
 .tap-sep { padding: 0 .5em; opacity: .5; }
 .tap-abv { color: var(--accent-l); }
-.tap-name { font-family: var(--beer); font-size: 46px; font-weight: 600; line-height: 1.06; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; }
+/* Sized by the fit pass, which shrinks the whole list until the longest
+   column fits. Seventeen taps is not a promise Untappd made us. */
+.tap-name { font-family: var(--beer); font-size: var(--name-size, 46px); font-weight: 600; line-height: 1.06; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; }
 .tap-r { text-align: right; }
 
 /* Price sits in cream, not the accent: the accent belongs to ABV and to the
@@ -108,6 +115,26 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .panel.is-on { opacity: 1; visibility: visible; }
 @media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
 
+/* A photo behind a panel, in two layers so the picture can be darkened
+   without dimming the text on top of it: ::before carries the image and takes
+   the filter, ::after is the scrim that guarantees contrast, and the content
+   sits above both. Filtering the panel itself would grey out the type. */
+.panel-photo::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background-image: var(--photo);
+  background-size: cover; background-position: center;
+  filter: saturate(.8) brightness(.5);
+}
+.panel-photo::after {
+  content: ""; position: absolute; inset: 0; z-index: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(11, 19, 26, .90) 0%,
+    rgba(11, 19, 26, .62) 42%,
+    rgba(11, 19, 26, .86) 100%);
+}
+.panel > * { position: relative; z-index: 2; }
+
 .panel-label { font-family: var(--display); font-size: 21px; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-hot); flex: 0 0 auto; margin-bottom: 22px; }
 
 .ev-list { list-style: none; display: flex; flex-direction: column; justify-content: center; gap: 34px; flex: 1 1 auto; }
@@ -115,10 +142,14 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .ev-when { font-family: var(--mono); font-size: 15px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-hot); margin-bottom: 6px; }
 .ev-when span { color: var(--dim); padding-left: .8em; }
 .ev-title { font-family: var(--beer); font-weight: 600; font-size: 31px; line-height: 1.12; text-transform: uppercase; color: #fff; margin-bottom: 5px; }
+.panel-photo .ev-title,
+.panel-photo .cta-head { text-shadow: 0 2px 14px rgba(0, 0, 0, .75); }
+.panel-photo .ev-note,
+.panel-photo .cta-body { color: #d3dbe3; text-shadow: 0 1px 8px rgba(0, 0, 0, .8); }
 .ev-note { font-size: 17px; line-height: 1.4; color: var(--muted); }
 
 .poster-wrap { flex: 1 1 auto; display: grid; place-items: center; min-height: 0; }
-.poster { max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 3px; display: block; }
+.poster { width: 100%; max-height: 100%; height: auto; object-fit: contain; border-radius: 4px; display: block; }
 
 .cta { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; gap: 24px; }
 .cta-head { font-family: var(--beer); font-weight: 600; font-size: 52px; line-height: 1.08; text-transform: uppercase; color: #fff; }

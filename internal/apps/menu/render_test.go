@@ -108,7 +108,7 @@ func TestRenderIsSelfContained(t *testing.T) {
 			{Kind: PanelCTA, Label: "Book the space", Headline: "Your party, here.", Body: "Birthdays.", Contact: []string{"info@example.com"}},
 		},
 	}
-	html, err := Render(b)
+	html, err := Render(b, nil, "v1")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestRenderEscapesContent(t *testing.T) {
 		Venue: Venue{Wordmark: "Gravity", Footer: []string{"Also in 4oz & 9oz"}},
 		Taps:  []Tap{{Section: "Sours", Name: "<script>alert(1)</script>", Style: "Sour & Tart", ABV: "6%", Price: "7", Size: "16oz"}},
 	}
-	html, err := Render(b)
+	html, err := Render(b, nil, "v1")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestRenderPosterKeepsItsDataURI(t *testing.T) {
 		Taps:   []Tap{tap("Lagers", "Beer", DefaultPour)},
 		Panels: []Panel{{Kind: PanelPoster, Label: "Don't miss", Image: img, Alt: "Poster"}},
 	}
-	html, err := Render(b)
+	html, err := Render(b, nil, "v1")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestRealBoardPayload(t *testing.T) {
 		t.Errorf("left column sections changed: %s", got)
 	}
 
-	html, err := Render(b)
+	html, err := Render(b, nil, "v1")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestStarfieldIsStableAndEmbedded(t *testing.T) {
 		t.Error("starfield is not deterministic")
 	}
 	b := &Board{Venue: Venue{Wordmark: "G"}, Taps: []Tap{tap("Lagers", "Beer", DefaultPour)}}
-	html, err := Render(b)
+	html, err := Render(b, nil, "v1")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}

@@ -250,10 +250,11 @@ func main() {
 	// render each board's copyable public link.
 	kiosk.Configure(sessionSigner, cfg.BaseURL)
 
-	// Menu boards need the signer for the console's read-only board list and
-	// the base URL to render the public link an admin copies into a kiosk
-	// board. The board page itself is unauthenticated.
-	menu.Configure(sessionSigner, cfg.BaseURL)
+	// Menu boards need the signer for the console's read-only board list, the
+	// fetcher to pull poster images server-side (so images never travel
+	// inside a tap-list update), and the base URL for the public link an
+	// admin copies into a kiosk board. The board page is unauthenticated.
+	menu.Configure(sessionSigner, app.Fetcher, cfg.BaseURL)
 
 	// Coordination needs builderLLM, the Messenger from app, the CardService
 	// (for surfacing decision cards), and the JobService (for shepherd

@@ -23,13 +23,22 @@ type BoardRow struct {
 	Payload   []byte
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// SourceKind is "untappd" when the tap list is pulled rather than pushed;
+	// empty means the payload is authored by hand and no sync touches it.
+	SourceKind string
+	SourceID   string
+	SourceHash string
+	SyncedAt   *time.Time
+	SyncError  string
 }
 
-const boardColumns = `id, tenant_id, key, name, payload, created_at, updated_at`
+const boardColumns = `id, tenant_id, key, name, payload, created_at, updated_at, source_kind, source_id, source_hash, synced_at, sync_error`
 
 func scanBoardRow(row pgx.Row) (*BoardRow, error) {
 	var b BoardRow
-	err := row.Scan(&b.ID, &b.TenantID, &b.Key, &b.Name, &b.Payload, &b.CreatedAt, &b.UpdatedAt)
+	err := row.Scan(&b.ID, &b.TenantID, &b.Key, &b.Name, &b.Payload, &b.CreatedAt, &b.UpdatedAt,
+		&b.SourceKind, &b.SourceID, &b.SourceHash, &b.SyncedAt, &b.SyncError)
 	if err != nil {
 		return nil, err
 	}
@@ -106,4 +115,81 @@ func CountBoards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (i
 		return 0, fmt.Errorf("counting menu boards: %w", err)
 	}
 	return n, nil
+}
+
+// SetBoardSource points a board at an upstream tap list, or clears it when
+// kind is empty.
+func SetBoardSource(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, key, kind, sourceID string) (*BoardRow, error) {
+	q := `UPDATE app_menu_boards
+	      SET source_kind = $3, source_id = $4, updated_at = NOW()
+	      WHERE tenant_id = $1 AND key = $2
+	      RETURNING ` + boardColumns
+	b, err := scanBoardRow(pool.QueryRow(ctx, q, tenantID, key, kind, sourceID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("setting menu board source: %w", err)
+	}
+	return b, nil
+}
+
+// SaveSyncedTaps writes a freshly pulled tap list and stamps the outcome.
+//
+// The payload is rewritten wholesale but only its `taps` key changes — the
+// caller merges — so a sync can never drop the venue chrome or the panels,
+// which have no upstream to be restored from.
+func SaveSyncedTaps(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, key string, payload []byte, hash string) error {
+	const q = `UPDATE app_menu_boards
+	           SET payload = $3, source_hash = $4, synced_at = NOW(),
+	               sync_error = '', updated_at = NOW()
+	           WHERE tenant_id = $1 AND key = $2`
+	if _, err := pool.Exec(ctx, q, tenantID, key, payload, hash); err != nil {
+		return fmt.Errorf("saving synced taps: %w", err)
+	}
+	return nil
+}
+
+// TouchSynced records a successful pull that found nothing new: the upstream
+// hash and the timestamp move, the payload does not.
+func TouchSynced(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, key, hash string) error {
+	const q = `UPDATE app_menu_boards
+	           SET source_hash = $3, synced_at = NOW(), sync_error = ''
+	           WHERE tenant_id = $1 AND key = $2`
+	if _, err := pool.Exec(ctx, q, tenantID, key, hash); err != nil {
+		return fmt.Errorf("touching menu sync: %w", err)
+	}
+	return nil
+}
+
+// RecordSyncError stamps a failed pull WITHOUT touching the payload. The
+// board keeps showing the last good tap list: stale beer is recoverable, a
+// blank wall in a full taproom is not.
+func RecordSyncError(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, key, msg string) error {
+	const q = `UPDATE app_menu_boards SET sync_error = $3, updated_at = NOW()
+	           WHERE tenant_id = $1 AND key = $2`
+	if _, err := pool.Exec(ctx, q, tenantID, key, msg); err != nil {
+		return fmt.Errorf("recording sync error: %w", err)
+	}
+	return nil
+}
+
+// ListSourcedBoards returns every board with an upstream, for the sync pass.
+func ListSourcedBoards(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]*BoardRow, error) {
+	q := `SELECT ` + boardColumns + ` FROM app_menu_boards
+	      WHERE tenant_id = $1 AND source_kind <> '' ORDER BY key`
+	rows, err := pool.Query(ctx, q, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("querying sourced menu boards: %w", err)
+	}
+	defer rows.Close()
+	var out []*BoardRow
+	for rows.Next() {
+		b, err := scanBoardRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning sourced menu board: %w", err)
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }

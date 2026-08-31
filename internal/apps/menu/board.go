@@ -136,15 +136,22 @@ func (b *Board) Validate() error {
 }
 
 func (p *Panel) validate(i int) error {
+	// An image is optional everywhere except a poster, but wherever it
+	// appears it must be something the page can inline — the board never
+	// fetches at paint time, whichever panel the image is on.
+	if p.Image != "" && !strings.HasPrefix(p.Image, AssetRef) &&
+		!strings.HasPrefix(p.Image, "data:image/") {
+		return fmt.Errorf("%w: panel %d image must be %q plus an uploaded asset key, "+
+			"or a data:image/ URI", ErrPayloadInvalid, i+1, AssetRef)
+	}
 	switch p.Kind {
 	case PanelAgenda:
 		if len(p.Events) == 0 {
 			return fmt.Errorf("%w: agenda panel %d has no events", ErrPayloadInvalid, i+1)
 		}
 	case PanelPoster:
-		if !strings.HasPrefix(p.Image, "data:image/") {
-			return fmt.Errorf("%w: poster panel %d needs a data:image/ URI "+
-				"(the page must not fetch anything at paint time)", ErrPayloadInvalid, i+1)
+		if p.Image == "" {
+			return fmt.Errorf("%w: poster panel %d has no image", ErrPayloadInvalid, i+1)
 		}
 	case PanelCTA:
 		if strings.TrimSpace(p.Headline) == "" {

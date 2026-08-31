@@ -28,6 +28,10 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 	switch name {
 	case "set_menu_board":
 		return mcpSetBoard(pool, a)
+	case "set_menu_asset":
+		return mcpSetAsset(pool, a)
+	case "set_menu_source":
+		return mcpSetSource(pool, a)
 	case "get_menu_board":
 		return mcpGetBoard(pool, a)
 	default:
@@ -46,6 +50,34 @@ func mcpSetBoard(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
 			Payload: req.GetString("payload", ""),
 		}
 		msg, err := saveBoard(ctx, pool, a, caller.TenantID, args)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(msg), nil
+	})
+}
+
+func mcpSetAsset(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if a.svc == nil {
+			return mcp.NewToolResultError("menu app is not configured"), nil
+		}
+		args := setAssetArgs{Key: req.GetString("key", ""), URL: req.GetString("url", "")}
+		msg, err := saveAsset(ctx, pool, a.fetcher, caller.TenantID, args)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(msg), nil
+	})
+}
+
+func mcpSetSource(pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFunc {
+	return mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {
+		if a.svc == nil {
+			return mcp.NewToolResultError("menu app is not configured"), nil
+		}
+		args := setSourceArgs{BoardID: req.GetString("board_id", ""), Key: req.GetString("key", "")}
+		msg, err := applySource(ctx, pool, a, caller.TenantID, args)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

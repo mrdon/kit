@@ -7,7 +7,7 @@
 <style>{{ .CSS }}</style>
 </head>
 <body>
-<div id="fit">
+<div id="fit" data-version="{{ .Version }}">
 <div class="board">
 
   <header class="head">
@@ -50,7 +50,7 @@
 
     <div class="rail" id="rail">
       {{- range $i, $p := .Panels }}
-      <section class="panel{{ if eq $i 0 }} is-on{{ end }}">
+      <section class="panel{{ if eq $i 0 }} is-on{{ end }}{{ with $p.PhotoClass }} panel-photo {{ . }}{{ end }}">
         <p class="panel-label">{{ $p.Label }}</p>
         {{- if eq $p.Kind "agenda" }}
         <ul class="ev-list">
@@ -85,6 +85,7 @@
 <script>
 (function () {
   var DWELL = 14000;
+  var VERSION_POLL = 30000;
 
   /* Scale the fixed stage to whatever we are being shown on. */
   var fit = document.getElementById('fit');
@@ -97,14 +98,40 @@
   window.addEventListener('resize', scale);
   scale();
 
-  /* Shrink any beer name too wide for its column. One long name should not
-     set the size for all of them. */
+  /* Two passes, in order, because they solve different problems.
+
+     Height first: the tap list is pulled from Untappd, so the number of beers
+     and the way they divide into sections is not ours to choose. Shrink the
+     whole list until the longest column fits its box — one size for every row,
+     so the columns still read as one list.
+
+     Then width: a single long name should not set the size for all seventeen,
+     so anything still too wide for its own column shrinks on its own. */
+  var NAME_MAX = 46, NAME_MIN = 24;
+
+  function fitColumnHeight() {
+    var taps = document.querySelector('.taps');
+    if (!taps) return NAME_MAX;
+    var cols = taps.querySelectorAll('.tapcol');
+    var size = NAME_MAX;
+    for (; size > NAME_MIN; size -= 1) {
+      taps.style.setProperty('--name-size', size + 'px');
+      var overflows = false;
+      for (var i = 0; i < cols.length; i++) {
+        if (cols[i].scrollHeight > cols[i].clientHeight + 1) { overflows = true; break; }
+      }
+      if (!overflows) break;
+    }
+    return size;
+  }
+
   function fitNames() {
+    var base = fitColumnHeight();
     var names = document.querySelectorAll('[data-fit]');
     for (var i = 0; i < names.length; i++) {
-      var el = names[i], size = 46;
-      el.style.fontSize = size + 'px';
-      while (el.scrollWidth > el.clientWidth && size > 26) {
+      var el = names[i], size = base;
+      el.style.fontSize = '';
+      while (el.scrollWidth > el.clientWidth && size > NAME_MIN) {
         size -= 1;
         el.style.fontSize = size + 'px';
       }
@@ -130,10 +157,49 @@
   tick();
   setInterval(tick, 20000);
 
+  /* Notice a new tap list.
+     The server syncs from Untappd every minute, but a screen that loaded once
+     would keep showing the list it booted with. So poll a few bytes and
+     re-fetch the page only when the stamp moves.
+
+     Swap the board's markup rather than reloading: a reload on this hardware
+     is a visible white flash and it restarts the panel rotation mid-cycle. */
+  var stage = document.getElementById('fit');
+  function reloadIfStale() {
+    var url = location.pathname.replace(/\/$/, '') + '/version';
+    if (!/\/menu\//.test(location.pathname)) {
+      url = location.pathname.replace(/\/menu$/, '/menu.version');
+    }
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (v) {
+        if (!v || v === stage.getAttribute('data-version')) return;
+        return fetch(location.href, { cache: 'no-store' })
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var next = doc.getElementById('fit');
+            if (!next) { location.reload(); return; }
+            stage.innerHTML = next.innerHTML;
+            stage.setAttribute('data-version', next.getAttribute('data-version'));
+            /* The new markup has no sized names, no clock and no rotation. */
+            fitNames();
+            tick();
+            startRotation();
+          });
+      })
+      .catch(function () { /* a failed check must never blank the screen */ });
+  }
+  setInterval(reloadIfStale, VERSION_POLL);
+
   /* Rotate the side panel. */
+  var rotationTimer = null;
+  function startRotation() {
   var panels = document.querySelectorAll('.panel');
   var ticks = document.getElementById('ticks');
+  if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
   if (panels.length > 1) {
+    ticks.innerHTML = '';
     for (var j = 0; j < panels.length; j++) {
       var t = document.createElement('div');
       t.className = 'tick';
@@ -155,13 +221,15 @@
     }
     paintTicks();
 
-    setInterval(function () {
+    rotationTimer = setInterval(function () {
       panels[at].classList.remove('is-on');
       at = (at + 1) % panels.length;
       panels[at].classList.add('is-on');
       paintTicks();
     }, DWELL);
   }
+  }
+  startRotation();
 })();
 </script>
 </body>

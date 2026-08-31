@@ -1843,3 +1843,22 @@ h2.view-title:hover {
   font-size: 0.75rem;
   color: var(--muted);
 }
+
+/* The kiosk address, shown as a real field so it can always be selected and
+   copied by hand — the Copy button is a convenience, not the only route. */
+.menu-address {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.menu-address input {
+  font-family: var(--mono, ui-monospace, Menlo, monospace);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-alt, #f4f4f2);
+  color: inherit;
+  width: 100%;
+  max-width: 34rem;
+}

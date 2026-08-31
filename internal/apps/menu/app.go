@@ -10,6 +10,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/web"
 )
 
 // AppName is the registry identifier, used for enablement and the URL prefix.
@@ -27,6 +28,7 @@ type App struct {
 	pool    *pgxpool.Pool
 	svc     *Service
 	signer  *auth.SessionSigner
+	fetcher *web.Fetcher
 	baseURL string
 }
 
@@ -39,11 +41,12 @@ func (a *App) Init(pool *pgxpool.Pool) {
 // Configure wires the console session signer and the external base URL used
 // to render a board's copyable public link — the string an admin pastes into
 // a kiosk board.
-func Configure(signer *auth.SessionSigner, baseURL string) {
+func Configure(signer *auth.SessionSigner, fetcher *web.Fetcher, baseURL string) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
+	instance.fetcher = fetcher
 	instance.baseURL = baseURL
 }
 

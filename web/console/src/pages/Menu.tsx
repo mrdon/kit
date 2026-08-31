@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type MenuBoard } from '../api';
 import { useSetChatContext } from '../chatContext';
@@ -13,6 +13,7 @@ export default function Menu() {
   const [boards, setBoards] = useState<MenuBoard[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const fields = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     api
@@ -21,13 +22,19 @@ export default function Menu() {
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
 
+  // The address is shown in a real text field, and copying falls back to
+  // selecting it. navigator.clipboard is not always available — an extension
+  // can block it, and it needs a secure context — and when it fails the
+  // address must still be gettable rather than the button just not working.
   function copy(b: MenuBoard) {
+    const field = fields.current[b.key];
+    field?.select();
     navigator.clipboard?.writeText(b.public_url).then(
       () => {
         setCopied(b.key);
         setTimeout(() => setCopied(null), 2000);
       },
-      () => setErr('Could not copy — select the address and copy it by hand.'),
+      () => setErr('Copying was blocked. The address is selected — press ⌘C.'),
     );
   }
 
@@ -55,9 +62,18 @@ export default function Menu() {
           <article key={b.key} className="card">
             <div className="card-main">
               <span className="card-title">{b.name}</span>
-              <span className="card-desc">
-                Screen address: <code>{b.public_url}</code>
-              </span>
+              <label className="card-desc menu-address">
+                Screen address
+                <input
+                  ref={(el) => {
+                    fields.current[b.key] = el;
+                  }}
+                  readOnly
+                  value={b.public_url}
+                  onFocus={(e) => e.currentTarget.select()}
+                  spellCheck={false}
+                />
+              </label>
               <span className="card-desc">
                 {b.error ? (
                   <em className="error-text">Will not render: {b.error}</em>

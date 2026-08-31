@@ -2,6 +2,7 @@ package menu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/web"
 )
 
 // toolMetas is the shared ToolMeta list for the agent + MCP surfaces.
@@ -35,6 +37,35 @@ func toolMetas() []services.ToolMeta {
 			}, "payload"),
 		},
 		{
+			Name: "set_menu_asset",
+			Description: "Store an image the menu can show, by giving Kit a URL to fetch it from. " +
+				"Kit downloads and keeps the bytes, so the board page stays self-contained and the " +
+				"image does not have to travel inside every tap-list update. Reference it from a " +
+				"poster panel as \"asset:<key>\". Re-run with the same key to replace it.",
+			AdminOnly: true,
+			Schema: services.PropsReq(map[string]any{
+				"key": services.Field("string",
+					"Short name to reference this image by, e.g. 'anniversary'."),
+				"url": services.Field("string",
+					"Public https URL of the image. Kit fetches it once; the page never fetches it."),
+			}, "key", "url"),
+		},
+		{
+			Name: "set_menu_source",
+			Description: "Point the menu at an Untappd digital board so Kit pulls the tap list " +
+				"automatically, every minute. Staff keep curating in Untappd exactly as they do " +
+				"now; the board here follows. Pass board_id from the Untappd board URL " +
+				"(business.untappd.com/boards/<id>). Pass an empty board_id to stop syncing and " +
+				"go back to a hand-set tap list.",
+			AdminOnly: true,
+			Schema: services.Props(map[string]any{
+				"board_id": services.Field("string",
+					"Untappd digital board id, e.g. '22128'. Empty to stop syncing."),
+				"key": services.Field("string",
+					"Only for an additional board separate from the workspace menu."),
+			}),
+		},
+		{
 			Name: "get_menu_board",
 			Description: "Show the workspace menu's public address and when its tap list was last " +
 				"changed, plus any additional boards. Pass key to show just one.",
@@ -56,6 +87,73 @@ type setBoardArgs struct {
 // getBoardArgs is the shared input shape for get_menu_board.
 type getBoardArgs struct {
 	Key string `json:"key"`
+}
+
+// setSourceArgs is the shared input shape for set_menu_source.
+type setSourceArgs struct {
+	BoardID string `json:"board_id"`
+	Key     string `json:"key"`
+}
+
+// applySource points a board at Untappd and pulls once, so configuring it is
+// also the test that it works — a wrong board id should fail here, in front of
+// whoever typed it, rather than an hour later in a scheduled job's last_error.
+func applySource(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.UUID, args setSourceArgs) (string, error) {
+	boardID := strings.TrimSpace(args.BoardID)
+	kind := SourceUntappd
+	if boardID == "" {
+		kind = ""
+	}
+	row, res, err := a.SetSource(ctx, tenantID, args.Key, kind, boardID)
+	if err != nil {
+		return "", err
+	}
+	url, err := a.publicURL(ctx, pool, tenantID, row.Key)
+	if err != nil {
+		return "", err
+	}
+	if kind == "" {
+		return fmt.Sprintf("Stopped syncing %q. Its tap list is now whatever was last set.", row.Name), nil
+	}
+	if res.Err != nil {
+		return "", fmt.Errorf("board saved, but the first pull failed: %w", res.Err)
+	}
+	return fmt.Sprintf("Now following Untappd board %s — pulled %d taps.\n\nShowing at: %s\n\n"+
+		"Kit re-checks every minute and updates the screen when the tap list changes.",
+		boardID, res.Taps, url), nil
+}
+
+// setAssetArgs is the shared input shape for set_menu_asset.
+type setAssetArgs struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
+}
+
+// saveAsset fetches an image and stores it. Kit does the fetching rather than
+// accepting bytes: an image is tens of kilobytes, and pushing that through a
+// tool call every time is the cost this whole table exists to avoid.
+//
+// The fetch goes through web.Fetcher so it inherits the SSRF protection there
+// -- a URL supplied by a caller must not be able to make Kit read its own
+// private network.
+func saveAsset(ctx context.Context, pool *pgxpool.Pool, f *web.Fetcher, tenantID uuid.UUID, args setAssetArgs) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(args.Key))
+	if !keyPattern.MatchString(key) {
+		return "", ErrKeyInvalid
+	}
+	if f == nil {
+		return "", errors.New("this surface cannot fetch images")
+	}
+	data, mime, err := f.FetchImage(ctx, strings.TrimSpace(args.URL))
+	if err != nil {
+		return "", err
+	}
+	asset := &Asset{Key: key, Mime: mime, Bytes: data, SourceURL: strings.TrimSpace(args.URL)}
+	if err := UpsertAsset(ctx, pool, tenantID, asset); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Stored %q — %s, %d KB.\n\nUse it from a poster panel as %q.",
+		key, mime, len(data)/1024, AssetRef+key), nil
 }
 
 // saveBoard is the one code path both surfaces call, so the agent and MCP
@@ -102,12 +200,32 @@ func listBoards(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.U
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&b, "%s\n  %s\n  tap list set %s\n",
+		fmt.Fprintf(&b, "%s\n  %s\n  tap list changed %s\n",
 			row.Name, url, row.UpdatedAt.Format("2 Jan 2006 15:04 MST"))
+		if row.SourceKind != "" {
+			fmt.Fprintf(&b, "  following Untappd board %s", row.SourceID)
+			if row.SyncedAt != nil {
+				fmt.Fprintf(&b, ", last checked %s", row.SyncedAt.Format("15:04:05 MST"))
+			}
+			b.WriteString("\n")
+		}
+		if row.SyncError != "" {
+			fmt.Fprintf(&b, "  SYNC FAILING: %s\n", row.SyncError)
+		}
 		if board, err := ParseBoard(row.Payload); err == nil {
 			fmt.Fprintf(&b, "  %d taps, %d panels\n", len(board.Taps), len(board.Panels))
 		} else {
 			fmt.Fprintf(&b, "  WILL NOT RENDER: %s\n", err)
+		}
+	}
+	assets, err := ListAssetKeys(ctx, a.pool, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if len(assets) > 0 {
+		b.WriteString("\nStored images:\n")
+		for _, as := range assets {
+			fmt.Fprintf(&b, "  %s%s — %s, %d KB\n", AssetRef, as.Key, as.Mime, as.Size/1024)
 		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil

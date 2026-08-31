@@ -2,8 +2,10 @@ package menu
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
@@ -23,6 +25,52 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	// so it can be pasted onto a screen once and never revisited.
 	mux.Handle("GET /{slug}/menu", tenantMW(http.HandlerFunc(a.handleBoard)))
 	mux.Handle("GET /{slug}/menu/{key}", tenantMW(http.HandlerFunc(a.handleBoard)))
+	// A few bytes the page polls to decide whether it is out of date. Without
+	// it a screen that loaded once would show that tap list until someone
+	// power-cycled the TV, however often the server synced.
+	mux.Handle("GET /{slug}/menu/{key}/version", tenantMW(http.HandlerFunc(a.handleVersion)))
+	mux.Handle("GET /{slug}/menu.version", tenantMW(http.HandlerFunc(a.handleVersion)))
+}
+
+// handleVersion answers with the board's current version stamp.
+//
+// Deliberately tiny and separate from the page: re-fetching 150KB every
+// thirty seconds to discover nothing changed is the kind of thing that is
+// invisible in testing and obvious on a metered connection.
+func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	if tenant == nil {
+		http.NotFound(w, r)
+		return
+	}
+	key := r.PathValue("key")
+	if key == "" {
+		key = DefaultKey
+	}
+	version := "empty"
+	if row, err := a.svc.Get(r.Context(), tenant.ID, key); err == nil {
+		// The screen polling this is what drives the pull. Doing it here
+		// rather than only on render means the expensive check happens on a
+		// few-byte request, and the page itself almost always finds the tap
+		// list already fresh.
+		version = boardVersion(a.EnsureFresh(r.Context(), tenant.ID, row))
+	} else if !errors.Is(err, ErrNotFound) {
+		slog.Error("reading menu version", "tenant_id", tenant.ID, "key", key, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	if _, err := io.WriteString(w, version); err != nil {
+		slog.Warn("writing menu version", "error", err)
+	}
+}
+
+// boardVersion is what the page compares against. updated_at moves only when
+// the tap list actually changes -- a sync that finds nothing new touches
+// synced_at instead -- so a quiet board never reloads a screen.
+func boardVersion(row *BoardRow) string {
+	return strconv.FormatInt(row.UpdatedAt.UnixNano(), 36)
 }
 
 // handleBoard renders a menu board for a screen.
@@ -60,10 +108,14 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ask upstream before parsing: the refresh replaces the payload, so
+	// parsing first would be work thrown away on every stale hit.
+	row = a.EnsureFresh(r.Context(), tenant.ID, row)
+
 	board, err := ParseBoard(row.Payload)
 	if err != nil {
 		// A stored board that no longer parses means the schema moved under a
-		// payload that was valid when it was pushed. Log loudly and 500: a
+		// payload that was valid when it was written. Log loudly and 500: a
 		// half-rendered tap list on a wall is worse than a blank screen,
 		// because staff will pour from it.
 		slog.Error("stored menu board failed to parse",
@@ -72,7 +124,14 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := Render(board)
+	assets, err := LoadAssets(r.Context(), a.pool, tenant.ID)
+	if err != nil {
+		slog.Error("loading menu assets", "tenant_id", tenant.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	html, err := Render(board, assets, boardVersion(row))
 	if err != nil {
 		slog.Error("rendering menu board", "tenant_id", tenant.ID, "key", key, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
