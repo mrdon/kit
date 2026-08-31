@@ -242,7 +242,7 @@ func TestRenderTopperPDF(t *testing.T) {
 	cases := map[string]Topper{
 		"typical": base,
 		"empty":   {Heading: "This week at Gravity Brewing", DateRange: "August 2-8"},
-		"full":    {Heading: base.Heading, DateRange: base.DateRange, Rows: append(append([]TopperRow{}, base.Rows...), base.Rows...)[:topperMaxRows], More: 3},
+		"full":    {Heading: base.Heading, DateRange: base.DateRange, Rows: append(append([]TopperRow{}, base.Rows...), base.Rows[:2]...)},
 	}
 	for name, topper := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -257,5 +257,148 @@ func TestRenderTopperPDF(t *testing.T) {
 				t.Fatalf("suspiciously small PDF: %d bytes", buf.Len())
 			}
 		})
+	}
+}
+
+// A day with two events is one band, not two stacked bands wearing the same
+// day label. This is the case the real calendar already has: Bike Night and
+// the Re-Launch Party both fall on Saturday.
+func TestTopperGroupsEventsByDay(t *testing.T) {
+	loc := denver(t)
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, loc)
+	mk := func(title string, day, hour int, p Prominence) Event {
+		return Event{
+			Title:      title,
+			StartsAt:   start.AddDate(0, 0, day).Add(time.Duration(hour) * time.Hour),
+			Timezone:   "America/Denver",
+			Status:     StatusPublished,
+			Visibility: VisibilityPublic,
+			Prominence: p,
+		}
+	}
+	events := []Event{
+		mk("Bike Night", 6, 18, ProminenceNormal),
+		mk("Re-Launch Party", 6, 14, ProminenceNormal),
+	}
+
+	rows := topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want one band for the day", len(rows))
+	}
+	// Equal prominence, so the earlier door time headlines.
+	if rows[0].Title != "Re-Launch Party" {
+		t.Fatalf("headliner = %q, want the earlier event", rows[0].Title)
+	}
+	if got := rows[0].Bullets; len(got) != 1 || got[0] != "Also: Bike Night · 6pm" {
+		t.Fatalf("bullets = %q, want the other event named with its time", got)
+	}
+}
+
+// The whole reason prominence exists: a standing pizza offer must not take the
+// headline off a real event, whatever time either starts.
+func TestTopperBackgroundNeverHeadlinesOverARealEvent(t *testing.T) {
+	loc := denver(t)
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, loc)
+	mk := func(title string, hour int, p Prominence) Event {
+		return Event{
+			Title:      title,
+			StartsAt:   start.AddDate(0, 0, 1).Add(time.Duration(hour) * time.Hour),
+			Timezone:   "America/Denver",
+			Status:     StatusPublished,
+			Visibility: VisibilityPublic,
+			Prominence: p,
+		}
+	}
+	// The offer starts earlier, so time alone would put it on top.
+	events := []Event{
+		mk("Half-price pizza", 16, ProminenceBackground),
+		mk("Bike Night", 18, ProminenceNormal),
+	}
+
+	rows := topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	if len(rows) != 1 || rows[0].Title != "Bike Night" {
+		t.Fatalf("headliner = %+v, want Bike Night", rows)
+	}
+	if got := rows[0].Bullets; len(got) != 1 || got[0] != "Also: Half-price pizza · 4pm" {
+		t.Fatalf("bullets = %q, want the offer demoted to a bullet", got)
+	}
+}
+
+// Featured outranks a normal event even when the normal one starts first.
+func TestTopperFeaturedHeadlinesItsDay(t *testing.T) {
+	loc := denver(t)
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, loc)
+	mk := func(title string, hour int, p Prominence) Event {
+		return Event{
+			Title:      title,
+			StartsAt:   start.AddDate(0, 0, 5).Add(time.Duration(hour) * time.Hour),
+			Timezone:   "America/Denver",
+			Status:     StatusPublished,
+			Visibility: VisibilityPublic,
+			Prominence: p,
+		}
+	}
+	events := []Event{
+		mk("Bike Night", 15, ProminenceNormal),
+		mk("Anniversary Party", 19, ProminenceFeatured),
+	}
+
+	rows := topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	if len(rows) != 1 || rows[0].Title != "Anniversary Party" {
+		t.Fatalf("headliner = %+v, want the featured event", rows)
+	}
+}
+
+// On a day with nothing else, a standing offer headlines by default rather
+// than by promotion -- it is what is on. This is the case the reference card
+// prints as MON / BOGO PIZZA.
+func TestTopperBackgroundHeadlinesAQuietDay(t *testing.T) {
+	loc := denver(t)
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, loc)
+	events := []Event{{
+		Title:      "Half-price pizza",
+		StartsAt:   start.AddDate(0, 0, 1).Add(16 * time.Hour),
+		Timezone:   "America/Denver",
+		Status:     StatusPublished,
+		Visibility: VisibilityPublic,
+		Prominence: ProminenceBackground,
+	}}
+
+	rows := topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	if len(rows) != 1 || rows[0].Title != "Half-price pizza" {
+		t.Fatalf("rows = %+v, want the offer headlining an otherwise empty day", rows)
+	}
+}
+
+func TestBandBullets(t *testing.T) {
+	own := []string{"first", "second", "third"}
+
+	// No support acts: the headliner keeps its own list.
+	if got := bandBullets(own, nil); strings.Join(got, "|") != "first|second|third" {
+		t.Fatalf("alone = %q", got)
+	}
+	// Two support acts squeeze the headliner's detail, never below one line,
+	// and reading order still puts the headliner's own bullets first.
+	got := bandBullets(own, []string{"Bike Night · 6pm", "Cask tapping · 7pm"})
+	if strings.Join(got, "|") != "first|second|Also: Bike Night · 6pm|Cask tapping · 7pm" {
+		t.Fatalf("with supports = %q", got)
+	}
+	// A very busy day names what fits and counts the rest rather than
+	// pretending the others are not happening.
+	got = bandBullets(own, []string{"A · 1pm", "B · 2pm", "C · 3pm", "D · 4pm", "E · 5pm"})
+	if strings.Join(got, "|") != "first|Also: A · 1pm|B · 2pm|+3 more" {
+		t.Fatalf("busy day = %q", got)
+	}
+}
+
+func TestBillingRankTreatsUnknownValuesAsNormal(t *testing.T) {
+	if billingRank(Prominence("wat")) != billingRank(ProminenceNormal) {
+		t.Fatal("an unknown prominence should behave like a normal event")
+	}
+	if billingRank(ProminenceFeatured) >= billingRank(ProminenceNormal) {
+		t.Fatal("featured must outrank normal")
+	}
+	if billingRank(ProminenceBackground) <= billingRank(ProminenceNormal) {
+		t.Fatal("background must rank below normal")
 	}
 }

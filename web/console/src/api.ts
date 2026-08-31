@@ -544,8 +544,10 @@ export interface EventRecord {
   venue: 'onsite' | 'offsite';
   space_impact: 'none' | 'partial';
   notify_food_partner: boolean;
-  // Editorial: the website leads with this one.
-  featured: boolean;
+  // Editorial prominence. 'featured' is what the website leads with;
+  // 'background' is a standing offer (a weekly pizza deal, happy hour) that
+  // never takes the headline off a real event on the same day.
+  prominence: 'featured' | 'normal' | 'background';
   price_cents?: number;
   currency: string;
   capacity?: number;
@@ -654,10 +656,20 @@ export interface EventsNoticeRun {
   at: string;
   ok: boolean;
   triggered_by: string;
-  sent: number;
-  skipped: number;
+  posted: boolean;
+  skipped: boolean;
+  mentions: number;
   unmapped: number;
   error?: string;
+}
+
+// A channel the notice could be posted to. bot_is_member matters: posting to
+// a channel Kit has not been invited to fails at 8am when nobody is watching.
+export interface EventsChannelOption {
+  id: string;
+  name: string;
+  bot_is_member: boolean;
+  is_private: boolean;
 }
 
 export interface EventsStaff {
@@ -666,23 +678,27 @@ export interface EventsStaff {
   staff: EventsStaffMember[] | null;
   slack_users: EventsSlackOption[] | null;
   mappings: EventsStaffMapping[] | null;
+  notice_channel_id: string;
+  channels: EventsChannelOption[] | null;
+  channels_error?: string;
   staff_error?: string;
   slack_error?: string;
   recent: EventsNoticeRun[] | null;
 }
 
-// One person's message for today, as it would be delivered.
-export interface EventsNoticePlan {
-  slack_user_id: string;
-  name: string;
-  body: string;
+// Today's post: the channel headline and the detail that threads under it.
+export interface EventsDayNotice {
+  headline: string;
+  detail: string;
+  mentions: number;
+  unmapped: number;
 }
 
 // Every field optional: the console PATCHes only what changed, so an edit made
 // here cannot silently revert one made in chat against the same event.
 export interface EventInput {
   title?: string;
-  featured?: boolean;
+  prominence?: 'featured' | 'normal' | 'background';
   summary?: string;
   description?: string;
   prep_notes?: string;
@@ -858,8 +874,12 @@ export const api = {
     square_team_member_id: string;
     slack_user_id: string;
   }) => apiPut<EventsStaff>('/events/staff', body),
+  // An empty channel_id turns notices off. Returns the whole page payload so
+  // the picker cannot show a stale selection after a change.
+  saveEventsNoticeChannel: (body: { channel_id: string }) =>
+    apiPut<EventsStaff>('/events/staff/channel', body),
   previewEventsNotices: () =>
-    apiPost<{ plans: EventsNoticePlan[] | null; message: string }>(
+    apiPost<{ notice: EventsDayNotice | null; message: string }>(
       '/events/staff/preview',
     ),
   sendEventsNotices: () =>

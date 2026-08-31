@@ -50,9 +50,10 @@ type Event struct {
 	SpaceImpact SpaceImpact `json:"space_impact"`
 
 	NotifyFoodPartner bool `json:"notify_food_partner"`
-	// Featured marks the event the website should lead with. Editorial rather
-	// than operational -- see migration 072.
-	Featured bool `json:"featured"`
+	// Prominence is the editorial axis -- featured / normal / background. See
+	// migration 079, and Prominence in visibility.go for why the default
+	// rather than the extremes is the interesting value.
+	Prominence Prominence `json:"prominence"`
 
 	PriceCents         *int64 `json:"price_cents,omitempty"`
 	Currency           string `json:"currency"`
@@ -139,7 +140,7 @@ const eventColumns = `
 	id, tenant_id, title, slug, summary, description, prep_notes,
 	starts_at, ends_at, all_day, timezone, rrule, rdates,
 	location, hero_attachment_id,
-	status, visibility, venue, space_impact, notify_food_partner, featured,
+	status, visibility, venue, space_impact, notify_food_partner, prominence,
 	price_cents, currency, capacity, expected_attendance,
 	registration_url, square_variation_id,
 	gcal_event_id, gcal_calendar_id, gcal_content_hash,
@@ -152,7 +153,7 @@ func scanEvent(row pgx.Row) (*Event, error) {
 		&e.ID, &e.TenantID, &e.Title, &e.Slug, &e.Summary, &e.Description, &e.PrepNotes,
 		&e.StartsAt, &e.EndsAt, &e.AllDay, &e.Timezone, &rrule, &e.RDates,
 		&e.Location, &e.HeroAttachmentID,
-		&e.Status, &e.Visibility, &e.Venue, &e.SpaceImpact, &e.NotifyFoodPartner, &e.Featured,
+		&e.Status, &e.Visibility, &e.Venue, &e.SpaceImpact, &e.NotifyFoodPartner, &e.Prominence,
 		&e.PriceCents, &e.Currency, &e.Capacity, &e.ExpectedAttendance,
 		&registrationURL, &squareVariationID,
 		&e.GCalEventID, &e.GCalCalendarID, &e.GCalContentHash,
@@ -199,7 +200,7 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			tenant_id, title, slug, summary, description, prep_notes,
 			starts_at, ends_at, all_day, timezone, rrule, rdates,
 			location, hero_attachment_id,
-			status, visibility, venue, space_impact, notify_food_partner, featured,
+			status, visibility, venue, space_impact, notify_food_partner, prominence,
 			price_cents, currency, capacity, expected_attendance,
 			registration_url, square_variation_id, created_by
 		) VALUES (
@@ -214,7 +215,7 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		e.TenantID, e.Title, e.Slug, e.Summary, e.Description, e.PrepNotes,
 		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule), emptyIfNil(e.RDates),
 		e.Location, e.HeroAttachmentID,
-		e.Status, e.Visibility, e.Venue, e.SpaceImpact, e.NotifyFoodPartner, e.Featured,
+		e.Status, e.Visibility, e.Venue, e.SpaceImpact, e.NotifyFoodPartner, e.Prominence,
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID), e.CreatedBy,
 	)
@@ -236,7 +237,7 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			rdates = $13,
 			location = $14, hero_attachment_id = $15,
 			status = $16, visibility = $17, venue = $18, space_impact = $19,
-			notify_food_partner = $20, featured = $21,
+			notify_food_partner = $20, prominence = $21,
 			price_cents = $22, currency = $23, capacity = $24, expected_attendance = $25,
 			registration_url = $26, square_variation_id = $27,
 			updated_at = now()
@@ -248,7 +249,7 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		emptyIfNil(e.RDates),
 		e.Location, e.HeroAttachmentID,
 		e.Status, e.Visibility, e.Venue, e.SpaceImpact,
-		e.NotifyFoodPartner, e.Featured,
+		e.NotifyFoodPartner, e.Prominence,
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID),
 	)

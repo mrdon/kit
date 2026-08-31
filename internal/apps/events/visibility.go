@@ -1,5 +1,7 @@
 package events
 
+import "strings"
+
 // This file is small and separate on purpose. IsPubliclyVisible is the single
 // gate between Gravity's private bookings and the open web; keeping it alone
 // in a 60-line file means it can be audited at a glance and its truth table
@@ -55,6 +57,39 @@ const (
 	SpaceImpactPartial SpaceImpact = "partial"
 )
 
+// Prominence is the editorial axis: how loudly does this event speak?
+//
+// The default is the load-bearing part. A normal public event is ALREADY
+// headline-worthy on its own day -- the bike night headlines Friday without
+// anyone marking it as anything. Featured is a superlative above that, for the
+// one thing the website should lead with; background is below it, for a
+// standing offer that must never take the headline off a real event.
+//
+// So callers opt DOWN or UP, never into the middle, which is what keeps this
+// from becoming the priority number migration 072 rightly refused.
+type Prominence string
+
+const (
+	// ProminenceFeatured is migration 072's `featured`, unchanged: the website
+	// leads with the next one of these. Several may be marked at once.
+	ProminenceFeatured Prominence = "featured"
+	// ProminenceNormal is a real event, and the default.
+	ProminenceNormal Prominence = "normal"
+	// ProminenceBackground is a standing offer rather than a happening -- a
+	// weekly pizza deal, happy hour, kids eat free. Real, public, worth
+	// printing, but never the headline of a day that has an actual event on
+	// it. On a day with nothing else, it headlines by default rather than by
+	// promotion, which is exactly right: it is what is on.
+	ProminenceBackground Prominence = "background"
+)
+
+// IsFeatured is what the website's feed asks. It exists so the wire contract
+// keeps its boolean shape while the database holds three values -- renaming
+// the feed's field would break a build we do not own.
+func (e *Event) IsFeatured() bool {
+	return e != nil && e.Prominence == ProminenceFeatured
+}
+
 // IsPubliclyVisible reports whether this event may appear on the public feed
 // and, through it, the website.
 //
@@ -84,4 +119,33 @@ func ValidVenue(v Venue) bool {
 
 func ValidSpaceImpact(s SpaceImpact) bool {
 	return s == SpaceImpactNone || s == SpaceImpactPartial
+}
+
+func ValidProminence(p Prominence) bool {
+	return p == ProminenceFeatured || p == ProminenceNormal || p == ProminenceBackground
+}
+
+// ResolveProminence maps an API request's two spellings onto one value.
+//
+// `prominence` is the field; `featured` is the boolean that predates it
+// (migration 072) and that existing MCP clients, saved agent prompts and any
+// cached copy of the console still send. Accepting both costs one function and
+// means nothing that worked yesterday stops working today.
+//
+// prominence wins when both are set, because it is the more specific
+// statement. A `featured: false` is deliberately NOT read as "background" --
+// it only ever meant "not the website's lead", which is normal.
+func ResolveProminence(prominence *Prominence, featured *bool) *Prominence {
+	if prominence != nil {
+		p := Prominence(strings.ToLower(strings.TrimSpace(string(*prominence))))
+		return &p
+	}
+	if featured == nil {
+		return nil
+	}
+	p := ProminenceNormal
+	if *featured {
+		p = ProminenceFeatured
+	}
+	return &p
 }

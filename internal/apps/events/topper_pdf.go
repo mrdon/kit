@@ -182,14 +182,6 @@ func drawTopperFoot(pdf *fpdf.Fpdf, t Topper, x0 float64) float64 {
 		pdf.ImageOptions("topper-logo", x0+margin, baseline-9, 11, 11, false,
 			fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 	}
-	if t.More > 0 {
-		// Admit to anything that did not fit, so a week with nine events does
-		// not print as a week with seven.
-		pdf.SetFont(fontText, "", 10)
-		pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
-		centreText(pdf, x0, fmt.Sprintf("+%d more this week", t.More), top-1)
-	}
-
 	pdf.SetFont(fontText, "", 12)
 	if t.Site != "" {
 		pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])

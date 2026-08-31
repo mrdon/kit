@@ -54,9 +54,10 @@ type CreateParams struct {
 	RegistrationURL    string
 
 	NotifyFoodPartner *bool
-	// Featured marks the event the website leads with.
-	Featured  *bool
-	CreatedBy *uuid.UUID
+	// Prominence is featured / normal / background; nil means normal. See
+	// Prominence in visibility.go.
+	Prominence *Prominence
+	CreatedBy  *uuid.UUID
 }
 
 // Create inserts a draft event.
@@ -120,8 +121,9 @@ func (s *Service) Create(ctx context.Context, tenantID uuid.UUID, p CreateParams
 	}
 	applyDates(e, extra)
 
-	if p.Featured != nil {
-		e.Featured = *p.Featured
+	e.Prominence = ProminenceNormal
+	if p.Prominence != nil {
+		e.Prominence = *p.Prominence
 	}
 	if p.NotifyFoodPartner != nil {
 		e.NotifyFoodPartner = *p.NotifyFoodPartner
@@ -181,7 +183,7 @@ type UpdateParams struct {
 	RegistrationURL    *string
 
 	NotifyFoodPartner *bool
-	Featured          *bool
+	Prominence        *Prominence
 	// HeroAttachmentID sets the poster. ClearHero removes it -- a nil pointer
 	// means "leave alone", so removal needs its own flag.
 	HeroAttachmentID *uuid.UUID
@@ -223,8 +225,8 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	if p.NotifyFoodPartner != nil {
 		e.NotifyFoodPartner = *p.NotifyFoodPartner
 	}
-	if p.Featured != nil {
-		e.Featured = *p.Featured
+	if p.Prominence != nil {
+		e.Prominence = *p.Prominence
 	}
 	if p.ClearPrice {
 		e.PriceCents = nil

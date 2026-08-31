@@ -2,8 +2,10 @@ package events
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,10 +27,13 @@ import (
 // events reach it, decided by the same single predicate (IsPubliclyVisible)
 // every public surface asks.
 
-// topperMaxRows bounds one panel. Past this the bands are too short to read
-// from across a table, which defeats the object -- so the overflow is counted
-// in the footer rather than silently dropped.
-const topperMaxRows = 7
+// topperMaxBandBullets is what fits under a title once a band has been sized
+// for a seven-day week. Support acts and the headliner's own detail share it.
+const topperMaxBandBullets = 4
+
+// topperMaxSupports bounds how many other events one day lists before it stops
+// naming them individually and says "+N more" instead.
+const topperMaxSupports = 3
 
 // topperMaxBullets is what fits under a title at a readable size. Anything
 // longer is a description, and the website is where descriptions live.
@@ -57,9 +62,6 @@ type Topper struct {
 	Heading   string
 	DateRange string
 	Rows      []TopperRow
-	// More is the number of events in the week that did not fit, so the panel
-	// can admit to it instead of quietly implying the list is complete.
-	More      int
 	Site      string
 	Logo      []byte
 	WeekStart time.Time
@@ -104,23 +106,36 @@ func (a *App) buildTopper(ctx context.Context, tenant *models.Tenant, day time.T
 		Logo:      tenant.Icon192,
 		WeekStart: start,
 	}
-	if len(rows) > topperMaxRows {
-		out.More = len(rows) - topperMaxRows
-		rows = rows[:topperMaxRows]
-	}
 	out.Rows = a.attachPosters(ctx, tenant.ID, rows)
 	return out, nil
 }
 
-// topperRows expands every event into the occurrences that land inside the
-// week, one band each.
+// topperOccurrence is one event landing on one day, before the day's bands are
+// decided. Kept separate from TopperRow because several of these collapse into
+// a single row.
+type topperOccurrence struct {
+	at         time.Time
+	title      string
+	bullets    []string
+	timeLabel  string
+	prominence Prominence
+	posterID   *uuid.UUID
+}
+
+// topperRows builds one band PER DAY, not per occurrence.
 //
-// Expansion rather than a row-per-event is what makes a weekly series work:
+// A day with two events used to print two bands with the same day label
+// stacked on top of each other, which reads as a mistake rather than as a busy
+// Saturday. Grouping also bounds the card at seven bands whatever the week
+// does, so the bands stay tall enough to read from across a table instead of
+// being squeezed by an unusually full week.
+//
+// Expansion still happens first, and it is what makes a weekly series work:
 // trivia's starts_at is the week it began, so the band has to say the date it
-// happens THIS week. It also means a fortnightly event correctly produces no
-// band on its off week.
+// happens THIS week -- and a fortnightly event correctly produces no band at
+// all on its off week.
 func topperRows(events []Event, start, end time.Time, loc *time.Location) []TopperRow {
-	var rows []TopperRow
+	byDay := map[int][]topperOccurrence{}
 	for i := range events {
 		e := &events[i]
 		// Belt and braces, as in the feed: this is the predicate that decides
@@ -131,21 +146,119 @@ func topperRows(events []Event, start, end time.Time, loc *time.Location) []Topp
 		}
 		for _, occ := range e.Occurrences(start, end) {
 			at := occ.Start.In(loc)
-			row := TopperRow{
-				Day:     strings.ToUpper(at.Format("Mon")),
-				Title:   strings.TrimSpace(e.Title),
-				Bullets: topperBullets(e),
-				at:      at,
+			o := topperOccurrence{
+				at:         at,
+				title:      strings.TrimSpace(e.Title),
+				bullets:    topperBullets(e),
+				prominence: e.Prominence,
+				posterID:   e.HeroAttachmentID,
 			}
 			if !e.AllDay {
-				row.Time = topperTime(at)
+				o.timeLabel = topperTime(at)
 			}
-			row.posterID = e.HeroAttachmentID
-			rows = append(rows, row)
+			day := int(at.Sub(start) / (24 * time.Hour))
+			byDay[day] = append(byDay[day], o)
 		}
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].at.Before(rows[j].at) })
+
+	days := slices.Sorted(maps.Keys(byDay))
+	rows := make([]TopperRow, 0, len(days))
+	for _, day := range days {
+		rows = append(rows, topperDayRow(byDay[day]))
+	}
 	return rows
+}
+
+// topperDayRow turns everything on one day into a single band: a headliner,
+// and the rest folded into its bullets.
+func topperDayRow(occs []topperOccurrence) TopperRow {
+	slices.SortStableFunc(occs, compareBilling)
+	head := occs[0]
+
+	supports := make([]string, 0, len(occs)-1)
+	for _, o := range occs[1:] {
+		supports = append(supports, supportBullet(o))
+	}
+	return TopperRow{
+		Day:      strings.ToUpper(head.at.Format("Mon")),
+		Time:     head.timeLabel,
+		Title:    head.title,
+		Bullets:  bandBullets(head.bullets, supports),
+		posterID: head.posterID,
+		at:       head.at,
+	}
+}
+
+// bandBullets shares one band's bullet budget between the headliner's own
+// detail and the other events on the day.
+//
+// The support acts win. Knowing there is a second thing on tonight changes
+// whether someone comes in; a third bullet about the first thing does not. So
+// the headliner's list is trimmed to make room rather than the other way
+// round -- but never below one line, because a band with a title and no words
+// under it looks unfinished.
+//
+// Reading order still puts the headliner's own bullets first. Priority decides
+// what survives, not what goes where.
+func bandBullets(own, supports []string) []string {
+	if len(supports) == 0 {
+		return own
+	}
+	if len(supports) > topperMaxSupports {
+		// Name as many as fit and count the rest. Silently dropping them would
+		// print a quiet Saturday that is actually the busiest day of the week.
+		extra := len(supports) - (topperMaxSupports - 1)
+		supports = append(supports[:topperMaxSupports-1], fmt.Sprintf("+%d more", extra))
+	}
+	// "Also:" on the first one only. Without it a support act reads as one more
+	// detail about the headliner -- "BIKE NIGHT · 6PM" under RE-LAUNCH PARTY
+	// looks like part of the party. One word, and the band stops lying.
+	supports[0] = "Also: " + supports[0]
+
+	room := max(topperMaxBandBullets-len(supports), 1)
+	if len(own) > room {
+		own = own[:room]
+	}
+	return append(own, supports...)
+}
+
+// compareBilling decides who headlines the day.
+//
+// Prominence first, which is the whole point of the axis: a standing pizza
+// offer must never take the headline off a bike night, and the anniversary
+// party outranks both. Then the earlier door time, because on a day with two
+// equals the one that starts first is the one someone reading the card at
+// lunchtime can still make.
+func compareBilling(a, b topperOccurrence) int {
+	if r := billingRank(a.prominence) - billingRank(b.prominence); r != 0 {
+		return r
+	}
+	return a.at.Compare(b.at)
+}
+
+// billingRank orders the prominence values, lowest first. Unknown values sort
+// with normal rather than to an extreme: a value this code has not heard of
+// should behave like an ordinary event, not silently seize the headline or
+// vanish beneath one.
+func billingRank(p Prominence) int {
+	switch p {
+	case ProminenceFeatured:
+		return 0
+	case ProminenceBackground:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// supportBullet is how a second event on the same day reads: its name, then
+// its time. Short enough to sit among the headliner's own bullets without
+// looking like a different kind of thing.
+func supportBullet(o topperOccurrence) string {
+	if o.timeLabel == "" {
+		return o.title
+	}
+	return o.title + " · " + o.timeLabel
 }
 
 // topperBullets turns an event's prose into the two or three lines that fit

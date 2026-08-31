@@ -97,6 +97,23 @@ type eventInput struct {
 	ExpectedAttendance *int    `json:"expected_attendance"`
 	RegistrationURL    *string `json:"registration_url"`
 	NotifyFoodPartner  *bool   `json:"notify_food_partner"`
+	// Prominence is featured / normal / background. Featured is its boolean
+	// predecessor, still accepted -- an agent working from a saved prompt, or
+	// an MCP client written against the old schema, should not start failing.
+	// Note both were declared in the tool schema before this and neither was
+	// ever read, so "featured: true" from the agent silently did nothing.
+	Prominence *string `json:"prominence"`
+	Featured   *bool   `json:"featured"`
+}
+
+// prominenceFrom folds the tool input's two spellings into one value.
+func (in eventInput) prominenceFrom() *Prominence {
+	var p *Prominence
+	if in.Prominence != nil {
+		v := Prominence(strings.ToLower(strings.TrimSpace(*in.Prominence)))
+		p = &v
+	}
+	return ResolveProminence(p, in.Featured)
 }
 
 func coreCreate(ctx context.Context, caller *services.Caller, svc *Service, raw json.RawMessage) (string, error) {
@@ -125,6 +142,7 @@ func coreCreate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		ExpectedAttendance: in.ExpectedAttendance,
 		RegistrationURL:    deref(in.RegistrationURL),
 		NotifyFoodPartner:  in.NotifyFoodPartner,
+		Prominence:         in.prominenceFrom(),
 	}
 	if caller.UserID != uuid.Nil {
 		id := caller.UserID
@@ -159,6 +177,7 @@ func coreUpdate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		ExpectedAttendance: in.ExpectedAttendance,
 		RegistrationURL:    in.RegistrationURL,
 		NotifyFoodPartner:  in.NotifyFoodPartner,
+		Prominence:         in.prominenceFrom(),
 	}
 	if in.Visibility != nil {
 		v := Visibility(strings.ToLower(*in.Visibility))

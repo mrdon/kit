@@ -34,7 +34,7 @@ const EMPTY_FORM: EventInput = {
   repeat_rule: '',
   repeat_dates: [],
   registration_url: '',
-  featured: false,
+  prominence: 'normal',
 };
 
 // The API returns an instant in UTC; <input type="datetime-local"> holds a
@@ -424,7 +424,7 @@ function EventDrawer({
           space_impact: event.space_impact,
           expected_attendance: event.expected_attendance,
           registration_url: event.registration_url ?? '',
-          featured: event.featured,
+          prominence: event.prominence,
         }
       : (() => {
           const starts = defaultStart();
@@ -537,17 +537,26 @@ function EventDrawer({
             </span>
           </label>
 
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={form.featured ?? false}
-              onChange={(e) => set({ featured: e.target.checked })}
-            />
-            Featured
+          <label className="field">
+            <span>Prominence</span>
+            <select
+              value={form.prominence ?? 'normal'}
+              onChange={(e) =>
+                set({ prominence: e.target.value as EventInput['prominence'] })
+              }
+            >
+              <option value="featured">Featured — the website leads with it</option>
+              <option value="normal">Normal — a regular event</option>
+              <option value="background">Background — a standing offer</option>
+            </select>
           </label>
           <span className="field-note">
-            The website leads with the next featured event, so several can be
-            marked at once. With none marked it shows whatever is soonest.
+            Most events are Normal: they headline their own day on the printed
+            table topper. Featured is for the one the website should lead with —
+            several can be marked at once, and it shows the next one. Background
+            is for a standing offer like a weekly pizza deal or happy hour: it
+            still gets printed and published, but never takes the headline off a
+            real event on the same day.
           </span>
 
           <label className="field">

@@ -78,7 +78,17 @@ type FeedItem struct {
 
 	// Featured asks the site to lead with this one. The site decides how to
 	// use it -- Kit only says which event matters most.
+	//
+	// Kept as a boolean even though the database now holds three values
+	// (migration 079). This is a contract someone else's build depends on;
+	// widening it here would break them for no gain, since "lead with this" is
+	// still exactly one question. Prominence carries the rest.
 	Featured bool `json:"featured,omitempty"`
+	// Prominence is the full editorial axis: "featured", "normal" or
+	// "background". Additive and optional, so a site that ignores it behaves
+	// exactly as before -- but a site that reads it can stop giving a standing
+	// pizza offer the same full event page as the anniversary party.
+	Prominence string `json:"prominence,omitempty"`
 
 	// ImageURL is the event's poster, absent when none was uploaded. The site
 	// falls back to its own artwork rather than showing a gap.
@@ -112,7 +122,8 @@ func feedItem(e *Event, s Settings) FeedItem {
 		Timezone:        e.Timezone,
 		Recurrence:      e.RRule,
 		Upcoming:        feedUpcoming(e),
-		Featured:        e.Featured,
+		Featured:        e.IsFeatured(),
+		Prominence:      string(e.Prominence),
 		Location:        e.Location,
 		CanonicalURL:    s.CanonicalURL(e.Slug),
 		PriceCents:      e.PriceCents,

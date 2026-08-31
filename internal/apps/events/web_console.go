@@ -147,8 +147,12 @@ type eventBody struct {
 	ExpectedAttendance *int    `json:"expected_attendance"`
 	RegistrationURL    *string `json:"registration_url"`
 	NotifyFoodPartner  *bool   `json:"notify_food_partner"`
-	Featured           *bool   `json:"featured"`
-	Slug               *string `json:"slug"`
+	// Prominence is the current field; Featured is its boolean predecessor,
+	// still accepted so a console tab left open across the deploy keeps
+	// working. See ResolveProminence.
+	Prominence *Prominence `json:"prominence"`
+	Featured   *bool       `json:"featured"`
+	Slug       *string     `json:"slug"`
 }
 
 func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +191,7 @@ func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ExpectedAttendance: body.ExpectedAttendance,
 		RegistrationURL:    derefOr(body.RegistrationURL),
 		NotifyFoodPartner:  body.NotifyFoodPartner,
-		Featured:           body.Featured,
+		Prominence:         ResolveProminence(body.Prominence, body.Featured),
 	}
 	if caller.UserID != uuid.Nil {
 		id := caller.UserID
@@ -223,7 +227,7 @@ func (a *App) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		ExpectedAttendance: body.ExpectedAttendance,
 		RegistrationURL:    body.RegistrationURL,
 		NotifyFoodPartner:  body.NotifyFoodPartner,
-		Featured:           body.Featured,
+		Prominence:         ResolveProminence(body.Prominence, body.Featured),
 		Slug:               body.Slug,
 	}
 	if body.Visibility != nil {
@@ -306,6 +310,7 @@ func (a *App) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"statuses":      []Status{StatusDraft, StatusPublished, StatusCancelled},
 		"visibilities":  []Visibility{VisibilityPrivate, VisibilityPublic},
 		"venues":        []Venue{VenueOnsite, VenueOffsite},
+		"prominences":   []Prominence{ProminenceFeatured, ProminenceNormal, ProminenceBackground},
 		"space_impacts": []SpaceImpact{SpaceImpactNone, SpaceImpactPartial},
 		"settings":      publicSettings(settings),
 	})
