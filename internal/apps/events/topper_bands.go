@@ -59,7 +59,7 @@ func drawBands(pdf *fpdf.Fpdf, rows []TopperRow, x0, top, height float64) {
 
 // uniformBulletSize is the largest size every band can carry.
 func uniformBulletSize(pdf *fpdf.Fpdf, rows []TopperRow, x, w, h float64) float64 {
-	smallest := max(h*0.40, 7)
+	smallest := maxBulletSize(h)
 	for _, row := range rows {
 		if len(row.Bullets) == 0 {
 			continue
@@ -150,11 +150,8 @@ func drawBandText(pdf *fpdf.Fpdf, row TopperRow, x, right, y, h, bulletPt float6
 	top, avail := bandTextTop(pdf, row, w, h)
 
 	pdf.SetFont(fontText, "", bulletPt)
-	lines := bulletLines(pdf, row.Bullets, w)
 	lineH := ptToMM(bulletPt) * 1.22
-	if n := int(avail / lineH); n < len(lines) {
-		lines = lines[:max(n, 0)]
-	}
+	lines := clampBullets(pdf, bulletLines(pdf, row.Bullets, w), w, int(avail/lineH))
 	baseline := y + top + lineH
 	for _, line := range lines {
 		pdf.Text(x+line.indent, baseline, line.text)

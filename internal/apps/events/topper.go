@@ -29,7 +29,12 @@ import (
 
 // topperMaxBandBullets is what fits under a title once a band has been sized
 // for a seven-day week. Support acts and the headliner's own detail share it.
-const topperMaxBandBullets = 4
+//
+// It is deliberately a little under what the band could physically hold, so
+// that bandBullets -- which knows a support act outranks a third adjective --
+// does the cutting rather than the renderer's line clamp, which can only cut
+// from the end.
+const topperMaxBandBullets = 3
 
 // topperMaxSupports bounds how many other events one day lists before it stops
 // naming them individually and says "+N more" instead.
@@ -37,7 +42,7 @@ const topperMaxSupports = 3
 
 // topperMaxBullets is what fits under a title at a readable size. Anything
 // longer is a description, and the website is where descriptions live.
-const topperMaxBullets = 3
+const topperMaxBullets = 2
 
 // topperBulletChars truncates a bullet that was written for the web. Long
 // enough for a real sentence, short enough that it cannot wrap past two lines.

@@ -17,6 +17,27 @@ import (
 // so it is better to clip the string than to keep shrinking it.
 const minFontPt = 6.0
 
+// Bullet type has a higher floor than the rest of the card and a hard line
+// budget, because the two failure modes are not symmetric. Detail set at 6pt
+// is present on the page but unreadable from a chair, which is the same as
+// absent -- except that it also crowds the title it sits under. So the detail
+// keeps its size and loses lines instead: a band shows the first few lines at
+// a size that carries across a table, ellipsised so the cut reads as a
+// decision, and the website carries the rest.
+const (
+	minBulletPt = 8.0
+	// maxBulletLines is the ceiling for one band regardless of how much room
+	// the band happens to have. Without it a light week -- tall bands, few of
+	// them -- prints a paragraph under every title, which is a flyer, not a
+	// table topper.
+	maxBulletLines = 3
+)
+
+// maxBulletSize is the largest detail type a band of this height may use.
+// Proportional so a busy week scales down together, with a floor that keeps a
+// seven-day week legible rather than merely fitted.
+func maxBulletSize(bandH float64) float64 { return max(bandH*0.46, 9) }
+
 // ptToMM converts a font size to page units. fpdf takes sizes in points
 // regardless of the document's unit, so any vertical maths against a font size
 // has to cross this boundary.
@@ -85,24 +106,39 @@ type bandLine struct {
 // needed one line too many. Hence the re-wrap inside the loop.
 func fitBullets(pdf *fpdf.Fpdf, bullets []string, w, avail, bandH float64) (float64, []bandLine) {
 	if len(bullets) == 0 || avail <= 0 {
-		return minFontPt, nil
+		return minBulletPt, nil
 	}
 	var lines []bandLine
-	size := max(bandH*0.40, 7)
-	for ; size > minFontPt; size-- {
+	size := maxBulletSize(bandH)
+	for ; size > minBulletPt; size-- {
 		pdf.SetFont(fontText, "", size)
-		lines = bulletLines(pdf, bullets, w)
+		lines = clampBullets(pdf, bulletLines(pdf, bullets, w), w, maxBulletLines)
 		if float64(len(lines))*ptToMM(size)*1.22 <= avail {
 			return size, lines
 		}
 	}
 	// At the floor, drop whole lines rather than shrinking into illegibility.
-	pdf.SetFont(fontText, "", minFontPt)
+	pdf.SetFont(fontText, "", minBulletPt)
 	lines = bulletLines(pdf, bullets, w)
-	if n := int(avail / (ptToMM(minFontPt) * 1.22)); n < len(lines) {
-		lines = lines[:max(n, 0)]
+	return minBulletPt, clampBullets(pdf, lines, w, int(avail/(ptToMM(minBulletPt)*1.22)))
+}
+
+// clampBullets trims the wrapped detail to whatever the band will actually
+// print -- the smaller of the caller's room and the hard line budget -- and
+// ellipsises what survives so a truncated band reads as edited rather than
+// broken off.
+func clampBullets(pdf *fpdf.Fpdf, lines []bandLine, w float64, room int) []bandLine {
+	room = max(min(room, maxBulletLines), 0)
+	if len(lines) <= room {
+		return lines
 	}
-	return minFontPt, lines
+	if room == 0 {
+		return nil
+	}
+	lines = lines[:room]
+	last := &lines[len(lines)-1]
+	last.text = clipToWidth(pdf, last.text+" \u2026", w-last.indent)
+	return lines
 }
 
 // bulletLines renders the bullets at the current font size as drawable lines.

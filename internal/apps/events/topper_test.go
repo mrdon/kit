@@ -127,7 +127,7 @@ func TestTopperBullets(t *testing.T) {
 		{
 			name: "multi-line description becomes bullets",
 			e:    Event{Description: "Buy one get one\nMembers only\nDine in only\nAnd a fourth"},
-			want: []string{"Buy one get one", "Members only", "Dine in only"},
+			want: []string{"Buy one get one", "Members only"},
 		},
 		{
 			name: "markdown dashes are stripped",
@@ -380,7 +380,7 @@ func TestBandBullets(t *testing.T) {
 	// Two support acts squeeze the headliner's detail, never below one line,
 	// and reading order still puts the headliner's own bullets first.
 	got := bandBullets(own, []string{"Bike Night · 6pm", "Cask tapping · 7pm"})
-	if strings.Join(got, "|") != "first|second|Also: Bike Night · 6pm|Cask tapping · 7pm" {
+	if strings.Join(got, "|") != "first|Also: Bike Night · 6pm|Cask tapping · 7pm" {
 		t.Fatalf("with supports = %q", got)
 	}
 	// A very busy day names what fits and counts the rest rather than
