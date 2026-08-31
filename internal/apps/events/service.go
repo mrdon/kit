@@ -404,7 +404,15 @@ func (s *Service) GetBySlug(ctx context.Context, tenantID uuid.UUID, slug string
 
 // List returns events matching the filter.
 func (s *Service) List(ctx context.Context, tenantID uuid.UUID, f ListFilter) ([]Event, error) {
-	return listEvents(ctx, s.pool, tenantID, f)
+	out, err := listEvents(ctx, s.pool, tenantID, f)
+	if err != nil {
+		return nil, err
+	}
+	// The SQL can only order by starts_at, which for anything repeating is the
+	// first occurrence and often months behind. Every reader of this list wants
+	// what is coming up next, so reorder before handing it over.
+	sortByNextOccurrence(out)
+	return out, nil
 }
 
 // Settings returns the tenant's configuration, defaulted when unset.

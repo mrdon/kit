@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Explicit repeat dates: the list a person edits when no rule fits.
@@ -172,4 +174,33 @@ func (e *Event) DateCount() int {
 		return 0
 	}
 	return len(e.RDates) + 1
+}
+
+// sortByNextOccurrence orders a listing by when each event next happens.
+//
+// The SQL orders by starts_at because that is the only date it can see, but
+// starts_at is the FIRST occurrence: a monthly series that began in March sorts
+// above a one-off next week even though its next date is at the end of the
+// month. The list is read to find out what is coming up, so it is ordered by
+// the same date it displays.
+//
+// Keys are computed once rather than inside the comparison -- working one out
+// means expanding a year of a recurrence, which is not something to repeat
+// O(n log n) times.
+//
+// An event with every date behind it falls back to starts_at, which keeps a
+// finished series in the archive view sorted by when it last ran.
+func sortByNextOccurrence(events []Event) {
+	keys := make(map[uuid.UUID]time.Time, len(events))
+	for i := range events {
+		e := &events[i]
+		if next := e.NextOccurrence(); next != nil {
+			keys[e.ID] = *next
+			continue
+		}
+		keys[e.ID] = e.StartsAt
+	}
+	slices.SortStableFunc(events, func(a, b Event) int {
+		return keys[a.ID].Compare(keys[b.ID])
+	})
 }

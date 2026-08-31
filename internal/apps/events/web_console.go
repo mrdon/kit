@@ -68,11 +68,14 @@ func (a *App) handleList(w http.ResponseWriter, r *http.Request) {
 		Status:     Status(strings.ToLower(q.Get("status"))),
 		Visibility: Visibility(strings.ToLower(q.Get("visibility"))),
 	}
-	// "upcoming" is the default view; past events are opt-in, because the list
-	// people want on opening the page is what is coming, not the archive.
+	// "upcoming" is the default view; past and cancelled events are opt-in,
+	// because the list people want on opening the page is what is coming, not
+	// the archive. Cancelled rides the same toggle rather than vanishing
+	// outright -- reopening one means finding it first.
 	if q.Get("include_past") != "true" {
 		now := timeNow()
 		f.From = &now
+		f.ExcludeCancelled = true
 	}
 	events, err := a.svc.List(r.Context(), caller.TenantID, f)
 	if err != nil {

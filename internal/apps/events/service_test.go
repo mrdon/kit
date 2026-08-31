@@ -335,3 +335,90 @@ func TestSettingsCanonicalURL(t *testing.T) {
 		t.Errorf("with no template, CanonicalURL should be empty, got %q", got)
 	}
 }
+
+// A cancelled event is not something anyone is planning around, so the default
+// upcoming view leaves it out even though its date is still ahead. It stays
+// reachable through the same toggle that reveals past events -- reopening one
+// means finding it first.
+func TestListExcludesCancelledWhenAsked(t *testing.T) {
+	f := newFixture(t)
+	future := time.Now().AddDate(0, 1, 0).Format("2006-01-02 15:04")
+	live := f.create(t, CreateParams{Title: "Still On", StartsAt: future})
+	off := f.create(t, CreateParams{Title: "Called Off", StartsAt: future})
+	if _, err := f.svc.Cancel(f.ctx, f.tenant.ID, off.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	from := time.Now()
+	list, err := f.svc.List(f.ctx, f.tenant.ID, ListFilter{From: &from, ExcludeCancelled: true})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var sawLive bool
+	for _, e := range list {
+		if e.ID == off.ID {
+			t.Error("a cancelled event leaked into the upcoming list")
+		}
+		if e.ID == live.ID {
+			sawLive = true
+		}
+	}
+	if !sawLive {
+		t.Error("the filter took a live event with it")
+	}
+
+	// Without the flag the archive view still shows it, or it could never be
+	// reopened.
+	all, err := f.svc.List(f.ctx, f.tenant.ID, ListFilter{From: &from})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var sawCancelled bool
+	for _, e := range all {
+		if e.ID == off.ID {
+			sawCancelled = true
+		}
+	}
+	if !sawCancelled {
+		t.Error("the cancelled event is unreachable — it cannot be reopened")
+	}
+}
+
+// The list is read to find out what is coming up next, and it shows each
+// event's next date -- so that is what it must be ordered by. Ordering by
+// starts_at instead floats an established series to the top, because its stored
+// start is its first occurrence and may be years old.
+func TestListOrdersByNextOccurrence(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now()
+	// A monthly series that began well before today, whose next date lands
+	// three weeks out -- after the one-off below.
+	old := now.AddDate(0, -6, 0)
+	series := f.create(t, CreateParams{
+		Title:    "Battles and Brews",
+		StartsAt: old.AddDate(0, 0, 21).Format("2006-01-02") + " 19:00",
+		RRule:    "FREQ=MONTHLY",
+	})
+	soon := f.create(t, CreateParams{
+		Title:    "Next Week",
+		StartsAt: now.AddDate(0, 0, 7).Format("2006-01-02") + " 19:00",
+	})
+
+	from := now
+	list, err := f.svc.List(f.ctx, f.tenant.ID, ListFilter{From: &from})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var order []uuid.UUID
+	for _, e := range list {
+		if e.ID == series.ID || e.ID == soon.ID {
+			order = append(order, e.ID)
+		}
+	}
+	if len(order) != 2 {
+		t.Fatalf("expected both events in the listing, got %d", len(order))
+	}
+	if order[0] != soon.ID {
+		t.Error("a series whose next date is weeks away sorted above an event happening sooner")
+	}
+}

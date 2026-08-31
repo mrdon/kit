@@ -295,9 +295,13 @@ type ListFilter struct {
 	Visibility Visibility
 	// From/To bound starts_at. Recurring rows are exempt from From (see
 	// listEvents) because a weekly series' first occurrence may be long past.
-	From  *time.Time
-	To    *time.Time
-	Limit int
+	From *time.Time
+	To   *time.Time
+	// ExcludeCancelled drops cancelled rows. The upcoming view uses it: a
+	// called-off event is not something anyone is planning around, so it only
+	// belongs in the archive alongside the past ones.
+	ExcludeCancelled bool
+	Limit            int
 }
 
 func listEvents(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f ListFilter) ([]Event, error) {
@@ -329,10 +333,11 @@ func listEvents(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f L
 		            (SELECT max(d) FROM unnest(rdates) AS d)
 		          ) >= $4)
 		  AND ($5::timestamptz IS NULL OR starts_at < $5)
+		  AND (NOT $6::bool OR status <> 'cancelled')
 		ORDER BY starts_at ASC
-		LIMIT $6`,
+		LIMIT $7`,
 		tenantID, nilIfEmpty(string(f.Status)), nilIfEmpty(string(f.Visibility)),
-		f.From, f.To, limit,
+		f.From, f.To, f.ExcludeCancelled, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing events: %w", err)

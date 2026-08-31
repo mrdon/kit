@@ -231,7 +231,7 @@ export default function Events() {
             checked={includePast}
             onChange={(e) => setIncludePast(e.target.checked)}
           />
-          Show past events
+          Show past and cancelled
         </label>
       </div>
 
