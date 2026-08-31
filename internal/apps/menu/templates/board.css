@@ -1,0 +1,114 @@
+/* Brand tokens lifted from thegravitybrewing.com's own stylesheet, not
+   invented: Bungee for display, navy grounds, #e8543a vermilion with #ffb4a3
+   as its on-navy variant, #b9c4cf for muted text on navy.
+
+   This board commits to one visual world on purpose. It is a wall display in
+   a dim room, not a document someone reads in their OS theme, so there is no
+   light palette and no prefers-color-scheme block -- every colour is painted
+   explicitly. */
+:root {
+  --navy: #1b2b38;
+  --navy-2: #14222d;
+  --accent: #e8543a;
+  --accent-l: #ffb4a3;
+  --muted: #b9c4cf;
+  --dim: #8ea2b3;
+  --cream: #f4efe7;
+  --line: rgba(255, 255, 255, .14);
+  --display: bungee, system-ui, sans-serif;
+  --beer: exo2, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #0d1720; overflow: hidden; }
+body { display: grid; place-items: center; font-family: var(--beer); -webkit-font-smoothing: antialiased; }
+
+/* One fixed 1920x1080 stage, scaled to whatever it is shown on, so the page
+   looks identical on the TV and in a laptop window. */
+#fit { width: 1920px; height: 1080px; transform-origin: top left; position: absolute; top: 0; left: 0; }
+
+.board {
+  width: 1920px; height: 1080px; padding: 34px 40px;
+  display: flex; flex-direction: column; color: #fff;
+  background:
+    radial-gradient(120% 80% at 82% 0%, rgba(232, 84, 58, .10) 0%, rgba(232, 84, 58, 0) 55%),
+    linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
+}
+
+/* ---------- header ---------- */
+.head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 18px; border-bottom: 2px solid var(--line); flex: 0 0 auto; }
+.brand { display: flex; align-items: center; gap: 18px; }
+.brand img { width: 54px; height: auto; filter: brightness(0) invert(1); }
+.brand-name { font-family: var(--display); font-size: 30px; letter-spacing: .01em; text-transform: uppercase; color: #fff; line-height: 1; }
+.head-r { display: flex; align-items: baseline; gap: 26px; }
+.head-tag { font-family: var(--display); font-size: 22px; text-transform: uppercase; color: var(--accent-l); line-height: 1; }
+.head-clock { font-family: var(--mono); font-size: 20px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* ---------- body ---------- */
+.body { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 520px; gap: 38px; padding: 20px 0 16px; min-height: 0; }
+
+/* Two independent columns, sections spread to fill the shorter one rather
+   than leaving a block of dead space under it. */
+.taps { display: grid; grid-template-columns: 1fr 1fr; column-gap: 44px; min-height: 0; }
+.tapcol { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.sect { display: flex; flex-direction: column; min-width: 0; }
+.sect-head {
+  font-family: var(--display); font-size: 18px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent-l); padding-bottom: 6px; margin-bottom: 6px;
+  border-bottom: 2px solid rgba(232, 84, 58, .45);
+}
+
+/* Fixed price column, not auto: "6.50" and "8" have to right-align into one
+   readable column or the eye has to hunt for the number on every row. */
+.tap { display: grid; grid-template-columns: 1fr 112px; align-items: end; gap: 20px; padding-bottom: 9px; border-bottom: 1px solid rgba(255, 255, 255, .09); min-width: 0; }
+.tap-l { min-width: 0; }
+
+/* Sentence case in the text face, not tracked mono caps. The row already has
+   an uppercase name and sits under an uppercase section head; a third caps
+   treatment on the same row is what made the board feel busy. */
+.tap-meta { font-family: var(--beer); font-size: 19px; font-weight: 400; letter-spacing: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.tap-sep { padding: 0 .5em; opacity: .5; }
+.tap-abv { color: var(--accent-l); }
+.tap-name { font-family: var(--beer); font-size: 46px; font-weight: 600; line-height: 1.06; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; }
+.tap-r { text-align: right; }
+
+/* Price sits in cream, not the accent: the accent belongs to ABV and to the
+   pour size, which are the two numbers that explain what the price buys. */
+.tap-price { font-family: var(--beer); font-weight: 600; font-size: 34px; line-height: 1.06; color: var(--cream); font-variant-numeric: tabular-nums; }
+.tap-size { font-family: var(--beer); font-size: 17px; letter-spacing: 0; color: var(--accent-l); margin-top: 1px; }
+
+/* ---------- rotating rail ---------- */
+.rail { position: relative; border: 1px solid var(--line); border-radius: 4px; background: rgba(255, 255, 255, .045); overflow: hidden; }
+.panel { position: absolute; inset: 0; padding: 34px 34px 30px; display: flex; flex-direction: column; opacity: 0; visibility: hidden; transition: opacity .6s ease; }
+.panel.is-on { opacity: 1; visibility: visible; }
+@media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
+
+.panel-label { font-family: var(--display); font-size: 20px; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-l); flex: 0 0 auto; margin-bottom: 22px; }
+
+.ev-list { list-style: none; display: flex; flex-direction: column; justify-content: center; gap: 34px; flex: 1 1 auto; }
+.ev { padding: 4px 0; }
+.ev-when { font-family: var(--mono); font-size: 15px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-l); margin-bottom: 6px; }
+.ev-when span { color: var(--dim); padding-left: .8em; }
+.ev-title { font-family: var(--beer); font-weight: 600; font-size: 31px; line-height: 1.12; text-transform: uppercase; color: #fff; margin-bottom: 5px; }
+.ev-note { font-size: 17px; line-height: 1.4; color: var(--muted); }
+
+.poster-wrap { flex: 1 1 auto; display: grid; place-items: center; min-height: 0; }
+.poster { max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 3px; display: block; }
+
+.cta { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; gap: 24px; }
+.cta-head { font-family: var(--beer); font-weight: 600; font-size: 52px; line-height: 1.08; text-transform: uppercase; color: #fff; }
+.cta-body { font-size: 22px; line-height: 1.5; color: var(--muted); }
+.cta-contact { display: flex; flex-direction: column; gap: 9px; font-family: var(--mono); font-size: 19px; letter-spacing: .05em; color: var(--accent-l); }
+
+.ticks { position: absolute; left: 34px; right: 34px; bottom: 20px; display: flex; gap: 7px; z-index: 2; }
+.tick { height: 3px; flex: 1; background: rgba(255, 255, 255, .16); border-radius: 2px; overflow: hidden; }
+.tick i { display: block; height: 100%; width: 0; background: var(--accent-l); }
+.tick.done i { width: 100%; }
+.tick.live i { width: 100%; transition: width var(--dwell) linear; }
+
+/* ---------- footer ---------- */
+.foot { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 2px solid var(--line); font-family: var(--beer); font-size: 18px; letter-spacing: 0; color: var(--dim); }
+.foot span { position: relative; }
+.foot span + span { padding-left: 30px; }
+.foot span + span::before { content: ""; position: absolute; left: 14px; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); transform: translateY(-50%); }

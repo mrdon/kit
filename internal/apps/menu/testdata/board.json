@@ -1,0 +1,196 @@
+{
+  "venue": {
+    "wordmark": "Gravity Brewing",
+    "footer": [
+      "Pours are 16oz unless marked",
+      "Also in 4oz & 9oz",
+      "Crowlers, growlers & cans to go"
+    ]
+  },
+  "taps": [
+    {
+      "section": "Lagers",
+      "name": "Cerveza Espacial",
+      "style": "American Lager",
+      "abv": "5.1%",
+      "price": "6.50",
+      "size": "16oz"
+    },
+    {
+      "section": "Pub Ales",
+      "name": "Newtonian",
+      "style": "Amber / ESB",
+      "abv": "5.7%",
+      "price": "6.50",
+      "size": "16oz"
+    },
+    {
+      "section": "Pub Ales",
+      "name": "Cosmic Alchemy",
+      "style": "Raspberry Brown",
+      "abv": "6.1%",
+      "price": "7",
+      "size": "16oz"
+    },
+    {
+      "section": "Pub Ales",
+      "name": "Space Kilt",
+      "style": "Scotch Ale",
+      "abv": "6.7%",
+      "price": "6.50",
+      "size": "16oz"
+    },
+    {
+      "section": "Pale Ales & IPAs",
+      "name": "Wavelength",
+      "style": "Watermelon Session IPA",
+      "abv": "4.5%",
+      "price": "7",
+      "size": "16oz"
+    },
+    {
+      "section": "Pale Ales & IPAs",
+      "name": "Golden Mosaic",
+      "style": "American Pale Ale",
+      "abv": "5.8%",
+      "price": "7",
+      "size": "16oz"
+    },
+    {
+      "section": "Pale Ales & IPAs",
+      "name": "Galactic Orbit",
+      "style": "West Coast IPA",
+      "abv": "6.4%",
+      "price": "8",
+      "size": "16oz"
+    },
+    {
+      "section": "Pale Ales & IPAs",
+      "name": "Wicked Nebula",
+      "style": "Hazy IPA",
+      "abv": "6.5%",
+      "price": "8",
+      "size": "16oz"
+    },
+    {
+      "section": "Pale Ales & IPAs",
+      "name": "Acceleration",
+      "style": "Imperial IPA",
+      "abv": "9.8%",
+      "price": "8",
+      "size": "12oz"
+    },
+    {
+      "section": "Belgian",
+      "name": "Coal Kriek",
+      "style": "Tart Cherry Dubbel",
+      "abv": "6.5%",
+      "price": "7.50",
+      "size": "12oz"
+    },
+    {
+      "section": "Belgian",
+      "name": "Mendacious",
+      "style": "Belgian Strong Golden",
+      "abv": "8.1%",
+      "price": "8",
+      "size": "16oz"
+    },
+    {
+      "section": "Belgian",
+      "name": "Asteroid Abbey",
+      "style": "Belgian Quadrupel",
+      "abv": "9.9%",
+      "price": "7.50",
+      "size": "9oz"
+    },
+    {
+      "section": "Stouts & Porters",
+      "name": "Mr. Radar",
+      "style": "Coffee Porter \u00b7 Nitro",
+      "abv": "7.4%",
+      "price": "9",
+      "size": "16oz"
+    },
+    {
+      "section": "Stouts & Porters",
+      "name": "Tsar Bomba",
+      "style": "Russian Imperial Stout",
+      "abv": "11%",
+      "price": "8",
+      "size": "9oz"
+    },
+    {
+      "section": "Specialty",
+      "name": "Viener Vino",
+      "style": "Barrel-Aged Barleywine",
+      "abv": "15%",
+      "price": "9",
+      "size": "9oz"
+    },
+    {
+      "section": "Specialty",
+      "name": "Mars Water",
+      "style": "Seltzer",
+      "abv": "5.4%",
+      "price": "6.50",
+      "size": "16oz"
+    },
+    {
+      "section": "Specialty",
+      "name": "Mango Peach Quasar",
+      "style": "Fruited Sour",
+      "abv": "6.2%",
+      "price": "7",
+      "size": "12oz"
+    }
+  ],
+  "panels": [
+    {
+      "kind": "agenda",
+      "label": "This week",
+      "events": [
+        {
+          "when": "Every Wed",
+          "time": "6:30 pm",
+          "title": "Trivia",
+          "note": "With Geeks Who Drink \u00b7 teams up to six"
+        },
+        {
+          "when": "Fri 11 Sep",
+          "time": "6:00 pm",
+          "title": "Bike Night",
+          "note": "Ride in, park out front"
+        },
+        {
+          "when": "Sat 12 Sep",
+          "time": "12 \u2013 10 pm",
+          "title": "14th Anniversary",
+          "note": "Live music, special releases"
+        },
+        {
+          "when": "Sat 3 Oct",
+          "time": "12 \u2013 4 pm",
+          "title": "Erie Brewfest",
+          "note": "We're pouring"
+        }
+      ]
+    },
+    {
+      "kind": "poster",
+      "label": "Don't miss",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "alt": "14th Anniversary Celebration, Saturday September 12"
+    },
+    {
+      "kind": "cta",
+      "label": "Book the space",
+      "headline": "Your party, here.",
+      "body": "Birthdays, team nights, wedding parties and wakes \u2014 in the tasting room or out in the bier garten.",
+      "contact": [
+        "info@thegravitybrewing.com",
+        "(303) 544-0746"
+      ]
+    }
+  ]
+}

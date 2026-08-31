@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ .Venue.Wordmark }} &middot; On Tap</title>
+<style>{{ .CSS }}</style>
+</head>
+<body>
+<div id="fit">
+<div class="board">
+
+  <header class="head">
+    <div class="brand">
+      <img src="{{ .Logo }}" alt="">
+      <p class="brand-name">{{ .Venue.Wordmark }}</p>
+    </div>
+    <div class="head-r">
+      <p class="head-tag">On Tap</p>
+      <p class="head-clock" id="clock"></p>
+    </div>
+  </header>
+
+  <div class="body">
+    <div class="taps">
+      {{- range .Columns }}
+      <div class="tapcol">
+        {{- range . }}
+        <div class="sect">
+          <p class="sect-head">{{ .Name }}</p>
+          {{- range .Taps }}
+          <div class="tap">
+            <div class="tap-l">
+              <p class="tap-meta"><span class="tap-style">{{ .Style }}</span>{{ if .ABV }}<span class="tap-sep">&middot;</span><span class="tap-abv">{{ .ABV }}</span>{{ end }}</p>
+              <p class="tap-name" data-fit>{{ .Name }}</p>
+            </div>
+            <div class="tap-r">
+              <p class="tap-price">{{ .Price }}</p>
+              {{- with .SizeLabel }}
+              <p class="tap-size">{{ . }}</p>
+              {{- end }}
+            </div>
+          </div>
+          {{- end }}
+        </div>
+        {{- end }}
+      </div>
+      {{- end }}
+    </div>
+
+    <div class="rail" id="rail">
+      {{- range $i, $p := .Panels }}
+      <section class="panel{{ if eq $i 0 }} is-on{{ end }}">
+        <p class="panel-label">{{ $p.Label }}</p>
+        {{- if eq $p.Kind "agenda" }}
+        <ul class="ev-list">
+          {{- range $p.Events }}
+          <li class="ev">
+            <p class="ev-when">{{ .When }}<span>{{ .Time }}</span></p>
+            <p class="ev-title">{{ .Title }}</p>
+            <p class="ev-note">{{ .Note }}</p>
+          </li>
+          {{- end }}
+        </ul>
+        {{- else if eq $p.Kind "poster" }}
+        <div class="poster-wrap"><img class="poster" src="{{ $p.ImageURL }}" alt="{{ $p.Alt }}"></div>
+        {{- else }}
+        <div class="cta">
+          <p class="cta-head">{{ $p.Headline }}</p>
+          <p class="cta-body">{{ $p.Body }}</p>
+          <p class="cta-contact">{{ range $p.Contact }}<span>{{ . }}</span>{{ end }}</p>
+        </div>
+        {{- end }}
+      </section>
+      {{- end }}
+      <div class="ticks" id="ticks"></div>
+    </div>
+  </div>
+
+  <footer class="foot">{{ range .Venue.Footer }}<span>{{ . }}</span>{{ end }}</footer>
+
+</div>
+</div>
+
+<script>
+(function () {
+  var DWELL = 14000;
+
+  /* Scale the fixed stage to whatever we are being shown on. */
+  var fit = document.getElementById('fit');
+  function scale() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    fit.style.transform = 'scale(' + s + ')';
+    fit.style.left = ((window.innerWidth - 1920 * s) / 2) + 'px';
+    fit.style.top = ((window.innerHeight - 1080 * s) / 2) + 'px';
+  }
+  window.addEventListener('resize', scale);
+  scale();
+
+  /* Shrink any beer name too wide for its column. One long name should not
+     set the size for all of them. */
+  function fitNames() {
+    var names = document.querySelectorAll('[data-fit]');
+    for (var i = 0; i < names.length; i++) {
+      var el = names[i], size = 46;
+      el.style.fontSize = size + 'px';
+      while (el.scrollWidth > el.clientWidth && size > 26) {
+        size -= 1;
+        el.style.fontSize = size + 'px';
+      }
+    }
+  }
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(fitNames);
+  } else {
+    window.addEventListener('load', fitNames);
+  }
+
+  /* Clock. A frozen clock is how anyone walking past can tell the board
+     died -- it is the only liveness signal a wall display has. */
+  var clock = document.getElementById('clock');
+  function tick() {
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    var ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12; if (h === 0) h = 12;
+    clock.textContent = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] +
+      ' ' + h + ':' + (m < 10 ? '0' + m : m) + ' ' + ampm;
+  }
+  tick();
+  setInterval(tick, 20000);
+
+  /* Rotate the side panel. */
+  var panels = document.querySelectorAll('.panel');
+  var ticks = document.getElementById('ticks');
+  if (panels.length > 1) {
+    for (var j = 0; j < panels.length; j++) {
+      var t = document.createElement('div');
+      t.className = 'tick';
+      t.appendChild(document.createElement('i'));
+      ticks.appendChild(t);
+    }
+    ticks.style.setProperty('--dwell', DWELL + 'ms');
+
+    var at = 0;
+    function paintTicks() {
+      for (var k = 0; k < ticks.children.length; k++) {
+        var c = ticks.children[k];
+        c.className = 'tick' + (k < at ? ' done' : '');
+      }
+      /* Force a reflow so the width transition restarts on the live tick. */
+      var live = ticks.children[at];
+      void live.offsetWidth;
+      live.className = 'tick live';
+    }
+    paintTicks();
+
+    setInterval(function () {
+      panels[at].classList.remove('is-on');
+      at = (at + 1) % panels.length;
+      panels[at].classList.add('is-on');
+      paintTicks();
+    }, DWELL);
+  }
+})();
+</script>
+</body>
+</html>
