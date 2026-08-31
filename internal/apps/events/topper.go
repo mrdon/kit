@@ -246,7 +246,12 @@ func billingRank(p Prominence) int {
 		return 0
 	case ProminenceBackground:
 		return 2
+	case ProminenceNormal:
+		return 1
 	default:
+		// Named separately from ProminenceNormal so the exhaustive check still
+		// catches a value added later without a ranking, while unknown values
+		// keep sorting as ordinary events.
 		return 1
 	}
 }
