@@ -402,3 +402,58 @@ func TestBillingRankTreatsUnknownValuesAsNormal(t *testing.T) {
 		t.Fatal("background must rank below normal")
 	}
 }
+
+// The Double D's case: one standing offer that runs Sunday, Monday and
+// Tuesday. It is a single weekly event on three weekdays -- not a three-day
+// event, and not three events -- so it must produce three bands in one week,
+// each one a background item that would yield to a real event on its day.
+func TestTopperMultiWeekdayStandingOffer(t *testing.T) {
+	loc := denver(t)
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, loc) // a Sunday
+	events := []Event{{
+		Title:      "Pizza Together",
+		Summary:    "Buy any sourdough pizza and get one free when you dine in.",
+		StartsAt:   start.Add(16 * time.Hour),
+		Timezone:   "America/Denver",
+		RRule:      "FREQ=WEEKLY;BYDAY=SU,MO,TU",
+		Status:     StatusPublished,
+		Visibility: VisibilityPublic,
+		Prominence: ProminenceBackground,
+	}}
+
+	rows := topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	var days []string
+	for _, r := range rows {
+		days = append(days, r.Day)
+	}
+	if strings.Join(days, ",") != "SUN,MON,TUE" {
+		t.Fatalf("days = %v, want SUN,MON,TUE", days)
+	}
+	// It headlines each of those days only because nothing else is on them.
+	for _, r := range rows {
+		if r.Title != "Pizza Together" {
+			t.Fatalf("row %s = %q", r.Day, r.Title)
+		}
+	}
+
+	// Put a real event on the Monday and the offer must step aside.
+	events = append(events, Event{
+		Title:      "Bike Night",
+		StartsAt:   start.AddDate(0, 0, 1).Add(18 * time.Hour),
+		Timezone:   "America/Denver",
+		Status:     StatusPublished,
+		Visibility: VisibilityPublic,
+		Prominence: ProminenceNormal,
+	})
+	rows = topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want three days still", len(rows))
+	}
+	mon := rows[1]
+	if mon.Day != "MON" || mon.Title != "Bike Night" {
+		t.Fatalf("monday = %s %q, want the real event headlining", mon.Day, mon.Title)
+	}
+	if len(mon.Bullets) == 0 || mon.Bullets[len(mon.Bullets)-1] != "Also: Pizza Together · 4pm" {
+		t.Fatalf("monday bullets = %q, want the offer demoted", mon.Bullets)
+	}
+}

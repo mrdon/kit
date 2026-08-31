@@ -15,6 +15,7 @@
 export type RepeatMode = 'none' | 'weekly' | 'monthly' | 'dates';
 
 const WEEKDAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const ORDINALS = ['', 'first', 'second', 'third', 'fourth', 'fifth'];
 
 // Parses "2026-09-04T19:00" — the datetime-local wire format — as plain
@@ -87,6 +88,42 @@ export function monthlyOptions(start: Date | null): MonthlyOption[] {
   return out;
 }
 
+// weeklyDays reads the selected weekdays out of a stored rule.
+//
+// A bare FREQ=WEEKLY has no BYDAY and means "the start date's own weekday",
+// which is how every weekly event was stored before multi-day was offered. The
+// start's day is always included whatever the rule says, because the server
+// refuses a rule that does not contain it — so showing it unselected would be
+// offering a state that cannot be saved.
+export function weeklyDays(rule: string, start: Date | null): number[] {
+  const set = new Set<number>();
+  const m = /BYDAY=([A-Z,]+)/i.exec(rule);
+  if (m) {
+    for (const code of m[1].split(',')) {
+      const i = WEEKDAY_CODES.indexOf(code.trim().toUpperCase());
+      if (i >= 0) set.add(i);
+    }
+  }
+  if (start) set.add(start.getDay());
+  return [...set].sort((a, b) => a - b);
+}
+
+// buildWeekly renders a day set back to a rule.
+//
+// A set that is only the start's own weekday emits a bare FREQ=WEEKLY rather
+// than BYDAY=WE. The two mean exactly the same thing, and opening an existing
+// trivia night should not rewrite its rule into a longer spelling of itself --
+// that would show up as a pending website change for an event nobody edited.
+export function buildWeekly(days: number[], start: Date | null): string {
+  const set = new Set(days);
+  if (start) set.add(start.getDay());
+  const sorted = [...set].sort((a, b) => a - b);
+  if (start && sorted.length === 1 && sorted[0] === start.getDay()) {
+    return 'FREQ=WEEKLY';
+  }
+  return `FREQ=WEEKLY;BYDAY=${sorted.map((d) => WEEKDAY_CODES[d]).join(',')}`;
+}
+
 // modeOf infers which control to show from what is already stored, so
 // reopening an event lands on the mode it was saved in.
 export function modeOf(rule: string, dates: string[]): RepeatMode {
@@ -111,6 +148,7 @@ export default function RepeatEditor({
   const start = parseLocalInput(startsAt);
   const mode = modeOf(rule, dates);
   const months = monthlyOptions(start);
+  const selectedDays = weeklyDays(rule, start);
 
   // A new row is pre-filled a week on from the last date at the same time,
   // because an empty date picker is a worse starting point than a wrong one
@@ -147,6 +185,16 @@ export default function RepeatEditor({
     }
   };
 
+  // Clicking the start date's own day is a no-op rather than an error: the
+  // server requires the rule to contain it, so there is nothing to turn off.
+  const toggleWeekday = (day: number) => {
+    if (start && day === start.getDay()) return;
+    const next = selectedDays.includes(day)
+      ? selectedDays.filter((d) => d !== day)
+      : [...selectedDays, day];
+    onChange({ repeat_rule: buildWeekly(next, start), repeat_dates: [] });
+  };
+
   const setDate = (i: number, value: string) => {
     const next = dates.slice();
     next[i] = value;
@@ -175,10 +223,37 @@ export default function RepeatEditor({
       </select>
 
       {mode === 'weekly' && (
-        <span className="field-note">
-          For a standing weekly night like trivia. Every week falls on the same
-          weekday as the start date.
-        </span>
+        <>
+          <div className="seg">
+            {WEEKDAY_LABELS.map((label, i) => {
+              const on = selectedDays.includes(i);
+              const isStart = start != null && i === start.getDay();
+              return (
+                <button
+                  key={WEEKDAY_CODES[i]}
+                  type="button"
+                  className={`seg-btn${on ? ' seg-active' : ''}`}
+                  disabled={disabled}
+                  aria-pressed={on}
+                  title={
+                    isStart
+                      ? 'The event starts on this day, so it is always included'
+                      : undefined
+                  }
+                  onClick={() => toggleWeekday(i)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="field-note">
+            For a standing weekly night like trivia, or an offer that runs
+            several days — a Sunday-to-Tuesday pizza deal is one event on three
+            weekdays, not three events. The start date's own day is always
+            included.
+          </span>
+        </>
       )}
 
       {mode === 'monthly' && (
