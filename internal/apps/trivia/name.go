@@ -82,31 +82,36 @@ func nameTaken(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name
 	return exists, nil
 }
 
-// IsValidGameName guards the public URL segment: two lowercase words joined
-// by a hyphen, optionally with a numeric suffix. Rejecting early keeps a
-// path-traversal-shaped string from ever reaching a query, and keeps the
-// literal routes alongside it (/{slug}/trivia/tv) unambiguous -- a single
-// word is not a game name, so it can never shadow one.
+// IsValidGameName guards the public URL segment. Its ONLY job is to reject
+// junk before it reaches a query -- path traversal, uppercase, empties -- and
+// to stay unambiguous against the literal routes beside it
+// (/{slug}/trivia/tv), which a single word cannot shadow.
+//
+// It deliberately does NOT assert the current generator's shape. Names are
+// permanent and public: they are on a whiteboard behind the bar and in the
+// URL a TV is parked on. Tightening this to "exactly two words" when the
+// generator moved from three-word names to two 404'd every game that already
+// existed -- their screens, their join links, all of it -- which is exactly
+// the failure a validator running against historical rows must not cause.
+//
+// So: two to four lowercase words, with an optional trailing numeric suffix
+// from the collision path. Wide enough to cover every scheme this has used
+// and any near neighbour of it.
 func IsValidGameName(s string) bool {
-	if len(s) == 0 || len(s) > 40 {
+	if len(s) == 0 || len(s) > 60 {
 		return false
 	}
 	parts := strings.Split(s, "-")
-	if len(parts) < 2 || len(parts) > 3 {
+	if len(parts) < 2 || len(parts) > 4 {
 		return false
 	}
 	for i, p := range parts {
 		if p == "" {
 			return false
 		}
-		// The optional third part is the collision suffix and is digits
-		// only; the first two are always words.
-		if i == 2 {
-			for _, r := range p {
-				if r < '0' || r > '9' {
-					return false
-				}
-			}
+		// A trailing all-digit part is the collision suffix. Anywhere else,
+		// and anything else, must be a lowercase word.
+		if i == len(parts)-1 && i > 0 && isDigits(p) {
 			continue
 		}
 		for _, r := range p {
@@ -116,4 +121,13 @@ func IsValidGameName(s string) bool {
 		}
 	}
 	return true
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
 }
