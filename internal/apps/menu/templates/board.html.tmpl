@@ -126,18 +126,46 @@
      so anything still too wide for its own column shrinks on its own. */
   var NAME_MAX = 46, NAME_MIN = 24;
 
+  /* The rest of the row, as its share of the beer name at full scale, each
+     with the smallest size still readable from the far end of the taproom.
+
+     The name used to be the only thing that scaled, which put a floor under
+     the row nothing could get past: shrink it below about 30px and the price
+     and pour label beside it were the taller side of the row, so every further
+     step cost legibility and won back no height. The pass would bottom out
+     still overflowing and .tapcol would quietly clip the rest. Sizes are
+     computed here rather than in calc() because the wall panel's browser is
+     older than the arithmetic is. */
+  var ROW = [
+    { prop: '--meta-size',  of: 19 / 46, min: 15 },
+    { prop: '--price-size', of: 34 / 46, min: 24 },
+    { prop: '--pour-size',  of: 17 / 46, min: 13 },
+    { prop: '--row-pad',    of:  9 / 46, min:  5 }
+  ];
+
+  function setScale(taps, size) {
+    taps.style.setProperty('--name-size', size + 'px');
+    for (var i = 0; i < ROW.length; i++) {
+      var r = ROW[i];
+      taps.style.setProperty(r.prop, Math.max(r.min, Math.round(size * r.of)) + 'px');
+    }
+  }
+
   function fitColumnHeight() {
     var taps = document.querySelector('.taps');
     if (!taps) return NAME_MAX;
     var cols = taps.querySelectorAll('.tapcol');
     var size = NAME_MAX;
-    for (; size > NAME_MIN; size -= 1) {
-      taps.style.setProperty('--name-size', size + 'px');
+    /* Exit with the size that is actually applied, not one step past it: the
+       width pass below starts from what this returns. */
+    for (;;) {
+      setScale(taps, size);
       var overflows = false;
       for (var i = 0; i < cols.length; i++) {
         if (cols[i].scrollHeight > cols[i].clientHeight + 1) { overflows = true; break; }
       }
-      if (!overflows) break;
+      if (!overflows || size <= NAME_MIN) break;
+      size -= 1;
     }
     return size;
   }

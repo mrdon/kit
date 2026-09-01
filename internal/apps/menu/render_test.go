@@ -344,3 +344,34 @@ func TestVersionCarriesTheRenderStamp(t *testing.T) {
 		t.Errorf("boardVersion = %q, want it to carry the render stamp %q", got, stamp)
 	}
 }
+
+// TestTapRowScalesWithTheFitPass keeps every size on a tap row driven by a
+// variable the fit pass can move. When only the name scaled, the price and
+// pour label held the row at roughly 68px however far the name shrank, so a
+// long tap list bottomed the pass out still overflowing and .tapcol clipped
+// the remainder.
+func TestTapRowScalesWithTheFitPass(t *testing.T) {
+	css, err := stylesheet()
+	if err != nil {
+		t.Fatalf("stylesheet: %v", err)
+	}
+	for _, rule := range []string{".tap-name {", ".tap-meta {", ".tap-price {", ".tap-size {", ".tap {"} {
+		i := strings.Index(css, rule)
+		if i < 0 {
+			t.Errorf("no %q rule in the stylesheet", rule)
+			continue
+		}
+		body := css[i:]
+		if end := strings.Index(body, "}"); end >= 0 {
+			body = body[:end]
+		}
+		// .tap carries the row's vertical padding; the rest carry type sizes.
+		want := "font-size: var(--"
+		if rule == ".tap {" {
+			want = "padding-bottom: var(--"
+		}
+		if !strings.Contains(body, want) {
+			t.Errorf("%s is not on the fit scale: want %q in %q", rule, want, body)
+		}
+	}
+}

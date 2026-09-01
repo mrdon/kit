@@ -77,24 +77,29 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
    repeated heading reads as a continuation rather than a duplicate. */
 .sect-cont { opacity: .65; font-size: 82%; letter-spacing: .04em; }
 
-.tap { display: grid; grid-template-columns: 1fr 112px; align-items: end; gap: 20px; padding-bottom: 9px; border-bottom: 1px solid rgba(255, 255, 255, .09); min-width: 0; }
+.tap { display: grid; grid-template-columns: 1fr 112px; align-items: end; gap: 20px; padding-bottom: var(--row-pad, 9px); border-bottom: 1px solid rgba(255, 255, 255, .09); min-width: 0; }
 .tap-l { min-width: 0; }
 
 /* Sentence case in the text face, not tracked mono caps. The row already has
    an uppercase name and sits under an uppercase section head; a third caps
    treatment on the same row is what made the board feel busy. */
-.tap-meta { font-family: var(--beer); font-size: 19px; font-weight: 400; letter-spacing: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.tap-meta { font-family: var(--beer); font-size: var(--meta-size, 19px); font-weight: 400; letter-spacing: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
 .tap-sep { padding: 0 .5em; opacity: .5; }
 .tap-abv { color: var(--accent-l); }
-/* Sized by the fit pass, which shrinks the whole list until the longest
-   column fits. Seventeen taps is not a promise Untappd made us. */
+/* Every size on a tap row is set by the fit pass, which shrinks the list until
+   the longest column fits. Only the name used to scale, which put a floor
+   under the row: below about 30px the price and pour label were taller than
+   the name beside them, so shrinking further bought no height at all and the
+   rows past the floor were clipped by .tapcol's overflow instead. The
+   fallbacks here are the sizes at full scale, so the board still reads right
+   if the pass never runs. Seventeen taps is not a promise Untappd made us. */
 .tap-name { font-family: var(--beer); font-size: var(--name-size, 46px); font-weight: 600; line-height: 1.06; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; }
 .tap-r { text-align: right; }
 
 /* Price sits in cream, not the accent: the accent belongs to ABV and to the
    pour size, which are the two numbers that explain what the price buys. */
-.tap-price { font-family: var(--beer); font-weight: 600; font-size: 34px; line-height: 1.06; color: var(--cream); font-variant-numeric: tabular-nums; }
-.tap-size { font-family: var(--beer); font-size: 17px; letter-spacing: 0; color: var(--accent-l); margin-top: 1px; }
+.tap-price { font-family: var(--beer); font-weight: 600; font-size: var(--price-size, 34px); line-height: 1.06; color: var(--cream); font-variant-numeric: tabular-nums; }
+.tap-size { font-family: var(--beer); font-size: var(--pour-size, 17px); letter-spacing: 0; color: var(--accent-l); margin-top: 1px; }
 
 /* ---------- rotating rail ---------- */
 .rail {
