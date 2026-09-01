@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { API_BASE, api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
-import { defaultSettings, money, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
+import { balanceWarning, defaultSettings, money, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
 // the shape of the game, choose the board's columns, and check the preview.
@@ -62,6 +62,20 @@ function ImportPanel({ onImported }: { onImported: (r: ImportReport) => void }) 
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const loadStarter = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.loadTriviaStarter();
+      setReport(r);
+      onImported(r);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const upload = async (file: File) => {
     setBusy(true);
     setErr(null);
@@ -97,6 +111,18 @@ function ImportPanel({ onImported }: { onImported: (r: ImportReport) => void }) 
         order. Topics are separated by semicolons. Answers must be numbers — the whole game is
         &ldquo;closest without going over&rdquo;. Re-uploading a corrected sheet updates in place
         rather than duplicating.
+      </p>
+      <div className="page-head-actions">
+        <button className="btn" disabled={busy} onClick={() => void loadStarter()}>
+          Load the starter pack
+        </button>
+        <a className="card-manage" href={`${API_BASE}/trivia/questions/sample`}>
+          Download it as a template
+        </a>
+      </div>
+      <p className="page-sub">
+        62 questions across eleven topics — enough to build the default board several times over.
+        Loading it twice is harmless: rows are matched on the question text and updated in place.
       </p>
       <input
         ref={fileRef}
@@ -193,13 +219,16 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
           </label>
         ))}
       </div>
-      <p className="page-sub">
-        Cell values sit well above chip values on purpose. Only the tables that WROTE the winning
-        answer take the cell, so with a full room betting is the only income most teams reliably
-        have — and the forced spread caps that at one chip, {money(Math.max(...s.token_values))} a
-        round. At {money(Math.min(...s.cell_values))} a cell, writing the winning answer is worth
-        about five good bets, which is what keeps the trivia the game.
-      </p>
+      {balanceWarning(s) ? (
+        <p className="banner">{balanceWarning(s)}</p>
+      ) : (
+        <p className="page-sub">
+          Cell values sit well above chip values on purpose. Only the tables that WROTE the winning
+          answer take the cell, so with a full room betting is the only income most teams reliably
+          have — and the forced spread caps that at one chip, {money(Math.max(...s.token_values))} a
+          round.
+        </p>
+      )}
 
       <div className="field-row">
         <label className="field">

@@ -36,6 +36,8 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 
 	mux.Handle("GET /{slug}/api/trivia/questions", jsonRoute(a.handleListQuestions))
 	mux.Handle("POST /{slug}/api/trivia/questions/import", jsonRoute(a.handleImport))
+	mux.Handle("GET /{slug}/api/trivia/questions/sample", jsonRoute(a.handleSampleCSV))
+	mux.Handle("POST /{slug}/api/trivia/questions/starter", jsonRoute(a.handleLoadStarter))
 	mux.Handle("DELETE /{slug}/api/trivia/questions/{id}", jsonRoute(a.handleDeleteQuestion))
 }
 
@@ -121,12 +123,12 @@ func (a *App) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 	var req createGameRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	s := normaliseSettings(req.Settings)
 	if err := validateSettings(s); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	name, err := UniqueName(r.Context(), a.pool, tenant.ID)
@@ -176,17 +178,17 @@ func (a *App) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 	// of a game people have already been reading off a TV would restate
 	// scores that were announced out loud.
 	if game.Phase != PhaseSetup && game.Phase != PhaseLobby {
-		http.Error(w, "settings can only change before the game starts", http.StatusConflict)
+		clientError(w, r, http.StatusConflict, "settings can only change before the game starts")
 		return
 	}
 	var req createGameRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	s := normaliseSettings(req.Settings)
 	if err := validateSettings(s); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	updated, err := UpdateSettings(r.Context(), a.pool, tenant.ID, game.ID, s)
@@ -222,16 +224,16 @@ func (a *App) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	var req ActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	snap, err := a.svc.Do(r.Context(), tenant.ID, game.ID, req)
 	switch {
 	case errors.Is(err, ErrPhaseConflict):
-		http.Error(w, err.Error(), http.StatusConflict)
+		clientError(w, r, http.StatusConflict, err.Error())
 		return
 	case errors.Is(err, ErrBadRequest):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	case errors.Is(err, ErrNotFound):
 		http.NotFound(w, r)
@@ -274,13 +276,13 @@ func (a *App) gameFromPath(w http.ResponseWriter, r *http.Request) (*Game, bool)
 	tenant := auth.TenantFromContext(r.Context())
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.NotFound(w, r)
+		clientError(w, r, http.StatusNotFound, "not a game id")
 		return nil, false
 	}
 	game, err := GetGame(r.Context(), a.pool, tenant.ID, id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			http.NotFound(w, r)
+			clientError(w, r, http.StatusNotFound, "no such game")
 			return nil, false
 		}
 		serverError(w, "loading trivia game", err)
@@ -308,4 +310,26 @@ func writeJSON(w http.ResponseWriter, v any) {
 func serverError(w http.ResponseWriter, what string, err error) {
 	slog.Error(what, "error", err)
 	http.Error(w, "internal error", http.StatusInternalServerError)
+}
+
+// clientError answers a 4xx AND logs it.
+//
+// The logging half is the point. A rejected request that leaves no
+// server-side trace is undebuggable from the operator's side: somebody says
+// "I got a 400 saving the settings", the logs are silent, and the only way to
+// find out which of a dozen validation rules fired is to reproduce it by
+// hand. Ask any of these handlers to refuse something and it says so out
+// loud, with the route and the reason.
+//
+// WARN, not ERROR: the request was refused on purpose and the service is
+// healthy. It should not page anyone, but it must be greppable.
+func clientError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	slog.Warn("trivia request refused",
+		"status", status,
+		"method", r.Method,
+		"route", r.Pattern,
+		"path", r.URL.Path,
+		"reason", msg,
+	)
+	http.Error(w, msg, status)
 }

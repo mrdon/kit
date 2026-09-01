@@ -93,7 +93,7 @@ func (a *App) callerTeam(r *http.Request, game *Game) uuid.UUID {
 func (a *App) requireTeam(w http.ResponseWriter, r *http.Request, game *Game) (uuid.UUID, bool) {
 	teamID := a.callerTeam(r, game)
 	if teamID == uuid.Nil {
-		http.Error(w, "join the game first", http.StatusUnauthorized)
+		clientError(w, r, http.StatusUnauthorized, "join the game first")
 		return uuid.Nil, false
 	}
 	return teamID, true
@@ -136,19 +136,19 @@ func (a *App) handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	var req joinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	team, token, err := a.svc.Join(r.Context(), game.TenantID, game.ID, req.Name)
 	switch {
 	case errors.Is(err, ErrGameFull):
-		http.Error(w, "this game is full", http.StatusConflict)
+		clientError(w, r, http.StatusConflict, "this game is full")
 		return
 	case errors.Is(err, ErrNameTaken):
-		http.Error(w, "another table already took that name", http.StatusConflict)
+		clientError(w, r, http.StatusConflict, "another table already took that name")
 		return
 	case errors.Is(err, ErrBadRequest), errors.Is(err, ErrClosed):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:
 		serverError(w, "joining trivia game", err)
@@ -174,17 +174,17 @@ func (a *App) handleRedeemReclaim(w http.ResponseWriter, r *http.Request) {
 	}
 	var req reclaimRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	teamID, err := uuid.Parse(strings.TrimSpace(req.TeamID))
 	if err != nil {
-		http.Error(w, "unknown team", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "unknown team")
 		return
 	}
 	token, err := a.svc.RedeemReclaim(r.Context(), game.TenantID, game.ID, teamID, strings.TrimSpace(req.Code))
 	if err != nil {
-		http.Error(w, "that code is not valid", http.StatusForbidden)
+		clientError(w, r, http.StatusForbidden, "that code is not valid")
 		return
 	}
 	a.setTeamCookie(w, r, slug, game.Name, teamID, token)
@@ -225,16 +225,16 @@ func (a *App) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	var req answerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	err := a.svc.SubmitAnswer(r.Context(), game.TenantID, game.ID, teamID, req.Answer, req.Stake)
 	switch {
 	case errors.Is(err, ErrClosed):
-		http.Error(w, err.Error(), http.StatusConflict)
+		clientError(w, r, http.StatusConflict, err.Error())
 		return
 	case errors.Is(err, ErrBadRequest):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:
 		serverError(w, "submitting trivia answer", err)
@@ -261,14 +261,14 @@ func (a *App) handleBet(w http.ResponseWriter, r *http.Request) {
 	}
 	var req betRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	var slotID *uuid.UUID
 	if req.SlotID != nil && *req.SlotID != "" {
 		id, err := uuid.Parse(*req.SlotID)
 		if err != nil {
-			http.Error(w, "unknown answer", http.StatusBadRequest)
+			clientError(w, r, http.StatusBadRequest, "unknown answer")
 			return
 		}
 		slotID = &id
@@ -276,13 +276,13 @@ func (a *App) handleBet(w http.ResponseWriter, r *http.Request) {
 	err := a.svc.PlaceChip(r.Context(), game.TenantID, game.ID, teamID, req.Chip, slotID, 0)
 	switch {
 	case errors.Is(err, ErrClosed):
-		http.Error(w, err.Error(), http.StatusConflict)
+		clientError(w, r, http.StatusConflict, err.Error())
 		return
 	case errors.Is(err, ErrBadRequest):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	case errors.Is(err, ErrNotFound):
-		http.Error(w, "unknown answer", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "unknown answer")
 		return
 	case err != nil:
 		serverError(w, "placing trivia bet", err)

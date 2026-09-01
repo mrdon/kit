@@ -12,8 +12,20 @@ import (
 //go:embed templates/display.html.tmpl templates/display.css templates/display.js
 var templateFS embed.FS
 
-//go:embed assets/bungee.woff2 assets/exo2.woff2
+//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/sample-questions.csv
 var assetFS embed.FS
+
+// SampleCSV is a starter question bank: 62 questions across eleven topics,
+// every one of them numeric and several carrying two topics, which is enough
+// to build the default 5x2 board several times over without repeating.
+//
+// It exists because "upload a CSV" is a worse instruction than "here is one
+// that works" — a host with an empty bank and a blank spreadsheet has to
+// guess the column names, and the first thing they learn otherwise is an
+// error message.
+func SampleCSV() ([]byte, error) {
+	return assetFS.ReadFile("assets/sample-questions.csv")
+}
 
 // displayTmpl is parsed once at package scope; a template that fails to parse
 // is a build-time mistake, not a runtime one.

@@ -183,6 +183,7 @@ import type {
   TriviaSettings as TriviaSettingsT,
   TopicCount as TopicCountT,
   HostFrame as HostFrameT,
+  ImportReport as ImportReportT,
 } from './pages/trivia/common';
 
 export interface KioskBoardInput {
@@ -836,6 +837,9 @@ export const api = {
   triviaReclaim: (gameId: string, teamId: string) =>
     apiPost<{ code: string }>(`/trivia/games/${gameId}/teams/${teamId}/reclaim`, {}),
   triviaQuestions: () => apiGet<{ total: number; topics: TopicCountT[] }>('/trivia/questions'),
+  // One click, no download-and-re-upload. Idempotent: the import upserts on
+  // the folded prompt, so loading it twice adds nothing.
+  loadTriviaStarter: () => apiPost<ImportReportT>('/trivia/questions/starter', {}),
 
   kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
   createKioskBoard: (body: KioskBoardInput) =>

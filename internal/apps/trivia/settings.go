@@ -82,16 +82,6 @@ func validateSettings(s Settings) error {
 			return fmt.Errorf("chip values must be positive, got %d", v)
 		}
 	}
-	// Cell values must sit well above chip values, and this is a 20-team
-	// effect. Only the team(s) who WROTE the winning answer take the cell, so
-	// with a full room most teams earn nothing from that channel in most
-	// rounds and betting is the only income they reliably have. If cells were
-	// worth what chips are, the quiz would be decoration on a betting game.
-	if cheapest(s.CellValues) < 2*dearest(s.TokenValues) {
-		return fmt.Errorf("the cheapest cell (%d) should be worth at least twice the biggest chip (%d), "+
-			"or writing the winning answer stops mattering",
-			cheapest(s.CellValues), dearest(s.TokenValues))
-	}
 	for name, v := range map[string]int{
 		"answer": s.AnswerSeconds, "reveal": s.RevealSeconds, "betting": s.BetSeconds,
 	} {
@@ -101,6 +91,36 @@ func validateSettings(s Settings) error {
 		}
 	}
 	return nil
+}
+
+// BalanceWarning describes a configuration that will play badly, WITHOUT
+// refusing it. This used to be a hard validation error, which was overreach:
+// it is an opinion about balance, not a correctness rule, and it rejected a
+// host setting up their own game with a 400 they could do nothing about.
+//
+// The effect it warns about is real but only shows up at a full room. Only
+// the team(s) who WROTE the winning answer take the cell, so with twenty
+// tables most earn nothing from that channel in most rounds and betting is
+// the only income they reliably have — capped at one chip per round, because
+// the two chips must go on different answers and only one answer wins. If a
+// cell is worth no more than a single good bet, the quiz becomes decoration
+// on a betting game.
+//
+// Returns "" when the numbers are fine.
+func BalanceWarning(s Settings) string {
+	if len(s.CellValues) == 0 || len(s.TokenValues) == 0 {
+		return ""
+	}
+	cell, chip := cheapest(s.CellValues), dearest(s.TokenValues)
+	if cell >= 2*chip {
+		return ""
+	}
+	return fmt.Sprintf(
+		"The cheapest cell (%s) is worth less than twice the biggest chip (%s). "+
+			"With a full room, only the tables that wrote the winning answer take a cell, "+
+			"so betting becomes the main way to score and the questions matter less. "+
+			"Fine for a small room — worth raising if you expect a crowd.",
+		FormatMoney(cell), FormatMoney(chip))
 }
 
 func cheapest(vs []int) int {

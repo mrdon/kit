@@ -1,9 +1,11 @@
 package trivia
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"time"
@@ -37,12 +39,12 @@ func (a *App) handleImport(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, importMaxBytes)
 	if err := r.ParseMultipartForm(importMaxBytes); err != nil {
-		http.Error(w, "the file is too large or not a valid upload", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "the file is too large or not a valid upload")
 		return
 	}
 	file, _, err := r.FormFile("csv")
 	if err != nil {
-		http.Error(w, "no csv file in the upload", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "no csv file in the upload")
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -51,7 +53,7 @@ func (a *App) handleImport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// A header the parser cannot read is the host's to fix, and the
 		// message names what it found against what it wanted.
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -129,6 +131,47 @@ func (a *App) handleListQuestions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"total": total, "topics": hist})
 }
 
+// handleLoadStarter imports the embedded starter pack straight into the
+// workspace bank — no download-and-re-upload round trip.
+//
+// Idempotent, because the import path upserts on prompt_key: loading it twice
+// updates 62 rows and adds none. That is what makes it safe to offer as a
+// button rather than a one-time setup step.
+func (a *App) handleLoadStarter(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	body, err := SampleCSV()
+	if err != nil {
+		serverError(w, "reading the trivia starter pack", err)
+		return
+	}
+	plan, err := ParseCSV(bytes.NewReader(body))
+	if err != nil {
+		serverError(w, "parsing the trivia starter pack", err)
+		return
+	}
+	resp, err := a.importPlan(r, tenant.ID, plan)
+	if err != nil {
+		serverError(w, "importing the trivia starter pack", err)
+		return
+	}
+	writeJSON(w, resp)
+}
+
+// handleSampleCSV serves the starter sheet as a download, for a host who
+// wants it as a template to build their own from.
+func (a *App) handleSampleCSV(w http.ResponseWriter, _ *http.Request) {
+	body, err := SampleCSV()
+	if err != nil {
+		serverError(w, "reading the trivia sample sheet", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="trivia-sample-questions.csv"`)
+	if _, err := w.Write(body); err != nil {
+		slog.Warn("writing trivia sample sheet", "error", err)
+	}
+}
+
 func (a *App) handleDeleteQuestion(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -143,7 +186,7 @@ func (a *App) handleDeleteQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 		// Board cells reference questions ON DELETE RESTRICT, so a question
 		// that is on some game's board cannot be pulled out from under it.
-		http.Error(w, "that question is on a game's board and cannot be deleted", http.StatusConflict)
+		clientError(w, r, http.StatusConflict, "that question is on a game's board and cannot be deleted")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -168,18 +211,18 @@ func (a *App) handleBuildBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if game.Phase != PhaseSetup && game.Phase != PhaseLobby {
-		http.Error(w, "the board can only be built before the game starts", http.StatusConflict)
+		clientError(w, r, http.StatusConflict, "the board can only be built before the game starts")
 		return
 	}
 	var req buildBoardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
 	topics, err := a.resolveTopics(r, tenant.ID, game, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -188,7 +231,7 @@ func (a *App) handleBuildBoard(w http.ResponseWriter, r *http.Request) {
 		var se *ShortfallError
 		if errors.As(err, &se) {
 			// The host is in a bar at 7pm. Name the column and the gap.
-			http.Error(w, se.Error(), http.StatusUnprocessableEntity)
+			clientError(w, r, http.StatusUnprocessableEntity, se.Error())
 			return
 		}
 		serverError(w, "building trivia board", err)
