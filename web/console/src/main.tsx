@@ -15,8 +15,6 @@ import EmailIntakeSettings from './pages/EmailIntakeSettings';
 import Events from './pages/Events';
 import EventsSettingsPage from './pages/EventsSettings';
 import EventsStaffPage from './pages/EventsStaff';
-import Expenses from './pages/Expenses';
-import ExpenseSettings from './pages/ExpenseSettings';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
 import Vault from './pages/Vault';
@@ -41,8 +39,6 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/email-intake" element={<EmailIntakeSettings />} />
           <Route path="/tasks/:id" element={<Tasks />} />
-          <Route path="/expenses" element={<Expenses />} />
-          <Route path="/expenses/:id" element={<Expenses />} />
           <Route path="/vault" element={<Vault />} />
           <Route path="/vault/:id" element={<Vault />} />
           <Route path="/skills" element={<Skills />} />
@@ -57,7 +53,6 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/apps" element={<AppsSettings />} />
           <Route path="/admin/events" element={<EventsSettingsPage />} />
           <Route path="/admin/events-staff" element={<EventsStaffPage />} />
-          <Route path="/admin/expenses" element={<ExpenseSettings />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />
           <Route path="/admin/netlify" element={<Netlify />} />

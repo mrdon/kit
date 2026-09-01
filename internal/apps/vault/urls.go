@@ -91,7 +91,7 @@ func registerVaultRoutes(mux apps.Mux, a *App) {
 	// The vault UI lives in the React console (/{slug}/web/vault); only
 	// the JSON API the console posts to lives here. It sits under the
 	// shared /{slug}/api/... namespace like every other feature app's
-	// API (task, expense, netlify, widget) — NOT under /apps/. The one
+	// API (task, widget) — NOT under /apps/. The one
 	// exception is the reveal bridge below, which is a redirect, not API.
 
 	// Admin-only setup, rotate, nuke (browser-driven crypto).

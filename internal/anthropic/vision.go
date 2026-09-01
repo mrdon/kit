@@ -33,7 +33,7 @@ const (
 )
 
 // defaultVisionInstructions is used when the caller does not target the
-// extraction. Receipt/expense callers pass their own (e.g. "extract
+// extraction. Callers pass their own (e.g. "extract
 // vendor, date, amount, tax, line items").
 const defaultVisionInstructions = "Transcribe all text in this image faithfully and completely, then briefly describe what the image shows."
 

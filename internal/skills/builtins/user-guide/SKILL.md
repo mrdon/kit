@@ -94,36 +94,16 @@ Kit tracks tasks for your team. Create them from conversation or explicitly:
 
 Tasks support priorities, due dates, role scoping, and an activity log. Use `list_tasks` to see open items or `complete_task` to mark one done. Use `snooze_task` (with `days` = any value 1–365; common picks are 1, 3, 7, 14, 30) to hide a todo from your swipe feed temporarily while keeping it active — worth doing for something urgent you've consciously deferred, since the feed shows urgent tasks only (see "Decisions and briefings"). To delete, set `status` to `cancelled` via `update_task` — it's a soft delete, recoverable by an admin via the DB if done accidentally.
 
-## Expense reports
-
-Kit files and routes expense reports. A report is a titled group of line items — each line is one receipt (vendor, date, amount, optional tax). A report belongs to a role (the team that owns the spend); anyone in the role can see it, and the submitter (or an admin) edits it while it's a draft.
-
-Attach a receipt photo or PDF in chat and ask Kit to log it:
-
-> "Here's my receipt from the hardware store — start an expense report."
-> "Add this $42 lunch to my June expenses."
-
-Kit reads the receipt with `read_attachment` (vision OCR), pulls out the vendor/date/amount, and adds a line item. When you're done, submit the report for approval:
-
-> "Submit my June expenses."
-
-Lifecycle: **draft → submitted → approved / rejected → reimbursed**. On submit, Kit raises an approval **decision card**. **Who approves is an admin setting** — in the web console's Expenses → Settings, an admin picks the approver role (e.g. "managers", "board"); until then, admins approve. Only the configured approvers (and admins) can approve, and they're also the only people besides the submitter who can see a report. Approvers act via the card, MCP/agent tools, or the web console — you can't approve your own. A rejected report can be reopened, fixed, and resubmitted; an approved one can be marked reimbursed. Spend categories are assigned automatically — no need to fill them in.
-
-**Public receipt intake.** Admins can enable a public page (Expenses → Settings) so people *without a Slack account* — volunteers, occasional helpers — can submit an expense. They open the workspace link, upload a receipt (Kit reads the vendor/date/amount for them to check), add their email, and submit. It lands as a normal submitted report owned by the role the admin chose, routed to that role for approval. Nothing is reimbursed until someone approves it, so the page is safe to share openly.
-
-Tools: `create_expense_report`, `add_expense_item`, `update_expense_item`, `remove_expense_item`, `assign_expense_approver`, `submit_expense_report`, `approve_expense_report`, `reject_expense_report`, `mark_expense_reimbursed`, `reopen_expense_report`, `delete_expense_report` (draft/rejected only), `list_expense_reports`, `get_expense_report`, `add_expense_comment`.
-
 ## Web console
 
 For deliberate, do-it-yourself work on a desktop, open the web console at `/<your-slug>/web`. It's a direct-manipulation UI — distinct from Slack (ask the agent) and the swipe feed (mobile triage). The launcher links to:
 
 - **Tasks** — a priority-banded list (Blocker / High / Normal) grouped by an auto-assigned topic category. Drag a task between bands to reprioritize, tap "I'm on it" to claim it (which reserves it so teammates skip it) or the checkbox to resolve. Also a flat List view, a detail drawer, and the comment timeline. The same tasks still surface in the swipe feed.
-- **Expenses** — reports grouped by status; open one to add or remove line items, assign an approver, and submit/approve/reject/reimburse. Receipts attached in chat show on their line items.
 - **Kiosk** — wall-mounted screens: give each one a permanent Kit address, then change what it shows by editing its URL here. Any member can repoint a screen.
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
 - **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
-- **Apps** — admin-only page to turn features (vault, expenses, voting, calendar, app builder, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
+- **Apps** — admin-only page to turn features (vault, calendar, events, kiosk, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
 - **Integrations** — connect external services from one page: click **Connect** and enter the secret on a secure one-time form (it never passes through the assistant). Personal email is self-service for any user; workspace-wide services (Square, Google Calendar, Netlify, GitHub) are admin-only.
 - **Website / Chat widget** — admin-only setup pages for Netlify/GitHub site changes and the website chat widget.
 

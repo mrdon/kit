@@ -158,8 +158,8 @@ func Catalog() []AppInfo {
 	return out
 }
 
-// titleCase turns an app slug ("expense", "github") into a display fallback
-// ("Expense", "Github"). Apps wanting nicer casing implement DescribableApp.
+// titleCase turns an app slug ("vault", "kiosk") into a display fallback
+// ("Vault", "Kiosk"). Apps wanting nicer casing implement DescribableApp.
 func titleCase(name string) string {
 	if name == "" {
 		return ""

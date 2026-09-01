@@ -27,7 +27,6 @@ import (
 	"github.com/mrdon/kit/internal/apps/coordination"
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/events"
-	"github.com/mrdon/kit/internal/apps/expense"
 	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/apps/integrations"
@@ -291,10 +290,6 @@ func main() {
 	// serve route. Shares the encryptor and the deep-link signer; uses the
 	// builder LLM client for image transcription.
 	attachmentapp.Configure(enc, deepLinkSigner, builderLLM)
-
-	// Expense reports: consumes the attachment capability for receipts and
-	// raises an approval decision card on submit (via the cards adapter).
-	expense.Configure(builderLLM, newExpenseCardAdapter(cards.ServiceForGating()), enc, sessionSigner)
 
 	console.Configure(sessionSigner, enc)
 	github.Configure(

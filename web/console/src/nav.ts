@@ -31,12 +31,6 @@ export const SECTIONS: Section[] = [
     app: 'events',
   },
   {
-    to: '/expenses',
-    label: 'Expenses',
-    blurb: 'File and approve expense reports with receipts.',
-    app: 'expense',
-  },
-  {
     to: '/menu',
     label: 'Menu',
     blurb: 'Published tap lists, and the address to put one on a screen.',
@@ -76,16 +70,9 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
   {
-    to: '/admin/expenses',
-    label: 'Expense settings',
-    blurb: 'Choose which role approves expense reports.',
-    admin: true,
-    app: 'expense',
-  },
-  {
     to: '/admin/apps',
     label: 'Apps',
-    blurb: 'Turn features like the vault, expenses, or voting on or off.',
+    blurb: 'Turn features like the vault, the menu, or events on or off.',
     admin: true,
   },
   {

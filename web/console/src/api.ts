@@ -325,96 +325,6 @@ export interface UpdateTaskBody {
   clear_due_date?: boolean;
 }
 
-export interface ExpenseItem {
-  id: string;
-  report_id: string;
-  attachment_id?: string;
-  vendor?: string;
-  spent_on?: string;
-  amount_cents: number;
-  tax_cents: number;
-  category?: string;
-  note?: string;
-  sort_order: number;
-}
-
-export interface ExpenseReport {
-  id: string;
-  title: string;
-  description?: string;
-  status: string;
-  scope_id: string;
-  submitter_user_id: string;
-  submitter_email?: string;
-  submitter_name?: string;
-  approver_user_id?: string;
-  decided_by_user_id?: string;
-  rejection_reason?: string;
-  total_cents: number;
-  currency: string;
-  submitted_at?: string;
-  decided_at?: string;
-  reimbursed_at?: string;
-  created_at: string;
-  updated_at: string;
-  items?: ExpenseItem[];
-}
-
-export interface ExpenseEvent {
-  id: string;
-  event_type: string;
-  content?: string;
-  old_value?: string;
-  new_value?: string;
-  created_at: string;
-}
-
-export interface ExpensesMeta {
-  roles: string[];
-  statuses: string[];
-  currencies: string[];
-  is_admin: boolean;
-}
-
-export interface ExpensePolicy {
-  approver_role?: string;
-  approver_user_id?: string;
-  intake_enabled: boolean;
-  intake_role?: string;
-  intake_currency?: string;
-}
-
-export interface IntakeConfigBody {
-  enabled: boolean;
-  role: string;
-  currency: string;
-}
-
-export interface ExpenseFilters {
-  status?: string;
-  mine_only?: boolean;
-  search?: string;
-  include_closed?: boolean;
-}
-
-export interface CreateExpenseBody {
-  title: string;
-  description?: string;
-  currency?: string;
-  role_scope?: string;
-  approver?: string;
-}
-
-export interface ExpenseItemBody {
-  amount?: string;
-  vendor?: string;
-  spent_on?: string;
-  tax?: string;
-  category?: string;
-  note?: string;
-  attachment_id?: string;
-}
-
 export interface SkillSummary {
   id: string; // empty for builtins
   name: string;
@@ -916,41 +826,6 @@ export const api = {
   squareShiftsStatus: () => apiGet<SquareShiftsStatus>('/square-shifts/status'),
   squareShiftsSync: () => apiPost<SquareShiftsStatus>('/square-shifts/sync'),
 
-  expensesMeta: () => apiGet<ExpensesMeta>('/expenses/meta'),
-  listExpenses: (f: ExpenseFilters = {}) =>
-    apiGet<{ reports: ExpenseReport[] }>(`/expenses${expenseQuery(f)}`),
-  getExpense: (id: string) =>
-    apiGet<{ report: ExpenseReport; events: ExpenseEvent[]; can_approve: boolean }>(
-      `/expenses/${id}`,
-    ),
-  expensePolicy: () => apiGet<{ policy: ExpensePolicy }>('/expenses/policy'),
-  setExpensePolicy: (body: { approver_role?: string; approver?: string }) =>
-    apiPut<{ policy: ExpensePolicy }>('/expenses/policy', body),
-  setExpenseIntake: (body: IntakeConfigBody) =>
-    apiPut<{ policy: ExpensePolicy }>('/expenses/intake-config', body),
-  createExpense: (body: CreateExpenseBody) =>
-    apiPost<{ report: ExpenseReport }>('/expenses', body),
-  assignExpenseApprover: (id: string, approver: string) =>
-    apiPost<{ report: ExpenseReport }>(`/expenses/${id}/approver`, { approver }),
-  addExpenseItem: (id: string, body: ExpenseItemBody) =>
-    apiPost<{ item: ExpenseItem }>(`/expenses/${id}/items`, body),
-  updateExpenseItem: (id: string, itemId: string, body: ExpenseItemBody) =>
-    apiPatch<{ item: ExpenseItem }>(`/expenses/${id}/items/${itemId}`, body),
-  removeExpenseItem: (id: string, itemId: string) =>
-    apiDelete<void>(`/expenses/${id}/items/${itemId}`),
-  submitExpense: (id: string) =>
-    apiPost<{ report: ExpenseReport }>(`/expenses/${id}/submit`),
-  approveExpense: (id: string) =>
-    apiPost<{ report: ExpenseReport }>(`/expenses/${id}/approve`),
-  rejectExpense: (id: string, reason: string) =>
-    apiPost<{ report: ExpenseReport }>(`/expenses/${id}/reject`, { reason }),
-  reimburseExpense: (id: string) =>
-    apiPost<{ report: ExpenseReport }>(`/expenses/${id}/reimburse`),
-  reopenExpense: (id: string) =>
-    apiPost<{ report: ExpenseReport }>(`/expenses/${id}/reopen`),
-  deleteExpense: (id: string) => apiDelete<void>(`/expenses/${id}`),
-  addExpenseComment: (id: string, content: string) =>
-    apiPost<void>(`/expenses/${id}/comments`, { content }),
 
   skillsMeta: () => apiGet<SkillsMeta>('/skills/meta'),
   listSkills: (search = '') =>
@@ -979,12 +854,3 @@ export const api = {
   deleteJob: (id: string) => apiDelete<void>(`/jobs/${id}`),
 };
 
-function expenseQuery(f: ExpenseFilters): string {
-  const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(f)) {
-    if (v === undefined || v === '' || v === false) continue;
-    p.set(k, String(v));
-  }
-  const qs = p.toString();
-  return qs ? `?${qs}` : '';
-}

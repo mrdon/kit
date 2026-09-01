@@ -55,7 +55,7 @@ func TestSetEnabledDisableAndReenable(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	initEnablement(pool)
-	withFeatures(t, "vault", "expense")
+	withFeatures(t, "vault", "kiosk")
 	t.Cleanup(func() { enablement = nil })
 
 	tenantID := enablementTenant(t, ctx, pool)
@@ -70,8 +70,8 @@ func TestSetEnabledDisableAndReenable(t *testing.T) {
 	}
 
 	// Other apps remain enabled; isolation by app name.
-	if !IsEnabled(ctx, tenantID, "expense") {
-		t.Fatal("expense should still be enabled")
+	if !IsEnabled(ctx, tenantID, "kiosk") {
+		t.Fatal("kiosk should still be enabled")
 	}
 
 	// Re-enable.

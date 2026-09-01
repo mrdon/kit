@@ -2,7 +2,7 @@
 // first place Kit persists original uploaded bytes (previously uploads were
 // extracted to text and discarded). Bytes are encrypted at rest; every read
 // is tenant-scoped. Consumers: the chat orchestrator (store turn
-// attachments), the read_attachment tool, and the expense app (receipts).
+// attachments) and the read_attachment tool.
 package attachment
 
 import (
