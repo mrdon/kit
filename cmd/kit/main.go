@@ -34,6 +34,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/squaresales"
 	"github.com/mrdon/kit/internal/apps/squareshifts"
 	"github.com/mrdon/kit/internal/apps/task"
+	"github.com/mrdon/kit/internal/apps/trivia"
 	"github.com/mrdon/kit/internal/apps/vault"
 	widgetapp "github.com/mrdon/kit/internal/apps/widget"
 	"github.com/mrdon/kit/internal/auth"
@@ -253,6 +254,13 @@ func main() {
 	// serve route. Shares the encryptor and the deep-link signer; uses the
 	// builder LLM client for image transcription.
 	attachmentapp.Configure(enc, deepLinkSigner, llm)
+
+	// Trivia needs the signer for the host console API, the base URL to build
+	// the join link the QR code on the TV encodes, and Redis to relay live
+	// snapshots between web processes. rdb may be nil -- fan-out then stays
+	// per-process, which is exactly correct at web=1.
+	trivia.Configure(sessionSigner, cfg.BaseURL, rdb)
+	trivia.StartLive(ctx)
 
 	console.Configure(sessionSigner, enc)
 
