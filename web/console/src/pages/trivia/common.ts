@@ -23,6 +23,10 @@ export interface TriviaGame {
   title: string;
   phase: Phase;
   join_url: string;
+  // The stable address — always shows the newest game. This is the one to put
+  // on the screen.
+  screen_url: string;
+  // Pins this one game. The exception, not the default.
   tv_url: string;
   teams: number;
   cells: number;

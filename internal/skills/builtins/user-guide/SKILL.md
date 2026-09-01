@@ -421,13 +421,19 @@ A live pub quiz that runs on three screens at once: a host console you drive fro
 
 There is no buzzer and no adjudication — every team answers every question, all the guesses are revealed together, and because answers are numbers the round scores itself.
 
-**Build a question bank.** On the **Trivia** page (`/<your-slug>/web/trivia`), create a game and upload a CSV with `question`, `topics` and `answer` columns, in any order. Topics are separated by semicolons, so one question can belong to two categories. Answers must be numbers — that is what makes "closest without going over" work. Re-uploading a corrected sheet updates rows in place rather than duplicating them, and the report tells you what landed, what was a duplicate, and which line of the sheet had a typo.
+**Question sets.** On the **Trivia** page (`/<your-slug>/web/trivia`), create a game and give it some questions. Kit ships two sets you can add with one click — a general starter pack and the Wits & Wagers questions — or upload your own CSV with `question`, `topics` and `answer` columns, in any order.
 
-The bank belongs to the workspace and grows over time. Building a board prefers questions the room hasn't heard recently, so a weekly quiz doesn't repeat itself.
+A **set** is just a named group of questions, and each game draws from whichever sets you tick. That's how you keep a Christmas quiz apart from an ordinary Tuesday. Uploading a set with a name that already exists replaces its contents, so fixing a typo and re-uploading does what you'd expect. Delete a set whenever you like — a game that's still in play will block it, but finished games won't, because they keep their own copy of every question they asked. Topics are separated by semicolons, so one question can belong to two categories. Answers must be numbers — that is what makes "closest without going over" work. Re-uploading a corrected sheet updates rows in place rather than duplicating them, and the report tells you what landed, what was a duplicate, and which line of the sheet had a typo.
 
-**Build the board.** Pick your categories (or hit **Auto**) and Kit fills a 5 × 2 grid at $500 and $1,000 a cell — ten questions, about half an hour. If a category doesn't have enough questions, you're told which one and by how much, at setup time rather than three questions into the night.
+Building a board prefers questions the room hasn't heard recently, so a weekly quiz doesn't repeat itself. Settings carry over too: a new game starts with the last one's board shape, values and timers.
 
-**Run it.** Open the TV URL on the screen and put the QR code where people can scan it. Teams join by scanning; each table types its own name. Up to 20 teams.
+**Build the board.** Pick your categories (or hit **Auto**) and Kit fills a 5 × 2 grid — ten questions, about half an hour. If a category doesn't have enough questions, you're told which one and by how much, at setup time rather than three questions into the night.
+
+Cells are worth $100 and $200 by default, the same as the chips, which makes betting the larger half of the game: only the table that *wrote* the winning answer takes a cell, but every table places chips every round. Raise the cell values in Settings if you'd rather knowing the answer outweighed reading the room.
+
+**Put the TV on `/<your-slug>/trivia/tv` once and leave it.** That address always shows the newest game, so you never have to walk over and retype a URL — the same idea as a kiosk screen. Before the first game it shows a "no quiz tonight" card, and it picks up a new game on its own within about fifteen seconds. Each game also has its own screen address if you ever need to pin one night (two rooms, or reviewing an old game), but the stable one is what belongs on the wall.
+
+**Run it.** Put the QR code where people can scan it. Teams join by scanning; each table types its own name. Up to 20 teams.
 
 From the live page you pick a cell, then press one button per beat: **Reveal answers**, **Open betting**, **Score round**, **Next**. The clocks run themselves — 60 seconds to answer, 45 to bet by default — so you can put the laptop down. Closing the laptop doesn't stop the game: the timing lives on the server, and if everyone has answered the phase ends early rather than burning the clock.
 
@@ -440,7 +446,7 @@ You can switch the final off per game (**Settings → Final wager**). With it of
 **Ask about it afterwards.** In Slack:
 
 > "How did trivia go last night?"
-> "What were the results for brave-otter-lamp?"
+> "What were the results for jumping-lion?"
 
 Kit calls `trivia_status` and `trivia_results`. Those are the only two trivia tools and both are read-only — nothing about running a live game is improved by asking an assistant to press the button in a loud room.
 

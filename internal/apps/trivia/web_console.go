@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,15 +47,20 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("DELETE /{slug}/api/trivia/questions/{id}", jsonRoute(a.handleDeleteQuestion))
 }
 
-// gameJSON is the console's view of a game. join_url and the QR are served
-// rather than assembled client-side so the console, the TV and the phone can
-// never disagree about where a game lives.
+// gameJSON is the console's view of a game. The URLs are served rather than
+// assembled client-side so the console, the TV and the phone can never
+// disagree about where a game lives.
 type gameJSON struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Title     string    `json:"title"`
-	Phase     string    `json:"phase"`
-	JoinURL   string    `json:"join_url"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Title   string `json:"title"`
+	Phase   string `json:"phase"`
+	JoinURL string `json:"join_url"`
+	// ScreenURL is the STABLE address — it always shows the newest game, and
+	// it is what a host should put on the TV. TVURL pins one specific game
+	// and is the exception, useful for looking at an old night or running two
+	// rooms at once.
+	ScreenURL string    `json:"screen_url"`
 	TVURL     string    `json:"tv_url"`
 	Teams     int       `json:"teams"`
 	Cells     int       `json:"cells"`
@@ -67,9 +73,10 @@ type gameJSON struct {
 func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader string) gameJSON {
 	return gameJSON{
 		ID: g.ID.String(), Name: g.Name, Title: g.Title, Phase: string(g.Phase),
-		JoinURL: JoinURL(a.baseURL, slug, g.Name),
-		TVURL:   JoinURL(a.baseURL, slug, g.Name) + "/tv",
-		Teams:   teams, Cells: cells, Played: played, Leader: leader,
+		JoinURL:   JoinURL(a.baseURL, slug, g.Name),
+		ScreenURL: strings.TrimRight(a.baseURL, "/") + "/" + slug + "/trivia/tv",
+		TVURL:     JoinURL(a.baseURL, slug, g.Name) + "/tv",
+		Teams:     teams, Cells: cells, Played: played, Leader: leader,
 		CreatedAt: g.CreatedAt,
 		Settings: Settings{
 			Title: g.Title, BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,

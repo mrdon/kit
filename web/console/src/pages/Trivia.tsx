@@ -14,6 +14,7 @@ import { PHASE_LABEL } from './trivia/common';
 export default function Trivia() {
   useSetChatContext('the Trivia page');
   const tvURL = `${window.location.origin}/${SLUG}/trivia/tv`;
+
   const nav = useNavigate();
   const [games, setGames] = useState<TriviaGame[] | null>(null);
   const [bank, setBank] = useState<{ total: number } | null>(null);

@@ -455,3 +455,25 @@ func TestDisplayShowsTheHostsTitle(t *testing.T) {
 		t.Fatal("the corner heading is not the host's title")
 	}
 }
+
+// The console must serve the STABLE screen address, not just the per-game
+// one. Advertising only the per-game URL is what sends a host to retype
+// something at the television every week.
+func TestGameJSONCarriesTheStableScreenURL(t *testing.T) {
+	f := newFixture(t)
+	game := f.newGame(defaultSettings(), nil)
+	app := &App{pool: f.pool, svc: f.svc, baseURL: "https://kit.example.com"}
+
+	j := app.gameToJSON(game, f.tenant.Slug, 0, 0, 0, "")
+	want := "https://kit.example.com/" + f.tenant.Slug + "/trivia/tv"
+	if j.ScreenURL != want {
+		t.Fatalf("screen_url = %q, want %q", j.ScreenURL, want)
+	}
+	// And it must NOT be the per-game one, which is the bug this guards.
+	if j.ScreenURL == j.TVURL {
+		t.Fatal("the stable screen URL is the same as the per-game one")
+	}
+	if !strings.HasSuffix(j.TVURL, "/trivia/"+game.Name+"/tv") {
+		t.Fatalf("tv_url = %q, want it to pin this game", j.TVURL)
+	}
+}

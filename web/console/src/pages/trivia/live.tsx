@@ -58,7 +58,7 @@ export default function TriviaLive() {
           <p className="page-sub">
             {PHASE_LABEL[frame.phase]} · {frame.progress.cellsPlayed}/{frame.progress.cellsTotal} played
             {!connected ? ' · reconnecting…' : ''}
-            {' · '}<a href={game.tv_url} target="_blank" rel="noreferrer">open the TV</a>
+            {' · '}<a href={game.tv_url} target="_blank" rel="noreferrer">open this game&rsquo;s screen</a>
           </p>
         </div>
         <div className="page-head-actions">

@@ -45,7 +45,16 @@ export default function TriviaSetup() {
         <div>
           <h1>{game.title || game.name}</h1>
           <p className="page-sub">
-            Players join at <code>{game.join_url}</code> · TV at <code>{game.tv_url}</code>
+            Players join at <code>{game.join_url}</code> — or by scanning the QR code on the TV.
+          </p>
+          {/* The stable address leads, because it is the one that should end
+              up on the screen. Advertising the per-game URL as "the TV URL"
+              sends a host to retype it at the television every week, which is
+              exactly the chore the stable one removes. */}
+          <p className="page-sub">
+            Put the TV on <code>{game.screen_url}</code> once and leave it — it always shows the
+            newest game. <a href={game.tv_url} target="_blank" rel="noreferrer">Open just this
+            game&rsquo;s screen</a> if you need to pin one night.
           </p>
         </div>
         <Link className="btn" to={`/trivia/${game.id}/live`}>Run it</Link>
