@@ -171,35 +171,6 @@ export interface KioskBoardInput {
   notes: string;
 }
 
-export interface NetlifySiteOption {
-  id: string;
-  name: string;
-  url: string;
-}
-
-export interface NetlifySiteGroup {
-  team: string;
-  sites: NetlifySiteOption[];
-}
-
-export interface NetlifyStatus {
-  netlify_configured: boolean;
-  github_configured: boolean;
-  netlify_connected: boolean;
-  netlify_site_name: string;
-  netlify_repo_owner: string;
-  netlify_repo_name: string;
-  netlify_needs_picker: boolean;
-  netlify_sites_error: string;
-  sites_by_team: NetlifySiteGroup[];
-  github_connected: boolean;
-  github_account_login: string;
-  github_installation_id: number;
-  netlify_connect_url: string;
-  github_connect_url: string;
-  github_disconnect_url: string;
-}
-
 export interface SquareShiftRun {
   status: string; // "completed" | "failed"
   triggered_by: string;
@@ -736,10 +707,6 @@ export const api = {
   revokeWidgetToken: (id: string) =>
     apiPost<void>(`/widget/tokens/${encodeURIComponent(id)}/revoke`),
 
-  netlifyStatus: () => apiGet<NetlifyStatus>('/netlify/status'),
-  netlifyPickSite: (siteId: string) =>
-    apiPost<{ message: string }>('/netlify/site', { site_id: siteId }),
-  netlifyDisconnect: () => apiPost<void>('/netlify/disconnect'),
 
   eventsMeta: () => apiGet<EventsMeta>('/events/meta'),
   listEvents: (opts: { status?: string; include_past?: boolean } = {}) => {

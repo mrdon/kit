@@ -5,7 +5,6 @@ import Shell from './Shell';
 import Launcher from './Launcher';
 import Integrations from './pages/Integrations';
 import AppsSettings from './pages/AppsSettings';
-import Netlify from './pages/Netlify';
 import SquareShifts from './pages/SquareShifts';
 import Kiosk from './pages/Kiosk';
 import Menu from './pages/Menu';
@@ -55,7 +54,6 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/events-staff" element={<EventsStaffPage />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />
-          <Route path="/admin/netlify" element={<Netlify />} />
           <Route path="/admin/square-shifts" element={<SquareShifts />} />
           <Route path="/admin/widget" element={<Widget />} />
         </Route>

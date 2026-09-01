@@ -31,7 +31,6 @@ import (
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/apps/kiosk"
 	"github.com/mrdon/kit/internal/apps/menu"
-	"github.com/mrdon/kit/internal/apps/netlify"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/square"
 	"github.com/mrdon/kit/internal/apps/squareshifts"
@@ -286,15 +285,6 @@ func main() {
 		cfg.GitHubAppSlug,
 		cfg.GitHubAppID,
 		cfg.GitHubAppPrivateKey,
-	)
-	netlify.Configure(
-		sessionSigner,
-		enc,
-		cfg.BaseURL,
-		cfg.NetlifyClientID,
-		cfg.NetlifyClientSecret,
-		github.GetService(),
-		builderLLM,
 	)
 
 	// Wire the urgent-card push surface so cards created with

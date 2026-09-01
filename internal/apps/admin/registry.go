@@ -27,7 +27,7 @@ type Integration interface {
 	Description() string
 
 	// Slug is a stable identifier used for sort order + as the
-	// element id. Lowercase, kebab-case. "netlify", "github".
+	// element id. Lowercase, kebab-case. "vault", "events".
 	Slug() string
 
 	// Status reports per-tenant connection state.

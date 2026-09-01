@@ -24,14 +24,6 @@ type Config struct {
 	WhisperModel       string // path to whisper ggml model file
 	FFmpegBin          string // path to ffmpeg; defaults to "ffmpeg" on PATH
 
-	// Netlify OAuth app credentials. Drive the Netlify website-
-	// management app at internal/apps/netlify. Unset values leave the
-	// corresponding Connect button disabled in the PWA settings page
-	// rather than crashing — local dev paths don't need either
-	// credential to bring the rest of Kit up.
-	NetlifyClientID     string // Netlify OAuth app client_id
-	NetlifyClientSecret string // Netlify OAuth app client_secret
-
 	// Square OAuth app credentials. Drive the Square integration at
 	// internal/apps/square (shift sync today; sales stats tomorrow).
 	// Application-level: per-tenant access/refresh tokens live in the
@@ -43,7 +35,7 @@ type Config struct {
 
 	// Kit GitHub App credentials. The GitHub App is workspace-scoped
 	// and shared across every Kit feature that ever touches GitHub
-	// (today: netlify; tomorrow: PR-decisions, issue-tasks, etc.).
+	// (PR-decisions, issue-tasks, and so on).
 	// Same rationale as the single shared Slack bot — install once
 	// per workspace, used by every feature that needs git/GitHub.
 	GitHubAppSlug       string // public slug used in the install URL (https://github.com/apps/<slug>)
@@ -55,23 +47,21 @@ func Load() (*Config, error) {
 	loadDotEnv(".env")
 
 	cfg := &Config{
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		Port:                os.Getenv("PORT"),
-		SlackClientID:       os.Getenv("SLACK_CLIENT_ID"),
-		SlackClientSecret:   os.Getenv("SLACK_CLIENT_SECRET"),
-		SlackSigningSecret:  os.Getenv("SLACK_SIGNING_SECRET"),
-		AnthropicAPIKey:     os.Getenv("ANTHROPIC_API_KEY"),
-		EncryptionKey:       os.Getenv("ENCRYPTION_KEY"),
-		BaseURL:             os.Getenv("BASE_URL"),
-		RedisURL:            os.Getenv("REDIS_URL"),
-		SessionSecret:       os.Getenv("KIT_SESSION_SECRET"),
-		Env:                 os.Getenv("KIT_ENV"),
-		WhisperBin:          os.Getenv("WHISPER_BIN"),
-		WhisperModel:        os.Getenv("WHISPER_MODEL"),
-		FFmpegBin:           os.Getenv("FFMPEG_BIN"),
-		NetlifyClientID:     os.Getenv("NETLIFY_CLIENT_ID"),
-		NetlifyClientSecret: os.Getenv("NETLIFY_CLIENT_SECRET"),
-		GitHubAppSlug:       os.Getenv("KIT_GITHUB_APP_SLUG"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		Port:               os.Getenv("PORT"),
+		SlackClientID:      os.Getenv("SLACK_CLIENT_ID"),
+		SlackClientSecret:  os.Getenv("SLACK_CLIENT_SECRET"),
+		SlackSigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
+		AnthropicAPIKey:    os.Getenv("ANTHROPIC_API_KEY"),
+		EncryptionKey:      os.Getenv("ENCRYPTION_KEY"),
+		BaseURL:            os.Getenv("BASE_URL"),
+		RedisURL:           os.Getenv("REDIS_URL"),
+		SessionSecret:      os.Getenv("KIT_SESSION_SECRET"),
+		Env:                os.Getenv("KIT_ENV"),
+		WhisperBin:         os.Getenv("WHISPER_BIN"),
+		WhisperModel:       os.Getenv("WHISPER_MODEL"),
+		FFmpegBin:          os.Getenv("FFMPEG_BIN"),
+		GitHubAppSlug:      os.Getenv("KIT_GITHUB_APP_SLUG"),
 
 		SquareApplicationID:     os.Getenv("SQUARE_APPLICATION_ID"),
 		SquareApplicationSecret: os.Getenv("SQUARE_APPLICATION_SECRET"),

@@ -85,13 +85,6 @@ export const SECTIONS: Section[] = [
     app: 'integrations',
   },
   {
-    to: '/admin/netlify',
-    label: 'Website',
-    blurb: 'Connect Netlify + GitHub so the team can request site changes.',
-    admin: true,
-    app: 'netlify',
-  },
-  {
     to: '/admin/events',
     label: 'Events calendar & feed',
     blurb: 'Pick the calendar events sync to, and the feed your website builds from.',
