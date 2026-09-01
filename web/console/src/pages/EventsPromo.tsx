@@ -3,7 +3,14 @@ import { Link } from 'react-router-dom';
 import { api, type PromoItem, type PromoPayload } from '../api';
 import { useMe } from '../me';
 
-// The promotion work list, rendered on the Events page.
+// The promotion work list. Its own page, deliberately.
+//
+// It started as a panel on the Events page and that was the wrong shape:
+// Events is about authoring what is on, this is about chasing where it has
+// been posted. They are different jobs done at different times -- one when a
+// gig gets booked, the other in a single sitting once a week -- and stacking
+// the second under the first buried the event list under a hundred rows of
+// chores. Events links here with a count instead.
 //
 // One list in priority order, mixing states rather than separating a "todo"
 // page from a log:
@@ -124,7 +131,7 @@ function PromoRow({
   );
 }
 
-export default function EventsPromoPanel() {
+export default function EventsPromoPage() {
   const me = useMe();
   const [data, setData] = useState<PromoPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -159,24 +166,29 @@ export default function EventsPromoPanel() {
 
   if (!data && !err) return null;
 
-  // Nothing configured yet still needs to say so. Rendering nothing was the
-  // first version and it was wrong: the Events page is exactly where someone
-  // looks for this, so an invisible panel makes the whole feature
+  // An unconfigured workspace still gets a real page saying what this is for.
+  // The first version rendered nothing at all, which made the whole feature
   // undiscoverable unless you already knew to go hunting in Admin.
   if (data && data.channels.length === 0) {
-    if (!me?.is_admin) return null;
     return (
-      <section className="panel">
-        <h2 className="panel-title">Promotion</h2>
-        <p className="muted">
-          Kit can keep track of where each event still needs posting — your
-          chamber, the city calendar, Facebook — and put the deep link and the
-          copy in front of you rather than making you go and find them.
-        </p>
-        <Link className="btn" to="/admin/events-channels">
-          Set up promotion channels
-        </Link>
-      </section>
+      <div className="page">
+        <PromoHead outstanding={0} />
+        <section className="panel">
+          <p className="muted">
+            Nothing set up yet. Kit can keep track of where each event still
+            needs posting — your chamber, the city calendar, Facebook — and put
+            the deep link and the copy in front of you rather than making you
+            go and find them.
+          </p>
+          {me?.is_admin ? (
+            <Link className="btn" to="/admin/events-channels">
+              Set up promotion channels
+            </Link>
+          ) : (
+            <p className="field-note">An admin can set the channels up.</p>
+          )}
+        </section>
+      </div>
     );
   }
   if (!data) return null;
@@ -184,40 +196,34 @@ export default function EventsPromoPanel() {
   const { items, done, summary } = data;
 
   return (
-    <section className="panel">
-      <div className="page-head-row">
-        <h2 className="panel-title">
-          Promotion
-          {summary.outstanding > 0 && (
-            <span className="btn-badge">{summary.outstanding}</span>
-          )}
-        </h2>
-        <Link className="btn btn-ghost" to="/admin/events-channels">
-          Channels
-        </Link>
-      </div>
+    <div className="page">
+      <PromoHead outstanding={summary.outstanding} overdue={summary.overdue} />
 
       {err && <p className="banner banner-error">{err}</p>}
 
-      {items.length === 0 ? (
-        <p className="muted">Nothing outstanding. </p>
-      ) : (
-        <table className="item-table">
-          <tbody>
-            {items.map((it) => (
-              <PromoRow
-                key={`${it.event_id}:${it.channel_id}:${it.step_key}`}
-                item={it}
-                busy={busy}
-                onMark={(s) => mark(it, s)}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
+      <section className="panel">
+        {items.length === 0 ? (
+          <p className="muted">
+            Nothing outstanding — everything due has been posted or skipped.
+          </p>
+        ) : (
+          <table className="item-table">
+            <tbody>
+              {items.map((it) => (
+                <PromoRow
+                  key={`${it.event_id}:${it.channel_id}:${it.step_key}`}
+                  item={it}
+                  busy={busy}
+                  onMark={(s) => mark(it, s)}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       {done.length > 0 && (
-        <>
+        <section className="panel">
           <button className="btn btn-ghost" onClick={() => setShowDone(!showDone)}>
             {showDone ? 'Hide' : 'Show'} {done.length} already done
           </button>
@@ -235,8 +241,36 @@ export default function EventsPromoPanel() {
               </tbody>
             </table>
           )}
-        </>
+        </section>
       )}
-    </section>
+    </div>
+  );
+}
+
+// PromoHead is the page chrome, shared by the empty and populated states so a
+// workspace with nothing configured still lands somewhere that looks like a
+// page rather than a stray paragraph.
+function PromoHead({ outstanding, overdue }: { outstanding: number; overdue?: number }) {
+  return (
+    <div className="page-head">
+      <nav className="crumbs">
+        <Link to="/">Home</Link>
+        <span className="crumb-sep">/</span>
+        <Link to="/events">Events</Link>
+        <span className="crumb-sep">/</span>
+        <span>Promotion</span>
+      </nav>
+      <div className="page-head-row">
+        <h1>Promotion</h1>
+        <Link className="btn btn-ghost" to="/admin/events-channels">
+          Channels
+        </Link>
+      </div>
+      <p className="page-sub">
+        Where each event still needs posting, in the order it wants doing —
+        soonest deadline first, not soonest event.
+        {outstanding > 0 && overdue ? ` ${overdue} of ${outstanding} overdue.` : ''}
+      </p>
+    </div>
   );
 }

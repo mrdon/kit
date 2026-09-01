@@ -18,6 +18,7 @@ import Events from './pages/Events';
 import EventsSettingsPage from './pages/EventsSettings';
 import EventsStaffPage from './pages/EventsStaff';
 import EventsChannelsPage from './pages/EventsChannels';
+import EventsPromoPage from './pages/EventsPromo';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
 import Vault from './pages/Vault';
@@ -47,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/skills" element={<Skills />} />
           <Route path="/skills/:id" element={<Skills />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/events/promo" element={<EventsPromoPage />} />
           <Route path="/menu" element={<Menu />} />
           <Route path="/kiosk" element={<Kiosk />} />
           <Route path="/trivia" element={<Trivia />} />

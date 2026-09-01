@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import EventsPromoPanel from './EventsPromoPanel';
 import {
   api,
   type EventInput,
@@ -206,6 +205,9 @@ export default function Events() {
                 <span className="btn-badge">{pendingCount}</span>
               )}
             </button>
+            {/* Promotion is its own page: a different job, done at a
+                different time. Only the count belongs here. */}
+            <PromoLink />
             <button
               className="btn"
               onClick={() => {
@@ -250,10 +252,6 @@ export default function Events() {
           set up. <Link to="/admin/events">Finish setup</Link>.
         </p>
       )}
-
-      {/* The promotion work list. Sits above the event list because it is
-          what a Monday session is for: work the list, then get on. */}
-      <EventsPromoPanel />
 
       <div className="toolbar">
         <label className="check">
@@ -795,5 +793,26 @@ function EventDrawer({
         </form>
       </aside>
     </div>
+  );
+}
+
+// PromoLink is the count and a way through to the promotion page. It renders
+// nothing at all until there is something to say -- an unconfigured workspace
+// should not carry a dead button, and neither should a week with nothing
+// outstanding.
+function PromoLink() {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    api
+      .eventsPromo()
+      .then((r) => setN(r.channels.length === 0 ? null : r.summary.outstanding))
+      .catch(() => setN(null));
+  }, []);
+  if (n === null) return null;
+  return (
+    <Link className="btn btn-ghost" to="/events/promo" title="Where these events still need posting">
+      Promotion
+      {n > 0 && <span className="btn-badge">{n}</span>}
+    </Link>
   );
 }
