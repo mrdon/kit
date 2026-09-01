@@ -47,6 +47,25 @@ func New(w http.ResponseWriter, r *http.Request) (*Writer, error) {
 	if !ok {
 		return nil, errors.New("response writer does not support flushing")
 	}
+	// Clear the connection's write deadline before any bytes go out.
+	//
+	// cmd/kit/main.go sets WriteTimeout on the server as its slowloris guard
+	// for ordinary request/response routes. That deadline is absolute and is
+	// stamped on the connection when the headers are read, so an SSE stream
+	// -- which is meant to stay open for as long as the client is watching --
+	// is torn down mid-frame once it elapses, however recently we wrote. The
+	// keep-alive comments below reset nginx's proxy_read_timeout; they do
+	// nothing for Go's own deadline. Relaxing the server-wide value instead
+	// would remove the guard from every other route, so the exemption is
+	// taken here, per stream, where the long life is intentional.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return nil, fmt.Errorf("clearing sse write deadline: %w", err)
+	}
+	// The read side matters for the same reason on HTTP/1.1 connections that
+	// are reused; unsupported is fine to ignore -- nothing here reads a body.
+	_ = rc.SetReadDeadline(time.Time{})
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
