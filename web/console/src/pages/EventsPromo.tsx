@@ -43,10 +43,14 @@ function PromoRow({
   item,
   busy,
   onMark,
+  // Inside an event group the heading already names the event, so repeating
+  // it on all five rows is noise that crowds out the part that differs.
+  hideEvent,
 }: {
   item: PromoItem;
   busy: boolean;
   onMark: (status: 'done' | 'ignored' | 'todo') => void;
+  hideEvent?: boolean;
 }) {
   const failed = item.state === 'auto_failed';
   const settled = item.state === 'done' || item.state === 'auto_done';
@@ -73,10 +77,18 @@ function PromoRow({
         />
       </td>
       <td>
-        <strong>{item.event_title}</strong>
-        <div className="muted">
-          {item.channel_name} · {item.step_label || item.step_key}
-        </div>
+        {hideEvent ? (
+          <strong>
+            {item.channel_name} · {item.step_label || item.step_key}
+          </strong>
+        ) : (
+          <>
+            <strong>{item.event_title}</strong>
+            <div className="muted">
+              {item.channel_name} · {item.step_label || item.step_key}
+            </div>
+          </>
+        )}
         {failed && (
           <div className="muted">
             ⚠ Kit tried to post this and failed{item.note ? `: ${item.note}` : '.'}{' '}
@@ -131,12 +143,88 @@ function PromoRow({
   );
 }
 
+// Two ways to read the same list, because there are two questions people
+// bring to it.
+//
+//   deadline — "what do I do next?" One flat run, soonest-due first, ignoring
+//              which event each row belongs to. This is the working order and
+//              the default.
+//   event    — "where has Oktoberfest got to?" Grouped, so one event's whole
+//              spread of channels reads as a unit.
+//
+// Grouping is deliberately not the default: sorted by deadline the top of the
+// page is always the next thing to do, whereas grouped you have to scan.
+type Grouping = 'deadline' | 'event';
+
+// The choice is remembered because it reflects how someone works rather than
+// what they are looking at right now, and re-picking it every visit would be
+// its own small chore.
+const GROUPING_KEY = 'kit.events.promo.grouping';
+
+function loadGrouping(): Grouping {
+  try {
+    return localStorage.getItem(GROUPING_KEY) === 'event' ? 'event' : 'deadline';
+  } catch {
+    return 'deadline';
+  }
+}
+
+// eventGroup is one event's outstanding work. `dueAt` is the soonest item in
+// it, which is what the group sorts on -- so grouping reorders the page
+// without abandoning urgency, and an event with something overdue still floats
+// to the top.
+type eventGroup = {
+  eventID: string;
+  title: string;
+  items: PromoItem[];
+  overdue: number;
+  dueAt: string;
+};
+
+function groupByEvent(items: PromoItem[]): eventGroup[] {
+  const byID = new Map<string, eventGroup>();
+  for (const it of items) {
+    let g = byID.get(it.event_id);
+    if (!g) {
+      g = { eventID: it.event_id, title: it.event_title, items: [], overdue: 0, dueAt: it.due_at };
+      byID.set(it.event_id, g);
+    }
+    g.items.push(it);
+    if (it.overdue) g.overdue++;
+    if (it.due_at < g.dueAt) g.dueAt = it.due_at;
+  }
+  // Items arrive already sorted by urgency, so the groups only need ordering
+  // against each other.
+  return [...byID.values()].sort((a, b) => {
+    if (a.overdue !== b.overdue) return b.overdue - a.overdue;
+    return a.dueAt < b.dueAt ? -1 : a.dueAt > b.dueAt ? 1 : 0;
+  });
+}
+
 export default function EventsPromoPage() {
   const me = useMe();
   const [data, setData] = useState<PromoPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [grouping, setGrouping] = useState<Grouping>(loadGrouping);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const chooseGrouping = (g: Grouping) => {
+    setGrouping(g);
+    try {
+      localStorage.setItem(GROUPING_KEY, g);
+    } catch {
+      /* private browsing; the choice just will not stick */
+    }
+  };
+
+  const toggleGroup = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     api
@@ -207,18 +295,57 @@ export default function EventsPromoPage() {
             Nothing outstanding — everything due has been posted or skipped.
           </p>
         ) : (
-          <table className="item-table">
-            <tbody>
-              {items.map((it) => (
-                <PromoRow
-                  key={`${it.event_id}:${it.channel_id}:${it.step_key}`}
-                  item={it}
-                  busy={busy}
-                  onMark={(s) => mark(it, s)}
+          <>
+            <div className="toolbar">
+              <label className="check">
+                <input
+                  type="radio"
+                  name="promo-grouping"
+                  checked={grouping === 'deadline'}
+                  onChange={() => chooseGrouping('deadline')}
                 />
-              ))}
-            </tbody>
-          </table>
+                By deadline
+              </label>
+              <label className="check">
+                <input
+                  type="radio"
+                  name="promo-grouping"
+                  checked={grouping === 'event'}
+                  onChange={() => chooseGrouping('event')}
+                />
+                By event
+              </label>
+            </div>
+
+            {grouping === 'deadline' ? (
+              <table className="item-table">
+                <tbody>
+                  {items.map((it) => (
+                    <PromoRow
+                      key={`${it.event_id}:${it.channel_id}:${it.step_key}`}
+                      item={it}
+                      busy={busy}
+                      onMark={(s) => mark(it, s)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              groupByEvent(items).map((g) => (
+                <EventGroup
+                  key={g.eventID}
+                  group={g}
+                  // Groups start open, EXCEPT once you have closed one. A
+                  // page that opens all-collapsed reads as empty and makes
+                  // you click through every event to find the work.
+                  open={!collapsed.has(g.eventID)}
+                  busy={busy}
+                  onToggle={() => toggleGroup(g.eventID)}
+                  onMark={mark}
+                />
+              ))
+            )}
+          </>
         )}
       </section>
 
@@ -267,10 +394,62 @@ function PromoHead({ outstanding, overdue }: { outstanding: number; overdue?: nu
         </Link>
       </div>
       <p className="page-sub">
-        Where each event still needs posting, in the order it wants doing —
-        soonest deadline first, not soonest event.
+        Where each event still needs posting. Ordered by each destination&rsquo;s
+        own deadline, not by when the event is.
         {outstanding > 0 && overdue ? ` ${overdue} of ${outstanding} overdue.` : ''}
       </p>
+    </div>
+  );
+}
+
+// EventGroup is one event's outstanding work under a collapsible heading.
+//
+// The heading carries the counts so a collapsed group still answers the
+// question the grouped view exists for -- "where has this one got to?" --
+// without being opened.
+function EventGroup({
+  group,
+  open,
+  busy,
+  onToggle,
+  onMark,
+}: {
+  group: eventGroup;
+  open: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onMark: (item: PromoItem, status: 'done' | 'ignored' | 'todo') => void;
+}) {
+  return (
+    <div className="item-row">
+      <button
+        className="btn btn-ghost"
+        onClick={onToggle}
+        aria-expanded={open}
+        title={open ? 'Collapse' : 'Expand'}
+      >
+        {open ? '▾' : '▸'} <strong>{group.title}</strong>{' '}
+        <span className="muted">
+          {group.items.length} outstanding
+          {group.overdue > 0 ? ` · ${group.overdue} overdue` : ''}
+        </span>
+      </button>
+
+      {open && (
+        <table className="item-table">
+          <tbody>
+            {group.items.map((it) => (
+              <PromoRow
+                key={`${it.channel_id}:${it.step_key}`}
+                item={it}
+                busy={busy}
+                hideEvent
+                onMark={(s) => onMark(it, s)}
+              />
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
