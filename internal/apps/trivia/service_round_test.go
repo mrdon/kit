@@ -48,7 +48,6 @@ func TestRoundFlowEndToEnd(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	b := f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -128,7 +127,6 @@ func TestDoubleClickedActionIsRefused(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	f.join(game.ID, "Solo")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 
@@ -160,7 +158,6 @@ func TestFinalStakeIsClampedToTheBank(t *testing.T) {
 	s.BoardColumns, s.BoardRows = 1, 1
 	s.CellValues = []int{500}
 	game := f.newGame(s, []string{"space"})
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 
@@ -227,7 +224,6 @@ func TestStakeCannotChangeAfterTheAnswerPhaseCloses(t *testing.T) {
 	s.BoardColumns, s.BoardRows = 1, 1
 	s.CellValues = []int{500}
 	game := f.newGame(s, []string{"space"})
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
@@ -259,7 +255,6 @@ func TestTeamJoiningDuringTheFinalCannotStake(t *testing.T) {
 	s.BoardColumns, s.BoardRows = 1, 1
 	s.CellValues = []int{500}
 	game := f.newGame(s, []string{"space"})
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
@@ -284,7 +279,6 @@ func TestFinalWagerOffGoesStraightToPodium(t *testing.T) {
 	s.CellValues = []int{500}
 	s.FinalWager = false
 	game := f.newGame(s, []string{"space"})
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 	f.playOneRound(game, map[uuid.UUID]string{a.ID: "1"})
@@ -305,7 +299,6 @@ func TestExpiredDeadlineAdvancesWithNobodyClicking(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	f.join(game.ID, "Bar Flies")
 	f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -345,7 +338,6 @@ func TestDeadlineHasAGraceWindow(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -370,7 +362,6 @@ func TestBothChipsOnOneAnswerIsRefused(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	b := f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -404,7 +395,6 @@ func TestMovingAChipDoesNotDuplicateIt(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	b := f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -440,7 +430,6 @@ func TestGameIsCappedAtTwentyTeams(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), nil)
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	for i := range MaxTeams {
 		f.join(game.ID, "Team "+FormatValue(float64(i)))
 	}
@@ -454,7 +443,6 @@ func TestGameIsCappedAtTwentyTeams(t *testing.T) {
 func TestDuplicateTeamNameIsRefused(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame(defaultSettings(), nil)
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	f.join(game.ID, "Bar Flies")
 	_, _, err := f.svc.Join(f.ctx, f.tenant.ID, game.ID, "  bar   flies  ")
 	if !errors.Is(err, ErrNameTaken) {
@@ -468,7 +456,6 @@ func TestLateJoinerIsNotInTheCurrentDenominator(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
@@ -500,5 +487,62 @@ func TestGameNamesAreTenantScoped(t *testing.T) {
 	_, err := GetGameByName(other.ctx, other.pool, other.tenant.ID, game.Name)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another tenant resolved the game: %v", err)
+	}
+}
+
+// Betting closes as soon as every eligible table has placed, without the host
+// touching anything. That already worked, but it matters more now that the
+// chips stay hidden until the phase closes: if the early close were broken,
+// the room would sit looking at cards with nothing on them until the clock
+// ran out.
+func TestBettingClosesEarlyWhenEveryTableHasPlaced(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(defaultSettings(), topicSet())
+	a := f.join(game.ID, "Bar Flies")
+	b := f.join(game.ID, "Quiz Khalifa")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+
+	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	cellID := snap.Board[0].ID
+	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20", nil); err != nil {
+		t.Fatal(err)
+	}
+	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
+
+	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	slots := snap.Slots
+	if len(slots) < 3 {
+		t.Fatalf("got %d cards, want at least 3", len(slots))
+	}
+	place := func(team uuid.UUID, chip int, slot uuid.UUID) {
+		t.Helper()
+		if err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, team, chip, &slot, 0); err != nil {
+			t.Fatalf("placing chip: %v", err)
+		}
+	}
+	place(a.ID, 0, slots[1].ID)
+	place(a.ID, 1, slots[2].ID)
+	if g := f.reload(game.ID); g.Phase != PhaseBetting {
+		t.Fatalf("phase = %s with one table still to bet, want betting", g.Phase)
+	}
+	place(b.ID, 0, slots[0].ID)
+	place(b.ID, 1, slots[1].ID)
+
+	if g := f.reload(game.ID); g.Phase != PhaseScoring {
+		t.Fatalf("phase = %s once every table had placed, want scoring", g.Phase)
+	}
+	// And the chips are now visible, which is the beat the hiding was for.
+	scored, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	shown := 0
+	for _, sl := range ProjectDisplay(scored).Slots {
+		shown += len(sl.Chips)
+	}
+	if shown != 4 {
+		t.Fatalf("the TV shows %d chips after betting closed, want all 4", shown)
 	}
 }

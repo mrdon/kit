@@ -142,11 +142,11 @@ export interface ImportReport {
 }
 
 export type Action =
-  | 'open_lobby' | 'start' | 'pick_cell' | 'reveal' | 'open_betting'
+  | 'start' | 'pick_cell' | 'reveal' | 'open_betting'
   | 'score' | 'next' | 'final' | 'extend' | 'finish';
 
 export const PHASE_LABEL: Record<Phase, string> = {
-  setup: 'Setting up',
+  setup: 'Teams joining',
   lobby: 'Teams joining',
   board: 'On the board',
   question: 'Answering',
@@ -163,7 +163,9 @@ export const PHASE_LABEL: Record<Phase, string> = {
 export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boolean, finalPlayed: boolean):
   { action: Action; label: string } | null {
   switch (phase) {
-    case 'setup': return { action: 'open_lobby', label: 'Open the lobby' };
+    // A game is joinable from the moment it exists, so there is no state to
+    // announce before starting: the host's controls are start and end.
+    case 'setup':
     case 'lobby': return { action: 'start', label: 'Start the game' };
     case 'board':
       if (boardEmpty && finalWager && !finalPlayed) return { action: 'final', label: 'Final question' };

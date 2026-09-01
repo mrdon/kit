@@ -10,6 +10,7 @@ import Kiosk from './pages/Kiosk';
 import Trivia from './pages/Trivia';
 import TriviaSetup from './pages/trivia/setup';
 import TriviaLive from './pages/trivia/live';
+import TriviaQuestions from './pages/TriviaQuestions';
 import Menu from './pages/Menu';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
@@ -59,6 +60,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/connect" element={<Connect />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/apps" element={<AppsSettings />} />
+          <Route path="/admin/trivia" element={<TriviaQuestions />} />
           <Route path="/admin/events" element={<EventsSettingsPage />} />
           <Route path="/admin/events-staff" element={<EventsStaffPage />} />
           <Route path="/admin/events-channels" element={<EventsChannelsPage />} />

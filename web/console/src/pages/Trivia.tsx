@@ -88,9 +88,9 @@ export default function Trivia() {
         {(games ?? []).map((g) => (
           <li key={g.id} className="card">
             <div className="card-main">
-              <span className="card-title">{g.title || g.name}</span>
+              <span className="card-title">{g.title}</span>
               <span className="card-desc">
-                {g.name} · {g.teams} team{g.teams === 1 ? '' : 's'}
+                {g.teams} team{g.teams === 1 ? '' : 's'}
                 {g.cells ? ` · ${g.played}/${g.cells} played` : ' · no board yet'}
                 {g.leader ? ` · leading: ${g.leader}` : ''}
               </span>

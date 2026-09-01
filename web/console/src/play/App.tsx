@@ -72,7 +72,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <span className="who">{you?.name ?? identity?.name ?? frame.game}</span>
+        <span className="who">{you?.name ?? identity?.name ?? frame.title}</span>
         <span>
           {!connected ? <span className="offline">reconnecting… </span> : null}
           {you ? <span className="score">{money(you.score)}</span> : null}
@@ -118,10 +118,16 @@ function Playing({
           <h1>You&rsquo;re in.</h1>
           <p className="sub">Waiting for the host to start.</p>
           <TeamList frame={frame} />
+          {/* Most people at a table have never played this. The wait before
+              the first question is exactly when they have time to read it. */}
+          <Rules frame={frame} />
         </div>
       );
     case 'board':
-      return <Waiting title="Next question coming up" sub="Watch the big screen." />;
+      // Between questions is the one moment a table has nothing to do, so it
+      // is the right time to tell them where they stand. "Next question
+      // coming up" told them nothing they could not see on the wall.
+      return <BetweenQuestions frame={frame} />;
     case 'question':
       if (!you.answered || frame.round?.isFinal) {
         return <Answer frame={frame} msLeft={msLeft} onDone={apply} />;
@@ -194,6 +200,53 @@ function Podium({ frame }: { frame: PlayerFrame }) {
   );
 }
 
+// BetweenQuestions: where this table stands, with their own row called out.
+function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
+  const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
+  const me = frame.you;
+  const rank = me ? sorted.findIndex((t) => t.id === me.teamId) + 1 : 0;
+  // Shared score means shared rank — two tables on $400 are both 2nd, and
+  // telling one of them they are 3rd would be wrong in a way they can check
+  // against the wall.
+  const tied = me ? sorted.filter((t) => t.score === me.score).length > 1 : false;
+  const leader = sorted[0];
+  const behind = me && leader ? leader.score - me.score : 0;
+
+  return (
+    <div className="body">
+      {me ? (
+        <>
+          <p className="sub" style={{ textAlign: 'center' }}>You&rsquo;re</p>
+          <div className="rank-hero">
+            {tied ? '=' : ''}{ordinal(rank)}
+            <span className="of"> of {sorted.length}</span>
+          </div>
+          <p className="sub" style={{ textAlign: 'center' }}>
+            {rank === 1
+              ? 'Leading. Next question shortly.'
+              : `${money(behind)} behind ${leader.name}.`}
+          </p>
+        </>
+      ) : (
+        <h1>Next question shortly</h1>
+      )}
+      <Standings frame={frame} />
+    </div>
+  );
+}
+
+// ordinal renders 1 as "1st". Small thing, but "You're 3" reads as a score.
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
 function Standings({ frame }: { frame: PlayerFrame }) {
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
   return (
@@ -205,6 +258,19 @@ function Standings({ frame }: { frame: PlayerFrame }) {
           <span className="sc">{money(t.score)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Rules, straight from the server so this and the TV always agree.
+function Rules({ frame }: { frame: PlayerFrame }) {
+  if (!frame.rules?.length) return null;
+  return (
+    <div className="rules">
+      <h2>How it works</h2>
+      <ol>
+        {frame.rules.map((r, i) => <li key={i}>{r}</li>)}
+      </ol>
     </div>
   );
 }
@@ -289,10 +355,10 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
 
   return (
     <div className="body">
-      {/* The game name huge, so somebody who just scanned a QR can confirm
-          they landed on the right thing. */}
-      <p className="gamename">{frame.game}</p>
-      <h1>{frame.title || 'Trivia'}</h1>
+      {/* The night's name, big, so somebody who just scanned a QR can confirm
+          they landed on the right thing. NEVER the URL slug: "puffing-buffalo"
+          confirms nothing to a person holding a phone in a bar. */}
+      <h1 className="gamename">{frame.title}</h1>
 
       {finished ? (
         <>
@@ -320,6 +386,7 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
           <button className="btn ghost" onClick={() => setMode('reclaim')}>
             Already playing? Get back in
           </button>
+          <Rules frame={frame} />
         </>
       )}
     </div>

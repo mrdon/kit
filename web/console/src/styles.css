@@ -1978,3 +1978,14 @@ h2.view-title:hover {
   font-size: 1.05rem;
   margin: 0 0 0.5rem;
 }
+
+/* Inline rename field inside a card row. */
+.field-inline {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.35rem;
+  background: var(--panel);
+  color: var(--ink);
+}

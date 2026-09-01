@@ -153,6 +153,12 @@ func (a *App) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
+	// A game always has a human name. The slug is a URL token, never a label:
+	// letting the title be empty means every surface needs a fallback, and
+	// the fallback is the slug, which is meaningless to anybody in the room.
+	if strings.TrimSpace(s.Title) == "" {
+		s.Title = defaultGameTitle()
+	}
 	name, err := UniqueName(r.Context(), a.pool, tenant.ID)
 	if err != nil {
 		serverError(w, "picking a trivia game name", err)
@@ -188,6 +194,12 @@ func (a *App) settingsForNewGame(r *http.Request, tenantID uuid.UUID, asked *Set
 		FinalWager: g.FinalWager, AnswerSeconds: g.AnswerSeconds,
 		RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds,
 	}), nil
+}
+
+// defaultGameTitle names a night when the host has not. Dated, so a list of
+// them is scannable rather than a column of identical labels.
+func defaultGameTitle() string {
+	return "Quiz night, " + time.Now().Format("2 Jan")
 }
 
 func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {
@@ -255,6 +267,9 @@ func (a *App) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := normaliseSettings(*req.Settings)
+	if strings.TrimSpace(s.Title) == "" {
+		s.Title = game.Title
+	}
 	if err := validateSettings(s); err != nil {
 		clientError(w, r, http.StatusBadRequest, err.Error())
 		return

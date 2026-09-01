@@ -83,10 +83,11 @@ var displayTmpl = template.Must(template.ParseFS(templateFS, "templates/display.
 type displayData struct {
 	Title string
 	// Heading is what the corner of every screen shows: the night's name as
-	// the host typed it. It is NOT the URL slug -- that only earns its place
-	// on the join screen, where somebody is typing it.
-	Heading   string
-	NameWords []string
+	// the host typed it.
+	Heading string
+	// JoinWords is the night's name broken across lines for the join screen's
+	// hero. It is the TITLE, never the URL slug -- see nameWords.
+	JoinWords []string
 	JoinHost  string
 	QR        template.HTML
 	CSS       template.CSS
@@ -101,6 +102,9 @@ type displayData struct {
 	// own, so a renamed night reloads it without ever switching games.
 	Version    string
 	VersionURL template.URL
+	// Rules are shown on the lobby screen. A stranger who has just walked in
+	// should be able to work the game out from the wall.
+	Rules []string
 }
 
 // RenderDisplay produces the whole self-contained TV page.
@@ -129,9 +133,14 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	if title == "" {
 		title = "Trivia"
 	}
+	// NEVER the slug. It is a URL token: "vague-jaguar-coin" in 180px letters
+	// on a wall means nothing to anybody in the room, and it was sitting
+	// above the actual name of the night in small grey type. Games are
+	// created with a title and the migration backfilled the ones that were
+	// not, so this fallback is for a row somebody blanked by hand.
 	heading := game.Title
 	if heading == "" {
-		heading = strings.ToUpper(strings.ReplaceAll(game.Name, "-", " · "))
+		heading = "Quiz night"
 	}
 	base := "/" + slug + "/trivia/" + game.Name
 	versionURL := base + "/tv.version"
@@ -143,7 +152,7 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	err = displayTmpl.ExecuteTemplate(&buf, "display.html.tmpl", displayData{
 		Title:      title,
 		Heading:    heading,
-		NameWords:  nameWords(game.Name),
+		JoinWords:  nameWords(heading),
 		JoinHost:   displayHost(join),
 		QR:         qr,
 		CSS:        template.CSS(css),
@@ -151,6 +160,7 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 		StreamURL:  template.URL(base + "/tv/stream"),
 		PollURL:    template.URL(base + "/tv/state"),
 		GameName:   game.Name,
+		Rules:      Rules(game.FinalWager),
 		Version:    displayVersion(game),
 		VersionURL: template.URL(versionURL),
 	})
@@ -160,14 +170,20 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	return buf.String(), nil
 }
 
-// nameWords splits jumping-lion into its words, one per line at 180px. Two
-// short lines read from the back of a room in a way one long hyphenated
-// string does not.
-func nameWords(name string) []string {
-	parts := strings.Split(name, "-")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		out = append(out, strings.ToUpper(p))
+// nameWords breaks the night's name across lines for the join screen's hero,
+// one word per line at 180px, because short lines read from the back of a
+// room in a way one long string does not.
+//
+// IT IS GIVEN THE TITLE, NOT THE URL SLUG. The slug was there originally so
+// somebody could type it into a phone -- but there is no name-entry screen;
+// players scan the QR or type the URL, and the URL is printed underneath in
+// full. So the biggest text on the wall was a machine-readable token nobody
+// needed, sitting above the name of the night in small grey letters.
+func nameWords(s string) []string {
+	fields := strings.Fields(strings.ReplaceAll(s, "-", " "))
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, strings.ToUpper(f))
 	}
 	return out
 }

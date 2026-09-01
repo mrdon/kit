@@ -27,7 +27,6 @@ type Action string
 
 // The host's vocabulary.
 const (
-	ActionOpenLobby   Action = "open_lobby"
 	ActionStart       Action = "start"
 	ActionPickCell    Action = "pick_cell"
 	ActionReveal      Action = "reveal"
@@ -87,8 +86,6 @@ func (s *Service) Do(ctx context.Context, tenantID, gameID uuid.UUID, req Action
 // the conflict check are written once.
 func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest) error {
 	switch req.Action {
-	case ActionOpenLobby:
-		return s.moveTo(ctx, game, PhaseLobby, nil, game.CurrentRoundID)
 	case ActionStart:
 		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	case ActionPickCell:

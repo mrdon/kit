@@ -51,14 +51,22 @@ export default function TriviaLive() {
 
   return (
     <>
-      <div className="crumbs"><Link to="/trivia">Trivia</Link> / {frame.game}</div>
+      <div className="crumbs"><Link to="/trivia">Trivia</Link> / {frame.title}</div>
       <div className="page-head page-head-row">
         <div>
-          <h1>{frame.title || frame.game}</h1>
+          <h1>{frame.title}</h1>
           <p className="page-sub">
             {PHASE_LABEL[frame.phase]} · {frame.progress.cellsPlayed}/{frame.progress.cellsTotal} played
             {!connected ? ' · reconnecting…' : ''}
-            {' · '}<a href={game.tv_url} target="_blank" rel="noreferrer">open this game&rsquo;s screen</a>
+          </p>
+          {/* Both addresses, while the host is actually running the night —
+              the one for the screen and the one people are scanning. */}
+          <p className="page-sub">
+            Screen: <code>{game.screen_url}</code>{' '}
+            (<a href={game.tv_url} target="_blank" rel="noreferrer">just this game</a>)
+          </p>
+          <p className="page-sub">
+            Players: <code>{game.join_url}</code>
           </p>
         </div>
         <div className="page-head-actions">

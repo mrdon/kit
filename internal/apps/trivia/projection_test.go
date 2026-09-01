@@ -189,3 +189,89 @@ func TestPlayerFrameCarriesOwnChipsOnly(t *testing.T) {
 		t.Fatalf("another team's frame shows %+v", otherFrame.You)
 	}
 }
+
+// TestBetsAreHiddenUntilBettingCloses. Chips landing live on the TV tell a
+// table still deciding exactly where the room has committed, so the last to
+// bet plays a different game from the first. Everything is revealed together
+// when the phase closes.
+func TestBetsAreHiddenUntilBettingCloses(t *testing.T) {
+	snap, teamID := snapshotIn(PhaseBetting, false)
+
+	display := ProjectDisplay(snap)
+	for _, sl := range display.Slots {
+		if len(sl.Chips) != 0 {
+			t.Fatalf("the TV shows %d chips during betting: %+v", len(sl.Chips), sl.Chips)
+		}
+		if sl.Pot != 0 {
+			t.Fatalf("the TV shows a pot of %d during betting — the same tell as the chips", sl.Pot)
+		}
+	}
+
+	// The other team's chip must not reach a player's frame either.
+	other := snap.Teams[1].ID
+	player := ProjectPlayer(snap, other)
+	for _, sl := range player.Slots {
+		if len(sl.Chips) != 0 {
+			t.Fatalf("a phone can see another table's chips during betting: %+v", sl.Chips)
+		}
+	}
+
+	// But a table always sees its OWN chips — it placed them.
+	own := ProjectPlayer(snap, teamID)
+	if own.You == nil || len(own.You.Chips) != 1 {
+		t.Fatalf("a table cannot see its own chips: %+v", own.You)
+	}
+
+	// And the host sees everything throughout: they need to know who has not
+	// placed.
+	host := ProjectHost(snap)
+	total := 0
+	for _, sl := range host.Slots {
+		total += len(sl.Chips)
+	}
+	if total == 0 {
+		t.Fatal("the host cannot see the chips during betting")
+	}
+
+	// Once scored, the room sees the lot.
+	scored, _ := snapshotIn(PhaseScoring, true)
+	shown := 0
+	for _, sl := range ProjectDisplay(scored).Slots {
+		shown += len(sl.Chips)
+	}
+	if shown == 0 {
+		t.Fatal("the chips never appear, even after scoring")
+	}
+}
+
+// The rules come from one place, so the wall and the phone cannot tell a room
+// different games — and a night with the final switched off is not told about
+// a mechanic it does not have.
+func TestRulesAreServedAndMatchTheGame(t *testing.T) {
+	snap, teamID := snapshotIn(PhaseLobby, false)
+
+	withFinal := ProjectPlayer(snap, teamID).Rules
+	if len(withFinal) != 6 {
+		t.Fatalf("got %d rules with the final on, want 6", len(withFinal))
+	}
+	if !strings.Contains(withFinal[len(withFinal)-1], "Last question") {
+		t.Fatalf("the last rule is not the final wager: %q", withFinal[len(withFinal)-1])
+	}
+
+	snap.FinalWager = false
+	withoutFinal := ProjectPlayer(snap, teamID).Rules
+	if len(withoutFinal) != 5 {
+		t.Fatalf("got %d rules with the final off, want 5", len(withoutFinal))
+	}
+	for _, r := range withoutFinal {
+		if strings.Contains(r, "Last question") {
+			t.Fatal("a game with no final wager is told about the final wager")
+		}
+	}
+
+	// A spectator sees them too — deciding whether to join is exactly when
+	// somebody needs to know what the game is.
+	if len(ProjectPlayer(snap, uuid.Nil).Rules) != 5 {
+		t.Fatal("a spectator cannot see the rules")
+	}
+}

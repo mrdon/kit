@@ -77,9 +77,9 @@ func scanGame(row pgx.Row) (*Game, error) {
 func CreateGame(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string, s Settings, createdBy *uuid.UUID) (*Game, error) {
 	g, err := scanGame(pool.QueryRow(ctx, `
 		INSERT INTO app_trivia_games
-		    (tenant_id, name, title, board_rows, board_columns, cell_values, token_values,
+		    (tenant_id, name, title, phase, board_rows, board_columns, cell_values, token_values,
 		     final_wager, answer_seconds, reveal_seconds, bet_seconds, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING `+gameColumns,
 		tenantID, name, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
 		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, createdBy))

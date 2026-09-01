@@ -20,7 +20,6 @@ func TestTriviaStatusSummarisesRecentGames(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -47,7 +46,6 @@ func TestTriviaResultsGivesTheLeaderboardAndRecap(t *testing.T) {
 	s.CellValues = []int{500}
 	s.FinalWager = false
 	game := f.newGame(s, []string{"space"})
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { API_BASE, api, type TriviaGame } from '../../api';
+import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
-import { defaultSettings, money, type BuiltinPack, type Dataset, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
+import { defaultSettings, money, type Dataset, type HostFrame, type TopicCount, type TriviaSettings } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
 // the shape of the game, choose the board's columns, and check the preview.
@@ -12,7 +12,6 @@ export default function TriviaSetup() {
   const [game, setGame] = useState<TriviaGame | null>(null);
   const [topics, setTopics] = useState<TopicCount[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [packs, setPacks] = useState<BuiltinPack[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [state, setState] = useState<HostFrame | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -29,10 +28,6 @@ export default function TriviaSetup() {
       .catch((e) => setErr(e.message));
   };
   useEffect(load, [id]);
-  // The shipped packs are workspace-level, not per game.
-  useEffect(() => {
-    api.triviaQuestions().then((r) => setPacks(r.packs ?? [])).catch(() => undefined);
-  }, []);
 
   if (!game) {
     return <p className="page-sub">{err ?? 'Loading…'}</p>;
@@ -40,10 +35,10 @@ export default function TriviaSetup() {
 
   return (
     <>
-      <div className="crumbs"><Link to="/trivia">Trivia</Link> / {game.name}</div>
+      <div className="crumbs"><Link to="/trivia">Trivia</Link> / {game.title}</div>
       <div className="page-head page-head-row">
         <div>
-          <h1>{game.title || game.name}</h1>
+          <h1>{game.title}</h1>
           <p className="page-sub">
             Players join at <code>{game.join_url}</code> — or by scanning the QR code on the TV.
           </p>
@@ -62,39 +57,40 @@ export default function TriviaSetup() {
 
       {err ? <p className="banner banner-error">{err}</p> : null}
 
-      <DatasetsPanel datasets={datasets} packs={packs} selected={selected} onChanged={load} />
+      <DatasetPicker datasets={datasets} selected={selected} onChanged={load} />
       <SettingsPanel game={game} onSaved={(g) => setGame(g)} />
       <BoardPanel game={game} topics={topics} state={state} onBuilt={(s) => { setState(s); load(); }} />
     </>
   );
 }
 
-// Question sets.
-//
-// One concept: a dataset is a named set of questions. An upload creates or
-// replaces one, the shipped starter pack is seeded as one, and THIS GAME
-// draws its board from whichever ones are ticked. Nothing reads questions
-// from anywhere else.
-function DatasetsPanel({
-  datasets, packs, selected, onChanged,
+// Which sets THIS GAME draws from. Managing the sets themselves — adding,
+// uploading, deleting — lives on the Trivia admin page, because a set belongs
+// to the workspace and outlives any one night; only the choice is per game.
+function DatasetPicker({
+  datasets, selected, onChanged,
 }: {
   datasets: Dataset[];
-  packs: BuiltinPack[];
   selected: string[];
   onChanged: () => void;
 }) {
   const { id = '' } = useParams();
-  const [report, setReport] = useState<ImportReport | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  const run = async (fn: () => Promise<void>) => {
+  // No ticks means every set. Ticking is how you narrow.
+  const usingAll = selected.length === 0;
+  const isOn = (d: Dataset) => usingAll || selected.includes(d.id);
+
+  const toggle = async (d: Dataset) => {
     setBusy(true);
     setErr(null);
     try {
-      await fn();
+      // Turning one off while "all" is implied has to become an explicit list
+      // of the rest, or the click would appear to do nothing.
+      const base = usingAll ? datasets.map((x) => x.id) : selected;
+      const next = base.includes(d.id) ? base.filter((x) => x !== d.id) : [...base, d.id];
+      await api.setTriviaGameDatasets(id, next.length === datasets.length ? [] : next);
       onChanged();
     } catch (e) {
       setErr((e as Error).message);
@@ -103,151 +99,40 @@ function DatasetsPanel({
     }
   };
 
-  const upload = (file: File) =>
-    run(async () => {
-      const form = new FormData();
-      form.append('csv', file);
-      // Naming the set is optional: the file name is usually what they meant.
-      if (name.trim()) form.append('name', name.trim());
-      // Multipart, so this goes around the JSON helper — but it still carries
-      // the CSRF header the server requires on every mutation.
-      const res = await fetch(`${API_BASE}/trivia/questions/import`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'X-Kit-Web': '1' },
-        body: form,
-      });
-      if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
-      setReport((await res.json()) as ImportReport);
-      setName('');
-      if (fileRef.current) fileRef.current.value = '';
-    });
-
-  // No ticks means every set. Ticking is how you narrow.
-  const usingAll = selected.length === 0;
-  const isOn = (d: Dataset) => usingAll || selected.includes(d.id);
-
-  const toggle = (d: Dataset) =>
-    run(async () => {
-      // Turning one off while "all" is implied has to become an explicit list
-      // of the rest, or the click would appear to do nothing.
-      const base = usingAll ? datasets.map((x) => x.id) : selected;
-      const next = base.includes(d.id) ? base.filter((x) => x !== d.id) : [...base, d.id];
-      await api.setTriviaGameDatasets(id, next.length === datasets.length ? [] : next);
-    });
-
   return (
     <section className="panel">
       <h2>Question sets</h2>
-      <p className="page-sub">
-        This game builds its board from the ticked sets. With none ticked it uses everything.
-      </p>
-
       {datasets.length === 0 ? (
-        <p className="page-sub">No question sets yet — load the starter pack or upload a CSV.</p>
+        <p className="page-sub">
+          No question sets yet — add one on the{' '}
+          <Link to="/admin/trivia">Trivia questions</Link> page.
+        </p>
       ) : (
-        <ul className="card-list">
-          {datasets.map((d) => (
-            <li key={d.id} className="card">
-              <div className="card-main">
-                <label className="card-title">
-                  <input
-                    type="checkbox"
-                    checked={isOn(d)}
-                    disabled={busy}
-                    onChange={() => void toggle(d)}
-                  />{' '}
-                  {d.name}
-                </label>
-                <span className="card-desc">
-                  {d.questions} question{d.questions === 1 ? '' : 's'} · {d.topics} topic
-                  {d.topics === 1 ? '' : 's'}
-                  {d.builtin_key ? ' · shipped with Kit' : ''}
-                  {d.notes ? ` · ${d.notes}` : ''}
-                </span>
-              </div>
-              <div className="card-side">
-                <button
-                  className="btn btn-danger"
-                  disabled={busy}
-                  onClick={() => void run(() => api.deleteTriviaDataset(d.id))}
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="page-sub">
+            This game builds its board from the ticked sets. With none ticked it uses everything.{' '}
+            <Link to="/admin/trivia">Manage sets</Link>.
+          </p>
+          <ul className="card-list">
+            {datasets.map((d) => (
+              <li key={d.id} className="card">
+                <div className="card-main">
+                  <label className="card-title">
+                    <input type="checkbox" checked={isOn(d)} disabled={busy}
+                      onChange={() => void toggle(d)} />{' '}
+                    {d.name}
+                  </label>
+                  <span className="card-desc">
+                    {d.questions} question{d.questions === 1 ? '' : 's'} · {d.topics} topic
+                    {d.topics === 1 ? '' : 's'}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
-
-      <h3 className="card-title">Sets Kit ships</h3>
-      <ul className="card-list">
-        {packs.map((p) => (
-          <li key={p.key} className="card">
-            <div className="card-main">
-              <span className="card-title">{p.name}</span>
-              <span className="card-desc">{p.notes}</span>
-            </div>
-            <div className="card-side">
-              <button
-                className="btn"
-                disabled={busy}
-                onClick={() => void run(async () => { setReport(await api.loadTriviaPack(p.key)); })}
-              >
-                {datasets.some((d) => d.builtin_key === p.key) ? 'Reload' : 'Add'}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="page-sub">
-        Adding one creates an ordinary set — rename it, upload over it or delete it like any other.{' '}
-        <a href={`${API_BASE}/trivia/questions/sample`}>Download a CSV template</a>.
-      </p>
-
-      <div className="field-row">
-        <label className="field">
-          <span>New set from a CSV</span>
-          <input
-            placeholder="name it (or we'll use the file name)"
-            value={name}
-            disabled={busy}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-      </div>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".csv,text/csv"
-        disabled={busy}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void upload(f);
-        }}
-      />
-      <p className="page-sub">
-        Columns <code>question</code>, <code>topics</code> and <code>answer</code>, in any order.
-        Topics are separated by semicolons. Answers must be numbers — the whole game is
-        &ldquo;closest without going over&rdquo;. Uploading a set with an existing name replaces
-        its contents.
-      </p>
-
       {err ? <p className="banner banner-error">{err}</p> : null}
-      {report ? (
-        <div className="banner banner-ok">
-          {report.imported} added, {report.updated} updated, {report.skipped_duplicates} duplicate
-          {report.skipped_duplicates === 1 ? '' : 's'} skipped.
-          {report.errors.length ? (
-            <ul>
-              {report.errors.map((e) => (
-                <li key={e.line}>Line {e.line}: {e.message}</li>
-              ))}
-              {report.truncated ? <li>…and more.</li> : null}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -260,26 +145,42 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const locked = game.phase !== 'setup' && game.phase !== 'lobby';
+  const dirty = useRef(false);
 
   useEffect(() => setS(game.settings ?? defaultSettings()), [game]);
 
-  const save = async () => {
-    setErr(null);
-    try {
-      onSaved(await api.updateTriviaGame(game.id, s));
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+  // Settings save themselves. There is nothing to confirm here — every field
+  // is a number or a checkbox, and a host who changes the timer and walks off
+  // to start the game should not lose it to a button they did not know about.
+  // Debounced so typing in a number field is one write, not one per keystroke.
+  useEffect(() => {
+    if (!dirty.current || locked) return;
+    const t = window.setTimeout(() => {
+      setErr(null);
+      api.updateTriviaGame(game.id, s)
+        .then((g) => {
+          onSaved(g);
+          setSaved(true);
+          window.setTimeout(() => setSaved(false), 1500);
+        })
+        .catch((e) => setErr((e as Error).message));
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [s, locked, game.id, onSaved]);
+
+  // edit marks the form dirty so the effect above only fires for real edits,
+  // not for the initial load or a refresh from the server.
+  const edit = (next: TriviaSettings) => {
+    dirty.current = true;
+    setS(next);
   };
 
   const setRows = (rows: number) => {
     // Cell values follow the row count, cheapest first, so the two can never
     // disagree — the server rejects a mismatch and the host should never see
     // that error.
-    const values = Array.from({ length: rows }, (_, i) => s.cell_values[i] ?? (i + 1) * 500);
-    setS({ ...s, board_rows: rows, cell_values: values });
+    const values = Array.from({ length: rows }, (_, i) => s.cell_values[i] ?? (i + 1) * 100);
+    edit({ ...s, board_rows: rows, cell_values: values });
   };
 
   return (
@@ -291,12 +192,12 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       <div className="field-row">
         <label className="field">
           <span>Name on the TV</span>
-          <input value={s.title} disabled={locked} onChange={(e) => setS({ ...s, title: e.target.value })} />
+          <input value={s.title} disabled={locked} onChange={(e) => edit({ ...s, title: e.target.value })} />
         </label>
         <label className="field">
           <span>Categories</span>
           <input type="number" min={1} max={8} value={s.board_columns} disabled={locked}
-            onChange={(e) => setS({ ...s, board_columns: Number(e.target.value) })} />
+            onChange={(e) => edit({ ...s, board_columns: Number(e.target.value) })} />
         </label>
         <label className="field">
           <span>Rows</span>
@@ -313,7 +214,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
               onChange={(e) => {
                 const next = s.cell_values.slice();
                 next[i] = Number(e.target.value);
-                setS({ ...s, cell_values: next });
+                edit({ ...s, cell_values: next });
               }} />
           </label>
         ))}
@@ -329,24 +230,24 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         <label className="field">
           <span>Answering (s)</span>
           <input type="number" min={5} max={600} value={s.answer_seconds} disabled={locked}
-            onChange={(e) => setS({ ...s, answer_seconds: Number(e.target.value) })} />
+            onChange={(e) => edit({ ...s, answer_seconds: Number(e.target.value) })} />
         </label>
         <label className="field">
           <span>Reveal (s)</span>
           <input type="number" min={5} max={600} value={s.reveal_seconds} disabled={locked}
-            onChange={(e) => setS({ ...s, reveal_seconds: Number(e.target.value) })} />
+            onChange={(e) => edit({ ...s, reveal_seconds: Number(e.target.value) })} />
         </label>
         <label className="field">
           <span>Betting (s)</span>
           <input type="number" min={5} max={600} value={s.bet_seconds} disabled={locked}
-            onChange={(e) => setS({ ...s, bet_seconds: Number(e.target.value) })} />
+            onChange={(e) => edit({ ...s, bet_seconds: Number(e.target.value) })} />
         </label>
       </div>
 
       <label className="field">
         <span>
           <input type="checkbox" checked={s.final_wager} disabled={locked}
-            onChange={(e) => setS({ ...s, final_wager: e.target.checked })} />
+            onChange={(e) => edit({ ...s, final_wager: e.target.checked })} />
           {' '}Final wager
         </span>
       </label>
@@ -357,9 +258,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       </p>
 
       {err ? <p className="banner banner-error">{err}</p> : null}
-      <button className="btn btn-spaced" onClick={() => void save()} disabled={locked}>
-        {saved ? 'Saved' : 'Save settings'}
-      </button>
+      {!locked ? <p className="page-sub">{saved ? 'Saved.' : 'Changes save themselves.'}</p> : null}
     </section>
   );
 }

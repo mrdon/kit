@@ -88,6 +88,9 @@ export interface PlayerFrame {
   scoring: WireScoring | null;
   tokens: number[];
   you: WireYou | null;
+  // Served by the server, not written here, so the phone and the TV cannot
+  // tell a room different games.
+  rules: string[];
 }
 
 // base is the game's own URL, with any trailing slash removed.

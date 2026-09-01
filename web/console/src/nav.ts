@@ -76,6 +76,13 @@ export const SECTIONS: Section[] = [
     admin: true,
   },
   {
+    to: '/admin/trivia',
+    label: 'Trivia questions',
+    blurb: 'Question sets for the pub quiz — add, upload, rename, delete.',
+    admin: true,
+    app: 'trivia',
+  },
+  {
     to: '/admin/apps',
     label: 'Apps',
     blurb: 'Turn features like the vault, the menu, or events on or off.',

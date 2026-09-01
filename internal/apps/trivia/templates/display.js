@@ -150,9 +150,14 @@
   /* --- 1. join --- */
   function renderJoin() {
     show('s-join');
+    // The night's name is already the hero here; repeating it in the corner
+    // is noise.
+    document.getElementById('gamename').style.visibility = 'hidden';
     document.getElementById('join-count').textContent =
       state.teams.length + (state.teams.length === 1 ? ' TEAM IN' : ' TEAMS IN');
+    fitJoinHero();
     fitJoinURL();
+    fitJoinRules();
     var host = document.getElementById('join-pills');
     // Only append what is new, so existing pills keep their entrance and the
     // wall does not re-animate every pill each time somebody joins.
@@ -161,6 +166,43 @@
       host.appendChild(el('div', 'pill', state.teams[i].name));
     }
     while (host.childElementCount > state.teams.length) { host.removeChild(host.lastChild); }
+  }
+
+  /* The hero is the host's own words, so its size cannot be a constant: "Quiz
+     night, 1 Sep" is four lines where "Trivia" is one. Measure and shrink
+     until it fits the space it has, the same loop the menu board uses --
+     clamp() guesses, a loop knows. */
+  function fitJoinHero() {
+    var box = document.getElementById('join-words');
+    if (!box) { return; }
+    var words = box.querySelectorAll('.join-word');
+    /* Room for the URL and the team count beneath it. */
+    var avail = 600;
+    var size = 180;
+    var apply = function (px) {
+      for (var i = 0; i < words.length; i++) { words[i].style.fontSize = px + 'px'; }
+    };
+    apply(size);
+    while ((box.scrollHeight > avail || box.scrollWidth > box.clientWidth) && size > 48) {
+      size -= 6;
+      apply(size);
+    }
+  }
+
+  /* Five rules or six depending on whether the final is on, and the wording
+     is fixed -- so the only variable is how much room is left beside the QR.
+     Measure and shrink, with 22px as the floor: below that nobody reads it
+     from the bar and the honest answer is that it does not fit. */
+  function fitJoinRules() {
+    var list = document.getElementById('join-rules');
+    if (!list) { return; }
+    var col = list.parentNode;
+    var size = 30;
+    list.style.fontSize = size + 'px';
+    while (col.scrollHeight > col.clientHeight && size > 22) {
+      size -= 1;
+      list.style.fontSize = size + 'px';
+    }
   }
 
   /* Somebody is reading this off a wall and typing it into a phone, so it has
@@ -180,6 +222,7 @@
   /* --- 2. board --- */
   function renderBoard(prev) {
     show('s-board');
+    document.getElementById('gamename').style.visibility = '';
     var grid = document.getElementById('board-grid');
     var cols = 0, rows = 0;
     state.board.forEach(function (c) {
@@ -372,6 +415,19 @@
       host.appendChild(card);
     });
     document.getElementById('cards-question').textContent = state.round ? state.round.text : '';
+    // During betting the chips are deliberately not on the cards yet, so the
+    // room needs some other sign of progress — otherwise the screen looks
+    // frozen while five tables think.
+    var tally = document.getElementById('bet-tally');
+    if (mode === 'betting') {
+      var want = (state.tokens || []).length || 1;
+      var eligible = state.teams.filter(function (t) { return t.eligible; });
+      var inCount = eligible.filter(function (t) { return t.chipsPlaced >= want; }).length;
+      tally.textContent = inCount + ' OF ' + eligible.length + ' TABLES IN';
+      tally.style.display = '';
+    } else {
+      tally.style.display = 'none';
+    }
     // The footer holds either the countdown or the answer band, never both.
     var footer = document.getElementById('cards-footer');
     footer.classList.toggle('scored', mode === 'scored');

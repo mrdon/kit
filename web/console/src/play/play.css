@@ -53,7 +53,7 @@ body {
 h1 { font-size: 30px; line-height: 1.15; margin: 0; }
 h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 .sub { color: var(--dim); margin: 0; }
-.gamename { font-size: 34px; font-weight: 800; letter-spacing: .01em; margin: 0 0 4px; }
+.gamename { font-size: 30px; font-weight: 800; letter-spacing: .01em; margin: 0 0 8px; line-height: 1.15; }
 
 .field {
   width: 100%; padding: 18px; border-radius: 16px;
@@ -158,3 +158,26 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
   padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.08);
   border: 2px solid var(--line); font-size: 14px; color: var(--muted);
 }
+
+/* The rules. Shown while joining and while waiting for the first question —
+   the only two moments a player has nothing else to do. */
+.rules { margin-top: 8px; }
+.rules h2 { font-size: 16px; color: var(--dim); font-weight: 700; margin: 0 0 8px; }
+.rules ol {
+  margin: 0; padding-left: 22px;
+  display: flex; flex-direction: column; gap: 8px;
+  font-size: 15px; line-height: 1.4; color: var(--muted);
+}
+.rules li::marker { color: var(--accent); font-weight: 700; }
+
+/* Where you stand, between questions. Big, because it is the only thing on
+   the screen and the table is looking at it across a bar table. */
+.rank-hero {
+  text-align: center;
+  font-size: 72px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.rank-hero .of { font-size: 22px; color: var(--dim); font-weight: 700; }

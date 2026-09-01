@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/mrdon/kit/internal/auth"
 )
 
 // serveMux builds a mux with the app's public routes, plus a stand-in for the
@@ -99,7 +101,6 @@ func TestNoCookieCanStreamButCannotPlay(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 
 	if rec := f.request(http.MethodGet, f.gamePath(game)+"/state", nil, nil); rec.Code != http.StatusOK {
 		t.Fatalf("spectator poll returned %d, want 200", rec.Code)
@@ -129,7 +130,6 @@ func TestAnotherTeamsCookieCannotActAsYou(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	cookieA := f.joinOverHTTP(game, "Bar Flies")
 	cookieB := f.joinOverHTTP(game, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -170,8 +170,6 @@ func TestCookieFromAnotherGameIsNotAnIdentity(t *testing.T) {
 	f.seedBank(topicSet(), 4)
 	gameA := f.newGame(defaultSettings(), topicSet())
 	gameB := f.newGame(defaultSettings(), topicSet())
-	f.do(gameA.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
-	f.do(gameB.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	cookieA := f.joinOverHTTP(gameA, "Bar Flies")
 
 	rec := f.request(http.MethodGet, f.gamePath(gameB)+"/me", nil, cookieA)
@@ -186,7 +184,6 @@ func TestHTTPRefusesBothChipsOnOneAnswer(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	cookie := f.joinOverHTTP(game, "Bar Flies")
 	f.joinOverHTTP(game, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -225,7 +222,6 @@ func TestHTTPRefusesBothChipsOnOneAnswer(t *testing.T) {
 func TestHTTPRefusesTheTwentyFirstTeam(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame(defaultSettings(), nil)
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	for i := range MaxTeams {
 		f.joinOverHTTP(game, "Table "+FormatValue(float64(i)))
 	}
@@ -263,7 +259,6 @@ func TestUnknownAndMalformedGameNames(t *testing.T) {
 func TestIdentityCookieIsScopedAndHttpOnly(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame(defaultSettings(), nil)
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	c := f.joinOverHTTP(game, "Bar Flies")
 
 	if !c.HttpOnly {
@@ -330,7 +325,6 @@ func TestDisplayPageIsSelfContained(t *testing.T) {
 func TestReclaimCodeWorksOnceAndRotatesTheIdentity(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame(defaultSettings(), nil)
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	old := f.joinOverHTTP(game, "Bar Flies")
 	teamID, _, _ := ParseCookieValue(old.Value)
 
@@ -407,7 +401,6 @@ func TestTVVersionIsStableWhileAGameIsPlayed(t *testing.T) {
 	path := "/" + f.tenant.Slug + "/trivia/" + game.Name + "/tv.version"
 	before := f.request(http.MethodGet, path, nil, nil).Body.String()
 
-	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
 	a := f.join(game.ID, "Bar Flies")
 	f.join(game.ID, "Quiz Khalifa")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
@@ -449,10 +442,46 @@ func TestDisplayShowsTheHostsTitle(t *testing.T) {
 	if !strings.Contains(body, "Tuesday Quiz") {
 		t.Fatal("the TV page does not carry the name the host set in setup")
 	}
-	// The slug still appears — the join screen needs it — but the heading is
-	// the title.
-	if !strings.Contains(body, `class="gamename">Tuesday Quiz<`) {
+	if !strings.Contains(body, `>Tuesday Quiz<`) {
 		t.Fatal("the corner heading is not the host's title")
+	}
+	// THE SLUG MUST NOT BE PRESENTED AS A NAME. It appears inside the join
+	// URL, which is unavoidable and fine, but nowhere as a label — it used to
+	// be the biggest text on the wall.
+	for word := range strings.SplitSeq(game.Name, "-") {
+		if strings.Contains(body, `class="join-word">`+strings.ToUpper(word)) {
+			t.Fatalf("the slug word %q is rendered as the join screen's hero", word)
+		}
+	}
+}
+
+// A game always has a human name, so no surface ever has to fall back to the
+// slug — a fallback is a branch every surface has to remember, and one always
+// forgets.
+func TestGamesAreAlwaysCreatedWithATitle(t *testing.T) {
+	f := newFixture(t)
+	app := &App{pool: f.pool, svc: f.svc, baseURL: "http://localhost:8489"}
+
+	mux := http.NewServeMux()
+	tenantMW := auth.TenantFromPath(f.pool)
+	mux.Handle("POST /{slug}/api/trivia/games", tenantMW(http.HandlerFunc(app.handleCreateGame)))
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/"+f.tenant.Slug+"/api/trivia/games", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create returned %d: %s", rec.Code, rec.Body.String())
+	}
+	var out gameJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.Title) == "" {
+		t.Fatal("a game was created with no title — every surface would fall back to the slug")
+	}
+	if out.Title == out.Name {
+		t.Fatal("the title is the slug")
 	}
 }
 

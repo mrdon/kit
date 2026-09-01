@@ -120,6 +120,11 @@ type PlayerFrame struct {
 	Scoring *wireScoring `json:"scoring"`
 	Tokens  []int        `json:"tokens"`
 	You     *wireYou     `json:"you"`
+	// Rules come from the server so the phone and the TV cannot tell a room
+	// different games. Cheap enough to ride on every frame (a few hundred
+	// bytes against a 3-6 KB snapshot) and that way there is no second fetch
+	// and no chance of a stale copy.
+	Rules []string `json:"rules"`
 }
 
 // wireYou is one team's own state. Only ever populated for the team whose
@@ -219,6 +224,7 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 		Slots:      publicSlots(s),
 		Scoring:    publicScoring(s),
 		Tokens:     s.TokenValues,
+		Rules:      Rules(s.FinalWager),
 	}
 	if teamID == uuid.Nil {
 		return f
@@ -315,14 +321,40 @@ func publicRound(s *Snapshot) *wireRound {
 	}
 }
 
+// betsVisible reports whether other tables' chips may be shown.
+//
+// NOT DURING BETTING. Chips landing live on the TV tells a table still
+// deciding exactly where the room has already committed, so the last to bet
+// plays a different game from the first — follow the crowd, or fade it, but
+// either way with information the early tables did not have. Everything is
+// revealed together when the phase closes, which is also a better beat: all
+// the chips appear at once rather than trickling.
+//
+// A table's OWN chips are always visible to it (see wireYou), and the host
+// sees everything throughout, because they need to know who has not placed.
+func betsVisible(s *Snapshot) bool {
+	switch s.Phase {
+	case PhaseScoring, PhasePodium:
+		return true
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseQuestion, PhaseReveal, PhaseBetting:
+		return false
+	}
+	return false
+}
+
 func publicSlots(s *Snapshot) []wireSlot {
 	if !revealed(s) {
 		return []wireSlot{}
 	}
-	return allSlots(s)
+	return slotsWith(s, betsVisible(s))
 }
 
 func allSlots(s *Snapshot) []wireSlot {
+	return slotsWith(s, true)
+}
+
+// slotsWith builds the cards, optionally carrying the chips on them.
+func slotsWith(s *Snapshot, withBets bool) []wireSlot {
 	out := make([]wireSlot, 0, len(s.Slots))
 	for _, sl := range s.Slots {
 		w := wireSlot{
@@ -332,14 +364,19 @@ func allSlots(s *Snapshot) []wireSlot {
 		if w.Teams == nil {
 			w.Teams = []string{}
 		}
-		for _, b := range s.Bets {
-			if b.SlotID == sl.ID {
-				name := ""
-				if t := s.TeamByID(b.TeamID); t != nil {
-					name = t.Name
+		if withBets {
+			for _, b := range s.Bets {
+				if b.SlotID == sl.ID {
+					name := ""
+					if t := s.TeamByID(b.TeamID); t != nil {
+						name = t.Name
+					}
+					w.Chips = append(w.Chips, wireChip{Team: name, Amount: b.Amount})
 				}
-				w.Chips = append(w.Chips, wireChip{Team: name, Amount: b.Amount})
 			}
+		} else {
+			// Pot too: the total on a card is the same tell as the chips.
+			w.Pot = 0
 		}
 		out = append(out, w)
 	}

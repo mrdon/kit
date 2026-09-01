@@ -11,21 +11,26 @@
 <body>
 <div id="stagewrap"></div>
 <div id="fit">
-  <div class="gamename">{{ .Heading }}</div>
+  <div class="gamename" id="gamename">{{ .Heading }}</div>
   <div id="dot"></div>
   <div id="clock"></div>
 
   <!-- 1. join -->
   <section class="screen on" id="s-join">
     <div class="join">
-      <div>
-        <div class="join-words">
-          {{ range .NameWords }}<div class="join-word">{{ . }}</div>{{ end }}
+      <div class="join-left">
+        <div class="join-words" id="join-words">
+          {{ range .JoinWords }}<div class="join-word">{{ . }}</div>{{ end }}
         </div>
         <div class="join-url" id="join-url">{{ .JoinHost }}</div>
         <div class="join-count" id="join-count">0 TEAMS IN</div>
       </div>
-      <div class="join-qr">{{ .QR }}</div>
+      <div class="join-right">
+        <div class="join-qr">{{ .QR }}</div>
+        <ol class="join-rules" id="join-rules">
+          {{ range .Rules }}<li>{{ . }}</li>{{ end }}
+        </ol>
+      </div>
     </div>
     <div class="join-pills" id="join-pills"></div>
   </section>
@@ -61,6 +66,7 @@
     <div class="cards-screen" id="cards-screen">
       <div class="q-text" id="cards-question" style="font-size:48px;max-height:120px"></div>
       <div class="cards" id="cards"></div>
+      <div class="answered-count" id="bet-tally" style="display:none"></div>
       <div class="cards-footer" id="cards-footer">
         <div class="ring-wrap">
           <svg class="ring" id="cards-ring" width="300" height="300" viewBox="0 0 300 300">
