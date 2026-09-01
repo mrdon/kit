@@ -175,7 +175,13 @@ func (s *Service) openFinal(ctx context.Context, game *Game, questionID *uuid.UU
 	if questionID != nil {
 		qID = *questionID
 	} else {
-		q, err := LeastUsedQuestion(ctx, s.pool, game.TenantID, game.ID)
+		// The final draws from the same datasets the board did, so a themed
+		// night does not end on a question from some other pack.
+		datasets, err := GameDatasetIDs(ctx, s.pool, game.TenantID, game.ID)
+		if err != nil {
+			return err
+		}
+		q, err := LeastUsedQuestion(ctx, s.pool, game.TenantID, game.ID, datasets)
 		if err != nil {
 			return err
 		}
@@ -207,11 +213,24 @@ func (s *Service) startRound(ctx context.Context, game *Game, questionID uuid.UU
 		return fmt.Errorf("computing round ordinal: %w", err)
 	}
 
+	// Copy the question onto the round as it opens. From here the round is
+	// self-contained: the recap, the scoring and the TV all read this copy,
+	// so a re-upload or a deleted dataset cannot change what the room was
+	// asked or what it was marked against.
+	question, err := getQuestionTx(ctx, tx, game.TenantID, questionID)
+	if err != nil {
+		return err
+	}
+
 	var roundID uuid.UUID
 	err = tx.QueryRow(ctx, `
-		INSERT INTO app_trivia_rounds (tenant_id, game_id, cell_id, question_id, is_final, ordinal, points)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-		game.TenantID, game.ID, cellID, questionID, isFinal, ordinal, points).Scan(&roundID)
+		INSERT INTO app_trivia_rounds
+		    (tenant_id, game_id, cell_id, question_id, prompt, answer_value, answer_text,
+		     is_final, ordinal, points)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+		game.TenantID, game.ID, cellID, questionID,
+		question.Prompt, question.AnswerValue, question.AnswerText,
+		isFinal, ordinal, points).Scan(&roundID)
 	if err != nil {
 		return fmt.Errorf("inserting round: %w", err)
 	}

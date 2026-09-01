@@ -105,7 +105,22 @@ export interface HostFrame {
   progress: { cellsPlayed: number; cellsTotal: number; finalPlayed: boolean };
 }
 
+// A dataset is a named set of questions. It is the only "set of questions"
+// concept: an upload creates one, the shipped starter pack is seeded as one,
+// and a game draws its board from one or more of them.
+export interface Dataset {
+  id: string;
+  name: string;
+  notes: string;
+  builtin_key: string;
+  questions: number;
+  topics: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ImportReport {
+  dataset_id: string;
   imported: number;
   updated: number;
   skipped_duplicates: number;

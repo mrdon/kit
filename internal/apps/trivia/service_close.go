@@ -130,10 +130,6 @@ func (s *Service) scoreRound(ctx context.Context, tx pgx.Tx, game *Game) error {
 	if err != nil {
 		return err
 	}
-	question, err := getQuestionTx(ctx, tx, game.TenantID, round.QuestionID)
-	if err != nil {
-		return err
-	}
 	slotRows, err := ListSlots(ctx, tx, game.TenantID, roundID)
 	if err != nil {
 		return err
@@ -173,7 +169,9 @@ func (s *Service) scoreRound(ctx context.Context, tx pgx.Tx, game *Game) error {
 	}
 
 	result := ScoreRound(RoundInput{
-		Correct:    question.AnswerValue,
+		// The round's own copy, not the bank's: the room is marked against
+		// the answer it was actually asked.
+		Correct:    round.AnswerValue,
 		CellPoints: round.Points,
 		Slots:      slots,
 		Bets:       bets,

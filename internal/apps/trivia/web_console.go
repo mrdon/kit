@@ -35,6 +35,10 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/trivia/games/{id}/teams/{teamID}/reclaim", jsonRoute(a.handleReclaim))
 
 	mux.Handle("GET /{slug}/api/trivia/questions", jsonRoute(a.handleListQuestions))
+	mux.Handle("GET /{slug}/api/trivia/datasets", jsonRoute(a.handleListDatasets))
+	mux.Handle("PATCH /{slug}/api/trivia/datasets/{id}", jsonRoute(a.handleRenameDataset))
+	mux.Handle("DELETE /{slug}/api/trivia/datasets/{id}", jsonRoute(a.handleDeleteDataset))
+	mux.Handle("PUT /{slug}/api/trivia/games/{id}/datasets", jsonRoute(a.handleSetGameDatasets))
 	mux.Handle("POST /{slug}/api/trivia/questions/import", jsonRoute(a.handleImport))
 	mux.Handle("GET /{slug}/api/trivia/questions/sample", jsonRoute(a.handleSampleCSV))
 	mux.Handle("POST /{slug}/api/trivia/questions/starter", jsonRoute(a.handleLoadStarter))
@@ -155,16 +159,34 @@ func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "loading trivia game", err)
 		return
 	}
-	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID)
+	// Everything the setup page shows is scoped to what THIS game draws from,
+	// so the column picker can never offer a topic the game cannot fill.
+	selected, err := GameDatasetIDs(r.Context(), a.pool, tenant.ID, game.ID)
+	if err != nil {
+		serverError(w, "loading game datasets", err)
+		return
+	}
+	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, selected)
 	if err != nil {
 		serverError(w, "loading topic histogram", err)
 		return
 	}
+	sets, err := ListDatasets(r.Context(), a.pool, tenant.ID)
+	if err != nil {
+		serverError(w, "listing trivia datasets", err)
+		return
+	}
+	ids := make([]string, 0, len(selected))
+	for _, id := range selected {
+		ids = append(ids, id.String())
+	}
 	teams, cells, played, leader := a.gameCounts(r, game)
 	writeJSON(w, map[string]any{
-		"game":   a.gameToJSON(game, tenant.Slug, teams, cells, played, leader),
-		"topics": hist,
-		"state":  ProjectHost(snap),
+		"game":     a.gameToJSON(game, tenant.Slug, teams, cells, played, leader),
+		"topics":   hist,
+		"datasets": sets,
+		"selected": ids,
+		"state":    ProjectHost(snap),
 	})
 }
 

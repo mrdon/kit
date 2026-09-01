@@ -214,11 +214,8 @@ func snapCorrect(t *testing.T, f *fixture, game *Game) float64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, err := GetQuestion(f.ctx, f.pool, f.tenant.ID, round.QuestionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return q.AnswerValue
+	// The round's own copy — the same value the engine will mark against.
+	return round.AnswerValue
 }
 
 // A stake cannot be changed once the answer phase has closed -- that is what

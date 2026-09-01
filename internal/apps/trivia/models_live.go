@@ -22,10 +22,19 @@ type Querier interface {
 // Round is one question in play. CellID is nil for a final, whose question is
 // drawn from the bank rather than the board.
 type Round struct {
-	ID            uuid.UUID
-	GameID        uuid.UUID
-	CellID        *uuid.UUID
-	QuestionID    uuid.UUID
+	ID     uuid.UUID
+	GameID uuid.UUID
+	CellID *uuid.UUID
+	// QuestionID is provenance only, and nullable: the bank row it came from
+	// may be deleted later. Everything the round needs is copied below.
+	QuestionID *uuid.UUID
+	// Prompt, AnswerValue and AnswerText are the round's OWN copy, taken when
+	// it opened. Same reasoning as Points: a played round must not change
+	// because somebody edited the bank afterwards -- and a live round must
+	// not have its answer swapped underneath it by a re-upload mid-game.
+	Prompt        string
+	AnswerValue   float64
+	AnswerText    string
 	IsFinal       bool
 	Ordinal       int
 	Points        int
@@ -34,12 +43,14 @@ type Round struct {
 	ScoredAt      *time.Time
 }
 
-const roundColumns = `id, game_id, cell_id, question_id, is_final, ordinal, points,
+const roundColumns = `id, game_id, cell_id, question_id, prompt,
+	COALESCE(answer_value, 0), answer_text, is_final, ordinal, points,
 	winning_slot_id, started_at, scored_at`
 
 func scanRound(row pgx.Row) (*Round, error) {
 	var r Round
-	err := row.Scan(&r.ID, &r.GameID, &r.CellID, &r.QuestionID, &r.IsFinal, &r.Ordinal,
+	err := row.Scan(&r.ID, &r.GameID, &r.CellID, &r.QuestionID,
+		&r.Prompt, &r.AnswerValue, &r.AnswerText, &r.IsFinal, &r.Ordinal,
 		&r.Points, &r.WinningSlotID, &r.StartedAt, &r.ScoredAt)
 	if err != nil {
 		return nil, err

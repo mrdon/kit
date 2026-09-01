@@ -172,6 +172,7 @@ export interface KioskBoard {
 // silently skipping a question.
 
 export type {
+  Dataset,
   TriviaGame,
   TriviaSettings,
   TopicCount,
@@ -184,6 +185,7 @@ import type {
   TopicCount as TopicCountT,
   HostFrame as HostFrameT,
   ImportReport as ImportReportT,
+  Dataset as DatasetT,
 } from './pages/trivia/common';
 
 export interface KioskBoardInput {
@@ -822,7 +824,13 @@ export const api = {
   // --- Trivia ---
   triviaGames: () => apiGet<{ games: TriviaGameT[] }>('/trivia/games'),
   triviaGame: (id: string) =>
-    apiGet<{ game: TriviaGameT; topics: TopicCountT[]; state: HostFrameT }>(`/trivia/games/${id}`),
+    apiGet<{
+      game: TriviaGameT;
+      topics: TopicCountT[];
+      datasets: DatasetT[];
+      selected: string[];
+      state: HostFrameT;
+    }>(`/trivia/games/${id}`),
   createTriviaGame: (settings: TriviaSettingsT) =>
     apiPost<TriviaGameT>('/trivia/games', { settings }),
   updateTriviaGame: (id: string, settings: TriviaSettingsT) =>
@@ -840,6 +848,15 @@ export const api = {
   // One click, no download-and-re-upload. Idempotent: the import upserts on
   // the folded prompt, so loading it twice adds nothing.
   loadTriviaStarter: () => apiPost<ImportReportT>('/trivia/questions/starter', {}),
+  triviaDatasets: () => apiGet<{ datasets: DatasetT[] }>('/trivia/datasets'),
+  renameTriviaDataset: (id: string, name: string, notes: string) =>
+    apiPatch<{ datasets: DatasetT[] }>(`/trivia/datasets/${id}`, { name, notes }),
+  deleteTriviaDataset: (id: string) => apiDelete<void>(`/trivia/datasets/${id}`),
+  // An empty list means "every dataset" — that is what keeps a game playable
+  // when the set it pointed at is later deleted.
+  setTriviaGameDatasets: (gameId: string, datasetIds: string[]) =>
+    apiPut<{ selected: string[]; topics: TopicCountT[] }>(
+      `/trivia/games/${gameId}/datasets`, { dataset_ids: datasetIds }),
 
   kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
   createKioskBoard: (body: KioskBoardInput) =>

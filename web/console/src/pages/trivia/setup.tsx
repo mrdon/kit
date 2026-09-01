@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { API_BASE, api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
-import { balanceWarning, defaultSettings, money, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
+import { balanceWarning, defaultSettings, money, type Dataset, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
 // the shape of the game, choose the board's columns, and check the preview.
@@ -11,6 +11,8 @@ export default function TriviaSetup() {
   const { id = '' } = useParams();
   const [game, setGame] = useState<TriviaGame | null>(null);
   const [topics, setTopics] = useState<TopicCount[]>([]);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [state, setState] = useState<HostFrame | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -19,6 +21,8 @@ export default function TriviaSetup() {
       .then((r) => {
         setGame(r.game);
         setTopics(r.topics ?? []);
+        setDatasets(r.datasets ?? []);
+        setSelected(r.selected ?? []);
         setState(r.state);
       })
       .catch((e) => setErr(e.message));
@@ -44,31 +48,39 @@ export default function TriviaSetup() {
 
       {err ? <p className="banner banner-error">{err}</p> : null}
 
-      <ImportPanel onImported={(r) => { setTopics(r.topics ?? []); load(); }} />
+      <DatasetsPanel datasets={datasets} selected={selected} onChanged={load} />
       <SettingsPanel game={game} onSaved={(g) => setGame(g)} />
       <BoardPanel game={game} topics={topics} state={state} onBuilt={(s) => { setState(s); load(); }} />
     </>
   );
 }
 
-// The CSV drop and its report. A three-hundred-row sheet with two typos is not
-// a total failure, so the good rows land and the bad ones come back by line
-// number — and the topic histogram comes back from the SAME call, because
-// that is what the column picker below needs.
-function ImportPanel({ onImported }: { onImported: (r: ImportReport) => void }) {
+// Question sets.
+//
+// One concept: a dataset is a named set of questions. An upload creates or
+// replaces one, the shipped starter pack is seeded as one, and THIS GAME
+// draws its board from whichever ones are ticked. Nothing reads questions
+// from anywhere else.
+function DatasetsPanel({
+  datasets, selected, onChanged,
+}: {
+  datasets: Dataset[];
+  selected: string[];
+  onChanged: () => void;
+}) {
   const { id = '' } = useParams();
   const [report, setReport] = useState<ImportReport | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadStarter = async () => {
+  const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.loadTriviaStarter();
-      setReport(r);
-      onImported(r);
+      await fn();
+      onChanged();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -76,14 +88,14 @@ function ImportPanel({ onImported }: { onImported: (r: ImportReport) => void }) 
     }
   };
 
-  const upload = async (file: File) => {
-    setBusy(true);
-    setErr(null);
-    try {
+  const upload = (file: File) =>
+    run(async () => {
       const form = new FormData();
       form.append('csv', file);
-      // Multipart, so this one goes around the JSON helper — but it still
-      // carries the CSRF header the server requires on every mutation.
+      // Naming the set is optional: the file name is usually what they meant.
+      if (name.trim()) form.append('name', name.trim());
+      // Multipart, so this goes around the JSON helper — but it still carries
+      // the CSRF header the server requires on every mutation.
       const res = await fetch(`${API_BASE}/trivia/questions/import`, {
         method: 'POST',
         credentials: 'same-origin',
@@ -91,39 +103,92 @@ function ImportPanel({ onImported }: { onImported: (r: ImportReport) => void }) 
         body: form,
       });
       if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
-      const r = (await res.json()) as ImportReport;
-      setReport(r);
-      onImported(r);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
+      setReport((await res.json()) as ImportReport);
+      setName('');
       if (fileRef.current) fileRef.current.value = '';
-    }
-  };
-  void id;
+    });
+
+  // No ticks means every set. Ticking is how you narrow.
+  const usingAll = selected.length === 0;
+  const isOn = (d: Dataset) => usingAll || selected.includes(d.id);
+
+  const toggle = (d: Dataset) =>
+    run(async () => {
+      // Turning one off while "all" is implied has to become an explicit list
+      // of the rest, or the click would appear to do nothing.
+      const base = usingAll ? datasets.map((x) => x.id) : selected;
+      const next = base.includes(d.id) ? base.filter((x) => x !== d.id) : [...base, d.id];
+      await api.setTriviaGameDatasets(id, next.length === datasets.length ? [] : next);
+    });
 
   return (
     <section className="panel">
-      <h2>Question bank</h2>
+      <h2>Question sets</h2>
       <p className="page-sub">
-        A CSV with <code>question</code>, <code>topics</code> and <code>answer</code> columns, in any
-        order. Topics are separated by semicolons. Answers must be numbers — the whole game is
-        &ldquo;closest without going over&rdquo;. Re-uploading a corrected sheet updates in place
-        rather than duplicating.
+        This game builds its board from the ticked sets. With none ticked it uses everything.
       </p>
+
+      {datasets.length === 0 ? (
+        <p className="page-sub">No question sets yet — load the starter pack or upload a CSV.</p>
+      ) : (
+        <ul className="card-list">
+          {datasets.map((d) => (
+            <li key={d.id} className="card">
+              <div className="card-main">
+                <label className="card-title">
+                  <input
+                    type="checkbox"
+                    checked={isOn(d)}
+                    disabled={busy}
+                    onChange={() => void toggle(d)}
+                  />{' '}
+                  {d.name}
+                </label>
+                <span className="card-desc">
+                  {d.questions} question{d.questions === 1 ? '' : 's'} · {d.topics} topic
+                  {d.topics === 1 ? '' : 's'}
+                  {d.builtin_key ? ' · shipped with Kit' : ''}
+                  {d.notes ? ` · ${d.notes}` : ''}
+                </span>
+              </div>
+              <div className="card-side">
+                <button
+                  className="btn btn-danger"
+                  disabled={busy}
+                  onClick={() => void run(() => api.deleteTriviaDataset(d.id))}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="page-head-actions">
-        <button className="btn" disabled={busy} onClick={() => void loadStarter()}>
+        <button
+          className="btn btn-spaced"
+          disabled={busy}
+          onClick={() => void run(async () => { setReport(await api.loadTriviaStarter()); })}
+        >
           Load the starter pack
         </button>
         <a className="card-manage" href={`${API_BASE}/trivia/questions/sample`}>
           Download it as a template
         </a>
       </div>
-      <p className="page-sub">
-        62 questions across eleven topics — enough to build the default board several times over.
-        Loading it twice is harmless: rows are matched on the question text and updated in place.
-      </p>
+
+      <div className="field-row">
+        <label className="field">
+          <span>New set from a CSV</span>
+          <input
+            placeholder="name it (or we'll use the file name)"
+            value={name}
+            disabled={busy}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+      </div>
       <input
         ref={fileRef}
         type="file"
@@ -134,6 +199,13 @@ function ImportPanel({ onImported }: { onImported: (r: ImportReport) => void }) 
           if (f) void upload(f);
         }}
       />
+      <p className="page-sub">
+        Columns <code>question</code>, <code>topics</code> and <code>answer</code>, in any order.
+        Topics are separated by semicolons. Answers must be numbers — the whole game is
+        &ldquo;closest without going over&rdquo;. Uploading a set with an existing name replaces
+        its contents.
+      </p>
+
       {err ? <p className="banner banner-error">{err}</p> : null}
       {report ? (
         <div className="banner banner-ok">

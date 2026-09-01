@@ -106,23 +106,28 @@ func CountQuestions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID)
 	return n, nil
 }
 
-// UpsertQuestion writes one bank row and replaces its topic set, keyed on
-// prompt_key so re-uploading a corrected CSV updates in place. Returns the
-// question id and whether the row already existed, which is what the import
-// report counts as "skipped duplicate".
-func UpsertQuestion(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, q Question) (uuid.UUID, bool, error) {
+// UpsertQuestion writes one question into a DATASET and replaces its topic
+// set, keyed on prompt_key within that dataset so re-uploading a corrected
+// CSV updates in place. Returns the question id and whether the row already
+// existed, which is what the import report counts as "updated".
+//
+// Uniqueness is per dataset, not per workspace: a general pack and a sports
+// pack may both ask how many holes are on a golf course, and forbidding that
+// would make the second upload silently lossy. The board builder dedupes on
+// the question text so a game drawing on both still only asks it once.
+func UpsertQuestion(ctx context.Context, tx pgx.Tx, tenantID, datasetID uuid.UUID, q Question) (uuid.UUID, bool, error) {
 	var id uuid.UUID
 	var inserted bool
 	err := tx.QueryRow(ctx, `
-		INSERT INTO app_trivia_questions (tenant_id, prompt, prompt_key, answer_value, answer_text)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (tenant_id, prompt_key) DO UPDATE
+		INSERT INTO app_trivia_questions (tenant_id, dataset_id, prompt, prompt_key, answer_value, answer_text)
+		VALUES ($1, $6, $2, $3, $4, $5)
+		ON CONFLICT (tenant_id, dataset_id, prompt_key) DO UPDATE
 		   SET prompt = EXCLUDED.prompt,
 		       answer_value = EXCLUDED.answer_value,
 		       answer_text = EXCLUDED.answer_text,
 		       updated_at = now()
 		RETURNING id, (xmax = 0)`,
-		tenantID, q.Prompt, q.PromptKey, q.AnswerValue, q.AnswerText).Scan(&id, &inserted)
+		tenantID, q.Prompt, q.PromptKey, q.AnswerValue, q.AnswerText, datasetID).Scan(&id, &inserted)
 	if err != nil {
 		return uuid.Nil, false, fmt.Errorf("upserting trivia question: %w", err)
 	}
@@ -179,15 +184,27 @@ type TopicCount struct {
 // TopicHistogram is what the setup page needs to offer column choices, and
 // the reason the import response carries it: a host who uploads a sheet and
 // is told only "38 imported" has no idea what they got.
-func TopicHistogram(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]TopicCount, error) {
+//
+// datasetIDs narrows it to a game's selection. An EMPTY slice means every
+// dataset — the same rule GameDatasetIDs documents — so a game that has never
+// opened the picker still sees the full set of topics it can actually draw
+// from. Counting the whole workspace regardless would offer the host a column
+// their game cannot fill.
+//
+// The counts are DISTINCT on the question text rather than on the row,
+// because two selected datasets may hold the same question and the board will
+// only ever ask it once.
+func TopicHistogram(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, datasetIDs []uuid.UUID) ([]TopicCount, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT t.topic_key, min(t.topic), count(*),
-		       count(*) FILTER (WHERE q.last_used_at IS NULL)
+		SELECT t.topic_key, min(t.topic),
+		       count(DISTINCT q.prompt_key)::int,
+		       count(DISTINCT q.prompt_key) FILTER (WHERE q.last_used_at IS NULL)::int
 		  FROM app_trivia_question_topics t
 		  JOIN app_trivia_questions q ON q.id = t.question_id AND q.tenant_id = t.tenant_id
 		 WHERE t.tenant_id = $1
+		   AND ($2::uuid[] IS NULL OR cardinality($2::uuid[]) = 0 OR q.dataset_id = ANY($2::uuid[]))
 		 GROUP BY t.topic_key
-		 ORDER BY count(*) DESC, t.topic_key`, tenantID)
+		 ORDER BY count(DISTINCT q.prompt_key) DESC, t.topic_key`, tenantID, datasetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("querying topic histogram: %w", err)
 	}
@@ -207,14 +224,24 @@ func TopicHistogram(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID)
 // least-recently-used first so a weekly quiz doesn't repeat itself. Each
 // question comes back with its full topic set, because the board builder has
 // to know that one question can fill either of two columns.
-func QuestionsForTopics(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, topicKeys []string) ([]Question, error) {
+// datasetIDs narrows to a game's selection; empty means every dataset.
+//
+// DISTINCT ON (prompt_key) is what stops two selected datasets that share a
+// question from putting it on the board twice. The board's own unique index
+// is on question_id, which would not catch it — those are two different rows
+// saying the same thing, and the room would notice.
+func QuestionsForTopics(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, topicKeys []string, datasetIDs []uuid.UUID) ([]Question, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT `+questionColumns+`
-		  FROM app_trivia_questions q
-		 WHERE q.tenant_id = $1
-		   AND EXISTS (SELECT 1 FROM app_trivia_question_topics t
-		                WHERE t.question_id = q.id AND t.topic_key = ANY($2))
-		 ORDER BY q.last_used_at ASC NULLS FIRST, q.id`, tenantID, topicKeys)
+		SELECT * FROM (
+		  SELECT DISTINCT ON (q.prompt_key) `+questionColumns+`
+		    FROM app_trivia_questions q
+		   WHERE q.tenant_id = $1
+		     AND ($3::uuid[] IS NULL OR cardinality($3::uuid[]) = 0 OR q.dataset_id = ANY($3::uuid[]))
+		     AND EXISTS (SELECT 1 FROM app_trivia_question_topics t
+		                  WHERE t.question_id = q.id AND t.topic_key = ANY($2))
+		   ORDER BY q.prompt_key, q.last_used_at ASC NULLS FIRST, q.id
+		) d
+		 ORDER BY d.last_used_at ASC NULLS FIRST, d.id`, tenantID, topicKeys, datasetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("querying questions for topics: %w", err)
 	}
@@ -291,17 +318,18 @@ func GetQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID
 // LeastUsedQuestion picks the bank question the room has heard least
 // recently that isn't already on this game's board. It's how the host gets a
 // final question without going shopping, and how the Auto button fills gaps.
-func LeastUsedQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID) (*Question, error) {
+func LeastUsedQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, datasetIDs []uuid.UUID) (*Question, error) {
 	q, err := scanQuestion(pool.QueryRow(ctx, `
 		SELECT `+questionColumns+`
 		  FROM app_trivia_questions q
 		 WHERE q.tenant_id = $1
+		   AND ($3::uuid[] IS NULL OR cardinality($3::uuid[]) = 0 OR q.dataset_id = ANY($3::uuid[]))
 		   AND NOT EXISTS (SELECT 1 FROM app_trivia_board_cells c
 		                    WHERE c.game_id = $2 AND c.question_id = q.id)
 		   AND NOT EXISTS (SELECT 1 FROM app_trivia_rounds r
 		                    WHERE r.game_id = $2 AND r.question_id = q.id)
 		 ORDER BY q.last_used_at ASC NULLS FIRST, q.id
-		 LIMIT 1`, tenantID, gameID))
+		 LIMIT 1`, tenantID, gameID, datasetIDs))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

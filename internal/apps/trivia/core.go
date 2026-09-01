@@ -143,19 +143,17 @@ func roundRecap(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, gam
 
 	var b strings.Builder
 	for _, r := range rounds {
-		q, err := GetQuestion(ctx, pool, tenantID, r.QuestionID)
-		if err != nil {
-			continue
-		}
 		label := fmt.Sprintf("%d.", r.Ordinal)
 		if r.IsFinal {
 			label = "Final:"
 		}
-		answer := q.AnswerText
+		// The round's own copy, so a recap of a night from last month still
+		// reads correctly after the dataset behind it was deleted.
+		answer := r.AnswerText
 		if answer == "" {
-			answer = FormatValue(q.AnswerValue)
+			answer = FormatValue(r.AnswerValue)
 		}
-		fmt.Fprintf(&b, "%s %s — %s", label, q.Prompt, answer)
+		fmt.Fprintf(&b, "%s %s — %s", label, r.Prompt, answer)
 		var took []string
 		for _, s := range byRound[r.ID] {
 			if s.BoardPoints > 0 {

@@ -38,20 +38,29 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{t: t, pool: pool, svc: NewService(pool), tenant: tenant, ctx: ctx}
 }
 
-// seedBank writes n questions per topic so a board can be built.
-func (f *fixture) seedBank(topics []string, perTopic int) {
+// seedBank writes n questions per topic into one dataset, so a board can be
+// built. Returns the dataset id for tests that care about the selection.
+func (f *fixture) seedBank(topics []string, perTopic int) uuid.UUID {
+	return f.seedDataset("Test questions", topics, perTopic)
+}
+
+func (f *fixture) seedDataset(name string, topics []string, perTopic int) uuid.UUID {
 	f.t.Helper()
 	tx, err := f.pool.Begin(f.ctx)
 	if err != nil {
 		f.t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(f.ctx) }()
+	datasetID, err := UpsertDataset(f.ctx, tx, f.tenant.ID, name, "", "")
+	if err != nil {
+		f.t.Fatalf("creating dataset: %v", err)
+	}
 	n := 0
 	for _, topic := range topics {
 		for range perTopic {
 			n++
 			prompt := topic + " question " + uuid.NewString()
-			if _, _, err := UpsertQuestion(f.ctx, tx, f.tenant.ID, Question{
+			if _, _, err := UpsertQuestion(f.ctx, tx, f.tenant.ID, datasetID, Question{
 				Prompt: prompt, PromptKey: FoldKey(prompt),
 				AnswerValue: float64(100 + n), AnswerText: FormatValue(float64(100 + n)),
 				Topics: []Topic{{Key: FoldKey(topic), Label: topic}},
@@ -63,6 +72,7 @@ func (f *fixture) seedBank(topics []string, perTopic int) {
 	if err := tx.Commit(f.ctx); err != nil {
 		f.t.Fatalf("commit: %v", err)
 	}
+	return datasetID
 }
 
 // newGame creates a game with the given settings and a built board.
@@ -88,7 +98,7 @@ func (f *fixture) buildBoard(game *Game, topics []string) {
 	for i, t := range topics {
 		keys[i] = FoldKey(t)
 	}
-	bank, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, keys)
+	bank, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, keys, nil)
 	if err != nil {
 		f.t.Fatalf("QuestionsForTopics: %v", err)
 	}

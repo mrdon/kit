@@ -133,10 +133,6 @@ func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, tea
 	if err != nil {
 		return err
 	}
-	question, err := GetQuestion(ctx, s.pool, tenantID, round.QuestionID)
-	if err != nil {
-		return err
-	}
 	answers, err := ListAnswers(ctx, s.pool, tenantID, round.ID)
 	if err != nil {
 		return err
@@ -152,7 +148,7 @@ func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, tea
 
 	sr := &SnapRound{
 		ID: round.ID, IsFinal: round.IsFinal, Ordinal: round.Ordinal, Points: round.Points,
-		Text: question.Prompt, CorrectValue: question.AnswerValue, CorrectText: question.AnswerText,
+		Text: round.Prompt, CorrectValue: round.AnswerValue, CorrectText: round.AnswerText,
 	}
 	answered := map[uuid.UUID]Answer{}
 	for _, a := range answers {
@@ -214,12 +210,12 @@ func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, tea
 	if round.ScoredAt == nil {
 		return nil
 	}
-	return s.fillScoring(ctx, snap, round, question)
+	return s.fillScoring(ctx, snap, round)
 }
 
 // fillScoring populates the one field that carries the answer to the public
 // surfaces, and does it only for a round that has actually been scored.
-func (s *Service) fillScoring(ctx context.Context, snap *Snapshot, round *Round, question *Question) error {
+func (s *Service) fillScoring(ctx context.Context, snap *Snapshot, round *Round) error {
 	deltas := map[uuid.UUID]ScoreDelta{}
 	rows, err := ScoredRoundScores(ctx, s.pool, snap.TenantID, snap.GameID)
 	if err != nil {
@@ -231,7 +227,7 @@ func (s *Service) fillScoring(ctx context.Context, snap *Snapshot, round *Round,
 		}
 	}
 	snap.Scoring = &SnapScoring{
-		CorrectValue: question.AnswerValue, CorrectText: question.AnswerText,
+		CorrectValue: round.AnswerValue, CorrectText: round.AnswerText,
 		WinningSlotID: round.WinningSlotID, Deltas: deltas,
 	}
 	return nil

@@ -22,8 +22,19 @@ var ErrNameTaken = errors.New("trivia: that team name is taken")
 const uniqueViolation = "23505"
 
 func isUniqueViolation(err error) bool {
+	return pgErrCode(err) == uniqueViolation
+}
+
+// pgErrCode returns the SQLSTATE of a Postgres error, or "" for anything
+// else. The unique and foreign-key indexes are the real concurrency and
+// integrity guards in this app, so recognising their codes is a first-class
+// path rather than an edge case.
+func pgErrCode(err error) string {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
+	if errors.As(err, &pgErr) {
+		return pgErr.Code
+	}
+	return ""
 }
 
 // Join adds a team and mints its identity token.
