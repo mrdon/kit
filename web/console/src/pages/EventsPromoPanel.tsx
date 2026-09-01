@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type PromoItem, type PromoPayload } from '../api';
+import { useMe } from '../me';
 
 // The promotion work list, rendered on the Events page.
 //
@@ -124,6 +125,7 @@ function PromoRow({
 }
 
 export default function EventsPromoPanel() {
+  const me = useMe();
   const [data, setData] = useState<PromoPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -155,8 +157,29 @@ export default function EventsPromoPanel() {
     }
   };
 
-  // Nothing configured yet is not an error state, and not worth a panel.
-  if (!data || (data.channels.length === 0 && !err)) return null;
+  if (!data && !err) return null;
+
+  // Nothing configured yet still needs to say so. Rendering nothing was the
+  // first version and it was wrong: the Events page is exactly where someone
+  // looks for this, so an invisible panel makes the whole feature
+  // undiscoverable unless you already knew to go hunting in Admin.
+  if (data && data.channels.length === 0) {
+    if (!me?.is_admin) return null;
+    return (
+      <section className="panel">
+        <h2 className="panel-title">Promotion</h2>
+        <p className="muted">
+          Kit can keep track of where each event still needs posting — your
+          chamber, the city calendar, Facebook — and put the deep link and the
+          copy in front of you rather than making you go and find them.
+        </p>
+        <Link className="btn" to="/admin/events-channels">
+          Set up promotion channels
+        </Link>
+      </section>
+    );
+  }
+  if (!data) return null;
 
   const { items, done, summary } = data;
 

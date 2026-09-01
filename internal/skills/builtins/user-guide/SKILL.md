@@ -234,6 +234,19 @@ Some places will never take a feed — they want a form filled in. Add each one 
 **channel** on the admin **Event promotion** page: what it is called, the link to their
 submit form, how much notice they need, and which events are worth sending them.
 
+Setting up eight destinations through a form eight times is worse than describing them,
+so you can do it in chat instead:
+
+> "Add the Louisville Chamber of Commerce as a promotion channel — submit once, big
+> events only, they want two weeks' notice."
+> "Add Instagram stories, day-of only."
+> "The chamber is subscribing to our feed now — switch it over, I've confirmed it."
+
+Pick a **campaign** rather than describing timings: `submit_once` for a calendar you fill
+a form in for, `announce_and_remind` for a feed post, `day_of_only` for stories, or
+`every_few_weeks` for periodic reminders. Kit works out which of those suit a one-off
+versus a standing weekly series, so the same channel does the right thing for both.
+
 Kit then keeps a running list on the Events page of what is outstanding, in the order it
 needs doing. Ordering is by *their* deadline, not the event date: a calendar that wants
 a fortnight's notice becomes urgent well before one that will take a listing the day

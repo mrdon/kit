@@ -199,6 +199,13 @@ func (c *Channel) isManualWork(s Step) bool {
 	return c.Mode == ChannelManual
 }
 
+// normaliseName is how two channel names are compared. The unique index is on
+// lower(name), so any lookup that wants to agree with the database has to fold
+// the same way.
+func normaliseName(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 // normaliseChannel fills defaults and trims input so a hand-made row or a
 // sloppy API call cannot produce a channel the list builder has to defend
 // against.

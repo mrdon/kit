@@ -59,6 +59,16 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreMapStaff(ctx, caller, raw)
 	case "events_shift_notices":
 		return coreShiftNotices(ctx, caller, raw)
+	case "events_channels":
+		return coreListChannels(ctx, caller, svc)
+	case "events_add_channel":
+		return coreSaveChannel(ctx, caller, svc, raw, true)
+	case "events_update_channel":
+		return coreSaveChannel(ctx, caller, svc, raw, false)
+	case "events_remove_channel":
+		return coreDeleteChannel(ctx, caller, svc, raw)
+	case "events_promo_list":
+		return corePromoList(ctx, caller, svc)
 	default:
 		return "", fmt.Errorf("events: unknown tool %q", name)
 	}

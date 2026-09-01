@@ -240,4 +240,70 @@ var eventsTools = []services.ToolMeta{
 			"send": services.Field("boolean", "Deliver the notices. Omit or pass false to preview the messages without sending."),
 		}),
 	},
+
+	// Promotion channels. The console page is the comfortable way to edit one;
+	// these exist because SETTING UP is a bulk job -- eight or nine
+	// destinations each with a campaign -- and doing that through a form eight
+	// times is worse than describing it once.
+	{
+		Name: "events_channels",
+		Description: "List where events get promoted and how much of it is still manual, plus the calendar feed addresses to hand out. " +
+			"Use this before adding a channel, to see what already exists.",
+		AdminOnly: true,
+		Schema:    services.Props(map[string]any{}),
+	},
+	{
+		Name: "events_add_channel",
+		Description: "Add a place events get promoted to — a chamber of commerce calendar, a city calendar, a newsletter, a Facebook or Instagram account. " +
+			"Pick a campaign rather than describing timings: submit_once for a calendar you fill a form in for, announce_and_remind for a feed post, " +
+			"day_of_only for stories (they expire in 24h), every_few_weeks for periodic reminders only. " +
+			"Kit works out which steps suit a one-off versus a standing weekly series, so the same channel does the right thing for both.",
+		AdminOnly: true,
+		Schema: services.PropsReq(map[string]any{
+			"name":            services.Field("string", "What to call it, e.g. 'Louisville Chamber of Commerce'."),
+			"campaign":        services.Field("string", "submit_once | announce_and_remind | day_of_only | every_few_weeks"),
+			"submit_url":      services.Field("string", "Deep link to their submit form, or your account page. Opened straight from the checklist, so the deeper the better."),
+			"min_prominence":  services.Field("string", "Lowest prominence this destination wants: 'featured' for a chamber that only takes your big events, 'normal' for real events but not standing offers, 'background' for everything including happy hour. Defaults to normal."),
+			"lead_time_days":  services.Field("integer", "How far ahead they need telling. This sets urgency: a calendar wanting 14 days is already late for an event 10 days out. Defaults to 0."),
+			"include_offsite": services.Field("boolean", "Whether to send events you are only ATTENDING rather than hosting. Usually false for a community calendar (the organiser already lists it) and true for your own social accounts. Defaults to false."),
+			"submit_label":    services.Field("string", "Wording for the checklist row on a submit_once channel, e.g. 'Add to the chamber calendar'."),
+		}, "name", "campaign"),
+	},
+	{
+		Name: "events_update_channel",
+		Description: "Change a promotion channel. The important one is mode: set it to 'subscribed' once a calendar agrees to pull your ICS feed and it stops generating work entirely. " +
+			"Also pass verified true when you have actually seen your events appear on their calendar — a subscribed channel produces no reminders, so an unconfirmed one fails silently. " +
+			"Set active false to stop the reminders while keeping the record.",
+		AdminOnly: true,
+		Schema: services.PropsReq(map[string]any{
+			"channel":         services.Field("string", "Which channel, by name or id."),
+			"name":            services.Field("string", "Rename it."),
+			"mode":            services.Field("string", "manual (you do it) | subscribed (they pull the feed, no work) | automated (Kit posts it, needs a connector)."),
+			"feed_tier":       services.Field("string", "For a subscribed channel, which feed they pull: all | highlights | featured."),
+			"verified":        services.Field("boolean", "Pass true to record that you have confirmed a subscribed channel really is pulling the feed."),
+			"submit_url":      services.Field("string", "Deep link to their submit form."),
+			"min_prominence":  services.Field("string", "background | normal | featured."),
+			"lead_time_days":  services.Field("integer", "How far ahead they need telling."),
+			"include_offsite": services.Field("boolean", "Whether to send events you are only attending."),
+			"active":          services.Field("boolean", "False stops the reminders but keeps the history."),
+			"campaign":        services.Field("string", "Replace the campaign: submit_once | announce_and_remind | day_of_only | every_few_weeks."),
+			"submit_label":    services.Field("string", "Wording for the checklist row on a submit_once channel."),
+		}, "channel"),
+	},
+	{
+		Name: "events_remove_channel",
+		Description: "Delete a promotion channel and its record of what was already posted there. " +
+			"To stop the reminders but keep the history, use events_update_channel with active false instead.",
+		AdminOnly: true,
+		Schema: services.PropsReq(map[string]any{
+			"channel": services.Field("string", "Which channel, by name or id."),
+		}, "channel"),
+	},
+	{
+		Name: "events_promo_list",
+		Description: "Show what still needs posting where, in the order it wants doing. " +
+			"Ordered by each destination's own deadline rather than the event date, so a calendar wanting a fortnight's notice comes first. " +
+			"Reminders whose window has closed are already gone rather than piling up.",
+		Schema: services.Props(map[string]any{}),
+	},
 }
