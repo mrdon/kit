@@ -198,3 +198,21 @@ func TestChannelTools_DeleteWarnsAboutHistory(t *testing.T) {
 		t.Errorf("channel should be gone: %s", got)
 	}
 }
+
+// Relabelling without touching the campaign has to work: the obvious reading
+// of "pass submit_label" is "change the wording", and folding it into the
+// campaign branch made it silently do nothing.
+func TestChannelTools_SubmitLabelAloneRenamesTheStep(t *testing.T) {
+	sf := newSyncFixture(t)
+	sf.tool(t, "events_add_channel", map[string]any{
+		"name": "DBA newsletter", "campaign": "submit_once",
+		"submit_label": "Send it for the newsletter",
+	})
+
+	out := sf.tool(t, "events_update_channel", map[string]any{
+		"channel": "DBA newsletter", "submit_label": "Include in the monthly newsletter",
+	})
+	if !strings.Contains(out, "Include in the monthly newsletter") {
+		t.Errorf("submit_label alone should rename the step:\n%s", out)
+	}
+}

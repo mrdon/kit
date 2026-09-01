@@ -210,6 +210,16 @@ func coreSaveChannel(ctx context.Context, caller *services.Caller, svc *Service,
 			return "", err
 		}
 		c.Steps = steps
+	} else if in.SubmitLabel != nil {
+		// Relabelling without replacing the campaign. Handled separately
+		// because the obvious reading of "pass submit_label" is "change the
+		// wording", and folding it into the campaign branch made it silently
+		// do nothing whenever the campaign was left alone.
+		for i := range c.Steps {
+			if c.Steps[i].Kind == StepOneshot {
+				c.Steps[i].Label = *in.SubmitLabel
+			}
+		}
 	}
 	if creating && len(c.Steps) == 0 {
 		return "", invalid("a new channel needs a campaign — submit_once, announce_and_remind, day_of_only or every_few_weeks")

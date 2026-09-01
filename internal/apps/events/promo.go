@@ -71,8 +71,8 @@ type PromoItem struct {
 	Note  string     `json:"note,omitempty"`
 
 	// DueAt is when this item wants doing -- for a drip or one-shot that is
-	// the event date minus lead time, for a cadence it is the last completion
-	// plus the interval.
+	// the event date minus lead time; for a cadence it is the next qualifying
+	// occurrence minus lead time.
 	DueAt time.Time `json:"due_at"`
 	// Overdue is DueAt in the past while still actionable. Ordering leans on
 	// it rather than on the event date; see PromoList.
@@ -196,19 +196,53 @@ func buildPromoItem(e *Event, c *Channel, s Step, rec promoRecord, now time.Time
 // event three weeks out, while a Facebook post for the same event is not.
 // Ordering by event date would get that exactly backwards.
 //
-// A cadence is anchored to its LAST COMPLETION instead. Posting about trivia
-// on a Tuesday pushes the next one four weeks from then, so items never bunch
-// onto the first of the month, and skipping a cycle means owing one rather
-// than two -- there is only ever one computed instance outstanding.
+// A cadence is anchored to the series' own dates instead: the first occurrence
+// at least IntervalDays after the last post. Skipping a cycle means owing one
+// rather than two, because there is only ever one computed instance
+// outstanding.
 func stepDue(e *Event, c *Channel, s Step, rec promoRecord, now time.Time) (time.Time, bool) {
 	switch s.Kind {
 	case StepCadence:
-		if rec.LastDoneAt == nil {
-			// Never done: due now, so a new series surfaces once rather than
-			// looking overdue by however long it has existed.
-			return now, true
+		// Aligned to the series' OWN occurrences, not a floating interval.
+		//
+		// This is what makes one setting behave sensibly across very
+		// different rhythms. IntervalDays is a floor -- "don't post about
+		// this more often than every N days" -- and the actual due date is
+		// the first occurrence at or after that floor. So with a 21-day
+		// floor, weekly trivia gets promoted every third or fourth week,
+		// while a D&D night that runs every 26 days gets promoted before
+		// every single one. Rarer things get proportionally more attention
+		// without anyone classifying them.
+		//
+		// A floating interval got both of those wrong in the same way: it
+		// under-promoted the rare series, and it landed the post on whatever
+		// day the arithmetic produced, which for a weekly quiz is routinely a
+		// day with no quiz anywhere near it.
+		earliest := now
+		if rec.LastDoneAt != nil {
+			// The grace period is what makes "roughly monthly" work for BOTH a
+			// weekly quiz and a roughly-monthly game night.
+			//
+			// Without it, a strict floor skips a whole cycle whenever the
+			// series' own gap is a little under the interval: a game night
+			// every 26 days against a 28-day floor never qualifies on its own
+			// date, so the next eligible night is 52 days out and every other
+			// game goes unpromoted. Letting a night that falls slightly early
+			// count instead gives every game a post, while a weekly quiz --
+			// which has a candidate every 7 days -- still lands about a month
+			// apart. One setting, and the rarer thing gets proportionally more
+			// attention without anyone configuring that.
+			grace := s.IntervalDays / 4
+			earliest = rec.LastDoneAt.AddDate(0, 0, s.IntervalDays-grace)
 		}
-		return rec.LastDoneAt.AddDate(0, 0, s.IntervalDays), true
+		if occ, ok := nextOccurrenceOnOrAfter(e, earliest); ok {
+			// Post ahead of the night itself, by however much notice this
+			// channel wants.
+			return occ.AddDate(0, 0, -c.LeadTimeDays), true
+		}
+		// The series has run out of dates -- a rule with an UNTIL, or an
+		// exhausted date list. Nothing left to promote.
+		return time.Time{}, false
 
 	case StepDrip:
 		return e.StartsAt.AddDate(0, 0, -s.OffsetDays), true
@@ -227,6 +261,22 @@ func stepDue(e *Event, c *Channel, s Step, rec promoRecord, now time.Time) (time
 	}
 	return time.Time{}, false
 }
+
+// nextOccurrenceOnOrAfter finds the first date a series lands on at or after
+// `from`. The window is bounded rather than open-ended because this runs for
+// every (event, channel, step) on every page load; a year and a bit covers
+// anything short of an annual series, and a series with no date inside it has
+// effectively finished.
+func nextOccurrenceOnOrAfter(e *Event, from time.Time) (time.Time, bool) {
+	occ := e.Occurrences(from, from.AddDate(0, 0, cadenceLookaheadDays))
+	if len(occ) == 0 {
+		return time.Time{}, false
+	}
+	return occ[0].Start, true
+}
+
+// cadenceLookaheadDays bounds the occurrence search above.
+const cadenceLookaheadDays = 400
 
 // stepExpired reports whether a drip beat's window has closed.
 //

@@ -130,14 +130,24 @@ func TestPromo_StepKindsMatchEventShape(t *testing.T) {
 	assertSameSet(t, "one-off", got, []string{"Facebook/create-fb-event", "Facebook/announce"})
 }
 
-// A cadence is anchored to its last completion, not a calendar grid: posting
-// on a Tuesday pushes the next one a full interval from THEN. That is what
-// stops everything bunching onto the first of the month.
-func TestPromo_CadenceAnchorsToLastCompletion(t *testing.T) {
-	e := testEvent("Trivia", 3, weekly)
+// wednesdayTrivia is a long-running weekly series -- StartsAt in the PAST,
+// which is what a real standing night looks like. Fixtures that start in the
+// future have no past occurrences and quietly hide the interesting cases.
+func wednesdayTrivia() Event {
+	e := testEvent("Trivia", 0)
+	e.StartsAt = time.Date(2026, 6, 3, 19, 0, 0, 0, time.UTC) // a Wednesday
+	e.RRule = "FREQ=WEEKLY;BYDAY=WE"
+	return e
+}
+
+// The interval is a FLOOR, not the due date. Due is the first occurrence at
+// least that far after the last post, so the reminder lands against a night
+// that is actually happening.
+func TestPromo_CadenceDueOnFirstOccurrenceAfterTheFloor(t *testing.T) {
+	e := wednesdayTrivia()
 	c := testChannel("Facebook", ChannelManual, cadence("mention-it", 28))
 
-	lastDone := at(-10)
+	lastDone := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC) // a Saturday
 	state := map[promoKey]promoRecord{
 		{e.ID, c.ID, "mention-it"}: {
 			State:      PromoDone,
@@ -150,11 +160,14 @@ func TestPromo_CadenceAnchorsToLastCompletion(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected one cadence item, got %v", keysOf(got))
 	}
-	if want := lastDone.AddDate(0, 0, 28); !got[0].DueAt.Equal(want) {
-		t.Errorf("due %v, want last-done + interval = %v", got[0].DueAt, want)
+	// 28-day interval less its 7-day grace lands on Sat 12 Sep; the next quiz
+	// is Wed 16 Sep.
+	want := time.Date(2026, 9, 16, 19, 0, 0, 0, time.UTC)
+	if !got[0].DueAt.Equal(want) {
+		t.Errorf("due %v, want the first Wednesday past the floor, %v", got[0].DueAt, want)
 	}
 	if got[0].Overdue {
-		t.Error("done 10 days ago on a 28-day cadence is not yet due")
+		t.Error("a future due date is not overdue")
 	}
 	if got[0].LastURL == "" {
 		t.Error("cadence row must carry the previous post's link, so you can see what you said last time")
@@ -164,11 +177,11 @@ func TestPromo_CadenceAnchorsToLastCompletion(t *testing.T) {
 // Miss a cycle and you owe one, never two. Falls out of anchoring, and this
 // pins it so a future change to a calendar-grid schedule gets caught.
 func TestPromo_CadenceNeverStacks(t *testing.T) {
-	e := testEvent("Trivia", 3, weekly)
+	e := wednesdayTrivia()
 	c := testChannel("Facebook", ChannelManual, cadence("mention-it", 28))
 
 	// Three intervals ago -- a naive scheduler would owe three posts.
-	lastDone := at(-90)
+	lastDone := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
 	state := map[promoKey]promoRecord{
 		{e.ID, c.ID, "mention-it"}: {State: PromoDone, LastDoneAt: &lastDone},
 	}
@@ -178,7 +191,7 @@ func TestPromo_CadenceNeverStacks(t *testing.T) {
 		t.Fatalf("expected exactly one outstanding cadence item, got %d: %v", len(got), keysOf(got))
 	}
 	if !got[0].Overdue {
-		t.Error("90 days since the last post on a 28-day cadence should be overdue")
+		t.Error("a quiz night has gone by unpromoted since the last post; that is overdue")
 	}
 }
 
@@ -405,5 +418,158 @@ func assertSameSet(t *testing.T, label string, got, want []string) {
 		if !wantSet[g] {
 			t.Errorf("%s: unexpected %q (got %v)", label, g, got)
 		}
+	}
+}
+
+// The rarity rule, which is the whole point of aligning a cadence to the
+// series rather than to the calendar.
+//
+// One setting -- "no more often than every 21 days" -- has to produce very
+// different behaviour for a weekly quiz and a monthly game night, because a
+// rarer thing deserves proportionally more attention per occurrence. Nobody
+// should have to classify that by hand.
+func TestPromo_CadenceScalesWithHowRareTheSeriesIs(t *testing.T) {
+	c := testChannel("Facebook", ChannelManual, cadence("mention", 21))
+
+	// Weekly trivia: 21 days after a post lands mid-week, so the next due date
+	// is the following Wednesday -- roughly every third or fourth quiz, not
+	// every one.
+	trivia := testEvent("Trivia", 2)
+	trivia.RRule = "FREQ=WEEKLY;BYDAY=WE"
+	trivia.StartsAt = time.Date(2026, 9, 2, 19, 0, 0, 0, time.UTC) // a Wednesday
+
+	// A game night every four weeks is rare enough that every single one is
+	// worth a post.
+	dnd := testEvent("Battles & Brews", 4)
+	dnd.RRule = "FREQ=WEEKLY;INTERVAL=4;BYDAY=TU"
+	dnd.StartsAt = time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC) // a Tuesday
+
+	lastDone := promoNow
+	state := func(e Event) map[promoKey]promoRecord {
+		return map[promoKey]promoRecord{
+			{e.ID, c.ID, "mention"}: {State: PromoDone, LastDoneAt: &lastDone},
+		}
+	}
+
+	got := buildPromoList([]Event{trivia}, []Channel{c}, state(trivia), promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected a trivia cadence item, got %v", keysOf(got))
+	}
+	triviaGap := got[0].DueAt.Sub(lastDone).Hours() / 24
+	if triviaGap < 21 {
+		t.Errorf("weekly trivia should wait out the 21-day floor, next due in %.0f days", triviaGap)
+	}
+
+	got = buildPromoList([]Event{dnd}, []Channel{c}, state(dnd), promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected a game-night cadence item, got %v", keysOf(got))
+	}
+	dndGap := got[0].DueAt.Sub(lastDone).Hours() / 24
+	if dndGap > 29 {
+		t.Errorf("a 4-weekly series should be promoted before each night, next due in %.0f days", dndGap)
+	}
+}
+
+// The due date has to land on a real occurrence, not wherever the arithmetic
+// falls. Posting "quiz night!" on a day with no quiz is the failure a floating
+// interval produced.
+func TestPromo_CadenceLandsOnAnOccurrence(t *testing.T) {
+	c := testChannel("Facebook", ChannelManual, cadence("mention", 21))
+	trivia := testEvent("Trivia", 1)
+	trivia.RRule = "FREQ=WEEKLY;BYDAY=WE"
+	trivia.StartsAt = time.Date(2026, 9, 2, 19, 0, 0, 0, time.UTC)
+
+	got := buildPromoList([]Event{trivia}, []Channel{c}, noState(), promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected one item, got %v", keysOf(got))
+	}
+	if wd := got[0].DueAt.Weekday(); wd != time.Wednesday {
+		t.Errorf("due on a %s; a weekly Wednesday quiz should be promoted against a Wednesday", wd)
+	}
+}
+
+// A channel that wants notice gets the post scheduled ahead of the night.
+func TestPromo_CadenceRespectsLeadTime(t *testing.T) {
+	c := testChannel("Facebook", ChannelManual, cadence("mention", 21))
+	c.LeadTimeDays = 3
+	trivia := testEvent("Trivia", 1)
+	trivia.RRule = "FREQ=WEEKLY;BYDAY=WE"
+	trivia.StartsAt = time.Date(2026, 9, 2, 19, 0, 0, 0, time.UTC)
+
+	got := buildPromoList([]Event{trivia}, []Channel{c}, noState(), promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected one item, got %v", keysOf(got))
+	}
+	if wd := got[0].DueAt.Weekday(); wd != time.Sunday {
+		t.Errorf("with 3 days' notice a Wednesday quiz should be due on Sunday, got %s", wd)
+	}
+}
+
+// A series that has run out of dates has nothing left to promote, and must not
+// sit on the list forever asking to be posted about.
+func TestPromo_CadenceStopsWhenTheSeriesEnds(t *testing.T) {
+	c := testChannel("Facebook", ChannelManual, cadence("mention", 21))
+	ended := testEvent("Summer Series", -400)
+	ended.RRule = "FREQ=WEEKLY;BYDAY=WE;UNTIL=20260101T000000Z"
+
+	if got := buildPromoList([]Event{ended}, []Channel{c}, noState(), promoNow); len(got) != 0 {
+		t.Errorf("a finished series should generate nothing, got %v", keysOf(got))
+	}
+}
+
+// The rule in one line: promote roughly monthly, but never skip a night in a
+// series that already runs at about that rhythm.
+//
+// A strict floor got the second half wrong. A game night every 26 days against
+// a 28-day floor never qualifies on its own date, so every other game went
+// unpromoted -- the exact opposite of "a rarer thing deserves more attention".
+func TestPromo_CadenceDoesNotSkipANearlyMonthlySeries(t *testing.T) {
+	c := testChannel("Facebook", ChannelManual, cadence("mention", 28))
+
+	// Every 26 days, just inside the 28-day floor.
+	dnd := testEvent("Battles & Brews", 0)
+	dnd.StartsAt = time.Date(2026, 6, 2, 19, 0, 0, 0, time.UTC)
+	dnd.RDates = []time.Time{
+		time.Date(2026, 6, 28, 19, 0, 0, 0, time.UTC),
+		time.Date(2026, 7, 24, 19, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 19, 19, 0, 0, 0, time.UTC),
+		time.Date(2026, 9, 14, 19, 0, 0, 0, time.UTC),
+	}
+
+	lastDone := time.Date(2026, 8, 19, 20, 0, 0, 0, time.UTC) // posted for the August game
+	state := map[promoKey]promoRecord{
+		{dnd.ID, c.ID, "mention"}: {State: PromoDone, LastDoneAt: &lastDone},
+	}
+
+	got := buildPromoList([]Event{dnd}, []Channel{c}, state, promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected one cadence item, got %v", keysOf(got))
+	}
+	// The very next game, 26 days later -- not the one after it.
+	want := time.Date(2026, 9, 14, 19, 0, 0, 0, time.UTC)
+	if !got[0].DueAt.Equal(want) {
+		t.Errorf("due %v, want the next game night %v — a near-monthly series must not be skipped",
+			got[0].DueAt, want)
+	}
+}
+
+// The same setting on a weekly series still spaces posts about a month apart,
+// which is the other half of the rule.
+func TestPromo_CadenceOnWeeklyStaysAboutMonthly(t *testing.T) {
+	c := testChannel("Facebook", ChannelManual, cadence("mention", 28))
+	e := wednesdayTrivia()
+
+	lastDone := time.Date(2026, 8, 5, 20, 0, 0, 0, time.UTC) // a Wednesday quiz
+	state := map[promoKey]promoRecord{
+		{e.ID, c.ID, "mention"}: {State: PromoDone, LastDoneAt: &lastDone},
+	}
+
+	got := buildPromoList([]Event{e}, []Channel{c}, state, promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected one cadence item, got %v", keysOf(got))
+	}
+	gap := got[0].DueAt.Sub(lastDone).Hours() / 24
+	if gap < 18 || gap > 32 {
+		t.Errorf("weekly trivia promoted %.0f days after the last post; should be about a month", gap)
 	}
 }

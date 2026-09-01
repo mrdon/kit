@@ -36,7 +36,13 @@ func testRedis(t *testing.T) *redis.Client {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := c.Ping(ctx).Err(); err != nil {
-		t.Fatalf("redis unreachable (run `make up`): %v", err)
+		// Skip rather than fail, matching trivia's broker_redis_test. CI
+		// provisions Postgres but no Redis, so failing here turns every push
+		// red for a dependency the workflow never promised -- and a red main
+		// that everyone learns to ignore is worse than a test that announces
+		// it did not run. Locally `make up` provides it and these do run.
+		_ = c.Close()
+		t.Skipf("redis unreachable at %s (run `make up` to exercise these): %v", url, err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	return c
