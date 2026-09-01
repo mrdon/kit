@@ -1,0 +1,160 @@
+/* The phone. Same palette as the TV so the two screens in the room read as
+   one product, but laid out for a thumb in a dark bar rather than for a wall.
+   Dark only and every colour painted explicitly, for the same reason the TV
+   is: this is not a document. */
+
+:root {
+  --navy: #1b2b38;
+  --navy-2: #14222d;
+  --navy-3: #0e1a23;
+  --accent: #e8543a;
+  --accent-l: #ffb4a3;
+  --gold: #f5c451;
+  --muted: #b9c4cf;
+  --dim: #8ea2b3;
+  --cream: #f4efe7;
+  --line: rgba(255, 255, 255, .14);
+  --ok: #4ec9a5;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body, #root {
+  margin: 0;
+  /* 100dvh, never 100vh: iOS Safari's collapsing toolbar otherwise hides the
+     submit button under the URL bar, which is the single most likely
+     "it doesn't work on my phone" report. */
+  min-height: 100dvh;
+}
+body {
+  background: linear-gradient(170deg, var(--navy) 0%, var(--navy-2) 100%);
+  background-attachment: fixed;
+  color: var(--cream);
+  font: 400 17px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Kills pull-to-refresh, which mid-question would throw away a typed
+     answer. */
+  overscroll-behavior: none;
+}
+
+.app {
+  min-height: 100dvh;
+  display: flex; flex-direction: column;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  max-width: 560px; margin: 0 auto;
+}
+
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.top .who { font-weight: 700; font-size: 15px; color: var(--accent-l); }
+.top .score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--gold); }
+.offline { font-size: 13px; color: var(--accent); }
+
+.body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+
+h1 { font-size: 30px; line-height: 1.15; margin: 0; }
+h2 { font-size: 21px; line-height: 1.25; margin: 0; }
+.sub { color: var(--dim); margin: 0; }
+.gamename { font-size: 34px; font-weight: 800; letter-spacing: .01em; margin: 0 0 4px; }
+
+.field {
+  width: 100%; padding: 18px; border-radius: 16px;
+  border: 2px solid var(--line); background: rgba(255,255,255,.07); color: var(--cream);
+  font: 700 26px/1.2 system-ui, sans-serif;
+}
+.field:focus { outline: none; border-color: var(--accent); }
+.field.big { font-size: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* The parsed echo. Without it you get silent zeros and an argument at the
+   bar about what somebody "obviously" meant. */
+.echo { text-align: center; color: var(--dim); font-size: 15px; min-height: 22px; }
+.echo strong { color: var(--ok); font-variant-numeric: tabular-nums; }
+.echo.bad strong { color: var(--accent); }
+
+.btn {
+  width: 100%; padding: 20px; border-radius: 16px; border: none;
+  background: var(--accent); color: #fff; font: 700 20px/1 system-ui, sans-serif;
+  min-height: 60px;
+}
+.btn:disabled { opacity: .4; }
+.btn.ghost { background: transparent; border: 2px solid var(--line); color: var(--cream); }
+.btn.gold { background: var(--gold); color: var(--navy-3); }
+
+.err { color: var(--accent); font-size: 15px; min-height: 20px; }
+
+/* countdown */
+.clock {
+  display: flex; align-items: baseline; gap: 8px; justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.clock .n { font-size: 46px; font-weight: 800; }
+.clock.warn .n { color: #ff9d3a; }
+.clock.hot .n { color: var(--accent); animation: hot 1s ease-in-out infinite; }
+@keyframes hot { 0%,100% { opacity: 1 } 50% { opacity: .5 } }
+.clock .of { color: var(--dim); font-size: 15px; }
+
+/* answer cards + chips */
+.slots { display: flex; flex-direction: column; gap: 10px; }
+.slot {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
+  padding: 16px; border-radius: 16px; border: 2px solid var(--line);
+  background: rgba(255,255,255,.06); touch-action: manipulation;
+}
+.slot.armed { border-color: var(--accent); background: rgba(232,84,58,.14); }
+.slot.blocked { opacity: .45; }
+.slot.win { border-color: var(--gold); background: rgba(245,196,81,.16); }
+.slot .val { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.slot.pseudo .val { font-size: 17px; font-weight: 700; color: var(--accent-l); }
+.slot .names { font-size: 13px; color: var(--dim); margin-top: 2px; }
+.slot .why { font-size: 12px; color: var(--accent); margin-top: 2px; }
+.slot .mine { display: flex; gap: 6px; }
+
+.chip {
+  border-radius: 50%; display: grid; place-items: center;
+  font: 800 13px/1 system-ui, sans-serif; color: var(--navy-3);
+  border: 3px solid transparent; touch-action: none;
+}
+.chip.c0 { width: 54px; height: 54px; background: var(--accent-l); }
+.chip.c1 { width: 66px; height: 66px; background: var(--gold); }
+.chip.armed { border-color: #fff; transform: scale(1.06); }
+.chip.placed { opacity: .55; }
+
+.tray { display: flex; gap: 14px; align-items: center; justify-content: center; padding: 6px 0; }
+.tray .hint { font-size: 13px; color: var(--dim); }
+
+/* result */
+.delta { font-size: 60px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: center; }
+.delta.up { color: var(--ok); }
+.delta.down { color: var(--accent); }
+.delta.flat { color: var(--dim); }
+
+.board-list { display: flex; flex-direction: column; gap: 6px; }
+.brow {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline;
+  padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05);
+  font-variant-numeric: tabular-nums;
+}
+.brow.you { background: rgba(232,84,58,.16); }
+.brow .rank { color: var(--dim); font-weight: 700; width: 28px; }
+.brow .sc { font-weight: 800; color: var(--gold); }
+
+.teamlist { display: flex; flex-wrap: wrap; gap: 8px; }
+.tpill {
+  padding: 8px 14px; border-radius: 999px; background: rgba(255,255,255,.08);
+  border: 2px solid var(--line); font-size: 14px; font-weight: 700;
+}
+.tpill.in { border-color: var(--ok); }
+
+/* the final's stake control gets the most care: it is the one place a player
+   commits real money. */
+.stake { display: flex; flex-direction: column; gap: 12px; }
+.presets { display: flex; gap: 8px; }
+.presets .btn { padding: 14px 8px; font-size: 16px; min-height: 52px; }
+.slider { width: 100%; accent-color: var(--accent); height: 44px; }
+.outcomes { display: flex; justify-content: space-between; font-size: 15px; }
+.outcomes .win { color: var(--ok); font-weight: 700; }
+.outcomes .lose { color: var(--accent); font-weight: 700; }
+.stake-amount { text-align: center; font-size: 42px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gold); }
+
+.banner {
+  padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.08);
+  border: 2px solid var(--line); font-size: 14px; color: var(--muted);
+}

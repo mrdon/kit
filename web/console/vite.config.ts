@@ -28,11 +28,19 @@ export default defineConfig({
     emptyOutDir: true,
     // Inline nothing so the go:embed tree stays flat and cacheable.
     assetsInlineLimit: 0,
-    // One entry: the authenticated console (index.html, served at
-    // /{slug}/web), emitting its hashed bundle under /console/assets/.
+    // Two entries, one build, one hashed asset prefix:
+    //   main — the authenticated console (index.html, served at /{slug}/web)
+    //   play — the trivia player (play.html, served at /{slug}/trivia/{game})
+    //
+    // The player is a separate entry rather than a route inside the console
+    // because the two share nothing: the console is authenticated, desktop
+    // and dense, while the player is a phone in a dark bar held by somebody
+    // with no Kit account, and it must not ship the console's auth code,
+    // Shell or launcher.
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
+        play: path.resolve(__dirname, 'play.html'),
       },
     },
   },

@@ -1,0 +1,237 @@
+/* The TV display, painted in the menu board's palette so two screens in the
+   same room read as one product. Dark only, no prefers-color-scheme: this is
+   a wall panel in a bar, not a document, and every colour is painted
+   explicitly for the same reason board.css gives.
+
+   EVERYTHING BELOW IS IN STAGE PIXELS on a fixed 1920x1080 canvas that is
+   scaled to fit the panel. That is why sizes are plain px and not vw: the
+   layout is then byte-identical on a laptop and on the bar's 55 inch screen,
+   and a size that reads from thirty feet in testing still reads from thirty
+   feet on the wall. */
+
+:root {
+  --navy: #1b2b38;
+  --navy-2: #14222d;
+  --navy-3: #0e1a23;
+  --accent: #e8543a;
+  --accent-l: #ffb4a3;
+  --accent-hot: #ff7d5e;
+  --gold: #f5c451;
+  --muted: #b9c4cf;
+  --dim: #8ea2b3;
+  --cream: #f4efe7;
+  --line: rgba(255, 255, 255, .14);
+  --display: bungee, system-ui, sans-serif;
+  --body: exo2, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--navy-2); }
+body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: antialiased; }
+
+/* The stage. Scaled by JS to min(vw/1920, vh/1080) with the origin pinned
+   top-left, then centred by the wrapper. */
+#stagewrap { position: absolute; inset: 0; display: grid; place-items: center; }
+#fit {
+  width: 1920px; height: 1080px;
+  transform-origin: top left; position: absolute; top: 0; left: 0;
+  background:
+    radial-gradient(1100px 700px at 82% -10%, rgba(232, 84, 58, .28), transparent 60%),
+    radial-gradient(900px 700px at -10% 110%, rgba(60, 120, 160, .22), transparent 60%),
+    linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
+  overflow: hidden;
+}
+
+.screen { position: absolute; inset: 0; padding: 64px; display: none; }
+.screen.on { display: block; }
+
+/* ---------- chrome ---------- */
+/* The clock earns its place for exactly the reason board.html.tmpl gives: a
+   frozen clock is the only way somebody walking past can tell the screen is
+   dead rather than merely quiet. */
+#clock {
+  position: absolute; top: 28px; right: 40px; z-index: 40;
+  font: 700 34px/1 var(--body); color: var(--dim); letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
+}
+#dot {
+  position: absolute; top: 34px; right: 210px; z-index: 40;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent-hot); opacity: 0; transition: opacity .3s;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+#dot.on { opacity: 1; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+
+.gamename {
+  position: absolute; top: 28px; left: 40px; z-index: 40;
+  font: 400 32px/1 var(--display); color: var(--dim); letter-spacing: .12em; text-transform: uppercase;
+}
+
+/* ---------- 1. join ---------- */
+.join { display: grid; grid-template-columns: 55fr 45fr; gap: 56px; height: 100%; align-items: center; }
+.join-words { display: flex; flex-direction: column; gap: 6px; }
+.join-word { font: 400 180px/1.02 var(--display); color: var(--cream); letter-spacing: .01em; }
+.join-url { margin-top: 34px; font: 700 48px/1.2 var(--body); color: var(--accent-l); word-break: break-all; }
+.join-count { margin-top: 26px; font: 400 120px/1 var(--display); color: var(--accent); }
+.join-qr { display: grid; place-items: center; }
+.join-qr svg { border-radius: 24px; background: #fff; padding: 0; }
+.join-pills { position: absolute; left: 64px; right: 64px; bottom: 48px; display: flex; flex-wrap: wrap; gap: 16px; }
+.pill {
+  font: 700 32px/1 var(--body); padding: 18px 28px; border-radius: 999px;
+  background: rgba(255, 255, 255, .09); border: 2px solid var(--line); color: var(--cream);
+  animation: pill-in .35s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+@keyframes pill-in {
+  from { transform: scale(.6) translateY(20px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* ---------- 2. board ---------- */
+.board-grid { display: grid; gap: 18px; height: 100%; grid-auto-rows: 1fr; }
+.cat {
+  display: grid; place-items: center; text-align: center; padding: 10px;
+  font: 400 42px/1.1 var(--display); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent-l);
+}
+.cell {
+  display: grid; place-items: center; border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+  border: 3px solid var(--line);
+  font: 400 88px/1 var(--display); color: var(--gold);
+}
+.cell.played { opacity: .25; }
+.cell.played .val { text-decoration: line-through; text-decoration-thickness: 6px; }
+
+/* The signature move: the picked tile is cloned, positioned absolutely over
+   the grid, and transformed to fill the stage. ~40 lines of vanilla JS, and
+   it is what makes the screen feel like Jeopardy rather than a web page. */
+#flip {
+  position: absolute; z-index: 30; border-radius: 20px; display: grid; place-items: center;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));
+  border: 3px solid var(--accent);
+  transition: transform .6s cubic-bezier(.2, .8, .2, 1), opacity .3s;
+  transform-origin: top left; pointer-events: none;
+}
+
+/* ---------- 3. question ---------- */
+.q-wrap { height: 100%; display: grid; grid-template-rows: 1fr auto auto; gap: 40px; align-items: center; }
+.q-text {
+  font: 700 96px/1.15 var(--body); text-align: center; color: var(--cream);
+  max-height: 400px; overflow: hidden;
+}
+.q-text.final { color: var(--accent-l); }
+.ring-wrap { display: grid; place-items: center; position: relative; height: 300px; }
+.ring { transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 18; }
+.ring .track { stroke: rgba(255,255,255,.10); }
+.ring .arc { stroke: var(--accent); transition: stroke .3s; }
+.ring.warn .arc { stroke: #ff9d3a; }
+.ring.hot .arc { stroke: #ff4b3a; animation: hot 1s ease-in-out infinite; }
+@keyframes hot { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.countdown {
+  position: absolute; font: 400 200px/1 var(--display); color: var(--cream);
+  font-variant-numeric: tabular-nums;
+}
+.answered-strip { display: flex; gap: 12px; align-items: flex-end; justify-content: center; height: 90px; }
+.tbar {
+  width: 64px; background: rgba(255,255,255,.10); border-radius: 10px 10px 0 0;
+  height: 30px; transition: height .35s, background .35s;
+  display: grid; align-content: end; justify-items: center;
+}
+.tbar.in { height: 90px; background: var(--accent); }
+.tbar.locked { background: var(--gold); }
+.tbar span { font: 700 20px/1 var(--body); color: var(--navy-2); padding-bottom: 8px; }
+.answered-count { text-align: center; font: 400 48px/1 var(--display); color: var(--dim); letter-spacing: .1em; }
+
+/* ---------- 4/5/6. cards ---------- */
+.cards { display: flex; gap: 22px; justify-content: center; align-items: stretch; height: 620px; }
+.card {
+  flex: 1 1 0; min-width: 0; border-radius: 24px; padding: 28px 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.04));
+  border: 3px solid var(--line);
+  display: grid; grid-template-rows: auto 1fr auto; gap: 14px; text-align: center;
+  animation: card-in .45s cubic-bezier(.2, .9, .3, 1.1) both;
+}
+@keyframes card-in {
+  from { transform: rotateX(70deg) translateY(30px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.card .val {
+  font: 400 120px/1 var(--display); color: var(--cream);
+  overflow-wrap: anywhere;
+}
+.card.pseudo .val { font-size: 52px; line-height: 1.1; color: var(--accent-l); }
+.card .names { font: 700 32px/1.25 var(--body); color: var(--muted); overflow: hidden; }
+.card .tray { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; min-height: 70px; align-content: end; }
+.chip {
+  border-radius: 50%; display: grid; place-items: center;
+  font: 700 18px/1 var(--body); color: var(--navy-3);
+  animation: chip-in .4s cubic-bezier(.3, 1.6, .5, 1) both;
+}
+.chip.c100 { width: 54px; height: 54px; background: var(--accent-l); }
+.chip.c200 { width: 68px; height: 68px; background: var(--gold); }
+.chip.falling { animation: chip-fall .5s ease-in forwards; }
+@keyframes chip-in { from { transform: translateY(-24px) scale(.7); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes chip-fall { to { transform: translateY(220px) rotate(40deg); opacity: 0; } }
+.card .pot { font: 400 40px/1 var(--display); color: var(--gold); }
+
+.card.win { border-color: var(--gold); box-shadow: 0 0 80px rgba(245,196,81,.45); transform: scale(1.08); }
+.cards.dim .card:not(.win) { opacity: .35; }
+.answer-band {
+  position: absolute; left: 0; right: 0; top: 300px; padding: 34px 64px; z-index: 25;
+  background: var(--accent); color: #fff; text-align: center;
+  font: 400 110px/1 var(--display);
+  transform: translateX(-110%); transition: transform .5s cubic-bezier(.2,.9,.2,1);
+}
+.answer-band.in { transform: none; }
+
+/* ---------- leaderboard rail ---------- */
+.rail {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 560px; padding: 48px 40px;
+  background: rgba(0,0,0,.42); border-left: 3px solid var(--line);
+  transform: translateX(100%); transition: transform .5s cubic-bezier(.2,.9,.2,1);
+  z-index: 26; overflow: hidden;
+}
+.rail.in { transform: none; }
+.rail h2 { font: 400 44px/1 var(--display); color: var(--accent-l); letter-spacing: .1em; margin: 0 0 28px; }
+.row {
+  display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 16px;
+  padding: 14px 0; border-bottom: 2px solid var(--line);
+  font: 700 38px/1.1 var(--body);
+  transition: transform .5s cubic-bezier(.2,.9,.2,1);
+}
+.row .score { font-variant-numeric: tabular-nums; color: var(--gold); }
+.row .delta { font: 700 26px/1 var(--body); color: var(--accent-l); }
+
+/* ---------- 7. final beat ---------- */
+.final-beat { height: 100%; display: grid; place-items: center; text-align: center; }
+.final-beat h1 {
+  font: 400 190px/1 var(--display); color: var(--accent);
+  margin: 0; animation: slam .5s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+@keyframes slam { from { transform: scale(2.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- 8. podium ---------- */
+.podium { height: 100%; display: flex; gap: 40px; align-items: flex-end; justify-content: center; padding-bottom: 60px; }
+.plinth {
+  flex: 0 1 420px; border-radius: 24px 24px 0 0; padding: 34px 24px;
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+  border: 3px solid var(--line); border-bottom: none; text-align: center;
+  animation: rise .6s cubic-bezier(.2,.9,.3,1.1) both;
+}
+.plinth.p1 { height: 620px; border-color: var(--gold); background: linear-gradient(180deg, rgba(245,196,81,.34), rgba(245,196,81,.08)); }
+.plinth.p2 { height: 480px; }
+.plinth.p3 { height: 400px; }
+@keyframes rise { from { transform: translateY(120px); opacity: 0; } to { transform: none; opacity: 1; } }
+.plinth .rank { font: 400 72px/1 var(--display); color: var(--dim); }
+.plinth.p1 .rank { color: var(--gold); font-size: 96px; }
+.plinth .name { font: 700 46px/1.15 var(--body); margin: 18px 0; overflow-wrap: anywhere; }
+.plinth .score { font: 400 76px/1 var(--display); color: var(--gold); font-variant-numeric: tabular-nums; }
+.crown { font-size: 90px; }
+.spark { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); pointer-events: none; }
+
+/* ---------- placeholder ---------- */
+.hold { height: 100%; display: grid; place-items: center; text-align: center; }
+.hold h1 { font: 400 120px/1.1 var(--display); color: var(--muted); margin: 0; }
+.hold p { font: 400 44px/1.4 var(--body); color: var(--dim); }

@@ -66,11 +66,28 @@ func AssetHandler() http.Handler {
 // /{slug}/web except for those tokens; the shared JS/CSS bundle lives at
 // /console/assets/ and is referenced absolutely by the Vite build.
 func IndexHTML(slug, title string) ([]byte, error) {
+	return entryHTML("index.html", slug, title)
+}
+
+// PlayHTML returns the trivia player entry point with the per-workspace slug
+// and title substituted in, exactly as IndexHTML does for the console.
+//
+// It is a SECOND Vite entry rather than a route inside the console SPA
+// because the two have nothing in common: the console is authenticated,
+// desktop and dense; this is a phone in a dark bar, held by somebody with no
+// Kit account, and it must not carry the console's auth code, Shell or
+// launcher. Two entries share one build and one hashed asset prefix.
+func PlayHTML(slug, title string) ([]byte, error) {
+	return entryHTML("play.html", slug, title)
+}
+
+// entryHTML is the shared body of IndexHTML and PlayHTML.
+func entryHTML(name, slug, title string) ([]byte, error) {
 	sub, err := distSubFS()
 	if err != nil {
 		return nil, err
 	}
-	raw, err := fs.ReadFile(sub, "index.html")
+	raw, err := fs.ReadFile(sub, name)
 	if err != nil {
 		return nil, err
 	}

@@ -88,7 +88,19 @@ func (a *App) Description() string {
 // during a live game is destructive and unrecoverable.
 func (a *App) SystemPrompt() string { return "" }
 
-func (a *App) RegisterRoutes(_ apps.Mux) {}
+// RegisterRoutes mounts the host console API and the two public surfaces.
+//
+// Every pattern carries {slug}, so the enablement gate in
+// apps.RegisterAllRoutes 404s all of them for a workspace that has turned
+// trivia off -- including the TV and the phones, which is the behaviour an
+// admin expects from that switch.
+func (a *App) RegisterRoutes(mux apps.Mux) {
+	if a.pool == nil || a.svc == nil || a.signer == nil {
+		return
+	}
+	registerConsoleRoutes(mux, a)
+	registerPublicRoutes(mux, a)
+}
 
 func (a *App) ToolMetas() []services.ToolMeta { return nil }
 

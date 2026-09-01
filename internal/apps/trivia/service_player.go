@@ -265,3 +265,36 @@ func teamByID(ctx context.Context, q Querier, tenantID, gameID, teamID uuid.UUID
 	}
 	return nil, ErrNotFound
 }
+
+// IssueReclaim replaces a team's identity with one derived from a four-digit
+// code the host reads out, and returns nothing but that. The phone posts the
+// code back and gets a cookie.
+//
+// The code is short because it is spoken across a bar, and short is safe here
+// only because the trust boundary is a person standing in the room who can
+// see who is asking -- not because four digits are hard to guess.
+func (s *Service) IssueReclaim(ctx context.Context, tenantID, gameID, teamID uuid.UUID, code string) error {
+	return SetTeamToken(ctx, s.pool, tenantID, gameID, teamID, HashToken(reclaimSecret(gameID, teamID, code)))
+}
+
+// RedeemReclaim exchanges a host-issued code for a fresh identity token.
+func (s *Service) RedeemReclaim(ctx context.Context, tenantID, gameID, teamID uuid.UUID, code string) (string, error) {
+	team, err := FindTeamByToken(ctx, s.pool, tenantID, gameID, teamID,
+		HashToken(reclaimSecret(gameID, teamID, code)))
+	if err != nil {
+		return "", err
+	}
+	// Burn the code on use: a four-digit secret read out loud must not stay
+	// live for the rest of the night.
+	token := NewTeamToken()
+	if err := SetTeamToken(ctx, s.pool, tenantID, gameID, team.ID, HashToken(token)); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// reclaimSecret binds a spoken code to one team in one game, so the same four
+// digits issued for another table are not interchangeable.
+func reclaimSecret(gameID, teamID uuid.UUID, code string) string {
+	return "reclaim:" + gameID.String() + ":" + teamID.String() + ":" + code
+}

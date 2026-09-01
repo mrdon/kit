@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="__KIT_BASE__/icon.svg" />
+    <!-- viewport-fit=cover so the safe-area insets are available; the app
+         uses 100dvh rather than 100vh, because iOS Safari's collapsing
+         toolbar otherwise hides the submit button under the URL bar. That is
+         the single most likely "it doesn't work on my phone" bug. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <meta name="theme-color" content="#1b2b38" />
+    <title>__KIT_TITLE__</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/play/main.tsx"></script>
+  </body>
+</html>

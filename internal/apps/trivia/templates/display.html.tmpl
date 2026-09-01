@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<!-- NO meta http-equiv="refresh" here, deliberately: a periodic reload would
+     kill the SSE stream mid-question. The client has its own watchdog. -->
+<style>{{ .CSS }}</style>
+</head>
+<body>
+<div id="stagewrap"></div>
+<div id="fit">
+  <div class="gamename"></div>
+  <div id="dot"></div>
+  <div id="clock"></div>
+
+  <!-- 1. join -->
+  <section class="screen on" id="s-join">
+    <div class="join">
+      <div>
+        <div class="join-words">
+          {{ range .NameWords }}<div class="join-word">{{ . }}</div>{{ end }}
+        </div>
+        <div class="join-url">{{ .JoinHost }}</div>
+        <div class="join-count" id="join-count">0 TEAMS IN</div>
+      </div>
+      <div class="join-qr">{{ .QR }}</div>
+    </div>
+    <div class="join-pills" id="join-pills"></div>
+  </section>
+
+  <!-- 2. board -->
+  <section class="screen" id="s-board">
+    <div class="board-grid" id="board-grid"></div>
+  </section>
+  <div id="flip" style="opacity:0"></div>
+
+  <!-- 3. question -->
+  <section class="screen" id="s-question">
+    <div class="q-wrap">
+      <div class="q-text" id="q-text"></div>
+      <div class="ring-wrap">
+        <svg class="ring" id="ring" width="300" height="300" viewBox="0 0 300 300">
+          <circle class="track" cx="150" cy="150" r="130"></circle>
+          <circle class="arc" id="ring-arc" cx="150" cy="150" r="130"></circle>
+        </svg>
+        <div class="countdown" id="countdown"></div>
+      </div>
+      <div>
+        <div class="answered-strip" id="answered-strip"></div>
+        <div class="answered-count" id="answered-count"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4/5/6. cards: reveal, betting and scoring are the same furniture -->
+  <section class="screen" id="s-cards">
+    <div class="q-text" id="cards-question" style="font-size:52px;max-height:130px"></div>
+    <div class="cards" id="cards"></div>
+    <div class="ring-wrap" style="height:180px">
+      <svg class="ring" width="300" height="300" viewBox="0 0 300 300" style="transform:rotate(-90deg) scale(.6)">
+        <circle class="track" cx="150" cy="150" r="130"></circle>
+        <circle class="arc" cx="150" cy="150" r="130"></circle>
+      </svg>
+    </div>
+    <div class="answer-band" id="answer-band"></div>
+    <aside class="rail" id="rail">
+      <h2>Standings</h2>
+      <div id="rail-rows"></div>
+    </aside>
+  </section>
+
+  <!-- 7. the final beat -->
+  <section class="screen" id="s-final">
+    <div class="final-beat"><h1>FINAL<br>QUESTION</h1></div>
+  </section>
+
+  <!-- 8. podium -->
+  <section class="screen" id="s-podium">
+    <div class="podium" id="podium"></div>
+  </section>
+
+  <section class="screen" id="s-hold">
+    <div class="hold"><div><h1>{{ .Title }}</h1><p>Waiting for the host.</p></div></div>
+  </section>
+</div>
+<script>
+  window.__KIT_TRIVIA_STREAM__ = "{{ .StreamURL }}";
+  window.__KIT_TRIVIA_POLL__ = "{{ .PollURL }}";
+</script>
+<script>{{ .JS }}</script>
+</body>
+</html>
