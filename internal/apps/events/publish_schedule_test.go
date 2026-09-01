@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mrdon/kit/internal/models"
 )
@@ -94,5 +95,60 @@ func TestBuildHookConfiguredGatesTheRow(t *testing.T) {
 
 	if !sf.app.buildHookConfigured(sf.ctx, sf.tenant.ID) {
 		t.Fatal("hook is set, but the tenant does not qualify")
+	}
+}
+
+// The build mark and the change timestamps it is compared against must come
+// from the SAME clock.
+//
+// This was a real bug and an intermittent CI failure. site_built_at was
+// stamped with the app process's time.Now(), while audit_events.created_at is
+// stamped by the database's now(). The two are compared with ">", and the gap
+// between an edit and the build that follows it is well under a millisecond —
+// so a database whose clock ran even slightly ahead left an
+// already-published change reading as still pending. Forever: the nightly job
+// would rebuild the site every night and never converge.
+//
+// Asserting "nothing is pending" alone only catches it when the skew happens
+// to be positive during the test run, which is exactly why it presented as a
+// flake. This asserts the invariant instead.
+func TestSiteBuildMarkComesFromTheDatabaseClock(t *testing.T) {
+	sf := newSyncFixture(t)
+	hookURL, _ := buildHookRecorder(t)
+	sf.setBuildHook(t, hookURL)
+
+	e := sf.create(t, CreateParams{Title: "Trivia Night", Visibility: VisibilityPublic})
+	sf.publish(t, e)
+
+	if _, err := sf.app.svc.PublishSite(sf.ctx, sf.tenant.ID, "test"); err != nil {
+		t.Fatalf("PublishSite: %v", err)
+	}
+
+	// The mark must be at or after every change it claims to have published,
+	// measured on the database's own clock.
+	var newestChange, builtAt time.Time
+	if err := sf.pool.QueryRow(sf.ctx, `
+		SELECT max(a.created_at),
+		       (SELECT site_built_at FROM app_event_settings WHERE tenant_id = $1)
+		  FROM audit_events a
+		 WHERE a.tenant_id = $1
+		   AND a.action LIKE 'events.event_%'
+		   AND a.metadata->>'affects_site' = 'true'`, sf.tenant.ID).
+		Scan(&newestChange, &builtAt); err != nil {
+		t.Fatalf("reading timestamps: %v", err)
+	}
+	if builtAt.Before(newestChange) {
+		t.Fatalf("the build mark (%s) predates the change it published (%s) by %v — "+
+			"the two came from different clocks",
+			builtAt, newestChange, newestChange.Sub(builtAt))
+	}
+
+	// And the consequence: nothing is left pending.
+	status, err := sf.app.svc.SiteStatus(sf.ctx, sf.tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Pending) != 0 {
+		t.Fatalf("%d changes still pending right after a publish", len(status.Pending))
 	}
 }

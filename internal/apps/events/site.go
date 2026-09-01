@@ -87,7 +87,17 @@ func (s *Service) PublishSite(ctx context.Context, tenantID uuid.UUID, triggered
 	if err != nil {
 		return SiteStatus{}, err
 	}
-	startedAt := time.Now().UTC()
+	// The mark comes from the DATABASE clock, not this process's, because it
+	// is compared against audit_events.created_at, which the database stamps
+	// with now(). Two clocks either side of a ">" is a bug even when they are
+	// close: the gap between an edit and the build that follows it can be
+	// under a millisecond, so a database running even slightly ahead makes an
+	// already-published change read as still pending -- forever. The nightly
+	// job would then rebuild the site every single night and never converge.
+	startedAt, err := databaseNow(ctx, s.pool)
+	if err != nil {
+		return SiteStatus{}, err
+	}
 
 	if err := postBuildHook(ctx, hook); err != nil {
 		s.auditSiteBuild(ctx, tenantID, triggeredBy, len(pending), err)

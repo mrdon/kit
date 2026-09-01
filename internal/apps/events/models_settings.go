@@ -157,6 +157,17 @@ func NewFeedToken() (string, error) {
 
 // setSiteBuilt stamps a completed website build. Separate from upsertSettings
 // so recording a build can never clobber a concurrent settings edit.
+// databaseNow reads the database's clock. Anything that will later be compared
+// against a database-stamped timestamp has to be measured against the same
+// clock, or the comparison is at the mercy of the skew between two machines.
+func databaseNow(ctx context.Context, pool *pgxpool.Pool) (time.Time, error) {
+	var now time.Time
+	if err := pool.QueryRow(ctx, `SELECT now()`).Scan(&now); err != nil {
+		return time.Time{}, fmt.Errorf("reading database time: %w", err)
+	}
+	return now.UTC(), nil
+}
+
 func setSiteBuilt(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, at time.Time, by string) error {
 	_, err := pool.Exec(ctx, `
 		UPDATE app_event_settings
