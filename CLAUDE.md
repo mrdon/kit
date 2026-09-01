@@ -28,7 +28,7 @@ make db-reset    # Wipe and restart Postgres
 - `git push origin main` — push to GitHub
 - `git push dokku main` — deploy to Dokku (apps.twdata.org)
 - Always push to both origin and dokku when deploying.
-- Logs: `ssh dokku@apps.twdata.org 'logs kit --num 100'`
+- Logs: `ssh dokku@apps.twdata.org 'dokku logs kit --num 100'`
 
 ## Tech Stack
 
@@ -80,35 +80,62 @@ make db-reset    # Wipe and restart Postgres
 
 ## Production Debugging
 
-> SSH access uses Dokku's `sshcommand` wrapper: each key in
-> `/home/dokku/.ssh/authorized_keys` has a `command="..."` force-command that
-> injects `/usr/bin/dokku`. Pass subcommands directly — no `dokku` prefix.
-> So `ssh dokku@host 'logs kit'`, not `ssh dokku@host 'dokku logs kit'`.
-> Same for `postgres:connect`, `config:get`, etc. If a command unexpectedly
-> drops you into bash or fails with "command not found", your key was added
-> by hand instead of via `dokku ssh-keys:add` / `sshcommand acl-add dokku <name>`.
+> **Prefix every remote command with `dokku`.** This key gets a plain shell,
+> not Dokku's `sshcommand` force-command wrapper, so nothing injects the binary
+> for you:
+>
+> ```bash
+> ssh dokku@apps.twdata.org 'dokku logs kit --num 200'      # works
+> ssh dokku@apps.twdata.org 'logs kit --num 200'            # "command not found"
+> ```
+>
+> Same for `postgres:connect`, `config:get`, and the rest.
+>
+> This is the "added by hand" case: a key installed via `dokku ssh-keys:add` /
+> `sshcommand acl-add dokku <name>` gets a `command="..."` entry in
+> `/home/dokku/.ssh/authorized_keys` that injects `/usr/bin/dokku`, and those
+> keys take the bare form instead. Ours does not — `ssh dokku@host 'whoami'`
+> returns `dokku` from a real shell rather than being refused, which is the
+> quick way to tell. Re-adding the key properly would flip this; until someone
+> does, prefix.
+>
+> The failure is quiet in a pipeline: `command not found` goes to stderr, so
+> `ssh ... 'logs kit' | grep -i error` prints nothing and reads as "no errors"
+> rather than as a broken command.
 
 ### Logs
 ```bash
 # Recent logs (adjust --num as needed)
-ssh dokku@apps.twdata.org 'logs kit --num 200'
+ssh dokku@apps.twdata.org 'dokku logs kit --num 200'
 
 # Filter for specific topics
-ssh dokku@apps.twdata.org 'logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
+ssh dokku@apps.twdata.org 'dokku logs kit --num 500' 2>&1 | grep -i "error\|task\|sync"
 ```
 
 ### Database queries
 ```bash
 # One-shot query (heredoc piped to postgres:connect)
-ssh dokku@apps.twdata.org 'postgres:connect kit-db' <<'SQL'
+ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db' <<'SQL'
 SELECT id, slack_team_id, name FROM tenants ORDER BY created_at;
 SQL
 
 # List postgres services
-ssh dokku@apps.twdata.org 'postgres:list'
+ssh dokku@apps.twdata.org 'dokku postgres:list'
 ```
 The container has no shell (`dokku enter` fails with no /bin/bash); always
 go through `postgres:connect`.
+
+Reading a single value back into a shell variable needs the psql formatting
+flags, or you capture the column header and the row-count banner along with it
+— and a value padded with those is wrong in a way that shows up much later as
+an unexplained 401:
+```bash
+ssh dokku@apps.twdata.org 'dokku postgres:connect kit-db' <<'SQL' | tail -1
+\pset tuples_only on
+\pset format unaligned
+SELECT feed_token FROM app_event_settings LIMIT 1;
+SQL
+```
 
 ### MCP tools for debugging
 - `list_sessions` / `get_session_events` — inspect your own agent session history. For debugging another user's sessions, query the DB directly (`postgres:connect kit-db` via SSH) — the MCP surface is scoped to the caller so admins can't read other users' email/memory traces.
