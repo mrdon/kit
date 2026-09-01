@@ -92,6 +92,13 @@ export const SECTIONS: Section[] = [
     app: 'events',
   },
   {
+    to: '/admin/events-channels',
+    label: 'Event promotion',
+    blurb: 'Where events get promoted, and which of it Kit handles for you.',
+    admin: true,
+    app: 'events',
+  },
+  {
     to: '/admin/events-staff',
     label: 'Daily event notices',
     blurb: 'Pick the Slack channel that gets the morning post, and who it mentions.',

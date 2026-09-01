@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -297,6 +298,14 @@ func feedExpandFrom(e *Event) time.Time {
 func (a *App) registerFeedRoutes(mux apps.Mux) {
 	mux.Handle("GET /{slug}/events/feed.json",
 		auth.TenantFromPath(a.pool)(http.HandlerFunc(a.handleFeed)))
+	// The ICS tiers sit behind the same bearer token as the JSON feed, even
+	// though their whole purpose is to be subscribed to publicly. The site
+	// build fetches them and republishes them token-free on the brewery's own
+	// domain -- see feed_ics.go. Keeping the origin authenticated means the
+	// public URL stays under our control rather than being whatever Kit
+	// hostname a chamber's web admin happened to paste.
+	mux.Handle("GET /{slug}/events/feed.ics",
+		auth.TenantFromPath(a.pool)(http.HandlerFunc(a.handleFeedICS)))
 	// Posters ride the same public path: no session, gated only by
 	// IsPubliclyVisible. See poster.go for why they are unsigned.
 	mux.Handle("GET /{slug}/events/{event}/poster",
@@ -348,6 +357,67 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(feed); err != nil {
 		slog.Warn("events feed: writing response", "tenant_id", tenant.ID, "error", err)
 	}
+}
+
+// handleFeedICS serves one calendar tier.
+//
+// Auth and the not-configured 404 are deliberately identical to handleFeed:
+// two endpoints over the same rows should not have two answers to "may you
+// see this". Only the projection and the tier filter differ.
+func (a *App) handleFeedICS(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tenant := auth.TenantFromContext(ctx)
+	if tenant == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	settings, err := getSettings(ctx, a.pool, tenant.ID)
+	if err != nil {
+		slog.Error("events ics: loading settings", "tenant_id", tenant.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if settings.FeedToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !validFeedToken(r, settings.FeedToken) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="events feed"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Default to the narrowest tier, not the widest. A typo in the query
+	// string should under-share rather than hand a town calendar every happy
+	// hour we run.
+	tier := Tier(strings.TrimSpace(r.URL.Query().Get("tier")))
+	if tier == "" {
+		tier = TierFeatured
+	}
+	if !ValidTier(tier) {
+		http.Error(w, "unknown tier", http.StatusBadRequest)
+		return
+	}
+
+	body, err := a.svc.BuildICS(ctx, tenant.ID, tier, tenant.Name)
+	if err != nil {
+		slog.Error("events ics: building", "tenant_id", tenant.ID, "tier", tier, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	if _, err := io.WriteString(w, body); err != nil {
+		slog.Warn("events ics: writing response", "tenant_id", tenant.ID, "error", err)
+	}
+}
+
+// ICSFeedURL renders the URL a site build should fetch for one tier, for the
+// admin page and the build script.
+func ICSFeedURL(baseURL, tenantSlug string, tier Tier) string {
+	return fmt.Sprintf("%s/%s/events/feed.ics?tier=%s", strings.TrimSuffix(baseURL, "/"), tenantSlug, tier)
 }
 
 // validFeedToken accepts the token as a bearer header, which is what a build

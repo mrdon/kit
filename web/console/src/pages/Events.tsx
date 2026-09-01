@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import EventsPromoPanel from './EventsPromoPanel';
 import {
   api,
   type EventInput,
@@ -249,6 +250,10 @@ export default function Events() {
           set up. <Link to="/admin/events">Finish setup</Link>.
         </p>
       )}
+
+      {/* The promotion work list. Sits above the event list because it is
+          what a Monday session is for: work the list, then get on. */}
+      <EventsPromoPanel />
 
       <div className="toolbar">
         <label className="check">

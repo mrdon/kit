@@ -14,6 +14,7 @@ import EmailIntakeSettings from './pages/EmailIntakeSettings';
 import Events from './pages/Events';
 import EventsSettingsPage from './pages/EventsSettings';
 import EventsStaffPage from './pages/EventsStaff';
+import EventsChannelsPage from './pages/EventsChannels';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
 import Vault from './pages/Vault';
@@ -52,6 +53,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/apps" element={<AppsSettings />} />
           <Route path="/admin/events" element={<EventsSettingsPage />} />
           <Route path="/admin/events-staff" element={<EventsStaffPage />} />
+          <Route path="/admin/events-channels" element={<EventsChannelsPage />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />
           <Route path="/admin/square-shifts" element={<SquareShifts />} />

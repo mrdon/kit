@@ -205,6 +205,49 @@ The exception is a run of genuinely *different* events — live music with a dif
 
 **Cancel rather than delete.** Cancelling removes an event from the calendar and the website but keeps the record, so the calendar entry gets cleaned up and the web address is never reused for different content. Web addresses are frozen once an event is published, because links to them may already be in a social post or newsletter.
 
+### Getting events onto other people's calendars
+
+The events page publishes three subscribable calendar feeds on your website, so a
+chamber of commerce, a city calendar or a regular's phone can follow along instead of
+being told about each event separately. They are nested — each one is a smaller version
+of the last:
+
+- `/events.ics` — **everything**, standing offers like happy hour included. For regulars.
+- `/events-highlights.ics` — real happenings, no standing offers. For a trade guild or
+  business association.
+- `/events-featured.ics` — just the big ones. For a chamber or town calendar.
+
+Which events land in which comes from the **prominence** you already set, so there is
+nothing extra to maintain. Events you are only *attending* (venue set to offsite) appear
+only in the everything feed — the organiser already lists those on the community
+calendars, so sending them again would just duplicate the listing.
+
+Point people at `/events#feeds` on your site rather than at a bare file, and ask them to
+**subscribe rather than import**. A one-time import looks like it worked and then quietly
+goes stale, still listing events you cancelled months ago.
+
+### Promotion channels and the weekly list
+
+Some places will never take a feed — they want a form filled in. Add each one as a
+**channel** on the admin **Event promotion** page: what it is called, the link to their
+submit form, how much notice they need, and which events are worth sending them.
+
+Kit then keeps a running list on the Events page of what is outstanding, in the order it
+needs doing. Ordering is by *their* deadline, not the event date: a calendar that wants
+a fortnight's notice becomes urgent well before one that will take a listing the day
+before. Each row carries the deep link and a copy button with the details ready to paste,
+and you tick it off or skip it.
+
+A missed reminder disappears rather than piling up — a "one week out" post is no use
+three days before, and a list of everything you never got round to is not worth reading.
+Standing series work differently again: they are not announced weekly, but you can set a
+channel to remind you to post about trivia every few weeks, timed from the last time you
+actually did.
+
+Once a calendar agrees to subscribe to a feed, switch that channel to **They subscribe**
+and it stops generating work entirely. That is the goal — every channel you move across
+is a chore retired rather than a chore made faster.
+
 ### The table topper
 
 The cog menu on the Events page prints the week's card for the taproom tables — **Table topper — this week** or **next week** — a coloured band per event with the day, the door time, a couple of lines about it, and the event's own poster. It's a PDF: two identical 4x6in cards on one landscape sheet, with dashed lines to cut along. One sheet covers two tables, and a cut card drops straight into a standard 4x6 table frame.

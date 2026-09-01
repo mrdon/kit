@@ -125,4 +125,5 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	registerConsoleRoutes(mux, a)
 	registerSettingsRoutes(mux, a)
 	registerStaffRoutes(mux, a)
+	registerPromoRoutes(mux, a)
 }

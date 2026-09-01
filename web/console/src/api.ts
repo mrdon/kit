@@ -418,6 +418,110 @@ export interface WorkspaceApp {
   usage: string;
 }
 
+// ------------------------------------------------- event promotion channels
+
+// A channel is a place events get promoted to. Channels are DATA, not code:
+// adding "City of Louisville" is a form submission. Only `automated` needs a
+// Go connector behind it, which is why the mode picker disables that option
+// when none exists.
+export type ChannelMode = 'manual' | 'subscribed' | 'automated';
+
+// The three rhythms a campaign step can have. They differ mainly in what
+// happens when one is missed:
+//   oneshot — stays outstanding until done or the event passes
+//   drip    — a timed beat that EXPIRES and quietly drops off
+//   cadence — series only; re-arms a fixed interval after it was last done
+export type StepKind = 'oneshot' | 'drip' | 'cadence';
+
+export type Prominence = 'background' | 'normal' | 'featured';
+
+export interface ChannelStep {
+  key: string;
+  label: string;
+  kind: StepKind;
+  offset_days?: number;
+  interval_days?: number;
+  expires_after_days?: number;
+  // Unset means "inherit the channel's floor". Setting it lets one channel
+  // take the announce for a normal event and the full drip only for a
+  // featured one.
+  min_prominence?: Prominence;
+  // False for work no API can do — creating the annual Facebook recurring
+  // event, most obviously. Such a step keeps producing a manual row even on
+  // an automated channel.
+  automatable?: boolean;
+}
+
+export interface EventChannel {
+  id: string;
+  name: string;
+  mode: ChannelMode;
+  connector?: string;
+  submit_url?: string;
+  feed_tier?: 'all' | 'highlights' | 'featured';
+  // When someone last confirmed a subscribed channel is really pulling the
+  // feed. `subscribed` is the only mode that can fail silently, so this is
+  // how a dead subscription gets noticed.
+  verified_at?: string;
+  lead_time_days: number;
+  // Whether events we are ATTENDING rather than hosting belong here. Off by
+  // default: the chamber already carries someone else's festival from the
+  // organiser, but your own Facebook very much wants "come see us at GABF".
+  include_offsite: boolean;
+  steps: ChannelStep[];
+  min_prominence: Prominence;
+  active: boolean;
+}
+
+// 'todo' is the absence of a stored row, and 'expired' is computed — neither
+// is ever written. See the promo.go comment for why.
+export type PromoState =
+  | 'todo'
+  | 'done'
+  | 'ignored'
+  | 'expired'
+  | 'auto_done'
+  | 'auto_failed';
+
+export interface PromoItem {
+  event_id: string;
+  event_title: string;
+  event_slug: string;
+  event_start: string;
+  channel_id: string;
+  channel_name: string;
+  submit_url?: string;
+  step_key: string;
+  step_label: string;
+  step_kind: StepKind;
+  state: PromoState;
+  url?: string;
+  note?: string;
+  // When this wants doing. NOT the event date: for a one-shot it is the event
+  // minus the channel's lead time, and for a cadence it is the last
+  // completion plus the interval. Ordering keys off this.
+  due_at: string;
+  overdue: boolean;
+  last_done_at?: string;
+  last_url?: string;
+  manual: boolean;
+}
+
+export interface PromoPayload {
+  items: PromoItem[];
+  done: PromoItem[];
+  summary: { outstanding: number; overdue: number };
+  channels: EventChannel[];
+}
+
+export interface ChannelsPayload {
+  channels: EventChannel[];
+  // The PUBLIC calendar addresses — the copies the website republishes
+  // token-free. These are what you send a chamber; Kit's own feed URL would
+  // 401 for them.
+  feed_urls: { all: string; highlights: string; featured: string };
+}
+
 // ---------------------------------------------------------------- events
 
 export interface EventRecord {
@@ -707,6 +811,25 @@ export const api = {
   revokeWidgetToken: (id: string) =>
     apiPost<void>(`/widget/tokens/${encodeURIComponent(id)}/revoke`),
 
+
+  eventsPromo: () => apiGet<PromoPayload>('/events/promo'),
+  markEventPromo: (body: {
+    event_id: string;
+    channel_id: string;
+    step_key: string;
+    // 'todo' un-ticks, which DELETES the row rather than storing a state.
+    status: 'todo' | 'done' | 'ignored';
+    url?: string;
+    note?: string;
+  }) => apiPost<PromoPayload>('/events/promo/mark', body),
+
+  listEventChannels: () => apiGet<ChannelsPayload>('/event-channels'),
+  saveEventChannel: (body: Partial<EventChannel>) =>
+    body.id
+      ? apiPut<ChannelsPayload>(`/event-channels/${encodeURIComponent(body.id)}`, body)
+      : apiPost<ChannelsPayload>('/event-channels', body),
+  deleteEventChannel: (id: string) =>
+    apiDelete<ChannelsPayload>(`/event-channels/${encodeURIComponent(id)}`),
 
   eventsMeta: () => apiGet<EventsMeta>('/events/meta'),
   listEvents: (opts: { status?: string; include_past?: boolean } = {}) => {

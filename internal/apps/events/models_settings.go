@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -56,6 +57,26 @@ func (s Settings) CanonicalURL(slug string) string {
 		return ""
 	}
 	return strings.ReplaceAll(tpl, "{slug}", slug)
+}
+
+// SiteBaseURL is the website's origin, derived from the same template the
+// canonical URLs come from so there is no second place to configure a domain.
+//
+// It exists for the published ICS addresses. Those live on the brewery's own
+// site rather than on Kit -- a chamber's calendar platform cannot send a
+// bearer token, so what they subscribe to has to be the token-free copy the
+// build republishes. Empty when no template is set, which the admin page
+// reports rather than rendering three dead links.
+func (s Settings) SiteBaseURL() string {
+	tpl := strings.TrimSpace(s.PublicURLTemplate)
+	if tpl == "" {
+		return ""
+	}
+	u, err := url.Parse(tpl)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // Loc resolves the tenant's default zone, falling back to UTC.
