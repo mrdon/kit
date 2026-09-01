@@ -22,7 +22,7 @@
         <div class="join-words">
           {{ range .NameWords }}<div class="join-word">{{ . }}</div>{{ end }}
         </div>
-        <div class="join-url">{{ .JoinHost }}</div>
+        <div class="join-url" id="join-url">{{ .JoinHost }}</div>
         <div class="join-count" id="join-count">0 TEAMS IN</div>
       </div>
       <div class="join-qr">{{ .QR }}</div>
@@ -54,17 +54,24 @@
     </div>
   </section>
 
-  <!-- 4/5/6. cards: reveal, betting and scoring are the same furniture -->
+  <!-- 4/5/6. cards: reveal, betting and scoring are the same furniture, laid
+       out as three rows so the answer band and the countdown never sit on top
+       of the cards or the team names. -->
   <section class="screen" id="s-cards">
-    <div class="q-text" id="cards-question" style="font-size:52px;max-height:130px"></div>
-    <div class="cards" id="cards"></div>
-    <div class="ring-wrap" style="height:180px">
-      <svg class="ring" width="300" height="300" viewBox="0 0 300 300" style="transform:rotate(-90deg) scale(.6)">
-        <circle class="track" cx="150" cy="150" r="130"></circle>
-        <circle class="arc" cx="150" cy="150" r="130"></circle>
-      </svg>
+    <div class="cards-screen" id="cards-screen">
+      <div class="q-text" id="cards-question" style="font-size:48px;max-height:120px"></div>
+      <div class="cards" id="cards"></div>
+      <div class="cards-footer" id="cards-footer">
+        <div class="ring-wrap">
+          <svg class="ring" id="cards-ring" width="300" height="300" viewBox="0 0 300 300">
+            <circle class="track" cx="150" cy="150" r="130"></circle>
+            <circle class="arc" id="cards-ring-arc" cx="150" cy="150" r="130"></circle>
+          </svg>
+          <div class="countdown" id="cards-countdown"></div>
+        </div>
+        <div class="answer-band" id="answer-band"></div>
+      </div>
     </div>
-    <div class="answer-band" id="answer-band"></div>
     <aside class="rail" id="rail">
       <h2>Standings</h2>
       <div id="rail-rows"></div>

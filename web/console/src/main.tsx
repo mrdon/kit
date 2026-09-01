@@ -7,6 +7,9 @@ import Integrations from './pages/Integrations';
 import AppsSettings from './pages/AppsSettings';
 import SquareShifts from './pages/SquareShifts';
 import Kiosk from './pages/Kiosk';
+import Trivia from './pages/Trivia';
+import TriviaSetup from './pages/trivia/setup';
+import TriviaLive from './pages/trivia/live';
 import Menu from './pages/Menu';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
@@ -46,6 +49,9 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/events" element={<Events />} />
           <Route path="/menu" element={<Menu />} />
           <Route path="/kiosk" element={<Kiosk />} />
+          <Route path="/trivia" element={<Trivia />} />
+          <Route path="/trivia/:id" element={<TriviaSetup />} />
+          <Route path="/trivia/:id/live" element={<TriviaLive />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />
           <Route path="/connect" element={<Connect />} />

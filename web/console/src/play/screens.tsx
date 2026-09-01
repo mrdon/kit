@@ -130,7 +130,7 @@ export function Answer({
       </button>
       {/* Saying so removes fat-finger anxiety on a 60-second clock. */}
       <p className="sub" style={{ textAlign: 'center' }}>
-        {submitted ? 'In! You can change it until time&rsquo;s up.' : 'You can change it until time&rsquo;s up.'}
+        {submitted ? 'In! You can change it until time\u2019s up.' : 'You can change it until time\u2019s up.'}
       </p>
       <p className="err">{err}</p>
     </div>

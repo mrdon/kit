@@ -16,6 +16,13 @@ export interface Stream {
   // wire; that would put the clock on bar wifi.
   msLeft: number | null;
   apply: (f: PlayerFrame) => void;
+  // reopen drops the stream and starts a new one. MUST be called after a join
+  // or a reclaim: EventSource sends whatever cookies exist AT CONNECT TIME,
+  // so a stream opened before the identity cookie existed keeps arriving as a
+  // spectator forever — and because its frames carry ever-newer versions,
+  // they suppress the poll frames that would have carried the private block.
+  // The phone would sit on the join screen for the whole game.
+  reopen: () => void;
 }
 
 const WATCHDOG_MS = 20_000;
@@ -116,7 +123,16 @@ export function useStream(): Stream {
     return () => window.clearInterval(tick);
   }, []);
 
-  return { frame, connected, msLeft, apply };
+  // reopen resets the version floor as well as the connection: the identity
+  // has changed, so the next frame is new information even at a version this
+  // client has already seen.
+  const reopen = useCallback(() => {
+    versionRef.current = -1;
+    connect();
+    void poll();
+  }, [connect, poll]);
+
+  return { frame, connected, msLeft, apply, reopen };
 }
 
 // useWakeLock keeps the screen on for the length of a game. Without it twenty

@@ -72,7 +72,13 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .join { display: grid; grid-template-columns: 55fr 45fr; gap: 56px; height: 100%; align-items: center; }
 .join-words { display: flex; flex-direction: column; gap: 6px; }
 .join-word { font: 400 180px/1.02 var(--display); color: var(--cream); letter-spacing: .01em; }
-.join-url { margin-top: 34px; font: 700 48px/1.2 var(--body); color: var(--accent-l); word-break: break-all; }
+/* break-word, never break-all: splitting "sturdy" across two lines as
+   "st / urdy" is unreadable from across a room, which is the only thing this
+   line has to be. JS shrinks it to fit rather than wrapping where it can. */
+.join-url {
+  margin-top: 34px; font: 700 48px/1.2 var(--body); color: var(--accent-l);
+  overflow-wrap: break-word; white-space: nowrap;
+}
 .join-count { margin-top: 26px; font: 400 120px/1 var(--display); color: var(--accent); }
 .join-qr { display: grid; place-items: center; }
 .join-qr svg { border-radius: 24px; background: #fff; padding: 0; }
@@ -99,7 +105,12 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
   border: 3px solid var(--line);
   font: 400 88px/1 var(--display); color: var(--gold);
+  padding: 0 10px; overflow: hidden;
 }
+/* A four-figure cell value is wider than a three-figure one, and 88px of
+   Bungee at $1,000 overflows the tile. The value is set by JS against the
+   measured tile width rather than guessed at here. */
+.cell .val { display: block; white-space: nowrap; }
 .cell.played { opacity: .25; }
 .cell.played .val { text-decoration: line-through; text-decoration-thickness: 6px; }
 
@@ -122,6 +133,11 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 .q-text.final { color: var(--accent-l); }
 .ring-wrap { display: grid; place-items: center; position: relative; height: 300px; }
+.cards-footer { display: grid; place-items: center; min-height: 0; }
+.cards-footer .ring-wrap { height: 190px; }
+.cards-footer .ring { transform: rotate(-90deg) scale(.6); }
+.cards-footer .countdown { font-size: 92px; }
+.cards-footer.scored .ring-wrap { display: none; }
 .ring { transform: rotate(-90deg); }
 .ring circle { fill: none; stroke-width: 18; }
 .ring .track { stroke: rgba(255,255,255,.10); }
@@ -130,10 +146,16 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .ring.hot .arc { stroke: #ff4b3a; animation: hot 1s ease-in-out infinite; }
 @keyframes hot { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
 .countdown {
-  position: absolute; font: 400 200px/1 var(--display); color: var(--cream);
+  position: absolute; font: 400 150px/1 var(--display); color: var(--cream);
   font-variant-numeric: tabular-nums;
 }
-.answered-strip { display: flex; gap: 12px; align-items: flex-end; justify-content: center; height: 90px; }
+/* The ring is 300px across with a 130px radius, so a 200px numeral collides
+   with the stroke on two digits. 150px clears it and still reads from the
+   back of the room. */
+.answered-strip {
+  display: flex; gap: 12px; align-items: flex-end; justify-content: center;
+  height: 90px; margin-bottom: 18px; flex-wrap: wrap;
+}
 .tbar {
   width: 64px; background: rgba(255,255,255,.10); border-radius: 10px 10px 0 0;
   height: 30px; transition: height .35s, background .35s;
@@ -145,7 +167,13 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .answered-count { text-align: center; font: 400 48px/1 var(--display); color: var(--dim); letter-spacing: .1em; }
 
 /* ---------- 4/5/6. cards ---------- */
-.cards { display: flex; gap: 22px; justify-content: center; align-items: stretch; height: 620px; }
+/* The cards screen is a three-row grid -- question, cards, footer -- so the
+   answer band and the countdown occupy their own row instead of being
+   positioned over the cards. The first version put the band at a fixed top
+   offset and it covered the team names, which are half the point of the
+   reveal. */
+.cards-screen { height: 100%; display: grid; grid-template-rows: auto 1fr 190px; gap: 24px; }
+.cards { display: flex; gap: 22px; justify-content: center; align-items: stretch; min-height: 0; }
 .card {
   flex: 1 1 0; min-width: 0; border-radius: 24px; padding: 28px 18px;
   background: linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.04));
@@ -159,9 +187,16 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 .card .val {
   font: 400 120px/1 var(--display); color: var(--cream);
-  overflow-wrap: anywhere;
+  overflow-wrap: anywhere; display: grid; place-items: center; min-height: 0;
 }
-.card.pseudo .val { font-size: 52px; line-height: 1.1; color: var(--accent-l); }
+/* The pseudo-slot's label is five words where every other card is a number.
+   It needs its own size, room to wrap, and NORMAL word breaking: the numeric
+   cards want break-anywhere so a long number never overflows, but applying
+   that here split "SMALLER" across two lines. */
+.card.pseudo .val {
+  font-size: 40px; line-height: 1.15; color: var(--accent-l);
+  overflow-wrap: normal; word-break: normal; hyphens: none;
+}
 .card .names { font: 700 32px/1.25 var(--body); color: var(--muted); overflow: hidden; }
 .card .tray { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; min-height: 70px; align-content: end; }
 .chip {
@@ -178,23 +213,33 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 
 .card.win { border-color: var(--gold); box-shadow: 0 0 80px rgba(245,196,81,.45); transform: scale(1.08); }
 .cards.dim .card:not(.win) { opacity: .35; }
+/* Its own row in the footer, not an overlay. Hidden until the beat lands. */
+/* Wide enough to read as a band slamming in rather than a badge appearing.
+   It fills the footer row, which is why the footer is a fixed 190px. */
 .answer-band {
-  position: absolute; left: 0; right: 0; top: 300px; padding: 34px 64px; z-index: 25;
-  background: var(--accent); color: #fff; text-align: center;
-  font: 400 110px/1 var(--display);
-  transform: translateX(-110%); transition: transform .5s cubic-bezier(.2,.9,.2,1);
+  width: 100%; padding: 30px 64px; background: var(--accent); color: #fff;
+  text-align: center; font: 400 100px/1 var(--display); border-radius: 20px;
+  transform: translateX(-130%); transition: transform .5s cubic-bezier(.2,.9,.2,1);
+  display: none;
 }
+.answer-band.shown { display: block; }
 .answer-band.in { transform: none; }
 
 /* ---------- leaderboard rail ---------- */
 .rail {
-  position: absolute; right: 0; top: 0; bottom: 0; width: 560px; padding: 48px 40px;
+  position: absolute; right: 0; top: 0; bottom: 0; width: 520px; padding: 48px 40px;
   background: rgba(0,0,0,.42); border-left: 3px solid var(--line);
   transform: translateX(100%); transition: transform .5s cubic-bezier(.2,.9,.2,1);
   z-index: 26; overflow: hidden;
 }
 .rail.in { transform: none; }
-.rail h2 { font: 400 44px/1 var(--display); color: var(--accent-l); letter-spacing: .1em; margin: 0 0 28px; }
+/* When the rail slides in the cards shift left rather than sitting under it,
+   so an overtake is legible next to the round that caused it. */
+.cards-screen.railed { padding-right: 540px; transition: padding-right .5s cubic-bezier(.2,.9,.2,1); }
+/* The clock lives at the top right of the stage and the rail slides in
+   underneath it, so the heading starts below the clock's baseline rather
+   than colliding with it. */
+.rail h2 { font: 400 44px/1 var(--display); color: var(--accent-l); letter-spacing: .1em; margin: 44px 0 28px; }
 .row {
   display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 16px;
   padding: 14px 0; border-bottom: 2px solid var(--line);

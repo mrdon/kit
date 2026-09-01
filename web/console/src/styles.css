@@ -1862,3 +1862,119 @@ h2.view-title:hover {
   width: 100%;
   max-width: 34rem;
 }
+
+/* --- Trivia --- */
+
+/* The host's board preview and live grid. Deliberately plain: the drama
+   belongs on the TV, and this is the surface somebody drives with a mouse in
+   a lit room. */
+.trivia-board {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.trivia-cat {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.35rem 0.2rem;
+}
+
+.trivia-cell {
+  display: grid;
+  place-items: center;
+  padding: 0.9rem 0.3rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.trivia-cell.live {
+  cursor: pointer;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.trivia-cell.live:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.trivia-cell.played {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+.trivia-live {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .trivia-live { grid-template-columns: 1fr; }
+}
+
+.trivia-panel {
+  padding: 1rem 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.trivia-question {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0.35rem 0;
+}
+
+/* Host-only, in every phase. */
+.trivia-answer {
+  margin: 0.35rem 0 0.75rem;
+  color: var(--accent);
+}
+
+.trivia-clock {
+  font-size: 3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  margin: 0.5rem 0;
+}
+
+.trivia-win {
+  border-color: var(--accent);
+}
+
+.teamlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+
+.teamlist button {
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.panel {
+  margin-top: 1.5rem;
+  padding: 1rem 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.panel h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.5rem;
+}

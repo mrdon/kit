@@ -34,7 +34,7 @@ function writeLocal(v: LocalIdentity) {
 }
 
 export default function App() {
-  const { frame, connected, msLeft, apply } = useStream();
+  const { frame, connected, msLeft, apply, reopen } = useStream();
   const [identity, setIdentity] = useState<{ teamId: string; name: string } | null>(null);
   const [checked, setChecked] = useState(false);
   useWakeLock();
@@ -79,7 +79,17 @@ export default function App() {
         </span>
       </header>
 
-      {spectating && checked ? <Lobby frame={frame} onJoined={setIdentity} /> : null}
+      {spectating && checked ? (
+        <Lobby
+          frame={frame}
+          onJoined={(v) => {
+            setIdentity(v);
+            // The stream was opened without a cookie, so it is a spectator
+            // stream. Reopen it now that we have an identity.
+            reopen();
+          }}
+        />
+      ) : null}
       {!spectating ? <Playing frame={frame} msLeft={msLeft} apply={apply} /> : null}
       {/* While /me is in flight we render the localStorage name, so a phone
           coming back from a lock screen says "rejoining as Bar Flies…"
@@ -178,7 +188,7 @@ function Podium({ frame }: { frame: PlayerFrame }) {
   const winner = sorted[0];
   return (
     <div className="body">
-      <h1>{winner ? `${winner.name} wins` : 'That&rsquo;s the game'}</h1>
+      <h1>{winner ? `${winner.name} wins` : 'That\u2019s the game'}</h1>
       <Standings frame={frame} />
     </div>
   );

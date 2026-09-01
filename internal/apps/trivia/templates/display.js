@@ -147,6 +147,7 @@
     show('s-join');
     document.getElementById('join-count').textContent =
       state.teams.length + (state.teams.length === 1 ? ' TEAM IN' : ' TEAMS IN');
+    fitJoinURL();
     var host = document.getElementById('join-pills');
     // Only append what is new, so existing pills keep their entrance and the
     // wall does not re-animate every pill each time somebody joins.
@@ -155,6 +156,20 @@
       host.appendChild(el('div', 'pill', state.teams[i].name));
     }
     while (host.childElementCount > state.teams.length) { host.removeChild(host.lastChild); }
+  }
+
+  /* Somebody is reading this off a wall and typing it into a phone, so it has
+     to stay on one line. Shrink to fit; never hyphenate mid-word. */
+  function fitJoinURL() {
+    var u = document.getElementById('join-url');
+    if (!u) { return; }
+    var box = u.parentNode.clientWidth;
+    var size = 48;
+    u.style.fontSize = size + 'px';
+    while (u.scrollWidth > box && size > 24) {
+      size -= 2;
+      u.style.fontSize = size + 'px';
+    }
   }
 
   /* --- 2. board --- */
@@ -184,6 +199,24 @@
       }
     }
     if (prev && prev.phase === 'scoring') { /* returning from a round: no flip */ }
+    fitCellValues();
+  }
+
+  /* $500 and $1,000 are different widths in Bungee, and 88px of the latter
+     overflows the tile. Measure and shrink rather than picking a size that
+     happens to work for one of them. */
+  function fitCellValues() {
+    var vals = document.querySelectorAll('#board-grid .cell .val');
+    for (var i = 0; i < vals.length; i++) {
+      var v = vals[i];
+      var box = v.parentNode.clientWidth - 20;
+      var size = 88;
+      v.style.fontSize = size + 'px';
+      while (v.scrollWidth > box && size > 28) {
+        size -= 4;
+        v.style.fontSize = size + 'px';
+      }
+    }
   }
 
   /* The FLIP: measure the picked tile, clone it, transform the clone to fill
@@ -223,7 +256,7 @@
       q.classList.toggle('final', !!(state.round && state.round.isFinal));
       fitQuestion(q);
       renderAnsweredStrip();
-      startRing();
+      startRing('question');
     };
     if (phaseChanged && state.round && !state.round.isFinal) {
       var cell = null;
@@ -277,11 +310,14 @@
 
   /* An SVG ring around the numeral, because a ring reads from across a room
      and a bare number does not. */
-  function startRing() {
+  function startRing(where) {
     if (ringTimer) { clearInterval(ringTimer); }
-    var arc = document.getElementById('ring-arc');
-    var ring = document.getElementById('ring');
-    var label = document.getElementById('countdown');
+    var ids = where === 'cards'
+      ? ['cards-ring-arc', 'cards-ring', 'cards-countdown']
+      : ['ring-arc', 'ring', 'countdown'];
+    var arc = document.getElementById(ids[0]);
+    var ring = document.getElementById(ids[1]);
+    var label = document.getElementById(ids[2]);
     var C = 2 * Math.PI * 130;
     arc.style.strokeDasharray = C;
     var total = null;
@@ -307,7 +343,9 @@
     var host = document.getElementById('cards');
     host.className = 'cards';
     host.innerHTML = '';
-    document.getElementById('answer-band').classList.remove('in');
+    var band = document.getElementById('answer-band');
+    band.classList.remove('in');
+    band.classList.remove('shown');
     document.getElementById('rail').classList.remove('in');
 
     (state.slots || []).forEach(function (s, i) {
@@ -317,7 +355,7 @@
       card.appendChild(el('div', 'val', s.label));
       card.appendChild(el('div', 'names', (s.teams || []).join(' · ')));
       var tray = el('div', 'tray');
-      if (mode === 'betting') {
+      if (mode === 'betting' || mode === 'scored') {
         (s.chips || []).forEach(function (c, ci) {
           var chip = el('div', 'chip ' + (c.amount >= 200 ? 'c200' : 'c100'), money(c.amount));
           chip.style.animationDelay = (ci * 60) + 'ms';
@@ -325,24 +363,25 @@
         });
       }
       card.appendChild(tray);
-      if (mode === 'betting' && s.pot) { card.appendChild(el('div', 'pot', money(s.pot))); }
+      if ((mode === 'betting' || mode === 'scored') && s.pot) { card.appendChild(el('div', 'pot', money(s.pot))); }
       host.appendChild(card);
     });
     document.getElementById('cards-question').textContent = state.round ? state.round.text : '';
-    startRing();
+    // The footer holds either the countdown or the answer band, never both.
+    var footer = document.getElementById('cards-footer');
+    footer.classList.toggle('scored', mode === 'scored');
+    document.getElementById('cards-screen').classList.remove('railed');
+    startRing('cards');
   }
 
   /* --- 6. scoring: the TV owns the choreography --- */
   function renderScoring(phaseChanged) {
-    renderCards('betting');
-    if (!phaseChanged) { paintScored(); return; }
+    renderCards('scored');
+    if (!phaseChanged) { paintScored(); renderRail(false); return; }
 
     var host = document.getElementById('cards');
     later(800, function () {
       host.classList.add('dim');
-      var band = document.getElementById('answer-band');
-      band.textContent = state.scoring ? state.scoring.correctText || state.scoring.correctValue : '';
-      band.classList.add('in');
       paintScored();
     });
     later(2200, function () { renderRail(true); });
@@ -363,6 +402,10 @@
     document.getElementById('cards').classList.add('dim');
     var band = document.getElementById('answer-band');
     band.textContent = state.scoring.correctText || String(state.scoring.correctValue);
+    band.classList.add('shown');
+    // Force a reflow so the slide-in runs from off-stage rather than being
+    // collapsed into the same frame as the display change.
+    void band.offsetWidth;
     band.classList.add('in');
   }
 
@@ -389,6 +432,7 @@
       rail.appendChild(row);
     });
     document.getElementById('rail').classList.add('in');
+    document.getElementById('cards-screen').classList.add('railed');
 
     if (!animate) { return; }
     var rows = rail.querySelectorAll('.row');

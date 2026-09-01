@@ -164,6 +164,27 @@ export interface KioskBoard {
   recent_urls: KioskUrlChange[] | null;
 }
 
+// --- Trivia ---
+//
+// The live host surface. Note there is exactly ONE mutating endpoint for the
+// game itself (`triviaAction`): every host click is a guarded transition
+// carrying the phase it was made from, so a stale click 409s instead of
+// silently skipping a question.
+
+export type {
+  TriviaGame,
+  TriviaSettings,
+  TopicCount,
+  ImportReport,
+  HostFrame,
+} from './pages/trivia/common';
+import type {
+  TriviaGame as TriviaGameT,
+  TriviaSettings as TriviaSettingsT,
+  TopicCount as TopicCountT,
+  HostFrame as HostFrameT,
+} from './pages/trivia/common';
+
 export interface KioskBoardInput {
   key?: string;
   name: string;
@@ -797,6 +818,25 @@ export const api = {
     apiPost<{ status: string }>('/email-intake/run'),
 
   menuBoard: () => apiGet<MenuBoard>('/menu/board'),
+  // --- Trivia ---
+  triviaGames: () => apiGet<{ games: TriviaGameT[] }>('/trivia/games'),
+  triviaGame: (id: string) =>
+    apiGet<{ game: TriviaGameT; topics: TopicCountT[]; state: HostFrameT }>(`/trivia/games/${id}`),
+  createTriviaGame: (settings: TriviaSettingsT) =>
+    apiPost<TriviaGameT>('/trivia/games', { settings }),
+  updateTriviaGame: (id: string, settings: TriviaSettingsT) =>
+    apiPatch<TriviaGameT>(`/trivia/games/${id}`, { settings }),
+  deleteTriviaGame: (id: string) => apiDelete<void>(`/trivia/games/${id}`),
+  buildTriviaBoard: (id: string, topics: string[], auto: boolean) =>
+    apiPost<HostFrameT>(`/trivia/games/${id}/board`, { topics, auto }),
+  // The single host action endpoint. from_phase is what makes a double click
+  // a 409 rather than a skipped question.
+  triviaAction: (id: string, body: Record<string, unknown>) =>
+    apiPost<HostFrameT>(`/trivia/games/${id}/action`, body),
+  triviaReclaim: (gameId: string, teamId: string) =>
+    apiPost<{ code: string }>(`/trivia/games/${gameId}/teams/${teamId}/reclaim`, {}),
+  triviaQuestions: () => apiGet<{ total: number; topics: TopicCountT[] }>('/trivia/questions'),
+
   kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
   createKioskBoard: (body: KioskBoardInput) =>
     apiPost<KioskBoard>('/kiosk/boards', body),
