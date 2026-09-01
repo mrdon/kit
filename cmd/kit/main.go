@@ -31,6 +31,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/menu"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/square"
+	"github.com/mrdon/kit/internal/apps/squaresales"
 	"github.com/mrdon/kit/internal/apps/squareshifts"
 	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/apps/vault"
@@ -203,6 +204,7 @@ func main() {
 
 	// Square shift sync needs the signer for its admin Manage page.
 	squareshifts.Configure(enc, sessionSigner)
+	squaresales.Configure(newSquareSalesCardAdapter(cards.ServiceForGating()))
 
 	// Events needs the signer for its console pages. Its calendar client comes
 	// from the googlecalendar singleton at call time, and it posts notices

@@ -28,6 +28,13 @@ var ErrNotConfigured = errors.New("square integration not configured")
 // without them token refresh (and therefore any long-lived use) can't work.
 var ErrNotReady = errors.New("square app credentials not configured")
 
+// ErrMissingScope means the tenant's token authenticates fine but was
+// granted without the permission this call needs. Distinct from
+// ErrNotConfigured: the fix is reconnecting with a wider-scoped token, not
+// connecting for the first time. Deliberately NOT swallowed by the
+// scheduled tasks — it is actionable and belongs in the job's last_error.
+var ErrMissingScope = errors.New("square token is missing a required permission")
+
 // LoadClient builds an authenticated Square client for the tenant. It reads
 // and decrypts the stored access + refresh tokens and wires a refresh hook
 // so an expired access token is transparently renewed and persisted on the

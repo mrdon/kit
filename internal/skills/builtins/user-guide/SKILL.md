@@ -139,10 +139,33 @@ If you run staff scheduling in Square, Kit can mirror your **published** schedul
 
 Two one-time connections, both on the **Integrations** page in the web console (click **Connect** on each):
 
-- **Square** — paste a Square Production Access Token (Developer Dashboard → Credentials; scopes `TIMECARDS_READ`, `EMPLOYEES_READ`, `MERCHANT_PROFILE_READ`). Leave the refresh token blank — a Production token doesn't expire. Once connected, `square_list_shifts` lists the upcoming published schedule so you can confirm the pull.
+- **Square** — paste a Square Production Access Token (Developer Console → Credentials → Production). A Production token carries every scope, so the same one covers shift sync (`TIMECARDS_READ`, `EMPLOYEES_READ`, `MERCHANT_PROFILE_READ`) and sales (`REPORTING_READ`). Leave the refresh token blank — a Production token doesn't expire. Once connected, `square_list_shifts` lists the upcoming published schedule so you can confirm the pull.
 - **Google Calendar** — create a Google service account, download its JSON key, and **share your target calendar with the service account's email as a writer**. Paste the key + the calendar's ID. Then `gcal_check` writes and deletes a probe event to confirm write access. (A service account has no per-seat cost and needs no admin domain setup.)
 
 Enable the **Square Shift Sync** feature on the Apps page and it starts syncing. Each published shift becomes an **all-day** calendar event on the shift's date, titled with the team member's first name and shift hours (e.g. "Alice · 6:00am–2:00pm") so it stays unobtrusive when layered over a personal calendar while still showing who opens and closes; cancelled shifts are removed on the next sweep. Run `squareshifts_sync_now` to sync on demand and `squareshifts_status` to see the last run. If the calendar has drifted — someone deleted synced events by hand, or stale ones linger — `squareshifts_reconcile` repairs it against Square; pass `dry_run: true` first to see exactly what it would add or remove before it touches anything. Kit only reads Square's *published* schedule — it doesn't build schedules (Square's API doesn't expose staff availability or time-off).
+
+## Square sales card
+
+If Square is connected, Kit posts one card each morning with yesterday's sales — and, more usefully, what was unusual about them. Enable **Square Sales Insights** on the Apps page.
+
+Every figure comes with its comparison, because a revenue number on its own tells you nothing. The baseline is the **same weekday** over the previous eight weeks, so a Tuesday is judged against Tuesdays; comparing against yesterday would flag every Monday as a collapse. The comparison uses a median rather than an average, so one exceptional day (a festival, a private buyout) doesn't quietly raise the bar for the next two months.
+
+A normal day is one line — the total, the order count, the average ticket, and how that compares. When something stands out, the card leads with it:
+
+- **an unusually high or low day** — it has to clear all three of: outside the normal spread for that weekday, at least 20% off the typical figure, and at least $75 in absolute terms. Any one alone produces noise.
+- **a dead stretch** — an hour that took far less than that same hour normally does on that weekday. Adjacent hours merge into one span ("3pm-5pm ran dead"). Hours that never trade much can't be flagged, so closed hours stay silent without anyone configuring opening times.
+- **item movers** — a beer that sold well above or below its own usual figure for that weekday.
+- **orders and revenue diverging** — more visits with smaller tabs, or fewer visits with bigger ones. Different problems, and the top-line number hides both.
+- **a shift in comping** — comps are reported as a *rate* rather than a dollar figure, because $120 comped on a festival Saturday is the same posture as $30 on a slow Tuesday. Only the rate tells you which way the dial has moved.
+
+Findings are ordered by how much money moved and capped at three, so the card stays readable in one glance.
+
+**Comps appear every day they happen**, flagged or not — "Comps $47.00 — 5.8% of gross, usual 4.3%" — so you can see the running level and dial it up or back deliberately rather than discovering a drift months later.
+
+There's no analysis until there's enough history: a comparison needs at least four prior same-weekday trading days, and until then the card says so rather than quoting a number with nothing behind it. Days with no sales are recorded as closed and excluded from every baseline, so a holiday doesn't drag the following weeks down.
+
+`squaresales_status` shows how far back the data goes and when the sync last ran; `squaresales_sync_now` pulls immediately; `squaresales_post_card_now` builds a card for any past day on demand (pass `preview: true` to read it without posting). All three are admin-only. Sales are re-pulled nightly for the past month, because refunds and disputes can move a day's total days after the fact.
+
 
 ## Events
 

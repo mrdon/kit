@@ -24,7 +24,7 @@ type Config struct {
 	FFmpegBin          string // path to ffmpeg; defaults to "ffmpeg" on PATH
 
 	// Square OAuth app credentials. Drive the Square integration at
-	// internal/apps/square (shift sync today; sales stats tomorrow).
+	// internal/apps/square (shift sync and sales rollups).
 	// Application-level: per-tenant access/refresh tokens live in the
 	// integrations row; these app credentials refresh them. Unset values
 	// leave the Square connection unavailable rather than crashing.

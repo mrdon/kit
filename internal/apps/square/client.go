@@ -40,6 +40,12 @@ func (e *APIError) Error() string {
 // refresh the access token and retry once.
 func (e *APIError) IsUnauthorized() bool { return e.StatusCode == http.StatusUnauthorized }
 
+// IsForbidden reports whether the error is a 403. For Square this is almost
+// always a permission the token was never granted rather than a stale
+// token, so it must NOT take the refresh-and-retry path a 401 does —
+// refreshing would succeed and the retry would fail identically.
+func (e *APIError) IsForbidden() bool { return e.StatusCode == http.StatusForbidden }
+
 // Client is a thin authenticated wrapper over the Square REST API for one
 // tenant. It refreshes its access token on a 401 and persists the new
 // tokens through refreshAndPersist (wired by LoadClient). Not safe for

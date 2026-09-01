@@ -4,7 +4,7 @@
 // not a user-facing feature: it implements neither DescribableApp (so it's
 // absent from the admin feature-toggle list) nor CardProvider (so it never
 // shows in the end-user swipe UI). Consumers today: the shift → calendar
-// sync; tomorrow: sales-stats cards. Config is admin-only via the
+// sync and the daily sales card. Config is admin-only via the
 // integrations index (admin.RegisterIntegration) + the hosted setup form.
 package square
 
@@ -97,7 +97,7 @@ func typeSpec() integrations.TypeSpec {
 		Provider:    Provider,
 		AuthType:    AuthType,
 		DisplayName: "Square",
-		Description: "Connect Square to sync the published staff schedule. Needs scopes TIMECARDS_READ, EMPLOYEES_READ, MERCHANT_PROFILE_READ. Simplest: paste your app's non-expiring Production Access Token (Developer Dashboard → Credentials) and leave the refresh token blank.",
+		Description: "Connect Square to sync the published staff schedule and pull daily sales. Needs scopes TIMECARDS_READ, EMPLOYEES_READ, MERCHANT_PROFILE_READ and REPORTING_READ. Simplest: paste your app's non-expiring Production Access Token (Developer Console → Credentials → Production), which carries every scope, and leave the refresh token blank.",
 		Scope:       integrations.ScopeTenant,
 		Fields: []integrations.FieldSpec{
 			{Name: "access_token", Label: "Access token", InputType: "password", Target: integrations.TargetPrimaryToken, Required: true, Help: "A Square Production Access Token, or an OAuth access token."},
