@@ -28,7 +28,7 @@ func verdict(s DaySummary) string {
 	case StatusClosed:
 		return "closed"
 	case StatusBuilding:
-		return fmt.Sprintf("%s, no baseline yet", money(s.Day.NetCents))
+		return money(s.Day.NetCents) + ", no baseline yet"
 	case StatusOK:
 	}
 	for _, f := range s.Findings {
