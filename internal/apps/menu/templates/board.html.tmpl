@@ -79,7 +79,18 @@
     </div>
   </div>
 
-  <footer class="foot">{{ range .Venue.Footer }}<span>{{ . }}</span>{{ end }}</footer>
+  <!-- The lockup is chrome, not a rail panel. The board this replaced carried
+       the same cue in this corner continuously; a rotating slide would be dark
+       three times out of four, and it would cost a slot the anniversary poster
+       is using. The tap list is still curated in Untappd and mirrored here, so
+       it states a fact as much as it asks for a check-in. -->
+  <footer class="foot">
+    <div class="foot-notes">{{ range .Venue.Footer }}<span>{{ . }}</span>{{ end }}</div>
+    <div class="foot-untappd">
+      <img src="{{ .Untappd }}" alt="">
+      <p>Check in on <span>Untappd</span></p>
+    </div>
+  </footer>
 
 </div>
 </div>

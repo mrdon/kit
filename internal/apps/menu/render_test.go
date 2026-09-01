@@ -161,6 +161,36 @@ func TestRenderIsSelfContained(t *testing.T) {
 	}
 }
 
+// The lockup replaces the "Subscribe to us on Untappd" line the Untappd-hosted
+// board carried in the same corner. It is what tells a regular the taproom
+// still runs on Untappd now that the screen is served from here, so it is
+// chrome on every board rather than a panel a venue can forget to add -- and
+// like everything else on the page it has to survive with no network.
+func TestFooterCarriesTheUntappdLockup(t *testing.T) {
+	b := &Board{
+		Venue: Venue{Wordmark: "Gravity Brewing", Footer: []string{"Pours are 16oz unless marked"}},
+		Taps:  []Tap{{Section: "Lagers", Name: "Cerveza Espacial", Price: "6.50"}},
+	}
+	html, err := Render(b, nil, "v1")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	for _, want := range []string{
+		"Check in on <span>Untappd</span>",
+		"data:image/svg+xml;base64,",
+		"foot-untappd",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("footer lockup missing %q", want)
+		}
+	}
+	// A board with no venue footer notes at all still gets the lockup, and
+	// the notes still get their own box so the two do not collapse together.
+	if !strings.Contains(html, `<div class="foot-notes">`) {
+		t.Error("footer notes lost their own container")
+	}
+}
+
 func TestRenderEscapesContent(t *testing.T) {
 	b := &Board{
 		Venue: Venue{Wordmark: "Gravity", Footer: []string{"Also in 4oz & 9oz"}},

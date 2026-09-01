@@ -13,7 +13,7 @@ import (
 //go:embed templates/board.html.tmpl templates/board.css
 var templateFS embed.FS
 
-//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/logo.png
+//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/logo.png assets/untappd.svg
 var assetFS embed.FS
 
 // boardTmpl is parsed once at package scope; a template that fails to parse is
@@ -43,6 +43,10 @@ type renderData struct {
 	Panels  []panelView
 	CSS     template.CSS
 	Logo    template.URL
+	// Untappd is the app icon, shown in the footer lockup. It is the mark
+	// people have on their phone, so it is carried in full colour rather
+	// than tinted to the board's palette like the house logo is.
+	Untappd template.URL
 	// Version is what the page compares against when it polls, so a screen
 	// picks up a new tap list without anyone power-cycling the TV.
 	Version string
@@ -79,6 +83,10 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	untappd, err := assetDataURI("assets/untappd.svg", "image/svg+xml")
+	if err != nil {
+		return "", err
+	}
 
 	panels := make([]panelView, len(b.Panels))
 	var photoCSS strings.Builder
@@ -104,7 +112,8 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 		Panels:  panels,
 		CSS:     template.CSS(css + photoCSS.String()),
 		Version: version,
-		Logo:    template.URL(logo), //nolint:gosec // locally embedded asset, not user input
+		Logo:    template.URL(logo),    //nolint:gosec // locally embedded asset, not user input
+		Untappd: template.URL(untappd), //nolint:gosec // locally embedded asset, not user input
 	})
 	if err != nil {
 		return "", fmt.Errorf("rendering menu board: %w", err)

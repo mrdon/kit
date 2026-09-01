@@ -168,6 +168,18 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 
 /* ---------- footer ---------- */
 .foot { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 2px solid var(--line); font-family: var(--beer); font-size: 18px; letter-spacing: 0; color: var(--dim); }
-.foot span { position: relative; }
-.foot span + span { padding-left: 30px; }
-.foot span + span::before { content: ""; position: absolute; left: 14px; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); transform: translateY(-50%); }
+.foot-notes { display: flex; align-items: center; min-width: 0; }
+.foot-notes span { position: relative; }
+.foot-notes span + span { padding-left: 30px; }
+.foot-notes span + span::before { content: ""; position: absolute; left: 14px; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); transform: translateY(-50%); }
+
+/* The Untappd lockup. Sized against the pour notes beside it rather than to
+   match them: those are a footnote you read once, this is the one thing the
+   board asks a customer to do, and the screen it replaced said it in this
+   same corner at roughly 29px. The app icon is carried in its own yellow
+   instead of tinted to the palette -- it has to match the icon on the phone
+   in their pocket, which is the whole point of showing it. */
+.foot-untappd { display: flex; align-items: center; gap: 13px; flex: 0 0 auto; }
+.foot-untappd img { width: 32px; height: 32px; display: block; border-radius: 7px; }
+.foot-untappd p { font-size: 24px; line-height: 1; color: var(--muted); }
+.foot-untappd span { font-weight: 700; color: #fff; }
