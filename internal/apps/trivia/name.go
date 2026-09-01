@@ -1,0 +1,118 @@
+package trivia
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"math/big"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// randomName draws three words: brave-otter-lamp.
+//
+// crypto/rand not for secrecy -- the name is painted on a TV -- but because
+// a process restarting twice during a deploy must not hand two games the same
+// seed. math/rand seeded from the clock does exactly that.
+func randomName() string {
+	return strings.Join([]string{
+		pick(adjectives), pick(animals), pick(objects),
+	}, "-")
+}
+
+func pick(words []string) string {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(words))))
+	if err != nil {
+		// crypto/rand failing is a broken machine, not a case to handle;
+		// falling back to a fixed word keeps the caller's uniqueness retry
+		// working rather than failing a game creation outright.
+		return words[0]
+	}
+	return words[n.Int64()]
+}
+
+// UniqueName returns a game name not already used in this workspace.
+//
+// The loop is an optimisation, not the guarantee: UNIQUE (tenant_id, name)
+// plus a retry on 23505 at insert time is what actually keeps two names from
+// colliding. Ten draws from ten million combinations makes a collision
+// something that effectively never reaches the retry.
+//
+// NAMES ARE NEVER RECYCLED. Same reasoning as an event slug that may already
+// be on a poster -- here, on a whiteboard behind the bar, or in a photo
+// somebody took of the TV.
+func UniqueName(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (string, error) {
+	for range 10 {
+		name := randomName()
+		taken, err := nameTaken(ctx, pool, tenantID, name)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return name, nil
+		}
+	}
+	// Ten collisions means the bank of names is genuinely crowded for this
+	// workspace. Suffixing keeps the name readable rather than falling back
+	// to something with a UUID in it that nobody can type.
+	base := randomName()
+	for n := 2; n < 100; n++ {
+		name := fmt.Sprintf("%s-%d", base, n)
+		taken, err := nameTaken(ctx, pool, tenantID, name)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return name, nil
+		}
+	}
+	return "", errors.New("could not find an unused trivia game name")
+}
+
+func nameTaken(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (bool, error) {
+	var exists bool
+	err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM app_trivia_games WHERE tenant_id = $1 AND name = $2)`,
+		tenantID, name).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking trivia game name: %w", err)
+	}
+	return exists, nil
+}
+
+// IsValidGameName guards the public URL segment: three lowercase words joined
+// by hyphens, optionally with a numeric suffix. Rejecting early keeps a
+// path-traversal-shaped string from ever reaching a query.
+func IsValidGameName(s string) bool {
+	if len(s) == 0 || len(s) > 40 {
+		return false
+	}
+	parts := strings.Split(s, "-")
+	if len(parts) < 3 || len(parts) > 4 {
+		return false
+	}
+	for i, p := range parts {
+		if p == "" {
+			return false
+		}
+		// The optional fourth part is the collision suffix and is digits
+		// only; the first three are always words.
+		if i == 3 {
+			for _, r := range p {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+			continue
+		}
+		for _, r := range p {
+			if r < 'a' || r > 'z' {
+				return false
+			}
+		}
+	}
+	return true
+}
