@@ -173,6 +173,17 @@ var eventsTools = []services.ToolMeta{
 		}),
 	},
 	{
+		Name: "event_poster_upload_url",
+		Description: "Get a one-time link for putting a poster image on an event. Tool calls carry text, not " +
+			"image bytes, so this hands back a URL to POST the file to instead: " +
+			"curl -F poster=@poster.jpg '<url>'. JPEG, PNG, WebP or GIF, up to 8MB. The link works once, " +
+			"expires after 15 minutes, and sets the poster on that one event — ask for another to replace it. " +
+			"create_event already returns one, so this is for later, or for an event that already exists.",
+		Schema: services.PropsReq(map[string]any{
+			"event_id": services.Field("string", "Event to attach the poster to."),
+		}, "event_id"),
+	},
+	{
 		Name:        "get_event",
 		Description: "Show one event in full, including its upcoming occurrences if it repeats.",
 		Schema: services.Props(map[string]any{

@@ -55,6 +55,16 @@ func (a *App) handleUploadPoster(w http.ResponseWriter, r *http.Request) {
 		eventsErr(w, http.StatusBadRequest, "invalid event id")
 		return
 	}
+	a.storePosterUpload(w, r, caller.TenantID, caller.UserID, id)
+}
+
+// storePosterUpload is the body of every poster upload: read the multipart
+// file, sniff it, store the bytes, point the event at them. Both entry points
+// share it -- the console form (session + CSRF) and the one-time upload link
+// (an opaque token, see poster_upload.go) -- so an image that one route would
+// refuse cannot get in through the other. Authentication is the caller's job;
+// by the time we are here the tenant and event are already decided.
+func (a *App) storePosterUpload(w http.ResponseWriter, r *http.Request, tenantID, userID, eventID uuid.UUID) {
 	store := a.attachments()
 	if store == nil {
 		eventsErr(w, http.StatusInternalServerError, "attachments are not configured")
@@ -99,12 +109,12 @@ func (a *App) handleUploadPoster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	att, err := store.Store(r.Context(), caller.TenantID, caller.UserID, header.Filename, mime, raw)
+	att, err := store.Store(r.Context(), tenantID, userID, header.Filename, mime, raw)
 	if err != nil {
 		a.serviceErr(w, fmt.Errorf("storing poster: %w", err))
 		return
 	}
-	ev, err := a.svc.Update(r.Context(), caller.TenantID, id, UpdateParams{HeroAttachmentID: &att.ID})
+	ev, err := a.svc.Update(r.Context(), tenantID, eventID, UpdateParams{HeroAttachmentID: &att.ID})
 	if err != nil {
 		a.serviceErr(w, err)
 		return

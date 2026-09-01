@@ -45,6 +45,8 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 		return coreList(ctx, caller, svc, raw)
 	case "get_event":
 		return coreGet(ctx, caller, svc, raw)
+	case "event_poster_upload_url":
+		return corePosterUploadURL(ctx, caller, raw)
 	case "events_status":
 		return coreStatus(ctx, caller, svc)
 	case "events_sync_now":
@@ -153,8 +155,49 @@ func coreCreate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		return userError(err)
 	}
 	settings, _ := svc.Settings(ctx, caller.TenantID)
-	return "Created as a draft — it is not visible anywhere yet. Publish it when confirmed.\n\n" +
-		FormatEvent(e, settings), nil
+	out := "Created as a draft — it is not visible anywhere yet. Publish it when confirmed.\n\n" +
+		FormatEvent(e, settings)
+	// Offered unprompted, because the moment right after a create is the only
+	// moment the caller is definitely still thinking about this event, and a
+	// poster added later is a poster never added. Best-effort: an event that
+	// was created stays created even if no link could be minted.
+	if app := Instance(); app != nil {
+		out += app.posterUploadOffer(ctx, caller.TenantID, caller.UserID, e.ID)
+	}
+	return out, nil
+}
+
+// corePosterUploadURL mints a fresh one-time upload link for an existing
+// event -- the same link create_event offers, for when that one has expired,
+// has been spent, or the poster is simply being replaced.
+func corePosterUploadURL(ctx context.Context, caller *services.Caller, raw json.RawMessage) (string, error) {
+	var in struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return "", fmt.Errorf("parsing input: %w", err)
+	}
+	id, err := uuid.Parse(strings.TrimSpace(in.EventID))
+	if err != nil {
+		return "", errors.New("event_id must be an event id")
+	}
+	app := Instance()
+	if app == nil {
+		return "", errors.New("events app not available")
+	}
+	// Resolve the event first so a bad id fails as "no such event" rather than
+	// handing back a link that dies on redemption -- and so a token is never
+	// minted for an event in another tenant.
+	if _, err := app.svc.Get(ctx, caller.TenantID, id); err != nil {
+		return userError(err)
+	}
+	link, err := app.PosterUploadLink(ctx, caller.TenantID, caller.UserID, id)
+	if err != nil {
+		return "", err
+	}
+	return "One-time upload link, good for 15 minutes and a single POST:\n\n" +
+		"  curl -F poster=@poster.jpg '" + link + "'\n\n" +
+		"JPEG, PNG, WebP or GIF, up to 8MB. It replaces any poster already on the event.", nil
 }
 
 func coreUpdate(ctx context.Context, caller *services.Caller, svc *Service, raw json.RawMessage) (string, error) {

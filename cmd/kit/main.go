@@ -209,9 +209,11 @@ func main() {
 
 	// Events needs the signer for its console pages. Its calendar client comes
 	// from the googlecalendar singleton at call time, and it posts notices
-	// with a Slack client it builds from the tenant's bot token, so there is
-	// nothing else to wire.
-	events.Configure(enc, sessionSigner)
+	// with a Slack client it builds from the tenant's bot token. Redis and the
+	// base URL are for one-time poster upload links, which is how a caller
+	// holding a tool rather than a browser gets an image onto an event; both
+	// are optional and their absence only disables that link.
+	events.Configure(enc, sessionSigner, rdb, cfg.BaseURL)
 
 	// Widget app needs the agent (for chat dispatch), the session signer
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for

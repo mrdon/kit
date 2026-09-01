@@ -203,6 +203,8 @@ The exception is a run of genuinely *different* events — live music with a dif
 
 **Duplicate instead of retyping.** The **Duplicate** button on an event (or "copy that event to the 12th" in chat) makes a new draft with the same blurb, staff notes, price, capacity and poster. The copy is independent — editing one never changes the other — and it gets its own web address. Give it a new date and it becomes a one-off on that date; leave the date alone and it duplicates the schedule exactly.
 
+**Adding a poster from chat or a harness.** The event form takes a poster as a file upload, but a tool call can only carry text — so when Kit creates an event for you in chat, or an AI harness creates one over MCP, the reply comes back with a one-time upload link instead. POST the image to that address and it becomes the event's poster. The link works once, expires after fifteen minutes, and only touches the one event it was made for. Ask for another any time ("give me an upload link for Bike Night") to replace a poster or to replace a link that has gone stale.
+
 **Cancel rather than delete.** Cancelling removes an event from the calendar and the website but keeps the record, so the calendar entry gets cleaned up and the web address is never reused for different content. Web addresses are frozen once an event is published, because links to them may already be in a social post or newsletter.
 
 ### Getting events onto other people's calendars

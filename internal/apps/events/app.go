@@ -18,15 +18,19 @@ package events
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/attachment"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
+	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -48,6 +52,12 @@ type App struct {
 	svc    *Service
 	// enc decrypts attachment bytes; needed for event posters.
 	enc *crypto.Encryptor
+	// redis backs one-time poster upload grants (poster_upload.go). Optional
+	// in Kit's config, so every use of it is nil-checked.
+	redis *redis.Client
+	// baseURL is Kit's external origin. Tools return fully-qualified upload
+	// URLs from it; without it an agent would have to guess the host.
+	baseURL string
 
 	// resolveWriter overrides how the calendar client is obtained. Nil in
 	// production; tests set it to inject a fake calendar. See writerFor.
@@ -66,16 +76,37 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.registerScheduledTasks()
 }
 
-// Configure wires the console session signer and the encryptor. The calendar
-// client comes from the googlecalendar singleton at call time, but enc is held
-// rather than decorative: posting a shift notice and listing channels for the
-// picker both need a Slack client built from the tenant's bot token.
-func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner) {
+// Configure wires the console session signer, the encryptor, the Redis client
+// and Kit's external origin. The calendar client comes from the
+// googlecalendar singleton at call time, but enc is held rather than
+// decorative: posting a shift notice and listing channels for the picker both
+// need a Slack client built from the tenant's bot token.
+//
+// rdb and baseURL are what let a tool caller attach a poster: together they
+// mint the one-time upload URL in poster_upload.go. Both are nil-safe -- Redis
+// is optional in Kit's config -- and their absence disables that link rather
+// than breaking event authoring.
+func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner, rdb *redis.Client, baseURL string) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
 	instance.enc = enc
+	instance.redis = rdb
+	instance.baseURL = baseURL
+}
+
+// tenantSlug resolves a tenant's URL segment, needed to build a fully
+// qualified link from a tool that only knows the tenant by id.
+func (a *App) tenantSlug(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	t, err := models.GetTenantByID(ctx, a.pool, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("resolving tenant: %w", err)
+	}
+	if t == nil {
+		return "", errors.New("tenant not found")
+	}
+	return t.Slug, nil
 }
 
 // attachments builds the poster store on demand. Nil when the encryptor was
@@ -123,6 +154,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	a.registerFeedRoutes(mux)
 	registerTopperRoutes(mux, a)
 	registerConsoleRoutes(mux, a)
+	registerPosterUploadRoutes(mux, a)
 	registerSettingsRoutes(mux, a)
 	registerStaffRoutes(mux, a)
 	registerPromoRoutes(mux, a)
