@@ -26,6 +26,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/tools"
 )
 
 // AppName is the registry identifier, used for enablement and the URL
@@ -102,12 +103,23 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	registerPublicRoutes(mux, a)
 }
 
-func (a *App) ToolMetas() []services.ToolMeta { return nil }
+func (a *App) ToolMetas() []services.ToolMeta { return triviaTools }
 
-func (a *App) RegisterAgentTools(_ context.Context, _ any, _ *services.Caller, _ bool) {}
+// RegisterAgentTools adds the two read-only tools. Both surfaces run the same
+// dispatchCore, so they cannot produce different text for the same question.
+func (a *App) RegisterAgentTools(_ context.Context, registerer any, _ *services.Caller, _ bool) {
+	reg, ok := registerer.(*tools.Registry)
+	if !ok || a.pool == nil || a.svc == nil {
+		return
+	}
+	registerAgentTools(reg, a.pool, a.svc)
+}
 
-func (a *App) RegisterMCPTools(_ *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
-	return nil
+func (a *App) RegisterMCPTools(pool *pgxpool.Pool, _ *services.Services) []mcpserver.ServerTool {
+	if a.svc == nil {
+		return nil
+	}
+	return buildMCPTools(pool, a.svc)
 }
 
 // Usage reports the question bank's size for the Apps settings page. The bank

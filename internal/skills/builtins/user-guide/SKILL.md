@@ -390,3 +390,43 @@ A screen only picks up changes on its own if something on the machine is watchin
 Each board shows **Live** once a machine is polling it, so a screen that has gone dark is visible from the page rather than from someone walking past it. A board with no URL yet shows a plain "no content assigned" card on the screen instead of an error.
 
 Board addresses are **public and unauthenticated** — that's what lets a machine with no login use them. Anyone who knows the address can see where the screen points, so don't send a screen to a URL that is itself a private link.
+
+## Trivia
+
+A live pub quiz that runs on three screens at once: a host console you drive from a laptop, a big TV the room watches, and every team's own phone.
+
+**The rules, as you read them out.** Six lines, and that is the whole game:
+
+1. Everybody types a number. Closest **without going over** wins.
+2. If everyone's too high, "smaller than all of these" wins.
+3. Whoever wrote the winning answer takes the board money.
+4. Then everyone bets: your $100 chip and your $200 chip, on **two different** answers.
+5. Chips on the winning answer pay their value. Wrong chips cost you nothing.
+6. *(final wager on)* Last question: set your bet **when you answer**, before you see anything. Then put it on whichever answer you like. Right doubles it, wrong loses it.
+
+There is no buzzer and no adjudication — every team answers every question, all the guesses are revealed together, and because answers are numbers the round scores itself.
+
+**Build a question bank.** On the **Trivia** page (`/<your-slug>/web/trivia`), create a game and upload a CSV with `question`, `topics` and `answer` columns, in any order. Topics are separated by semicolons, so one question can belong to two categories. Answers must be numbers — that is what makes "closest without going over" work. Re-uploading a corrected sheet updates rows in place rather than duplicating them, and the report tells you what landed, what was a duplicate, and which line of the sheet had a typo.
+
+The bank belongs to the workspace and grows over time. Building a board prefers questions the room hasn't heard recently, so a weekly quiz doesn't repeat itself.
+
+**Build the board.** Pick your categories (or hit **Auto**) and Kit fills a 5 × 2 grid at $500 and $1,000 a cell — ten questions, about half an hour. If a category doesn't have enough questions, you're told which one and by how much, at setup time rather than three questions into the night.
+
+**Run it.** Open the TV URL on the screen and put the QR code where people can scan it. Teams join by scanning; each table types its own name. Up to 20 teams.
+
+From the live page you pick a cell, then press one button per beat: **Reveal answers**, **Open betting**, **Score round**, **Next**. The clocks run themselves — 60 seconds to answer, 45 to bet by default — so you can put the laptop down. Closing the laptop doesn't stop the game: the timing lives on the server, and if everyone has answered the phase ends early rather than burning the clock.
+
+**If a table's phone dies**, tap their name on the live page and read out the four-digit code it gives you. That's the only way back in, on purpose — with twenty names on a TV screen, letting somebody pick a team off a list would let anyone play as anyone.
+
+**The final wager** is the one round where a table risks its own money: they set a stake when they answer, before seeing anyone else's number, then put it on whichever revealed answer they like. Right doubles it, wrong loses it, and $0 is a real choice — it's the leader's defensive play. Nobody can finish below $0.
+
+You can switch the final off per game (**Settings → Final wager**). With it off, scores only ever go up, the emptied board goes straight to the podium, and no stake control appears on any phone. That's the setting to use for a first night.
+
+**Ask about it afterwards.** In Slack:
+
+> "How did trivia go last night?"
+> "What were the results for brave-otter-lamp?"
+
+Kit calls `trivia_status` and `trivia_results`. Those are the only two trivia tools and both are read-only — nothing about running a live game is improved by asking an assistant to press the button in a loud room.
+
+Game addresses are **public and unauthenticated**: that's what lets somebody scan a QR code and play without a Kit account. Anyone with the link can watch, and a phone with no cookie gets the full read-only view.
