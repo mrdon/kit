@@ -146,14 +146,15 @@ function PromoRow({
 // Two ways to read the same list, because there are two questions people
 // bring to it.
 //
+//   event    — "where has everything got to?" Grouped and collapsed, so the
+//              page opens as a short index of events with their counts rather
+//              than a wall of rows. The default.
 //   deadline — "what do I do next?" One flat run, soonest-due first, ignoring
-//              which event each row belongs to. This is the working order and
-//              the default.
-//   event    — "where has Oktoberfest got to?" Grouped, so one event's whole
-//              spread of channels reads as a unit.
+//              which event each row belongs to.
 //
-// Grouping is deliberately not the default: sorted by deadline the top of the
-// page is always the next thing to do, whereas grouped you have to scan.
+// Collapsed-by-default is the point of the grouped view: a dozen events across
+// four channels is over a hundred rows, and an index you expand one line at a
+// time is the only version of that you can actually read.
 type Grouping = 'deadline' | 'event';
 
 // The choice is remembered because it reflects how someone works rather than
@@ -163,9 +164,9 @@ const GROUPING_KEY = 'kit.events.promo.grouping';
 
 function loadGrouping(): Grouping {
   try {
-    return localStorage.getItem(GROUPING_KEY) === 'event' ? 'event' : 'deadline';
+    return localStorage.getItem(GROUPING_KEY) === 'deadline' ? 'deadline' : 'event';
   } catch {
-    return 'deadline';
+    return 'event';
   }
 }
 
@@ -208,7 +209,8 @@ export default function EventsPromoPage() {
   const [busy, setBusy] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [grouping, setGrouping] = useState<Grouping>(loadGrouping);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Tracks what has been OPENED, so an untouched page is fully collapsed.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const chooseGrouping = (g: Grouping) => {
     setGrouping(g);
@@ -220,7 +222,7 @@ export default function EventsPromoPage() {
   };
 
   const toggleGroup = (id: string) =>
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
       return next;
@@ -301,19 +303,19 @@ export default function EventsPromoPage() {
                 <input
                   type="radio"
                   name="promo-grouping"
-                  checked={grouping === 'deadline'}
-                  onChange={() => chooseGrouping('deadline')}
+                  checked={grouping === 'event'}
+                  onChange={() => chooseGrouping('event')}
                 />
-                By deadline
+                By event
               </label>
               <label className="check">
                 <input
                   type="radio"
                   name="promo-grouping"
-                  checked={grouping === 'event'}
-                  onChange={() => chooseGrouping('event')}
+                  checked={grouping === 'deadline'}
+                  onChange={() => chooseGrouping('deadline')}
                 />
-                By event
+                By deadline
               </label>
             </div>
 
@@ -335,10 +337,7 @@ export default function EventsPromoPage() {
                 <EventGroup
                   key={g.eventID}
                   group={g}
-                  // Groups start open, EXCEPT once you have closed one. A
-                  // page that opens all-collapsed reads as empty and makes
-                  // you click through every event to find the work.
-                  open={!collapsed.has(g.eventID)}
+                  open={expanded.has(g.eventID)}
                   busy={busy}
                   onToggle={() => toggleGroup(g.eventID)}
                   onMark={mark}
