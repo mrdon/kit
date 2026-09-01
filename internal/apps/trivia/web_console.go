@@ -42,6 +42,7 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/trivia/questions/import", jsonRoute(a.handleImport))
 	mux.Handle("GET /{slug}/api/trivia/questions/sample", jsonRoute(a.handleSampleCSV))
 	mux.Handle("POST /{slug}/api/trivia/questions/starter", jsonRoute(a.handleLoadStarter))
+	mux.Handle("POST /{slug}/api/trivia/questions/packs/{key}", jsonRoute(a.handleLoadStarter))
 	mux.Handle("DELETE /{slug}/api/trivia/questions/{id}", jsonRoute(a.handleDeleteQuestion))
 }
 

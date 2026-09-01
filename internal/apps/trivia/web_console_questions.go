@@ -185,15 +185,10 @@ func (a *App) handleListQuestions(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "counting trivia questions", err)
 		return
 	}
-	writeJSON(w, map[string]any{"total": total, "topics": hist, "datasets": sets})
+	writeJSON(w, map[string]any{
+		"total": total, "topics": hist, "datasets": sets, "packs": BuiltinPacks,
+	})
 }
-
-// starterName and starterKey identify the shipped pack. The key is what marks
-// the dataset as seeded so the UI can say so; it carries no behaviour.
-const (
-	starterName = "Kit starter pack"
-	starterKey  = "starter"
-)
 
 // handleLoadStarter imports the embedded starter pack straight into the
 // workspace bank — no download-and-re-upload round trip.
@@ -203,29 +198,33 @@ const (
 // button rather than a one-time setup step.
 func (a *App) handleLoadStarter(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
-	body, err := SampleCSV()
+	key := r.PathValue("key")
+	if key == "" {
+		key = "starter"
+	}
+	body, pack, err := BuiltinPackCSV(key)
 	if err != nil {
-		serverError(w, "reading the trivia starter pack", err)
+		clientError(w, r, http.StatusNotFound, "no such pack")
 		return
 	}
 	plan, err := ParseCSV(bytes.NewReader(body))
 	if err != nil {
-		serverError(w, "parsing the trivia starter pack", err)
+		serverError(w, "parsing a shipped trivia pack", err)
 		return
 	}
 	resp, err := a.importPlan(r, tenant.ID, plan, importTarget{
-		Name:       starterName,
-		Notes:      "Shipped with Kit. Edit or delete it like any other set.",
-		BuiltinKey: starterKey,
+		Name:       pack.Name,
+		Notes:      pack.Notes,
+		BuiltinKey: pack.Key,
 		Replace:    true,
 	})
 	if err != nil {
 		if errors.Is(err, ErrDatasetInUse) {
 			clientError(w, r, http.StatusConflict,
-				"the starter questions are on the board of a game still in play — finish or delete that game first")
+				"that set is on the board of a game still in play — finish or delete that game first")
 			return
 		}
-		serverError(w, "importing the trivia starter pack", err)
+		serverError(w, "importing a shipped trivia pack", err)
 		return
 	}
 	writeJSON(w, resp)

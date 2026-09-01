@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { API_BASE, api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
-import { balanceWarning, defaultSettings, money, type Dataset, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
+import { balanceWarning, defaultSettings, money, type BuiltinPack, type Dataset, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
 // the shape of the game, choose the board's columns, and check the preview.
@@ -12,6 +12,7 @@ export default function TriviaSetup() {
   const [game, setGame] = useState<TriviaGame | null>(null);
   const [topics, setTopics] = useState<TopicCount[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [packs, setPacks] = useState<BuiltinPack[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [state, setState] = useState<HostFrame | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -28,6 +29,10 @@ export default function TriviaSetup() {
       .catch((e) => setErr(e.message));
   };
   useEffect(load, [id]);
+  // The shipped packs are workspace-level, not per game.
+  useEffect(() => {
+    api.triviaQuestions().then((r) => setPacks(r.packs ?? [])).catch(() => undefined);
+  }, []);
 
   if (!game) {
     return <p className="page-sub">{err ?? 'Loading…'}</p>;
@@ -48,7 +53,7 @@ export default function TriviaSetup() {
 
       {err ? <p className="banner banner-error">{err}</p> : null}
 
-      <DatasetsPanel datasets={datasets} selected={selected} onChanged={load} />
+      <DatasetsPanel datasets={datasets} packs={packs} selected={selected} onChanged={load} />
       <SettingsPanel game={game} onSaved={(g) => setGame(g)} />
       <BoardPanel game={game} topics={topics} state={state} onBuilt={(s) => { setState(s); load(); }} />
     </>
@@ -62,9 +67,10 @@ export default function TriviaSetup() {
 // draws its board from whichever ones are ticked. Nothing reads questions
 // from anywhere else.
 function DatasetsPanel({
-  datasets, selected, onChanged,
+  datasets, packs, selected, onChanged,
 }: {
   datasets: Dataset[];
+  packs: BuiltinPack[];
   selected: string[];
   onChanged: () => void;
 }) {
@@ -165,18 +171,30 @@ function DatasetsPanel({
         </ul>
       )}
 
-      <div className="page-head-actions">
-        <button
-          className="btn btn-spaced"
-          disabled={busy}
-          onClick={() => void run(async () => { setReport(await api.loadTriviaStarter()); })}
-        >
-          Load the starter pack
-        </button>
-        <a className="card-manage" href={`${API_BASE}/trivia/questions/sample`}>
-          Download it as a template
-        </a>
-      </div>
+      <h3 className="card-title">Sets Kit ships</h3>
+      <ul className="card-list">
+        {packs.map((p) => (
+          <li key={p.key} className="card">
+            <div className="card-main">
+              <span className="card-title">{p.name}</span>
+              <span className="card-desc">{p.notes}</span>
+            </div>
+            <div className="card-side">
+              <button
+                className="btn"
+                disabled={busy}
+                onClick={() => void run(async () => { setReport(await api.loadTriviaPack(p.key)); })}
+              >
+                {datasets.some((d) => d.builtin_key === p.key) ? 'Reload' : 'Add'}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="page-sub">
+        Adding one creates an ordinary set — rename it, upload over it or delete it like any other.{' '}
+        <a href={`${API_BASE}/trivia/questions/sample`}>Download a CSV template</a>.
+      </p>
 
       <div className="field-row">
         <label className="field">

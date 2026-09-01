@@ -172,6 +172,7 @@ export interface KioskBoard {
 // silently skipping a question.
 
 export type {
+  BuiltinPack,
   Dataset,
   TriviaGame,
   TriviaSettings,
@@ -186,6 +187,7 @@ import type {
   HostFrame as HostFrameT,
   ImportReport as ImportReportT,
   Dataset as DatasetT,
+  BuiltinPack as BuiltinPackT,
 } from './pages/trivia/common';
 
 export interface KioskBoardInput {
@@ -844,10 +846,13 @@ export const api = {
     apiPost<HostFrameT>(`/trivia/games/${id}/action`, body),
   triviaReclaim: (gameId: string, teamId: string) =>
     apiPost<{ code: string }>(`/trivia/games/${gameId}/teams/${teamId}/reclaim`, {}),
-  triviaQuestions: () => apiGet<{ total: number; topics: TopicCountT[] }>('/trivia/questions'),
+  triviaQuestions: () =>
+    apiGet<{ total: number; topics: TopicCountT[]; datasets: DatasetT[]; packs: BuiltinPackT[] }>(
+      '/trivia/questions'),
   // One click, no download-and-re-upload. Idempotent: the import upserts on
   // the folded prompt, so loading it twice adds nothing.
-  loadTriviaStarter: () => apiPost<ImportReportT>('/trivia/questions/starter', {}),
+  loadTriviaPack: (key: string) =>
+    apiPost<ImportReportT>(`/trivia/questions/packs/${key}`, {}),
   triviaDatasets: () => apiGet<{ datasets: DatasetT[] }>('/trivia/datasets'),
   renameTriviaDataset: (id: string, name: string, notes: string) =>
     apiPatch<{ datasets: DatasetT[] }>(`/trivia/datasets/${id}`, { name, notes }),

@@ -12,7 +12,7 @@ import (
 //go:embed templates/display.html.tmpl templates/display.css templates/display.js
 var templateFS embed.FS
 
-//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/sample-questions.csv
+//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/sample-questions.csv assets/wits-wagers-questions.csv
 var assetFS embed.FS
 
 // SampleCSV is a starter question bank: 62 questions across eleven topics,
@@ -25,6 +25,49 @@ var assetFS embed.FS
 // error message.
 func SampleCSV() ([]byte, error) {
 	return assetFS.ReadFile("assets/sample-questions.csv")
+}
+
+// BuiltinPack is a question set Kit ships. Loading one creates an ordinary
+// dataset — after that it is a host's to rename, re-upload over or delete,
+// and nothing in the code treats it specially.
+type BuiltinPack struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Notes string `json:"notes"`
+	file  string
+}
+
+// BuiltinPacks is the shipped set. Adding one is a line here plus a CSV in
+// assets/ — there is no registry to update and no code that branches on which
+// pack a dataset came from.
+var BuiltinPacks = []BuiltinPack{
+	{
+		Key:   "starter",
+		Name:  "Kit starter pack",
+		Notes: "62 general-knowledge questions across eleven topics. A good first night.",
+		file:  "assets/sample-questions.csv",
+	},
+	{
+		Key:  "wits",
+		Name: "Wits & Wagers questions",
+		// Worth saying out loud: a chunk of these pin their answer to a year
+		// ("as of 2007"). The question text carries the year, so they play
+		// fine -- but somebody skimming the bank should know why the numbers
+		// look dated rather than assuming they are wrong.
+		Notes: "237 questions from the Wits & Wagers sets. Several state the year they were true.",
+		file:  "assets/wits-wagers-questions.csv",
+	},
+}
+
+// BuiltinPackCSV returns a shipped pack's sheet.
+func BuiltinPackCSV(key string) ([]byte, BuiltinPack, error) {
+	for _, p := range BuiltinPacks {
+		if p.Key == key {
+			body, err := assetFS.ReadFile(p.file)
+			return body, p, err
+		}
+	}
+	return nil, BuiltinPack{}, ErrNotFound
 }
 
 // displayTmpl is parsed once at package scope; a template that fails to parse

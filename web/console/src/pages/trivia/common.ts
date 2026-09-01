@@ -119,6 +119,14 @@ export interface Dataset {
   updated_at: string;
 }
 
+// A pack Kit ships. Loading one creates an ordinary dataset — after that it
+// is yours to rename, replace or delete.
+export interface BuiltinPack {
+  key: string;
+  name: string;
+  notes: string;
+}
+
 export interface ImportReport {
   dataset_id: string;
   imported: number;
