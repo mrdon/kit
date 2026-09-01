@@ -5,58 +5,96 @@ import (
 	"strings"
 )
 
-// CardTitle names the card. The date is in the title so consecutive days
-// stack in the feed without blending into one another.
+// CardTitle names the card, and carries the two things worth seeing at a
+// glance: the day's takings and whether that was good or bad.
+//
+// The title renders at 24px where the body renders at 16px, and markdown
+// headings inside the body are SMALLER still (0.9em, uppercase — they are
+// section labels here, not display type). So the headline number belongs in
+// the title; putting it in the body would shrink it.
+//
+// The date stays so saved cards remain distinguishable.
 func CardTitle(s DaySummary) string {
-	return "Sales — " + s.Day.Date.Format("Mon Jan 2")
+	return fmt.Sprintf("%s — %s", s.Day.Date.Format("Mon Jan 2"), verdict(s))
 }
 
-// FormatDaySummary renders the card body.
-//
-// Four invariants are enforced HERE, in Go, rather than asked of a writer:
-//
-//  1. No dollar figure is ever emitted without its comparison, or without
-//     an explicit sentence saying there is no comparison. A bare revenue
-//     number is the thing that made the old recap useless.
-//  2. The flagged item leads; the day's total sits inside the summary line
-//     rather than in a header of its own.
-//  3. At most maxFindings bullets.
-//  4. The whole body stays a few hundred characters, readable in one look.
-func FormatDaySummary(s DaySummary) string {
-	var b strings.Builder
-
+// verdict is the headline clause: the money and its judgement in one
+// phrase. Never the figure alone — a bare number is what made the old
+// recap useless.
+func verdict(s DaySummary) string {
 	switch s.Status {
-	case StatusOK:
-		// handled below — the common path needs the whole function body
 	case StatusNoData:
-		b.WriteString("No Square data for this date — the sales sync has not run or returned nothing.")
-		return b.String()
+		return "no sales data"
 	case StatusClosed:
-		b.WriteString(s.Note)
-		return b.String()
+		return "closed"
 	case StatusBuilding:
-		fmt.Fprintf(&b, "%s\n%s net · %d orders. No baseline yet, so this number means nothing on its own.",
-			s.Note, money(s.Day.NetCents), s.Day.OrderCount)
-		return b.String()
+		return fmt.Sprintf("%s, no baseline yet", money(s.Day.NetCents))
+	case StatusOK:
 	}
-
-	fmt.Fprintf(&b, "%s net · %d orders · %s avg ticket\n",
-		money(s.Day.NetCents), s.Day.OrderCount, money(s.Day.AvgTicketCents()))
-
-	// The comparison clause is not optional: it is what makes the number
-	// above mean anything.
-	pct := s.Baseline.pctDelta(cents(s.Day.NetCents))
-	typical := money(int64(s.Baseline.Median * 100))
-	switch {
-	case len(s.Findings) == 0:
-		fmt.Fprintf(&b, "In line with a typical %s (%s).", s.Day.Date.Weekday(), typical)
-	default:
-		fmt.Fprintf(&b, "A typical %s is %s (%d-week baseline).\n", s.Day.Date.Weekday(), typical, s.Baseline.N)
-		for _, f := range s.Findings {
-			fmt.Fprintf(&b, "\n• %s", f.Headline)
+	for _, f := range s.Findings {
+		if f.Kind == FindingDayHigh || f.Kind == FindingDayLow {
+			word := "above"
+			if f.Kind == FindingDayLow {
+				word = "below"
+			}
+			return fmt.Sprintf("%s, %.0f%% %s normal", money(s.Day.NetCents), absPct(f.PctDelta), word)
 		}
 	}
-	_ = pct
+	return fmt.Sprintf("%s, in line for a %s", money(s.Day.NetCents), s.Day.Date.Weekday())
+}
+
+func absPct(p float64) float64 {
+	if p < 0 {
+		return -p * 100
+	}
+	return p * 100
+}
+
+// FormatDaySummary renders the card body: the supporting detail, kept
+// deliberately thin because the headline already landed in the title.
+//
+// Three invariants are enforced here, in Go, rather than asked of a writer:
+//
+//  1. No dollar figure appears without its comparison, or without an
+//     explicit sentence saying there is no comparison.
+//  2. At most maxFindings bullets, each one line.
+//  3. On an ordinary day the body is a single line of metrics — the card
+//     should be readable without reading, not a wall of text.
+func FormatDaySummary(s DaySummary) string {
+	switch s.Status {
+	case StatusNoData:
+		return "The sales sync has not run for this date, or Square returned nothing."
+	case StatusClosed:
+		return "No sales recorded. Excluded from every comparison."
+	case StatusBuilding:
+		return fmt.Sprintf("%s\n\n%d orders · %s avg. No baseline yet, so this figure means nothing on its own.",
+			s.Note, s.Day.OrderCount, money(s.Day.AvgTicketCents()))
+	case StatusOK:
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d orders · %s avg · typical %s %s",
+		s.Day.OrderCount, money(s.Day.AvgTicketCents()),
+		s.Day.Date.Weekday(), money(int64(s.Baseline.Median*100)))
+
+	// The day-level finding is already the title; repeating it here is the
+	// padding this card exists to avoid.
+	//
+	// Bullets are written as ONE tight block: a blank line between list
+	// items makes markdown render a loose list, which adds a paragraph gap
+	// under every bullet and turns three short lines into a wall.
+	first := true
+	for _, f := range s.Findings {
+		if f.Kind == FindingDayHigh || f.Kind == FindingDayLow {
+			continue
+		}
+		if first {
+			b.WriteString("\n")
+			first = false
+		}
+		fmt.Fprintf(&b, "\n- %s", f.Headline)
+	}
+
 	writeCompLine(&b, s)
 	return strings.TrimSpace(b.String())
 }
@@ -65,8 +103,8 @@ func FormatDaySummary(s DaySummary) string {
 //
 // Comps are a lever the owner sets on purpose, so the useful thing is the
 // running level rather than a one-off alert. It carries its own comparison
-// for the same reason every other figure does: 5.8% means nothing without
-// knowing that a Saturday usually runs 4.3%.
+// for the same reason every other figure does: 3.9% means nothing without
+// knowing a Monday usually runs 1.7%.
 func writeCompLine(b *strings.Builder, s DaySummary) {
 	if s.Day.CompsCents == 0 {
 		return

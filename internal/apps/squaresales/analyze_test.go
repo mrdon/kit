@@ -68,9 +68,12 @@ func TestAug8FlagsHigh(t *testing.T) {
 	if !hasKind(s.Findings, FindingDayHigh) {
 		t.Fatalf("Aug 8 should flag high, got %+v", s.Findings)
 	}
-	body := FormatDaySummary(s)
-	if !strings.Contains(body, "$2,725.09") {
-		t.Errorf("body should quote the day's net:\n%s", body)
+	card := CardTitle(s) + "\n" + FormatDaySummary(s)
+	if !strings.Contains(card, "$2,725.09") {
+		t.Errorf("card should quote the day's net:\n%s", card)
+	}
+	if !strings.Contains(CardTitle(s), "above normal") {
+		t.Errorf("the verdict belongs in the title, got %q", CardTitle(s))
 	}
 }
 
@@ -80,9 +83,11 @@ func TestAug29ProducesNoDayFinding(t *testing.T) {
 	if hasKind(s.Findings, FindingDayHigh) || hasKind(s.Findings, FindingDayLow) {
 		t.Fatalf("ordinary Saturday should not flag: %+v", s.Findings)
 	}
-	body := FormatDaySummary(s)
-	if !strings.Contains(body, "In line with a typical Saturday") {
-		t.Errorf("quiet day should still carry its comparison:\n%s", body)
+	if !strings.Contains(CardTitle(s), "in line for a Saturday") {
+		t.Errorf("quiet day title should carry its verdict, got %q", CardTitle(s))
+	}
+	if n := strings.Count(FormatDaySummary(s), "\n"); n > 0 {
+		t.Errorf("an ordinary day should be one line of body, got:\n%s", FormatDaySummary(s))
 	}
 }
 
@@ -223,13 +228,15 @@ func TestNoBareRevenueFigureInAnyStatus(t *testing.T) {
 		"no-data":    {Status: StatusNoData, Day: day("2026-08-31", 0, 0)},
 	}
 	for name, s := range cases {
-		body := FormatDaySummary(s)
+		body := CardTitle(s) + "\n" + FormatDaySummary(s)
 		if !strings.Contains(body, "$") {
 			continue // no figure quoted at all is trivially fine
 		}
 		hasComparison := strings.Contains(body, "typical") ||
 			strings.Contains(body, "baseline") ||
 			strings.Contains(body, "usual") ||
+			strings.Contains(body, "normal") ||
+			strings.Contains(body, "in line") ||
 			strings.Contains(body, "against")
 		if !hasComparison {
 			t.Errorf("%s: quotes a dollar figure with no comparison:\n%s", name, body)
