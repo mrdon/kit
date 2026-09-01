@@ -45,6 +45,16 @@ func (a *App) RunPostCard(ctx context.Context, tenantID uuid.UUID) (bool, error)
 	// Yesterday: today is still in progress and would report a partial day
 	// as a collapse.
 	cutoff := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -1)
+
+	// Drop anything too old to be news -- a fresh tenant's whole backfill,
+	// or the tail of days accumulated during an outage -- in one statement,
+	// so this doesn't dribble out one stale card per day.
+	if n, err := claimStaleDates(ctx, a.pool, tenantID, cutoff.AddDate(0, 0, -maxCardAgeDays)); err != nil {
+		return false, err
+	} else if n > 0 {
+		slog.Info("squaresales: skipped stale sales days", "tenant_id", tenantID, "days", n)
+	}
+
 	date, ok, err := nextUnpostedDate(ctx, a.pool, tenantID, cutoff)
 	if err != nil || !ok {
 		return false, err
