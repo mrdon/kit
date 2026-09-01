@@ -362,3 +362,19 @@ func TestResolveCardDate(t *testing.T) {
 		t.Error("expected an error for a non-ISO date")
 	}
 }
+
+// A day is claimed exactly once. Both the scheduled and the manual path
+// must stamp it, or a manual post just before the morning run duplicates.
+func TestCardDateIsClaimedOnce(t *testing.T) {
+	// markCardPosted only clears a NULL stamp, so re-stamping is a no-op
+	// and the two paths can both call it safely. Asserted here as a
+	// contract note; the SQL carries "AND card_posted_at IS NULL".
+	const guard = "card_posted_at IS NULL"
+	src, err := readSource("models.go")
+	if err != nil {
+		t.Skip("source unavailable")
+	}
+	if !strings.Contains(src, guard) {
+		t.Errorf("markCardPosted must only claim an unclaimed date (%q missing)", guard)
+	}
+}

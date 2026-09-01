@@ -2,6 +2,7 @@ package squaresales
 
 import (
 	"math"
+	"os"
 	"testing"
 )
 
@@ -157,4 +158,10 @@ func TestBaselineWindowTrims(t *testing.T) {
 	if b.N != baselineWindow || b.Median != 900 {
 		t.Errorf("N=%d median=%v, want %d and 900 (recent samples only)", b.N, b.Median, baselineWindow)
 	}
+}
+
+// readSource loads a file from this package for contract assertions.
+func readSource(name string) (string, error) {
+	b, err := os.ReadFile(name)
+	return string(b), err
 }

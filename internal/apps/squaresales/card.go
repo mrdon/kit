@@ -81,6 +81,15 @@ func (a *App) PostCardFor(ctx context.Context, tenantID uuid.UUID, date time.Tim
 		return false, fmt.Errorf("creating sales card: %w", err)
 	}
 	a.auditCardPosted(ctx, tenantID, date, severity, len(summary.Findings))
+
+	// Stamp here too, not only on the scheduled path. Without this a
+	// manual post shortly before the morning run leaves the date looking
+	// unposted, and the scheduled run posts it a second time.
+	// markCardPosted is a no-op once the date is already claimed, so the
+	// scheduled path stamping first costs nothing.
+	if err := markCardPosted(ctx, a.pool, tenantID, date); err != nil {
+		return true, err
+	}
 	return true, nil
 }
 
