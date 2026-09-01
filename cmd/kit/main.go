@@ -26,7 +26,6 @@ import (
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/events"
-	"github.com/mrdon/kit/internal/apps/github"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/apps/kiosk"
@@ -279,13 +278,6 @@ func main() {
 	attachmentapp.Configure(enc, deepLinkSigner, builderLLM)
 
 	console.Configure(sessionSigner, enc)
-	github.Configure(
-		sessionSigner,
-		cfg.BaseURL,
-		cfg.GitHubAppSlug,
-		cfg.GitHubAppID,
-		cfg.GitHubAppPrivateKey,
-	)
 
 	// Wire the urgent-card push surface so cards created with
 	// Urgent=true (today: vault's failed-unlock alarm) trigger an

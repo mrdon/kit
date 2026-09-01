@@ -15,7 +15,7 @@ export default function Integrations() {
       .integrationCatalog()
       .then(setCatalog)
       .catch((e) => setErr(e.message));
-    // Custom-flow integrations (GitHub) keep their own cards; only
+    // Custom-flow integrations keep their own cards; only
     // admins can see/manage them, and the endpoint 403s for non-admins.
     api
       .me()

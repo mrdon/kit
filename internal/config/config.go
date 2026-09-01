@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -33,14 +32,6 @@ type Config struct {
 	SquareApplicationSecret string // Square OAuth application_secret (client_secret)
 	SquareEnvironment       string // "production" (default) or "sandbox"
 
-	// Kit GitHub App credentials. The GitHub App is workspace-scoped
-	// and shared across every Kit feature that ever touches GitHub
-	// (PR-decisions, issue-tasks, and so on).
-	// Same rationale as the single shared Slack bot — install once
-	// per workspace, used by every feature that needs git/GitHub.
-	GitHubAppSlug       string // public slug used in the install URL (https://github.com/apps/<slug>)
-	GitHubAppID         int64  // numeric GitHub App ID used to sign installation-token JWTs
-	GitHubAppPrivateKey []byte // PEM-encoded RSA private key (read from KIT_GITHUB_APP_PRIVATE_KEY env var or KIT_GITHUB_APP_PRIVATE_KEY_FILE)
 }
 
 func Load() (*Config, error) {
@@ -61,7 +52,6 @@ func Load() (*Config, error) {
 		WhisperBin:         os.Getenv("WHISPER_BIN"),
 		WhisperModel:       os.Getenv("WHISPER_MODEL"),
 		FFmpegBin:          os.Getenv("FFMPEG_BIN"),
-		GitHubAppSlug:      os.Getenv("KIT_GITHUB_APP_SLUG"),
 
 		SquareApplicationID:     os.Getenv("SQUARE_APPLICATION_ID"),
 		SquareApplicationSecret: os.Getenv("SQUARE_APPLICATION_SECRET"),
@@ -70,19 +60,6 @@ func Load() (*Config, error) {
 
 	if cfg.SquareEnvironment == "" {
 		cfg.SquareEnvironment = "production"
-	}
-
-	if v := os.Getenv("KIT_GITHUB_APP_ID"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.GitHubAppID = n
-		}
-	}
-	if pem := os.Getenv("KIT_GITHUB_APP_PRIVATE_KEY"); pem != "" {
-		cfg.GitHubAppPrivateKey = []byte(pem)
-	} else if path := os.Getenv("KIT_GITHUB_APP_PRIVATE_KEY_FILE"); path != "" {
-		if b, err := os.ReadFile(path); err == nil {
-			cfg.GitHubAppPrivateKey = b
-		}
 	}
 
 	if cfg.DatabaseURL == "" {
