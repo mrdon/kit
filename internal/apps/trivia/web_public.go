@@ -27,6 +27,14 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	tenantMW := auth.TenantFromPath(a.pool)
 	pub := func(h http.HandlerFunc) http.Handler { return tenantMW(h) }
 
+	// A STABLE ADDRESS FOR THE SCREEN. Without this a host has to walk over
+	// to the TV and retype a URL every week, which is exactly the chore the
+	// kiosk app exists to remove. "tv" is unambiguous against {game} both by
+	// Go 1.22's literal-over-wildcard precedence and because a single word
+	// is not a valid game name.
+	mux.Handle("GET /{slug}/trivia/tv", pub(a.handleLatestDisplay))
+	mux.Handle("GET /{slug}/trivia/tv.version", pub(a.handleTVVersion))
+
 	mux.Handle("GET /{slug}/trivia/{game}", pub(a.handlePlayerPage))
 	mux.Handle("GET /{slug}/trivia/{game}/me", pub(a.handleMe))
 	mux.Handle("POST /{slug}/trivia/{game}/join", pub(a.handleJoin))
@@ -39,6 +47,7 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/trivia/{game}/tv", pub(a.handleDisplay))
 	mux.Handle("GET /{slug}/trivia/{game}/tv/state", pub(a.handleDisplayState))
 	mux.Handle("GET /{slug}/trivia/{game}/tv/stream", pub(a.handleDisplayStream))
+	mux.Handle("GET /{slug}/trivia/{game}/tv.version", pub(a.handleTVVersion))
 }
 
 // resolveGame turns the URL's three-word name into a game, tenant-scoped.

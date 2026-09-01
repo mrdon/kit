@@ -1,6 +1,7 @@
 package trivia
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -8,16 +9,14 @@ import (
 // The one hard requirement: somebody reads it off a TV across a loud room and
 // types it into a phone correctly on the first try.
 func TestWordListsMeetTheReadAloudCriteria(t *testing.T) {
-	lists := map[string][]string{
-		"adjectives": adjectives, "animals": animals, "objects": objects,
-	}
+	lists := map[string][]string{"verbs": verbs, "animals": animals}
 	for name, list := range lists {
 		if len(list) < 100 {
 			t.Errorf("%s has only %d words — too few for a name space this shallow", name, len(list))
 		}
 		for _, w := range list {
-			if len(w) < 4 || len(w) > 7 {
-				t.Errorf("%s: %q is %d letters, want 4-7", name, w, len(w))
+			if len(w) < 3 || len(w) > 9 {
+				t.Errorf("%s: %q is %d letters, want 3-9", name, w, len(w))
 			}
 			for _, r := range w {
 				if r < 'a' || r > 'z' {
@@ -33,9 +32,7 @@ func TestWordListsMeetTheReadAloudCriteria(t *testing.T) {
 // looks sloppy, and the same word in two lists produces "otter-otter-lamp".
 func TestWordListsHaveNoDuplicatesOrOverlap(t *testing.T) {
 	seen := map[string]string{}
-	for name, list := range map[string][]string{
-		"adjectives": adjectives, "animals": animals, "objects": objects,
-	} {
+	for name, list := range map[string][]string{"verbs": verbs, "animals": animals} {
 		local := map[string]bool{}
 		for _, w := range list {
 			if local[w] {
@@ -55,8 +52,13 @@ func TestRandomNameShape(t *testing.T) {
 	for range 200 {
 		name := randomName()
 		parts := strings.Split(name, "-")
-		if len(parts) != 3 {
-			t.Fatalf("%q has %d parts, want 3", name, len(parts))
+		if len(parts) != 2 {
+			t.Fatalf("%q has %d parts, want 2", name, len(parts))
+		}
+		// The first word is the verb, which is what gives the name a shape
+		// somebody can hold on to between the screen and their phone.
+		if !slices.Contains(verbs, parts[0]) {
+			t.Fatalf("%q does not start with a verb", name)
 		}
 		if !IsValidGameName(name) {
 			t.Fatalf("%q was generated but fails IsValidGameName", name)
@@ -67,16 +69,16 @@ func TestRandomNameShape(t *testing.T) {
 // The validator guards a public URL segment, so anything path-shaped has to
 // bounce before it reaches a query.
 func TestIsValidGameName(t *testing.T) {
-	good := []string{"brave-otter-lamp", "quiet-heron-anchor", "brave-otter-lamp-2"}
+	good := []string{"jumping-lion", "prowling-otter", "jumping-lion-2"}
 	for _, s := range good {
 		if !IsValidGameName(s) {
 			t.Errorf("%q should be valid", s)
 		}
 	}
 	bad := []string{
-		"", "brave", "brave-otter", "brave--lamp", "Brave-Otter-Lamp",
-		"../../etc/passwd", "brave-otter-lamp-", "brave-otter-lamp/tv",
-		"brave-otter-lamp-x", strings.Repeat("a-", 30),
+		"", "jumping", "tv", "jumping--lion", "Jumping-Lion",
+		"../../etc/passwd", "jumping-lion-", "jumping-lion/tv",
+		"jumping-lion-x", "a-b-c-d", strings.Repeat("a-", 30),
 	}
 	for _, s := range bad {
 		if IsValidGameName(s) {
@@ -85,16 +87,21 @@ func TestIsValidGameName(t *testing.T) {
 	}
 }
 
-// Drawing from ten million combinations, two hundred draws should not repeat.
-// Not a distribution proof — a guard against wiring every game to one seed.
-func TestRandomNameDoesNotRepeatImmediately(t *testing.T) {
+// A guard against wiring every game to one seed — not a distribution proof.
+//
+// Deliberately NOT "no repeats in 200 draws". The two-word space is about
+// 65,000 combinations, so the birthday paradox makes at least one collision
+// in 200 draws a coin-flip; asserting zero would be a test that fails a
+// quarter of the time for no reason. Uniqueness is guaranteed by the unique
+// index and the retry, not by the size of the space.
+func TestRandomNameIsActuallyRandom(t *testing.T) {
+	const draws = 200
 	seen := map[string]bool{}
-	for range 200 {
-		n := randomName()
-		if seen[n] {
-			t.Fatalf("%q drawn twice in 200 tries — the source is not random", n)
-		}
-		seen[n] = true
+	for range draws {
+		seen[randomName()] = true
+	}
+	if len(seen) < draws*9/10 {
+		t.Fatalf("only %d distinct names in %d draws — the source is not random", len(seen), draws)
 	}
 }
 

@@ -81,7 +81,11 @@ var displayTmpl = template.Must(template.ParseFS(templateFS, "templates/display.
 // an untyped CSS string or QR would render as a blank wall with nothing in
 // the logs to explain it -- the trap menu/render.go documents.
 type displayData struct {
-	Title     string
+	Title string
+	// Heading is what the corner of every screen shows: the night's name as
+	// the host typed it. It is NOT the URL slug -- that only earns its place
+	// on the join screen, where somebody is typing it.
+	Heading   string
 	NameWords []string
 	JoinHost  string
 	QR        template.HTML
@@ -89,6 +93,14 @@ type displayData struct {
 	JS        template.JS
 	StreamURL template.URL
 	PollURL   template.URL
+	GameName  string
+	// Version stamps what this rendered page depends on, and VersionURL is
+	// where the screen polls for it — the menu board's pattern. A page served
+	// from the stable latest-game address polls the workspace-level stamp, so
+	// a newer game reloads it; a page for one specific game polls that game's
+	// own, so a renamed night reloads it without ever switching games.
+	Version    string
+	VersionURL template.URL
 }
 
 // RenderDisplay produces the whole self-contained TV page.
@@ -98,7 +110,7 @@ type displayData struct {
 // wall the first time the network hiccups. Fonts are inlined as base64 data
 // URIs for the same reason -- a board that falls back to a system font loses
 // the size calibration the whole 1920x1080 layout is built around.
-func RenderDisplay(baseURL, slug string, game *Game) (string, error) {
+func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string, error) {
 	css, err := stylesheet()
 	if err != nil {
 		return "", err
@@ -117,18 +129,30 @@ func RenderDisplay(baseURL, slug string, game *Game) (string, error) {
 	if title == "" {
 		title = "Trivia"
 	}
+	heading := game.Title
+	if heading == "" {
+		heading = strings.ToUpper(strings.ReplaceAll(game.Name, "-", " · "))
+	}
 	base := "/" + slug + "/trivia/" + game.Name
+	versionURL := base + "/tv.version"
+	if followLatest {
+		versionURL = "/" + slug + "/trivia/tv.version"
+	}
 
 	var buf bytes.Buffer
 	err = displayTmpl.ExecuteTemplate(&buf, "display.html.tmpl", displayData{
-		Title:     title,
-		NameWords: nameWords(game.Name),
-		JoinHost:  displayHost(join),
-		QR:        qr,
-		CSS:       template.CSS(css),
-		JS:        template.JS(js), //nolint:gosec // embedded first-party script, no interpolation
-		StreamURL: template.URL(base + "/tv/stream"),
-		PollURL:   template.URL(base + "/tv/state"),
+		Title:      title,
+		Heading:    heading,
+		NameWords:  nameWords(game.Name),
+		JoinHost:   displayHost(join),
+		QR:         qr,
+		CSS:        template.CSS(css),
+		JS:         template.JS(js), //nolint:gosec // embedded first-party script, no interpolation
+		StreamURL:  template.URL(base + "/tv/stream"),
+		PollURL:    template.URL(base + "/tv/state"),
+		GameName:   game.Name,
+		Version:    displayVersion(game),
+		VersionURL: template.URL(versionURL),
 	})
 	if err != nil {
 		return "", fmt.Errorf("rendering trivia display: %w", err)
@@ -136,9 +160,9 @@ func RenderDisplay(baseURL, slug string, game *Game) (string, error) {
 	return buf.String(), nil
 }
 
-// nameWords splits brave-otter-lamp into its words, one per line at 180px.
-// Three short lines read from the back of a room in a way one long
-// hyphenated string does not.
+// nameWords splits jumping-lion into its words, one per line at 180px. Two
+// short lines read from the back of a room in a way one long hyphenated
+// string does not.
 func nameWords(name string) []string {
 	parts := strings.Split(name, "-")
 	out := make([]string, 0, len(parts))

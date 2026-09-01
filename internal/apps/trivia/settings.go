@@ -13,18 +13,29 @@ const (
 	maxTokens       = 4
 )
 
-// DefaultSettings is the shipped game: 5 categories x 2 rows at $500/$1000,
+// DefaultSettings is the shipped game: 5 categories x 2 rows at $100/$200,
 // ten questions, two chips at $100/$200, and a final.
 //
-// Deliberately not Jeopardy's 30-clue shape. Jeopardy works at that size
-// because one person buzzes and answers in seconds; here EVERY team types an
-// answer, watches a reveal and places bets, so a question costs about three
-// minutes end to end. Ten questions is roughly half an hour of board plus a
-// lobby and a final -- a bar game people finish.
+// CELLS AND CHIPS ARE THE SAME SIZE ON PURPOSE, which makes betting the
+// larger half of the game. Only the table that WROTE the winning answer takes
+// a cell, and with a full room that is nobody at most tables most rounds --
+// whereas putting a chip on the right answer is something every table does
+// every round. Reading the room is the skill this game is about; the
+// questions are the raw material for that judgement rather than the
+// scoreboard themselves.
+//
+// (An earlier default had cells at five times the chips, which made writing
+// the winning answer worth about five good bets. That is the Jeopardy
+// weighting, and it is not what this game is for.)
+//
+// Board shape is deliberately not Jeopardy's 30-clue one. Here EVERY team
+// types an answer, watches a reveal and places bets, so a question costs
+// about three minutes end to end. Ten questions is roughly half an hour of
+// board plus a lobby and a final -- a bar game people finish.
 func DefaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
-		CellValues: []int{500, 1000}, TokenValues: []int{100, 200},
+		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
 	}
 }
@@ -91,50 +102,4 @@ func validateSettings(s Settings) error {
 		}
 	}
 	return nil
-}
-
-// BalanceWarning describes a configuration that will play badly, WITHOUT
-// refusing it. This used to be a hard validation error, which was overreach:
-// it is an opinion about balance, not a correctness rule, and it rejected a
-// host setting up their own game with a 400 they could do nothing about.
-//
-// The effect it warns about is real but only shows up at a full room. Only
-// the team(s) who WROTE the winning answer take the cell, so with twenty
-// tables most earn nothing from that channel in most rounds and betting is
-// the only income they reliably have — capped at one chip per round, because
-// the two chips must go on different answers and only one answer wins. If a
-// cell is worth no more than a single good bet, the quiz becomes decoration
-// on a betting game.
-//
-// Returns "" when the numbers are fine.
-func BalanceWarning(s Settings) string {
-	if len(s.CellValues) == 0 || len(s.TokenValues) == 0 {
-		return ""
-	}
-	cell, chip := cheapest(s.CellValues), dearest(s.TokenValues)
-	if cell >= 2*chip {
-		return ""
-	}
-	return fmt.Sprintf(
-		"The cheapest cell (%s) is worth less than twice the biggest chip (%s). "+
-			"With a full room, only the tables that wrote the winning answer take a cell, "+
-			"so betting becomes the main way to score and the questions matter less. "+
-			"Fine for a small room — worth raising if you expect a crowd.",
-		FormatMoney(cell), FormatMoney(chip))
-}
-
-func cheapest(vs []int) int {
-	out := vs[0]
-	for _, v := range vs {
-		out = min(out, v)
-	}
-	return out
-}
-
-func dearest(vs []int) int {
-	out := vs[0]
-	for _, v := range vs {
-		out = max(out, v)
-	}
-	return out
 }

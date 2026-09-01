@@ -11,7 +11,7 @@
 <body>
 <div id="stagewrap"></div>
 <div id="fit">
-  <div class="gamename"></div>
+  <div class="gamename">{{ .Heading }}</div>
   <div id="dot"></div>
   <div id="clock"></div>
 
@@ -95,6 +95,9 @@
 <script>
   window.__KIT_TRIVIA_STREAM__ = "{{ .StreamURL }}";
   window.__KIT_TRIVIA_POLL__ = "{{ .PollURL }}";
+  window.__KIT_TRIVIA_GAME__ = "{{ .GameName }}";
+  window.__KIT_TRIVIA_VERSION__ = "{{ .Version }}";
+  window.__KIT_TRIVIA_VERSION_URL__ = "{{ .VersionURL }}";
 </script>
 <script>{{ .JS }}</script>
 </body>

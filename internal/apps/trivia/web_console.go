@@ -117,11 +117,13 @@ func (a *App) gameCounts(r *http.Request, g *Game) (teams, cells, played int, le
 	return teams, cells, played, leader
 }
 
-// createGameRequest carries only settings. The NAME is never client-supplied:
-// it is the public URL contract and is drawn server-side so two hosts racing
-// cannot claim the same one.
+// createGameRequest carries only settings, and they are OPTIONAL. The NAME is
+// never client-supplied: it is the public URL contract and is drawn
+// server-side so two hosts racing cannot claim the same one.
+//
+// A nil Settings means "same as last time" — see handleCreateGame.
 type createGameRequest struct {
-	Settings Settings `json:"settings"`
+	Settings *Settings `json:"settings"`
 }
 
 func (a *App) handleCreateGame(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +133,15 @@ func (a *App) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	s := normaliseSettings(req.Settings)
+	// A new game inherits the previous one's setup. A venue runs the same
+	// quiz every week; retyping the board shape, the values and the timers
+	// each time is a chore with no upside, and the host can still change
+	// anything on the setup page.
+	s, err := a.settingsForNewGame(r, tenant.ID, req.Settings)
+	if err != nil {
+		serverError(w, "reading previous trivia settings", err)
+		return
+	}
 	if err := validateSettings(s); err != nil {
 		clientError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -147,6 +157,30 @@ func (a *App) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, a.gameToJSON(game, tenant.Slug, 0, 0, 0, ""))
+}
+
+// settingsForNewGame resolves what a new game starts as: whatever the client
+// asked for, else the most recent game's settings, else the shipped defaults.
+func (a *App) settingsForNewGame(r *http.Request, tenantID uuid.UUID, asked *Settings) (Settings, error) {
+	if asked != nil {
+		return normaliseSettings(*asked), nil
+	}
+	games, err := ListGames(r.Context(), a.pool, tenantID, 1)
+	if err != nil {
+		return Settings{}, err
+	}
+	if len(games) == 0 {
+		return DefaultSettings(), nil
+	}
+	g := games[0]
+	return normaliseSettings(Settings{
+		// The TITLE is not inherited. Everything else describes how the game
+		// is played and is stable week to week; the title names one night.
+		BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,
+		CellValues: g.CellValues, TokenValues: g.TokenValues,
+		FinalWager: g.FinalWager, AnswerSeconds: g.AnswerSeconds,
+		RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds,
+	}), nil
 }
 
 func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +243,11 @@ func (a *App) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	s := normaliseSettings(req.Settings)
+	if req.Settings == nil {
+		clientError(w, r, http.StatusBadRequest, "no settings in the request")
+		return
+	}
+	s := normaliseSettings(*req.Settings)
 	if err := validateSettings(s); err != nil {
 		clientError(w, r, http.StatusBadRequest, err.Error())
 		return

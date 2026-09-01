@@ -138,8 +138,13 @@
       case 'podium':  renderPodium(phaseChanged); break;
       default:        show('s-hold');
     }
+    // The corner shows the night's NAME as the host typed it ("Tuesday
+    // Quiz"), not the two-word URL slug. The slug is only useful where
+    // somebody has to type it, which is the join screen.
     var gn = document.querySelectorAll('.gamename');
-    for (var i = 0; i < gn.length; i++) { gn[i].textContent = state.game; }
+    for (var i = 0; i < gn.length; i++) {
+      gn[i].textContent = state.title || state.game;
+    }
   }
 
   /* --- 1. join --- */
@@ -497,6 +502,23 @@
       })(s, angle, dist);
     }
   }
+
+  /* The version poll, same shape as the menu board's.
+     The SSE stream carries live state, but the QR code, the join words and
+     the heading are baked into the HTML at render time -- so a renamed night,
+     or a newer game appearing on the stable address, leaves the screen
+     showing something wrong until somebody walks over to it. A few bytes
+     every 15s, and a reload only when they actually change. */
+  setInterval(function () {
+    fetch(window.__KIT_TRIVIA_VERSION_URL__, { credentials: 'same-origin' })
+      .then(function (r) { return r.text(); })
+      .then(function (v) {
+        if (v && v.trim() && v.trim() !== window.__KIT_TRIVIA_VERSION__) {
+          window.location.reload();
+        }
+      })
+      .catch(function () { /* offline; try again next tick */ });
+  }, 15000);
 
   /* ---------- clock ---------- */
   setInterval(function () {

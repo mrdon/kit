@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { API_BASE, api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
-import { balanceWarning, defaultSettings, money, type BuiltinPack, type Dataset, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
+import { defaultSettings, money, type BuiltinPack, type Dataset, type HostFrame, type ImportReport, type TopicCount, type TriviaSettings } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
 // the shape of the game, choose the board's columns, and check the preview.
@@ -309,16 +309,12 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
           </label>
         ))}
       </div>
-      {balanceWarning(s) ? (
-        <p className="banner">{balanceWarning(s)}</p>
-      ) : (
-        <p className="page-sub">
-          Cell values sit well above chip values on purpose. Only the tables that WROTE the winning
-          answer take the cell, so with a full room betting is the only income most teams reliably
-          have — and the forced spread caps that at one chip, {money(Math.max(...s.token_values))} a
-          round.
-        </p>
-      )}
+      <p className="page-sub">
+        Cells and chips are the same size by default, which makes betting the larger half of the
+        game: only the table that wrote the winning answer takes a cell, but every table places
+        chips every round. Raise the cell values if you want knowing the answer to outweigh reading
+        the room.
+      </p>
 
       <div className="field-row">
         <label className="field">

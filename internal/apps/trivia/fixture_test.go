@@ -158,13 +158,39 @@ func (f *fixture) do(gameID uuid.UUID, req ActionRequest) *Snapshot {
 	return snap
 }
 
-// defaultSettings is the shipped board: 5 categories x 2 rows at $500/$1000,
-// with fast timers so tests are not waiting on real clocks.
+// defaultSettings is the test board. It DELIBERATELY differs from the shipped
+// DefaultSettings, which has cells and chips at the same $100/$200 so betting
+// outweighs knowing.
+//
+// Tests want the two channels to be distinguishable: with cells at $500/$1000
+// against $100/$200 chips, an assertion that a team took $500 of board points
+// and $200 of winnings would fail if the engine ever swapped the two, whereas
+// identical values would let that bug pass silently. The shipped weighting is
+// covered separately by the tests that construct settings explicitly.
 func defaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
 		CellValues: []int{500, 1000}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
+	}
+}
+
+// TestShippedDefaultsWeightBettingOverKnowing pins the product decision that
+// the fixture above deliberately does not use.
+func TestShippedDefaultsWeightBettingOverKnowing(t *testing.T) {
+	d := DefaultSettings()
+	if err := validateSettings(d); err != nil {
+		t.Fatalf("the shipped defaults do not validate: %v", err)
+	}
+	cheapestCell, dearestChip := d.CellValues[0], d.TokenValues[len(d.TokenValues)-1]
+	if cheapestCell > dearestChip {
+		t.Fatalf("cheapest cell %d is worth more than the biggest chip %d — "+
+			"the default is supposed to make betting at least as big as knowing",
+			cheapestCell, dearestChip)
+	}
+	if d.BoardRows*d.BoardColumns != 10 {
+		t.Fatalf("the default board is %dx%d; ten questions is the half-hour shape",
+			d.BoardColumns, d.BoardRows)
 	}
 }
 

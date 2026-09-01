@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type TriviaGame } from '../api';
 import { useSetChatContext } from '../chatContext';
-import { PHASE_LABEL, defaultSettings } from './trivia/common';
+import { SLUG } from '../workspace';
+import { PHASE_LABEL } from './trivia/common';
 
 // The game list, and the one button that starts a night.
 //
@@ -12,11 +13,27 @@ import { PHASE_LABEL, defaultSettings } from './trivia/common';
 // page, where they can see the board they are describing.
 export default function Trivia() {
   useSetChatContext('the Trivia page');
+  const tvURL = `${window.location.origin}/${SLUG}/trivia/tv`;
   const nav = useNavigate();
   const [games, setGames] = useState<TriviaGame[] | null>(null);
   const [bank, setBank] = useState<{ total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const remove = async (id: string) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.deleteTriviaGame(id);
+      setConfirming(null);
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const load = () => {
     api.triviaGames().then((r) => setGames(r.games)).catch((e) => setErr(e.message));
@@ -28,7 +45,8 @@ export default function Trivia() {
     setBusy(true);
     setErr(null);
     try {
-      const g = await api.createTriviaGame(defaultSettings());
+      // No settings: the server carries last week's setup forward.
+      const g = await api.createTriviaGame();
       nav(`/trivia/${g.id}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -44,7 +62,12 @@ export default function Trivia() {
           <h1>Trivia</h1>
           <p className="page-sub">
             A live pub quiz on the TV, with every table playing from their phone.
-            {bank ? ` ${bank.total} question${bank.total === 1 ? '' : 's'} in the bank.` : ''}
+            {bank ? ` ${bank.total} question${bank.total === 1 ? '' : 's'} available.` : ''}
+          </p>
+          {/* One address for the screen, forever: it always shows the newest
+              game, so nobody has to retype a URL at the TV each week. */}
+          <p className="page-sub">
+            Point the TV at <code>{tvURL}</code> once and leave it — it follows the newest game.
           </p>
         </div>
         <button className="btn" onClick={() => void create()} disabled={busy}>
@@ -77,6 +100,19 @@ export default function Trivia() {
               </span>
               <Link className="card-manage" to={`/trivia/${g.id}`}>Set up</Link>
               <Link className="card-manage" to={`/trivia/${g.id}/live`}>Run it</Link>
+              {/* Two taps, because deleting a game takes its scores with it
+                  and there is no undo. */}
+              {confirming === g.id ? (
+                <>
+                  <button className="btn btn-danger" disabled={busy}
+                    onClick={() => void remove(g.id)}>Really delete</button>
+                  <button className="btn btn-danger" disabled={busy}
+                    onClick={() => setConfirming(null)}>Cancel</button>
+                </>
+              ) : (
+                <button className="btn btn-danger" disabled={busy}
+                  onClick={() => setConfirming(g.id)}>Delete</button>
+              )}
             </div>
           </li>
         ))}

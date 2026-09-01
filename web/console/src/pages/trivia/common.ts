@@ -187,29 +187,11 @@ export function defaultSettings(): TriviaSettings {
     title: '',
     board_rows: 2,
     board_columns: 5,
-    cell_values: [500, 1000],
+    cell_values: [100, 200],
     token_values: [100, 200],
     final_wager: true,
     answer_seconds: 60,
     reveal_seconds: 15,
     bet_seconds: 45,
   };
-}
-
-// balanceWarning mirrors the server's advice about cell values against chip
-// values. It used to be a hard 400 from the server, which was the wrong call:
-// it is an opinion about balance, not a correctness rule, and refusing a
-// host's own settings with an error they could do nothing about is overreach.
-// Now it is said once, here, and the save goes through either way.
-export function balanceWarning(s: TriviaSettings): string | null {
-  if (!s.cell_values.length || !s.token_values.length) return null;
-  const cell = Math.min(...s.cell_values);
-  const chip = Math.max(...s.token_values);
-  if (cell >= 2 * chip) return null;
-  return (
-    `The cheapest cell (${money(cell)}) is worth less than twice the biggest chip (${money(chip)}). ` +
-    'With a full room, only the tables that wrote the winning answer take a cell, so betting becomes ' +
-    'the main way to score and the questions matter less. Fine for a small room — worth raising if you ' +
-    'expect a crowd.'
-  );
 }

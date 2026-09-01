@@ -833,8 +833,10 @@ export const api = {
       selected: string[];
       state: HostFrameT;
     }>(`/trivia/games/${id}`),
-  createTriviaGame: (settings: TriviaSettingsT) =>
-    apiPost<TriviaGameT>('/trivia/games', { settings }),
+  // Omitting settings means "same as last time" — the server carries the
+  // previous game's setup forward.
+  createTriviaGame: (settings?: TriviaSettingsT) =>
+    apiPost<TriviaGameT>('/trivia/games', settings ? { settings } : {}),
   updateTriviaGame: (id: string, settings: TriviaSettingsT) =>
     apiPatch<TriviaGameT>(`/trivia/games/${id}`, { settings }),
   deleteTriviaGame: (id: string) => apiDelete<void>(`/trivia/games/${id}`),

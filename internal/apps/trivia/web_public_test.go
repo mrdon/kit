@@ -361,3 +361,97 @@ func TestReclaimCodeWorksOnceAndRotatesTheIdentity(t *testing.T) {
 		t.Fatal("a wrong reclaim code was accepted")
 	}
 }
+
+// The stable TV address: point a screen at it once and it follows the newest
+// game, so nobody has to retype a URL at the TV each week.
+func TestStableTVAddressFollowsTheNewestGame(t *testing.T) {
+	f := newFixture(t)
+
+	// Before any game exists it must still answer, and say so readably.
+	rec := f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv", nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("empty workspace returned %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "No quiz tonight") {
+		t.Fatal("no placeholder for a workspace with no games")
+	}
+	if v := f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv.version", nil, nil); v.Body.String() != "empty" {
+		t.Fatalf("version = %q, want empty", v.Body.String())
+	}
+
+	first := f.newGame(defaultSettings(), nil)
+	rec = f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv", nil, nil)
+	if !strings.Contains(rec.Body.String(), first.Name) {
+		t.Fatal("the stable address does not show the only game")
+	}
+	v1 := f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv.version", nil, nil).Body.String()
+
+	second := f.newGame(defaultSettings(), nil)
+	rec = f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv", nil, nil)
+	if !strings.Contains(rec.Body.String(), second.Name) {
+		t.Fatal("the stable address did not follow the newer game")
+	}
+	v2 := f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv.version", nil, nil).Body.String()
+	if v1 == v2 {
+		t.Fatal("the version did not change when a newer game appeared — a parked screen would never reload")
+	}
+}
+
+// The stamp must NOT move while a game is being played. It covers the
+// rendered chrome, not the live state, or a screen would reload itself in the
+// middle of a question — several times a round.
+func TestTVVersionIsStableWhileAGameIsPlayed(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(defaultSettings(), topicSet())
+	path := "/" + f.tenant.Slug + "/trivia/" + game.Name + "/tv.version"
+	before := f.request(http.MethodGet, path, nil, nil).Body.String()
+
+	f.do(game.ID, ActionRequest{Action: ActionOpenLobby, FromPhase: PhaseSetup})
+	a := f.join(game.ID, "Bar Flies")
+	f.join(game.ID, "Quiz Khalifa")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	cellID := snap.Board[0].ID
+	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "42", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	after := f.request(http.MethodGet, path, nil, nil).Body.String()
+	if before != after {
+		t.Fatalf("the version moved during play (%s -> %s) — the TV would reload mid-question",
+			before, after)
+	}
+
+	// But renaming the night IS a change the rendered page has to pick up.
+	if _, err := UpdateSettings(f.ctx, f.pool, f.tenant.ID, game.ID, Settings{
+		Title: "Renamed Night", BoardRows: 2, BoardColumns: 5,
+		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
+		AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	renamed := f.request(http.MethodGet, path, nil, nil).Body.String()
+	if renamed == after {
+		t.Fatal("renaming the night did not change the version — the TV would show the old name")
+	}
+}
+
+// The host's title is what the TV shows in the corner, not the URL slug.
+func TestDisplayShowsTheHostsTitle(t *testing.T) {
+	f := newFixture(t)
+	s := defaultSettings()
+	s.Title = "Tuesday Quiz"
+	game := f.newGame(s, nil)
+
+	body := f.request(http.MethodGet, f.gamePath(game)+"/tv", nil, nil).Body.String()
+	if !strings.Contains(body, "Tuesday Quiz") {
+		t.Fatal("the TV page does not carry the name the host set in setup")
+	}
+	// The slug still appears — the join screen needs it — but the heading is
+	// the title.
+	if !strings.Contains(body, `class="gamename">Tuesday Quiz<`) {
+		t.Fatal("the corner heading is not the host's title")
+	}
+}
