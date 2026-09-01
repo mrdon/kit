@@ -2,8 +2,8 @@
 // job_type='agent' — the original user-created scheduled job type, where
 // job.description is a Slack-style prompt that the LLM agent runs on
 // behalf of the job's creator. The body of this file is the same dispatch
-// the pre-refactor scheduler did inline; the extraction lets builtin +
-// builder_script job_types plug into the same claim loop without branching.
+// the pre-refactor scheduler did inline; the extraction lets other
+// job_types plug into the same claim loop without branching.
 package scheduler
 
 import (

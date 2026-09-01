@@ -28,13 +28,13 @@ import (
 // already have broad privileges; gating is for operations that cross
 // a trust boundary regardless of who invokes them).
 //
-// Dynamic (builder-exposed) tools never set DefaultPolicy so they're
+// Tools that never set DefaultPolicy are
 // implicitly PolicyAllow — safe to miss here.
 func snapshotToolPolicies(ctx context.Context) map[string]tools.Policy {
 	// Build a throwaway registry using an admin caller so we see every
 	// registered tool (AdminOnly defs are included). DefaultPolicy
 	// lives on Def and doesn't vary by caller, so one snapshot is
-	// sufficient. Dynamic (builder-exposed) tools never set
+	// sufficient. Tools that never set
 	// DefaultPolicy so they're implicitly PolicyAllow — safe to miss.
 	dummy := &services.Caller{IsAdmin: true}
 	reg := tools.NewRegistry(ctx, dummy, false)

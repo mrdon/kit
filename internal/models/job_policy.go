@@ -100,7 +100,7 @@ func ParseConfigPolicy(cfg []byte) (*Policy, error) {
 
 // SetConfigPolicy returns a new Config JSONB payload with the policy key
 // replaced (or deleted, if p is nil). Other keys in the existing config
-// (e.g. builder_script's script_id/fn_name) are preserved.
+// (e.g. a builtin's config keys) are preserved.
 func SetConfigPolicy(cfg []byte, p *Policy) ([]byte, error) {
 	m := map[string]json.RawMessage{}
 	if len(cfg) > 0 {
@@ -124,7 +124,7 @@ func SetConfigPolicy(cfg []byte, p *Policy) ([]byte, error) {
 }
 
 // UpdateJobPolicy writes a job's policy in-place by replacing the
-// "policy" key in its Config JSONB. Other keys (e.g. builder_script
+// "policy" key in its Config JSONB. Other keys (e.g. builtin config
 // fields) are preserved. Builtin jobs cannot be updated — matches
 // the constraint on UpdateJobDescription.
 func UpdateJobPolicy(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUID, p *Policy) error {

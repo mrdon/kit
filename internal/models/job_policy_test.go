@@ -118,8 +118,7 @@ func TestMergePinnedArgs_NoChangeWhenSameValue(t *testing.T) {
 }
 
 // TestConfigPolicyRoundTrip — SetConfigPolicy preserves other keys on
-// the Config JSON (builder_script's script_id, etc.) and can be parsed
-// back out via ParseConfigPolicy.
+// the Config JSON and can be parsed back out via ParseConfigPolicy.
 func TestConfigPolicyRoundTrip(t *testing.T) {
 	existing := []byte(`{"script_id":"abc","fn_name":"main"}`)
 	forceGate := []string{"post_to_channel"}

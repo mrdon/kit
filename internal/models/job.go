@@ -28,9 +28,8 @@ const (
 type JobType string
 
 const (
-	JobTypeAgent         JobType = "agent"
-	JobTypeBuiltin       JobType = "builtin"
-	JobTypeBuilderScript JobType = "builder_script" // scheduled builder script; config carries {script_id, fn_name}
+	JobTypeAgent   JobType = "agent"
+	JobTypeBuiltin JobType = "builtin"
 )
 
 // JobLane is the execution pool a job is claimed into. Deliberately not
@@ -86,7 +85,6 @@ type Job struct {
 	LastRunAt   *time.Time
 	LastError   *string
 	// Config is a job_type-specific JSONB payload. For
-	// job_type='builder_script' it carries {"script_id","fn_name"}.
 	// Nil for agent/builtin jobs where the fixed columns are sufficient.
 	Config []byte
 	// ResumeSessionID is set by ResolveDecision to tell the scheduler
@@ -96,7 +94,7 @@ type Job struct {
 	ResumeSessionID *uuid.UUID
 	// Model is the tier name ("haiku" or "sonnet") the scheduler should
 	// run this job under. Picked once by a Haiku classifier at create
-	// time; builtin / builder_script rows just carry the default.
+	// time; builtin rows just carry the default.
 	Model string
 	// SkillID, when non-nil, points at the skill the scheduler should
 	// load and execute instead of running Description as a free-form
@@ -107,7 +105,7 @@ type Job struct {
 	CreatedAt time.Time
 	// BuiltinKey is the stable identity of a code-registered job (e.g.
 	// "events.reconcile"). Nil for user-created agent jobs and for
-	// builder_script rows. Handler lookup keys on this, never on
+	// builtin rows. Handler lookup keys on this, never on
 	// Description — a description is a label and may be edited or
 	// renamed in code without orphaning the row.
 	BuiltinKey *string
@@ -403,89 +401,4 @@ func DeleteJob(ctx context.Context, pool *pgxpool.Pool, tenantID, jobID uuid.UUI
 		}
 	}
 	return nil
-}
-
-// UpsertBuilderScriptTask creates (or revives) a job_type='builder_script'
-// row. On conflict with the partial unique index on
-// (tenant_id, config->>'script_id', config->>'fn_name') WHERE active, we
-// instead look for an inactive row with the same (script_id, fn_name) and
-// flip it back to active with the new cron/tz. Returns the job ID.
-//
-// scriptID + fnName end up in config JSONB; the scheduler's builder
-// runner parses them back out at claim time.
-func UpsertBuilderScriptTask(
-	ctx context.Context,
-	pool *pgxpool.Pool,
-	tenantID, createdBy uuid.UUID,
-	scriptID uuid.UUID, fnName, description, cronExpr, tz string,
-	nextRun time.Time,
-) (uuid.UUID, error) {
-	configJSON := fmt.Sprintf(`{"script_id":%q,"fn_name":%q}`, scriptID.String(), fnName)
-
-	// Revive path: if an inactive row already exists for (script_id, fn),
-	// flip it back to active with the new cron.
-	var existingID uuid.UUID
-	err := pool.QueryRow(ctx, `
-		SELECT id FROM jobs
-		WHERE tenant_id = $1
-		  AND job_type = $2
-		  AND status = $3
-		  AND config->>'script_id' = $4
-		  AND config->>'fn_name'   = $5
-	`, tenantID, JobTypeBuilderScript, JobStatusInactive, scriptID.String(), fnName).Scan(&existingID)
-	if err == nil {
-		_, err = pool.Exec(ctx, `
-			UPDATE jobs
-			SET status = $3, cron_expr = $4, timezone = $5,
-			    next_run_at = $6, last_error = NULL,
-			    description = $7, created_by = $8, lane = $9
-			WHERE tenant_id = $1 AND id = $2
-		`, tenantID, existingID, JobStatusActive, cronExpr, tz, nextRun, description, createdBy, JobLaneFunction)
-		if err != nil {
-			return uuid.Nil, fmt.Errorf("reviving builder_script job: %w", err)
-		}
-		return existingID, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("checking existing builder_script job: %w", err)
-	}
-
-	// Fresh insert. The partial unique index rejects a second active row
-	// for the same (script_id, fn_name) — surfaced as a Postgres error
-	// which the caller translates to "already scheduled".
-	// lane is set explicitly: the column defaults to 'agent' (correct for
-	// user-created jobs), but a builder script is native work and belongs
-	// in the function lane even though it can call the LLM from inside.
-	jobID := uuid.New()
-	_, err = pool.Exec(ctx, `
-		INSERT INTO jobs (
-			id, tenant_id, created_by, description, cron_expr, timezone,
-			channel_id, job_type, status, next_run_at, config, lane
-		) VALUES ($1, $2, $3, $4, $5, $6, '', $7, $8, $9, $10::jsonb, $11)
-	`, jobID, tenantID, createdBy, description, cronExpr, tz,
-		JobTypeBuilderScript, JobStatusActive, nextRun, configJSON, JobLaneFunction)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("inserting builder_script job: %w", err)
-	}
-	return jobID, nil
-}
-
-// DeactivateBuilderScriptTask flips an active job_type='builder_script'
-// row to status='inactive'. Row survives so history + cron expression are
-// preserved and a later UpsertBuilderScriptTask can revive it.
-// Returns true if a row was flipped.
-func DeactivateBuilderScriptTask(ctx context.Context, pool *pgxpool.Pool, tenantID, scriptID uuid.UUID, fnName string) (bool, error) {
-	tag, err := pool.Exec(ctx, `
-		UPDATE jobs
-		SET status = $4
-		WHERE tenant_id = $1
-		  AND job_type = $2
-		  AND status = $3
-		  AND config->>'script_id' = $5
-		  AND config->>'fn_name'   = $6
-	`, tenantID, JobTypeBuilderScript, JobStatusActive, JobStatusInactive, scriptID.String(), fnName)
-	if err != nil {
-		return false, fmt.Errorf("deactivating builder_script job: %w", err)
-	}
-	return tag.RowsAffected() > 0, nil
 }

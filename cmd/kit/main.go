@@ -20,7 +20,6 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	_ "github.com/mrdon/kit/internal/apps/admin"
 	attachmentapp "github.com/mrdon/kit/internal/apps/attachment"
-	builderapp "github.com/mrdon/kit/internal/apps/builder"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
 	"github.com/mrdon/kit/internal/apps/console"
@@ -91,20 +90,8 @@ func main() {
 	// Initialize apps (lets them set up services after DB is ready)
 	apps.Init(pool)
 
-	// Wire the exposed-tool registry source. The builder app owns the
-	// exposed_tools table; tools.Registry asks it per session for the
-	// caller-visible set. Done after apps.Init so the builder app's pool
-	// is populated. Stays nil-safe in tests via tools.SetExposedToolRunner(nil).
-	for _, a := range apps.All() {
-		if b, ok := a.(*builderapp.App); ok {
-			tools.SetExposedToolRunner(b.ExposedToolRunner())
-			break
-		}
-	}
-
 	// Encryption for bot tokens (needed by services.New below + later
-	// internal.NewApp). Constructed before the builder runtime so the
-	// shared services bundle is ready when we install script-run deps.
+	// internal.NewApp).
 	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
 	if err != nil {
 		slog.Error("initializing encryptor", "error", err)
@@ -138,23 +125,11 @@ func main() {
 		}
 		return info.DisplayName, info.Timezone, true
 	})
-	// Anthropic client for the builder LLM builtins. internal.NewApp
-	// constructs its own client for the Slack agent; sharing isn't
-	// worthwhile since the client is a stateless HTTP wrapper.
-	builderLLM := anthropic.NewClient(cfg.AnthropicAPIKey)
-
-	// Install the builder script runtime. Without this, every run_script
-	// call (admin or via an exposed tool) errors with "engine not wired".
-	closeBuilder, err := builderapp.InstallScriptRunDeps(pool, svc, enc, builderLLM)
-	if err != nil {
-		slog.Error("installing builder script runtime", "error", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if cerr := closeBuilder(); cerr != nil {
-			slog.Warn("closing builder runtime", "error", cerr)
-		}
-	}()
+	// Anthropic client shared by the apps that need one (task, cards,
+	// attachment). internal.NewApp constructs its own for the Slack
+	// agent; sharing isn't worthwhile since the client is a stateless
+	// HTTP wrapper.
+	llm := anthropic.NewClient(cfg.AnthropicAPIKey)
 
 	// PWA session signer. Prefer an explicit KIT_SESSION_SECRET; fall back
 	// to deriving from ENCRYPTION_KEY (domain-separated in NewSessionSigner)
@@ -224,7 +199,7 @@ func main() {
 	// The task app needs the signer (console routes), the encryptor + agent
 	// (email-intake sweep), the JobService and LLM (resolution chips). Wired
 	// here, after the agent and signer exist.
-	task.Configure(builderLLM, svc.Jobs, enc, sessionSigner, app.Agent)
+	task.Configure(llm, svc.Jobs, enc, sessionSigner, app.Agent)
 
 	// Square shift sync needs the signer for its admin Manage page.
 	squareshifts.Configure(enc, sessionSigner)
@@ -275,7 +250,7 @@ func main() {
 	// General attachment capability: read_attachment tool + signed-token
 	// serve route. Shares the encryptor and the deep-link signer; uses the
 	// builder LLM client for image transcription.
-	attachmentapp.Configure(enc, deepLinkSigner, builderLLM)
+	attachmentapp.Configure(enc, deepLinkSigner, llm)
 
 	console.Configure(sessionSigner, enc)
 
@@ -310,7 +285,7 @@ func main() {
 	})
 	tools.SetGateCreator(cards.ServiceForGating())
 	kitmcp.SetGateCreator(cards.ServiceForGating())
-	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher, builderLLM))
+	cards.ConfigureToolExecutor(buildResolveToolExecutor(pool, svc, enc, app.Fetcher, llm))
 
 	// Card housekeeping: stuck-resolve recovery and expiry every minute,
 	// the retention purge nightly. Registered here rather than in the app's
@@ -331,19 +306,9 @@ func main() {
 	// OAuth handler
 	oauthHandler := kitslack.NewOAuthHandler(cfg.SlackClientID, cfg.SlackClientSecret, pool, enc, app.HandlePostInstall)
 
-	// MCP server + OAuth (svc was constructed earlier for the builder
-	// runtime; reuse it here so both surfaces share one services bundle).
+	// MCP server + OAuth (reuses the svc bundle built above so both
+	// surfaces share one services bundle).
 	mcpHolder := kitmcp.NewServer(pool, svc, app.Agent, enc, sched)
-
-	// Wire builder-published tools into MCP via per-session tool maps.
-	// - InstallExposedToolRegistry gives the per-session register hook
-	//   access to the MCPServer, pool, and the invoke dispatcher.
-	// - SetExposedToolHooks tells the builder app_expose_tool /
-	//   app_revoke_tool handlers to fan the change out to live sessions.
-	kitmcp.InstallExposedToolRegistry(mcpHolder, func(ctx context.Context, caller *services.Caller, toolName string, args map[string]any) (string, error) {
-		return builderapp.InvokeExposedTool(ctx, pool, caller, toolName, args)
-	})
-	builderapp.SetExposedToolHooks(kitmcp.PublishExposedTool, kitmcp.RevokeExposedTool)
 
 	mcpHTTP := mcpserver.NewStreamableHTTPServer(mcpHolder.Server,
 		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {

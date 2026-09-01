@@ -207,53 +207,6 @@ type Registry struct {
 	handlers map[string]HandlerFunc
 }
 
-// ExposedToolDef describes one tenant-published script function surfaced
-// through the generic tool registry. Registry construction asks the
-// registered ExposedToolRunner to enumerate these per caller, then wraps
-// each with a Def whose handler invokes the backing script.
-type ExposedToolDef struct {
-	ToolName       string
-	Description    string
-	ArgsSchema     map[string]any
-	VisibleToRoles []string
-	// Invoke is a closure that runs the exposed tool with the supplied
-	// keyword args. Implementations are responsible for enforcing stale
-	// flags, role checks at invocation time, and child audit rows. The
-	// registry treats the returned string as the tool result.
-	Invoke func(ctx context.Context, ec *ExecContext, args map[string]any) (string, error)
-}
-
-// ExposedToolRunner is implemented by the builder app (or any future
-// source of dynamic tools). The registry calls List at construction time
-// to enumerate the caller's tenant-published tools. A nil runner makes
-// dynamic registration a no-op — static Kit tools still register
-// normally, so a mis-wired startup doesn't break the agent.
-//
-// Split out into its own interface to dodge the import cycle: the
-// builder package imports tools (to register Defs); if tools imported
-// builder to call RunScript directly we'd have a cycle. The interface
-// hop means the builder registers an implementation during app Init and
-// the tools package only depends on the narrow contract declared here.
-type ExposedToolRunner interface {
-	// List returns the exposed tools for the given caller's tenant.
-	// Implementations should filter out stale rows so the registry can
-	// trust what it receives (registry applies the role-visibility check
-	// centrally via Def.VisibleToRoles).
-	List(ctx context.Context, caller *services.Caller) ([]ExposedToolDef, error)
-}
-
-// currentExposedToolRunner is wired once at startup from cmd/kit/main.go
-// (after apps Init). A nil value is allowed — dynamic registration simply
-// short-circuits and the static tool set is returned.
-var currentExposedToolRunner ExposedToolRunner
-
-// SetExposedToolRunner wires the tenant-exposed tool source used by
-// NewRegistry. Call once during startup, after apps have initialized.
-// Passing nil disables dynamic registration (tests reset via t.Cleanup).
-func SetExposedToolRunner(r ExposedToolRunner) {
-	currentExposedToolRunner = r
-}
-
 // GateCardPreview is the human-readable framing a gated tool provides
 // for its approval card. Empty fields fall back to the generic
 // "Approve <tool>?" wording so tools without a Preview func still work.
@@ -336,44 +289,7 @@ func NewRegistry(ctx context.Context, caller *services.Caller, botInitiated bool
 		a.RegisterAgentTools(ctx, r, caller, isAdmin)
 	}
 
-	// Dynamic per-tenant exposed tools. Skipped silently if no runner is
-	// wired (tests, or a startup ordering slip). Failures to enumerate are
-	// logged but non-fatal — the agent still works with the static set.
-	if currentExposedToolRunner != nil && caller != nil {
-		defs, err := currentExposedToolRunner.List(ctx, caller)
-		if err != nil {
-			slog.Warn("listing exposed tools", "tenant_id", caller.TenantID, "error", err)
-		} else {
-			for _, d := range defs {
-				r.Register(buildExposedDef(d))
-			}
-		}
-	}
-
 	return r
-}
-
-// buildExposedDef wraps an ExposedToolDef into a tools.Def whose handler
-// unmarshals the raw input, forwards to the runner-supplied Invoke, and
-// returns the string result. The closure captures d by value so repeated
-// registry builds don't share a mutable reference.
-func buildExposedDef(d ExposedToolDef) Def {
-	captured := d
-	return Def{
-		Name:           captured.ToolName,
-		Description:    captured.Description,
-		Schema:         captured.ArgsSchema,
-		VisibleToRoles: captured.VisibleToRoles,
-		Handler: func(ec *ExecContext, input json.RawMessage) (string, error) {
-			args := map[string]any{}
-			if len(input) > 0 {
-				if err := json.Unmarshal(input, &args); err != nil {
-					return "", fmt.Errorf("exposed tool %s: invalid arguments: %w", captured.ToolName, err)
-				}
-			}
-			return captured.Invoke(ec.Ctx, ec, args)
-		},
-	}
 }
 
 // Register adds a tool to the registry. Unless the Def opts out via

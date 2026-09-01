@@ -23,8 +23,7 @@ import (
 // JobRunner dispatches a claimed job. One implementation per job_type.
 // Run is expected to handle its own audit/next_run_at bookkeeping because
 // the bookkeeping differs per type (agent runs open a session, builtin
-// runs call a native handler, builder_script runs write a script_runs row
-// and re-check admin status). The scheduler only owns claim + dispatch.
+// runs call a native handler). The scheduler only owns claim + dispatch.
 type JobRunner interface {
 	JobType() string
 	Run(ctx context.Context, job *models.Job) error

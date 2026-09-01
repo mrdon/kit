@@ -113,7 +113,7 @@ func sendEmailHandler(ec *tools.ExecContext, input json.RawMessage) (string, err
 
 ## Shadow-path discipline (non-negotiable)
 
-The registry gate protects callers that go through `tools.Registry.Execute`. It does NOT protect against direct calls to the underlying dangerous operation. A future developer adding `mailer.Send(ctx, ...)` to `internal/apps/builder/action_builtins.go` would bypass the gate entirely.
+The registry gate protects callers that go through `tools.Registry.Execute`. It does NOT protect against direct calls to the underlying dangerous operation. A future developer calling `mailer.Send(ctx, ...)` from another package would bypass the gate entirely.
 
 **Pick one of two patterns for every PolicyGate tool:**
 
@@ -133,7 +133,7 @@ The registry gate protects callers that go through `tools.Registry.Execute`. It 
        // ... real send ...
    }
    ```
-   The `guard` ctx-key marker is set only when `Registry.Execute` dispatches a PolicyGate handler. Builder action_builtins and MCP direct-calls panic; only the registry path works.
+   The `guard` ctx-key marker is set only when `Registry.Execute` dispatches a PolicyGate handler. Direct calls from other packages and from MCP panic; only the registry path works.
 
 Pick whichever fits; do not leave a public, unguarded service function alongside a gated tool.
 
@@ -201,7 +201,7 @@ For PolicyGate tools the agent can also just call the tool directly — `Registr
 ## What NEVER to do
 
 1. **Never construct an `approval.Token`** and call `WithToken` outside `CardService.ResolveDecision` (one legitimate call site, grep-enforced).
-2. **Never add a non-registry entry point** to a PolicyGate operation. No direct builder action_builtins, no MCP handler that bypasses `tools.Registry.Execute`, no helpers in other packages that duplicate the tool logic.
+2. **Never add a non-registry entry point** to a PolicyGate operation. No MCP handler that bypasses `tools.Registry.Execute`, no helpers in other packages that duplicate the tool logic.
 3. **Never claim the action happened** when you see a tool_result starting with `HALTED:`. Tell the user you've queued it.
 4. **Never populate `tool_arguments`** on an option with unsanitized third-party content without wrapping in `<untrusted>` tags for the chat-revision LLM. (The chat path's `buildCardSystemSuffix` already does this.)
 5. **Never remove `is_gate_artifact` validation** from `ResolveDecision`. The re-check is the only thing catching post-creation tamper.

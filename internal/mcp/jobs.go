@@ -134,8 +134,8 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 
 		// Anything that isn't an agent job runs native code. Route it
 		// through the same runner the claim loop uses rather than
-		// re-implementing dispatch here — builder_script rows previously
-		// fell past this check and were run as if they were agent prompts.
+		// re-implementing dispatch here — otherwise a native row would
+		// fall past this check and be run as if it were an agent prompt.
 		if job.JobType != models.JobTypeAgent {
 			if dryRun {
 				return mcp.NewToolResultText(fmt.Sprintf("Dry run: %s job %q would execute its native handler.", job.JobType, job.Description)), nil
