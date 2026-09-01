@@ -249,3 +249,22 @@ func locationIdentity(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUI
 	}
 	return d, true, nil
 }
+
+// claimStaleDates marks every unposted business date before cutoff as
+// handled, without posting anything.
+//
+// Two cases need this. A tenant that has just connected Square backfills a
+// year of history, all of it unposted; and after an outage a run can find
+// several unposted days. In both, the card should report the most recent
+// day and quietly drop the rest -- a card about last Tuesday, arriving
+// today, is worse than no card.
+func claimStaleDates(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, before time.Time) (int64, error) {
+	tag, err := pool.Exec(ctx, `
+		UPDATE app_squaresales_daily SET card_posted_at = now()
+		WHERE tenant_id = $1 AND business_date < $2 AND card_posted_at IS NULL`,
+		tenantID, before)
+	if err != nil {
+		return 0, fmt.Errorf("claiming stale sales dates: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

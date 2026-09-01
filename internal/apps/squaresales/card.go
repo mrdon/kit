@@ -17,6 +17,12 @@ import (
 // the unread pile the whole card is meant to replace.
 const cardTTL = 40 * time.Hour
 
+// maxCardAgeDays is how far back the daily run will still report. Older
+// unposted days are claimed and dropped rather than surfaced late: the card
+// is a morning briefing, and one about last Tuesday arriving today is worse
+// than none.
+const maxCardAgeDays = 2
+
 // CardSurface is the slice of the cards service this app needs. Injected
 // rather than imported so the dependency graph stays one-way; cmd/kit
 // adapts the concrete CardService, as the vault app does.
