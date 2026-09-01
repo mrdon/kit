@@ -46,7 +46,7 @@ func (m *Default) sendSlack(ctx context.Context, req SendRequest) (SentMessage, 
 
 	// Resolve or create the session. Default key is "" (channel-level),
 	// but apps can override via SessionThreadKey to isolate their flow
-	// from other bot↔user activity in the same channel. Coordination
+	// from other bot↔user activity in the same channel. An app
 	// uses "participant:<id>" so each (coord, participant) gets its own
 	// session.
 	threadKey := req.SessionThreadKey

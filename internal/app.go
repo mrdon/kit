@@ -118,7 +118,7 @@ func (a *App) HandleSlackEvent(teamID string, rawEvent json.RawMessage, eventTyp
 		return
 	}
 
-	// Give the Messenger first crack at the message: if a coordination (or
+	// Give the Messenger first crack at the message: if an app (or
 	// future app) is awaiting a reply on this user's session, route there.
 	// Returns handled=false if no app claims it; falls through to the
 	// regular agent loop below.

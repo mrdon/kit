@@ -35,7 +35,7 @@ const (
 
 // JobLane is the execution pool a job is claimed into. Deliberately not
 // derived from JobType: some builtin registrations call the LLM (the task
-// app's email intake runs a full agent loop; the coordination sweep calls
+// app's email intake runs a full agent loop; a native sweep calls
 // the Messages API directly) and must stay serialized alongside agent runs,
 // while the remaining builtins are IO-bound and safe to run wide.
 type JobLane string

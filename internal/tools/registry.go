@@ -167,7 +167,7 @@ type Def struct {
 	// registry's name → handler map so direct invocations via
 	// Execute/ExecuteWithResult still resolve. Use for tools that are
 	// only meant to be invoked by the framework (e.g. card-option
-	// resolvers like coordination_resolve_decision)
+	// resolvers)
 	// — exposing them to the LLM tempts it to call them directly with
 	// crafted args, bypassing the surface flow they were designed to
 	// dispatch from.

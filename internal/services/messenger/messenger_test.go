@@ -100,7 +100,7 @@ func TestSend_HappyPath(t *testing.T) {
 		Channel:    "slack",
 		Recipient:  Recipient{SlackUserID: fx.user.SlackUserID},
 		Body:       "Hi Alice — are any of these times OK?",
-		Origin:     "coordination",
+		Origin:     "testapp",
 		OriginRef:  "participant-uuid",
 		AwaitReply: true,
 		UserID:     fx.user.ID,
@@ -153,7 +153,7 @@ func TestSend_ReusesSession(t *testing.T) {
 	first, err := fx.m.Send(ctx, SendRequest{
 		TenantID: fx.tenant.ID, Channel: "slack",
 		Recipient: Recipient{SlackUserID: fx.user.SlackUserID},
-		Body:      "first", Origin: "coordination", AwaitReply: true,
+		Body:      "first", Origin: "testapp", AwaitReply: true,
 		UserID: fx.user.ID,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestSend_ReusesSession(t *testing.T) {
 	second, err := fx.m.Send(ctx, SendRequest{
 		TenantID: fx.tenant.ID, Channel: "slack",
 		Recipient: Recipient{SlackUserID: fx.user.SlackUserID},
-		Body:      "second", Origin: "coordination", AwaitReply: true,
+		Body:      "second", Origin: "testapp", AwaitReply: true,
 		UserID: fx.user.ID,
 	})
 	if err != nil {
@@ -186,11 +186,11 @@ func TestSend_RequiresFields(t *testing.T) {
 		req  SendRequest
 		want string
 	}{
-		{"missing TenantID", SendRequest{Channel: "slack", Body: "x", Origin: "coordination"}, "TenantID"},
+		{"missing TenantID", SendRequest{Channel: "slack", Body: "x", Origin: "testapp"}, "TenantID"},
 		{"missing Origin", SendRequest{TenantID: fx.tenant.ID, Channel: "slack", Body: "x"}, "Origin"},
-		{"missing Body", SendRequest{TenantID: fx.tenant.ID, Channel: "slack", Origin: "coordination"}, "Body"},
-		{"unknown channel", SendRequest{TenantID: fx.tenant.ID, Channel: "telepathy", Body: "x", Origin: "coordination"}, "unsupported"},
-		{"missing slack user", SendRequest{TenantID: fx.tenant.ID, Channel: "slack", Body: "x", Origin: "coordination"}, "SlackUserID"},
+		{"missing Body", SendRequest{TenantID: fx.tenant.ID, Channel: "slack", Origin: "testapp"}, "Body"},
+		{"unknown channel", SendRequest{TenantID: fx.tenant.ID, Channel: "telepathy", Body: "x", Origin: "testapp"}, "unsupported"},
+		{"missing slack user", SendRequest{TenantID: fx.tenant.ID, Channel: "slack", Body: "x", Origin: "testapp"}, "SlackUserID"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -233,7 +233,7 @@ func TestDispatch_NoAwaitReplyFallthrough(t *testing.T) {
 	_, err := fx.m.Send(ctx, SendRequest{
 		TenantID: fx.tenant.ID, Channel: "slack",
 		Recipient: Recipient{SlackUserID: fx.user.SlackUserID},
-		Body:      "FYI", Origin: "coordination", AwaitReply: false,
+		Body:      "FYI", Origin: "testapp", AwaitReply: false,
 		UserID: fx.user.ID,
 	})
 	if err != nil {
@@ -241,7 +241,7 @@ func TestDispatch_NoAwaitReplyFallthrough(t *testing.T) {
 	}
 
 	called := false
-	fx.m.RegisterReplyHandler("coordination", func(_ context.Context, _ InboundMessage, _ string) (bool, error) {
+	fx.m.RegisterReplyHandler("testapp", func(_ context.Context, _ InboundMessage, _ string) (bool, error) {
 		called = true
 		return true, nil
 	})
@@ -272,7 +272,7 @@ func TestDispatch_HandlerCalled(t *testing.T) {
 	sent, err := fx.m.Send(ctx, SendRequest{
 		TenantID: fx.tenant.ID, Channel: "slack",
 		Recipient: Recipient{SlackUserID: fx.user.SlackUserID},
-		Body:      "Hi Alice, are these slots OK?", Origin: "coordination",
+		Body:      "Hi Alice, are these slots OK?", Origin: "testapp",
 		OriginRef: "participant-42", AwaitReply: true,
 		UserID: fx.user.ID,
 	})
@@ -282,7 +282,7 @@ func TestDispatch_HandlerCalled(t *testing.T) {
 
 	var gotMsg InboundMessage
 	var gotRef string
-	fx.m.RegisterReplyHandler("coordination", func(_ context.Context, msg InboundMessage, ref string) (bool, error) {
+	fx.m.RegisterReplyHandler("testapp", func(_ context.Context, msg InboundMessage, ref string) (bool, error) {
 		gotMsg = msg
 		gotRef = ref
 		return true, nil
@@ -326,7 +326,7 @@ func TestDispatch_HandlerFallthrough(t *testing.T) {
 	_, err := fx.m.Send(ctx, SendRequest{
 		TenantID: fx.tenant.ID, Channel: "slack",
 		Recipient: Recipient{SlackUserID: fx.user.SlackUserID},
-		Body:      "scheduling DM", Origin: "coordination", AwaitReply: true,
+		Body:      "scheduling DM", Origin: "testapp", AwaitReply: true,
 		UserID: fx.user.ID,
 	})
 	if err != nil {
@@ -334,7 +334,7 @@ func TestDispatch_HandlerFallthrough(t *testing.T) {
 	}
 
 	// Handler claims by returning false (e.g. parser said "unrelated").
-	fx.m.RegisterReplyHandler("coordination", func(_ context.Context, _ InboundMessage, _ string) (bool, error) {
+	fx.m.RegisterReplyHandler("testapp", func(_ context.Context, _ InboundMessage, _ string) (bool, error) {
 		return false, nil
 	})
 
@@ -417,7 +417,7 @@ func TestSendSlack_PostError(t *testing.T) {
 	_, err := fx.m.Send(ctx, SendRequest{
 		TenantID: fx.tenant.ID, Channel: "slack",
 		Recipient: Recipient{SlackUserID: fx.user.SlackUserID},
-		Body:      "x", Origin: "coordination", AwaitReply: true,
+		Body:      "x", Origin: "testapp", AwaitReply: true,
 		UserID: fx.user.ID,
 	})
 	if err == nil {

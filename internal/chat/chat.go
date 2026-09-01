@@ -232,7 +232,7 @@ func threadKey(card *shared.StackItem, userID uuid.UUID, clientSessionID string)
 }
 
 // CardThreadKey is the exported form of the card-chat thread key
-// builder. External packages (e.g. coordination's vote-card resolve
+// builder. External packages (e.g. an app's card-resolve
 // handler) need the same key when reading chat history for a (card,
 // user) pair.
 func CardThreadKey(sourceApp, kind, cardID string, userID uuid.UUID) string {

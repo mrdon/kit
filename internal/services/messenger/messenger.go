@@ -6,7 +6,7 @@
 // (Slack events today; email-poll/SMS-webhook later) back to whichever
 // app registered as the reply handler for the originating outbound.
 //
-// Coordination is the first Phase 1 consumer; the agent loop's
+// The agent loop's
 // send_slack_message tool is retrofitted onto Messenger in Phase 2.
 package messenger
 
@@ -39,12 +39,12 @@ type SendRequest struct {
 	Recipient Recipient
 	Body      string
 
-	// Origin identifies the owning app ("coordination", "agent", "email").
+	// Origin identifies the owning app ("agent", "email").
 	// Used by Dispatch to route subsequent inbound messages back.
 	Origin string
 
 	// OriginRef is opaque to messenger; round-tripped to the ReplyHandler.
-	// E.g. coordination passes the participant_id.
+	// E.g. an app passes its own participant/row id.
 	OriginRef string
 
 	// AwaitReply registers the resulting session for inbound dispatch.
@@ -60,10 +60,9 @@ type SendRequest struct {
 	// SessionThreadKey overrides the default thread_ts ("") used when
 	// resolving the recipient's session. Apps that need their outbound
 	// (and the matching inbound) isolated from other bot↔user activity
-	// in the same channel set this. Coordination uses
-	// "participant:<participant_id>" so each (coord, participant) gets
-	// its own session, isolated from other coordinations and from
-	// ad-hoc agent chat.
+	// in the same channel set this — e.g. "participant:<id>" so each
+	// (conversation, participant) pair gets its own session, isolated
+	// from other conversations and from ad-hoc agent chat.
 	SessionThreadKey string
 }
 
@@ -140,8 +139,8 @@ func New(pool *pgxpool.Pool, enc *crypto.Encryptor) *Default {
 }
 
 // RegisterReplyHandler associates an origin string with a ReplyHandler.
-// Apps call this at startup (e.g. coordination registers
-// ReplyHandler("coordination", coordHandler)).
+// Apps call this at startup (e.g. an app registers
+// ReplyHandler("myapp", myHandler)). No app registers one today.
 //
 // Subsequent registrations for the same origin replace the prior handler.
 func (m *Default) RegisterReplyHandler(origin string, handler ReplyHandler) {

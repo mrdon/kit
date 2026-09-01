@@ -24,7 +24,6 @@ import (
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
 	"github.com/mrdon/kit/internal/apps/console"
-	"github.com/mrdon/kit/internal/apps/coordination"
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/events"
 	"github.com/mrdon/kit/internal/apps/github"
@@ -124,9 +123,8 @@ func main() {
 	// Lazy user-profile enrichment. models.GetUserByID /
 	// GetUserBySlackID / EnsureUserBySlackID call this enricher when a
 	// user row has empty display_name or timezone — once per user
-	// lifetime, persisted on success. Without it, participants added by
-	// start_coordination who haven't DM'd Kit themselves
-	// would surface as raw Slack IDs in cards and digests.
+	// lifetime, persisted on success. Without it, users who haven't DM'd
+	// Kit themselves would surface as raw Slack IDs in cards and digests.
 	models.RegisterUserEnricher(func(ctx context.Context, tenantID uuid.UUID, slackUserID string) (string, string, bool) {
 		tenant, err := models.GetTenantByID(ctx, pool, tenantID)
 		if err != nil || tenant == nil {
@@ -253,11 +251,6 @@ func main() {
 	// inside a tap-list update), and the base URL for the public link an
 	// admin copies into a kiosk board. The board page is unauthenticated.
 	menu.Configure(sessionSigner, app.Fetcher, cfg.BaseURL)
-
-	// Coordination needs builderLLM, the Messenger from app, the CardService
-	// (for surfacing decision cards), and the JobService (for shepherd
-	// jobs). Wired here because Messenger lives on app.
-	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Jobs)
 
 	// Vault uses the same CardService for both admin grant-request
 	// decision cards and user-targeted security-tripwire briefings
