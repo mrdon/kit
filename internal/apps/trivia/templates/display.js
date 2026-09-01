@@ -176,15 +176,17 @@
     var box = document.getElementById('join-words');
     if (!box) { return; }
     var words = box.querySelectorAll('.join-word');
-    /* Room for the URL and the team count beneath it. */
-    var avail = 600;
-    var size = 180;
+    if (!words.length) { return; }
+    /* The name is confirmation, not the headline -- the QR is. Two lines of
+       it is plenty; shrink rather than let it push the rules off the screen. */
+    var avail = 240;
+    var size = 104;
     var apply = function (px) {
       for (var i = 0; i < words.length; i++) { words[i].style.fontSize = px + 'px'; }
     };
     apply(size);
-    while ((box.scrollHeight > avail || box.scrollWidth > box.clientWidth) && size > 48) {
-      size -= 6;
+    while ((box.scrollHeight > avail || box.scrollWidth > box.clientWidth) && size > 40) {
+      size -= 4;
       apply(size);
     }
   }
@@ -197,7 +199,7 @@
     var list = document.getElementById('join-rules');
     if (!list) { return; }
     var col = list.parentNode;
-    var size = 30;
+    var size = 27;
     list.style.fontSize = size + 'px';
     while (col.scrollHeight > col.clientHeight && size > 22) {
       size -= 1;

@@ -27,6 +27,28 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	tenantMW := auth.TenantFromPath(a.pool)
 	pub := func(h http.HandlerFunc) http.Handler { return tenantMW(h) }
 
+	// The short join link, at the ROOT. The workspace slug is the longest
+	// part of a game's URL and every character it costs makes the QR on the
+	// wall harder to scan, so this one drops it entirely.
+	//
+	// THE PATH IS TERSE ON PURPOSE, and measured. QR jumps a version band at
+	// 33 characters: at 32 the whole URL fits in 25 modules, at 33 it needs
+	// 29, and modules are what decide whether a phone picks the code up from
+	// across a room (25 modules gives a 21% bigger square than the 33 the
+	// long URL needed). "https://kit.twdata.org" alone is 22 characters, so
+	// the entire path budget is ten — /j/t/ plus a five-character code, with
+	// nothing left over for a readable word. It is still short enough to read
+	// aloud and type, which is the other thing this address has to be.
+	//
+	// Three segments rather than the obvious /j/{code} because Go's mux
+	// rejects that one: it overlaps /{slug}/mcp and neither is more specific,
+	// so registering it panics at startup.
+	//
+	// It carries no {slug}, so the enablement gate cannot wrap it — the
+	// handler checks enablement itself once the code has told it whose game
+	// this is, the same way the widget does for its slug-less routes.
+	mux.Handle("GET /j/t/{code}", http.HandlerFunc(a.handleShortJoin))
+
 	// A STABLE ADDRESS FOR THE SCREEN. Without this a host has to walk over
 	// to the TV and retype a URL every week, which is exactly the chore the
 	// kiosk app exists to remove. "tv" is unambiguous against {game} both by

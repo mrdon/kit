@@ -38,6 +38,10 @@ type Game struct {
 	CreatedBy      *uuid.UUID
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// JoinCode is the short, workspace-less code the QR encodes. The long
+	// /{slug}/trivia/{name} URL keeps working; this exists only to make the
+	// code on the wall scannable from further away.
+	JoinCode string
 }
 
 // Settings are the per-game knobs. Board size, values and the final are
@@ -58,7 +62,15 @@ type Settings struct {
 
 const gameColumns = `id, tenant_id, name, title, phase, board_rows, board_columns,
 	cell_values, token_values, final_wager, answer_seconds, reveal_seconds, bet_seconds,
-	current_round_id, phase_deadline, state_version, created_by, created_at, updated_at`
+	current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
+	COALESCE(join_code, '')`
+
+// gameColumnsQualified is the same list with a table alias, for the one query
+// that joins tenants.
+const gameColumnsQualified = `g.id, g.tenant_id, g.name, g.title, g.phase, g.board_rows, g.board_columns,
+	g.cell_values, g.token_values, g.final_wager, g.answer_seconds, g.reveal_seconds, g.bet_seconds,
+	g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
+	COALESCE(g.join_code, '')`
 
 func scanGame(row pgx.Row) (*Game, error) {
 	var g Game
@@ -66,7 +78,7 @@ func scanGame(row pgx.Row) (*Game, error) {
 		&g.BoardRows, &g.BoardColumns, &g.CellValues, &g.TokenValues, &g.FinalWager,
 		&g.AnswerSeconds, &g.RevealSeconds, &g.BetSeconds,
 		&g.CurrentRoundID, &g.PhaseDeadline, &g.StateVersion,
-		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt)
+		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +90,11 @@ func CreateGame(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 	g, err := scanGame(pool.QueryRow(ctx, `
 		INSERT INTO app_trivia_games
 		    (tenant_id, name, title, phase, board_rows, board_columns, cell_values, token_values,
-		     final_wager, answer_seconds, reveal_seconds, bet_seconds, created_by)
-		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		     final_wager, answer_seconds, reveal_seconds, bet_seconds, created_by, join_code)
+		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING `+gameColumns,
 		tenantID, name, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
-		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, createdBy))
+		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, createdBy, NewJoinCode()))
 	if err != nil {
 		return nil, fmt.Errorf("inserting trivia game: %w", err)
 	}

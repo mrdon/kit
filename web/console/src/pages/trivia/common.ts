@@ -23,6 +23,9 @@ export interface TriviaGame {
   title: string;
   phase: Phase;
   join_url: string;
+  // Same destination, a third of the characters — what the QR encodes and
+  // what the TV prints.
+  short_url: string;
   // The stable address — always shows the newest game. This is the one to put
   // on the screen.
   screen_url: string;

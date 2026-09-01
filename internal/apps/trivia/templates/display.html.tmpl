@@ -19,17 +19,15 @@
   <section class="screen on" id="s-join">
     <div class="join">
       <div class="join-left">
-        <div class="join-words" id="join-words">
-          {{ range .JoinWords }}<div class="join-word">{{ . }}</div>{{ end }}
-        </div>
+        <div class="join-words" id="join-words"><span class="join-word">{{ .Heading }}</span></div>
         <div class="join-url" id="join-url">{{ .JoinHost }}</div>
         <div class="join-count" id="join-count">0 TEAMS IN</div>
-      </div>
-      <div class="join-right">
-        <div class="join-qr">{{ .QR }}</div>
         <ol class="join-rules" id="join-rules">
           {{ range .Rules }}<li>{{ . }}</li>{{ end }}
         </ol>
+      </div>
+      <div class="join-right">
+        <div class="join-qr">{{ .QR }}</div>
       </div>
     </div>
     <div class="join-pills" id="join-pills"></div>

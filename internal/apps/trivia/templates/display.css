@@ -69,21 +69,31 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 
 /* ---------- 1. join ---------- */
-/* min-width: 0 on both columns is load-bearing. A grid track sized in `fr`
-   still refuses to shrink below its content's min-content width, so one long
-   word in the title at 180px pushed the whole right-hand column -- and the QR
-   code with it -- off the edge of the stage. */
+/* THE QR IS THE POINT OF THIS SCREEN. It is the only thing on the wall
+   somebody has to act on, and it is acted on from across a room with a phone
+   camera, so it gets a fixed 720px track and everything else fits around it.
+   The night's name is confirmation that you scanned the right thing -- useful,
+   but nobody needs it in 180px letters.
+
+   minmax(0, 1fr) on the left is load-bearing: a track sized in `fr` still
+   refuses to shrink below its content's min-content width, so one long word
+   in the title used to shove the QR off the edge of the stage. */
 .join {
-  display: grid; grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+  display: grid; grid-template-columns: minmax(0, 1fr) 720px;
   gap: 56px; height: 100%; align-items: center;
+  padding-bottom: 130px; /* the team pills sit along the bottom */
 }
 .join > * { min-width: 0; }
 .join-left { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
-.join-words { display: flex; flex-direction: column; gap: 6px; }
+/* One block that wraps, not one line per word. Splitting per word suited a
+   two-word generated name at 180px; a host's own title ("Quiz night, 1 Sep")
+   became a four-line column of single words, which wastes the space the QR
+   now wants. */
+.join-words { display: block; }
 /* The size is a starting point; JS measures and shrinks it to fit, because a
    title is whatever the host typed and "Quiz night, 1 Sep" is four lines
    where "Trivia" is one. */
-.join-word { font: 400 180px/1.02 var(--display); color: var(--cream); letter-spacing: .01em; }
+.join-word { font: 400 104px/1.06 var(--display); color: var(--cream); letter-spacing: .01em; }
 /* break-word, never break-all: splitting "sturdy" across two lines as
    "st / urdy" is unreadable from across a room, which is the only thing this
    line has to be. JS shrinks it to fit rather than wrapping where it can. */
@@ -91,25 +101,22 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   margin-top: 34px; font: 700 48px/1.2 var(--body); color: var(--accent-l);
   overflow-wrap: break-word; white-space: nowrap;
 }
-.join-count { margin-top: 26px; font: 400 120px/1 var(--display); color: var(--accent); }
+.join-count { margin-top: 18px; font: 400 76px/1 var(--display); color: var(--accent); }
 /* padding-top clears the clock, which is fixed at the top-right of the stage
    and would otherwise sit on the QR's quiet zone -- the one part of the code
    that must stay clean for a scan. */
-.join-right {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 24px; min-height: 0; padding-top: 56px; overflow: hidden;
-}
+.join-right { display: grid; place-items: center; min-height: 0; }
 .join-qr { display: grid; place-items: center; }
 /* The rules, on the wall, while people are standing around waiting anyway.
    Sized so somebody at the bar can read them without walking over -- 28px is
    the floor this display sets for anything at all. */
 .join-rules {
-  margin: 0; padding: 0 0 0 44px; text-align: left;
-  font: 400 30px/1.32 var(--body); color: var(--muted);
-  display: flex; flex-direction: column; gap: 10px;
+  margin: 28px 0 0; padding: 0 0 0 40px; text-align: left;
+  font: 400 27px/1.3 var(--body); color: var(--muted);
+  display: flex; flex-direction: column; gap: 8px;
 }
 .join-rules li::marker { color: var(--accent); font-weight: 700; }
-.join-qr svg { border-radius: 24px; background: #fff; padding: 0; width: 400px; height: 400px; max-width: 100%; }
+.join-qr svg { border-radius: 28px; background: #fff; padding: 0; width: 700px; height: 700px; max-width: 100%; }
 .join-pills { position: absolute; left: 64px; right: 64px; bottom: 48px; display: flex; flex-wrap: wrap; gap: 16px; }
 .pill {
   font: 700 32px/1 var(--body); padding: 18px 28px; border-radius: 999px;

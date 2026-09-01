@@ -84,10 +84,7 @@ type displayData struct {
 	Title string
 	// Heading is what the corner of every screen shows: the night's name as
 	// the host typed it.
-	Heading string
-	// JoinWords is the night's name broken across lines for the join screen's
-	// hero. It is the TITLE, never the URL slug -- see nameWords.
-	JoinWords []string
+	Heading   string
 	JoinHost  string
 	QR        template.HTML
 	CSS       template.CSS
@@ -123,7 +120,13 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	if err != nil {
 		return "", fmt.Errorf("reading display.js: %w", err)
 	}
+	// The QR and the printed line both carry the SHORT link. It is the
+	// easiest thing to scan and also the easiest thing to type off a screen;
+	// the long /{slug}/trivia/{name} URL keeps working for anyone who has it.
 	join := JoinURL(baseURL, slug, game.Name)
+	if game.JoinCode != "" {
+		join = ShortJoinURL(baseURL, game.JoinCode)
+	}
 	qr, err := RenderQR(join, 640)
 	if err != nil {
 		return "", err
@@ -152,7 +155,6 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	err = displayTmpl.ExecuteTemplate(&buf, "display.html.tmpl", displayData{
 		Title:      title,
 		Heading:    heading,
-		JoinWords:  nameWords(heading),
 		JoinHost:   displayHost(join),
 		QR:         qr,
 		CSS:        template.CSS(css),
@@ -168,24 +170,6 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 		return "", fmt.Errorf("rendering trivia display: %w", err)
 	}
 	return buf.String(), nil
-}
-
-// nameWords breaks the night's name across lines for the join screen's hero,
-// one word per line at 180px, because short lines read from the back of a
-// room in a way one long string does not.
-//
-// IT IS GIVEN THE TITLE, NOT THE URL SLUG. The slug was there originally so
-// somebody could type it into a phone -- but there is no name-entry screen;
-// players scan the QR or type the URL, and the URL is printed underneath in
-// full. So the biggest text on the wall was a machine-readable token nobody
-// needed, sitting above the name of the night in small grey letters.
-func nameWords(s string) []string {
-	fields := strings.Fields(strings.ReplaceAll(s, "-", " "))
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, strings.ToUpper(f))
-	}
-	return out
 }
 
 // displayHost strips the scheme from the join URL. Somebody typing it into a

@@ -40,7 +40,7 @@ export default function TriviaSetup() {
         <div>
           <h1>{game.title}</h1>
           <p className="page-sub">
-            Players join at <code>{game.join_url}</code> — or by scanning the QR code on the TV.
+            Players join at <code>{game.short_url}</code> — or by scanning the QR on the TV.
           </p>
           {/* The stable address leads, because it is the one that should end
               up on the screen. Advertising the per-game URL as "the TV URL"

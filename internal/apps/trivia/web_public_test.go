@@ -506,3 +506,71 @@ func TestGameJSONCarriesTheStableScreenURL(t *testing.T) {
 		t.Fatalf("tv_url = %q, want it to pin this game", j.TVURL)
 	}
 }
+
+// The short join link. It exists to make the QR scannable from across a room,
+// so the thing worth testing is that it resolves — and that it cannot be used
+// to reach a workspace that has trivia switched off, since this is the one
+// public route with no {slug} for the enablement gate to wrap.
+func TestShortJoinLinkResolvesToTheGame(t *testing.T) {
+	f := newFixture(t)
+	game := f.newGame(defaultSettings(), nil)
+	if game.JoinCode == "" {
+		t.Fatal("a new game has no join code")
+	}
+	if !IsValidJoinCode(game.JoinCode) {
+		t.Fatalf("generated code %q does not validate", game.JoinCode)
+	}
+
+	mux := http.NewServeMux()
+	registerPublicRoutes(mux, &App{pool: f.pool, svc: f.svc, baseURL: "http://localhost:8489"})
+
+	req := httptest.NewRequest(http.MethodGet, "/j/t/"+game.JoinCode, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 (body %q)", rec.Code, rec.Body.String())
+	}
+	want := "/" + f.tenant.Slug + "/trivia/" + game.Name
+	if got := rec.Header().Get("Location"); got != want {
+		t.Fatalf("Location = %q, want %q", got, want)
+	}
+	// A cached redirect would pin a phone to a game that has finished.
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Fatalf("Cache-Control = %q, want no-store", cc)
+	}
+}
+
+// Junk and unknown codes 404 rather than reaching a query.
+func TestShortJoinLinkRejectsJunk(t *testing.T) {
+	f := newFixture(t)
+	f.newGame(defaultSettings(), nil)
+	mux := http.NewServeMux()
+	registerPublicRoutes(mux, &App{pool: f.pool, svc: f.svc, baseURL: "http://localhost:8489"})
+
+	for _, code := range []string{"zzzzz", "../../etc", "AAAAA", "ab", "iloux", strings.Repeat("a", 40)} {
+		req := httptest.NewRequest(http.MethodGet, "/j/t/"+code, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code == http.StatusFound {
+			t.Errorf("%q resolved to a game", code)
+		}
+	}
+}
+
+// Codes are drawn from an alphabet with the characters that get misread
+// stripped out — a code is read aloud across a bar when a camera will not
+// focus, and "was that an i or a 1" is the failure that causes.
+func TestJoinCodesAvoidAmbiguousCharacters(t *testing.T) {
+	for range 200 {
+		code := NewJoinCode()
+		if len(code) != joinCodeLength {
+			t.Fatalf("code %q is not %d characters", code, joinCodeLength)
+		}
+		for _, bad := range []string{"i", "l", "o", "u"} {
+			if strings.Contains(code, bad) {
+				t.Fatalf("code %q contains the ambiguous character %q", code, bad)
+			}
+		}
+	}
+}

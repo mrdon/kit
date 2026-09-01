@@ -56,6 +56,10 @@ type gameJSON struct {
 	Title   string `json:"title"`
 	Phase   string `json:"phase"`
 	JoinURL string `json:"join_url"`
+	// ShortURL is the same destination in a third of the characters. It is
+	// what the QR encodes and what the TV prints, so it is what a host reads
+	// out when somebody's camera will not focus.
+	ShortURL string `json:"short_url"`
 	// ScreenURL is the STABLE address — it always shows the newest game, and
 	// it is what a host should put on the TV. TVURL pins one specific game
 	// and is the exception, useful for looking at an old night or running two
@@ -74,6 +78,7 @@ func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader 
 	return gameJSON{
 		ID: g.ID.String(), Name: g.Name, Title: g.Title, Phase: string(g.Phase),
 		JoinURL:   JoinURL(a.baseURL, slug, g.Name),
+		ShortURL:  shortURLOrLong(a.baseURL, slug, g),
 		ScreenURL: strings.TrimRight(a.baseURL, "/") + "/" + slug + "/trivia/tv",
 		TVURL:     JoinURL(a.baseURL, slug, g.Name) + "/tv",
 		Teams:     teams, Cells: cells, Played: played, Leader: leader,
@@ -84,6 +89,15 @@ func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader 
 			AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds,
 		},
 	}
+}
+
+// shortURLOrLong prefers the short link, falling back to the readable one for
+// a row that predates join codes and somehow escaped the backfill.
+func shortURLOrLong(baseURL, slug string, g *Game) string {
+	if g.JoinCode != "" {
+		return ShortJoinURL(baseURL, g.JoinCode)
+	}
+	return JoinURL(baseURL, slug, g.Name)
 }
 
 func (a *App) handleListGames(w http.ResponseWriter, r *http.Request) {

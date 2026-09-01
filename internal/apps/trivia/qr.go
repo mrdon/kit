@@ -25,7 +25,15 @@ const quietZone = 6
 // injected into the template as template.HTML, so it must never carry
 // untrusted markup -- everything below is generated from a module grid.
 func RenderQR(url string, size int) (template.HTML, error) {
-	code, err := qr.Encode(url, qr.M)
+	// Level L, not M. Error correction exists to survive DAMAGE — a printed
+	// code that gets folded, smudged or torn. This one is drawn on a glass
+	// panel and is pristine by construction, so the redundancy buys nothing
+	// and costs modules: L renders the same URL in 25 modules where M needs
+	// 29, which is a 16% bigger square at the same panel size. Module size is
+	// what decides whether a phone picks it up from across a room.
+	//
+	// If these are ever PRINTED — a table tent, a poster — put this back to M.
+	code, err := qr.Encode(url, qr.L)
 	if err != nil {
 		return "", fmt.Errorf("encoding qr for %q: %w", url, err)
 	}

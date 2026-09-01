@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	consoleassets "github.com/mrdon/kit/web/console"
 )
@@ -41,6 +42,36 @@ func (a *App) writeDisplay(w http.ResponseWriter, r *http.Request, game *Game, s
 		slog.Warn("writing trivia display", "game_id", game.ID, "error", err)
 	}
 	_ = r
+}
+
+// handleShortJoin turns a short code into the real join page.
+//
+// A redirect rather than serving the page here, so there is one canonical
+// address a phone ends up on: the cookie is Path-scoped to
+// /{slug}/trivia/{game}, and a page served under /j/{code} would be outside
+// that scope and unable to hold an identity at all.
+func (a *App) handleShortJoin(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !IsValidJoinCode(code) {
+		http.NotFound(w, r)
+		return
+	}
+	game, slug, err := GameByJoinCode(r.Context(), a.pool, code)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// This route carries no {slug}, so the enablement gate in
+	// apps.RegisterAllRoutes cannot wrap it. Check here, once the code has
+	// told us whose game it is.
+	if !apps.IsEnabled(r.Context(), game.TenantID, AppName) {
+		http.NotFound(w, r)
+		return
+	}
+	// no-store for the same reason the pages themselves use it: a cached
+	// redirect would pin a phone to a game that has finished.
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	http.Redirect(w, r, "/"+slug+"/trivia/"+game.Name, http.StatusFound)
 }
 
 // handleLatestDisplay serves the newest game's TV page from a fixed address,

@@ -66,7 +66,7 @@ export default function TriviaLive() {
             (<a href={game.tv_url} target="_blank" rel="noreferrer">just this game</a>)
           </p>
           <p className="page-sub">
-            Players: <code>{game.join_url}</code>
+            Players: <code>{game.short_url}</code>
           </p>
         </div>
         <div className="page-head-actions">
