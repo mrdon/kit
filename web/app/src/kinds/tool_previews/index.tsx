@@ -21,8 +21,8 @@ export type ToolPreviewProps = {
 export type ToolPreviewComponent = ComponentType<ToolPreviewProps>;
 
 // NullPreview is registered for internal app resolve handlers
-// (voting_resolve_card, coordination_resolve_decision, etc.) whose
-// tool_arguments are pure routing data (vote_id, coordination_id,
+// (coordination_resolve_decision, etc.) whose
+// tool_arguments are pure routing data (coordination_id,
 // option_id) — the button label already says what the option does, so
 // rendering "Vote Id: <long uuid>" via the SchemaPreview fallback is
 // noise.
@@ -34,7 +34,6 @@ export const toolPreviews: Record<string, ToolPreviewComponent> = {
   post_to_channel: PostToChannelPreview,
   dm_user: DMUserPreview,
   create_task: CreateTaskPreview,
-  voting_resolve_card: NullPreview,
   coordination_resolve_decision: NullPreview,
 };
 

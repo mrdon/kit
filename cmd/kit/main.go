@@ -38,7 +38,6 @@ import (
 	"github.com/mrdon/kit/internal/apps/squareshifts"
 	"github.com/mrdon/kit/internal/apps/task"
 	"github.com/mrdon/kit/internal/apps/vault"
-	"github.com/mrdon/kit/internal/apps/voting"
 	widgetapp "github.com/mrdon/kit/internal/apps/widget"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
@@ -126,7 +125,7 @@ func main() {
 	// GetUserBySlackID / EnsureUserBySlackID call this enricher when a
 	// user row has empty display_name or timezone — once per user
 	// lifetime, persisted on success. Without it, participants added by
-	// start_vote/start_coordination who haven't DM'd Kit themselves
+	// start_coordination who haven't DM'd Kit themselves
 	// would surface as raw Slack IDs in cards and digests.
 	models.RegisterUserEnricher(func(ctx context.Context, tenantID uuid.UUID, slackUserID string) (string, string, bool) {
 		tenant, err := models.GetTenantByID(ctx, pool, tenantID)
@@ -259,10 +258,6 @@ func main() {
 	// (for surfacing decision cards), and the JobService (for shepherd
 	// jobs). Wired here because Messenger lives on app.
 	coordination.Configure(builderLLM, app.Messenger, cards.ServiceForGating(), svc.Jobs)
-
-	// Voting only needs the CardService — the participant ask is the
-	// decision card itself, no Slack DMs go out.
-	voting.Configure(cards.ServiceForGating())
 
 	// Vault uses the same CardService for both admin grant-request
 	// decision cards and user-targeted security-tripwire briefings

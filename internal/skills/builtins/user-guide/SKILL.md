@@ -248,21 +248,6 @@ The organizer's availability is implicit (it's expressed via the candidate slots
 
 Tools: `start_coordination`, `list_coordinations`, `get_coordination`, `cancel_coordination`. Don't hand-DM participants for scheduling — `start_coordination` is the only path that wires up approvals, parsing, and convergence.
 
-## Group votes
-
-When you need quorum approval from a named stakeholder list — board sign-off, partner agreement, "do we all agree on this" — use a vote. Unlike meeting scheduling, no Slack DMs go out: each participant sees a decision card in their card stack and swipes Approve / Object or taps Abstain. Long-press the card to attach a private comment ("happy to approve if we drop the per-seat clause").
-
-> "Start a vote on the new vendor agreement with @alice, @bob, and @carol."
-
-Once everyone resolves or the deadline hits, the organizer sees a digest card with the tally and verbatim objection reasons. Options:
-
-- **Accept** / **Reject** — record the decision silently.
-- **Accept-and-share-with-team** / **Reject-and-announce** — broadcast a sanitized briefing card to each participant so the group sees the outcome.
-
-Votes are one-shot. If objections come in, you decide what to do — there's no automatic compromise round. Don't use this for meeting times (use `start_coordination`) or casual channel polls (Slack's built-in poll is better).
-
-Tools: `start_vote`, `list_votes`, `get_vote`, `cancel_vote`.
-
 ## Vault (shared passwords)
 
 Kit's vault stores team logins — POS accounts, SaaS dashboards, Mailchimp, Squarespace, anything where a small group needs to share one set of credentials. Values are encrypted in the browser before they leave the user's device; Kit and the LLM never see plaintext.

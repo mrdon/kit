@@ -33,7 +33,7 @@ type User struct {
 // Wired once at startup via RegisterUserEnricher. The package-level
 // hook keeps GetUserByID/GetUserBySlackID free of slack-client deps
 // while still letting them lazily hydrate users that were created as
-// skeletons (e.g. participants added by start_vote / start_coordination
+// skeletons (e.g. participants added by start_coordination
 // who haven't DM'd Kit themselves).
 type UserEnricher func(ctx context.Context, tenantID uuid.UUID, slackUserID string) (displayName, timezone string, ok bool)
 
@@ -208,7 +208,7 @@ func SetUserPrimaryRoleID(ctx context.Context, pool *pgxpool.Pool, tenantID, use
 //     fields will fill in next call)
 //
 // Use this from any path that adds a user to Kit's world based on a
-// Slack ID (vote participants, coordination invites, role assignments).
+// Slack ID (coordination invites, role assignments).
 // Auth and messenger paths that want to detect "not registered" should
 // keep using GetUserBySlackID (read-only, returns nil-nil if absent).
 func EnsureUserBySlackID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string) (*User, error) {
