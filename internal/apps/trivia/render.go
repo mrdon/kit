@@ -12,19 +12,30 @@ import (
 //go:embed templates/display.html.tmpl templates/display.css templates/display.js
 var templateFS embed.FS
 
-//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/sample-questions.csv assets/wits-wagers-questions.csv
+//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/wits-wagers-questions.csv
 var assetFS embed.FS
 
-// SampleCSV is a starter question bank: 62 questions across eleven topics,
-// every one of them numeric and several carrying two topics, which is enough
-// to build the default 5x2 board several times over without repeating.
+// sampleRows is enough to show the format and the spread of answers without
+// being a bank somebody tries to play.
+const sampleRows = 12
+
+// SampleCSV is the downloadable template: the header plus a handful of real
+// questions, cut from the shipped pack rather than written by hand.
 //
-// It exists because "upload a CSV" is a worse instruction than "here is one
-// that works" — a host with an empty bank and a blank spreadsheet has to
-// guess the column names, and the first thing they learn otherwise is an
-// error message.
+// Taking them from the pack is the point. A template's job is to show the
+// column format AND the shape a question needs, and the surest way to get the
+// shape wrong is to invent examples — which is exactly how a pack of recall
+// questions ended up shipping here once already.
 func SampleCSV() ([]byte, error) {
-	return assetFS.ReadFile("assets/sample-questions.csv")
+	body, err := assetFS.ReadFile("assets/wits-wagers-questions.csv")
+	if err != nil {
+		return nil, fmt.Errorf("reading the trivia question pack: %w", err)
+	}
+	lines := strings.SplitAfter(string(body), "\n")
+	if len(lines) > sampleRows+1 {
+		lines = lines[:sampleRows+1] // header + sampleRows questions
+	}
+	return []byte(strings.Join(lines, "")), nil
 }
 
 // BuiltinPack is a question set Kit ships. Loading one creates an ordinary
@@ -38,23 +49,33 @@ type BuiltinPack struct {
 }
 
 // BuiltinPacks is the shipped set. Adding one is a line here plus a CSV in
-// assets/ — there is no registry to update and no code that branches on which
-// pack a dataset came from.
+// assets/ -- there is no registry to update and no code that branches on
+// which pack a dataset came from.
+//
+// ONE pack, and it is the published Wits & Wagers questions, because the
+// shape a question needs for this game is not the shape a pub quiz usually
+// has: the answer must be something nobody KNOWS but anybody can reason
+// toward, over a wide enough range that twenty guesses actually spread out.
+//
+// "How many wives did Henry VIII have?" is recall — you know six or you do
+// not, everyone who knows it ties, and "closest without going over" has
+// nothing left to separate them. "How many islands make up Indonesia?" is the
+// game.
+//
+// A hand-written pack shipped here briefly and got this wrong: 38% of its
+// answers were ten or less against 5% for these, and small integers are the
+// clearest symptom, because everyone converges on the same number and the
+// round stops discriminating. It was removed rather than fixed — writing
+// questions of this shape is a skill, and the published game already did it.
 var BuiltinPacks = []BuiltinPack{
-	{
-		Key:   "starter",
-		Name:  "Kit starter pack",
-		Notes: "62 general-knowledge questions across eleven topics. A good first night.",
-		file:  "assets/sample-questions.csv",
-	},
 	{
 		Key:  "wits",
 		Name: "Wits & Wagers questions",
 		// Worth saying out loud: a chunk of these pin their answer to a year
 		// ("as of 2007"). The question text carries the year, so they play
-		// fine -- but somebody skimming the bank should know why the numbers
+		// fine — but somebody skimming the bank should know why the numbers
 		// look dated rather than assuming they are wrong.
-		Notes: "237 questions from the Wits & Wagers sets. Several state the year they were true.",
+		Notes: "237 estimation questions. Several state the year they were true.",
 		file:  "assets/wits-wagers-questions.csv",
 	},
 }

@@ -185,9 +185,17 @@ export default function TriviaQuestions() {
           }} />
         <p className="page-sub">
           Columns <code>question</code>, <code>topics</code> and <code>answer</code>, in any order.
-          Topics are separated by semicolons. Answers must be numbers — the whole game is
-          &ldquo;closest without going over&rdquo;. Uploading a set with a name that already exists
-          replaces its contents.
+          Topics are separated by semicolons. Answers must be numbers. Uploading a set with a name
+          that already exists replaces its contents.
+        </p>
+        <p className="page-sub">
+          {/* The single most useful thing to tell somebody writing their own
+              sheet, and the mistake a first attempt almost always makes. */}
+          Aim for answers nobody <em>knows</em> but anybody can reason toward — &ldquo;how many
+          islands make up Indonesia?&rdquo; rather than &ldquo;how many wives did Henry VIII
+          have?&rdquo;. If everyone at the table knows the answer they all write the same number,
+          they all tie, and &ldquo;closest without going over&rdquo; has nothing to separate them.
+          Answers under ten are the warning sign.
         </p>
         {report ? (
           <div className="banner banner-ok">

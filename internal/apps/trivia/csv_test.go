@@ -1,6 +1,7 @@
 package trivia
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -248,5 +249,109 @@ func TestParseCSVRejectsOverlongPrompts(t *testing.T) {
 func TestParseCSVEmptyFile(t *testing.T) {
 	if _, err := ParseCSV(strings.NewReader("")); err == nil {
 		t.Fatal("expected an error for an empty file")
+	}
+}
+
+// Every shipped pack has to parse cleanly through the same importer a host's
+// upload goes through — a pack that fails to import is worse than no pack.
+func TestShippedPacksImportCleanly(t *testing.T) {
+	for _, p := range BuiltinPacks {
+		body, pack, err := BuiltinPackCSV(p.Key)
+		if err != nil {
+			t.Fatalf("%s: %v", p.Key, err)
+		}
+		plan, err := ParseCSV(bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("%s: %v", pack.Name, err)
+		}
+		if len(plan.Errors) != 0 {
+			t.Fatalf("%s: %d rows rejected, first: %+v", pack.Name, len(plan.Errors), plan.Errors[0])
+		}
+		if len(plan.Rows) < 40 {
+			t.Fatalf("%s has %d questions — too few to fill a board", pack.Name, len(plan.Rows))
+		}
+		// It must be able to fill the default 5x2 board, or "Auto" fails on a
+		// pack we shipped.
+		topics := map[string]int{}
+		for _, q := range plan.Rows {
+			for _, tp := range q.Topics {
+				topics[tp.Key]++
+			}
+		}
+		viable := 0
+		for _, n := range topics {
+			if n >= 2 {
+				viable++
+			}
+		}
+		if viable < 5 {
+			t.Fatalf("%s has %d topics with 2+ questions — the default board needs 5", pack.Name, viable)
+		}
+	}
+}
+
+// The question shape this game needs, guarded on the packs we ship.
+//
+// The answer should be something nobody KNOWS but anybody can reason toward.
+// Small integers are the clearest symptom of the wrong shape: everyone
+// converges on the same number, everyone ties, and "closest without going
+// over" has nothing left to separate them. A hand-written pack shipped here
+// briefly with 38% of its answers at ten or below — this is what would have
+// caught it.
+func TestShippedPacksAreGuessableNotRecallable(t *testing.T) {
+	for _, p := range BuiltinPacks {
+		body, pack, err := BuiltinPackCSV(p.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := ParseCSV(bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		small := 0
+		for _, q := range plan.Rows {
+			if q.AnswerValue <= 10 && q.AnswerValue == float64(int(q.AnswerValue)) {
+				small++
+			}
+		}
+		pct := 100 * small / len(plan.Rows)
+		if pct > 15 {
+			t.Errorf("%s: %d%% of answers are integers <= 10 — too many tables will guess the same "+
+				"number and the round stops discriminating", pack.Name, pct)
+		}
+		t.Logf("%s: %d questions, %d%% small-integer answers", pack.Name, len(plan.Rows), pct)
+	}
+}
+
+// The downloadable template is not a pack — it is an example of the SHAPE, so
+// it is held to the standard it is teaching.
+func TestTemplateDemonstratesTheRightShape(t *testing.T) {
+	body, err := SampleCSV()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ParseCSV(bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Errors) != 0 {
+		t.Fatalf("the template does not import cleanly: %+v", plan.Errors)
+	}
+	if len(plan.Rows) < 5 || len(plan.Rows) > sampleRows {
+		t.Fatalf("the template has %d questions, want up to %d — it is an example, not a bank",
+			len(plan.Rows), sampleRows)
+	}
+	// It is cut from the shipped pack, so it inherits that pack's shape
+	// rather than needing its own hand-written examples.
+	body2, _, err := BuiltinPackCSV(BuiltinPacks[0].Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := ParseCSV(bytes.NewReader(body2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Rows[0].Prompt != full.Rows[0].Prompt {
+		t.Fatal("the template is not cut from the shipped pack — it can drift out of shape")
 	}
 }

@@ -421,7 +421,9 @@ A live pub quiz that runs on three screens at once: a host console you drive fro
 
 There is no buzzer and no adjudication — every team answers every question, all the guesses are revealed together, and because answers are numbers the round scores itself.
 
-**Question sets.** On the **Trivia** page (`/<your-slug>/web/trivia`), create a game and give it some questions. Kit ships two sets you can add with one click — a general starter pack and the Wits & Wagers questions — or upload your own CSV with `question`, `topics` and `answer` columns, in any order.
+**Question sets.** On the **Trivia** page (`/<your-slug>/web/trivia`), create a game and give it some questions. Kit ships the Wits & Wagers question set, which you can add with one click, or upload your own CSV with `question`, `topics` and `answer` columns, in any order.
+
+**What makes a good question here.** Not a normal pub-quiz question. The answer should be something nobody *knows* but anybody can reason toward — "how many islands make up Indonesia?" rather than "how many wives did Henry VIII have?". Recall questions break the game: everyone who knows the answer writes the same number, they all tie, and "closest without going over" has nothing left to separate them. Small answers are the warning sign — if most of your answers are under ten, every table will guess the same thing.
 
 A **set** is just a named group of questions, and each game draws from whichever sets you tick. That's how you keep a Christmas quiz apart from an ordinary Tuesday. Uploading a set with a name that already exists replaces its contents, so fixing a typo and re-uploading does what you'd expect. Delete a set whenever you like — a game that's still in play will block it, but finished games won't, because they keep their own copy of every question they asked. Topics are separated by semicolons, so one question can belong to two categories. Answers must be numbers — that is what makes "closest without going over" work. Re-uploading a corrected sheet updates rows in place rather than duplicating them, and the report tells you what landed, what was a duplicate, and which line of the sheet had a typo.
 
