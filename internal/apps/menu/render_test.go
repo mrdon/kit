@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func tap(section, name, size string) Tap {
@@ -301,5 +302,45 @@ func TestStarfieldIsStableAndEmbedded(t *testing.T) {
 	}
 	if !strings.Contains(html, "--starfield:url(data:image/svg+xml;base64,") {
 		t.Error("starfield missing from the rendered page")
+	}
+}
+
+// TestScreenReloadsRatherThanSplicing pins the fix for the board that lost the
+// bottom of its tap list. The page used to notice a new version by splicing
+// fresh markup into itself, which updated neither the stylesheet nor the
+// script, so a screen that had been on the wall across a deploy rendered the
+// new footer with the CSS it booted with -- an Untappd icon at its intrinsic
+// 180px, and two beers pushed out the bottom of the column.
+func TestScreenReloadsRatherThanSplicing(t *testing.T) {
+	b := &Board{Venue: Venue{Wordmark: "G"}, Taps: []Tap{tap("Lagers", "Beer", DefaultPour)}}
+	html, err := Render(b, nil, "v1")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(html, "location.reload()") {
+		t.Error("the version poll must reload the page, not patch it in place")
+	}
+	for _, splice := range []string{"DOMParser", ".innerHTML ="} {
+		if strings.Contains(html, splice) {
+			t.Errorf("page still splices markup in place (%q): the stylesheet and "+
+				"script would not come with it", splice)
+		}
+	}
+}
+
+// TestVersionCarriesTheRenderStamp keeps deploys reaching screens whose tap
+// list has not moved. The stamp is half the version a board polls; without it
+// a CSS-only change lands on the server and nowhere else.
+func TestVersionCarriesTheRenderStamp(t *testing.T) {
+	stamp := RenderStamp()
+	if len(stamp) != 8 {
+		t.Fatalf("stamp = %q, want 8 chars", stamp)
+	}
+	if again := RenderStamp(); again != stamp {
+		t.Errorf("stamp is not stable: %q then %q", stamp, again)
+	}
+	row := &BoardRow{UpdatedAt: time.Unix(0, 1).UTC()}
+	if got := boardVersion(row); !strings.HasSuffix(got, "."+stamp) {
+		t.Errorf("boardVersion = %q, want it to carry the render stamp %q", got, stamp)
 	}
 }

@@ -27,7 +27,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 
 /* One fixed 1920x1080 stage, scaled to whatever it is shown on, so the page
    looks identical on the TV and in a laptop window. */
-#fit { width: 1920px; height: 1080px; transform-origin: top left; position: absolute; top: 0; left: 0; }
+#stage { width: 1920px; height: 1080px; transform-origin: top left; position: absolute; top: 0; left: 0; }
 
 .board {
   width: 1920px; height: 1080px; padding: 34px 40px;

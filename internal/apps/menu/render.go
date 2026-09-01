@@ -2,12 +2,16 @@ package menu
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"math"
 	"strings"
+	"sync"
 )
 
 //go:embed templates/board.html.tmpl templates/board.css
@@ -21,6 +25,43 @@ var assetFS embed.FS
 var boardTmpl = template.Must(
 	template.ParseFS(templateFS, "templates/board.html.tmpl"),
 )
+
+// RenderStamp fingerprints everything the page's appearance is built from --
+// the template, the stylesheet, the fonts and the graphics -- so it can ride
+// along in the board's version stamp.
+//
+// Without it a deploy reaches no screen already on the wall. The version a
+// board polls is derived from the tap list alone, which is right for the tap
+// list and wrong for everything else: a taproom whose menu is quiet for a week
+// keeps rendering the CSS it booted with, and the first Untappd edit after a
+// deploy swaps in markup the old stylesheet has never seen.
+var RenderStamp = sync.OnceValue(func() string {
+	h := sha256.New()
+	for _, fsys := range []fs.FS{templateFS, assetFS} {
+		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			raw, err := fs.ReadFile(fsys, path)
+			if err != nil {
+				return err
+			}
+			h.Write([]byte(path))
+			h.Write(raw)
+			return nil
+		})
+		if err != nil {
+			// Both trees are compiled into the binary; a read that fails here
+			// means the embed is broken, and a stamp that silently ignored it
+			// would pin every screen to a stylesheet we cannot account for.
+			panic(fmt.Errorf("stamping menu render assets: %w", err))
+		}
+	}
+	// Generated at startup rather than embedded, so it has to be folded in by
+	// hand or a change to the sky would never reach a board.
+	h.Write([]byte(starfieldURI))
+	return hex.EncodeToString(h.Sum(nil))[:8]
+})
 
 // headerCost weights a section header against a beer row when balancing the
 // two columns. A header is shorter than a row but not free, and getting this

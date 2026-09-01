@@ -126,8 +126,13 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 // boardVersion is what the page compares against. updated_at moves only when
 // the tap list actually changes — a refresh that finds nothing new touches
 // synced_at instead — so a quiet menu never reloads a screen.
+//
+// The render stamp is the second half of it, because "has the board changed"
+// is not the same question as "has the tap list changed". A deploy that
+// touches only the stylesheet leaves updated_at alone, and a screen that
+// never notices keeps painting with the CSS it booted with.
 func boardVersion(row *BoardRow) string {
-	return strconv.FormatInt(row.UpdatedAt.UnixNano(), 36)
+	return strconv.FormatInt(row.UpdatedAt.UnixNano(), 36) + "." + RenderStamp()
 }
 
 // writePlaceholder serves the menu before anyone has set a tap list. A 200

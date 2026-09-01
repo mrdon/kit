@@ -7,7 +7,11 @@
 <style>{{ .CSS }}</style>
 </head>
 <body>
-<div id="fit" data-version="{{ .Version }}">
+<!-- id="stage", not "fit": a screen still running the pre-reload script looks
+     for an element called "fit" to splice into itself and falls back to a full
+     reload when it cannot find one. Renaming it is what gets a board already
+     on the wall onto this script without someone carrying a keyboard to it. -->
+<div id="stage" data-version="{{ .Version }}">
 <div class="board">
 
   <header class="head">
@@ -101,12 +105,12 @@
   var VERSION_POLL = 30000;
 
   /* Scale the fixed stage to whatever we are being shown on. */
-  var fit = document.getElementById('fit');
+  var stage = document.getElementById('stage');
   function scale() {
     var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    fit.style.transform = 'scale(' + s + ')';
-    fit.style.left = ((window.innerWidth - 1920 * s) / 2) + 'px';
-    fit.style.top = ((window.innerHeight - 1080 * s) / 2) + 'px';
+    stage.style.transform = 'scale(' + s + ')';
+    stage.style.left = ((window.innerWidth - 1920 * s) / 2) + 'px';
+    stage.style.top = ((window.innerHeight - 1080 * s) / 2) + 'px';
   }
   window.addEventListener('resize', scale);
   scale();
@@ -150,11 +154,20 @@
       }
     }
   }
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(fitNames);
-  } else {
-    window.addEventListener('load', fitNames);
+  /* Both passes measure the space the header and footer leave behind, so they
+     have to run after the things that set that space have laid out. A face
+     still swapping or a graphic still decoding reports a box that is about to
+     change size, and the list gets fitted to the wrong one. */
+  function refit() {
+    fitNames();
+    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(fitNames); }
+    var imgs = stage.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      if (!imgs[i].complete) { imgs[i].addEventListener('load', fitNames); }
+    }
   }
+  window.addEventListener('load', refit);
+  refit();
 
   /* Clock. A frozen clock is how anyone walking past can tell the board
      died -- it is the only liveness signal a wall display has. */
@@ -170,14 +183,19 @@
   tick();
   setInterval(tick, 20000);
 
-  /* Notice a new tap list.
+  /* Notice a new board.
      The server syncs from Untappd every minute, but a screen that loaded once
-     would keep showing the list it booted with. So poll a few bytes and
-     re-fetch the page only when the stamp moves.
+     would keep showing what it booted with. So poll a few bytes and reload
+     when the stamp moves.
 
-     Swap the board's markup rather than reloading: a reload on this hardware
-     is a visible white flash and it restarts the panel rotation mid-cycle. */
-  var stage = document.getElementById('fit');
+     A full reload, not an in-place swap of the markup. Swapping avoids a brief
+     flash and keeps the panel rotation mid-cycle, and it cost us a board: the
+     stamp covers the stylesheet and this script as well as the tap list, and a
+     swap updates neither. The taproom TV spent a day painting a freshly
+     deployed footer with the CSS it had booted with, which sized the Untappd
+     icon at its intrinsic 180px, ate the room the tap columns are measured
+     against, and clipped the bottom of the list. A flash every few hours is
+     cheaper than a class of bug that only ever appears on the wall. */
   function reloadIfStale() {
     var url = location.pathname.replace(/\/$/, '') + '/version';
     if (!/\/menu\//.test(location.pathname)) {
@@ -186,33 +204,16 @@
     fetch(url, { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (v) {
-        if (!v || v === stage.getAttribute('data-version')) return;
-        return fetch(location.href, { cache: 'no-store' })
-          .then(function (r) { return r.text(); })
-          .then(function (html) {
-            var doc = new DOMParser().parseFromString(html, 'text/html');
-            var next = doc.getElementById('fit');
-            if (!next) { location.reload(); return; }
-            stage.innerHTML = next.innerHTML;
-            stage.setAttribute('data-version', next.getAttribute('data-version'));
-            /* The new markup has no sized names, no clock and no rotation. */
-            fitNames();
-            tick();
-            startRotation();
-          });
+        if (v && v !== stage.getAttribute('data-version')) { location.reload(); }
       })
       .catch(function () { /* a failed check must never blank the screen */ });
   }
   setInterval(reloadIfStale, VERSION_POLL);
 
-  /* Rotate the side panel. */
-  var rotationTimer = null;
-  function startRotation() {
+  /* Rotate the side panel. Set up once: a new board arrives as a reload. */
   var panels = document.querySelectorAll('.panel');
   var ticks = document.getElementById('ticks');
-  if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
   if (panels.length > 1) {
-    ticks.innerHTML = '';
     for (var j = 0; j < panels.length; j++) {
       var t = document.createElement('div');
       t.className = 'tick';
@@ -234,15 +235,13 @@
     }
     paintTicks();
 
-    rotationTimer = setInterval(function () {
+    setInterval(function () {
       panels[at].classList.remove('is-on');
       at = (at + 1) % panels.length;
       panels[at].classList.add('is-on');
       paintTicks();
     }, DWELL);
   }
-  }
-  startRotation();
 })();
 </script>
 </body>
