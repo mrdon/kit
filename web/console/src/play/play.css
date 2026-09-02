@@ -181,3 +181,24 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
   font-variant-numeric: tabular-nums;
 }
 .rank-hero .of { font-size: 22px; color: var(--dim); font-weight: 700; }
+
+/* Drag-to-place. Tap is still primary — in a dark bar with greasy hands drag
+   fights a scrolling list — but dragging is the gesture people reach for with
+   something that looks like a casino chip, and it is how you move one that is
+   already down. */
+.chip.dragging { cursor: grabbing; box-shadow: 0 12px 28px rgba(0, 0, 0, .5); }
+
+/* The hole a chip leaves in the tray once it is on a row, so how many are
+   left to place stays obvious. */
+.chip.ghost {
+  background: transparent;
+  border: 2px dashed var(--line);
+}
+
+/* The row a chip is currently over. Distinct from `.armed`, which marks every
+   legal target — this one says "let go here". */
+.slot.over {
+  border-color: var(--ok);
+  background: rgba(78, 201, 165, .16);
+  transform: scale(1.01);
+}

@@ -178,8 +178,13 @@ export function Betting({
   onDone: (f: PlayerFrame) => void;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const [err, setErr] = useState('');
   const running = useRef(false);
+  // Live rects for the answer rows, so a drop can be hit-tested without
+  // measuring the DOM on every pointer move.
+  const rowRefs = useRef(new Map<string, HTMLElement>());
 
   const isFinal = !!frame.round?.isFinal;
   const chips = isFinal ? [frame.you?.stake ?? 0] : frame.tokens;
@@ -209,6 +214,53 @@ export function Betting({
     void place(armed, slot.id);
   };
 
+  // slotUnder finds the answer row beneath a pointer. Hit-testing our own
+  // cached rects rather than elementFromPoint, because the chip being dragged
+  // sits under the finger and would be the top element every time.
+  const slotUnder = (x: number, y: number): string | null => {
+    for (const [id, el] of rowRefs.current) {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id;
+    }
+    return null;
+  };
+
+  const dragProps = (chip: number) => ({
+    drag: true as const,
+    // Snap home on release. The chip's real position is decided by the
+    // server round-trip, so animating it to where it was dropped would be a
+    // lie the next frame has to undo.
+    dragSnapToOrigin: true as const,
+    dragMomentum: false as const,
+    // Follow the finger exactly: elastic drag makes a small target harder to
+    // land on a row in a moving bar.
+    dragElastic: 0,
+    onDragStart: () => {
+      setDragging(chip);
+      setArmed(chip);
+    },
+    onDrag: (_: unknown, info: { point: { x: number; y: number } }) => {
+      const id = slotUnder(info.point.x, info.point.y);
+      setOver(id && !blockedFor(chip, id, placedBy) ? id : null);
+    },
+    onDragEnd: (_: unknown, info: { point: { x: number; y: number } }) => {
+      const id = slotUnder(info.point.x, info.point.y);
+      setDragging(null);
+      setOver(null);
+      if (!id) {
+        // Dropped on nothing. Dragging a placed chip off its row is how you
+        // take it back — the same gesture, no separate control.
+        if (placedBy.has(chip)) void place(chip, null);
+        return;
+      }
+      if (blockedFor(chip, id, placedBy)) return; // snaps home
+      if (placedBy.get(chip) === id) return; // already there
+      void place(chip, id);
+    },
+  });
+
+  const active = dragging ?? armed;
+
   return (
     <div className="body">
       <Clock msLeft={msLeft} note="to place your chips" />
@@ -217,31 +269,51 @@ export function Betting({
       <div className="tray">
         {chips.map((amount, i) => {
           const placed = placedBy.has(i);
+          if (placed) {
+            // Its home is the row it is on; leave a hole in the tray so the
+            // count of chips still to place is obvious at a glance.
+            return <span key={i} className={`chip c${i} ghost`} aria-hidden="true" />;
+          }
           return (
             <motion.button
               key={i}
-              className={`chip c${i} ${armed === i ? 'armed' : ''} ${placed ? 'placed' : ''}`}
+              className={`chip c${i} ${armed === i ? 'armed' : ''} ${dragging === i ? 'dragging' : ''}`}
               onClick={() => setArmed(armed === i ? null : i)}
               whileTap={{ scale: 0.92 }}
+              whileDrag={{ scale: 1.15, zIndex: 30 }}
               aria-label={`${money(amount)} chip`}
+              {...dragProps(i)}
             >
               {money(amount)}
             </motion.button>
           );
         })}
         <span className="hint">
-          {armed === null ? 'Tap a chip, then an answer' : 'Now tap an answer'}
+          {active === null
+            ? 'Drag a chip onto an answer, or tap it then tap an answer'
+            : 'Drop it on an answer'}
         </span>
       </div>
 
       <div className="slots">
         {frame.slots.map((s) => {
-          const blocked = armed !== null && blockedFor(armed, s.id, placedBy);
+          const blocked = active !== null && blockedFor(active, s.id, placedBy);
           const mine = (frame.you?.chips ?? []).filter((c) => c.slotId === s.id);
+          const target = over === s.id;
           return (
             <motion.div
               key={s.id}
-              className={`slot ${s.value === null ? 'pseudo' : ''} ${armed !== null && !blocked ? 'armed' : ''} ${blocked ? 'blocked' : ''}`}
+              ref={(el: HTMLDivElement | null) => {
+                if (el) rowRefs.current.set(s.id, el);
+                else rowRefs.current.delete(s.id);
+              }}
+              className={[
+                'slot',
+                s.value === null ? 'pseudo' : '',
+                active !== null && !blocked ? 'armed' : '',
+                blocked ? 'blocked' : '',
+                target ? 'over' : '',
+              ].filter(Boolean).join(' ')}
               onClick={() => tapSlot(s)}
               whileTap={armed !== null && !blocked ? { scale: 0.98 } : undefined}
             >
@@ -254,17 +326,22 @@ export function Betting({
               </div>
               <div className="mine">
                 {mine.map((c) => (
-                  <button
+                  // A placed chip stays draggable, so moving it to another
+                  // answer is the same gesture that put it there — and while
+                  // the clock is still running, moving is the whole game.
+                  <motion.button
                     key={c.tokenIndex}
-                    className={`chip c${c.tokenIndex}`}
+                    className={`chip c${c.tokenIndex} ${dragging === c.tokenIndex ? 'dragging' : ''}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       void place(c.tokenIndex, null);
                     }}
-                    aria-label="take this chip back"
+                    whileDrag={{ scale: 1.15, zIndex: 30 }}
+                    aria-label={`${money(c.amount)} chip — drag to move it, tap to take it back`}
+                    {...dragProps(c.tokenIndex)}
                   >
                     {money(c.amount)}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </motion.div>
