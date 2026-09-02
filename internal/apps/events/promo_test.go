@@ -71,6 +71,12 @@ func keysOf(items []PromoItem) []string {
 
 func noState() map[promoKey]promoRecord { return map[promoKey]promoRecord{} }
 
+// testSettings gives the list a public URL template so the copy payload has a
+// link, matching what a configured workspace has.
+func testSettings() Settings {
+	return Settings{Timezone: "America/Denver", PublicURLTemplate: "https://example.com/events/{slug}"}
+}
+
 // A drip beat whose window has closed drops off entirely rather than sitting
 // on the page in red. This is the anti-guilt-ledger rule and the single most
 // load-bearing behaviour in the file.
@@ -80,7 +86,7 @@ func TestPromo_ExpiredDripDisappears(t *testing.T) {
 	e := testEvent("Oktoberfest", 3)
 	c := testChannel("Facebook", ChannelManual, drip("remind-1wk", 7, 2))
 
-	got := buildPromoList([]Event{e}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow)
 	if len(got) != 0 {
 		t.Errorf("expected the lapsed reminder to vanish, got %v", keysOf(got))
 	}
@@ -92,7 +98,7 @@ func TestPromo_DripInsideItsWindowIsListed(t *testing.T) {
 	e := testEvent("Oktoberfest", 6)
 	c := testChannel("Facebook", ChannelManual, drip("remind-1wk", 7, 2))
 
-	got := buildPromoList([]Event{e}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected the reminder to be listed, got %v", keysOf(got))
 	}
@@ -106,7 +112,7 @@ func TestPromo_DripDropsAfterTheEvent(t *testing.T) {
 	e := testEvent("Last Week's Party", -2)
 	c := testChannel("Facebook", ChannelManual, drip("announce", 21, 0))
 
-	if got := buildPromoList([]Event{e}, []Channel{c}, noState(), promoNow); len(got) != 0 {
+	if got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow); len(got) != 0 {
 		t.Errorf("expected nothing after the event, got %v", keysOf(got))
 	}
 }
@@ -122,11 +128,11 @@ func TestPromo_StepKindsMatchEventShape(t *testing.T) {
 	)
 
 	series := testEvent("Trivia", 3, weekly)
-	got := keysOf(buildPromoList([]Event{series}, []Channel{c}, noState(), promoNow))
+	got := keysOf(buildPromoList([]Event{series}, []Channel{c}, noState(), testSettings(), promoNow))
 	assertSameSet(t, "series", got, []string{"Facebook/create-fb-event", "Facebook/mention-it"})
 
 	oneOff := testEvent("Oktoberfest", 30)
-	got = keysOf(buildPromoList([]Event{oneOff}, []Channel{c}, noState(), promoNow))
+	got = keysOf(buildPromoList([]Event{oneOff}, []Channel{c}, noState(), testSettings(), promoNow))
 	assertSameSet(t, "one-off", got, []string{"Facebook/create-fb-event", "Facebook/announce"})
 }
 
@@ -156,7 +162,7 @@ func TestPromo_CadenceDueOnFirstOccurrenceAfterTheFloor(t *testing.T) {
 		},
 	}
 
-	got := buildPromoList([]Event{e}, []Channel{c}, state, promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, state, testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected one cadence item, got %v", keysOf(got))
 	}
@@ -186,7 +192,7 @@ func TestPromo_CadenceNeverStacks(t *testing.T) {
 		{e.ID, c.ID, "mention-it"}: {State: PromoDone, LastDoneAt: &lastDone},
 	}
 
-	got := buildPromoList([]Event{e}, []Channel{c}, state, promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, state, testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected exactly one outstanding cadence item, got %d: %v", len(got), keysOf(got))
 	}
@@ -201,12 +207,12 @@ func TestPromo_SubscribedChannelGeneratesNothing(t *testing.T) {
 	e := testEvent("Oktoberfest", 30, featured)
 	c := testChannel("Chamber", ChannelManual, oneshot("submit"))
 
-	if got := buildPromoList([]Event{e}, []Channel{c}, noState(), promoNow); len(got) != 1 {
+	if got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow); len(got) != 1 {
 		t.Fatalf("manual chamber should want a submission, got %v", keysOf(got))
 	}
 
 	c.Mode = ChannelSubscribed
-	if got := buildPromoList([]Event{e}, []Channel{c}, noState(), promoNow); len(got) != 0 {
+	if got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow); len(got) != 0 {
 		t.Errorf("a subscribed channel must generate no work, got %v", keysOf(got))
 	}
 }
@@ -228,12 +234,12 @@ func TestPromo_ProminenceGatesChannelAndStep(t *testing.T) {
 	// Background: below the chamber's floor entirely; Facebook takes it for
 	// the announce but not the featured-only reminder.
 	happyHour := testEvent("Happy Hour", 25, background)
-	got := keysOf(buildPromoList([]Event{happyHour}, channels, noState(), promoNow))
+	got := keysOf(buildPromoList([]Event{happyHour}, channels, noState(), testSettings(), promoNow))
 	assertSameSet(t, "background", got, []string{"Facebook/announce"})
 
 	// Featured clears everything.
 	okt := testEvent("Oktoberfest", 25, featured)
-	got = keysOf(buildPromoList([]Event{okt}, channels, noState(), promoNow))
+	got = keysOf(buildPromoList([]Event{okt}, channels, noState(), testSettings(), promoNow))
 	assertSameSet(t, "featured", got, []string{"Chamber/submit", "Facebook/announce", "Facebook/remind"})
 }
 
@@ -254,7 +260,7 @@ func TestPromo_OffsiteExcludedUnlessChannelOptsIn(t *testing.T) {
 	facebook := testChannel("Facebook", ChannelManual, oneshot("post"))
 	facebook.IncludeOffsite = true
 
-	got := keysOf(buildPromoList([]Event{gabf}, []Channel{chamber, facebook}, noState(), promoNow))
+	got := keysOf(buildPromoList([]Event{gabf}, []Channel{chamber, facebook}, noState(), testSettings(), promoNow))
 	assertSameSet(t, "offsite", got, []string{"Facebook/post"})
 }
 
@@ -269,7 +275,7 @@ func TestPromo_NeverPromotesNonPublicEvents(t *testing.T) {
 	draft := testEvent("Unfinished", 20)
 	draft.Status = StatusDraft
 
-	got := buildPromoList([]Event{private, draft}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{private, draft}, []Channel{c}, noState(), testSettings(), promoNow)
 	if len(got) != 0 {
 		t.Errorf("private and draft events must generate no promotion work, got %v", keysOf(got))
 	}
@@ -284,7 +290,7 @@ func TestPromo_IgnoredStaysGone(t *testing.T) {
 	state := map[promoKey]promoRecord{
 		{e.ID, c.ID, "submit"}: {State: PromoIgnored},
 	}
-	if got := buildPromoList([]Event{e}, []Channel{c}, state, promoNow); len(got) != 0 {
+	if got := buildPromoList([]Event{e}, []Channel{c}, state, testSettings(), promoNow); len(got) != 0 {
 		t.Errorf("an ignored item must not reappear, got %v", keysOf(got))
 	}
 }
@@ -300,7 +306,7 @@ func TestPromo_AutomatableIsPerStep(t *testing.T) {
 	)
 	c.Connector = "meta"
 
-	got := buildPromoList([]Event{e}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow)
 	manual := map[string]bool{}
 	for _, it := range got {
 		manual[it.StepKey] = it.Manual
@@ -325,7 +331,7 @@ func TestPromo_OrdersByDeadlineNotEventDate(t *testing.T) {
 
 	fb := testChannel("Facebook", ChannelManual, drip("announce", 7, 0)) // due in 9 days
 
-	got := buildPromoList([]Event{e}, []Channel{chamber, fb}, noState(), promoNow)
+	got := buildPromoList([]Event{e}, []Channel{chamber, fb}, noState(), testSettings(), promoNow)
 	if len(got) != 2 {
 		t.Fatalf("expected both items, got %v", keysOf(got))
 	}
@@ -343,7 +349,7 @@ func TestPromo_OverdueSortsFirst(t *testing.T) {
 	c.MinProminence = ProminenceFeatured
 	c.LeadTimeDays = 30 // late: due 10 days ago; soon: due in 10 days
 
-	got := buildPromoList([]Event{soon, late}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{soon, late}, []Channel{c}, noState(), testSettings(), promoNow)
 	if len(got) != 2 {
 		t.Fatalf("expected two items, got %v", keysOf(got))
 	}
@@ -360,7 +366,7 @@ func TestPromo_SummaryCountsOnlyActionable(t *testing.T) {
 	state := map[promoKey]promoRecord{
 		{e.ID, c.ID, "poster"}: {State: PromoAutoDone},
 	}
-	got := summarisePromo(buildPromoList([]Event{e}, []Channel{c}, state, promoNow))
+	got := summarisePromo(buildPromoList([]Event{e}, []Channel{c}, state, testSettings(), promoNow))
 	if got.Outstanding != 1 {
 		t.Errorf("outstanding = %d, want 1 (a completed item is not work)", got.Outstanding)
 	}
@@ -378,7 +384,7 @@ func TestPromo_AutoFailureIsActionable(t *testing.T) {
 	state := map[promoKey]promoRecord{
 		{e.ID, c.ID, "announce"}: {State: PromoAutoFailed, Note: "token expired"},
 	}
-	got := buildPromoList([]Event{e}, []Channel{c}, state, promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, state, testSettings(), promoNow)
 	if len(got) != 1 || got[0].State != PromoAutoFailed {
 		t.Fatalf("a failed post must surface as work, got %v", got)
 	}
@@ -451,7 +457,7 @@ func TestPromo_CadenceScalesWithHowRareTheSeriesIs(t *testing.T) {
 		}
 	}
 
-	got := buildPromoList([]Event{trivia}, []Channel{c}, state(trivia), promoNow)
+	got := buildPromoList([]Event{trivia}, []Channel{c}, state(trivia), testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected a trivia cadence item, got %v", keysOf(got))
 	}
@@ -460,7 +466,7 @@ func TestPromo_CadenceScalesWithHowRareTheSeriesIs(t *testing.T) {
 		t.Errorf("weekly trivia should wait out the 21-day floor, next due in %.0f days", triviaGap)
 	}
 
-	got = buildPromoList([]Event{dnd}, []Channel{c}, state(dnd), promoNow)
+	got = buildPromoList([]Event{dnd}, []Channel{c}, state(dnd), testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected a game-night cadence item, got %v", keysOf(got))
 	}
@@ -479,7 +485,7 @@ func TestPromo_CadenceLandsOnAnOccurrence(t *testing.T) {
 	trivia.RRule = "FREQ=WEEKLY;BYDAY=WE"
 	trivia.StartsAt = time.Date(2026, 9, 2, 19, 0, 0, 0, time.UTC)
 
-	got := buildPromoList([]Event{trivia}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{trivia}, []Channel{c}, noState(), testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected one item, got %v", keysOf(got))
 	}
@@ -496,7 +502,7 @@ func TestPromo_CadenceRespectsLeadTime(t *testing.T) {
 	trivia.RRule = "FREQ=WEEKLY;BYDAY=WE"
 	trivia.StartsAt = time.Date(2026, 9, 2, 19, 0, 0, 0, time.UTC)
 
-	got := buildPromoList([]Event{trivia}, []Channel{c}, noState(), promoNow)
+	got := buildPromoList([]Event{trivia}, []Channel{c}, noState(), testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected one item, got %v", keysOf(got))
 	}
@@ -512,7 +518,7 @@ func TestPromo_CadenceStopsWhenTheSeriesEnds(t *testing.T) {
 	ended := testEvent("Summer Series", -400)
 	ended.RRule = "FREQ=WEEKLY;BYDAY=WE;UNTIL=20260101T000000Z"
 
-	if got := buildPromoList([]Event{ended}, []Channel{c}, noState(), promoNow); len(got) != 0 {
+	if got := buildPromoList([]Event{ended}, []Channel{c}, noState(), testSettings(), promoNow); len(got) != 0 {
 		t.Errorf("a finished series should generate nothing, got %v", keysOf(got))
 	}
 }
@@ -541,7 +547,7 @@ func TestPromo_CadenceDoesNotSkipANearlyMonthlySeries(t *testing.T) {
 		{dnd.ID, c.ID, "mention"}: {State: PromoDone, LastDoneAt: &lastDone},
 	}
 
-	got := buildPromoList([]Event{dnd}, []Channel{c}, state, promoNow)
+	got := buildPromoList([]Event{dnd}, []Channel{c}, state, testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected one cadence item, got %v", keysOf(got))
 	}
@@ -564,12 +570,56 @@ func TestPromo_CadenceOnWeeklyStaysAboutMonthly(t *testing.T) {
 		{e.ID, c.ID, "mention"}: {State: PromoDone, LastDoneAt: &lastDone},
 	}
 
-	got := buildPromoList([]Event{e}, []Channel{c}, state, promoNow)
+	got := buildPromoList([]Event{e}, []Channel{c}, state, testSettings(), promoNow)
 	if len(got) != 1 {
 		t.Fatalf("expected one cadence item, got %v", keysOf(got))
 	}
 	gap := got[0].DueAt.Sub(lastDone).Hours() / 24
 	if gap < 18 || gap > 32 {
 		t.Errorf("weekly trivia promoted %.0f days after the last post; should be about a month", gap)
+	}
+}
+
+// The copy button's payload comes off these fields, so they have to be the
+// EVENT's details -- most importantly its own public page. `URL` on the item
+// is the promo record's, which records where this was posted: empty until the
+// job is done, and the wrong link to paste while doing it.
+func TestPromo_CarriesTheEventDetailsForPasting(t *testing.T) {
+	e := testEvent("Oktoberfest", 20, featured)
+	e.Slug = "oktoberfest"
+	e.Location = "Bier Garten"
+	e.Summary = "Steins, polka and a whole hog"
+	c := testChannel("Chamber", ChannelManual, oneshot("submit"))
+	c.MinProminence = ProminenceFeatured
+
+	got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected one item, got %v", keysOf(got))
+	}
+	it := got[0]
+	if it.EventURL != "https://example.com/events/oktoberfest" {
+		t.Errorf("event_url = %q, want the event's own public page", it.EventURL)
+	}
+	if it.URL != "" {
+		t.Errorf("url = %q, want empty — nothing has been posted yet", it.URL)
+	}
+	if it.EventLocation != "Bier Garten" || it.EventSummary != "Steins, polka and a whole hog" {
+		t.Errorf("venue and blurb should ride along for pasting: %+v", it)
+	}
+}
+
+// Description stands in when there is no summary, since a form still wants
+// some prose and an empty box helps nobody.
+func TestPromo_FallsBackToDescriptionWhenNoSummary(t *testing.T) {
+	e := testEvent("Bike Night", 20)
+	e.Description = "Ride in, park up, first pint discounted."
+	c := testChannel("Facebook", ChannelManual, drip("announce", 21, 0))
+
+	got := buildPromoList([]Event{e}, []Channel{c}, noState(), testSettings(), promoNow)
+	if len(got) != 1 {
+		t.Fatalf("expected one item, got %v", keysOf(got))
+	}
+	if got[0].EventSummary != "Ride in, park up, first pint discounted." {
+		t.Errorf("summary = %q, want the description as the fallback", got[0].EventSummary)
 	}
 }

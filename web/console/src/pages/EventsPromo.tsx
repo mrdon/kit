@@ -55,15 +55,6 @@ function PromoRow({
   const failed = item.state === 'auto_failed';
   const settled = item.state === 'done' || item.state === 'auto_done';
 
-  // Everything needed to do the job without hunting for it: the deep link,
-  // the copy, and what was said last time.
-  const copy = [
-    item.event_title,
-    new Date(item.event_start).toLocaleString(),
-    item.url || '',
-  ]
-    .filter(Boolean)
-    .join('\n');
 
   return (
     <tr className={item.overdue ? 'row-warn' : undefined}>
@@ -122,14 +113,7 @@ function PromoRow({
             Open
           </a>
         )}
-        <button
-          className="btn btn-ghost"
-          disabled={busy}
-          onClick={() => navigator.clipboard?.writeText(copy)}
-          title="Copy the title, date and link, ready to paste into their form"
-        >
-          Copy
-        </button>
+        <CopyButton item={item} disabled={busy} />
         <button
           className="btn btn-ghost"
           disabled={busy}
@@ -450,5 +434,93 @@ function EventGroup({
         </table>
       )}
     </div>
+  );
+}
+
+// pasteBlock is what lands on the clipboard: everything a listing form asks
+// for, in the order those forms ask for it.
+//
+// The link is the event's OWN page, never the promo row's url — that one
+// records where this was posted, so it is empty while you are doing the job
+// and points at last time's post once you are done.
+function pasteBlock(item: PromoItem): string {
+  const tz = item.event_timezone;
+  const when = item.event_all_day
+    ? whenDate(item.event_start, tz)
+    : `${whenDate(item.event_start, tz)}, ${whenTime(item.event_start, tz)}${
+        item.event_end ? `–${whenTime(item.event_end, tz)}` : ''
+      }`;
+
+  return [
+    item.event_title,
+    when,
+    item.event_location,
+    item.event_summary,
+    item.event_url,
+  ]
+    .map((l) => (l ?? '').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+// Rendered in the EVENT's timezone, not the browser's.
+//
+// A listing describes when the doors open at the venue. Formatting in the
+// reader's zone would silently shift that for anyone working from a laptop set
+// elsewhere -- and the resulting paste would be wrong in a way nobody notices
+// until people turn up at the wrong time. Falls back to the browser only when
+// the event carries no zone.
+function whenDate(iso: string, tz?: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: tz || undefined,
+  });
+}
+
+function whenTime(iso: string, tz?: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: tz || undefined,
+  });
+}
+
+// CopyButton says whether it worked.
+//
+// The previous version was `navigator.clipboard?.writeText(...)` with no
+// feedback at all: the optional chain swallowed the case where the API is
+// missing, and even the success path looked identical to a dead button. On a
+// page whose whole job is saving you a trip back to the event, silently not
+// copying is the worst available outcome.
+function CopyButton({ item, disabled }: { item: PromoItem; disabled: boolean }) {
+  const [state, setState] = useState<'idle' | 'ok' | 'failed'>('idle');
+
+  const copy = async () => {
+    const text = pasteBlock(item);
+    try {
+      if (!navigator.clipboard) throw new Error('no clipboard API');
+      await navigator.clipboard.writeText(text);
+      setState('ok');
+    } catch {
+      setState('failed');
+      // Last resort so the details are still gettable: put them somewhere the
+      // person can select by hand rather than leaving them with nothing.
+      window.prompt('Copy the event details:', text.replace(/\n/g, ' · '));
+    }
+    window.setTimeout(() => setState('idle'), 2000);
+  };
+
+  return (
+    <button
+      className="btn btn-ghost"
+      disabled={disabled}
+      onClick={() => void copy()}
+      title="Copy the title, when, venue, blurb and link — ready to paste into their form"
+    >
+      {state === 'ok' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy'}
+    </button>
   );
 }

@@ -53,10 +53,23 @@ func (s PromoState) actionable() bool {
 
 // PromoItem is one row of the page.
 type PromoItem struct {
-	EventID    uuid.UUID `json:"event_id"`
-	EventTitle string    `json:"event_title"`
-	EventSlug  string    `json:"event_slug"`
-	EventStart time.Time `json:"event_start"`
+	EventID    uuid.UUID  `json:"event_id"`
+	EventTitle string     `json:"event_title"`
+	EventSlug  string     `json:"event_slug"`
+	EventStart time.Time  `json:"event_start"`
+	EventEnd   *time.Time `json:"event_end,omitempty"`
+	// The rest of what a submission form asks for. Carried so the checklist's
+	// copy button produces something pasteable rather than sending you back to
+	// the event to collect the venue and the blurb by hand.
+	//
+	// EventURL is the event's own public page, NOT the promo row's `url` --
+	// that one records where this was posted, so it is empty until after the
+	// job is done and useless as the link you paste while doing it.
+	EventLocation string `json:"event_location,omitempty"`
+	EventSummary  string `json:"event_summary,omitempty"`
+	EventURL      string `json:"event_url,omitempty"`
+	EventTimezone string `json:"event_timezone,omitempty"`
+	EventAllDay   bool   `json:"event_all_day,omitempty"`
 
 	ChannelID   uuid.UUID `json:"channel_id"`
 	ChannelName string    `json:"channel_name"`
@@ -109,7 +122,7 @@ type promoRecord struct {
 
 // buildPromoList is the whole computation, kept pure so it can be tested
 // without a database. `now` is injected for the same reason.
-func buildPromoList(events []Event, channels []Channel, state map[promoKey]promoRecord, now time.Time) []PromoItem {
+func buildPromoList(events []Event, channels []Channel, state map[promoKey]promoRecord, settings Settings, now time.Time) []PromoItem {
 	out := make([]PromoItem, 0, len(events)*2)
 	for i := range events {
 		e := &events[i]
@@ -122,7 +135,7 @@ func buildPromoList(events []Event, channels []Channel, state map[promoKey]promo
 				if !c.stepApplies(s, e) {
 					continue
 				}
-				item, ok := buildPromoItem(e, c, s, state[promoKey{e.ID, c.ID, s.Key}], now)
+				item, ok := buildPromoItem(e, c, s, state[promoKey{e.ID, c.ID, s.Key}], settings, now)
 				if !ok {
 					continue
 				}
@@ -136,24 +149,33 @@ func buildPromoList(events []Event, channels []Channel, state map[promoKey]promo
 
 // buildPromoItem resolves one (event, channel, step) against its stored state.
 // Returns false when the item should not appear at all.
-func buildPromoItem(e *Event, c *Channel, s Step, rec promoRecord, now time.Time) (PromoItem, bool) {
+func buildPromoItem(e *Event, c *Channel, s Step, rec promoRecord, settings Settings, now time.Time) (PromoItem, bool) {
 	item := PromoItem{
-		EventID:     e.ID,
-		EventTitle:  e.Title,
-		EventSlug:   e.Slug,
-		EventStart:  e.StartsAt,
-		ChannelID:   c.ID,
-		ChannelName: c.Name,
-		SubmitURL:   c.SubmitURL,
-		StepKey:     s.Key,
-		StepLabel:   s.Label,
-		StepKind:    s.Kind,
-		State:       rec.State,
-		URL:         rec.URL,
-		Note:        rec.Note,
-		LastDoneAt:  rec.LastDoneAt,
-		LastURL:     rec.LastURL,
-		Manual:      c.isManualWork(s),
+		EventID:    e.ID,
+		EventTitle: e.Title,
+		EventSlug:  e.Slug,
+		EventStart: e.StartsAt,
+		EventEnd:   e.EndsAt,
+		// Summary first: it is the one-line teaser written for listings, which
+		// is exactly what a submission form wants. Description is the long
+		// body and only stands in when there is no summary.
+		EventLocation: e.Location,
+		EventSummary:  firstNonEmpty(e.Summary, e.Description),
+		EventURL:      settings.CanonicalURL(e.Slug),
+		EventTimezone: e.Timezone,
+		EventAllDay:   e.AllDay,
+		ChannelID:     c.ID,
+		ChannelName:   c.Name,
+		SubmitURL:     c.SubmitURL,
+		StepKey:       s.Key,
+		StepLabel:     s.Label,
+		StepKind:      s.Kind,
+		State:         rec.State,
+		URL:           rec.URL,
+		Note:          rec.Note,
+		LastDoneAt:    rec.LastDoneAt,
+		LastURL:       rec.LastURL,
+		Manual:        c.isManualWork(s),
 	}
 	if item.State == "" {
 		item.State = PromoTodo

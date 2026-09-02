@@ -84,7 +84,11 @@ func (s *Service) PromoList(ctx context.Context, tenantID uuid.UUID) ([]PromoIte
 	if err != nil {
 		return nil, err
 	}
-	return buildPromoList(events, channels, state, now), nil
+	settings, err := getSettings(ctx, s.pool, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return buildPromoList(events, channels, state, settings, now), nil
 }
 
 // PromoSummaryFor is what the reminder card needs: a count, not a grid.

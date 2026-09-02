@@ -514,6 +514,16 @@ export interface PromoItem {
   event_title: string;
   event_slug: string;
   event_start: string;
+  event_end?: string;
+  // What a submission form asks for, carried so the copy button does not send
+  // you back to the event to collect the venue and blurb by hand. event_url is
+  // the event's own public page — distinct from `url` below, which records
+  // where this item was posted.
+  event_location?: string;
+  event_summary?: string;
+  event_url?: string;
+  event_timezone?: string;
+  event_all_day?: boolean;
   channel_id: string;
   channel_name: string;
   submit_url?: string;
