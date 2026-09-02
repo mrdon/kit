@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
@@ -15,9 +15,11 @@ import { PHASE_LABEL, money, primaryAction, type HostFrame } from './common';
 export default function TriviaLive() {
   useSetChatContext('the Trivia live page');
   const { id = '' } = useParams();
+  const nav = useNavigate();
   const [game, setGame] = useState<TriviaGame | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ending, setEnding] = useState(false);
   const { frame, connected, msLeft, apply } = useHostStream(id);
 
   useEffect(() => {
@@ -30,6 +32,10 @@ export default function TriviaLive() {
     setErr(null);
     try {
       apply(await api.triviaAction(id, { from_phase: frame.phase, ...body }));
+      // Ending the game is the last thing a host does here, so leaving them
+      // parked on a finished game's driver page is a dead end — the podium is
+      // on the TV, not on their laptop.
+      if (body.action === 'finish') nav('/trivia');
     } catch (e) {
       const msg = (e as Error).message;
       // A conflict is not an error the host has to do anything about: the
@@ -70,9 +76,22 @@ export default function TriviaLive() {
           </p>
         </div>
         <div className="page-head-actions">
-          <button className="btn btn-danger" onClick={() => void act({ action: 'finish' })} disabled={busy}>
-            End game
-          </button>
+          {/* Two taps: ending a game is not reversible and the button sits
+              next to the ones a host presses every round. */}
+          {ending ? (
+            <>
+              <button className="btn btn-danger" disabled={busy}
+                onClick={() => void act({ action: 'finish' })}>
+                Really end it
+              </button>
+              <button className="btn btn-danger" disabled={busy}
+                onClick={() => setEnding(false)}>Cancel</button>
+            </>
+          ) : (
+            <button className="btn btn-danger" disabled={busy} onClick={() => setEnding(true)}>
+              End game
+            </button>
+          )}
         </div>
       </div>
 

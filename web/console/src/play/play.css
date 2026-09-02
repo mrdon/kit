@@ -202,3 +202,27 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
   background: rgba(78, 201, 165, .16);
   transform: scale(1.01);
 }
+
+/* Betting: the two things people could not tell were how many chips they had
+   and whether they were finished. Both now have their own space rather than
+   being inferred from the tray. */
+.betting-head {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px; border-radius: 14px;
+  background: rgba(255, 255, 255, .05); border: 2px solid var(--line);
+}
+.betting-status { margin: 0; font-size: 15px; line-height: 1.35; color: var(--muted); }
+.betting-status.done { color: var(--ok); font-weight: 700; }
+
+/* A placed chip leaves a ticked outline rather than an empty hole, so "that
+   one is done" reads as done rather than as missing. */
+.chip.ghost {
+  background: transparent;
+  border: 2px dashed var(--line);
+  color: var(--ok);
+  font-size: 20px;
+}
+
+/* The question stays available but stops competing with the chips for the
+   top of a phone screen — by betting time the room has read it twice. */
+.q-compact { font-size: 17px; color: var(--muted); font-weight: 600; }

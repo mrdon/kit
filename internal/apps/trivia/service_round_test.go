@@ -546,3 +546,31 @@ func TestBettingClosesEarlyWhenEveryTableHasPlaced(t *testing.T) {
 		t.Fatalf("the TV shows %d chips after betting closed, want all 4", shown)
 	}
 }
+
+// A game cannot start without a board. Starting into an empty board puts the
+// room in front of a screen with nothing to pick and the only way out is to
+// end the game.
+func TestCannotStartWithoutABoard(t *testing.T) {
+	f := newFixture(t)
+	game := f.newGame(defaultSettings(), nil) // no board built
+
+	_, err := f.svc.Do(f.ctx, f.tenant.ID, game.ID,
+		ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("starting with no board returned %v, want ErrBadRequest", err)
+	}
+	if !strings.Contains(err.Error(), "no board") {
+		t.Fatalf("error %q does not say what is wrong", err)
+	}
+	if g := f.reload(game.ID); g.Phase != PhaseLobby {
+		t.Fatalf("phase = %s after a refused start, want lobby", g.Phase)
+	}
+
+	// With a board it starts.
+	f.seedBank(topicSet(), 4)
+	f.buildBoard(game, topicSet())
+	if _, err := f.svc.Do(f.ctx, f.tenant.ID, game.ID,
+		ActionRequest{Action: ActionStart, FromPhase: PhaseLobby}); err != nil {
+		t.Fatalf("starting with a board: %v", err)
+	}
+}

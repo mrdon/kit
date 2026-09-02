@@ -261,38 +261,66 @@ export function Betting({
 
   const active = dragging ?? armed;
 
+  const total = chips.length;
+  const down = placedBy.size;
+  const done = down === total;
+  // Plain words, not a progress bar. On a phone at a noisy table the only
+  // thing that reliably lands is a sentence saying what to do next, or that
+  // there is nothing left to do.
+  const statusLine = (() => {
+    if (isFinal) {
+      return done
+        ? 'Wager placed. Waiting for the other tables.'
+        : 'Put your wager on whichever answer you think wins.';
+    }
+    if (done) {
+      const waiting = frame.teams.filter((t) => t.eligible && t.chipsPlaced < total).length;
+      return waiting > 0
+        ? `Both chips down. Waiting for ${waiting} more ${waiting === 1 ? 'table' : 'tables'}.`
+        : 'Both chips down.';
+    }
+    if (down === 0) {
+      return `You have ${total} chips. Put them on ${total} different answers.`;
+    }
+    return `${down} of ${total} placed — your ${money(chips[total - down - 1] ?? 0)} chip still to go, on a different answer.`;
+  })();
+
   return (
     <div className="body">
       <Clock msLeft={msLeft} note="to place your chips" />
-      <h2>{frame.round?.text}</h2>
+      <h2 className="q-compact">{frame.round?.text}</h2>
 
-      <div className="tray">
-        {chips.map((amount, i) => {
-          const placed = placedBy.has(i);
-          if (placed) {
-            // Its home is the row it is on; leave a hole in the tray so the
-            // count of chips still to place is obvious at a glance.
-            return <span key={i} className={`chip c${i} ghost`} aria-hidden="true" />;
-          }
-          return (
-            <motion.button
-              key={i}
-              className={`chip c${i} ${armed === i ? 'armed' : ''} ${dragging === i ? 'dragging' : ''}`}
-              onClick={() => setArmed(armed === i ? null : i)}
-              whileTap={{ scale: 0.92 }}
-              whileDrag={{ scale: 1.15, zIndex: 30 }}
-              aria-label={`${money(amount)} chip`}
-              {...dragProps(i)}
-            >
-              {money(amount)}
-            </motion.button>
-          );
-        })}
-        <span className="hint">
-          {active === null
-            ? 'Drag a chip onto an answer, or tap it then tap an answer'
-            : 'Drop it on an answer'}
-        </span>
+      {/* People did not realise they had two chips, or whether they were
+          done. So: the chips are counted out loud, the ones still in hand
+          stay in the tray at full size, and the state of play gets its own
+          line in plain words rather than being inferred from the tray. */}
+      <div className="betting-head">
+        <div className="tray">
+          {chips.map((amount, i) => {
+            const placed = placedBy.has(i);
+            if (placed) {
+              return (
+                <span key={i} className={`chip c${i} ghost`} aria-hidden="true">
+                  ✓
+                </span>
+              );
+            }
+            return (
+              <motion.button
+                key={i}
+                className={`chip c${i} ${armed === i ? 'armed' : ''} ${dragging === i ? 'dragging' : ''}`}
+                onClick={() => setArmed(armed === i ? null : i)}
+                whileTap={{ scale: 0.92 }}
+                whileDrag={{ scale: 1.15, zIndex: 30 }}
+                aria-label={`${money(amount)} chip, still to place`}
+                {...dragProps(i)}
+              >
+                {money(amount)}
+              </motion.button>
+            );
+          })}
+        </div>
+        <p className={done ? 'betting-status done' : 'betting-status'}>{statusLine}</p>
       </div>
 
       <div className="slots">

@@ -183,7 +183,39 @@ func (a *App) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "creating trivia game", err)
 		return
 	}
-	writeJSON(w, a.gameToJSON(game, tenant.Slug, 0, 0, 0, ""))
+	// Build a board straight away. A game with no board is not a game, and
+	// making the host press Auto before anything works is a step that only
+	// ever has one sensible answer. They can rebuild or choose the columns
+	// themselves on the setup page; this is the default, not a decision.
+	//
+	// Best-effort on purpose: a workspace with no questions yet gets a game
+	// with an empty board and a setup page telling it what to do, which is
+	// better than refusing to create the game at all.
+	if err := a.autoBuildBoard(r, tenant.ID, game); err != nil {
+		slog.Info("trivia: could not auto-build a board for a new game",
+			"game_id", game.ID, "reason", err)
+	}
+	teams, cells, played, leader := a.gameCounts(r, game)
+	writeJSON(w, a.gameToJSON(game, tenant.Slug, teams, cells, played, leader))
+}
+
+// autoBuildBoard fills a new game's board from whatever questions the
+// workspace has. Errors are informational: "not enough questions yet" is a
+// normal state for a fresh workspace, not a failure to create a game.
+func (a *App) autoBuildBoard(r *http.Request, tenantID uuid.UUID, game *Game) error {
+	datasetIDs, err := GameDatasetIDs(r.Context(), a.pool, tenantID, game.ID)
+	if err != nil {
+		return err
+	}
+	topics, err := a.resolveTopics(r, tenantID, game, buildBoardRequest{Auto: true}, datasetIDs)
+	if err != nil {
+		return err
+	}
+	cells, err := a.assignBoard(r, tenantID, game, topics, datasetIDs)
+	if err != nil {
+		return err
+	}
+	return ReplaceBoard(r.Context(), a.pool, tenantID, game.ID, cells)
 }
 
 // settingsForNewGame resolves what a new game starts as: whatever the client

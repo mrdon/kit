@@ -87,6 +87,17 @@ func (s *Service) Do(ctx context.Context, tenantID, gameID uuid.UUID, req Action
 func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest) error {
 	switch req.Action {
 	case ActionStart:
+		// A game cannot start without a board. Starting into an empty board
+		// puts the room in front of a screen with nothing to pick, and the
+		// only way out is for the host to end the game — so it is refused
+		// here with a message that says what to do instead.
+		cells, err := ListBoardCells(ctx, s.pool, game.TenantID, game.ID)
+		if err != nil {
+			return err
+		}
+		if len(cells) == 0 {
+			return fmt.Errorf("%w: this game has no board yet — add some questions and build one on the setup page", ErrBadRequest)
+		}
 		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	case ActionPickCell:
 		return s.openCell(ctx, game, req.CellID)
