@@ -48,7 +48,7 @@ SELECT
          "alt": "14th Anniversary Celebration"},
         {"kind": "cta", "label": "Book the space", "image": "asset:party",
          "headline": "Your party, here.",
-         "body": "Birthdays, team nights, wedding parties and wakes.",
+         "body": "Birthdays, promotions, going-away parties and after-hours team nights.",
          "contact": ["info@thegravitybrewing.com", "(303) 544-0746"]}
       ]
     }$json$::jsonb,
