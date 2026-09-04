@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import ActionMenu from '../ActionMenu';
 import { api, type MenuBoard } from '../api';
 import { useSetChatContext } from '../chatContext';
 import { SLUG } from '../workspace';
@@ -13,6 +12,11 @@ import { SLUG } from '../workspace';
 // The printed menu hangs off this page because it is the same tap list on
 // paper. The events table topper is a separate thing on a separate page: that
 // one is about the week's programme, this one is about what is pouring.
+//
+// It gets its own titled panel rather than a slot under a cog. The Events page
+// hides its topper there because that page head already carries three buttons,
+// so a cog reads as "the rest of them"; this page head is a title and nothing
+// else, where a lone cog is just an unlabelled icon nobody thinks to press.
 
 // openPrintMenu opens the letter-sized tap list in its own tab, the same way
 // the events topper does. The next thing anyone does with it is press print,
@@ -59,21 +63,7 @@ export default function Menu() {
           <span className="crumb-sep">/</span>
           <span>Menu</span>
         </nav>
-        <div className="page-head-row">
-          <h1>Menu board</h1>
-          <div className="page-head-actions">
-            {/* Printing is an occasional errand — a keg blows, or the season
-                turns — so it sits under the cog rather than taking a slot
-                beside the address, which is what this page is for. Same
-                placement as the events table topper, for the same reason. */}
-            <ActionMenu
-              label="Menu actions"
-              items={[
-                { label: 'Printable menu', onClick: () => openPrintMenu() },
-              ]}
-            />
-          </div>
-        </div>
+        <h1>Menu board</h1>
         <p className="page-sub">
           Your menu has a permanent address. Paste it into a kiosk screen once;
           after that the tap list keeps itself current.
@@ -146,6 +136,28 @@ export default function Menu() {
             >
               Preview
             </a>
+          </div>
+        </section>
+      )}
+
+      {board && !board.empty && (
+        <section className="panel">
+          <h2 className="panel-title">Printed menu</h2>
+          <p className="card-desc">
+            The same tap list on paper, sized for letter and ready to print —
+            a page per few sections, with each beer&rsquo;s style, strength,
+            price and description. It is built when you open it, so it always
+            shows what is pouring right now.
+          </p>
+          <p className="card-desc">
+            Only beers Untappd prices for a 4oz taster appear, which is every
+            beer actually on tap. Cans, sodas and the wording around the edges
+            are set with <code>set_menu_print</code>.
+          </p>
+          <div className="drawer-actions">
+            <button className="btn" onClick={openPrintMenu}>
+              Open printable menu
+            </button>
           </div>
         </section>
       )}
