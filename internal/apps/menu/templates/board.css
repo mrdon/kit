@@ -1,6 +1,13 @@
 /* Brand tokens lifted from thegravitybrewing.com's own stylesheet, not
-   invented: Bungee for display, navy grounds, #e8543a vermilion with #ffb4a3
-   as its on-navy variant, #b9c4cf for muted text on navy.
+   invented: Bungee for display, navy grounds, #b9c4cf for muted text on navy.
+
+   The accent is the site's flame gold rather than the vermilion this board
+   opened with. Gold is simply the brighter ink on navy -- the section heads
+   go from about 5.6:1 against the ground to 8.7:1 -- and that gap is what
+   you feel from across the taproom, where the salmon heads were reading as
+   a dull orange smudge. The site pulls the logo's #fccc0c down to #d9a03c
+   because it is read at arm's length; a wall display is not, so the tier the
+   titles use is pushed back up toward the logo.
 
    This board commits to one visual world on purpose. It is a wall display in
    a dim room, not a document someone reads in their OS theme, so there is no
@@ -9,9 +16,9 @@
 :root {
   --navy: #1b2b38;
   --navy-2: #14222d;
-  --accent: #e8543a;
-  --accent-l: #ffb4a3;
-  --accent-hot: #ff7d5e;
+  --accent: #d9a03c;    /* the site's gold, verbatim: rules, ticks, glow */
+  --accent-l: #ffd89a;  /* pale gold, for data set beside white type */
+  --accent-hot: #ffc247; /* the titles, back up toward the logo's #fccc0c */
   --muted: #b9c4cf;
   --dim: #8ea2b3;
   --cream: #f4efe7;
@@ -38,7 +45,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
      washes rather than under them, or the washes grey them out. */
   background:
     var(--starfield) 0 0 / cover no-repeat,
-    radial-gradient(120% 80% at 82% 0%, rgba(232, 84, 58, .12) 0%, rgba(232, 84, 58, 0) 55%),
+    radial-gradient(120% 80% at 82% 0%, rgba(217, 160, 60, .10) 0%, rgba(217, 160, 60, 0) 55%),
     radial-gradient(90% 70% at 5% 100%, rgba(122, 165, 194, .10) 0%, rgba(122, 165, 194, 0) 60%),
     linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
 }
@@ -68,7 +75,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .sect-head {
   font-family: var(--display); font-size: 19px; letter-spacing: .07em; text-transform: uppercase;
   color: var(--accent-hot); padding-bottom: 6px; margin-bottom: 6px;
-  border-bottom: 2px solid rgba(232, 84, 58, .7);
+  border-bottom: 2px solid rgba(217, 160, 60, .7);
 }
 
 /* Fixed price column, not auto: "6.50" and "8" have to right-align into one
@@ -104,9 +111,9 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 /* ---------- rotating rail ---------- */
 .rail {
   position: relative; border-radius: 6px; overflow: hidden;
-  border: 1px solid rgba(255, 125, 94, .38);
+  border: 1px solid rgba(255, 194, 71, .38);
   background:
-    linear-gradient(165deg, rgba(232, 84, 58, .16) 0%, rgba(232, 84, 58, .04) 42%, rgba(255, 255, 255, .05) 100%),
+    linear-gradient(165deg, rgba(217, 160, 60, .16) 0%, rgba(217, 160, 60, .04) 42%, rgba(255, 255, 255, .05) 100%),
     rgba(9, 16, 22, .55);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, .35),
@@ -117,7 +124,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
    than as another column of the tap list. */
 .rail::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hot) 45%, rgba(255, 180, 163, 0) 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hot) 45%, rgba(255, 216, 154, 0) 100%);
   z-index: 3;
 }
 .panel { position: absolute; inset: 0; padding: 34px 34px 30px; display: flex; flex-direction: column; opacity: 0; visibility: hidden; transition: opacity .6s ease; }
