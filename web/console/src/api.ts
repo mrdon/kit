@@ -129,6 +129,49 @@ export interface MintedToken {
 // The workspace's menu board. One per workspace, read-only in the console:
 // the tap list follows Untappd and the presentation is pushed from an AI
 // client, so this page only answers "what URL do I paste into the screen?".
+/** One priced container of a beer, as Untappd writes it. */
+export interface MenuPour {
+  size: string;
+  label: string;
+  price: string;
+}
+
+/** A row on the printed menu that Untappd does not carry — a can, a soda. */
+export interface MenuExtra {
+  section: string;
+  name: string;
+  style?: string;
+  abv?: string;
+  notes?: string;
+  pours?: MenuPour[];
+}
+
+/** Everything about the printed menu the tap list cannot say. All optional. */
+export interface MenuPrintConfig {
+  brand?: string;
+  title?: string;
+  subtitle?: string;
+  flight?: string;
+  sizes?: string;
+  foot_left?: string;
+  foot_right?: string;
+  hero?: string;
+  colors?: Record<string, string>;
+  notes?: Record<string, string>;
+  extras?: MenuExtra[];
+}
+
+export interface MenuPrint {
+  config: MenuPrintConfig;
+  /** Headings on the tap list right now, offered to the colour editor. */
+  sections: string[];
+  /** The house colour cycle, offered as swatches. */
+  palette: string[];
+  /** How many descriptions have been fetched from Untappd and stored. */
+  notes_cached: number;
+  print_url: string;
+}
+
 export interface MenuBoard {
   name: string;
   public_url: string;
@@ -858,6 +901,9 @@ export const api = {
     apiPost<{ status: string }>('/email-intake/run'),
 
   menuBoard: () => apiGet<MenuBoard>('/menu/board'),
+  menuPrint: () => apiGet<MenuPrint>('/menu/print'),
+  saveMenuPrint: (body: MenuPrintConfig) =>
+    apiPut<MenuPrint>('/menu/print', body),
   // --- Trivia ---
   triviaGames: () => apiGet<{ games: TriviaGameT[] }>('/trivia/games'),
   triviaGame: (id: string) =>

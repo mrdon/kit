@@ -33,19 +33,25 @@ type PrintConfig struct {
 	FootRight string `json:"foot_right,omitempty"` // "@thegravitybrewing"
 
 	// Colors maps a section heading to a #rrggbb bar colour.
-	Colors map[string]string `json:"colors,omitempty"`
+	//
+	// The three collections below carry no omitempty, unlike the strings. An
+	// omitted empty map is indistinguishable from an absent one on the wire,
+	// and a console doing `.map(...)` on the result gets `undefined` rather
+	// than an empty list -- which in React takes the whole page down. Storing
+	// "colors": {} is a little noisier and a lot harder to trip over.
+	Colors map[string]string `json:"colors"`
 
 	// Notes are descriptions written here rather than in Untappd, keyed by
 	// beer name. They win over anything scraped, which makes them both the fix
 	// for a beer Untappd has no page for and the way to say something on paper
 	// that you do not want on your public brewery listing.
-	Notes map[string]string `json:"notes,omitempty"`
+	Notes map[string]string `json:"notes"`
 
 	// Extras are the rows Untappd has no opinion about: canned non-alcoholics,
 	// sodas, juice boxes. They are Beers rather than a lesser type because
 	// a soda still has a section, a name and a price, and the renderer should
 	// not have to care which half of the menu a row came from.
-	Extras []Beer `json:"extras,omitempty"`
+	Extras []Beer `json:"extras"`
 
 	// Hero is the asset key of the masthead photograph, uploaded with
 	// set_menu_asset. Empty prints the masthead as a flat colour band, which

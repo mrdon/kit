@@ -12,6 +12,7 @@ import TriviaSetup from './pages/trivia/setup';
 import TriviaLive from './pages/trivia/live';
 import TriviaQuestions from './pages/TriviaQuestions';
 import Menu from './pages/Menu';
+import MenuPrint from './pages/MenuPrint';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
@@ -51,6 +52,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/events" element={<Events />} />
           <Route path="/events/promo" element={<EventsPromoPage />} />
           <Route path="/menu" element={<Menu />} />
+          <Route path="/menu/print" element={<MenuPrint />} />
           <Route path="/kiosk" element={<Kiosk />} />
           <Route path="/trivia" element={<Trivia />} />
           <Route path="/trivia/:id" element={<TriviaSetup />} />

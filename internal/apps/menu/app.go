@@ -93,6 +93,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	registerPublicRoutes(mux, a)
 	if a.signer != nil {
 		registerConsoleRoutes(mux, a)
+		registerPrintConsoleRoutes(mux, a)
 		registerPrintRoutes(mux, a)
 	}
 }
