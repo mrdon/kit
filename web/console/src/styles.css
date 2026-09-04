@@ -1989,3 +1989,25 @@ h2.view-title:hover {
   background: var(--panel);
   color: var(--ink);
 }
+
+/* ---- Event labels -------------------------------------------------------- */
+/* Presets wrap rather than scroll: there are seven of them today and the row
+   has to survive a narrow admin window without hiding the last two. */
+.label-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.label-preset {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.label-preset input {
+  margin: 0;
+}

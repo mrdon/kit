@@ -191,6 +191,8 @@ Three things describe an event, and they're independent rather than one "type":
 - **venue** — `onsite`, or `offsite` for a festival you're attending. An offsite event can still be public: "come see us there" belongs on the site.
 - **space impact** — whether it reserves part of the room, so whoever's working knows
 
+**Labels** say what kind of thing an event is, so your website can group events onto their own page without Kit needing to know that page exists. An event can carry several. Tick the usual ones — `giveback`, `food`, `trivia`, `music`, `release`, `family`, `community` — or type your own for anything else. They are lowercased and hyphenated on save, and a few obvious synonyms fold automatically ("charity" and "Give Back" both become `giveback`). Reuse a label that already exists rather than inventing a synonym for it: the website matches the exact word, so a second spelling quietly splits the group in two. Labels are not prominence (how loudly an event speaks) and not venue (where it happens) — they are the subject.
+
 **Staff notes** go on the calendar entry, where the bartender working that night is already looking. They never appear on the website.
 
 **Repeats come in three shapes**, and picking the right one means one web page instead of five:

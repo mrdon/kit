@@ -596,6 +596,10 @@ export interface EventRecord {
   // 'background' is a standing offer (a weekly pizza deal, happy hour) that
   // never takes the headline off a real event on the same day.
   prominence: 'featured' | 'normal' | 'background';
+  // What kind of thing this is, for grouping downstream — the website filters
+  // its Give Back page on 'giveback'. Open-ended and multi-valued, unlike the
+  // closed axes above, and nothing in Kit branches on them.
+  labels?: string[];
   price_cents?: number;
   currency: string;
   capacity?: number;
@@ -742,6 +746,25 @@ export interface EventsDayNotice {
   unmapped: number;
 }
 
+// STANDARD_LABELS mirrors StandardLabels in internal/apps/events/labels.go,
+// which is the source of truth. The vocabulary is open — anything may be typed
+// — so these are presets, not a whitelist: they exist so the common cases
+// converge on one spelling instead of fragmenting into synonyms the website's
+// filters will never match.
+//
+// Duplicated rather than fetched because it is a handful of words that change
+// about once a year, and an endpoint plus a load state is a lot of machinery
+// for that. TestConsoleStandardLabelsMatchGo fails the build if the two drift.
+export const STANDARD_LABELS: { label: string; means: string }[] = [
+  { label: 'giveback', means: 'a charity night' },
+  { label: 'food', means: 'a food offer or food-led night' },
+  { label: 'trivia', means: 'a quiz night' },
+  { label: 'music', means: 'live music' },
+  { label: 'release', means: 'a new beer coming out' },
+  { label: 'family', means: 'explicitly good for kids' },
+  { label: 'community', means: 'hosted for somebody else' },
+];
+
 // Every field optional: the console PATCHes only what changed, so an edit made
 // here cannot silently revert one made in chat against the same event.
 export interface EventInput {
@@ -759,6 +782,8 @@ export interface EventInput {
   // Replaces the whole extra-date list. Omit to leave it alone; send [] to
   // turn a series back into a one-off.
   repeat_dates?: string[];
+  // Replaces the whole label set. Omit to leave it alone; send [] to clear.
+  labels?: string[];
   visibility?: string;
   venue?: string;
   space_impact?: string;

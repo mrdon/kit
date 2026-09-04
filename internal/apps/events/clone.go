@@ -62,6 +62,7 @@ func (s *Service) Clone(ctx context.Context, tenantID, id uuid.UUID, p ClonePara
 	// The slice is shared with src by the struct copy; a fresh one keeps a
 	// later edit to either row from mutating the other's dates in place.
 	dup.RDates = append([]time.Time(nil), src.RDates...)
+	dup.Labels = append([]string(nil), src.Labels...)
 
 	if title := strings.TrimSpace(p.Title); title != "" {
 		dup.Title = title

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   api,
+  STANDARD_LABELS,
   type EventInput,
   type EventRecord,
   type EventsSettingsSummary,
@@ -35,6 +36,7 @@ const EMPTY_FORM: EventInput = {
   repeat_dates: [],
   registration_url: '',
   prominence: 'normal',
+  labels: [],
 };
 
 // The API returns an instant in UTC; <input type="datetime-local"> holds a
@@ -428,6 +430,7 @@ function EventDrawer({
           expected_attendance: event.expected_attendance,
           registration_url: event.registration_url ?? '',
           prominence: event.prominence,
+          labels: event.labels ?? [],
         }
       : (() => {
           const starts = defaultStart();
@@ -561,6 +564,58 @@ function EventDrawer({
             still gets printed and published, but never takes the headline off a
             real event on the same day.
           </span>
+
+          {/* Labels are open-ended, so the presets are checkboxes rather than
+              the only option: tick the usual ones, type anything else. Typing
+              is what keeps "wednesday-market" possible; the presets are what
+              stop "charity" and "give-back" becoming three labels that the
+              website's Give Back page matches none of. */}
+          <fieldset className="field">
+            <legend>Labels</legend>
+            <div className="label-presets">
+              {STANDARD_LABELS.map(({ label, means }) => (
+                <label key={label} className="label-preset" title={means}>
+                  <input
+                    type="checkbox"
+                    checked={(form.labels ?? []).includes(label)}
+                    onChange={(e) => {
+                      const current = form.labels ?? [];
+                      set({
+                        labels: e.target.checked
+                          ? [...current, label]
+                          : current.filter((l) => l !== label),
+                      });
+                    }}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+            <input
+              type="text"
+              placeholder="Anything else, comma separated"
+              value={(form.labels ?? [])
+                .filter((l) => !STANDARD_LABELS.some((s) => s.label === l))
+                .join(', ')}
+              onChange={(e) => {
+                const custom = e.target.value
+                  .split(',')
+                  .map((l) => l.trim())
+                  .filter(Boolean);
+                const standard = (form.labels ?? []).filter((l) =>
+                  STANDARD_LABELS.some((s) => s.label === l),
+                );
+                set({ labels: [...standard, ...custom] });
+              }}
+            />
+            <span className="field-note">
+              What kind of thing this is, so the website can group events onto
+              their own page. Not how loudly it speaks — that is Prominence.
+              Reuse a label that already exists rather than inventing a synonym
+              for it: the website matches the exact word, so a second spelling
+              quietly splits the group in two. Saved lowercased and hyphenated.
+            </span>
+          </fieldset>
 
           <label className="field">
             <span>Where</span>

@@ -152,7 +152,10 @@ type eventBody struct {
 	// working. See ResolveProminence.
 	Prominence *Prominence `json:"prominence"`
 	Featured   *bool       `json:"featured"`
-	Slug       *string     `json:"slug"`
+	// Labels replaces the whole set. Nil leaves it alone; a non-nil empty
+	// slice clears it, same contract as RepeatDates.
+	Labels *[]string `json:"labels"`
+	Slug   *string   `json:"slug"`
 }
 
 func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -192,6 +195,7 @@ func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
 		RegistrationURL:    derefOr(body.RegistrationURL),
 		NotifyFoodPartner:  body.NotifyFoodPartner,
 		Prominence:         ResolveProminence(body.Prominence, body.Featured),
+		Labels:             derefSlice(body.Labels),
 	}
 	if caller.UserID != uuid.Nil {
 		id := caller.UserID
@@ -228,6 +232,7 @@ func (a *App) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		RegistrationURL:    body.RegistrationURL,
 		NotifyFoodPartner:  body.NotifyFoodPartner,
 		Prominence:         ResolveProminence(body.Prominence, body.Featured),
+		Labels:             body.Labels,
 		Slug:               body.Slug,
 	}
 	if body.Visibility != nil {

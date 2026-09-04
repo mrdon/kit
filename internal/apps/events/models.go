@@ -54,6 +54,12 @@ type Event struct {
 	// migration 079, and Prominence in visibility.go for why the default
 	// rather than the extremes is the interesting value.
 	Prominence Prominence `json:"prominence"`
+	// Labels say what KIND of thing this is -- "giveback", "food", "trivia".
+	// Open-ended and multi-valued, unlike the three closed axes above, and
+	// nothing in Kit branches on them: they exist so a downstream reader can
+	// group events without any axis here being bent to mean two things. See
+	// migration 094. Always non-nil; the column is NOT NULL DEFAULT '{}'.
+	Labels []string `json:"labels,omitempty"`
 
 	PriceCents         *int64 `json:"price_cents,omitempty"`
 	Currency           string `json:"currency"`
@@ -141,6 +147,7 @@ const eventColumns = `
 	starts_at, ends_at, all_day, timezone, rrule, rdates,
 	location, hero_attachment_id,
 	status, visibility, venue, space_impact, notify_food_partner, prominence,
+	labels,
 	price_cents, currency, capacity, expected_attendance,
 	registration_url, square_variation_id,
 	gcal_event_id, gcal_calendar_id, gcal_content_hash,
@@ -154,6 +161,7 @@ func scanEvent(row pgx.Row) (*Event, error) {
 		&e.StartsAt, &e.EndsAt, &e.AllDay, &e.Timezone, &rrule, &e.RDates,
 		&e.Location, &e.HeroAttachmentID,
 		&e.Status, &e.Visibility, &e.Venue, &e.SpaceImpact, &e.NotifyFoodPartner, &e.Prominence,
+		&e.Labels,
 		&e.PriceCents, &e.Currency, &e.Capacity, &e.ExpectedAttendance,
 		&registrationURL, &squareVariationID,
 		&e.GCalEventID, &e.GCalCalendarID, &e.GCalContentHash,
@@ -194,6 +202,16 @@ func emptyIfNil(ts []time.Time) []time.Time {
 	return ts
 }
 
+// emptyIfNilStrings keeps the labels column NOT NULL, for the same reason
+// emptyIfNil does for rdates: a nil Go slice writes as SQL NULL, which the
+// column refuses.
+func emptyIfNilStrings(ss []string) []string {
+	if ss == nil {
+		return []string{}
+	}
+	return ss
+}
+
 func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, error) {
 	row := pool.QueryRow(ctx, `
 		INSERT INTO app_events (
@@ -201,6 +219,7 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			starts_at, ends_at, all_day, timezone, rrule, rdates,
 			location, hero_attachment_id,
 			status, visibility, venue, space_impact, notify_food_partner, prominence,
+			labels,
 			price_cents, currency, capacity, expected_attendance,
 			registration_url, square_variation_id, created_by
 		) VALUES (
@@ -208,14 +227,16 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			$7, $8, $9, $10, $11, $12,
 			$13, $14,
 			$15, $16, $17, $18, $19, $20,
-			$21, $22, $23, $24,
-			$25, $26, $27
+			$21,
+			$22, $23, $24, $25,
+			$26, $27, $28
 		)
 		RETURNING `+eventColumns,
 		e.TenantID, e.Title, e.Slug, e.Summary, e.Description, e.PrepNotes,
 		e.StartsAt, e.EndsAt, e.AllDay, e.Timezone, nilIfEmpty(e.RRule), emptyIfNil(e.RDates),
 		e.Location, e.HeroAttachmentID,
 		e.Status, e.Visibility, e.Venue, e.SpaceImpact, e.NotifyFoodPartner, e.Prominence,
+		emptyIfNilStrings(e.Labels),
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID), e.CreatedBy,
 	)
@@ -237,9 +258,9 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			rdates = $13,
 			location = $14, hero_attachment_id = $15,
 			status = $16, visibility = $17, venue = $18, space_impact = $19,
-			notify_food_partner = $20, prominence = $21,
-			price_cents = $22, currency = $23, capacity = $24, expected_attendance = $25,
-			registration_url = $26, square_variation_id = $27,
+			notify_food_partner = $20, prominence = $21, labels = $22,
+			price_cents = $23, currency = $24, capacity = $25, expected_attendance = $26,
+			registration_url = $27, square_variation_id = $28,
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 		RETURNING `+eventColumns,
@@ -249,7 +270,7 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		emptyIfNil(e.RDates),
 		e.Location, e.HeroAttachmentID,
 		e.Status, e.Visibility, e.Venue, e.SpaceImpact,
-		e.NotifyFoodPartner, e.Prominence,
+		e.NotifyFoodPartner, e.Prominence, emptyIfNilStrings(e.Labels),
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID),
 	)

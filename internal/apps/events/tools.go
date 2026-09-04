@@ -2,10 +2,10 @@ package events
 
 import "github.com/mrdon/kit/internal/services"
 
-// dateList describes a repeat-date array. Spelled out rather than built with
-// services.Field because that helper emits no "items", and a typed array
-// without one is rejected by strict MCP clients.
-func dateList(desc string) map[string]any {
+// stringList describes an array-of-string parameter. Spelled out rather than
+// built with services.Field because that helper emits no "items", and a typed
+// array without one is rejected by strict MCP clients.
+func stringList(desc string) map[string]any {
 	return map[string]any{
 		"type":        "array",
 		"items":       map[string]any{"type": "string"},
@@ -48,7 +48,7 @@ var eventsTools = []services.ToolMeta{
 					"'FREQ=MONTHLY;BYMONTHDAY=15' (the 15th). Add INTERVAL for 'every 2 weeks'/'every 3 months', "+
 					"and UNTIL or COUNT to stop it. The start date must itself fall on the pattern. "+
 					"For dates that follow no pattern, use repeat_dates instead."),
-			"repeat_dates": dateList(
+			"repeat_dates": stringList(
 				"Extra dates this same event also happens on, e.g. ['2026-10-02 19:00', '2026-11-06 19:00']. " +
 					"Use this for a series with no pattern — dates picked around someone's availability, or a run " +
 					"with a gap over a holiday. One event, one web page, many dates; do not create one event per night. " +
@@ -60,6 +60,12 @@ var eventsTools = []services.ToolMeta{
 			"registration_url":    services.Field("string", "Where to buy or RSVP, if anywhere."),
 			"notify_food_partner": services.Field("boolean",
 				"Whether the food partner should plan for this. Defaults true for public onsite events."),
+			"labels": stringList(
+				"What kind of thing this is, for grouping downstream. An event may carry several, and " +
+					"anything is allowed — but a website page filters on the exact word, so REUSE an " +
+					"existing label rather than inventing a synonym for one. This is NOT how loudly the " +
+					"event speaks (prominence) nor where it happens (venue) — it is the subject. " +
+					"Lowercased and hyphenated on save. The usual ones: " + describeLabels()),
 		}, "title", "starts_at"),
 	},
 	{
@@ -83,7 +89,7 @@ var eventsTools = []services.ToolMeta{
 			"space_impact": services.Field("string", "'none' or 'partial'."),
 			"repeat_rule": services.Field("string",
 				"Repeat rule (weekly or monthly, as in create_event), or empty to stop repeating."),
-			"repeat_dates": dateList(
+			"repeat_dates": stringList(
 				"Replaces the whole list of extra dates. Pass the full list you want, not just additions; " +
 					"an empty list turns the event back into a one-off."),
 			"price_cents":         services.Field("integer", "New price in cents."),
@@ -93,7 +99,10 @@ var eventsTools = []services.ToolMeta{
 			"expected_attendance": services.Field("integer", "New expected headcount."),
 			"registration_url":    services.Field("string", "New ticket/RSVP link."),
 			"notify_food_partner": services.Field("boolean", "Whether the food partner should plan for this."),
-			"slug":                services.Field("string", "Web address segment. Draft events only."),
+			"labels": stringList(
+				"Replaces the whole label set. Pass the full list you want, not just additions; " +
+					"an empty list removes every label. The usual ones: " + describeLabels()),
+			"slug": services.Field("string", "Web address segment. Draft events only."),
 		}, "event_id"),
 	},
 	{

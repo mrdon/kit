@@ -57,7 +57,11 @@ type CreateParams struct {
 	// Prominence is featured / normal / background; nil means normal. See
 	// Prominence in visibility.go.
 	Prominence *Prominence
-	CreatedBy  *uuid.UUID
+	// Labels must come from the closed vocabulary in labels.go. Spelling is
+	// forgiving (case, hyphens, a short alias list); an unrecognised label is
+	// an error rather than a silent drop. See ParseLabels.
+	Labels    []string
+	CreatedBy *uuid.UUID
 }
 
 // Create inserts a draft event.
@@ -125,6 +129,9 @@ func (s *Service) Create(ctx context.Context, tenantID uuid.UUID, p CreateParams
 	if p.Prominence != nil {
 		e.Prominence = *p.Prominence
 	}
+	if e.Labels, err = ParseLabels(p.Labels); err != nil {
+		return nil, err
+	}
 	if p.NotifyFoodPartner != nil {
 		e.NotifyFoodPartner = *p.NotifyFoodPartner
 	} else {
@@ -184,6 +191,11 @@ type UpdateParams struct {
 
 	NotifyFoodPartner *bool
 	Prominence        *Prominence
+	// Labels replaces the whole set. Nil leaves it alone; a non-nil empty
+	// slice clears every label. Same reasoning as RepeatDates: "the caller
+	// omitted this" and "the caller removed them all" are opposite intents and
+	// a plain []string cannot tell them apart.
+	Labels *[]string
 	// HeroAttachmentID sets the poster. ClearHero removes it -- a nil pointer
 	// means "leave alone", so removal needs its own flag.
 	HeroAttachmentID *uuid.UUID
@@ -227,6 +239,13 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	}
 	if p.Prominence != nil {
 		e.Prominence = *p.Prominence
+	}
+	if p.Labels != nil {
+		labels, err := ParseLabels(*p.Labels)
+		if err != nil {
+			return nil, err
+		}
+		e.Labels = labels
 	}
 	if p.ClearPrice {
 		e.PriceCents = nil

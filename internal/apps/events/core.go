@@ -116,6 +116,9 @@ type eventInput struct {
 	// ever read, so "featured: true" from the agent silently did nothing.
 	Prominence *string `json:"prominence"`
 	Featured   *bool   `json:"featured"`
+	// Labels is a pointer so update can tell "not sent" from "cleared", the
+	// same way RepeatDates does. An empty list is a real instruction.
+	Labels *[]string `json:"labels"`
 }
 
 // prominenceFrom folds the tool input's two spellings into one value.
@@ -155,6 +158,7 @@ func coreCreate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		RegistrationURL:    deref(in.RegistrationURL),
 		NotifyFoodPartner:  in.NotifyFoodPartner,
 		Prominence:         in.prominenceFrom(),
+		Labels:             derefSlice(in.Labels),
 	}
 	if caller.UserID != uuid.Nil {
 		id := caller.UserID
@@ -231,6 +235,7 @@ func coreUpdate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		RegistrationURL:    in.RegistrationURL,
 		NotifyFoodPartner:  in.NotifyFoodPartner,
 		Prominence:         in.prominenceFrom(),
+		Labels:             in.Labels,
 	}
 	if in.Visibility != nil {
 		v := Visibility(strings.ToLower(*in.Visibility))

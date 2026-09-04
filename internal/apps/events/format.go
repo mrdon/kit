@@ -41,6 +41,9 @@ func FormatEvent(e *Event, s Settings) string {
 	if url := s.CanonicalURL(e.Slug); url != "" && e.IsPubliclyVisible() {
 		fmt.Fprintf(&b, "  page: %s\n", url)
 	}
+	if len(e.Labels) > 0 {
+		fmt.Fprintf(&b, "  labels: %s\n", strings.Join(e.Labels, ", "))
+	}
 	if e.NotifyFoodPartner {
 		b.WriteString("  food partner should plan for this\n")
 	}

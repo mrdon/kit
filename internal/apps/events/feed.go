@@ -91,6 +91,12 @@ type FeedItem struct {
 	// exactly as before -- but a site that reads it can stop giving a standing
 	// pizza offer the same full event page as the anniversary party.
 	Prominence string `json:"prominence,omitempty"`
+	// Labels say what KIND of thing this is -- "giveback", "food", "trivia".
+	// Additive and optional: a site that ignores them behaves exactly as
+	// before, and one that reads them can put a programme on its own page
+	// without Kit needing to know that page exists. Omitted when empty, so an
+	// unlabelled event's payload is byte-identical to what it was.
+	Labels []string `json:"labels,omitempty"`
 
 	// ImageURL is the event's poster, absent when none was uploaded. The site
 	// falls back to its own artwork rather than showing a gap.
@@ -126,6 +132,7 @@ func feedItem(e *Event, s Settings, until time.Time) FeedItem {
 		Upcoming:        feedUpcoming(e, until),
 		Featured:        e.IsFeatured(),
 		Prominence:      string(e.Prominence),
+		Labels:          e.Labels,
 		Location:        e.Location,
 		CanonicalURL:    s.CanonicalURL(e.Slug),
 		PriceCents:      e.PriceCents,
