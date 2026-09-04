@@ -22,8 +22,14 @@ import (
 // would be, takes a page break if it will not fit, and draws. Pagination is
 // the one thing the original could not do, because the original was three
 // hand-positioned artboards: a beer added in Untappd moved every row below it
-// by hand. Here a section that overflows continues under a repeated heading on
-// the next page, which is what somebody would have done manually anyway.
+// by hand.
+//
+// Sections are kept whole. A heading whose beers do not all fit moves to the
+// next page rather than leaving two of them behind under a repeated one --
+// this is already a multi-page document, so a sheet with some air at the
+// bottom costs nothing, while a section that resumes overleaf makes a reader
+// wonder whether they have seen all of it. Splitting is still there for a
+// section genuinely taller than a sheet, where there is no other option.
 
 //go:embed fonts/Montserrat-Regular.ttf fonts/Montserrat-Bold.ttf
 var printFonts embed.FS
@@ -115,6 +121,12 @@ const (
 	rowPadding = 22.0  // description bottom -> next name
 	rowNoDescH = 44.0  // a whole row that has no description
 	sectionGap = 14.0  // last row bottom -> next section bar
+
+	// A section blurb is set at the description's size, because that is what
+	// it is: prose about what is on offer rather than a row. Reusing the size
+	// and leading keeps the page on one rhythm.
+	blurbGap = 12.0 // section bar bottom -> first line of the blurb
+	blurbPad = 16.0 // last line of the blurb -> the first beer under it
 )
 
 // Footer.
@@ -152,6 +164,7 @@ func RenderPrintPDF(m PrintMenu, out io.Writer) error {
 	registerPrintImages(pdf, m)
 
 	first := true
+	atTop := false
 	y := 0.0
 	newPage := func() {
 		pdf.AddPage()
@@ -164,22 +177,29 @@ func RenderPrintPDF(m PrintMenu, out io.Writer) error {
 			y = bodyTopRest
 		}
 		drawPrintFooter(pdf, m)
+		atTop = true
 	}
 	newPage()
 
 	for _, s := range m.Sections {
 		rows := s.Rows
-		for len(rows) > 0 {
+		for {
 			// How many rows fit under a heading drawn at y.
 			n := rowsThatFit(pdf, s, rows, y)
-			if n == 0 {
+			// Anything short of the whole section moves to a fresh page, as
+			// does a heading with no room left under it at all -- which is the
+			// only test a section of pure blurb has, since it has no rows to
+			// count. Already being at the top of a page means there is no
+			// fresher page to move to.
+			if (n < len(rows) || !headingFits(pdf, s, y)) && !atTop {
 				newPage()
 				n = rowsThatFit(pdf, s, rows, y)
-				// A single row taller than a whole empty page would loop
-				// forever. Draw it and let it overrun rather than hang.
-				if n == 0 {
-					n = 1
-				}
+			}
+			// Still nothing fits on a page of its own: this section is taller
+			// than a sheet and has to be split. Force a row through rather
+			// than loop forever, and let it overrun.
+			if n == 0 && len(rows) > 0 {
+				n = 1
 			}
 			// Never send one row over on its own. A page holding a heading and
 			// a single soda reads as a printer error, so the break moves up a
@@ -188,10 +208,12 @@ func RenderPrintPDF(m PrintMenu, out io.Writer) error {
 				n--
 			}
 			y = drawSection(pdf, s, rows[:n], y)
+			atTop = false
 			rows = rows[n:]
-			if len(rows) > 0 {
-				newPage()
+			if len(rows) == 0 {
+				break
 			}
+			newPage()
 		}
 		y += sectionGap
 	}
@@ -244,10 +266,10 @@ func registerPrintImages(pdf *fpdf.Fpdf, m PrintMenu) {
 // lines ran underneath the footer rule. Better to move the heading and its
 // beer together than to print a sentence into the furniture.
 func rowsThatFit(pdf *fpdf.Fpdf, s PrintSection, rows []Beer, y float64) int {
-	cursor := y + barToName
-	if cursor > bodyBottom {
+	if !headingFits(pdf, s, y) {
 		return 0
 	}
+	cursor := y + sectionLead(pdf, s)
 	n := 0
 	for _, r := range rows {
 		next := cursor + rowHeight(pdf, s, r)
@@ -258,6 +280,36 @@ func rowsThatFit(pdf *fpdf.Fpdf, s PrintSection, rows []Beer, y float64) int {
 		n++
 	}
 	return n
+}
+
+// headingFits reports whether a section bar drawn at y, and whatever sentence
+// sits under it, land above the footer rule. It is the whole test for a
+// section that is nothing but a blurb.
+func headingFits(pdf *fpdf.Fpdf, s PrintSection, y float64) bool {
+	return y+sectionLead(pdf, s) <= bodyBottom
+}
+
+// sectionLead is the distance from a section bar's top to its first row.
+//
+// Without a blurb that is barToName, the rhythm the original was set on. With
+// one it is the bar's own height plus the sentence, because the sentence has
+// to go between them.
+func sectionLead(pdf *fpdf.Fpdf, s PrintSection) float64 {
+	lines := blurbLines(pdf, s)
+	if len(lines) == 0 {
+		return barToName
+	}
+	return barH + blurbGap + float64(len(lines))*rowDescPt*rowDescLH + blurbPad
+}
+
+// blurbLines measures a section's blurb at the width it will be set in.
+func blurbLines(pdf *fpdf.Fpdf, s PrintSection) []string {
+	text := strings.TrimSpace(s.Blurb)
+	if text == "" {
+		return nil
+	}
+	pdf.SetFont(printBody, "", rowDescPt*designScale)
+	return wrapText(pdf, text, d(contentW))
 }
 
 // rowHeight is what one row advances the cursor by.
@@ -286,7 +338,8 @@ func descLines(pdf *fpdf.Fpdf, _ PrintSection, r Beer) int {
 // drawSection draws the heading and its rows, returning the new cursor.
 func drawSection(pdf *fpdf.Fpdf, s PrintSection, rows []Beer, y float64) float64 {
 	drawSectionBar(pdf, s, y)
-	cursor := y + barToName
+	drawSectionBlurb(pdf, s, y)
+	cursor := y + sectionLead(pdf, s)
 	for _, r := range rows {
 		drawRow(pdf, s, r, cursor)
 		cursor += rowHeight(pdf, s, r)
@@ -306,6 +359,13 @@ func drawSectionBar(pdf *fpdf.Fpdf, s PrintSection, y float64) {
 	drawSpaced(pdf, d(marginX+2.05), d(capCentredBaseline(y, barH, barTitlePt)),
 		strings.ToUpper(s.Name), barTitleEm, barTitlePt*designScale)
 
+	// A heading that carries a sentence rather than a list has nothing to
+	// label. "Price" over a line about pretzels is furniture, and the ABV of a
+	// bowl of popcorn is not a question anyone has.
+	if len(s.Rows) == 0 {
+		return
+	}
+
 	// The column labels are half the size of the heading, so they need their
 	// own centreline rather than the heading's.
 	pdf.SetFont(printBold, "", colLabelPt*designScale)
@@ -317,6 +377,25 @@ func drawSectionBar(pdf *fpdf.Fpdf, s PrintSection, y float64) {
 	}
 	// A section of cans and sodas has one price and no ABV worth printing.
 	drawSpacedRight(pdf, d(colLargeRight), base, s.PackagedSize(), colLabelEm, colLabelPt*designScale)
+}
+
+// drawSectionBlurb sets the sentence under a heading.
+//
+// It repeats with the bar on a continuation page, for the same reason the bar
+// does: somebody landing on the second page of a section should not have to
+// turn back to find out what it says.
+func drawSectionBlurb(pdf *fpdf.Fpdf, s PrintSection, y float64) {
+	lines := blurbLines(pdf, s)
+	if len(lines) == 0 {
+		return
+	}
+	pdf.SetTextColor(printInk[0], printInk[1], printInk[2])
+	pdf.SetFont(printBody, "", rowDescPt*designScale)
+	dy := d(y + barH + blurbGap + rowDescPt*0.78)
+	for _, line := range lines {
+		pdf.Text(d(marginX+2.05), dy, line)
+		dy += d(rowDescPt * rowDescLH)
+	}
 }
 
 // drawRow is one beer: name, style beside it, the price columns, and the

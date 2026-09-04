@@ -74,6 +74,9 @@ func (p printConfigPayload) MarshalJSON() ([]byte, error) {
 	if p.Config.Notes == nil {
 		p.Config.Notes = map[string]string{}
 	}
+	if p.Config.Blurbs == nil {
+		p.Config.Blurbs = map[string]string{}
+	}
 	return json.Marshal(alias(p))
 }
 
@@ -107,7 +110,8 @@ func (a *App) handleGetPrintConfig(w http.ResponseWriter, r *http.Request) {
 //
 // The configured sections are folded in too, so a colour set for a beer that
 // has since gone off tap stays visible and editable rather than vanishing from
-// the page while remaining in the stored config.
+// the page while remaining in the stored config. That includes headings that
+// exist only as a blurb -- snacks have no tap and still want a bar colour.
 func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintConfig) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -130,14 +134,17 @@ func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintCo
 	for _, e := range cfg.Extras {
 		add(e.Section)
 	}
-	// Colours is a map, so its own order is not stable. Sorted, or the list
+	// The config maps have no order of their own. Sorted, or the list
 	// reshuffles between page loads for no reason the reader can see.
-	coloured := make([]string, 0, len(cfg.Colors))
+	named := make([]string, 0, len(cfg.Colors)+len(cfg.Blurbs))
 	for name := range cfg.Colors {
-		coloured = append(coloured, name)
+		named = append(named, name)
 	}
-	sort.Strings(coloured)
-	for _, name := range coloured {
+	for name := range cfg.Blurbs {
+		named = append(named, name)
+	}
+	sort.Strings(named)
+	for _, name := range named {
 		add(name)
 	}
 	return out

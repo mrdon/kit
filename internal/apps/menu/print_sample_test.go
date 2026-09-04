@@ -25,6 +25,9 @@ func samplePrintConfig() PrintConfig {
 			"Non-Alcoholic":    "#f58a22",
 			"Sodas & Juices":   "#fec111",
 		},
+		Blurbs: map[string]string{
+			"Snacks": "Pretzels, chips, popcorn and pub mix — ask at the bar.",
+		},
 		Extras: []Beer{
 			{Section: "Non-Alcoholic", Name: "Athletic Upside Dawn", Style: "Golden Ale",
 				Pours: []Pour{{Size: "12oz", Label: "12oz Can", Price: "6"}}},

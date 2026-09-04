@@ -2,6 +2,7 @@ package menu
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -210,7 +211,7 @@ func TestSectionColours(t *testing.T) {
 		{Section: "Pub Ales", Name: "b"},
 		{Section: "Belgian Styles", Name: "c"},
 	}
-	got := buildSections(rows, map[string]string{"pub ales": "#123456"})
+	got := buildSections(rows, map[string]string{"pub ales": "#123456"}, nil)
 	if len(got) != 3 {
 		t.Fatalf("got %d sections, want 3", len(got))
 	}
@@ -240,7 +241,7 @@ func TestMergeExtrasGroupsWithItsSection(t *testing.T) {
 		{Section: "Specialty", Name: "A can"},
 		{Section: "Sodas", Name: "Lemonade"},
 	}
-	sections := buildSections(mergeExtras(rows, extras), nil)
+	sections := buildSections(mergeExtras(rows, extras), nil, nil)
 	byName := map[string][]string{}
 	for _, s := range sections {
 		for _, r := range s.Rows {
@@ -319,7 +320,7 @@ func TestRenderPrintPDF(t *testing.T) {
 		Sizes:     defaultSizes,
 		FootLeft:  cfg.FootLeft,
 		FootRight: cfg.FootRight,
-		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors),
+		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors, cfg.Blurbs),
 	}
 	var buf bytes.Buffer
 	if err := RenderPrintPDF(m, &buf); err != nil {
@@ -459,7 +460,7 @@ func TestRowsNeverOverrunTheFooter(t *testing.T) {
 		if n == 0 {
 			continue
 		}
-		bottom := y + barToName + rowHeight(pdf, section, section.Rows[0])
+		bottom := y + sectionLead(pdf, section) + rowHeight(pdf, section, section.Rows[0])
 		if bottom > bodyBottom {
 			t.Fatalf("at y=%.0f the section was allowed to run to %.0f, past the %.0f limit",
 				y, bottom, bodyBottom)
@@ -614,5 +615,167 @@ func TestPriceColumnClearsTheBarEdge(t *testing.T) {
 	if colLargeRight-colABVMid < 100 {
 		t.Errorf("only %.1f between the ABV column and the prices",
 			colLargeRight-colABVMid)
+	}
+}
+
+// A blurb with no matching heading becomes a section of its own, at the end,
+// with no rows. This is the snacks case: one heading, one line, no prices.
+func TestBlurbBecomesItsOwnSection(t *testing.T) {
+	rows := []Beer{
+		{Section: "Lagers", Name: "Cerveza"},
+		{Section: "Sodas", Name: "Lemonade"},
+	}
+	blurbs := map[string]string{
+		"Snacks": "Pretzels, chips and popcorn — ask at the bar.",
+		"sodas":  "All fountain, all refillable.",
+	}
+	got := buildSections(rows, nil, blurbs)
+	if len(got) != 3 {
+		t.Fatalf("got %d sections, want Lagers, Sodas and Snacks", len(got))
+	}
+	// A blurb naming a heading that exists attaches to it, matched the same
+	// case-insensitive way colours are, and does not spawn a duplicate.
+	if got[1].Name != "Sodas" || got[1].Blurb != blurbs["sodas"] {
+		t.Errorf("Sodas = %+v, want the blurb attached to the existing section", got[1])
+	}
+	if len(got[1].Rows) != 1 {
+		t.Errorf("Sodas has %d rows, want its lemonade kept", len(got[1].Rows))
+	}
+	// One that names nothing lands last, and carries no rows at all.
+	if got[2].Name != "Snacks" || len(got[2].Rows) != 0 {
+		t.Errorf("last section = %+v, want a rowless Snacks", got[2])
+	}
+	if got[2].Color == "" {
+		t.Error("a standalone blurb section got no bar colour")
+	}
+	if got[2].Color == got[1].Color {
+		t.Errorf("Snacks took the same colour as the heading above it (%s)", got[2].Color)
+	}
+}
+
+// The palette cycle cannot see a hand-picked colour, so an appended section
+// has to step past whatever the heading above it was actually given.
+func TestBlurbSectionAvoidsTheColourAboveIt(t *testing.T) {
+	rows := []Beer{{Section: "Sodas", Name: "Lemonade"}}
+	// Sodas is coloured by hand with the very colour the cycle would hand to
+	// the section after it.
+	got := buildSections(rows,
+		map[string]string{"Sodas": printPalette[1]},
+		map[string]string{"Snacks": "Pretzels and popcorn."})
+	if len(got) != 2 {
+		t.Fatalf("got %d sections, want Sodas and Snacks", len(got))
+	}
+	if got[1].Color == got[0].Color {
+		t.Errorf("both headings are %s", got[0].Color)
+	}
+}
+
+// An empty blurb is not a section. A console that writes every key it knows
+// about would otherwise print a heading with nothing under it.
+func TestEmptyBlurbIsIgnored(t *testing.T) {
+	got := buildSections([]Beer{{Section: "Lagers", Name: "a"}}, nil,
+		map[string]string{"Snacks": "   "})
+	if len(got) != 1 {
+		t.Fatalf("got %d sections, want only Lagers", len(got))
+	}
+}
+
+// A rowless section still renders, and takes up only its bar and its sentence.
+func TestBlurbOnlySectionRenders(t *testing.T) {
+	snacks := PrintSection{
+		Name:  "Snacks",
+		Color: "#1b4525",
+		Blurb: "Pretzels, chips and popcorn — ask at the bar.",
+	}
+	var buf bytes.Buffer
+	err := RenderPrintPDF(PrintMenu{
+		Title: "Beers",
+		Sections: []PrintSection{{Name: "Lagers", Color: "#fec111", Rows: []Beer{
+			{Name: "Cerveza", Style: "Lager - Mexican", ABV: "4.5%",
+				Pours: []Pour{{Size: "16oz", Label: "16oz Draft", Price: "6"}}},
+		}}, snacks},
+	}, &buf)
+	if err != nil {
+		t.Fatalf("rendering: %v", err)
+	}
+	if !bytes.HasPrefix(buf.Bytes(), []byte("%PDF-")) {
+		t.Fatal("output is not a PDF")
+	}
+
+	pdf := newMeasuringPDF(t)
+	// The blurb decides the section's height; without one it would be the
+	// full row lead, which for a rowless heading is empty space.
+	if lead := sectionLead(pdf, snacks); lead <= barH || lead >= barToName+80 {
+		t.Errorf("blurb-only lead = %.1f, want a bar plus one or two lines", lead)
+	}
+	if got := sectionLead(pdf, PrintSection{Name: "Lagers"}); got != barToName {
+		t.Errorf("lead with no blurb = %.1f, want the plain %.1f", got, barToName)
+	}
+}
+
+// A section that fits on a page of its own is never split across two. An extra
+// sheet is cheaper than a heading that resumes overleaf.
+func TestSectionsAreKeptWhole(t *testing.T) {
+	note := "A beer with a description long enough to wrap onto a second line, " +
+		"which is what makes a row tall enough to force the issue."
+	beer := func(n string) Beer {
+		return Beer{Name: n, Style: "IPA - West Coast", ABV: "6.5%", Notes: note,
+			Pours: []Pour{{Size: "16oz", Label: "16oz Draft", Price: "7"}}}
+	}
+	// Six sections of four beers each: too much for one page, and no single
+	// section anywhere near a page tall.
+	var sections []PrintSection
+	for i := range 6 {
+		s := PrintSection{Name: fmt.Sprintf("Section %d", i), Color: "#1b4525"}
+		for j := range 4 {
+			s.Rows = append(s.Rows, beer(fmt.Sprintf("Beer %d-%d", i, j)))
+		}
+		sections = append(sections, s)
+	}
+	var buf bytes.Buffer
+	if err := RenderPrintPDF(PrintMenu{Title: "Beers", Sections: sections}, &buf); err != nil {
+		t.Fatalf("rendering: %v", err)
+	}
+	if n := strings.Count(buf.String(), "/Type /Page\n"); n < 3 {
+		t.Fatalf("got %d pages; the fixture is meant to overflow several", n)
+	}
+
+	// Walk the layout the renderer walks and assert no section ever draws in
+	// two pieces.
+	pdf := newMeasuringPDF(t)
+	// Page one is already open, so every break from here lands on a later
+	// page, which starts higher.
+	y, atTop := bodyTopFirst, true
+	for _, s := range sections {
+		rows := s.Rows
+		pieces := 0
+		for {
+			n := rowsThatFit(pdf, s, rows, y)
+			if (n < len(rows) || !headingFits(pdf, s, y)) && !atTop {
+				// Moved whole to a fresh page. No need to raise atTop:
+				// drawing the section lowers it again before anything reads.
+				y = bodyTopRest
+				n = rowsThatFit(pdf, s, rows, y)
+			}
+			if n == 0 && len(rows) > 0 {
+				n = 1
+			}
+			for _, r := range rows[:n] {
+				y += rowHeight(pdf, s, r)
+			}
+			y += sectionLead(pdf, s)
+			pieces++
+			atTop = false
+			rows = rows[n:]
+			if len(rows) == 0 {
+				break
+			}
+			// Split: the continuation starts a fresh page.
+			y, atTop = bodyTopRest, true
+		}
+		if pieces != 1 {
+			t.Errorf("%s was drawn in %d pieces, want 1", s.Name, pieces)
+		}
+		y += sectionGap
 	}
 }

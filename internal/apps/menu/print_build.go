@@ -110,7 +110,7 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		Sizes:     firstNonEmpty(cfg.Sizes, defaultSizes),
 		FootLeft:  cfg.FootLeft,
 		FootRight: cfg.FootRight,
-		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors),
+		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors, cfg.Blurbs),
 	}
 	a.attachPrintArt(ctx, tenant.ID, cfg, &m)
 	return m, nil

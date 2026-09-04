@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -73,7 +74,10 @@ func toolMetas() []services.ToolMeta {
 				"the footer), `foot_left` and `foot_right` (the wifi and social lines), `colors` " +
 				"(section heading name to #rrggbb), `notes` (beer name to a description you " +
 				"write yourself, which wins over Untappd — use it for anything Untappd has no " +
-				"page for), `hero` (the key of an image stored with " +
+				"page for), `blurbs` (section heading name to one sentence printed under that " +
+				"heading — a heading named here that is not on the tap list becomes a section " +
+				"of its own at the end, which is how snacks go on a beer menu without a row " +
+				"and a price each), `hero` (the key of an image stored with " +
 				"set_menu_asset, used behind the masthead), and `extras` (rows Untappd does not " +
 				"carry — canned non-alcoholics, sodas, juice boxes — each with section, name, " +
 				"style and pours: [{size, label, price}]). Replaces the whole configuration.",
@@ -210,8 +214,8 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Printed menu configured — %d extra rows, %d section colours.",
-		len(cfg.Extras), len(cfg.Colors))
+	fmt.Fprintf(&b, "Printed menu configured — %d extra rows, %d section colours, %d blurbs.",
+		len(cfg.Extras), len(cfg.Colors), len(cfg.Blurbs))
 	if strings.TrimSpace(cfg.Brand) == "" {
 		b.WriteString("\n\nNo `brand` set, so the menu will print without beer descriptions: " +
 			"the Untappd digital board does not carry them, and the brewery's untappd.com slug " +
@@ -236,6 +240,14 @@ func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 	}
 	if len(cfg.Extras) > 0 {
 		fmt.Fprintf(&b, "  %d extra rows (non-Untappd)\n", len(cfg.Extras))
+	}
+	if len(cfg.Blurbs) > 0 {
+		names := make([]string, 0, len(cfg.Blurbs))
+		for name := range cfg.Blurbs {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Fprintf(&b, "  blurbs under %s\n", strings.Join(names, ", "))
 	}
 	return b.String()
 }

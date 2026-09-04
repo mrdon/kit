@@ -18,8 +18,9 @@ import { useSetChatContext } from '../chatContext';
 //
 // Everything here is what Untappd cannot tell us. The beers, prices, strengths
 // and descriptions all come from the tap list; this page is the masthead
-// wording, the colour of each section bar, and the rows that are not on tap at
-// all — cans, sodas, juice boxes.
+// wording, the colour of each section bar, the rows that are not on tap at all
+// — cans, sodas, juice boxes — and the headings that are a sentence rather
+// than a list, which is how snacks go on a beer menu.
 //
 // It is one form saved whole, not a set of live-updating fields. The config is
 // stored as a single document and replaced on write, so a per-field save would
@@ -35,10 +36,21 @@ const BLANK_EXTRA: MenuExtra = {
   pours: [{ size: '12oz', label: '12oz Can', price: '' }],
 };
 
+// A blurb is edited as a heading and a sentence side by side, not as a map
+// entry. Typing into a key rewrites it on every keystroke, which remounts the
+// input and loses the cursor after the first letter; an array holds still
+// while it is being typed into and is folded back into a map on save.
+type BlurbRow = { name: string; text: string };
+
+function toBlurbRows(blurbs: Record<string, string> | undefined): BlurbRow[] {
+  return Object.entries(blurbs ?? {}).map(([name, text]) => ({ name, text }));
+}
+
 export default function MenuPrintSettings() {
   useSetChatContext('the printed menu settings page');
   const [data, setData] = useState<MenuPrint | null>(null);
   const [cfg, setCfg] = useState<MenuPrintConfig | null>(null);
+  const [blurbs, setBlurbs] = useState<BlurbRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -49,6 +61,7 @@ export default function MenuPrintSettings() {
       .then((d) => {
         setData(d);
         setCfg(d.config);
+        setBlurbs(toBlurbRows(d.config.blurbs));
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
@@ -69,6 +82,11 @@ export default function MenuPrintSettings() {
     if (hex) colors[section] = hex;
     else delete colors[section];
     set('colors', colors);
+  }
+
+  function setBlurb(i: number, patch: Partial<BlurbRow>) {
+    setBlurbs((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+    setSaved(false);
   }
 
   function setExtra(i: number, patch: Partial<MenuExtra>) {
@@ -105,10 +123,18 @@ export default function MenuPrintSettings() {
     if (!cfg) return;
     setSaving(true);
     setErr(null);
+    // A half-filled blurb row is someone mid-thought, not a heading. Dropping
+    // the incomplete ones here means Add can leave a blank row on screen
+    // without it printing an empty bar.
+    const map: Record<string, string> = {};
+    for (const { name, text } of blurbs) {
+      if (name.trim() && text.trim()) map[name.trim()] = text.trim();
+    }
     try {
-      const next = await api.saveMenuPrint(cfg);
+      const next = await api.saveMenuPrint({ ...cfg, blurbs: map });
       setData(next);
       setCfg(next.config);
+      setBlurbs(toBlurbRows(next.config.blurbs));
       setSaved(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -274,6 +300,63 @@ export default function MenuPrintSettings() {
                 </div>
               ))
             )}
+          </section>
+
+          <section className="panel">
+            <h2 className="panel-title">Say it in a line</h2>
+            <p className="card-desc">
+              A heading with a sentence under it instead of a price list. Use it
+              for snacks — one line beats six rows and six prices — or to say
+              something about a section that is already on the board.
+            </p>
+            <p className="card-desc">
+              A heading that matches your tap list prints its sentence above
+              those beers. One that matches nothing becomes its own section at
+              the end of the menu.
+            </p>
+            {blurbs.map((row, i) => (
+              <div className="field-row" key={i}>
+                <label className="field">
+                  <span>Heading</span>
+                  <input
+                    value={row.name}
+                    placeholder="Snacks"
+                    list="menu-print-sections"
+                    onChange={(e) => setBlurb(i, { name: e.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  <span>Sentence</span>
+                  <input
+                    value={row.text}
+                    placeholder="Pretzels, chips and popcorn — ask at the bar."
+                    onChange={(e) => setBlurb(i, { text: e.target.value })}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setBlurbs(blurbs.filter((_, j) => j !== i));
+                    setSaved(false);
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <div className="drawer-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setBlurbs([...blurbs, { name: '', text: '' }]);
+                  setSaved(false);
+                }}
+              >
+                Add a heading
+              </button>
+            </div>
           </section>
 
           <section className="panel">

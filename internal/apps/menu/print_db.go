@@ -47,6 +47,12 @@ type PrintConfig struct {
 	// that you do not want on your public brewery listing.
 	Notes map[string]string `json:"notes"`
 
+	// Blurbs map a section heading to a sentence printed under it, instead of
+	// or before its rows. A heading named here that matches nothing on the tap
+	// list becomes a section of its own at the end of the menu, which is how
+	// snacks get onto a beer list: one heading, one line, no price column.
+	Blurbs map[string]string `json:"blurbs"`
+
 	// Extras are the rows Untappd has no opinion about: canned non-alcoholics,
 	// sodas, juice boxes. They are Beers rather than a lesser type because
 	// a soda still has a section, a name and a price, and the renderer should

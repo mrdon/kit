@@ -77,7 +77,7 @@ func TestPrintLive(t *testing.T) {
 		Sizes:     defaultSizes,
 		FootLeft:  cfg.FootLeft,
 		FootRight: cfg.FootRight,
-		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors),
+		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors, cfg.Blurbs),
 	}
 	for _, s := range m.Sections {
 		t.Logf("  %-20s %d rows", s.Name, len(s.Rows))

@@ -406,6 +406,8 @@ Only beers that are **actually pouring** reach the printed menu — Kit takes th
 
 **Printable menu** on the same page opens a letter-sized PDF for the tables: a coloured band per section, and a row per beer with its style, ABV, half-pour and full-pour prices, and a sentence about it. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size beside the price, so nobody is quoted a 16oz they cannot order.
 
+Sections are kept whole. A heading whose beers don't all fit moves to the next page rather than resuming overleaf under a repeated bar, so a reader can tell they've seen all of it. This is already a multi-page sheet, so the trade is a bit of air at the foot of a page — and occasionally an extra page — for a menu nobody loses their place in. A section genuinely taller than a sheet still splits, because there's nowhere else for it to go.
+
 The descriptions come from your brewery's pages on untappd.com, because the digital board doesn't carry any. Configure the printed menu with `set_menu_print`, passing a JSON document:
 
 - `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. **Without it the menu prints with no descriptions.** They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
@@ -414,10 +416,13 @@ The descriptions come from your brewery's pages on untappd.com, because the digi
 - `foot_left` / `foot_right` — the wifi and social lines.
 - `colors` — section heading name to a `#rrggbb` bar colour. Sections you don't name get one from the house palette.
 - `notes` — beer name to a description you write yourself. These win over Untappd, so they're the fix for a beer Untappd has no page for, and the way to say something on paper you don't want on your public brewery listing.
+- `blurbs` — section heading to a single sentence printed under that heading. A heading that matches your tap list gets the sentence above its beers; a heading that matches nothing becomes a section of its own at the end of the menu. This is how **snacks** go on a beer menu: one bar saying `Snacks` and one line saying what's behind it, rather than a row and a price for every bag of pretzels.
 - `hero` — the key of an image stored with `set_menu_asset`, printed behind the masthead. A `print_logo` asset, if you upload one, goes on the masthead too — use a white knockout, it sits on a colour band.
 - `extras` — the rows Untappd has no opinion about: canned non-alcoholics, sodas, juice boxes. Each has a `section`, `name`, optional `style`, and `pours: [{size, label, price}]`. A section whose rows are all packaged prints one price column instead of three.
 
 Everything is optional. A workspace that configures none of it still prints a usable menu — the headings and beers come from Untappd and the colours cycle.
+
+All of the same settings have a form in the console, under **Admin → Printed menu** (`/<your-slug>/web/admin/menu`), which is usually easier than hand-writing the JSON.
 
 ## Kiosk screens
 

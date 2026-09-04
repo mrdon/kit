@@ -22,6 +22,15 @@ type PrintSection struct {
 	Name  string
 	Color string // #rrggbb
 	Rows  []Beer
+
+	// Blurb is a sentence set under the heading, before any rows. It is how
+	// the menu says a thing exists without pricing it line by line -- snacks
+	// being the case it was added for: a taproom puts out pretzels and popcorn
+	// and wants one heading and one sentence, not six rows and six prices.
+	//
+	// A section may have a blurb and rows both, which reads as a note about
+	// the list under it ("all cans to go").
+	Blurb string
 }
 
 // PrintMenu is everything one print run needs.
@@ -126,7 +135,7 @@ func tidyABV(s string) string {
 // beers appear on the Untappd board is a decision somebody made -- lagers
 // first, the strong stuff last -- and re-sorting it here would quietly
 // override them.
-func buildSections(rows []Beer, colors map[string]string) []PrintSection {
+func buildSections(rows []Beer, colors, blurbs map[string]string) []PrintSection {
 	order := make([]string, 0, 8)
 	byName := make(map[string][]Beer)
 	for _, r := range rows {
@@ -144,10 +153,70 @@ func buildSections(rows []Beer, colors map[string]string) []PrintSection {
 		out = append(out, PrintSection{
 			Name:  name,
 			Color: sectionColor(name, i, colors),
+			Blurb: lookupFold(blurbs, name),
 			Rows:  byName[name],
 		})
 	}
-	return out
+	return standaloneBlurbs(out, blurbs, colors)
+}
+
+// standaloneBlurbs adds a heading for every blurb that matched no section.
+//
+// This is how snacks reach a beer menu. There is nothing upstream to hang them
+// on -- Untappd knows about beer -- and they are not extras either, because an
+// extra is a row with a price and the whole point of a blurb is not having
+// one.
+//
+// They land after everything that pours, which is where a food line belongs on
+// a drinks menu, and in name order so that two of them do not swap places
+// between prints for no reason a reader could see.
+func standaloneBlurbs(sections []PrintSection, blurbs, colors map[string]string) []PrintSection {
+	if len(blurbs) == 0 {
+		return sections
+	}
+	used := make(map[string]bool, len(sections))
+	for _, s := range sections {
+		used[strings.ToLower(strings.TrimSpace(s.Name))] = true
+	}
+	names := make([]string, 0, len(blurbs))
+	for name, text := range blurbs {
+		if strings.TrimSpace(text) == "" || used[strings.ToLower(strings.TrimSpace(name))] {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		sections = append(sections, PrintSection{
+			Name:  name,
+			Color: freshColor(name, sections, colors),
+			Blurb: blurbs[name],
+		})
+	}
+	return sections
+}
+
+// freshColor picks a bar for an appended section, stepping through the palette
+// until it differs from the heading above it.
+//
+// The plain cycle cannot promise that here. Everything before this point may
+// have been coloured by hand, and a gold Snacks bar landing under a gold Sodas
+// bar reads as one long heading with a hole punched in it.
+func freshColor(name string, prior []PrintSection, colors map[string]string) string {
+	if c := lookupFold(colors, name); c != "" {
+		return c
+	}
+	above := ""
+	if len(prior) > 0 {
+		above = prior[len(prior)-1].Color
+	}
+	for i := range printPalette {
+		c := printPalette[(len(prior)+i)%len(printPalette)]
+		if !strings.EqualFold(c, above) {
+			return c
+		}
+	}
+	return printPalette[len(prior)%len(printPalette)]
 }
 
 // House colours, cycled when a section has not been given one. Gold, dark
@@ -156,18 +225,28 @@ func buildSections(rows []Beer, colors map[string]string) []PrintSection {
 var printPalette = []string{"#fec111", "#1b4525", "#f58a22", "#678f42"}
 
 func sectionColor(name string, i int, colors map[string]string) string {
-	if c, ok := colors[name]; ok && c != "" {
+	if c := lookupFold(colors, name); c != "" {
 		return c
 	}
-	// Case-insensitive second look: the config is hand-typed and the section
-	// name comes off a scrape, so "Pub Ales" and "PUB ALES" should be one key.
-	lower := strings.ToLower(name)
-	for k, v := range colors {
-		if strings.ToLower(k) == lower && v != "" {
+	return printPalette[i%len(printPalette)]
+}
+
+// lookupFold reads a hand-typed config map with a scraped key.
+//
+// One side is written by a person and the other comes off Untappd, so "Pub
+// Ales" and "PUB ALES" have to be one entry. An exact hit is tried first, so a
+// config that does distinguish two casings is not second-guessed.
+func lookupFold(m map[string]string, key string) string {
+	if v, ok := m[key]; ok && v != "" {
+		return v
+	}
+	lower := strings.ToLower(strings.TrimSpace(key))
+	for k, v := range m {
+		if strings.ToLower(strings.TrimSpace(k)) == lower && v != "" {
 			return v
 		}
 	}
-	return printPalette[i%len(printPalette)]
+	return ""
 }
 
 // mergeExtras appends the configured non-Untappd rows.

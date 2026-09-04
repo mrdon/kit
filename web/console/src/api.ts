@@ -158,6 +158,12 @@ export interface MenuPrintConfig {
   hero?: string;
   colors?: Record<string, string>;
   notes?: Record<string, string>;
+  /**
+   * Section heading to a sentence printed under it. A heading named here that
+   * is not on the tap list becomes a section of its own at the end — which is
+   * how snacks reach a beer menu without a row and a price each.
+   */
+  blurbs?: Record<string, string>;
   extras?: MenuExtra[];
 }
 
