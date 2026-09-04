@@ -214,14 +214,25 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Printed menu configured — %d extra rows, %d section colours, %d blurbs.",
-		len(cfg.Extras), len(cfg.Colors), len(cfg.Blurbs))
+	fmt.Fprintf(&b, "Printed menu configured — %s, %s, %s.",
+		plural(len(cfg.Extras), "extra row"),
+		plural(len(cfg.Colors), "section colour"),
+		plural(len(cfg.Blurbs), "blurb"))
 	if strings.TrimSpace(cfg.Brand) == "" {
 		b.WriteString("\n\nNo `brand` set, so the menu will print without beer descriptions: " +
 			"the Untappd digital board does not carry them, and the brewery's untappd.com slug " +
 			"is what finds the pages that do.")
 	}
 	return b.String(), nil
+}
+
+// plural counts a thing the way a person would read it back. "1 blurbs" in a
+// confirmation makes the whole message look generated rather than written.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // describePrint summarises the printed menu for get_menu_board.
