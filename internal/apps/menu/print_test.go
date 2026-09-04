@@ -713,24 +713,24 @@ func TestBlurbOnlySectionRenders(t *testing.T) {
 	}
 }
 
-// A section that fits on a page of its own is never split across two. An extra
-// sheet is cheaper than a heading that resumes overleaf.
-func TestSectionsAreKeptWhole(t *testing.T) {
+// Pages are filled, not left half empty. A break may only happen where the
+// next row genuinely would not have fitted -- keeping whole sections together
+// was tried instead and left the bottom of a page white, which on a menu reads
+// as a mistake rather than as design.
+func TestPagesAreFilledBeforeBreaking(t *testing.T) {
 	note := "A beer with a description long enough to wrap onto a second line, " +
 		"which is what makes a row tall enough to force the issue."
 	beer := func(n string) Beer {
 		return Beer{Name: n, Style: "IPA - West Coast", ABV: "6.5%", Notes: note,
 			Pours: []Pour{{Size: "16oz", Label: "16oz Draft", Price: "7"}}}
 	}
-	// Six sections of four beers each: too much for one page, and no single
-	// section anywhere near a page tall.
 	var sections []PrintSection
 	for i := range 6 {
-		s := PrintSection{Name: fmt.Sprintf("Section %d", i), Color: "#1b4525"}
+		sec := PrintSection{Name: fmt.Sprintf("Section %d", i), Color: "#1b4525"}
 		for j := range 4 {
-			s.Rows = append(s.Rows, beer(fmt.Sprintf("Beer %d-%d", i, j)))
+			sec.Rows = append(sec.Rows, beer(fmt.Sprintf("Beer %d-%d", i, j)))
 		}
-		sections = append(sections, s)
+		sections = append(sections, sec)
 	}
 	var buf bytes.Buffer
 	if err := RenderPrintPDF(PrintMenu{Title: "Beers", Sections: sections}, &buf); err != nil {
@@ -740,41 +740,43 @@ func TestSectionsAreKeptWhole(t *testing.T) {
 		t.Fatalf("got %d pages; the fixture is meant to overflow several", n)
 	}
 
-	// Walk the layout the renderer walks and assert no section ever draws in
-	// two pieces.
+	// Walk the layout the renderer walks. Every break must be forced, and
+	// nothing may cross the footer rule.
 	pdf := newMeasuringPDF(t)
-	// Page one is already open, so every break from here lands on a later
-	// page, which starts higher.
 	y, atTop := bodyTopFirst, true
 	for _, s := range sections {
 		rows := s.Rows
-		pieces := 0
 		for {
 			n := rowsThatFit(pdf, s, rows, y)
-			if (n < len(rows) || !headingFits(pdf, s, y)) && !atTop {
-				// Moved whole to a fresh page. No need to raise atTop:
-				// drawing the section lowers it again before anything reads.
+			if ((n == 0 && len(rows) > 0) || !headingFits(pdf, s, y)) && !atTop {
+				if n > 0 {
+					t.Errorf("%s broke the page with %d rows still fitting", s.Name, n)
+				}
+				// atTop is not raised: drawing lowers it again below with no
+				// read in between.
 				y = bodyTopRest
 				n = rowsThatFit(pdf, s, rows, y)
 			}
 			if n == 0 && len(rows) > 0 {
 				n = 1
 			}
-			for _, r := range rows[:n] {
-				y += rowHeight(pdf, s, r)
+			// Everything that fits is drawn -- no row is held back.
+			if n < len(rows) && n < rowsThatFit(pdf, s, rows, y) {
+				t.Errorf("%s drew %d rows with %d fitting", s.Name, n, rowsThatFit(pdf, s, rows, y))
 			}
-			y += sectionLead(pdf, s)
-			pieces++
-			atTop = false
+			cursor := y + sectionLead(pdf, s)
+			for _, r := range rows[:n] {
+				cursor += rowHeight(pdf, s, r)
+			}
+			if cursor > bodyBottom {
+				t.Errorf("%s ran to %.0f, past the %.0f limit", s.Name, cursor, bodyBottom)
+			}
+			y, atTop = cursor, false
 			rows = rows[n:]
 			if len(rows) == 0 {
 				break
 			}
-			// Split: the continuation starts a fresh page.
 			y, atTop = bodyTopRest, true
-		}
-		if pieces != 1 {
-			t.Errorf("%s was drawn in %d pieces, want 1", s.Name, pieces)
 		}
 		y += sectionGap
 	}

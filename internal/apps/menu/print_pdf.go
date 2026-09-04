@@ -24,12 +24,18 @@ import (
 // hand-positioned artboards: a beer added in Untappd moved every row below it
 // by hand.
 //
-// Sections are kept whole. A heading whose beers do not all fit moves to the
-// next page rather than leaving two of them behind under a repeated one --
-// this is already a multi-page document, so a sheet with some air at the
-// bottom costs nothing, while a section that resumes overleaf makes a reader
-// wonder whether they have seen all of it. Splitting is still there for a
-// section genuinely taller than a sheet, where there is no other option.
+// The rule is: fill the page, break only when the next row genuinely will not
+// fit, and continue the section under a repeated heading.
+//
+// It is deliberately the dumbest rule available, because the content moves.
+// Kegs blow weekly, descriptions arrive and get rewritten, and a whole section
+// can appear or vanish -- so any rule tuned to make a particular tap list fall
+// nicely will fall badly on next month's. Two prettier-sounding heuristics
+// were tried and both did: keeping a section whole left the bottom half of a
+// page white when three tall rows would not fit, and a widow guard that held a
+// row back so the last two travelled together gave up 143 points at the foot
+// of a page to save one beer from starting the next. Greedy filling has no
+// such failure mode -- the worst it can do is what the page geometry forces.
 
 //go:embed fonts/Montserrat-Regular.ttf fonts/Montserrat-Bold.ttf
 var printFonts embed.FS
@@ -186,27 +192,24 @@ func RenderPrintPDF(m PrintMenu, out io.Writer) error {
 		for {
 			// How many rows fit under a heading drawn at y.
 			n := rowsThatFit(pdf, s, rows, y)
-			// Anything short of the whole section moves to a fresh page, as
-			// does a heading with no room left under it at all -- which is the
-			// only test a section of pure blurb has, since it has no rows to
-			// count. Already being at the top of a page means there is no
-			// fresher page to move to.
-			if (n < len(rows) || !headingFits(pdf, s, y)) && !atTop {
+			// Break only when nothing can be drawn here at all. For a section
+			// with beers that means not one of them fits; for a section that
+			// is only a blurb it means the heading itself has no room, which
+			// is its whole test -- it has no rows to count. Already being at
+			// the top of a page means there is no fresher page to move to.
+			if ((n == 0 && len(rows) > 0) || !headingFits(pdf, s, y)) && !atTop {
 				newPage()
 				n = rowsThatFit(pdf, s, rows, y)
 			}
-			// Still nothing fits on a page of its own: this section is taller
-			// than a sheet and has to be split. Force a row through rather
-			// than loop forever, and let it overrun.
+			// Still nothing on a page of its own: this row is taller than an
+			// empty page. Force it through rather than loop forever, and let
+			// it overrun.
 			if n == 0 && len(rows) > 0 {
 				n = 1
 			}
-			// Never send one row over on its own. A page holding a heading and
-			// a single soda reads as a printer error, so the break moves up a
-			// row and the two travel together.
-			if len(rows)-n == 1 && n > 1 {
-				n--
-			}
+			// Everything that fits is drawn. There is deliberately no widow
+			// guard holding a row back to keep the last two together -- see
+			// the note at the top of the file.
 			y = drawSection(pdf, s, rows[:n], y)
 			atTop = false
 			rows = rows[n:]

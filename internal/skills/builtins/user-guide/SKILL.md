@@ -408,7 +408,7 @@ Only beers that are **actually pouring** reach the printed menu — Kit takes th
 
 The sheet prints **what was last synced**, not whatever Untappd says at the moment you open it. Press **Sync from Untappd** on the settings page after the taps change. That keeps a third party off the critical path of somebody standing at a printer, and it means a failure to reach Untappd lands in front of you when you asked for it rather than silently subtracting the descriptions from a document.
 
-Sections are kept whole. A heading whose beers don't all fit moves to the next page rather than resuming overleaf under a repeated bar, so a reader can tell they've seen all of it. This is already a multi-page sheet, so the trade is a bit of air at the foot of a page — and occasionally an extra page — for a menu nobody loses their place in. A section genuinely taller than a sheet still splits, because there's nowhere else for it to go.
+Pages fill up before they break, and a section that doesn't fit continues on the next page under a repeated heading. Keeping whole sections together was tried and looked worse — three tall beers that won't fit leave the bottom half of a page white, which on a menu reads as a mistake rather than as design.
 
 ### Why descriptions often don't come down
 
