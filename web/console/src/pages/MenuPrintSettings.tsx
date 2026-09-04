@@ -10,6 +10,12 @@ import { useSetChatContext } from '../chatContext';
 
 // Settings for the printed menu.
 //
+// Lives in the Admin area, with the other set-up-once surfaces: it changes the
+// prices and wording a room full of customers reads off a table, which is not
+// something anyone should wander into from the page that answers "what URL do
+// I paste into the screen". The endpoints are admin-only regardless; this is
+// where the tile is.
+//
 // Everything here is what Untappd cannot tell us. The beers, prices, strengths
 // and descriptions all come from the tap list; this page is the masthead
 // wording, the colour of each section bar, and the rows that are not on tap at
@@ -29,7 +35,7 @@ const BLANK_EXTRA: MenuExtra = {
   pours: [{ size: '12oz', label: '12oz Can', price: '' }],
 };
 
-export default function MenuPrint() {
+export default function MenuPrintSettings() {
   useSetChatContext('the printed menu settings page');
   const [data, setData] = useState<MenuPrint | null>(null);
   const [cfg, setCfg] = useState<MenuPrintConfig | null>(null);
@@ -120,7 +126,7 @@ export default function MenuPrint() {
         <nav className="crumbs">
           <Link to="/">Home</Link>
           <span className="crumb-sep">/</span>
-          <Link to="/menu">Menu</Link>
+          <Link to="/admin">Admin</Link>
           <span className="crumb-sep">/</span>
           <span>Printed menu</span>
         </nav>

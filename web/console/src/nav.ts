@@ -98,6 +98,13 @@ export const SECTIONS: Section[] = [
     app: 'integrations',
   },
   {
+    to: '/admin/menu',
+    label: 'Printed menu',
+    blurb: 'Wording, section colours, and the drinks that are not on tap.',
+    admin: true,
+    app: 'menu',
+  },
+  {
     to: '/admin/events',
     label: 'Events calendar & feed',
     blurb: 'Pick the calendar events sync to, and the feed your website builds from.',

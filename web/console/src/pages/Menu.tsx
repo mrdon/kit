@@ -158,7 +158,7 @@ export default function Menu() {
             <button className="btn" onClick={openPrintMenu}>
               Open printable menu
             </button>
-            <Link className="btn btn-ghost" to="/menu/print">
+            <Link className="btn btn-ghost" to="/admin/menu">
               Settings
             </Link>
           </div>
