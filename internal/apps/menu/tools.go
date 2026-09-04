@@ -2,6 +2,7 @@ package menu
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -62,9 +63,29 @@ func toolMetas() []services.ToolMeta {
 			}, "key", "url"),
 		},
 		{
+			Name: "set_menu_print",
+			Description: "Configure the printed menu — the letter-sized PDF at /<slug>/menu/print.pdf. " +
+				"The beers, prices and ABVs come from the same Untappd board the screen follows; " +
+				"this is everything that is not on it. The payload is one JSON document: `brand` " +
+				"(the brewery's untappd.com slug, e.g. 'gravitybrewing' — without it the menu " +
+				"prints no beer descriptions, because the digital board carries none), `title` and " +
+				"`subtitle` (the masthead, e.g. 'Beers' / '& Beverages'), `flight` (the line above " +
+				"the footer), `foot_left` and `foot_right` (the wifi and social lines), `colors` " +
+				"(section heading name to #rrggbb), `notes` (beer name to a description you " +
+				"write yourself, which wins over Untappd — use it for anything Untappd has no " +
+				"page for), `hero` (the key of an image stored with " +
+				"set_menu_asset, used behind the masthead), and `extras` (rows Untappd does not " +
+				"carry — canned non-alcoholics, sodas, juice boxes — each with section, name, " +
+				"style and pours: [{size, label, price}]). Replaces the whole configuration.",
+			AdminOnly: true,
+			Schema: services.PropsReq(map[string]any{
+				"payload": services.Field("string", "The printed menu's configuration as a JSON document."),
+			}, "payload"),
+		},
+		{
 			Name: "get_menu_board",
 			Description: "Show the menu's public address, what it is following, when it last " +
-				"changed, and any stored images.",
+				"changed, any stored images, and how the printed menu is configured.",
 			AdminOnly: true,
 			Schema:    services.Props(map[string]any{}),
 		},
@@ -79,6 +100,11 @@ type setSourceArgs struct {
 // setBoardArgs is the shared input shape for set_menu_board.
 type setBoardArgs struct {
 	Name    string `json:"name"`
+	Payload string `json:"payload"`
+}
+
+// setPrintArgs is the shared input shape for set_menu_print.
+type setPrintArgs struct {
 	Payload string `json:"payload"`
 }
 
@@ -167,6 +193,53 @@ func saveAsset(ctx context.Context, pool *pgxpool.Pool, f *web.Fetcher, tenantID
 		key, mime, len(data)/1024, AssetRef+key), nil
 }
 
+// savePrintConfig validates and stores the printed menu's settings.
+//
+// Unknown fields are rejected for the same reason the board payload rejects
+// them: a typo'd key in a hand-authored document should fail here, in front of
+// whoever wrote it, rather than silently print a menu missing its footer.
+func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, args setPrintArgs) (string, error) {
+	dec := json.NewDecoder(strings.NewReader(args.Payload))
+	dec.DisallowUnknownFields()
+	var cfg PrintConfig
+	if err := dec.Decode(&cfg); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrPayloadInvalid, err)
+	}
+	if err := SavePrintConfig(ctx, pool, tenantID, cfg); err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Printed menu configured — %d extra rows, %d section colours.",
+		len(cfg.Extras), len(cfg.Colors))
+	if strings.TrimSpace(cfg.Brand) == "" {
+		b.WriteString("\n\nNo `brand` set, so the menu will print without beer descriptions: " +
+			"the Untappd digital board does not carry them, and the brewery's untappd.com slug " +
+			"is what finds the pages that do.")
+	}
+	return b.String(), nil
+}
+
+// describePrint summarises the printed menu for get_menu_board.
+func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) string {
+	state, err := LoadPrintState(ctx, pool, tenantID)
+	if err != nil {
+		return ""
+	}
+	cfg := state.Config
+	var b strings.Builder
+	b.WriteString("\nPrinted menu:\n")
+	if strings.TrimSpace(cfg.Brand) == "" {
+		b.WriteString("  no brewery slug set — will print without descriptions\n")
+	} else {
+		fmt.Fprintf(&b, "  descriptions from untappd.com/%s (%d cached)\n", cfg.Brand, len(state.Notes))
+	}
+	if len(cfg.Extras) > 0 {
+		fmt.Fprintf(&b, "  %d extra rows (non-Untappd)\n", len(cfg.Extras))
+	}
+	return b.String()
+}
+
 // describeBoard renders the status both surfaces return.
 func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.UUID) (string, error) {
 	url, err := a.publicURL(ctx, pool, tenantID)
@@ -203,6 +276,8 @@ func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uui
 			fmt.Fprintf(&b, "  WILL NOT RENDER: %s\n", perr)
 		}
 	}
+
+	b.WriteString(describePrint(ctx, pool, tenantID))
 
 	assets, err := ListAssetKeys(ctx, a.pool, tenantID)
 	if err != nil {

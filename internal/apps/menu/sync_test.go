@@ -31,6 +31,11 @@ func TestEnsureFreshHonoursTTL(t *testing.T) {
 
 // The pour rules the board depends on, stated as a table so a change to them
 // is a deliberate edit rather than a surprise.
+//
+// The rules moved into the shared source model when the printed menu and the
+// till started reading the same tap list, so this now exercises them through
+// Headline and boardPourSize. The expectations are unchanged on purpose: the
+// board must quote exactly what it quoted before.
 func TestHeadlinePourRules(t *testing.T) {
 	container := func(price, name string) string {
 		return `<div class="container"><div class="price">` + price +
@@ -49,7 +54,11 @@ func TestHeadlinePourRules(t *testing.T) {
 			"", "", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			price, size := headlinePour(c.item)
+			beer := Beer{Pours: parsePours(c.item)}
+			var price, size string
+			if pour, ok := beer.Headline(); ok {
+				price, size = pour.Price, boardPourSize(pour)
+			}
 			if price != c.price || size != c.size {
 				t.Errorf("got %q/%q, want %q/%q", price, size, c.price, c.size)
 			}

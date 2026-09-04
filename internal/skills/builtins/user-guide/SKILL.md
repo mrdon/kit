@@ -394,6 +394,29 @@ Kit returns a token (shown once — save it) and a one-line `<script>` snippet. 
 
 Kit calls `list_widget_conversations`, `search_widget_conversations`, and `read_widget_conversation` to answer. Visitor identity is anonymous (a per-browser UUID), so cross-conversation grouping works without storing personal data.
 
+## Menu boards and the printed menu
+
+The **Menu** page (`/<your-slug>/web/menu`) holds one tap list per workspace and renders it two ways.
+
+The **screen address** is the wall display: a permanent public URL you paste into a kiosk board once. Point the menu at your Untappd digital board with `set_menu_source` (the id is the number in `business.untappd.com/boards/<id>`) and the tap list follows — staff keep curating in Untappd exactly as they do now, and the screen re-checks when it asks, at most once a minute.
+
+Only beers that are **actually pouring** reach the printed menu — Kit takes that from whether Untappd prices a 4oz taster, which every tap has and nothing else does. A beer whose prices you clear in Untappd drops off the paper (and its heading with it, if it was the last one under it), and a can listed beside the taps never appears as though you could order a glass of it. Put cans and bottles in `extras` instead.
+
+**Printable menu** on the same page opens a letter-sized PDF for the tables: a coloured band per section, and a row per beer with its style, ABV, half-pour and full-pour prices, and a sentence about it. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size beside the price, so nobody is quoted a 16oz they cannot order.
+
+The descriptions come from your brewery's pages on untappd.com, because the digital board doesn't carry any. Configure the printed menu with `set_menu_print`, passing a JSON document:
+
+- `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. **Without it the menu prints with no descriptions.** They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
+- `title` / `subtitle` — the masthead, e.g. `"Beers"` and `"& Beverages"`.
+- `flight` — the line above the footer, e.g. `"Try any set of four 4oz pours as a flight"`.
+- `foot_left` / `foot_right` — the wifi and social lines.
+- `colors` — section heading name to a `#rrggbb` bar colour. Sections you don't name get one from the house palette.
+- `notes` — beer name to a description you write yourself. These win over Untappd, so they're the fix for a beer Untappd has no page for, and the way to say something on paper you don't want on your public brewery listing.
+- `hero` — the key of an image stored with `set_menu_asset`, printed behind the masthead. A `print_logo` asset, if you upload one, goes on the masthead too — use a white knockout, it sits on a colour band.
+- `extras` — the rows Untappd has no opinion about: canned non-alcoholics, sodas, juice boxes. Each has a `section`, `name`, optional `style`, and `pours: [{size, label, price}]`. A section whose rows are all packaged prints one price column instead of three.
+
+Everything is optional. A workspace that configures none of it still prints a usable menu — the headings and beers come from Untappd and the colours cycle.
+
 ## Kiosk screens
 
 For screens that just sit on a wall running a browser — a lobby TV, a shop-floor dashboard — Kit gives each one a permanent address so you never have to walk over with a keyboard to change what it shows.

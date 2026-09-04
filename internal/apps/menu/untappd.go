@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -107,109 +106,46 @@ func FetchUntappdBody(ctx context.Context, client *http.Client, boardID string) 
 	return string(raw), hex.EncodeToString(sum[:]), nil
 }
 
-// ParseUntappdBoard extracts the tap list from a board page's HTML.
+// ParseUntappdBoard derives the wall board's tap list from the parsed source.
+//
+// The parse itself lives in source.go, shared with the printed menu and the
+// till. What is board-specific is the narrowing: a beer collapses to one price
+// because a screen has room for one, and a beer with no price at all is
+// dropped. An empty price column on a wall reads as a mistake rather than as
+// information -- the fix for that belongs in Untappd.
 func ParseUntappdBoard(raw string) []Tap {
-	doc := unescapePayload(raw)
-
-	// Walk sections and items in document order so each beer keeps the
-	// section heading it sits under.
-	type mark struct {
-		at      int
-		section string
-		item    string
-	}
-	sections := sectionRe.FindAllStringSubmatchIndex(doc, -1)
-	items := itemStartRe.FindAllStringIndex(doc, -1)
-
-	// Every place an item's markup must stop: the next item, the next section
-	// heading, or the footer.
-	bounds := make([]int, 0, len(items)+len(sections)+1)
-	for _, m := range items {
-		bounds = append(bounds, m[0])
-	}
-	for _, m := range sections {
-		bounds = append(bounds, m[0])
-	}
-	if m := footerRe.FindStringIndex(doc); m != nil {
-		bounds = append(bounds, m[0])
-	}
-	sort.Ints(bounds)
-
-	var marks []mark
-	for _, m := range sections {
-		marks = append(marks, mark{at: m[0], section: cleanText(doc[m[2]:m[3]])})
-	}
-	for _, m := range items {
-		end := len(doc)
-		if i := sort.SearchInts(bounds, m[0]+1); i < len(bounds) {
-			end = bounds[i]
-		}
-		marks = append(marks, mark{at: m[0], item: doc[m[0]:end]})
-	}
-	sort.Slice(marks, func(i, j int) bool { return marks[i].at < marks[j].at })
-
-	var taps []Tap
-	section := ""
-	for _, mk := range marks {
-		if mk.item == "" {
-			section = mk.section
-			continue
-		}
-		name := firstGroup(nameRe, mk.item)
-		if name == "" {
-			continue
-		}
-		price, size := headlinePour(mk.item)
-		// No price, no row. A beer nobody can be quoted from the board is
-		// just a question for the bartender, and an empty price column reads
-		// as a mistake rather than as information. If it should be on the
-		// wall, it needs a price in Untappd.
-		if price == "" {
+	beers := ParseBeers(raw)
+	taps := make([]Tap, 0, len(beers))
+	for _, b := range beers {
+		pour, ok := b.Headline()
+		if !ok {
 			continue
 		}
 		taps = append(taps, Tap{
-			Section: section,
-			Name:    name,
-			Style:   firstGroup(styleRe, mk.item),
-			ABV:     firstGroup(abvRe, mk.item),
-			Price:   price,
-			Size:    size,
+			Section: b.Section,
+			Name:    b.Name,
+			Style:   b.Style,
+			ABV:     b.ABV,
+			Price:   pour.Price,
+			Size:    boardPourSize(pour),
 		})
+	}
+	if len(taps) == 0 {
+		return nil
 	}
 	return taps
 }
 
-// headlinePour picks the one price the board has room for. Untappd lists
-// every container a beer comes in; a row shows one.
-func headlinePour(item string) (price, size string) {
-	bestDraft := 0
-	var fallbackPrice, fallbackSize string
-	for _, m := range containerRe.FindAllStringSubmatch(item, -1) {
-		p, label := cleanText(m[1]), cleanText(m[2])
-		fields := strings.Fields(label)
-		if len(fields) == 0 || p == "" {
-			continue
-		}
-		size0 := strings.ToLower(fields[0])
-		// Draft is decided by the word, not the size. Untappd labels are
-		// "16oz Draft", "64oz Growler", "12oz Can" -- keying on the size alone
-		// made a 12oz can outrank a 9oz pour and take the pint column.
-		if strings.Contains(strings.ToLower(label), "draft") {
-			if rank, ok := draftRank[size0]; ok && rank > bestDraft {
-				bestDraft, price, size = rank, p, size0
-			}
-			continue
-		}
-		// Not a draft pour. Keep the first as a fallback for a beer that has
-		// no draft price at all.
-		if fallbackPrice == "" {
-			fallbackPrice, fallbackSize = p, strings.ToLower(label)
-		}
+// boardPourSize is how the board labels the pour it chose.
+//
+// A draft pour is labelled by its size alone -- "16oz", and SizeLabel then
+// hides it because that is the house pour. Anything else keeps its whole
+// label, so a row reads "12 oz can" rather than claiming to be a 12oz pour.
+func boardPourSize(p Pour) string {
+	if isDraft(p.Label) {
+		return p.Size
 	}
-	if bestDraft == 0 {
-		return fallbackPrice, fallbackSize
-	}
-	return price, size
+	return strings.ToLower(p.Label)
 }
 
 // unescapePayload undoes the JSON escaping the board markup arrives in.

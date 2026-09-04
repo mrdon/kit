@@ -60,6 +60,12 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 				URL: req.GetString("url", ""),
 			})
 		})
+	case "set_menu_print":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			return savePrintConfig(ctx, pool, c.TenantID, setPrintArgs{
+				Payload: req.GetString("payload", ""),
+			})
+		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
 			return describeBoard(ctx, pool, a, c.TenantID)

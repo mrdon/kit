@@ -1,12 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ActionMenu from '../ActionMenu';
 import { api, type MenuBoard } from '../api';
 import { useSetChatContext } from '../chatContext';
+import { SLUG } from '../workspace';
 
 // The Menu page exists to answer one question: what URL do I paste into the
 // screen? The tap list follows Untappd and the presentation is pushed from an
 // AI client, so there is nothing to edit here — an address, a copy button, and
 // enough state to tell whether it is working.
+//
+// The printed menu hangs off this page because it is the same tap list on
+// paper. The events table topper is a separate thing on a separate page: that
+// one is about the week's programme, this one is about what is pouring.
+
+// openPrintMenu opens the letter-sized tap list in its own tab, the same way
+// the events topper does. The next thing anyone does with it is press print,
+// so it wants a viewer rather than a download.
+function openPrintMenu() {
+  window.open(`/${SLUG}/menu/print.pdf`, '_blank', 'noopener');
+}
+
 export default function Menu() {
   useSetChatContext('the Menu board page');
   const [board, setBoard] = useState<MenuBoard | null>(null);
@@ -45,7 +59,21 @@ export default function Menu() {
           <span className="crumb-sep">/</span>
           <span>Menu</span>
         </nav>
-        <h1>Menu board</h1>
+        <div className="page-head-row">
+          <h1>Menu board</h1>
+          <div className="page-head-actions">
+            {/* Printing is an occasional errand — a keg blows, or the season
+                turns — so it sits under the cog rather than taking a slot
+                beside the address, which is what this page is for. Same
+                placement as the events table topper, for the same reason. */}
+            <ActionMenu
+              label="Menu actions"
+              items={[
+                { label: 'Printable menu', onClick: () => openPrintMenu() },
+              ]}
+            />
+          </div>
+        </div>
         <p className="page-sub">
           Your menu has a permanent address. Paste it into a kiosk screen once;
           after that the tap list keeps itself current.
