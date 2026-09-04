@@ -16,6 +16,11 @@ import (
 // drawMasthead is the first page's title block: the photograph, a wash of
 // colour over it so white type stays readable whatever the picture is, the
 // wordmark and the title.
+//
+// Title and subtitle share one baseline, the title at the left margin and the
+// subtitle at the right. Stacking them put the subtitle alone in the corner
+// with a wedge of empty colour above it; across one line the band holds the
+// full width and needs a third less height.
 func drawMasthead(pdf *fpdf.Fpdf, m PrintMenu) {
 	x, w := d(marginX-4.9), d(contentW+12.3)
 	if len(m.Hero) > 0 {
@@ -28,23 +33,62 @@ func drawMasthead(pdf *fpdf.Fpdf, m PrintMenu) {
 	pdf.Rect(x, d(heroTop), w, d(heroH), "F")
 	pdf.SetAlpha(1, "Normal")
 
+	// The title clears the wordmark when there is one and moves over to the
+	// margin when there is not -- an indent that exists to make room for a
+	// logo reads as a mistake once the logo is gone.
+	//
+	// The logo is measured off the band rather than pinned to numbers of its
+	// own, so shortening the band cannot leave it hanging over the edge.
+	titleX := d(marginX + 16)
 	if len(m.Logo) > 0 {
-		pdf.ImageOptions("menu-print-logo", d(58.35), d(42.55), d(197.06), d(165.53),
-			false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+		logoH := heroH - 2*logoInset
+		logoW := logoH * logoAspect
+		pdf.ImageOptions("menu-print-logo", d(marginX+logoInset), d(heroTop+logoInset),
+			d(logoW), d(logoH), false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+		titleX = d(marginX + logoInset + logoW + 22)
 	}
 
 	pdf.SetTextColor(255, 255, 255)
-	pdf.SetFont(printBold, "", heroTitlePt*designScale)
-	// The title clears the wordmark when there is one, and moves over to the
-	// margin when there is not -- an indent that exists to make room for a
-	// logo reads as a mistake once the logo is gone.
-	titleX := d(marginX + 16)
-	if len(m.Logo) > 0 {
-		titleX = d(255.4)
-	}
-	pdf.Text(titleX, d(heroTop+heroTitleY), strings.ToUpper(m.Title))
+	title := strings.ToUpper(m.Title)
+	subRight := d(marginX + contentW - 16)
+
+	// The two are set at opposite ends of one line, so a long title is the one
+	// way they can collide. The title gives way rather than the subtitle: it
+	// is the larger of the two and has the room to lose.
 	pdf.SetFont(printBody, "", heroSubPt*designScale)
-	rightText(pdf, d(marginX+contentW-16), d(heroTop+heroSubY), m.Subtitle)
+	subW := pdf.GetStringWidth(m.Subtitle)
+	titlePt := fitHeroTitle(pdf, title, subRight-titleX-subW-d(24))
+
+	pdf.SetFont(printBold, "", titlePt)
+	baseline := d(capCentredBaseline(heroTop, heroH, heroTitlePt))
+	pdf.Text(titleX, baseline, title)
+
+	pdf.SetFont(printBody, "", heroSubPt*designScale)
+	rightText(pdf, subRight, alignedBaseline(baseline, titlePt, heroSubPt*designScale), m.Subtitle)
+}
+
+// Logo geometry, as fractions of the band. The aspect is the original art's;
+// the inset is the breathing room above and below it.
+const (
+	logoInset  = 12.0
+	logoAspect = 197.06 / 165.53
+)
+
+// fitHeroTitle returns the largest size at or below the design size that fits
+// the width, stopping well short of illegible -- a masthead that has shrunk to
+// body copy is worse than one that is merely tight.
+func fitHeroTitle(pdf *fpdf.Fpdf, title string, width float64) float64 {
+	full := heroTitlePt * designScale
+	if width <= 0 {
+		return full
+	}
+	for pt := full; pt >= full*0.6; pt -= 1 {
+		pdf.SetFont(printBold, "", pt)
+		if pdf.GetStringWidth(title) <= width {
+			return pt
+		}
+	}
+	return full * 0.6
 }
 
 // drawContinuedHead is the plain wordmark on pages two and up. The photograph

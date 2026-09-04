@@ -781,3 +781,54 @@ func TestPagesAreFilledBeforeBreaking(t *testing.T) {
 		y += sectionGap
 	}
 }
+
+// Title and subtitle sit at opposite ends of one baseline, so a long title is
+// the one way the masthead can collide with itself. The title gives way.
+func TestHeroTitleShrinksBeforeItCollides(t *testing.T) {
+	pdf := newMeasuringPDF(t)
+	titleX := d(marginX + 16)
+	subRight := d(marginX + contentW - 16)
+	pdf.SetFont(printBody, "", heroSubPt*designScale)
+	avail := subRight - titleX - pdf.GetStringWidth("& Beverages") - d(24)
+	full := heroTitlePt * designScale
+
+	// The house title is well within the band and must not be shrunk at all —
+	// a masthead that quietly loses a point or two is worse than one that does
+	// not, because nobody can see why.
+	if got := fitHeroTitle(pdf, "BEERS", avail); got != full {
+		t.Errorf("BEERS was shrunk to %.1f; it fits at %.1f", got, full)
+	}
+
+	for _, title := range []string{"CRAFT BEERS & COCKTAILS", "THE EXCEEDINGLY LONG TAPROOM NAME"} {
+		pt := fitHeroTitle(pdf, title, avail)
+		if pt >= full {
+			t.Errorf("%q kept the full %.1f but cannot fit in %.1f", title, full, avail)
+			continue
+		}
+		pdf.SetFont(printBold, "", pt)
+		// It may bottom out at the floor rather than fit; what it must never do
+		// is claim a size that overlaps while a smaller one was available.
+		if w := pdf.GetStringWidth(title); w > avail && pt > full*0.6 {
+			t.Errorf("%q set at %.1f is %.1f wide, over the %.1f available",
+				title, pt, w, avail)
+		}
+	}
+}
+
+// The masthead has to fit inside its own band, or the title crosses the colour
+// edge and prints on white.
+func TestHeroBaselineStaysInTheBand(t *testing.T) {
+	base := capCentredBaseline(heroTop, heroH, heroTitlePt)
+	if top := base - heroTitlePt*capHeight; top < heroTop {
+		t.Errorf("title capitals start at %.1f, above the band top %.1f", top, heroTop)
+	}
+	if base > heroTop+heroH {
+		t.Errorf("title baseline %.1f is below the band bottom %.1f", base, heroTop+heroH)
+	}
+	// And the body must start clear of the band, or the first heading bar
+	// overlaps the masthead.
+	if bodyTopFirst < heroTop+heroH {
+		t.Errorf("body starts at %.1f, inside the band that ends at %.1f",
+			bodyTopFirst, heroTop+heroH)
+	}
+}

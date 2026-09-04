@@ -62,7 +62,7 @@ const (
 
 	// Where the tap list may start and must end. Page one gives up its top to
 	// the masthead; later pages get a plain wordmark and start higher.
-	bodyTopFirst = 262.0
+	bodyTopFirst = 195.0
 	bodyTopRest  = 112.0
 	bodyBottom   = 920.0
 
@@ -70,21 +70,21 @@ const (
 	// original had it tighter, which read as cramped on paper and risked the
 	// band being clipped by printers that will not go to the edge -- a colour
 	// block is far less forgiving of a narrow top margin than text is.
+	//
+	// The band is 104 rather than the 171 it started at. It used to stack the
+	// title and the subtitle on two lines, which left "& More" stranded in the
+	// bottom-right corner with a diagonal of empty orange between it and the
+	// word it belongs to. On one baseline the band needs a third less height,
+	// and on this board that is the difference between a four-page menu and a
+	// three-page one -- a quarter less paper every time somebody prints it.
 	heroTop = 58.0
-	heroH   = 170.66
+	heroH   = 104.0
 
 	// Type sizes for the masthead and the running head.
 	heroTitlePt = 101.3
 	heroSubPt   = 33.79
 	contTitlePt = 38.0
 	contSubPt   = 30.0
-
-	// Title and subtitle baselines, as offsets into the band, so moving the
-	// masthead moves its contents with it. The pair is centred in the band as
-	// a block: measured from the top of the title's capitals to the bottom of
-	// the subtitle's descenders, not from the boxes the glyphs sit in.
-	heroTitleY = 96.0
-	heroSubY   = 141.0
 
 	// The running head on pages two and up, and how far the first bar sits
 	// below it.
