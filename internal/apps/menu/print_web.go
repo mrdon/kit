@@ -3,6 +3,7 @@ package menu
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -20,9 +21,9 @@ import (
 // viewer.
 //
 // It sits behind a session even though the board it prints is public. The
-// public board is a screen on a wall; this is a document that costs two scrapes
-// of somebody else's site to build, and leaving it unauthenticated would make
-// it a free way to have Kit hammer Untappd.
+// public board is a screen on a wall; this is an internal document, and the
+// prices and wording on it are a staff-facing thing until somebody puts it on
+// a table.
 
 // registerPrintRoutes mounts the printable menu.
 func registerPrintRoutes(mux apps.Mux, a *App) {
@@ -37,14 +38,20 @@ func (a *App) handlePrint(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// The assembly outlives the request only in the sense that it must not be
-	// cut short by a browser that gave up; a print that half-finishes is worse
-	// than one that takes four seconds.
+	// Nothing is fetched here any more, so this bounds a few reads and a PDF
+	// compose. It exists so a stuck query cannot hold a browser open forever.
 	ctx, cancel := context.WithTimeout(r.Context(), printTimeout)
 	defer cancel()
 
 	menu, err := a.buildPrintMenu(ctx, tenant)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrNotSynced):
+		// Not an error worth a stack trace: it is the state every workspace
+		// starts in, and the message is the whole fix.
+		slog.Info("menu print: not synced yet", "tenant_id", tenant.ID)
+		http.Error(w, ErrNotSynced.Error(), http.StatusUnprocessableEntity)
+		return
+	case err != nil:
 		slog.Error("menu print: building", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "no menu to print yet — set a tap list first",
 			http.StatusUnprocessableEntity)
@@ -65,8 +72,8 @@ func (a *App) handlePrint(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition",
 		`inline; filename="menu-`+time.Now().Format("2006-01-02")+`.pdf"`)
-	// The whole point is that it reflects what is pouring right now, so a
-	// cached copy from before this morning's tap change is worse than useless.
+	// It reflects the last sync, and a sync can happen between two prints, so
+	// a cached copy is a menu that silently disagrees with the one beside it.
 	w.Header().Set("Cache-Control", "no-store, must-revalidate")
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		slog.Warn("menu print: writing response", "tenant_id", tenant.ID, "error", err)

@@ -2,6 +2,9 @@ package menu
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -66,6 +69,18 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 				Payload: req.GetString("payload", ""),
 			})
 		})
+	case "sync_menu_print":
+		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
+			return syncPrint(ctx, pool, c.TenantID)
+		})
+	case "set_menu_notes":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			args, err := notesFromRequest(req)
+			if err != nil {
+				return "", err
+			}
+			return saveNotes(ctx, pool, c.TenantID, args)
+		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
 			return describeBoard(ctx, pool, a, c.TenantID)
@@ -73,4 +88,32 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 	default:
 		return nil
 	}
+}
+
+// notesFromRequest reads the notes map off an MCP call.
+//
+// The values are re-encoded and decoded through the shared arg type rather
+// than being cast in place, so the MCP surface accepts exactly what the agent
+// surface does -- including a client that sends the object as a JSON string,
+// which several do.
+func notesFromRequest(req mcp.CallToolRequest) (setNotesArgs, error) {
+	var args setNotesArgs
+	raw, ok := req.GetArguments()["notes"]
+	if !ok {
+		return args, errors.New("notes is required")
+	}
+	if s, isStr := raw.(string); isStr {
+		if err := json.Unmarshal([]byte(s), &args.Notes); err != nil {
+			return args, fmt.Errorf("parsing notes: %w", err)
+		}
+		return args, nil
+	}
+	blob, err := json.Marshal(raw)
+	if err != nil {
+		return args, fmt.Errorf("reading notes: %w", err)
+	}
+	if err := json.Unmarshal(blob, &args.Notes); err != nil {
+		return args, fmt.Errorf("parsing notes: %w", err)
+	}
+	return args, nil
 }

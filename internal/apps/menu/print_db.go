@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -69,23 +70,44 @@ type PrintConfig struct {
 type PrintState struct {
 	Config PrintConfig
 	Notes  map[string]string // normalised beer name -> description
+
+	// Rows is the tap list as of the last sync, and the only thing the printed
+	// menu draws beers from.
+	//
+	// It used to be fetched on the way to the PDF. That put a third party on
+	// the critical path of somebody standing at a printer, and made every
+	// failure silent -- a sheet with no descriptions and nothing to say why.
+	// Now a deliberate Sync fills it in and says what it could not reach.
+	//
+	// A sync replaces this wholesale, so a beer that comes off the board takes
+	// its row with it. The copy survives regardless: descriptions live in
+	// Notes, keyed by beer name, rather than being carried on the row.
+	Rows []Beer
+
+	// SyncedAt is when the tap list last agreed with upstream, and SyncError
+	// what went wrong if it did not. Nil and empty mean nobody has synced yet,
+	// which is the state every workspace starts in and the reason the settings
+	// page leads with the button rather than the form.
+	SyncedAt  *time.Time
+	SyncError string
 }
 
 // LoadPrintState reads a workspace's paper-menu state. A workspace that has
 // never printed has no row, which is not an error -- it is the starting state,
 // and returns empty config with an empty cache.
 func LoadPrintState(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (*PrintState, error) {
-	var rawConfig, rawNotes []byte
+	var rawConfig, rawNotes, rawRows []byte
+	state := &PrintState{Notes: map[string]string{}}
 	err := pool.QueryRow(ctx,
-		`SELECT config, notes FROM app_menu_print WHERE tenant_id = $1`,
-		tenantID).Scan(&rawConfig, &rawNotes)
+		`SELECT config, notes, rows, synced_at, sync_error
+		   FROM app_menu_print WHERE tenant_id = $1`,
+		tenantID).Scan(&rawConfig, &rawNotes, &rawRows, &state.SyncedAt, &state.SyncError)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &PrintState{Notes: map[string]string{}}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("loading print state: %w", err)
 	}
-	state := &PrintState{Notes: map[string]string{}}
 	if len(rawConfig) > 0 {
 		if err := json.Unmarshal(rawConfig, &state.Config); err != nil {
 			return nil, fmt.Errorf("decoding print config: %w", err)
@@ -94,6 +116,11 @@ func LoadPrintState(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID)
 	if len(rawNotes) > 0 {
 		if err := json.Unmarshal(rawNotes, &state.Notes); err != nil {
 			return nil, fmt.Errorf("decoding print notes: %w", err)
+		}
+	}
+	if len(rawRows) > 0 {
+		if err := json.Unmarshal(rawRows, &state.Rows); err != nil {
+			return nil, fmt.Errorf("decoding print rows: %w", err)
 		}
 	}
 	if state.Notes == nil {
@@ -121,6 +148,39 @@ func SavePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	return nil
 }
 
+// SavePrintRows records a sync: the tap list it found, and what went wrong.
+//
+// Rows are replaced rather than merged. A beer that has come off the board
+// should leave the menu, and a merge would keep it there forever -- the
+// failure mode being a sheet that grows every seasonal the brewery has ever
+// poured. What a person wrote survives anyway, because descriptions live in
+// the notes cache under the beer's name.
+//
+// A failed sync still writes: syncErr is recorded so the settings page can say
+// what happened, and the rows it did manage to read are kept. Half a tap list
+// beats none, and the error beside it says not to trust it yet.
+func SavePrintRows(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
+	rows []Beer, syncErr string) error {
+	if rows == nil {
+		rows = []Beer{}
+	}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		return fmt.Errorf("encoding print rows: %w", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO app_menu_print (tenant_id, rows, synced_at, sync_error)
+		VALUES ($1, $2, NOW(), $3)
+		ON CONFLICT (tenant_id) DO UPDATE
+		SET rows = EXCLUDED.rows, synced_at = NOW(),
+		    sync_error = EXCLUDED.sync_error, updated_at = NOW()`,
+		tenantID, raw, syncErr)
+	if err != nil {
+		return fmt.Errorf("saving print rows: %w", err)
+	}
+	return nil
+}
+
 // MergePrintNotes folds newly fetched descriptions into the cache.
 //
 // The merge happens in Postgres rather than by reading, merging and writing
@@ -142,6 +202,35 @@ func MergePrintNotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 		tenantID, raw)
 	if err != nil {
 		return fmt.Errorf("saving print notes: %w", err)
+	}
+	return nil
+}
+
+// DeletePrintNotes removes cached descriptions by beer name.
+//
+// The key is the normalised name, the same one MergePrintNotes writes under,
+// so a caller clears a description using the name it reads on the menu rather
+// than having to know how Kit files it.
+func DeletePrintNotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(names))
+	for _, n := range names {
+		if key := normalizeBeerName(n); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	// `- text[]` drops every listed key in one statement, so this cannot lose
+	// a concurrent write the way a read-modify-write would.
+	_, err := pool.Exec(ctx,
+		`UPDATE app_menu_print SET notes = notes - $2::text[], updated_at = NOW()
+		  WHERE tenant_id = $1`, tenantID, keys)
+	if err != nil {
+		return fmt.Errorf("clearing print notes: %w", err)
 	}
 	return nil
 }

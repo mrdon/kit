@@ -15,24 +15,38 @@ func TestPrintConfigPayloadNeverSendsNull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshalling: %v", err)
 	}
-	if strings.Contains(string(raw), ":null") {
-		t.Errorf("payload carries a null: %s", raw)
+	// synced_at is the one field allowed to be null, and it means something:
+	// nobody has synced yet. It is read as a value, never mapped over.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	for name, val := range fields {
+		if name != "synced_at" && string(val) == "null" {
+			t.Errorf("%s came back null: %s", name, raw)
+		}
+	}
+	if _, ok := fields["synced_at"]; !ok {
+		t.Error("synced_at must be present even when null — the page branches on it")
 	}
 
 	var back struct {
 		Config struct {
 			Colors map[string]string `json:"colors"`
 			Notes  map[string]string `json:"notes"`
+			Blurbs map[string]string `json:"blurbs"`
 			Extras []Beer            `json:"extras"`
 		} `json:"config"`
-		Sections []string `json:"sections"`
-		Palette  []string `json:"palette"`
+		Sections []string    `json:"sections"`
+		Palette  []string    `json:"palette"`
+		Beers    []printBeer `json:"beers"`
 	}
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("round trip: %v", err)
 	}
-	if back.Sections == nil || back.Palette == nil ||
-		back.Config.Extras == nil || back.Config.Colors == nil || back.Config.Notes == nil {
+	if back.Sections == nil || back.Palette == nil || back.Beers == nil ||
+		back.Config.Extras == nil || back.Config.Colors == nil ||
+		back.Config.Notes == nil || back.Config.Blurbs == nil {
 		t.Errorf("an empty collection came back nil: %s", raw)
 	}
 }
@@ -56,5 +70,29 @@ func TestPrintConfigRoundTripsThroughTheToolShape(t *testing.T) {
 	if back.Brand != cfg.Brand || len(back.Extras) != len(cfg.Extras) ||
 		len(back.Colors) != len(cfg.Colors) {
 		t.Error("config did not survive the round trip intact")
+	}
+}
+
+// The sync response must carry its report. printConfigPayload has a custom
+// MarshalJSON, and embedding it here would promote that method and quietly
+// emit the payload alone -- a bug with no symptom but a Sync button that never
+// says what it did.
+func TestSyncResponseKeepsItsReport(t *testing.T) {
+	raw, err := json.Marshal(syncResponse{
+		State:   printConfigPayload{},
+		Report:  SyncReport{Rows: 16, Described: 14, Missing: []string{"Mars Water"}},
+		Summary: "Synced 16 beers from Untappd.",
+	})
+	if err != nil {
+		t.Fatalf("marshalling: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshalling: %v", err)
+	}
+	for _, key := range []string{"state", "report", "summary"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("response lost %q: %s", key, raw)
+		}
 	}
 }

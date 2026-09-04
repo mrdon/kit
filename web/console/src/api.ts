@@ -167,6 +167,36 @@ export interface MenuPrintConfig {
   extras?: MenuExtra[];
 }
 
+/** One synced beer, as the settings page shows it. Facts are read-only here —
+ *  they follow the board — but the description is yours to write. */
+export interface MenuPrintBeer {
+  section: string;
+  name: string;
+  style: string;
+  abv: string;
+  price: string;
+  note: string;
+  /** True when the description was typed in Kit rather than scraped. */
+  written: boolean;
+}
+
+/** What one sync did. `missing` is the work list for an agent that can reach
+ *  untappd.com — Kit's own server usually cannot. */
+export interface MenuSyncReport {
+  rows: number;
+  dropped: number;
+  described: number;
+  missing: string[];
+  fetched: number;
+  notes_error?: string;
+}
+
+export interface MenuSyncResult {
+  state: MenuPrint;
+  report: MenuSyncReport;
+  summary: string;
+}
+
 export interface MenuPrint {
   config: MenuPrintConfig;
   /** Headings on the tap list right now, offered to the colour editor. */
@@ -176,6 +206,12 @@ export interface MenuPrint {
   /** How many descriptions have been fetched from Untappd and stored. */
   notes_cached: number;
   print_url: string;
+  /** The synced tap list — what will actually print. */
+  beers: MenuPrintBeer[];
+  /** Null until the first sync. The page leads with the button while it is. */
+  synced_at: string | null;
+  /** The last sync's warning, normally that descriptions were unreachable. */
+  sync_error: string;
 }
 
 export interface MenuBoard {
@@ -910,6 +946,7 @@ export const api = {
   menuPrint: () => apiGet<MenuPrint>('/menu/print'),
   saveMenuPrint: (body: MenuPrintConfig) =>
     apiPut<MenuPrint>('/menu/print', body),
+  syncMenuPrint: () => apiPost<MenuSyncResult>('/menu/print/sync', {}),
   // --- Trivia ---
   triviaGames: () => apiGet<{ games: TriviaGameT[] }>('/trivia/games'),
   triviaGame: (id: string) =>

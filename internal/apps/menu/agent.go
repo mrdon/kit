@@ -35,6 +35,10 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return handleSetAsset(a)
 	case "set_menu_print":
 		return handleSetPrint()
+	case "sync_menu_print":
+		return handleSyncPrint()
+	case "set_menu_notes":
+		return handleSetNotes()
 	case "get_menu_board":
 		return handleGetBoard(a)
 	default:
@@ -99,6 +103,22 @@ func handleSetPrint() tools.HandlerFunc {
 			return "", err
 		}
 		return savePrintConfig(ec.Ctx, ec.Pool, ec.Tenant.ID, args)
+	}
+}
+
+func handleSyncPrint() tools.HandlerFunc {
+	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
+		return syncPrint(ec.Ctx, ec.Pool, ec.Tenant.ID)
+	}
+}
+
+func handleSetNotes() tools.HandlerFunc {
+	return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+		var args setNotesArgs
+		if err := decode(raw, &args, "set_menu_notes"); err != nil {
+			return "", err
+		}
+		return saveNotes(ec.Ctx, ec.Pool, ec.Tenant.ID, args)
 	}
 }
 

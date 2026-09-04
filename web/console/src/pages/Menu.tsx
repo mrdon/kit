@@ -146,13 +146,12 @@ export default function Menu() {
           <p className="card-desc">
             The same tap list on paper, sized for letter and ready to print —
             a page per few sections, with each beer&rsquo;s style, strength,
-            price and description. It is built when you open it, so it always
-            shows what is pouring right now.
+            price and description, and no section ever split across a page.
           </p>
           <p className="card-desc">
-            Only beers Untappd prices for a 4oz taster appear, which is every
-            beer actually on tap. Cans, sodas and the wording around the edges
-            are set with <code>set_menu_print</code>.
+            It prints what was last synced rather than going to Untappd when
+            you open it, so it comes out instantly and never half-finished.
+            Sync it after the taps change, on the settings page.
           </p>
           <div className="drawer-actions">
             <button className="btn" onClick={openPrintMenu}>

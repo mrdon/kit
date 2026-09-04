@@ -406,11 +406,30 @@ Only beers that are **actually pouring** reach the printed menu — Kit takes th
 
 **Printable menu** on the same page opens a letter-sized PDF for the tables: a coloured band per section, and a row per beer with its style, ABV, half-pour and full-pour prices, and a sentence about it. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size beside the price, so nobody is quoted a 16oz they cannot order.
 
+The sheet prints **what was last synced**, not whatever Untappd says at the moment you open it. Press **Sync from Untappd** on the settings page after the taps change. That keeps a third party off the critical path of somebody standing at a printer, and it means a failure to reach Untappd lands in front of you when you asked for it rather than silently subtracting the descriptions from a document.
+
 Sections are kept whole. A heading whose beers don't all fit moves to the next page rather than resuming overleaf under a repeated bar, so a reader can tell they've seen all of it. This is already a multi-page sheet, so the trade is a bit of air at the foot of a page — and occasionally an extra page — for a menu nobody loses their place in. A section genuinely taller than a sheet still splits, because there's nowhere else for it to go.
 
-The descriptions come from your brewery's pages on untappd.com, because the digital board doesn't carry any. Configure the printed menu with `set_menu_print`, passing a JSON document:
+### Why descriptions often don't come down
 
-- `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. **Without it the menu prints with no descriptions.** They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
+Sync reads **two different Untappds, and they fail independently.**
+
+- The digital board (`business.untappd.com`) has the beers, sections, prices and ABVs. It answers anybody, so this half essentially always works.
+- The descriptions live on the consumer site (`untappd.com`), which sits behind Cloudflare bot management. It answers a laptop fine and answers a server with a challenge — so from Kit's own host this half usually **cannot** succeed, whatever the network is doing.
+
+So "16 beers synced, 0 descriptions" is a normal result, not a fault, and Sync says so rather than leaving you to notice on paper. Three ways to fill them in:
+
+1. **Type them** on the settings page, under "What each beer says". Anything written in Kit wins over Untappd and is never overwritten.
+2. **Have an agent do it.** Point Claude Code (or any MCP harness) on your own machine at Kit: it can reach untappd.com, and `sync_menu_print` reports exactly which beers have no description, so it has a work list. It pushes them back with `set_menu_notes`, which **merges** — unlike `set_menu_print`, which replaces the whole configuration.
+3. **Write them in Untappd** and sync from a machine that can reach it.
+
+Stored descriptions are kept forever, so this is a once-per-new-beer job, not a recurring one.
+
+### Configuring it
+
+Configure the printed menu with `set_menu_print`, passing a JSON document:
+
+- `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. Without it Sync doesn't even try for descriptions. They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
 - `title` / `subtitle` — the masthead, e.g. `"Beers"` and `"& Beverages"`.
 - `flight` — the line above the footer, e.g. `"Try any set of four 4oz pours as a flight"`.
 - `foot_left` / `foot_right` — the wifi and social lines.

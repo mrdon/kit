@@ -87,6 +87,35 @@ func toolMetas() []services.ToolMeta {
 			}, "payload"),
 		},
 		{
+			Name: "sync_menu_print",
+			Description: "Refresh the printed menu's tap list from the Untappd board. The printed " +
+				"menu no longer fetches anything when it is opened — it renders what was last " +
+				"synced — so this is what puts a new beer on the paper. It reads the digital " +
+				"board for beers, sections, prices and ABVs, and tries the brewery's untappd.com " +
+				"pages for descriptions. Those two do not fail together: the board answers " +
+				"anybody, while the consumer site sits behind bot management and usually refuses " +
+				"a server, so a sync that gets the beers and no prose is normal. It reports which " +
+				"beers have no description; fill those with set_menu_notes.",
+			AdminOnly: true,
+			Schema:    services.Props(map[string]any{}),
+		},
+		{
+			Name: "set_menu_notes",
+			Description: "Store beer descriptions for the printed menu, merging them into what is " +
+				"already there rather than replacing it — unlike set_menu_print, which replaces " +
+				"the whole configuration. Use this to fill in the beers sync_menu_print reports " +
+				"as having no description. It is the way an agent running somewhere untappd.com " +
+				"will actually talk to — a laptop rather than a datacenter — can crawl the " +
+				"brewery's beer pages and push the prose into Kit. Names are matched loosely " +
+				"against the tap list, so the board's spelling and Untappd's need not agree.",
+			AdminOnly: true,
+			Schema: services.PropsReq(map[string]any{
+				"notes": services.Field("object",
+					"Beer name to description, e.g. {\"Newtonian\": \"Award winning British style ale.\"}. "+
+						"Merged into what is stored; an empty description clears that beer's."),
+			}, "notes"),
+		},
+		{
 			Name: "get_menu_board",
 			Description: "Show the menu's public address, what it is following, when it last " +
 				"changed, any stored images, and how the printed menu is configured.",
@@ -110,6 +139,11 @@ type setBoardArgs struct {
 // setPrintArgs is the shared input shape for set_menu_print.
 type setPrintArgs struct {
 	Payload string `json:"payload"`
+}
+
+// setNotesArgs is the shared input shape for set_menu_notes.
+type setNotesArgs struct {
+	Notes map[string]string `json:"notes"`
 }
 
 // setAssetArgs is the shared input shape for set_menu_asset.
@@ -235,6 +269,86 @@ func plural(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
+// syncPrint refreshes the tap list and reports what happened, for both
+// surfaces. The report is worth returning in full: the missing-description
+// list is the work an agent picks up next, and hiding it behind a count would
+// mean a second round trip to find out which beers.
+func syncPrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (string, error) {
+	rep, err := SyncPrintMenu(ctx, pool, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return rep.Summary(), nil
+}
+
+// saveNotes merges descriptions into the store.
+//
+// Blank values delete rather than storing an empty string, so clearing a
+// description a customer should not read is possible without a separate tool,
+// and a caller that sends a beer it could find nothing for does not overwrite
+// prose somebody typed with nothing.
+func saveNotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, args setNotesArgs) (string, error) {
+	if len(args.Notes) == 0 {
+		return "", errors.New("no notes given")
+	}
+	set := map[string]string{}
+	var cleared []string
+	for name, note := range args.Notes {
+		key := normalizeBeerName(name)
+		if key == "" {
+			continue
+		}
+		if strings.TrimSpace(note) == "" {
+			cleared = append(cleared, name)
+			continue
+		}
+		set[key] = strings.TrimSpace(note)
+	}
+	if err := MergePrintNotes(ctx, pool, tenantID, set); err != nil {
+		return "", err
+	}
+	if len(cleared) > 0 {
+		if err := DeletePrintNotes(ctx, pool, tenantID, cleared); err != nil {
+			return "", err
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Stored %s.", plural(len(set), "description"))
+	if len(cleared) > 0 {
+		fmt.Fprintf(&b, " Cleared %s: %s.", plural(len(cleared), "other"), strings.Join(cleared, ", "))
+	}
+	// The names are matched loosely at print time, so a description stored
+	// under a name no beer answers to is silent. Saying which landed nowhere
+	// is the difference between a typo found now and one found on paper.
+	if stray := strayNotes(ctx, pool, tenantID, set); len(stray) > 0 {
+		fmt.Fprintf(&b, "\n\nStored but matching no beer on the current tap list: %s. "+
+			"They will apply if those beers come back.", strings.Join(stray, ", "))
+	}
+	return b.String(), nil
+}
+
+// strayNotes reports which of the just-stored names match nothing on the
+// synced tap list.
+func strayNotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, set map[string]string) []string {
+	state, err := LoadPrintState(ctx, pool, tenantID)
+	if err != nil || len(state.Rows) == 0 {
+		return nil
+	}
+	onTap := make(map[string]bool, len(state.Rows))
+	for _, r := range state.Rows {
+		onTap[normalizeBeerName(r.Name)] = true
+	}
+	var stray []string
+	for key := range set {
+		if !onTap[key] {
+			stray = append(stray, key)
+		}
+	}
+	sort.Strings(stray)
+	return stray
+}
+
 // describePrint summarises the printed menu for get_menu_board.
 func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) string {
 	state, err := LoadPrintState(ctx, pool, tenantID)
@@ -251,6 +365,24 @@ func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 	}
 	if len(cfg.Extras) > 0 {
 		fmt.Fprintf(&b, "  %d extra rows (non-Untappd)\n", len(cfg.Extras))
+	}
+	if state.SyncedAt == nil {
+		b.WriteString("  never synced — the sheet has no beers on it until sync_menu_print runs\n")
+	} else {
+		fmt.Fprintf(&b, "  %d beers, synced %s\n",
+			len(state.Rows), state.SyncedAt.Format("2 Jan 2006 15:04 MST"))
+		var missing []string
+		for _, r := range state.Rows {
+			if strings.TrimSpace(cfg.Notes[r.Name]) == "" && strings.TrimSpace(state.Notes[normalizeBeerName(r.Name)]) == "" {
+				missing = append(missing, r.Name)
+			}
+		}
+		if len(missing) > 0 {
+			fmt.Fprintf(&b, "  no description yet: %s\n", strings.Join(missing, ", "))
+		}
+	}
+	if state.SyncError != "" {
+		fmt.Fprintf(&b, "  last sync warning: %s\n", state.SyncError)
 	}
 	if len(cfg.Blurbs) > 0 {
 		names := make([]string, 0, len(cfg.Blurbs))

@@ -16,7 +16,20 @@ import { useSetChatContext } from '../chatContext';
 // I paste into the screen". The endpoints are admin-only regardless; this is
 // where the tile is.
 //
-// Everything here is what Untappd cannot tell us. The beers, prices, strengths
+// The tap list is synced, not fetched at print time. Printing used to scrape
+// Untappd on the way to the PDF, which put a third party on the critical path
+// of somebody standing at a printer and made every failure silent. Now Sync
+// fills the menu in and says what it could not reach, and the sheet renders
+// from what is stored.
+//
+// The two halves of that sync fail independently, and the page has to be
+// honest about it. The board — beers, prices, ABVs — answers anybody. The
+// descriptions live on untappd.com, which refuses a datacenter IP, so on a
+// server that half usually cannot succeed at all. A beer with no description
+// is therefore a normal outcome and not an error, and the page offers the
+// missing list as work rather than as a fault.
+//
+// Everything else here is what Untappd cannot tell us. The beers, prices, strengths
 // and descriptions all come from the tap list; this page is the masthead
 // wording, the colour of each section bar, the rows that are not on tap at all
 // — cans, sodas, juice boxes — and the headings that are a sentence rather
@@ -54,6 +67,8 @@ export default function MenuPrintSettings() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -119,6 +134,36 @@ export default function MenuPrintSettings() {
     set('extras', extras);
   }
 
+  // Sync writes on the server, so the whole page state comes back with it
+  // rather than being patched locally — including the descriptions it found,
+  // which the notes fields below are showing.
+  async function sync() {
+    setSyncing(true);
+    setErr(null);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncMenuPrint();
+      setData(res.state);
+      setCfg(res.state.config);
+      setBlurbs(toBlurbRows(res.state.config.blurbs));
+      setSyncMsg(res.summary);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // setNote writes a description into config.notes, the layer that wins over
+  // anything scraped. Keyed by the beer's name as the board spells it.
+  function setNote(name: string, text: string) {
+    if (!cfg) return;
+    const notes = { ...(cfg.notes ?? {}) };
+    if (text.trim()) notes[name] = text;
+    else delete notes[name];
+    set('notes', notes);
+  }
+
   async function save() {
     if (!cfg) return;
     setSaving(true);
@@ -169,6 +214,76 @@ export default function MenuPrintSettings() {
 
       {cfg && data && (
         <>
+          <section className="panel">
+            <h2 className="panel-title">Tap list</h2>
+            <p className="card-desc">
+              The printed menu shows what was last synced — it doesn&rsquo;t go
+              to Untappd when you open it, so printing is instant and never
+              half-finished. Sync after the taps change.
+            </p>
+            {syncMsg && (
+              <p className="banner" style={{ whiteSpace: 'pre-wrap' }}>
+                {syncMsg}
+              </p>
+            )}
+            <p className="card-desc">
+              {data.synced_at ? (
+                <>
+                  {data.beers.length} beers · last synced{' '}
+                  {new Date(data.synced_at).toLocaleString()}
+                </>
+              ) : (
+                <em>
+                  Never synced — the sheet has no beers on it until you do.
+                </em>
+              )}
+            </p>
+            {data.sync_error && (
+              <p className="banner banner-error">
+                Descriptions: {data.sync_error}. The beers and prices are fine —
+                Kit&rsquo;s server can read the board but not the brewery pages.
+                Write the copy below, or have an agent on your own machine fill
+                it in with <code>set_menu_notes</code>.
+              </p>
+            )}
+            <div className="drawer-actions">
+              <button className="btn" onClick={sync} disabled={syncing}>
+                {syncing ? 'Syncing…' : 'Sync from Untappd'}
+              </button>
+            </div>
+          </section>
+
+          {data.beers.length > 0 && (
+            <section className="panel">
+              <h2 className="panel-title">What each beer says</h2>
+              <p className="card-desc">
+                Style, strength and price follow the board and change on the
+                next sync. The description is yours: anything you write here
+                wins over Untappd and is never overwritten.
+              </p>
+              {data.beers.map((b) => (
+                <div className="field-row" key={b.name}>
+                  <label className="field" style={{ flex: '2 1 20rem' }}>
+                    <span>
+                      {b.name}
+                      {b.style && <> · {b.style}</>}
+                      {b.abv && <> · {b.abv}</>}
+                      {b.price && <> · {b.price}</>}
+                      {b.written && <> · edited here</>}
+                    </span>
+                    <input
+                      value={cfg.notes?.[b.name] ?? b.note ?? ''}
+                      placeholder={
+                        b.note ? b.note : 'No description yet — write one'
+                      }
+                      onChange={(e) => setNote(b.name, e.target.value)}
+                    />
+                  </label>
+                </div>
+              ))}
+            </section>
+          )}
+
           <section className="panel">
             <h2 className="panel-title">Descriptions</h2>
             <label className="field">
@@ -459,8 +574,9 @@ export default function MenuPrintSettings() {
               </a>
             </div>
             <p className="card-desc">
-              The sheet is built when you open it, so save first and the next
-              print has your changes.
+              The sheet is drawn from what is stored here, so save first and
+              the next print has your changes. Nothing is fetched when you open
+              it.
             </p>
           </section>
         </>

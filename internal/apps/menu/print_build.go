@@ -2,7 +2,6 @@ package menu
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/models"
@@ -18,23 +16,25 @@ import (
 
 // Assembling a print run.
 //
-// The paper menu reads the same upstream the wall board does, but it reads it
-// itself rather than reusing the stored board: the board payload has already
-// collapsed each beer to one price, and the printed columns need all of them.
-// A print is a rare, deliberate act -- somebody is standing at a printer -- so
-// one extra fetch is the right trade for not touching the board's shape.
+// Nothing here touches the network. The tap list, the descriptions, the
+// wording and the images are all read from storage, because a print is
+// somebody standing at a printer and a third party has no business being on
+// that path. Filling the storage is Sync's job -- see print_sync.go -- and it
+// happens when a person asks for it, where its failures can be read.
 //
-// Everything after the tap list is best-effort. Descriptions, the masthead
-// photograph and the logo can all fail independently, and each failure costs
-// exactly its own feature. The one thing that can fail the print is having no
-// tap list at all, because that is not a menu.
+// This was not the first shape. The menu used to scrape Untappd on the way to
+// the PDF, which meant a slow afternoon at Untappd was a slow print, and a
+// blocked request was a sheet that came out with no descriptions and nothing
+// anywhere to say why.
+//
+// The masthead photograph and the logo can still fail independently, and each
+// failure costs exactly its own feature. The one thing that fails a print is
+// having no tap list at all, because that is not a menu.
 
-// printTimeout bounds the whole assembly -- the board fetch plus however many
-// beer pages are new. It is generous compared to the board's eight seconds
-// because nothing is waiting on it but the person who clicked print, and a
-// menu that takes four seconds and has descriptions beats one that returns
-// instantly without them.
-const printTimeout = 25 * time.Second
+// printTimeout bounds a print. It is short now that nothing is fetched: this
+// covers reading a few rows and two images out of Postgres and composing a
+// PDF, and anything approaching it is a fault rather than a slow upstream.
+const printTimeout = 10 * time.Second
 
 // defaultFlight is what the strap says when a venue has not written one. It is
 // the line the original carried, and it is true of every taproom that pours
@@ -46,32 +46,24 @@ const defaultFlight = "Try any set of four 4oz pours as a flight"
 // three columns of numbers on every row.
 const defaultSizes = "Full pours are 16oz unless marked — 9oz and 4oz also available"
 
-// buildPrintMenu gathers everything one sheet needs.
+// buildPrintMenu gathers everything one sheet needs, all of it from storage.
 func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintMenu, error) {
-	row, err := GetBoard(ctx, a.pool, tenant.ID)
-	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, pgx.ErrNoRows) {
-		return PrintMenu{}, fmt.Errorf("loading menu board: %w", err)
-	}
-
 	state, err := LoadPrintState(ctx, a.pool, tenant.ID)
 	if err != nil {
 		return PrintMenu{}, err
 	}
 	cfg := state.Config
 
-	rows, err := a.printRows(ctx, row)
-	if err != nil {
-		return PrintMenu{}, err
-	}
+	rows := append([]Beer(nil), state.Rows...)
 	if len(rows) == 0 && len(cfg.Extras) == 0 {
-		return PrintMenu{}, errors.New("no tap list to print")
+		return PrintMenu{}, ErrNotSynced
 	}
 
-	// Descriptions. A brewery slug that is not set, or an Untappd that will
-	// not answer, means a menu without prose -- not a failed print.
-	//
-	// Hand-written notes are folded in as though they were already cached, so
-	// they both win over Untappd and stop it being asked about that beer.
+	// Descriptions are stored, in two layers: what somebody wrote here wins
+	// over what was scraped, which is what makes Kit the last word on the copy
+	// a customer reads. Applied at build time rather than baked into the rows,
+	// so correcting a description takes effect on the next print rather than
+	// needing a re-sync.
 	cache := state.Notes
 	for name, note := range cfg.Notes {
 		if strings.TrimSpace(note) == "" {
@@ -79,27 +71,9 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		}
 		cache[normalizeBeerName(name)] = note
 	}
-	if brand := strings.TrimSpace(cfg.Brand); brand != "" && len(rows) > 0 {
-		found, err := AttachNotes(ctx, printClient(), brand, rows, cache)
-		if err != nil {
-			slog.Warn("menu print: fetching descriptions",
-				"tenant_id", tenant.ID, "brand", brand, "error", err)
-		}
-		if len(found) > 0 {
-			if err := MergePrintNotes(ctx, a.pool, tenant.ID, found); err != nil {
-				slog.Warn("menu print: caching descriptions",
-					"tenant_id", tenant.ID, "error", err)
-			}
-		}
-	}
-
-	// With no brand configured the scrape never runs, so hand-written notes
-	// still have to reach their rows.
-	if strings.TrimSpace(cfg.Brand) == "" {
-		for i := range rows {
-			if note, ok := cache[normalizeBeerName(rows[i].Name)]; ok && note != "" {
-				rows[i].Notes = note
-			}
+	for i := range rows {
+		if note, ok := cache[normalizeBeerName(rows[i].Name)]; ok && note != "" {
+			rows[i].Notes = note
 		}
 	}
 
@@ -114,67 +88,6 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 	}
 	a.attachPrintArt(ctx, tenant.ID, cfg, &m)
 	return m, nil
-}
-
-// printRows reads the tap list, preferring a live pull.
-//
-// The stored board is the fallback rather than the source. It has only the one
-// headline price per beer, so a menu built from it prints a single column --
-// correct, but thinner than the real thing. That is the right behaviour when
-// Untappd is down, and the wrong one to choose by default.
-//
-// Only the live branch narrows to what is pouring. The stored board has
-// already dropped everything unpriced on its way in, and its pours are
-// reconstructed rather than real, so there is no four-ounce price left to
-// test -- filtering it again would empty the menu.
-func (a *App) printRows(ctx context.Context, row *BoardRow) ([]Beer, error) {
-	if row == nil {
-		return nil, nil
-	}
-	if row.SourceKind == SourceUntappd && strings.TrimSpace(row.SourceID) != "" {
-		body, _, err := FetchUntappdBody(ctx, printClient(), row.SourceID)
-		if err == nil {
-			// Plausibility is judged on everything parsed, then the list is
-			// narrowed to what pours -- so a board that genuinely lost most of
-			// its beers still trips the tripwire rather than looking like a
-			// menu with nothing on it.
-			if rows := ParseBeers(body); len(rows) >= minPlausibleTaps {
-				return OnTapOnly(rows), nil
-			}
-			slog.Warn("menu print: implausible scrape, falling back to stored board",
-				"source_id", row.SourceID)
-		} else {
-			slog.Warn("menu print: fetching Untappd board, falling back to stored board",
-				"source_id", row.SourceID, "error", err)
-		}
-	}
-	return storedBeers(row)
-}
-
-// storedBeers converts the saved board into printable rows.
-func storedBeers(row *BoardRow) ([]Beer, error) {
-	if row == nil || len(row.Payload) == 0 {
-		return nil, nil
-	}
-	board, err := ParseBoard(row.Payload)
-	if err != nil {
-		return nil, fmt.Errorf("reading stored board: %w", err)
-	}
-	out := make([]Beer, 0, len(board.Taps))
-	for _, t := range board.Taps {
-		size := t.Size
-		if size == "" {
-			size = DefaultPour
-		}
-		out = append(out, Beer{
-			Section: t.Section,
-			Name:    t.Name,
-			Style:   t.Style,
-			ABV:     t.ABV,
-			Pours:   []Pour{{Size: size, Label: size + " Draft", Price: t.Price}},
-		})
-	}
-	return out, nil
 }
 
 // attachPrintArt loads the masthead images. Both are optional and neither is

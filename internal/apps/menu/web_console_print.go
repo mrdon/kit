@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -32,6 +33,7 @@ func registerPrintConsoleRoutes(mux apps.Mux, a *App) {
 	}
 	mux.Handle("GET /{slug}/api/menu/print", adminRoute(a.handleGetPrintConfig))
 	mux.Handle("PUT /{slug}/api/menu/print", adminRoute(a.handleSavePrintConfig))
+	mux.Handle("POST /{slug}/api/menu/print/sync", adminRoute(a.handleSyncPrint))
 }
 
 // printConfigPayload is the wire shape.
@@ -51,6 +53,33 @@ type printConfigPayload struct {
 	NotesCached int `json:"notes_cached"`
 	// PrintURL is where the sheet lives, so the page can link to it.
 	PrintURL string `json:"print_url"`
+
+	// Beers is the synced tap list, so the page can show what will print and
+	// let somebody write the copy for it. Descriptions are resolved here --
+	// hand-written over cached -- so the page shows what the paper will say
+	// rather than making the client re-derive the precedence.
+	Beers []printBeer `json:"beers"`
+	// SyncedAt is null until the first sync, which is the state that makes the
+	// page lead with the button rather than the form.
+	SyncedAt *time.Time `json:"synced_at"`
+	// SyncError is the last sync's warning, normally about descriptions.
+	SyncError string `json:"sync_error"`
+}
+
+// printBeer is one row as the settings page needs it: enough to recognise the
+// beer, plus the description and where it came from. The facts are read-only
+// on this page -- they follow the board -- so they travel as display strings
+// rather than as something to edit.
+type printBeer struct {
+	Section string `json:"section"`
+	Name    string `json:"name"`
+	Style   string `json:"style"`
+	ABV     string `json:"abv"`
+	Price   string `json:"price"`
+	Note    string `json:"note"`
+	// Written is true when the description was typed here rather than scraped,
+	// so the page can show which copy is yours and which came from Untappd.
+	Written bool `json:"written"`
 }
 
 // MarshalJSON guarantees the slice and map fields serialise as `[]` and `{}`
@@ -77,6 +106,9 @@ func (p printConfigPayload) MarshalJSON() ([]byte, error) {
 	if p.Config.Blurbs == nil {
 		p.Config.Blurbs = map[string]string{}
 	}
+	if p.Beers == nil {
+		p.Beers = []printBeer{}
+	}
 	return json.Marshal(alias(p))
 }
 
@@ -91,14 +123,7 @@ func (a *App) handleGetPrintConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := printConfigPayload{
-		Config:      state.Config,
-		Palette:     printPalette,
-		NotesCached: len(state.Notes),
-		PrintURL:    a.baseURL + "/" + tenant.Slug + "/menu/print.pdf",
-		Sections:    a.boardSections(ctx, tenant.ID, state.Config),
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, a.printPayload(ctx, tenant.Slug, tenant.ID, state))
 }
 
 // boardSections lists the headings on the stored tap list, in board order.
@@ -148,6 +173,89 @@ func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintCo
 		add(name)
 	}
 	return out
+}
+
+// printPayload assembles the settings page's whole state from one load, so a
+// GET and the response to a save or a sync cannot disagree about what is
+// stored.
+func (a *App) printPayload(ctx context.Context, slug string, tenantID uuid.UUID, state *PrintState) printConfigPayload {
+	return printConfigPayload{
+		Config:      state.Config,
+		Palette:     printPalette,
+		NotesCached: len(state.Notes),
+		PrintURL:    a.baseURL + "/" + slug + "/menu/print.pdf",
+		Sections:    a.boardSections(ctx, tenantID, state.Config),
+		Beers:       printBeers(state),
+		SyncedAt:    state.SyncedAt,
+		SyncError:   state.SyncError,
+	}
+}
+
+// printBeers resolves each synced row to what the paper will actually say.
+func printBeers(state *PrintState) []printBeer {
+	out := make([]printBeer, 0, len(state.Rows))
+	for _, r := range state.Rows {
+		b := printBeer{
+			Section: r.Section,
+			Name:    r.Name,
+			Style:   tidyStyle(r.Style),
+			ABV:     tidyABV(r.ABV),
+			Note:    state.Notes[normalizeBeerName(r.Name)],
+		}
+		if pour, ok := r.Headline(); ok {
+			b.Price = money(pour.Price)
+		}
+		// Hand-written wins, and says so -- the page marks it, because "this
+		// is your copy, Untappd will not overwrite it" is the whole reason the
+		// layer exists.
+		if written := lookupFold(state.Config.Notes, r.Name); written != "" {
+			b.Note, b.Written = written, true
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// syncResponse carries the new state alongside what the sync did.
+//
+// The state is a named field rather than an embedded one on purpose.
+// printConfigPayload has its own MarshalJSON, and embedding promotes that
+// method to the outer struct -- encoding/json would then call it and emit the
+// payload alone, silently dropping the report and the summary. A field cannot
+// do that.
+type syncResponse struct {
+	State   printConfigPayload `json:"state"`
+	Report  SyncReport         `json:"report"`
+	Summary string             `json:"summary"`
+}
+
+// handleSyncPrint refreshes the tap list from Untappd on request.
+//
+// A sync that cannot reach the description pages is a success with a warning,
+// not a failure, so the report comes back on a 200 alongside the new state and
+// the page shows both. Only losing the board itself is an error, because
+// without it there is no menu to show.
+func (a *App) handleSyncPrint(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tenant := auth.TenantFromContext(ctx)
+
+	rep, err := SyncPrintMenu(ctx, a.pool, tenant.ID)
+	if err != nil {
+		slog.Warn("menu print: sync", "tenant_id", tenant.ID, "error", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	state, err := LoadPrintState(ctx, a.pool, tenant.ID)
+	if err != nil {
+		slog.Error("loading print config after sync", "tenant_id", tenant.ID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, syncResponse{
+		State:   a.printPayload(ctx, tenant.Slug, tenant.ID, state),
+		Report:  rep,
+		Summary: rep.Summary(),
+	})
 }
 
 func (a *App) handleSavePrintConfig(w http.ResponseWriter, r *http.Request) {

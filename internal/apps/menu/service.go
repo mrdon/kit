@@ -17,6 +17,12 @@ var (
 	ErrKeyInvalid     = errors.New("key must be 1-40 characters of lowercase letters, numbers, and hyphens")
 	ErrPayloadInvalid = errors.New("menu payload is invalid")
 	ErrNotFound       = errors.New("this workspace has no menu yet")
+
+	// ErrNotSynced is a printed menu with nothing in it yet. It is a distinct
+	// error from ErrNotFound because the fix is different and worth saying: the
+	// tap list is no longer read on the way to the PDF, so a workspace that has
+	// a board still has to sync once before it has a sheet.
+	ErrNotSynced = errors.New("the printed menu has not been synced yet — press Sync on the printed menu settings")
 )
 
 // MaxTaps is what the two-column layout can show at a legible size. Beyond
