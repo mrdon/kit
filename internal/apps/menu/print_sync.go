@@ -49,6 +49,11 @@ type SyncReport struct {
 	Described int      `json:"described"`
 	Missing   []string `json:"missing"`
 
+	// Unmatched is the subset of Missing whose page could not be found on the
+	// brewery's listings at all -- a different problem from a beer nobody has
+	// written up, and one on Kit's side rather than upstream's.
+	Unmatched []string `json:"unmatched,omitempty"`
+
 	// Fetched is how many descriptions this sync newly pulled and stored.
 	Fetched int `json:"fetched"`
 
@@ -108,10 +113,11 @@ func SyncPrintMenu(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 		rep.NotesError = "no Untappd brewery slug set, so no descriptions were fetched"
 		applyNotes(rows, cache)
 	} else {
-		found, ferr := AttachNotes(ctx, printClient(), brand, rows, cache)
+		found, unmatched, ferr := AttachNotes(ctx, printClient(), brand, rows, cache)
 		if ferr != nil {
 			rep.NotesError = ferr.Error()
 		}
+		rep.Unmatched = unmatched
 		rep.Fetched = len(found)
 		if len(found) > 0 {
 			if merr := MergePrintNotes(ctx, pool, tenantID, found); merr != nil {
@@ -166,6 +172,11 @@ func (r SyncReport) Summary() string {
 	}
 	if len(r.Missing) > 0 {
 		fmt.Fprintf(&b, "\n\nNo description yet: %s", strings.Join(r.Missing, ", "))
+	}
+	if len(r.Unmatched) > 0 {
+		fmt.Fprintf(&b, "\n\nNo page found on the brewery's Untappd listings for: %s. "+
+			"That is a lookup failure rather than a beer nobody has written up — "+
+			"the description may well exist.", strings.Join(r.Unmatched, ", "))
 	}
 	return b.String()
 }

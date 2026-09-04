@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -24,17 +25,33 @@ import (
 // and only for beers whose description is not already stored, which in the
 // steady state is none of them. A new beer costs two requests, once.
 
-// Two listings, because neither is complete on its own.
+// Three listings, because none of them is complete and each truncates at
+// thirty.
 //
-// The brewery's front page shows what it has brewed lately, which is very
-// nearly what is pouring; the /beer catalogue shows its most-had beers, which
-// is the back catalogue and the classics. A tap list straddles the two -- the
-// seasonal that went on last week is only on the front page, the flagship is
-// only in the catalogue -- so both are read and merged. Two requests, once,
-// against pages that are cached hard at the other end.
+// That truncation is the whole problem. Every one of these pages returns its
+// first thirty beers and no more -- ?page=2 hands back the same thirty, and
+// the /brewery/more_beer endpoint the page's own "show more" calls answers an
+// anonymous request with nothing -- so a brewery with a deeper catalogue than
+// that simply cannot be read in one request. Each sort order, though, returns
+// a *different* thirty, which is a way through: ask for several orderings and
+// union them.
+//
+//   - the front page is what has been brewed lately, which is very nearly what
+//     is pouring;
+//   - /beer is the most-had list, which is the back catalogue and the classics;
+//   - /beer?sort=name is alphabetical, which is the only one of the three that
+//     has no popularity or recency bias at all, and so is the one that catches
+//     the beer that is neither new nor famous.
+//
+// The third was added after two of Gravity's sixteen taps printed with no
+// description for weeks. Both had perfectly good write-ups on Untappd; they
+// were simply absent from the first two listings, and nothing said so -- a
+// beer that cannot be found and a beer with nothing written about it looked
+// identical from here. Three listings covers that board completely.
 var untappdBrandURLs = []string{
 	"https://untappd.com/%s",
 	"https://untappd.com/%s/beer",
+	"https://untappd.com/%s/beer?sort=name",
 }
 
 const untappdBeerBase = "https://untappd.com"
@@ -136,8 +153,15 @@ func parseBeerNote(body string) string {
 	return ""
 }
 
-// AttachNotes fills in each row's description, and returns the ones it had to
-// fetch so the caller can add them to the cache.
+// AttachNotes fills in each row's description. It returns the ones it had to
+// fetch, so the caller can cache them, and the names it could not find a page
+// for at all.
+//
+// Those two failures look identical on paper and are not the same problem. A
+// beer with no write-up in Untappd is upstream's to fix; a beer whose page the
+// listings never showed us is ours, and it stays broken silently until
+// somebody notices a blank row and goes looking. Reporting them apart is what
+// makes the second one findable.
 //
 // A cached note wins outright: a beer is fetched once and read from the store
 // forever after, and a description corrected by hand in Kit is not overwritten
@@ -150,7 +174,7 @@ func parseBeerNote(body string) string {
 // more than an error page at the moment somebody wants to print it, so the
 // error comes back for logging and the caller carries on.
 func AttachNotes(ctx context.Context, client *http.Client, brand string,
-	rows []Beer, cache map[string]string) (map[string]string, error) {
+	rows []Beer, cache map[string]string) (map[string]string, []string, error) {
 	todo := make([]int, 0, len(rows))
 	for i := range rows {
 		key := normalizeBeerName(rows[i].Name)
@@ -163,12 +187,13 @@ func AttachNotes(ctx context.Context, client *http.Client, brand string,
 		}
 	}
 	found := map[string]string{}
+	var unmatched []string
 	if len(todo) == 0 {
-		return found, nil
+		return found, nil, nil
 	}
 	index, err := FetchBeerIndex(ctx, client, brand)
 	if err != nil {
-		return found, err
+		return found, nil, err
 	}
 	if len(todo) > notesBudget {
 		todo = todo[:notesBudget]
@@ -182,6 +207,7 @@ func AttachNotes(ctx context.Context, client *http.Client, brand string,
 	for _, i := range todo {
 		url, ok := matchBeer(index, rows[i].Name)
 		if !ok {
+			unmatched = append(unmatched, rows[i].Name)
 			continue
 		}
 		wg.Go(func() {
@@ -198,7 +224,8 @@ func AttachNotes(ctx context.Context, client *http.Client, brand string,
 		})
 	}
 	wg.Wait()
-	return found, nil
+	sort.Strings(unmatched)
+	return found, unmatched, nil
 }
 
 // matchBeer finds a tap's page in the brewery index.
