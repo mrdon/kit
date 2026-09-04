@@ -1,5 +1,5 @@
 /* Brand tokens lifted from thegravitybrewing.com's own stylesheet, not
-   invented: Bungee for display, navy grounds, #b9c4cf for muted text on navy.
+   invented: Archivo for display, navy grounds, #b9c4cf for muted text on navy.
 
    The accent is the site's flame gold rather than the vermilion this board
    opened with. Gold is simply the brighter ink on navy -- the section heads
@@ -23,8 +23,16 @@
   --dim: #8ea2b3;
   --cream: #f4efe7;
   --line: rgba(255, 255, 255, .14);
-  --display: bungee, system-ui, sans-serif;
-  --beer: exo2, system-ui, sans-serif;
+  /* Archivo is variable 400-700. The site sets its headings at 400 -- light
+     tracked caps are the agency-document look it is after -- but 400 at 19px
+     dissolves at taproom distance, so every display element here is set at
+     600 or 700 and tracked a little wider to compensate. Same face as the
+     site, one viewing distance further away. */
+  --display: archivo, system-ui, sans-serif;
+  /* Same face, kept as its own token because the roles still differ: --display
+     is tracked caps at 600-700 for the chrome, --beer is the beer names and
+     prices, which set their own weight per element. Two names, one file. */
+  --beer: archivo, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
 }
 
@@ -54,9 +62,9 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 18px; border-bottom: 2px solid var(--line); flex: 0 0 auto; }
 .brand { display: flex; align-items: center; gap: 18px; }
 .brand img { width: 54px; height: auto; filter: brightness(0) invert(1); }
-.brand-name { font-family: var(--display); font-size: 30px; letter-spacing: .01em; text-transform: uppercase; color: #fff; line-height: 1; }
+.brand-name { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: .04em; text-transform: uppercase; color: #fff; line-height: 1; }
 .head-r { display: flex; align-items: baseline; gap: 26px; }
-.head-tag { font-family: var(--display); font-size: 22px; text-transform: uppercase; color: var(--accent-l); line-height: 1; }
+.head-tag { font-family: var(--display); font-weight: 600; font-size: 22px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-l); line-height: 1; }
 .head-clock { font-family: var(--mono); font-size: 20px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); font-variant-numeric: tabular-nums; }
 
 /* ---------- body ---------- */
@@ -73,7 +81,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .tapcol { display: flex; flex-direction: column; justify-content: flex-start; gap: 14px; min-width: 0; overflow: hidden; }
 .sect { display: flex; flex-direction: column; min-width: 0; }
 .sect-head {
-  font-family: var(--display); font-size: 19px; letter-spacing: .07em; text-transform: uppercase;
+  font-family: var(--display); font-weight: 700; font-size: 19px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--accent-hot); padding-bottom: 6px; margin-bottom: 6px;
   border-bottom: 2px solid rgba(217, 160, 60, .7);
 }
@@ -151,7 +159,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 }
 .panel > * { position: relative; z-index: 2; }
 
-.panel-label { font-family: var(--display); font-size: 21px; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-hot); flex: 0 0 auto; margin-bottom: 22px; }
+.panel-label { font-family: var(--display); font-weight: 700; font-size: 21px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-hot); flex: 0 0 auto; margin-bottom: 22px; }
 
 /* Panel bodies stack from the top rather than centring in the leftover space.
    The board runs on a TV with a dead backlight LED in the bottom right, so

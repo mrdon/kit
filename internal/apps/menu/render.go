@@ -17,7 +17,7 @@ import (
 //go:embed templates/board.html.tmpl templates/board.css
 var templateFS embed.FS
 
-//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/logo.png assets/untappd.svg
+//go:embed assets/archivo.woff2 assets/logo.png assets/untappd.svg
 var assetFS embed.FS
 
 // boardTmpl is parsed once at package scope; a template that fails to parse is
@@ -162,16 +162,20 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 	return buf.String(), nil
 }
 
-// stylesheet is the embedded CSS with the two @font-face rules prepended.
-// The faces are inlined rather than linked because the screen must repaint
+// stylesheet is the embedded CSS with the one @font-face rule prepended.
+// The face is inlined rather than linked because the screen must repaint
 // correctly with no network: a board that falls back to a system font loses
 // the size calibration the whole layout is built around.
+//
+// One face now, and it is the site's: the same variable Archivo woff2 the
+// site serves, so the two cannot drift. This board used to carry two, Bungee
+// for headings and Exo2 for the beers, and both are gone. The site settled on
+// a neo-grotesque set in caps precisely because the chunky and the squared
+// faces read as science fiction rather than as the agency printing the brand
+// is quoting -- and with beers called Newtonian and Galactic Orbit, a taproom
+// TV is the last place that should be arguing the other side of that.
 func stylesheet() (string, error) {
-	bungee, err := assetDataURI("assets/bungee.woff2", "font/woff2")
-	if err != nil {
-		return "", err
-	}
-	exo, err := assetDataURI("assets/exo2.woff2", "font/woff2")
+	archivo, err := assetDataURI("assets/archivo.woff2", "font/woff2")
 	if err != nil {
 		return "", err
 	}
@@ -183,10 +187,8 @@ func stylesheet() (string, error) {
 	// The generated sky rides in as a token so board.css can compose it with
 	// the washes rather than having a data URI pasted into the file.
 	fmt.Fprintf(&b, ":root{--starfield:url(%s)}\n", starfieldURI)
-	fmt.Fprintf(&b, "@font-face{font-family:bungee;src:url(%s) format(\"woff2\");"+
-		"font-weight:400;font-style:normal;font-display:block}\n", bungee)
-	fmt.Fprintf(&b, "@font-face{font-family:exo2;src:url(%s) format(\"woff2\");"+
-		"font-weight:400 700;font-style:normal;font-display:block}\n", exo)
+	fmt.Fprintf(&b, "@font-face{font-family:archivo;src:url(%s) format(\"woff2\");"+
+		"font-weight:400 700;font-style:normal;font-display:block}\n", archivo)
 	b.Write(base)
 	return b.String(), nil
 }
