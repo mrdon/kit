@@ -28,7 +28,7 @@ export default function EmailIntakeSettings() {
         setEnabled(r.enabled);
         setSchedule(r.schedule);
         setExtra(r.extra_instructions);
-        setLastScan(r.last_scanned_at);
+        setLastScan(r.last_run_at);
         setHasMailbox(r.has_mailbox);
         setDefaultText(r.default_instructions);
         setLoaded(true);
@@ -47,7 +47,7 @@ export default function EmailIntakeSettings() {
         schedule,
         extra_instructions: extra,
       });
-      setLastScan(r.last_scanned_at);
+      setLastScan(r.last_run_at);
       setSaved(true);
     } catch (e) {
       setErr((e as Error).message);

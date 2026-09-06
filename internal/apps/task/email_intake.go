@@ -150,13 +150,18 @@ func (a *TaskApp) runEmailIntakeForTenant(ctx context.Context, tenantID uuid.UUI
 }
 
 // emailIntakeDue reports whether a row's cron schedule has come due since its
-// last scan. A never-scanned row is always due. A malformed cron expression is
+// last run. A never-run row is always due. A malformed cron expression is
 // treated as not-due (skip rather than spin) — the console validates schedules.
+//
+// Due-ness reads LastRunAt (wall-clock, when a scan last completed), never
+// LastScannedAt (a watermark over email dates). A mailbox with no new mail
+// never advances its watermark, so scheduling off it leaves the row
+// permanently overdue and re-running on every sweep tick.
 func emailIntakeDue(in models.EmailIntake, tz string, now time.Time) bool {
-	if in.LastScannedAt == nil {
+	if in.LastRunAt == nil {
 		return true
 	}
-	next, err := models.NextCronRun(in.Schedule, tz, *in.LastScannedAt)
+	next, err := models.NextCronRun(in.Schedule, tz, *in.LastRunAt)
 	if err != nil {
 		slog.Warn("email intake: bad schedule", "user_id", in.UserID, "schedule", in.Schedule, "error", err)
 		return false
@@ -199,10 +204,19 @@ func (a *TaskApp) runEmailIntakeForUser(ctx context.Context, pool *pgxpool.Pool,
 		return
 	}
 
+	// IMAP SEARCH SINCE is date-granular — the server ignores the time of day,
+	// so a watermark of 09-04 20:28 still returns everything from 09-04 00:00.
+	// Drop what the agent has already been shown; without this it re-triages
+	// the same mail (and posts a fresh briefing card) on every run.
+	if in.LastScannedAt != nil {
+		inbox = newerThan(inbox, since)
+	}
+
 	if len(inbox) == 0 {
-		// Nothing new received — advance the watermark so due-ness keeps moving.
-		if err := models.AdvanceEmailIntakeWatermark(ctx, pool, tenant.ID, in.UserID, time.Now()); err != nil {
-			slog.Warn("email intake: advancing empty watermark", "tenant_id", tenant.ID, "user_id", in.UserID, "error", err)
+		// Nothing new received — stamp the run so due-ness moves on. The
+		// watermark stays put: there is no new mail to move it to.
+		if err := models.StampEmailIntakeRun(ctx, pool, tenant.ID, in.UserID); err != nil {
+			slog.Warn("email intake: stamping empty run", "tenant_id", tenant.ID, "user_id", in.UserID, "error", err)
 		}
 		return
 	}
@@ -278,6 +292,19 @@ func (a *TaskApp) runIntakeAgent(ctx context.Context, pool *pgxpool.Pool, enc *c
 			AuthorName:    authorName,
 		},
 	})
+}
+
+// newerThan keeps only summaries that arrived strictly after the watermark.
+// A summary with no parseable date is kept — better a re-triaged email (the
+// source_email_uid guard stops a duplicate task) than a silently dropped one.
+func newerThan(summaries []email.Summary, since time.Time) []email.Summary {
+	kept := make([]email.Summary, 0, len(summaries))
+	for _, s := range summaries {
+		if s.Date.IsZero() || s.Date.After(since) {
+			kept = append(kept, s)
+		}
+	}
+	return kept
 }
 
 // renderEmailSummaries formats the candidate list seeded into the agent

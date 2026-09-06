@@ -339,7 +339,9 @@ func TestFeedExpandsAMonthlyRule(t *testing.T) {
 func TestFeedOmitsUpcomingForAOneOff(t *testing.T) {
 	sf := newSyncFixture(t)
 	e := sf.create(t, CreateParams{
-		Title: "Single Night", StartsAt: "2026-09-04 18:00", Visibility: VisibilityPublic,
+		// Relative, not a literal date: the feed only carries what's still
+		// ahead, so a hardcoded day turns this into a time bomb.
+		Title: "Single Night", StartsAt: dayOut(3), Visibility: VisibilityPublic,
 	})
 	sf.publish(t, e)
 

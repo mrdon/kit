@@ -17,11 +17,16 @@ import (
 // emailIntakeView is the JSON shape the console panel reads/writes. The
 // default_instructions field is read-only preview of the baked triage prose the
 // user is extending; only extra_instructions is stored.
+//
+// last_run_at is when a scan last completed (what the console shows and what
+// the schedule is evaluated against); last_scanned_at is how far into the
+// mailbox it has read, which is an email date and can lag well behind.
 type emailIntakeView struct {
 	Enabled             bool       `json:"enabled"`
 	Schedule            string     `json:"schedule"`
 	ExtraInstructions   string     `json:"extra_instructions"`
 	LastScannedAt       *time.Time `json:"last_scanned_at"`
+	LastRunAt           *time.Time `json:"last_run_at"`
 	HasMailbox          bool       `json:"has_mailbox"`
 	DefaultInstructions string     `json:"default_instructions"`
 }
@@ -47,6 +52,7 @@ func (a *TaskApp) handleGetEmailIntake(w http.ResponseWriter, r *http.Request) {
 		view.Schedule = row.Schedule
 		view.ExtraInstructions = row.ExtraInstructions
 		view.LastScannedAt = row.LastScannedAt
+		view.LastRunAt = row.LastRunAt
 	}
 	taskJSON(w, http.StatusOK, view)
 }
@@ -94,6 +100,7 @@ func (a *TaskApp) handlePutEmailIntake(w http.ResponseWriter, r *http.Request) {
 		Schedule:            row.Schedule,
 		ExtraInstructions:   row.ExtraInstructions,
 		LastScannedAt:       row.LastScannedAt,
+		LastRunAt:           row.LastRunAt,
 		HasMailbox:          a.callerHasMailbox(r, caller.TenantID, caller.UserID),
 		DefaultInstructions: defaultEmailIntakeInstructions(),
 	})

@@ -362,6 +362,7 @@ export interface EmailIntake {
   schedule: string;
   extra_instructions: string;
   last_scanned_at: string | null;
+  last_run_at: string | null;
   has_mailbox: boolean;
   default_instructions: string;
 }

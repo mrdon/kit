@@ -19,8 +19,15 @@ var ErrEmailIntakeNotFound = errors.New("email intake not found")
 // watermark (table app_task_email_intake). Opt-in: a row exists only for a
 // mailbox user who enabled intake in the Tasks console. The sweep in the task
 // app reads enabled rows, evaluates each row's cron schedule against
-// LastScannedAt for due-ness, claims the row (ClaimedAt) to avoid a
-// concurrent instance double-running it, then advances LastScannedAt.
+// LastRunAt for due-ness, claims the row (ClaimedAt) to avoid a concurrent
+// instance double-running it, then stamps LastRunAt and (when it saw mail)
+// advances LastScannedAt.
+//
+// The two timestamps are deliberately separate. LastScannedAt is a watermark
+// over *email dates* — how far the agent has read. LastRunAt is wall-clock —
+// when a scan last completed. Scheduling off the watermark wedges a quiet
+// mailbox permanently overdue, because a mailbox with no new mail never moves
+// its watermark forward.
 type EmailIntake struct {
 	ID                uuid.UUID
 	TenantID          uuid.UUID
@@ -29,6 +36,7 @@ type EmailIntake struct {
 	Schedule          string
 	ExtraInstructions string
 	LastScannedAt     *time.Time
+	LastRunAt         *time.Time
 	ClaimedAt         *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -37,14 +45,15 @@ type EmailIntake struct {
 func scanEmailIntake(row pgx.Row) (*EmailIntake, error) {
 	var e EmailIntake
 	if err := row.Scan(&e.ID, &e.TenantID, &e.UserID, &e.Enabled, &e.Schedule,
-		&e.ExtraInstructions, &e.LastScannedAt, &e.ClaimedAt, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		&e.ExtraInstructions, &e.LastScannedAt, &e.LastRunAt, &e.ClaimedAt,
+		&e.CreatedAt, &e.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &e, nil
 }
 
 const emailIntakeCols = `id, tenant_id, user_id, enabled, schedule, extra_instructions,
-	last_scanned_at, claimed_at, created_at, updated_at`
+	last_scanned_at, last_run_at, claimed_at, created_at, updated_at`
 
 // GetEmailIntake returns the intake row for (tenant, user), or nil when the
 // user has never configured intake.
@@ -112,17 +121,34 @@ func ClaimEmailIntake(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid
 	return tag.RowsAffected() == 1, nil
 }
 
-// AdvanceEmailIntakeWatermark records a successful sweep: moves the watermark
-// to the newest email presented and releases the claim so the row is due again
-// on its next scheduled tick.
+// AdvanceEmailIntakeWatermark records a successful sweep that saw mail: moves
+// the watermark to the newest email presented, stamps the run, and releases
+// the claim so the row is due again on its next scheduled tick.
 func AdvanceEmailIntakeWatermark(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, scannedTo time.Time) error {
 	_, err := pool.Exec(ctx, `
 		UPDATE app_task_email_intake
-		SET last_scanned_at = $3, claimed_at = NULL, updated_at = now()
+		SET last_scanned_at = $3, last_run_at = now(), claimed_at = NULL, updated_at = now()
 		WHERE tenant_id = $1 AND user_id = $2`,
 		tenantID, userID, scannedTo)
 	if err != nil {
 		return fmt.Errorf("advancing email intake watermark: %w", err)
+	}
+	return nil
+}
+
+// StampEmailIntakeRun records a successful sweep that found nothing new, and
+// releases the claim. The watermark is left alone: there was no new email to
+// move it to, and pushing it to now() would skip a message that lands with an
+// older Date header. Only last_run_at moves, which is what due-ness reads — so
+// the row waits for its next scheduled tick instead of re-running immediately.
+func StampEmailIntakeRun(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE app_task_email_intake
+		SET last_run_at = now(), claimed_at = NULL, updated_at = now()
+		WHERE tenant_id = $1 AND user_id = $2`,
+		tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("stamping email intake run: %w", err)
 	}
 	return nil
 }
