@@ -29,7 +29,30 @@ var (
 // this the grid would silently push rows off the bottom of the screen, which
 // on a wall display reads as "we stopped serving those" rather than as a bug,
 // so it is rejected at the door instead.
-const MaxTaps = 18
+//
+// It was 18, which was the number before the board could resize itself: the
+// row was drawn at one fixed size and the eighteenth beer was the last one
+// that fitted. The board now shrinks the whole list until the longest column
+// fits its box, so the real ceiling is wherever that pass bottoms out -- and
+// 18 had stopped describing anything except the day it was written. A board
+// that grew to 20 beers was refused at the door, and refusing a sync leaves
+// the LAST good list on the wall: the screen goes on naming beers that blew
+// and omitting the ones that replaced them, which is the exact failure the
+// cap was put there to prevent, arrived at from the other side.
+//
+// The number below is measured, in a headless browser at the board's own
+// 1920x1080, against tap lists cut every way to the far side of the cliff:
+//
+//	20 beers  ->  names at 38px, no overflow
+//	24 beers  ->  names at 29px, no overflow
+//	26 beers  ->  names at 23px, no overflow
+//	28 beers  ->  the pass hits its 22px floor and a column overflows
+//
+// Section headings take column height too, so the cliff moves with how the
+// list is divided -- 24 beers across ten sections lands at the same 23px that
+// 26 across six does. 24 is the largest count that still fits at every
+// division tried, which is what a ceiling has to mean.
+const MaxTaps = 24
 
 // keyPattern constrains asset keys: lowercase, hyphenated, no slashes, so one
 // can be typed into a payload by hand without surprises.
