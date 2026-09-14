@@ -47,7 +47,7 @@ func snapshotIn(phase Phase, scored bool) (*Snapshot, uuid.UUID) {
 			AnsweredCount: 1, EligibleCount: 2,
 		},
 		Slots: []SnapSlot{
-			{ID: slotA, Position: 1, Value: &v2, Label: "271828", TeamIDs: []uuid.UUID{teamA}, TeamNames: []string{"Bar Flies"}},
+			{ID: slotA, Position: 1, Value: &v2, Label: "271828", TeamIDs: []uuid.UUID{teamA}, TeamNames: []string{"Bar Flies"}, Pot: 200},
 			{ID: slotB, Position: 2, Value: &v1, Label: "314159", TeamIDs: []uuid.UUID{teamB}, TeamNames: []string{"Quiz Khalifa"}},
 		},
 		Bets:      []SnapBet{{TeamID: teamA, TokenIndex: 1, Amount: 200, SlotID: slotA}},
@@ -190,39 +190,74 @@ func TestPlayerFrameCarriesOwnChipsOnly(t *testing.T) {
 	}
 }
 
-// TestBetsAreHiddenUntilBettingCloses. Chips landing live on the TV tell a
-// table still deciding exactly where the room has committed, so the last to
-// bet plays a different game from the first. Everything is revealed together
-// when the phase closes.
-func TestBetsAreHiddenUntilBettingCloses(t *testing.T) {
+// TestBetsLandLiveFromBettingOnward. The room watches the chips arrive: a
+// card with nothing on it for forty-five seconds reads as a frozen screen,
+// and the chip that moves with ten seconds left is the best thing on the
+// wall. What is still withheld is anything from BEFORE betting opens --
+// during the reveal the cards carry no chips and no pot, because nothing has
+// been placed and a stale pot would be a lie.
+func TestBetsLandLiveFromBettingOnward(t *testing.T) {
 	snap, teamID := snapshotIn(PhaseBetting, false)
 
 	display := ProjectDisplay(snap)
+	shownOnTV, potOnTV := 0, 0
 	for _, sl := range display.Slots {
-		if len(sl.Chips) != 0 {
-			t.Fatalf("the TV shows %d chips during betting: %+v", len(sl.Chips), sl.Chips)
-		}
-		if sl.Pot != 0 {
-			t.Fatalf("the TV shows a pot of %d during betting — the same tell as the chips", sl.Pot)
-		}
+		shownOnTV += len(sl.Chips)
+		potOnTV += sl.Pot
+	}
+	if shownOnTV == 0 {
+		t.Fatal("the TV shows no chips during betting — the room cannot watch them land")
+	}
+	if potOnTV == 0 {
+		t.Fatal("the TV shows no pot during betting")
+	}
+	// The chips say WHOSE they are — a bare stack of money tells the room
+	// nothing about who is chasing what.
+	if display.Slots[0].Chips[0].Team == "" {
+		t.Fatalf("a chip on the TV carries no team name: %+v", display.Slots[0].Chips[0])
 	}
 
-	// The other team's chip must not reach a player's frame either.
+	// Another table's chip reaches a phone too, so the small screen and the
+	// big one agree about what is on the table.
 	other := snap.Teams[1].ID
 	player := ProjectPlayer(snap, other)
+	chipsOnPhone, potOnPhone := 0, 0
 	for _, sl := range player.Slots {
-		if len(sl.Chips) != 0 {
-			t.Fatalf("a phone can see another table's chips during betting: %+v", sl.Chips)
-		}
+		chipsOnPhone += len(sl.Chips)
+		potOnPhone += sl.Pot
+	}
+	if chipsOnPhone == 0 {
+		t.Fatal("a phone cannot see another table's chips during betting")
+	}
+	if potOnPhone == 0 {
+		t.Fatal("a phone cannot see the pot during betting")
 	}
 
-	// But a table always sees its OWN chips — it placed them.
+	// A table always sees its OWN chips, in the private shape it needs to
+	// draw its own tokens as placed.
 	own := ProjectPlayer(snap, teamID)
 	if own.You == nil || len(own.You.Chips) != 1 {
 		t.Fatalf("a table cannot see its own chips: %+v", own.You)
 	}
 
-	// And the host sees everything throughout: they need to know who has not
+	// Before betting opens there is nothing to show, and the cards must not
+	// carry a pot from a previous life.
+	reveal, _ := snapshotIn(PhaseReveal, false)
+	for _, sl := range ProjectDisplay(reveal).Slots {
+		if len(sl.Chips) != 0 {
+			t.Fatalf("the TV shows %d chips during the reveal: %+v", len(sl.Chips), sl.Chips)
+		}
+		if sl.Pot != 0 {
+			t.Fatalf("the TV shows a pot of %d during the reveal", sl.Pot)
+		}
+	}
+	for _, sl := range ProjectPlayer(reveal, other).Slots {
+		if len(sl.Chips) != 0 || sl.Pot != 0 {
+			t.Fatalf("a phone sees bets during the reveal: %+v", sl)
+		}
+	}
+
+	// The host sees everything throughout: they need to know who has not
 	// placed.
 	host := ProjectHost(snap)
 	total := 0
@@ -233,14 +268,14 @@ func TestBetsAreHiddenUntilBettingCloses(t *testing.T) {
 		t.Fatal("the host cannot see the chips during betting")
 	}
 
-	// Once scored, the room sees the lot.
+	// And once scored the chips are still there to be paid or swept.
 	scored, _ := snapshotIn(PhaseScoring, true)
 	shown := 0
 	for _, sl := range ProjectDisplay(scored).Slots {
 		shown += len(sl.Chips)
 	}
 	if shown == 0 {
-		t.Fatal("the chips never appear, even after scoring")
+		t.Fatal("the chips vanish at scoring")
 	}
 }
 

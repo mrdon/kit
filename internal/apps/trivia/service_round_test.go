@@ -491,10 +491,9 @@ func TestGameNamesAreTenantScoped(t *testing.T) {
 }
 
 // Betting closes as soon as every eligible table has placed, without the host
-// touching anything. That already worked, but it matters more now that the
-// chips stay hidden until the phase closes: if the early close were broken,
-// the room would sit looking at cards with nothing on them until the clock
-// ran out.
+// touching anything. The chips are on the wall as they land now, so a broken
+// early close is no longer a room staring at empty cards — but it is still
+// everyone waiting out a clock with nothing left to decide.
 func TestBettingClosesEarlyWhenEveryTableHasPlaced(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)

@@ -679,8 +679,14 @@ The screens:
    flipping in on a 120ms stagger, **each carrying the team name(s) who wrote it**.
    Identical numbers collapse into one card. Nothing else on the card.
 5. **Betting** — same cards with a chip tray beneath; chips settle with a small overshoot
-   and stack at 12px offsets like real casino chips; $100 and $200 in visibly different
-   colours and sizes; live pot per card.
+   and stack like real casino chips; $100 and $200 in visibly different colours; live pot
+   per card. **Chips land on the wall as they are placed, each labelled with the table
+   that placed it** — one arriving, three piling onto the favourite, one being lifted and
+   moved with ten seconds left. An earlier build withheld them until the phase closed so
+   that a table still deciding could not read the room; in the bar that reads as a frozen
+   screen, and the best thirty seconds of the round were invisible. Only the arriving chip
+   re-animates: the cards themselves are built once per phase and diffed after that, or
+   every bet replays the whole deal.
 6. **Scoring** — the TV owns the choreography off `setTimeout`: dim everything but the
    cards; at 800ms the correct answer slams in as a band, the winning card gets gold and
    `scale(1.08)`, losing chips fall off; at 2200ms a leaderboard rail slides in with

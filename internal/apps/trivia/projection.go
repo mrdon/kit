@@ -323,20 +323,25 @@ func publicRound(s *Snapshot) *wireRound {
 
 // betsVisible reports whether other tables' chips may be shown.
 //
-// NOT DURING BETTING. Chips landing live on the TV tells a table still
-// deciding exactly where the room has already committed, so the last to bet
-// plays a different game from the first — follow the crowd, or fade it, but
-// either way with information the early tables did not have. Everything is
-// revealed together when the phase closes, which is also a better beat: all
-// the chips appear at once rather than trickling.
+// FROM BETTING ONWARD. This used to withhold them until the phase closed, on
+// the argument that a table still deciding should not see where the room had
+// committed. Played in a bar, that argument lost: a wall of cards with
+// nothing on them reads as a screen that has frozen, and the moment the
+// chips are worth watching — one landing on the long shot, three piling onto
+// the favourite, a table lifting a chip and moving it with ten seconds left —
+// is exactly the moment nobody could see. Chips land on the TV as they are
+// placed. Yes, the last table to bet knows more than the first; that is the
+// same information any table gets by looking around the room, and it is
+// worth the beat.
 //
-// A table's OWN chips are always visible to it (see wireYou), and the host
-// sees everything throughout, because they need to know who has not placed.
+// Still hidden before betting opens: during the question and the reveal
+// there is nothing placed yet, and the cards must not carry a pot from a
+// previous life.
 func betsVisible(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseScoring, PhasePodium:
+	case PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseQuestion, PhaseReveal, PhaseBetting:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseQuestion, PhaseReveal:
 		return false
 	}
 	return false
