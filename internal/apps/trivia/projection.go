@@ -216,6 +216,16 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 		TeamID: teamID.String(), Name: team.Name, Score: team.Score,
 		Answered: team.Answered, Chips: []wireOwnChip{},
 	}
+	// The final's wager, and this is the ONLY assignment of it anywhere in
+	// this file. publicTeams carries stakeLocked and stops there, so the TV
+	// and the other nineteen phones know a table has committed without
+	// knowing to what -- and the phone that staked it can show the table its
+	// own number, in the betting phase especially, where its single chip IS
+	// the stake.
+	if team.Stake != nil {
+		stake := *team.Stake
+		you.Stake = &stake
+	}
 	for _, b := range s.Bets {
 		if b.TeamID == teamID {
 			you.Chips = append(you.Chips, wireOwnChip{

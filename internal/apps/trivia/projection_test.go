@@ -201,13 +201,22 @@ func TestPublicSlotsAreEmptyBeforeReveal(t *testing.T) {
 	}
 }
 
-// The final's tension is that nobody knows whether the leader defended or sat
-// out. The TV shows LOCKED, never the amount, until scoring.
-func TestPublicFramesShowStakeLockedWithoutTheAmount(t *testing.T) {
-	snap, _ := snapshotIn(PhaseQuestion, false)
+// finalWithStake puts the snapshot in a final with team A's wager locked in.
+// 7400 is deliberately a number that appears nowhere else in the fixture --
+// the leak checks below are substring searches over the marshalled frames.
+func finalWithStake(phase Phase) (*Snapshot, uuid.UUID, int) {
+	snap, teamA := snapshotIn(phase, false)
 	snap.Round.IsFinal = true
 	stake := 7400
 	snap.Teams[0].StakeLocked = true
+	snap.Teams[0].Stake = &stake
+	return snap, teamA, stake
+}
+
+// The final's tension is that nobody knows whether the leader defended or sat
+// out. The TV shows LOCKED, never the amount, until scoring.
+func TestPublicFramesShowStakeLockedWithoutTheAmount(t *testing.T) {
+	snap, _, stake := finalWithStake(PhaseQuestion)
 
 	frame := ProjectDisplay(snap)
 	if !frame.Teams[0].StakeLocked {
@@ -216,6 +225,47 @@ func TestPublicFramesShowStakeLockedWithoutTheAmount(t *testing.T) {
 	raw, _ := json.Marshal(frame)
 	if strings.Contains(string(raw), "7400") {
 		t.Fatalf("the stake amount %d appears in the TV frame:\n%s", stake, raw)
+	}
+}
+
+// The wager is the one number a table may see about ITSELF and nobody may see
+// about anyone else. It has to reach the phone that staked it -- in betting
+// that phone's single chip IS the stake, and with nothing to render it the
+// chip read $0 -- and it must reach no other surface.
+func TestOwnStakeReachesOnlyTheTableThatStakedIt(t *testing.T) {
+	for _, phase := range []Phase{PhaseQuestion, PhaseBetting} {
+		snap, teamA, stake := finalWithStake(phase)
+
+		own := ProjectPlayer(snap, teamA)
+		if own.You == nil || own.You.Stake == nil || *own.You.Stake != stake {
+			t.Fatalf("%s: the staking table cannot see its own wager: %+v", phase, own.You)
+		}
+
+		// Everywhere else the amount must be ABSENT, not zeroed. Marshalling
+		// and searching the bytes is the only check that still catches this
+		// when somebody adds a field to a public struct later.
+		otherID := snap.Teams[1].ID
+		elsewhere := map[string]any{
+			"the TV":            ProjectDisplay(snap),
+			"another phone":     ProjectPlayer(snap, otherID),
+			"a spectator":       ProjectPlayer(snap, uuid.Nil),
+			"its own team rows": own.Teams,
+		}
+		for label, frame := range elsewhere {
+			raw, err := json.Marshal(frame)
+			if err != nil {
+				t.Fatalf("%s: marshalling %s: %v", phase, label, err)
+			}
+			if strings.Contains(string(raw), "7400") {
+				t.Fatalf("%s: %s carries the wager %d:\n%s", phase, label, stake, raw)
+			}
+		}
+
+		// A table that has not staked gets nil, not a zero it would render as
+		// "you bet nothing".
+		if other := ProjectPlayer(snap, otherID); other.You == nil || other.You.Stake != nil {
+			t.Fatalf("%s: a table with no wager reports %+v", phase, other.You)
+		}
 	}
 }
 

@@ -70,6 +70,14 @@ type SnapTeam struct {
 	Answered    bool
 	StakeLocked bool
 	ChipsPlaced int
+
+	// Stake is the final's locked wager, and it is the one number in here
+	// that only ONE surface may ever see. StakeLocked is the public tell --
+	// the room knows a table has committed -- while the amount rides down to
+	// that table's own phone and nowhere else: not knowing whether the leader
+	// defended or sat out is most of the tension. Nil outside a final, and
+	// nil for a table that has not locked one in yet.
+	Stake *int
 }
 
 // SnapCell is one board tile.

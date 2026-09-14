@@ -202,6 +202,13 @@ func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, tea
 		if a, ok := answered[t.ID]; ok {
 			t.Answered = true
 			t.StakeLocked = a.Stake != nil
+			if a.Stake != nil {
+				// Copied, never aliased into the Answer row: the snapshot is
+				// fanned out to every connection and a shared pointer is one
+				// stray write away from twenty phones seeing the same wager.
+				stake := *a.Stake
+				t.Stake = &stake
+			}
 		}
 		if t.Eligible {
 			sr.EligibleCount++
