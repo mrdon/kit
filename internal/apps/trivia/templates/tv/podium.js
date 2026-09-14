@@ -14,9 +14,13 @@ function renderPodium(phaseChanged) {
       if (placed[idx]) { return; }
       placed[idx] = true;
       var t = teams[idx];
-      var p = el('div', 'plinth p' + (idx + 1));
-      if (idx === 0) { p.appendChild(el('div', 'crown', '♛')); }
-      p.appendChild(el('div', 'rank', '#' + (idx + 1)));
+      // Competition rank, not list position: two tables on the same money
+      // are both #1, and both get the crown. The plinth heights stay by
+      // position so the layout is still three steps.
+      var rank = 1 + teams.filter(function (o) { return o.score > t.score; }).length;
+      var p = el('div', 'plinth p' + (idx + 1) + (rank === 1 ? ' tied-top' : ''));
+      if (rank === 1) { p.appendChild(el('div', 'crown', '♛')); }
+      p.appendChild(el('div', 'rank', '#' + rank));
       p.appendChild(el('div', 'name', t.name));
       p.appendChild(el('div', 'score', money(t.score)));
       // Column order left-to-right is 2nd, 1st, 3rd, so the winner is
@@ -28,7 +32,7 @@ function renderPodium(phaseChanged) {
       // over before the bar has finished looking up from the plinth rising,
       // and the winner's moment is the only thing left on the wall -- there
       // is nothing for it to be competing with.
-      if (idx === 0) { burstWaves(p, 3, 1300, { count: 26, dist: 200, spread: 380 }); }
+      if (rank === 1) { burstWaves(p, 3, 1300, { count: 26, dist: 200, spread: 380 }); }
     });
   });
 }

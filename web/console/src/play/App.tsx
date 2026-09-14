@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { join, me, money, reclaim, type PlayerFrame } from './api';
 import { useStream, useWakeLock } from './useStream';
-import { Answer, Clock, Wager, WagerWatching, Waiting } from './screens';
+import { Answer, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';
 import { Podium, Result, Standings } from './results';
 import { sittingOutScreen, WatchingCards } from './waiting';
@@ -148,19 +148,11 @@ function Playing({
       return <Wager frame={frame} msLeft={msLeft} onDone={apply} />;
     }
     case 'question':
-      if (!you.answered) {
-        return <Answer frame={frame} msLeft={msLeft} onDone={apply} />;
-      }
-      return (
-        <div className="body">
-          <Clock msLeft={msLeft} />
-          <h1>Answer&rsquo;s in.</h1>
-          <p className="sub">
-            {frame.round ? `${frame.round.answered} of ${frame.round.eligible} tables have answered.` : ''}
-          </p>
-          <Answer frame={frame} msLeft={msLeft} onDone={apply} />
-        </div>
-      );
+      // ONE tree whether or not the answer is in. Wrapping the answered case
+      // in its own panel remounted <Answer> the moment the flag flipped, which
+      // stacked a second clock above its own and wiped the number the table
+      // had just typed. The answered count lives inside Answer now.
+      return <Answer frame={frame} msLeft={msLeft} onDone={apply} />;
     case 'reveal':
       return <WatchingCards frame={frame} msLeft={msLeft} note="until betting opens" />;
     case 'betting':
@@ -178,10 +170,11 @@ function Playing({
 function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
   const me = frame.you;
-  const rank = me ? sorted.findIndex((t) => t.id === me.teamId) + 1 : 0;
   // Shared score means shared rank — two tables on $400 are both 2nd, and
   // telling one of them they are 3rd would be wrong in a way they can check
-  // against the wall.
+  // against the wall. So the rank is one more than the number of tables
+  // strictly ahead, never the position in the sorted list.
+  const rank = me ? sorted.filter((t) => t.score > me.score).length + 1 : 0;
   const tied = me ? sorted.filter((t) => t.score === me.score).length > 1 : false;
   const leader = sorted[0];
   const behind = me && leader ? leader.score - me.score : 0;

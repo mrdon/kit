@@ -426,6 +426,10 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   border-radius: 22px; display: inline-grid; align-items: center;
   grid-auto-flow: column; grid-template-columns: auto minmax(0, 1fr); gap: 8px;
   padding: 7px 14px; max-width: 100%;
+  /* A flex item shrinks by default, and two pills sharing a tray row were
+     each squeezed until the name column was a letter wide. A chip keeps its
+     size and wraps to the next row instead. */
+  flex: 0 0 auto;
   font: 700 20px/1 var(--body); color: var(--navy-3);
   animation: chip-in .4s cubic-bezier(.3, 1.6, .5, 1) both;
 }
@@ -572,6 +576,9 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   animation: rise .6s cubic-bezier(.2,.9,.3,1.1) both;
 }
 .plinth.p1 { height: 620px; border-color: var(--gold); background: linear-gradient(180deg, rgba(245,196,81,.34), rgba(245,196,81,.08)); }
+/* A tied winner on the second plinth is still a winner: gold like the first. */
+.plinth.tied-top { border-color: var(--gold); background: linear-gradient(180deg, rgba(245,196,81,.34), rgba(245,196,81,.08)); }
+.plinth.tied-top .rank { color: var(--gold); }
 .plinth.p2 { height: 480px; }
 .plinth.p3 { height: 400px; }
 @keyframes rise { from { transform: translateY(120px); opacity: 0; } to { transform: none; opacity: 1; } }

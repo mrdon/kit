@@ -207,6 +207,10 @@ function movers(frame: HostFrame, deltas: Record<string, number>): string {
 function cuePodium(frame: HostFrame): string {
   const top = [...frame.teams].sort((a, b) => b.score - a.score)[0];
   if (!top) return 'That is the night';
+  // A tie is a tie: two tables on the same money both won, and the phone
+  // already tells each of them so.
+  const winners = frame.teams.filter((t) => t.score === top.score).map((t) => t.name);
+  if (winners.length > 1) return `Winners: ${winners.join(' and ')} with ${money(top.score)}`;
   return `Winner: ${top.name} with ${money(top.score)}`;
 }
 
