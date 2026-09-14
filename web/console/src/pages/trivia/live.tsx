@@ -5,7 +5,7 @@ import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
 import { PHASE_LABEL, money, type HostFrame } from './common';
 import { StatusPanel } from './live_panel';
-import { LastRoundRecap, roundMovement, signed } from './live_lastround';
+import { LastRoundRecap } from './live_lastround';
 
 // The live driver: the page a host runs the night from.
 //
@@ -113,7 +113,6 @@ export default function TriviaLive() {
       </div>
 
       {showCards ? <Cards frame={frame} /> : null}
-      <Leaderboard frame={frame} />
     </>
   );
 }
@@ -174,42 +173,6 @@ function Cards({ frame }: { frame: HostFrame }) {
             </div>
           </li>
         ))}
-      </ul>
-    </section>
-  );
-}
-
-// Standings with the rank in front and this round's movement behind, split
-// into the two channels — a table that took the cell and a table whose chip
-// paid did different things, and the host calls them out differently.
-function Leaderboard({ frame }: { frame: HostFrame }) {
-  const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
-  const move = roundMovement(frame);
-  return (
-    <section className="panel">
-      <h2>Standings</h2>
-      <ul className="card-list">
-        {sorted.map((t, i) => {
-          const card = move?.board[t.id] ?? 0;
-          const bet = move?.bets[t.id] ?? 0;
-          return (
-            <li key={t.id} className={i === 0 ? 'card trivia-win' : 'card'}>
-              <div className="card-main">
-                <span className="card-title">
-                  {i + 1}. {t.name}{i === 0 && t.score > 0 ? ' · leader' : ''}
-                </span>
-                {card || bet ? (
-                  <span className="card-desc">
-                    {signed(card + bet)} last round
-                    {card ? ` · ${signed(card)} card` : ''}
-                    {bet ? ` · ${signed(bet)} bets` : ''}
-                  </span>
-                ) : null}
-              </div>
-              <div className="card-side"><span className="pill pill-ok">{money(t.score)}</span></div>
-            </li>
-          );
-        })}
       </ul>
     </section>
   );

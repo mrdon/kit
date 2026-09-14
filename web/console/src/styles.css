@@ -1918,9 +1918,13 @@ h2.view-title:hover {
   text-decoration: line-through;
 }
 
+/* The panel got wider when it took the standings in: twenty table names next
+   to a rank, a movement and a score do not fit in 320px without the names
+   being the thing that gives, and the name is the only column a host reads
+   by shape rather than by value. */
 .trivia-live {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 360px;
   gap: 1.25rem;
   align-items: start;
 }
@@ -1953,6 +1957,159 @@ h2.view-title:hover {
    wait, a list tells them which table to go and lean on. */
 .trivia-wait {
   margin: 0.5rem 0 0.2rem;
+}
+
+/* The secondary half of a pill — a score, a chip count, a delta — kept
+   lighter so the table name still reads first at a glance. */
+.trivia-split {
+  opacity: 0.75;
+  font-weight: 500;
+}
+
+/* --- The table list ---------------------------------------------------- */
+
+.trivia-tables {
+  margin-top: 0.75rem;
+}
+
+/* Scrolls inside the panel rather than stretching it: with twenty tables the
+   list is taller than the laptop, and everything above it — the sentence the
+   host reads out and the button they press — has to stay put. */
+.trivia-rows {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0.4rem 0 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* One line per table, and the line is a button: tapping it reissues that
+   table's code. Deliberately the same height as a row of text, because the
+   host is scanning twenty of them for one name. */
+.trivia-row {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0.2rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  color: var(--ink);
+  background: var(--panel);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+/* The row's one line. Nowrap, so a long table name is truncated rather than
+   pushing the score onto a second line — down a list of twenty, a score that
+   moves is a score the host has to hunt for. */
+.trivia-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 24px;
+}
+
+.trivia-row:last-child {
+  border-bottom: 0;
+}
+
+.trivia-row:hover {
+  background: var(--off-bg);
+}
+
+/* The leader gets the mark and the accent, so the top of the list reads as a
+   result rather than as row one of twenty. */
+.trivia-row-top {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.trivia-rank {
+  flex: 0 0 1.4rem;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.trivia-row-top .trivia-rank {
+  color: inherit;
+}
+
+/* The name takes what is left and gives it back first — a long table name is
+   allowed to be cut off, the score and the state are not — but never below a
+   floor. Squeezed to zero it stops being a row about a table at all. */
+.trivia-name {
+  flex: 1 1 auto;
+  min-width: 5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.trivia-tag {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+}
+
+.trivia-move {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ok-ink);
+}
+
+.trivia-move-down {
+  color: var(--error-ink);
+}
+
+.trivia-score {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The rare second line: which half of a table's movement came from the cell
+   and which from their chips. Only the tables that did both get it, so the
+   list is still one line per table nearly all the way down. */
+.trivia-breakdown {
+  display: block;
+  padding-left: 1.8rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* The line the host reads out. It is the first thing on the panel and the
+   biggest thing in it, because the host is looking up from a laptop into a
+   noisy room and needs the sentence, not the phase name. */
+.trivia-say {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0 0 0.6rem;
+  color: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding-left: 0.6rem;
+}
+
+/* Who is holding the room up. Names, not a count: a count tells the host to
+   wait, a list tells them which table to go and lean on. */
+.trivia-wait {
+  margin: 0.5rem 0 0.2rem;
+}
+
+/* Capped, because early in a question the answer is "all twenty of them" and
+   an uncapped list of twenty names pushed the primary button off a 768px
+   laptop entirely. Three rows is enough to see who is left once it matters;
+   before that the count in the cue line is the real answer. */
+.trivia-wait .teamlist {
+  max-height: 5.4rem;
+  overflow-y: auto;
 }
 
 /* The secondary half of a pill — a score, a chip count, a delta — kept

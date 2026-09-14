@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { api } from '../../api';
 import { boardIsEmpty, money, primaryAction, type HostFrame, type HostTeam } from './common';
 import { pickLine, signed } from './live_lastround';
+import { TeamBoard } from './live_tables';
 
 // The status board half of the live page.
 //
@@ -64,7 +63,10 @@ export function StatusPanel({ frame, busy, secs, gameId, onAct }: {
         ) : null}
       </div>
 
-      <TeamChips frame={frame} gameId={gameId} />
+      {/* Rank, name, movement, phase state and score — one list, directly
+          under the button, where the standings section used to be a screen
+          and a half away. */}
+      <TeamBoard frame={frame} gameId={gameId} />
     </aside>
   );
 }
@@ -100,45 +102,9 @@ function waitingLabel(frame: HostFrame): string {
   return 'Not answered yet';
 }
 
-// One chip per table, lighting as answers, stakes and bets land — so the host
-// can see WHICH table is holding everyone up rather than just a count.
-function TeamChips({ frame, gameId }: { frame: HostFrame; gameId: string }) {
-  const [code, setCode] = useState<{ team: string; code: string } | null>(null);
-  const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
-
-  const reissue = async (teamId: string, name: string) => {
-    try {
-      const r = await api.triviaReclaim(gameId, teamId);
-      setCode({ team: name, code: r.code });
-    } catch {
-      /* the host can just try again */
-    }
-  };
-
-  return (
-    <>
-      <h3 className="card-title">Tables</h3>
-      <div className="teamlist">
-        {sorted.map((t) => (
-          <button key={t.id} className={teamPill(frame, t)} title="Reissue this table's code"
-            onClick={() => void reissue(t.id, t.name)}>
-            {t.name} {money(t.score)}
-            <span className="trivia-split">{teamState(frame, t)}</span>
-          </button>
-        ))}
-      </div>
-      {code ? (
-        <p className="banner banner-ok">
-          Read <strong>{code.code}</strong> to {code.team}. Their old phone is signed out.
-        </p>
-      ) : (
-        <p className="card-desc">Tap a table to reissue its code if their phone died.</p>
-      )}
-    </>
-  );
-}
-
-function teamPill(frame: HostFrame, t: HostTeam): string {
+// The pill's colour: green once this table has done whatever the phase is
+// waiting on, grey while the host is still waiting for them.
+export function teamPill(frame: HostFrame, t: HostTeam): string {
   const done = !waitingTeams(frame).some((w) => w.id === t.id);
   return done ? 'pill pill-ok' : 'pill pill-off';
 }
@@ -146,7 +112,7 @@ function teamPill(frame: HostFrame, t: HostTeam): string {
 // What this table has done in the phase the game is actually in. In the final
 // that is locked-or-not and never the amount: the stake belongs to the phone
 // that typed it until the round is scored.
-function teamState(frame: HostFrame, t: HostTeam): string {
+export function teamState(frame: HostFrame, t: HostTeam): string {
   if (frame.phase === 'wager') return t.stakeLocked ? ' 🔒 locked' : ' waiting';
   if (frame.phase === 'question') return t.answered ? ' in' : ' waiting';
   if (frame.phase === 'betting') return ` ${t.chipsPlaced}/${frame.tokens.length}`;
