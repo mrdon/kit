@@ -293,7 +293,13 @@
     clone.style.transition = '';
     clone.style.transform =
       'translate(' + (64 - x) + 'px,' + (64 - y) + 'px) scale(' + ((1920 - 128) / w) + ',' + ((1080 - 128) / h) + ')';
-    later(620, function () { clone.style.opacity = '0'; done(); });
+    // Hiding the clone is CLEANUP, not choreography, so it goes on a plain
+    // timeout rather than the cancellable one. Sharing `later` meant any
+    // frame landing inside the 620ms cancelled it -- and during a question
+    // the first table's answer nearly always does -- which left the blown-up
+    // tile stuck over the whole screen until somebody reloaded the TV.
+    setTimeout(function () { clone.style.opacity = '0'; }, 620);
+    later(620, done);
   }
 
   /* --- 3. question --- */
