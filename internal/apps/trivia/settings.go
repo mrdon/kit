@@ -11,6 +11,9 @@ const (
 	minPhaseSeconds = 5
 	maxPhaseSeconds = 600
 	maxTokens       = 4
+	// maxGraceSeconds bounds the beat after everyone is in. A minute of it
+	// would not be a grace, it would be the phase.
+	maxGraceSeconds = 60
 )
 
 // DefaultSettings is the shipped game: 5 categories x 2 rows at $100/$200,
@@ -42,6 +45,9 @@ func DefaultSettings() Settings {
 		// out, only a nerve to settle, and a long blind-bet clock is dead air
 		// in a bar.
 		WagerSeconds: 30,
+		// Five seconds for the last table to look at what it just did. See
+		// maybeCloseEarly.
+		GraceSeconds: 5,
 	}
 }
 
@@ -73,6 +79,10 @@ func normaliseSettings(s Settings) Settings {
 	if s.WagerSeconds == 0 {
 		s.WagerSeconds = d.WagerSeconds
 	}
+	// GraceSeconds is deliberately NOT filled in. Zero is a real setting here
+	// -- it means "close the instant the last table is in", the behaviour the
+	// game shipped with -- so treating it as "unset" would make that choice
+	// unexpressable.
 	return s
 }
 
@@ -109,6 +119,12 @@ func validateSettings(s Settings) error {
 			return fmt.Errorf("the %s timer must be %d to %d seconds, got %d",
 				name, minPhaseSeconds, maxPhaseSeconds, v)
 		}
+	}
+	// Zero is legal and means no grace at all, so this is the one timer whose
+	// range starts at the bottom.
+	if s.GraceSeconds < 0 || s.GraceSeconds > maxGraceSeconds {
+		return fmt.Errorf("the grace after everyone is in must be 0 to %d seconds, got %d",
+			maxGraceSeconds, s.GraceSeconds)
 	}
 	return nil
 }

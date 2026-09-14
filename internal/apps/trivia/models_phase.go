@@ -97,6 +97,46 @@ func ExtendDeadline(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uu
 	return g, true, nil
 }
 
+// ShortenDeadline pulls a live phase's deadline IN to now + grace. It is
+// ExtendDeadline's mirror image and the only other thing in the app that
+// moves a clock without moving a phase.
+//
+// The room is told the news by the clock itself: bumping state_version puts
+// the new deadline on every phone and the TV in the same frame, so the
+// countdown visibly drops to the grace instead of the phase simply vanishing
+// out from under whoever acted last. The close that follows is the ORDINARY
+// timer close -- the sweep, the ticker and the scheduled backstop all take it
+// as they always would -- so nothing new learned how to end a phase.
+//
+// Two guards, both load-bearing. `phase = $3` is the usual one: a shorten
+// that lands just after the phase closed must do nothing rather than putting
+// a stale clock on the next phase. `phase_deadline > now() + grace` makes the
+// operation idempotent AND one-way: it never pushes a deadline out, so a
+// table that lifts and re-places a chip during the grace re-triggers this and
+// gets a no-op. THE GRACE IS NOT RE-ARMED BY MOVING WITHIN IT. That is
+// deliberate -- an extendable grace is an unbounded phase, one table with a
+// twitchy thumb holding the whole room -- and it is also why the grace is
+// short enough to spend entirely on one change of mind.
+func ShortenDeadline(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, from Phase, grace time.Duration) (*Game, bool, error) {
+	interval := fmt.Sprintf("%d milliseconds", grace.Milliseconds())
+	g, err := scanGame(pool.QueryRow(ctx, `
+		UPDATE app_trivia_games
+		   SET phase_deadline = now() + $4::interval,
+		       state_version = state_version + 1, updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2 AND phase = $3
+		   AND phase_deadline IS NOT NULL
+		   AND phase_deadline > now() + $4::interval
+		RETURNING `+gameColumns,
+		tenantID, gameID, from, interval))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("shortening trivia deadline: %w", err)
+	}
+	return g, true, nil
+}
+
 // BumpVersion records that something under a game changed without moving the
 // phase -- an answer landing, a chip moving, a team joining. It is what turns
 // those writes into a frame on every stream.

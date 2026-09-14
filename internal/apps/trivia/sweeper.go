@@ -111,12 +111,24 @@ func (s *Service) sweepOne(ctx context.Context, ref GameRef) {
 	s.publish(ctx, ref.TenantID, ref.ID)
 }
 
-// maybeCloseEarly ends a phase before its deadline when there is nothing left
-// to wait for: everyone has answered, or every chip is down.
+// maybeCloseEarly cuts a phase short when there is nothing left to wait for:
+// everyone has answered, everyone has wagered, or every chip is down.
 //
 // Worth doing rather than always burning the clock -- a room of three teams
-// should not sit through sixty seconds of silence -- and it is the same
-// guarded transition, so racing the timer is harmless.
+// should not sit through sixty seconds of silence -- but "cut short" is a
+// SHORTENED DEADLINE, not an immediate close, and that distinction is the
+// whole point of the grace setting.
+//
+// Closing instantly punishes precisely one table per round: the one that
+// acted last. Its chip ends betting the moment it lands, so it alone never
+// gets to look at the wall with its own money on it, and alone cannot change
+// its mind -- the beat every other table in the room had for free. Pulling
+// the deadline in to now + grace gives it that beat, in public, on the same
+// countdown everyone is already watching, and then lets the phase end the way
+// every other phase ends: by the timer.
+//
+// grace of 0 keeps the old behaviour exactly, for a host who wants the night
+// to move.
 func (s *Service) maybeCloseEarly(ctx context.Context, game *Game) bool {
 	if game.CurrentRoundID == nil {
 		return false
@@ -125,11 +137,23 @@ func (s *Service) maybeCloseEarly(ctx context.Context, game *Game) bool {
 	if err != nil || !ready {
 		return false
 	}
-	if err := s.closePhase(ctx, game, game.Phase, false); err != nil {
-		slog.Warn("trivia early close failed", "game_id", game.ID, "error", err)
+	if game.GraceSeconds <= 0 {
+		if err := s.closePhase(ctx, game, game.Phase, false); err != nil {
+			slog.Warn("trivia early close failed", "game_id", game.ID, "error", err)
+			return false
+		}
+		return true
+	}
+	grace := time.Duration(game.GraceSeconds) * time.Second
+	_, moved, err := ShortenDeadline(ctx, s.pool, game.TenantID, game.ID, game.Phase, grace)
+	if err != nil {
+		slog.Warn("trivia grace shorten failed", "game_id", game.ID, "error", err)
 		return false
 	}
-	return true
+	// moved == false is the ordinary case on every call after the first: the
+	// deadline is already inside the grace, so there is nothing to pull in
+	// and nothing to re-arm.
+	return moved
 }
 
 // everyoneIn is the early-close test for the two phases that have one.
