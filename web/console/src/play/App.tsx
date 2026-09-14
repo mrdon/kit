@@ -4,6 +4,7 @@ import { useStream, useWakeLock } from './useStream';
 import { Answer, Clock, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';
 import { Podium, Result, Standings } from './results';
+import { sittingOutScreen, WatchingCards } from './waiting';
 
 // LOCAL_KEY mirrors {gameId, teamId, teamName} — never the token — purely so
 // the UI can render "rejoining as Bar Flies…" before the first round trip.
@@ -112,6 +113,11 @@ function Playing({
   apply: (f: PlayerFrame) => void;
 }) {
   const you = frame.you!;
+  // A table that joined during the question in flight is in the room but not
+  // in THIS round, so the two phases where it would otherwise ACT are
+  // diverted before the switch. Everything else it gets as normal.
+  const out = sittingOutScreen(frame, msLeft);
+  if (out) return out;
   switch (frame.phase) {
     case 'setup':
     case 'lobby':
@@ -156,22 +162,7 @@ function Playing({
         </div>
       );
     case 'reveal':
-      return (
-        <div className="body">
-          <Clock msLeft={msLeft} note="until betting opens" />
-          <h2>Here&rsquo;s what the room said</h2>
-          <div className="slots">
-            {frame.slots.map((s) => (
-              <div key={s.id} className={`slot ${s.value === null ? 'pseudo' : ''}`}>
-                <div>
-                  <div className="val">{s.label}</div>
-                  {s.teams.length ? <div className="names">{s.teams.join(' · ')}</div> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <WatchingCards frame={frame} msLeft={msLeft} note="until betting opens" />;
     case 'betting':
       return <Betting frame={frame} msLeft={msLeft} onDone={apply} />;
     case 'scoring':
@@ -268,74 +259,20 @@ function TeamList({ frame }: { frame: PlayerFrame }) {
 // your team from this list": with twenty names on a TV screen that would be
 // an impersonation hole, so a table that lost its phone asks the host, who
 // can see who is asking.
+//
+// Lobby itself is only the router between the three states a phone with no
+// identity can be in — the game is over, the room is full, or there is a form
+// to fill in — because the form and the reclaim screen each carry their own
+// state and neither wants to know about the other.
 function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId: string; name: string }) => void }) {
-  const [name, setName] = useState('');
-  const [err, setErr] = useState('');
   const [mode, setMode] = useState<'join' | 'reclaim'>('join');
-  const [teamId, setTeamId] = useState('');
-  const [code, setCode] = useState('');
-  const running = useRef(false);
+
+  if (mode === 'reclaim') {
+    return <ReclaimForm frame={frame} onJoined={onJoined} onBack={() => setMode('join')} />;
+  }
 
   const full = frame.teams.length >= 20;
   const finished = frame.phase === 'podium';
-  // Joining mid-final is allowed — the room is still a room — but the wager
-  // is closed to anybody not already in it, so say that rather than letting a
-  // latecomer type a name and then find a dead slider.
-  const wagering = frame.phase === 'wager';
-
-  const doJoin = async () => {
-    if (running.current) return;
-    running.current = true;
-    try {
-      const v = await join(name);
-      writeLocal({ game: frame.game, teamId: v.teamId, name: v.name });
-      onJoined(v);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'could not join');
-    } finally {
-      running.current = false;
-    }
-  };
-
-  const doReclaim = async () => {
-    if (running.current) return;
-    running.current = true;
-    try {
-      await reclaim(teamId, code);
-      const v = await me();
-      if (v) {
-        writeLocal({ game: frame.game, teamId: v.teamId, name: v.name });
-        onJoined(v);
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'that code is not valid');
-    } finally {
-      running.current = false;
-    }
-  };
-
-  if (mode === 'reclaim') {
-    return (
-      <div className="body">
-        <h2>Get back in</h2>
-        <p className="sub">Ask the host for your table&rsquo;s code.</p>
-        <select className="field" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-          <option value="">Which table?</option>
-          {frame.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <input
-          className="field big" type="text" inputMode="numeric" maxLength={4}
-          placeholder="0000" value={code} onChange={(e) => setCode(e.target.value)}
-        />
-        <button className="btn" disabled={!teamId || code.length !== 4} onClick={() => void doReclaim()}>
-          Rejoin
-        </button>
-        <button className="btn ghost" onClick={() => setMode('join')}>Back</button>
-        <p className="err">{err}</p>
-      </div>
-    );
-  }
-
   return (
     <div className="body">
       {/* The night's name, big, so somebody who just scanned a QR can confirm
@@ -354,30 +291,128 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
           <TeamList frame={frame} />
         </>
       ) : (
-        <>
-          {wagering ? (
-            <div className="banner">
-              Final question &mdash; tables are setting their wagers. Join now and you&rsquo;ll
-              be watching this one.
-            </div>
-          ) : null}
-          <input
-            className="field" type="text" enterKeyHint="go" maxLength={40}
-            placeholder="your table&rsquo;s name" value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void doJoin(); }}
-          />
-          <button className="btn" disabled={!name.trim()} onClick={() => void doJoin()}>Join</button>
-          <p className="err">{err}</p>
-          {/* The live team list from the spectator stream, so a latecomer can
-              see the party is real before committing a name. */}
-          <TeamList frame={frame} />
-          <button className="btn ghost" onClick={() => setMode('reclaim')}>
-            Already playing? Get back in
-          </button>
-          <Rules frame={frame} />
-        </>
+        <JoinForm frame={frame} onJoined={onJoined} onReclaim={() => setMode('reclaim')} />
       )}
+    </div>
+  );
+}
+
+// The form, and the two things a latecomer has to be told before they use it.
+//
+// A bar fills up all night, so most tables join AFTER the first question, not
+// before it — the note is the normal path, not an edge case. Without it a
+// table types a name, lands on a waiting screen and concludes the app is
+// broken; with it, the wait is something they were told about.
+function JoinForm({ frame, onJoined, onReclaim }: {
+  frame: PlayerFrame;
+  onJoined: (v: { teamId: string; name: string }) => void;
+  onReclaim: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [err, setErr] = useState('');
+  const running = useRef(false);
+
+  const inProgress = frame.phase !== 'lobby' && frame.phase !== 'setup';
+  // The final is where the door shuts. The round in flight being final covers
+  // every phase the final passes through; the refusal text covers the race
+  // where the host started it between this frame landing and the tap.
+  const closing = !!frame.round?.isFinal || err.includes('this game is closing');
+
+  const doJoin = async () => {
+    if (running.current) return;
+    running.current = true;
+    try {
+      const v = await join(name);
+      writeLocal({ game: frame.game, teamId: v.teamId, name: v.name });
+      onJoined(v);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'could not join');
+    } finally {
+      running.current = false;
+    }
+  };
+
+  if (closing) {
+    // No form at all, because there is nothing left to join: a table arriving
+    // now could not answer the final, could not wager into it, and the next
+    // thing that happens is the podium. The standings go here instead, so
+    // somebody standing in the room can at least watch the end.
+    return (
+      <>
+        <div className="banner">The final question is under way — this game is closing</div>
+        <Standings frame={frame} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {inProgress ? (
+        <p className="sub">Game&rsquo;s in progress — you&rsquo;ll be in from the next question.</p>
+      ) : null}
+      <input
+        className="field" type="text" enterKeyHint="go" maxLength={40}
+        placeholder="your table&rsquo;s name" value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') void doJoin(); }}
+      />
+      <button className="btn" disabled={!name.trim()} onClick={() => void doJoin()}>Join</button>
+      <p className="err">{err}</p>
+      {/* The live team list from the spectator stream, so a latecomer can
+          see the party is real before committing a name. */}
+      <TeamList frame={frame} />
+      <button className="btn ghost" onClick={onReclaim}>Already playing? Get back in</button>
+      <Rules frame={frame} />
+    </>
+  );
+}
+
+// Getting back in with a code the host reads out. Its own component because
+// it shares nothing with the join form but the callback.
+function ReclaimForm({ frame, onJoined, onBack }: {
+  frame: PlayerFrame;
+  onJoined: (v: { teamId: string; name: string }) => void;
+  onBack: () => void;
+}) {
+  const [teamId, setTeamId] = useState('');
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState('');
+  const running = useRef(false);
+
+  const doReclaim = async () => {
+    if (running.current) return;
+    running.current = true;
+    try {
+      await reclaim(teamId, code);
+      const v = await me();
+      if (v) {
+        writeLocal({ game: frame.game, teamId: v.teamId, name: v.name });
+        onJoined(v);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'that code is not valid');
+    } finally {
+      running.current = false;
+    }
+  };
+
+  return (
+    <div className="body">
+      <h2>Get back in</h2>
+      <p className="sub">Ask the host for your table&rsquo;s code.</p>
+      <select className="field" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+        <option value="">Which table?</option>
+        {frame.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      <input
+        className="field big" type="text" inputMode="numeric" maxLength={4}
+        placeholder="0000" value={code} onChange={(e) => setCode(e.target.value)}
+      />
+      <button className="btn" disabled={!teamId || code.length !== 4} onClick={() => void doReclaim()}>
+        Rejoin
+      </button>
+      <button className="btn ghost" onClick={onBack}>Back</button>
+      <p className="err">{err}</p>
     </div>
   );
 }

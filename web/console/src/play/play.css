@@ -157,6 +157,14 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
   border: 2px solid var(--line); font-size: 14px; color: var(--muted);
 }
 
+/* The prompt on a sitting-out table's phone. Muted, because this table is not
+   answering it — but present, because it is already on the wall and playing
+   along in your head is the difference between waiting and being ignored. */
+.watching {
+  color: var(--dim); font-weight: 400;
+  padding-top: 12px; border-top: 2px solid var(--line);
+}
+
 /* The rules. Shown while joining and while waiting for the first question —
    the only two moments a player has nothing else to do. */
 .rules { margin-top: 8px; }

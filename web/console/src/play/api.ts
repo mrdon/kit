@@ -70,6 +70,11 @@ export interface WireYou {
   stake: number | null;
   delta: number | null;
   wroteWinner: boolean;
+  // Whether this table is in the round in flight, and which question it IS in
+  // from when it is not. inFromQuestion is omitted by the server for a table
+  // that is already in, so it is optional here rather than 0.
+  eligible: boolean;
+  inFromQuestion?: number;
 }
 
 // Who picks the next category. Public — every phone sees the same name, and
