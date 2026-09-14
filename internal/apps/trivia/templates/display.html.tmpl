@@ -35,9 +35,25 @@
 
   <!-- 2. board -->
   <section class="screen" id="s-board">
+    <div class="pick-callout" id="pick-callout"></div>
     <div class="board-grid" id="board-grid"></div>
   </section>
   <div id="flip" style="opacity:0"></div>
+
+  <!-- 2a. the wheel that draws who picks first. Shown once, on the way into
+       the first board of the night. -->
+  <section class="screen" id="s-wheel">
+    <div class="wheel-wrap">
+      <div class="wheel-title">WHO PICKS FIRST?</div>
+      <div class="wheel-stage">
+        <div class="wheel-disc" id="wheel-disc"></div>
+        <div class="wheel-labels" id="wheel-labels"></div>
+        <div class="wheel-hub"></div>
+        <div class="wheel-pointer"></div>
+      </div>
+      <div class="wheel-band" id="wheel-band"></div>
+    </div>
+  </section>
 
   <!-- 3. question -->
   <section class="screen" id="s-question">

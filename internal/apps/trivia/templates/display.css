@@ -151,7 +151,99 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 
 /* ---------- 2. board ---------- */
-.board-grid { display: grid; gap: 18px; height: 100%; grid-auto-rows: 1fr; }
+/* A column rather than the bare grid, because the callout above it is a row
+   the board has to make room for. The grid keeps `1fr` so it takes whatever
+   the callout leaves -- a board that overflowed the stage by the height of
+   one line would push the cheapest row of cells off the bottom. */
+#s-board.on { display: flex; flex-direction: column; gap: 20px; }
+.board-grid { display: grid; gap: 18px; flex: 1; min-height: 0; grid-auto-rows: 1fr; }
+
+/* Whose pick it is, across the top of the board. Absent (no tables in the
+   room) it collapses entirely rather than holding an empty band of stage. */
+.pick-callout { display: none; text-align: center; }
+.pick-callout.on { display: block; }
+/* inline-block AND nowrap, both load-bearing for the measure-and-fit loop. A
+   block-level line is as wide as the stage whatever it contains, so its
+   scrollWidth always reported an overflow and the loop shrank every name to
+   its floor; and a line allowed to wrap never reports one at all, it just
+   gets taller and silently eats a row of the board. */
+.pick-name { display: inline-block; font: 400 64px/1.05 var(--display); white-space: nowrap; }
+.pick-team { color: var(--gold); }
+.pick-verb { color: var(--muted); }
+.pick-why {
+  margin-top: 6px; font: 400 28px/1 var(--body); color: var(--dim);
+  letter-spacing: .16em; text-transform: uppercase;
+}
+
+/* ---------- 2a. the wheel ---------- */
+.wheel-wrap {
+  height: 100%; display: grid; grid-template-rows: auto 1fr auto;
+  gap: 18px; justify-items: center; align-content: center;
+}
+.wheel-title {
+  font: 400 54px/1 var(--display); color: var(--accent-l);
+  letter-spacing: .14em; text-transform: uppercase;
+}
+/* A fixed square rather than a percentage: everything on this stage is in
+   stage pixels, and the wheel's geometry (the seats' translate below) has to
+   agree with its radius exactly or the names drift off the rim. */
+.wheel-stage { position: relative; width: 700px; height: 700px; }
+.wheel-disc, .wheel-labels {
+  position: absolute; inset: 0; border-radius: 50%;
+  /* 3.5s, matching WHEEL_SPIN_MS. cubic-bezier with a near-flat tail is what
+     makes it read as a wheel losing momentum rather than a thing that
+     stopped: the last half-second covers about two degrees. */
+  transition: transform 3.5s cubic-bezier(.15, .8, .2, 1);
+}
+.wheel-disc { border: 10px solid var(--gold); box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+/* The labels ride in their own layer over the gradient, turning with it. A
+   conic-gradient cannot carry text, and a wheel whose names do not turn with
+   the wedges is a wheel that lands on the wrong table. */
+.wheel-labels { pointer-events: none; }
+/* One seat per wedge: rotated to the wedge's centre, its name pushed out to
+   the rim and counter-rotated back upright by JS. */
+.wheel-seat {
+  position: absolute; inset: 0; display: grid; justify-items: center;
+  /* start, not the default stretch: a stretched single row would fill the
+     whole disc and put the name at the centre instead of the rim. */
+  align-content: start; padding-top: 46px;
+}
+.wheel-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--body); font-weight: 800; color: var(--cream);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, .6);
+}
+.wheel-hub {
+  position: absolute; left: 50%; top: 50%; width: 96px; height: 96px;
+  margin: -48px 0 0 -48px; border-radius: 50%;
+  background: var(--navy-3); border: 8px solid var(--gold);
+}
+/* The pointer sits at twelve o'clock and never moves; the disc turns under
+   it. That is the same convention the landing rotation in wheel.js assumes. */
+.wheel-pointer {
+  position: absolute; left: 50%; top: -26px; margin-left: -26px;
+  width: 0; height: 0; z-index: 5;
+  border-left: 26px solid transparent; border-right: 26px solid transparent;
+  border-top: 54px solid var(--cream);
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .6));
+}
+/* The band under the wheel. Reserved height whether or not it is showing, so
+   the wheel does not jump up the stage when the name lands. */
+.wheel-band {
+  height: 150px; display: grid; place-items: center; opacity: 0;
+  transition: opacity .35s ease-out, transform .35s cubic-bezier(.2, .9, .3, 1.2);
+  transform: scale(.85);
+}
+.wheel-band.on { opacity: 1; transform: none; }
+.wheel-band-name {
+  display: block; font: 400 130px/1 var(--display); color: var(--gold);
+  white-space: nowrap; text-align: center;
+}
+.wheel-band-tail {
+  display: block; margin-top: 8px; text-align: center;
+  font: 400 38px/1 var(--display); color: var(--accent-l);
+  letter-spacing: .2em; text-transform: uppercase;
+}
 .cat {
   display: grid; place-items: center; text-align: center; padding: 10px;
   font: 400 42px/1.1 var(--display); letter-spacing: .1em; text-transform: uppercase;

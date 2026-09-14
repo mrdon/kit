@@ -1,8 +1,14 @@
 /* Screen 2: the board, and the flip that turns a tile into a question. */
 /* --- 2. board --- */
 function renderBoard(prev) {
+  // The first board of the night is a wheel, not a board: the server has
+  // already drawn who picks and this is where the room gets to watch it. It
+  // hands back here when it is done.
+  if (wheelIsDue()) { renderWheel(); return; }
+
   show('s-board');
   document.getElementById('gamename').style.visibility = '';
+  renderPickCallout();
   var grid = document.getElementById('board-grid');
   var cols = 0, rows = 0;
   state.board.forEach(function (c) {
@@ -28,6 +34,55 @@ function renderBoard(prev) {
   }
   if (prev && prev.phase === 'scoring') { /* returning from a round: no flip */ }
   fitCellValues();
+}
+
+/* Whose pick it is, across the top of the board.
+
+   The room cannot see the host's laptop, and "who picks next" is the one
+   thing between questions that decides what happens next. It used to be said
+   out loud and nowhere else, so a table that had wandered to the bar missed
+   it entirely. The reason rides underneath in small type because "why us?" is
+   the immediate follow-up question, and answering it on the wall saves the
+   host the argument. */
+function renderPickCallout() {
+  var box = document.getElementById('pick-callout');
+  box.innerHTML = '';
+  if (!state.picker) {
+    // No picker: a room where nobody has joined. Collapse rather than leave a
+    // gap the board could have used.
+    box.classList.remove('on');
+    return;
+  }
+  var line = el('div', 'pick-name');
+  line.appendChild(el('span', 'pick-team', state.picker.name));
+  line.appendChild(el('span', 'pick-verb', ' picks'));
+  box.appendChild(line);
+  var why = pickWhy(state.pickerReason);
+  if (why) { box.appendChild(el('div', 'pick-why', why)); }
+  box.classList.add('on');
+  fitPickCallout();
+}
+
+/* The reason in the room's words rather than the wire's. "drawn" never
+   appears here -- the wheel just showed the room exactly what that meant. */
+function pickWhy(reason) {
+  if (reason === 'wrote_winner') { return 'closest answer'; }
+  if (reason === 'lowest') { return 'lowest score picks'; }
+  return '';
+}
+
+/* A table's name is whatever somebody typed into a phone, and "The Quizzical
+   Beergoggles of Doom" at 64px is wider than the stage. Measure and shrink,
+   the same way the cell values and the join title do. */
+function fitPickCallout() {
+  var line = document.querySelector('#pick-callout .pick-name');
+  if (!line) { return; }
+  var size = 64;
+  line.style.fontSize = size + 'px';
+  while (line.scrollWidth > 1700 && size > 26) {
+    size -= 3;
+    line.style.fontSize = size + 'px';
+  }
 }
 
 /* $500 and $1,000 are different widths in Bungee, and 88px of the latter

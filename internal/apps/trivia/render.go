@@ -18,7 +18,7 @@ var templateFS embed.FS
 // matters for top-level statements, which is why core (the shared vars) is
 // first and boot (the first connect) is last.
 var tvScripts = []string{
-	"core.js", "join.js", "board.js", "question.js",
+	"core.js", "join.js", "board.js", "wheel.js", "question.js",
 	"cards.js", "scoring.js", "podium.js", "boot.js",
 }
 
