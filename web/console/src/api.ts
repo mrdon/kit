@@ -965,6 +965,7 @@ export const api = {
   updateTriviaGame: (id: string, settings: TriviaSettingsT) =>
     apiPatch<TriviaGameT>(`/trivia/games/${id}`, { settings }),
   deleteTriviaGame: (id: string) => apiDelete<void>(`/trivia/games/${id}`),
+  deleteAllTriviaGames: () => apiDelete<{ deleted: number }>('/trivia/games'),
   buildTriviaBoard: (id: string, topics: string[], auto: boolean) =>
     apiPost<HostFrameT>(`/trivia/games/${id}/board`, { topics, auto }),
   // The single host action endpoint. from_phase is what makes a double click

@@ -209,6 +209,22 @@ func DeleteGame(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID)
 	return nil
 }
 
+// DeleteAllGames clears every game in a workspace -- boards, teams, rounds
+// and scores go with them through the cascades -- and reports how many went.
+//
+// It exists for the reset between nights, and for the one sharp edge of the
+// stable TV address: that screen always follows the NEWEST game, so a stray
+// game somebody created for a test is the game on the wall until it is gone.
+// Deleting them one card at a time was fine at three games and a chore at
+// thirty.
+func DeleteAllGames(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (int, error) {
+	tag, err := pool.Exec(ctx, `DELETE FROM app_trivia_games WHERE tenant_id = $1`, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("deleting all trivia games: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // BoardCell is one tile: a topic column, a points row, and the question that
 // tile will ask.
 type BoardCell struct {

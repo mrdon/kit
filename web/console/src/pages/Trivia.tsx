@@ -20,7 +20,22 @@ export default function Trivia() {
   const [bank, setBank] = useState<{ total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // One id, or 'all' -- the same two-tap guard covers both.
   const [confirming, setConfirming] = useState<string | null>(null);
+
+  const removeAll = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.deleteAllTriviaGames();
+      setConfirming(null);
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const remove = async (id: string) => {
     setBusy(true);
@@ -71,9 +86,27 @@ export default function Trivia() {
             Point the TV at <code>{tvURL}</code> once and leave it — it follows the newest game.
           </p>
         </div>
-        <button className="btn" onClick={() => void create()} disabled={busy}>
-          New game
-        </button>
+        <div className="page-head-actions">
+          <button className="btn" onClick={() => void create()} disabled={busy}>
+            New game
+          </button>
+          {/* The reset between nights. The stable TV address follows the
+              newest game, so a stray test game is what's on the wall until
+              it is gone -- and clearing thirty of them one by one is a chore. */}
+          {games && games.length > 0 ? (
+            confirming === 'all' ? (
+              <>
+                <button className="btn btn-danger" disabled={busy}
+                  onClick={() => void removeAll()}>Really delete all {games.length}</button>
+                <button className="btn btn-danger" disabled={busy}
+                  onClick={() => setConfirming(null)}>Cancel</button>
+              </>
+            ) : (
+              <button className="btn btn-danger" disabled={busy}
+                onClick={() => setConfirming('all')}>Delete all games</button>
+            )
+          ) : null}
+        </div>
       </div>
 
       {err ? <p className="banner banner-error">{err}</p> : null}

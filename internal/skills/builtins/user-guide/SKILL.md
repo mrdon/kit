@@ -482,7 +482,7 @@ Building a board prefers questions the room hasn't heard recently, so a weekly q
 
 Cells are worth $100 and $200 by default, the same as the chips, which makes betting the larger half of the game: only the table that *wrote* the winning answer takes a cell, but every table places chips every round. Raise the cell values in Settings if you'd rather knowing the answer outweighed reading the room.
 
-**Put the TV on `/<your-slug>/trivia/tv` once and leave it.** That address always shows the newest game, so you never have to walk over and retype a URL — the same idea as a kiosk screen. Before the first game it shows a "no quiz tonight" card, and it picks up a new game on its own within about fifteen seconds. Each game also has its own screen address if you ever need to pin one night (two rooms, or reviewing an old game), but the stable one is what belongs on the wall.
+**Put the TV on `/<your-slug>/trivia/tv` once and leave it.** That address always shows the newest game, so you never have to walk over and retype a URL — the same idea as a kiosk screen. Before the first game it shows a "no quiz tonight" card, and it picks up a new game on its own within about fifteen seconds. Each game also has its own screen address if you ever need to pin one night (two rooms, or reviewing an old game), but the stable one is what belongs on the wall. Because it follows the newest game, a stray game somebody made for a test is what the screen shows until it is gone — **Delete all games** on the Trivia page clears the list in one go (it asks twice; scores go with the games).
 
 **Run it.** Put the QR code where people can scan it. Teams join by scanning; each table types its own name. Up to 20 teams.
 

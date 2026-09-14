@@ -29,6 +29,7 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/trivia/games/{id}", jsonRoute(a.handleGetGame))
 	mux.Handle("PATCH /{slug}/api/trivia/games/{id}", jsonRoute(a.handleUpdateGame))
 	mux.Handle("DELETE /{slug}/api/trivia/games/{id}", jsonRoute(a.handleDeleteGame))
+	mux.Handle("DELETE /{slug}/api/trivia/games", jsonRoute(a.handleDeleteAllGames))
 	mux.Handle("POST /{slug}/api/trivia/games/{id}/board", jsonRoute(a.handleBuildBoard))
 	mux.Handle("POST /{slug}/api/trivia/games/{id}/action", jsonRoute(a.handleAction))
 	mux.Handle("GET /{slug}/api/trivia/games/{id}/state", jsonRoute(a.handleHostState))
@@ -342,6 +343,20 @@ func (a *App) handleDeleteGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteAllGames is the reset button. Member-level like the single
+// delete: the person clearing last month's games is the person who ran
+// them, and the console asks twice before it sends this.
+func (a *App) handleDeleteAllGames(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	n, err := DeleteAllGames(r.Context(), a.pool, tenant.ID)
+	if err != nil {
+		serverError(w, "deleting all trivia games", err)
+		return
+	}
+	slog.Info("trivia: deleted all games", "tenant_id", tenant.ID, "count", n)
+	writeJSON(w, map[string]int{"deleted": n})
 }
 
 // handleAction is the ONE host endpoint. Every host click is the same shape --
