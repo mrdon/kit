@@ -66,6 +66,7 @@ export default function TriviaQuestions() {
     });
 
   const total = datasets.reduce((n, d) => n + d.questions, 0);
+  const fresh = datasets.reduce((n, d) => n + d.fresh, 0);
 
   return (
     <>
@@ -75,7 +76,7 @@ export default function TriviaQuestions() {
         <p className="page-sub">
           A set is a named group of questions. Games draw their board from whichever sets they
           pick, which is how a Christmas quiz stays separate from an ordinary Tuesday.
-          {total ? ` ${total} question${total === 1 ? '' : 's'} across ${datasets.length} set${datasets.length === 1 ? '' : 's'}.` : ''}
+          {total ? ` ${total} question${total === 1 ? '' : 's'} across ${datasets.length} set${datasets.length === 1 ? '' : 's'}, ${fresh} never asked.` : ''}
         </p>
       </div>
 
@@ -109,9 +110,12 @@ export default function TriviaQuestions() {
                   ) : (
                     <span className="card-title">{d.name}</span>
                   )}
+                  {/* Fresh leads, because "how many nights are left in this
+                      set" is the question a host actually has. A set at 0
+                      fresh is not empty — it has all been asked. */}
                   <span className="card-desc">
-                    {d.questions} question{d.questions === 1 ? '' : 's'} · {d.topics} topic
-                    {d.topics === 1 ? '' : 's'}
+                    {d.fresh} fresh of {d.questions} question{d.questions === 1 ? '' : 's'} ·{' '}
+                    {d.topics} topic{d.topics === 1 ? '' : 's'}
                     {d.builtin_key ? ' · shipped with Kit' : ''}
                     {d.notes ? ` · ${d.notes}` : ''}
                   </span>

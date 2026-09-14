@@ -23,6 +23,10 @@ export interface TriviaSettings {
   // that acted last gets the look-at-it beat everyone else had. 0 means close
   // immediately, which is what the game did before this existed.
   grace_seconds: number;
+  // Whether this game may draw on questions an earlier night already asked.
+  // Off by default: a question the room has heard is not a question, and the
+  // regulars are the people most likely to notice.
+  repeat_questions: boolean;
 }
 
 export interface TriviaGame {
@@ -47,6 +51,11 @@ export interface TriviaGame {
   settings: TriviaSettings;
 }
 
+// One bar of the setup page's category picker. `unused` means FRESH — no
+// round in a surviving game has asked it — which is not the same as "not on
+// a previous board": a board that was built and never finished spent
+// nothing. With repeats allowed on the game, every question counts as
+// available and this equals `total`.
 export interface TopicCount {
   key: string;
   label: string;
@@ -167,6 +176,9 @@ export interface Dataset {
   notes: string;
   builtin_key: string;
   questions: number;
+  // How many of those no game has asked yet — the number that says whether
+  // this set still has a night in it.
+  fresh: number;
   topics: number;
   created_at: string;
   updated_at: string;
@@ -274,5 +286,6 @@ export function defaultSettings(): TriviaSettings {
     bet_seconds: 45,
     wager_seconds: 30,
     grace_seconds: 5,
+    repeat_questions: false,
   };
 }

@@ -123,8 +123,8 @@ function DatasetPicker({
                     {d.name}
                   </label>
                   <span className="card-desc">
-                    {d.questions} question{d.questions === 1 ? '' : 's'} · {d.topics} topic
-                    {d.topics === 1 ? '' : 's'}
+                    {d.fresh} fresh of {d.questions} question{d.questions === 1 ? '' : 's'} ·{' '}
+                    {d.topics} topic{d.topics === 1 ? '' : 's'}
                   </span>
                 </div>
               </li>
@@ -283,6 +283,23 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         the podium and no stake control appears on any phone.
       </p>
 
+      {/* Locked with the rest once the game starts: the board is already
+          built by then, so flipping this halfway through a night would
+          change nothing except what the final draws from. */}
+      <label className="field">
+        <span>
+          <input type="checkbox" checked={s.repeat_questions} disabled={locked}
+            onChange={(e) => edit({ ...s, repeat_questions: e.target.checked })} />
+          {' '}Allow questions from past games
+        </span>
+      </label>
+      <p className="page-sub">
+        Off by default: a question this workspace has already asked will not come back, and the
+        regulars are exactly the people who would notice. Only questions that were actually read
+        out count — a cell nobody opened is still fresh — and deleting an old game puts its
+        questions back in the pot. Turn this on if your bank has run thin.
+      </p>
+
       {err ? <p className="banner banner-error">{err}</p> : null}
       {!locked ? <p className="page-sub">{saved ? 'Saved.' : 'Changes save themselves.'}</p> : null}
     </section>
@@ -308,7 +325,13 @@ function BoardPanel({
 
   const cols = game.settings?.board_columns ?? 5;
   const rows = game.settings?.board_rows ?? 2;
-  const viable = topics.filter((t) => t.total >= rows);
+  const repeats = game.settings?.repeat_questions ?? false;
+  // Viability is measured in FRESH questions, not total, because fresh is
+  // what the builder will actually be handed. Offering a category with nine
+  // questions the room has already heard and none it has not would walk the
+  // host straight into a shortfall. With repeats on the server reports
+  // everything as unused, so this is the same test either way.
+  const viable = topics.filter((t) => t.unused >= rows);
 
   const toggle = (key: string) => {
     setChosen((c) =>
@@ -337,13 +360,18 @@ function BoardPanel({
     <section className="panel">
       <h2>The board</h2>
       <p className="page-sub">
-        Pick {cols} categor{cols === 1 ? 'y' : 'ies'}, or hit Auto. Questions the room hasn&rsquo;t
-        heard recently are preferred, so a weekly quiz doesn&rsquo;t repeat itself.
+        Pick {cols} categor{cols === 1 ? 'y' : 'ies'}, or hit Auto.{' '}
+        {repeats
+          ? 'This game may reuse questions from past nights; the ones the room heard longest ago come first.'
+          : 'Only questions no game has asked yet are on offer — the count in brackets is what each category has left.'}
       </p>
 
       {viable.length === 0 ? (
         <p className="page-sub">
-          No category has {rows} question{rows === 1 ? '' : 's'} yet. Upload a sheet above.
+          No category has {rows} {repeats ? '' : 'fresh '}question{rows === 1 ? '' : 's'} left.{' '}
+          {repeats
+            ? 'Upload a sheet above.'
+            : 'Upload more questions, delete an old game to free the ones it asked, or allow repeats above.'}
         </p>
       ) : (
         <div className="teamlist">
@@ -353,13 +381,24 @@ function BoardPanel({
               className={chosen.includes(t.key) ? 'pill pill-ok' : 'pill'}
               onClick={() => toggle(t.key)}
             >
-              {t.label} · {t.total} ({t.unused} unused)
+              {t.label} · {t.total} ({t.unused} {repeats ? 'unused' : 'fresh'})
             </button>
           ))}
         </div>
       )}
 
-      {err ? <p className="banner banner-error">{err}</p> : null}
+      {/* A shortfall counted in FRESH questions is a different problem from
+          a shortfall counted in questions, and it has a different fix. Say
+          which one it is rather than leaving the host to hunt for questions
+          that are sitting in the set, already asked. */}
+      {err ? (
+        <p className="banner banner-error">
+          {err}
+          {err.includes('fresh question')
+            ? ' — allow repeats on this game, or upload more questions.'
+            : ''}
+        </p>
+      ) : null}
       <div className="page-head-actions">
         <button className="btn btn-spaced" onClick={() => void build(false)}
           disabled={busy || chosen.length !== cols}>
