@@ -81,7 +81,9 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .join {
   display: grid; grid-template-columns: minmax(0, 1fr) 720px;
   gap: 56px; height: 100%; align-items: center;
-  padding-bottom: 130px; /* the team pills sit along the bottom */
+  /* The team pills sit along the bottom, and how much bottom they need is the
+     size of the room. fitJoinPills measures the strip and sets this. */
+  padding-bottom: var(--pill-reserve, 130px);
 }
 .join > * { min-width: 0; }
 .join-left { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
@@ -116,10 +118,30 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   display: flex; flex-direction: column; gap: 8px;
 }
 .join-rules li::marker { color: var(--accent); font-weight: 700; }
-.join-qr svg { border-radius: 28px; background: #fff; padding: 0; width: 700px; height: 700px; max-width: 100%; }
-.join-pills { position: absolute; left: 64px; right: 64px; bottom: 48px; display: flex; flex-wrap: wrap; gap: 16px; }
+/* aspect-ratio rather than a fixed height, so that if the pills ever do claim
+   more of the stage than they are budgeted the code shrinks square instead of
+   being squashed into something no camera will read. */
+.join-qr svg {
+  border-radius: 28px; background: #fff; padding: 0;
+  width: 700px; height: auto; aspect-ratio: 1; max-width: 100%; max-height: 100%;
+}
+/* Twenty pills at the five-table size are four rows deep, and the strip only
+   ever had 130px reserved for it -- so a full room's pills climbed up over
+   the rules and under the QR, which is the one thing on this screen that has
+   to stay clean. `fitJoinPills` shrinks them to a budget and then tells the
+   grid above how much room it actually took. The values here are the
+   five-table look, untouched. */
+/* Deliberately unclipped and unbounded: the strip is anchored to the bottom
+   and grows upward, so its own height IS the measurement fitJoinPills shrinks
+   against. A max-height here would hide the overflow from the loop rather
+   than from the room. */
+.join-pills {
+  position: absolute; left: 64px; right: 64px; bottom: 48px;
+  display: flex; flex-wrap: wrap; gap: var(--pill-gap, 16px);
+}
 .pill {
-  font: 700 32px/1 var(--body); padding: 18px 28px; border-radius: 999px;
+  font: 700 var(--pill-size, 32px)/1 var(--body);
+  padding: var(--pill-pad-y, 18px) var(--pill-pad-x, 28px); border-radius: 999px;
   background: rgba(255, 255, 255, .09); border: 2px solid var(--line); color: var(--cream);
   animation: pill-in .35s cubic-bezier(.2, .9, .3, 1.2) both;
 }
@@ -195,8 +217,12 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   display: flex; gap: 12px; align-items: flex-end; justify-content: center;
   height: 90px; margin-bottom: 18px; flex-wrap: wrap;
 }
+/* Twenty bars at 64px plus their gaps is 1508px, so a full room fits the
+   strip as it stands -- but the strip has a fixed height and wrapping would
+   clip the second row, so the bars give up width rather than wrap. */
 .tbar {
-  width: 64px; background: rgba(255,255,255,.10); border-radius: 10px 10px 0 0;
+  flex: 0 1 64px; min-width: 26px;
+  background: rgba(255,255,255,.10); border-radius: 10px 10px 0 0;
   height: 30px; transition: height .35s, background .35s;
   display: grid; align-content: end; justify-items: center;
 }
