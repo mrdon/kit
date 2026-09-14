@@ -54,6 +54,7 @@ export default function TriviaLive() {
   }
 
   const secs = msLeft === null ? null : Math.ceil(msLeft / 1000);
+  const inLobby = frame.phase === 'lobby' || frame.phase === 'setup';
   // The cards earn the full width from the moment they go up until the round
   // is put away — that is the stretch where the host is reading them out,
   // watching chips land on them and calling the winner. Outside it they
@@ -82,9 +83,16 @@ export default function TriviaLive() {
           </p>
         </div>
         <div className="page-head-actions">
-          {/* Two taps: ending a game is not reversible and the button sits
-              next to the ones a host presses every round. */}
-          {ending ? (
+          {/* Before the night starts the only button that matters is Start,
+              and it belongs up here where the host is looking -- a page whose
+              header offered "End game" and buried "Start the game" halfway
+              down the panel read as a page with no start at all. Ending an
+              unstarted game is the list page's Delete. */}
+          {inLobby ? (
+            <button className="btn" disabled={busy} onClick={() => void act({ action: 'start' })}>
+              Start the game
+            </button>
+          ) : ending ? (
             <>
               <button className="btn btn-danger" disabled={busy}
                 onClick={() => void act({ action: 'finish' })}>
@@ -118,6 +126,7 @@ export default function TriviaLive() {
           {frame.phase === 'board' || frame.phase === 'podium' ? <LastRoundRecap frame={frame} /> : null}
         </section>
         <StatusPanel frame={frame} busy={busy} secs={secs} gameId={id}
+          skipReveal={game.settings.reveal_seconds === 0}
           onAct={(body) => void act(body)} />
         {showCards ? <Cards frame={frame} /> : null}
       </div>
