@@ -213,8 +213,19 @@ function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
   const leader = sorted[0];
   const behind = me && leader ? leader.score - me.score : 0;
 
+  // Whose pick it is, above the rank, because it is the only thing on this
+  // screen anybody has to ACT on: a table holding the pick has to shout a
+  // category at the host, and a table that is not gets a name to grumble at.
+  const picker = frame.picker;
+  const mine = !!picker && !!me && picker.teamId === me.teamId;
+
   return (
     <div className="body">
+      {picker ? (
+        mine
+          ? <h1 className="your-pick">It&rsquo;s your pick — tell the host which category</h1>
+          : <p className="sub" style={{ textAlign: 'center' }}>{picker.name} picks the next category</p>
+      ) : null}
       {me ? (
         <>
           <p className="sub" style={{ textAlign: 'center' }}>You&rsquo;re</p>
@@ -224,12 +235,12 @@ function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
           </div>
           <p className="sub" style={{ textAlign: 'center' }}>
             {rank === 1
-              ? 'Leading. Next question shortly.'
+              ? `Leading.${picker ? '' : ' Next question shortly.'}`
               : `${money(behind)} behind ${leader.name}.`}
           </p>
         </>
       ) : (
-        <h1>Next question shortly</h1>
+        picker ? null : <h1>Next question shortly</h1>
       )}
       <Standings frame={frame} />
     </div>

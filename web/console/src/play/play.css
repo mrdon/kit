@@ -180,6 +180,19 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 }
 .rank-hero .of { font-size: 22px; color: var(--dim); font-weight: 700; }
 
+/* "It's your pick." One table in the room gets this between questions, and it
+   is an INSTRUCTION rather than a status — they have to say a category out
+   loud before the night moves on — so it is sized and coloured to be seen by
+   a phone face-up on a table, not read by somebody already looking at it. */
+.your-pick {
+  text-align: center;
+  color: var(--gold);
+  border: 2px solid var(--gold);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(245, 196, 81, .08);
+}
+
 /* Drag-to-place. Tap is still primary — in a dark bar with greasy hands drag
    fights a scrolling list — but dragging is the gesture people reach for with
    something that looks like a casino chip, and it is how you move one that is

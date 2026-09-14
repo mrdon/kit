@@ -181,8 +181,7 @@ function cueBoard(frame: HostFrame): string {
     return 'Board is empty — the final is next';
   }
   if (boardEmpty) return 'Board is empty — take them to the podium';
-  if (frame.lastRound) return pickLine(frame.lastRound);
-  return 'Pick a cell to ask the first question';
+  return pickLine(frame) ?? 'Pick a cell to ask the first question';
 }
 
 function cueQuestion(frame: HostFrame, secs: number | null): string {

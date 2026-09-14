@@ -69,6 +69,16 @@ export interface WireYou {
   wroteWinner: boolean;
 }
 
+// Who picks the next category. Public — every phone sees the same name, and
+// only the table whose teamId matches is told it is their turn. The reason
+// rides alongside so the phone can say why without knowing the rule.
+export interface WirePicker {
+  teamId: string;
+  name: string;
+}
+
+export type PickerReason = '' | 'drawn' | 'wrote_winner' | 'lowest';
+
 export type Phase =
   | 'setup' | 'lobby' | 'board' | 'question'
   | 'reveal' | 'betting' | 'scoring' | 'podium';
@@ -87,6 +97,8 @@ export interface PlayerFrame {
   slots: WireSlot[];
   scoring: WireScoring | null;
   tokens: number[];
+  picker: WirePicker | null;
+  pickerReason: PickerReason;
   you: WireYou | null;
   // Served by the server, not written here, so the phone and the TV cannot
   // tell a room different games.

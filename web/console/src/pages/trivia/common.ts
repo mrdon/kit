@@ -114,6 +114,18 @@ export interface HostLastRound {
   betDeltas: Record<string, number>;
 }
 
+// Who picks the next category, and why it is theirs. Decided by the server —
+// the first one is drawn at random and announced on the TV with a wheel,
+// after that it follows the winning card. Every surface reads this field
+// rather than re-deriving the rule, so none of them can name a different
+// table.
+export interface Picker {
+  teamId: string;
+  name: string;
+}
+
+export type PickerReason = '' | 'drawn' | 'wrote_winner' | 'lowest';
+
 export interface HostFrame {
   version: number;
   game: string;
@@ -131,6 +143,8 @@ export interface HostFrame {
   answer: { value: number; text: string } | null;
   tokens: number[];
   progress: { cellsPlayed: number; cellsTotal: number; finalPlayed: boolean };
+  picker: Picker | null;
+  pickerReason: PickerReason;
 }
 
 // A dataset is a named set of questions. It is the only "set of questions"
@@ -208,6 +222,18 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
     case 'betting': return { action: 'score', label: 'Score the round' };
     case 'scoring': return { action: 'next', label: 'Next' };
     case 'podium': return null;
+  }
+}
+
+// The reason in the host's words, appended to the pick line. Short, because
+// it is read aloud over a room: the sentence has to end before anybody stops
+// listening.
+export function pickerWhy(reason: PickerReason): string {
+  switch (reason) {
+    case 'drawn': return 'drawn at random';
+    case 'wrote_winner': return 'wrote the winning answer';
+    case 'lowest': return 'lowest score picks';
+    default: return '';
   }
 }
 

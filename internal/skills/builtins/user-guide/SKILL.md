@@ -488,6 +488,8 @@ Cells are worth $100 and $200 by default, the same as the chips, which makes bet
 
 From the live page you pick a cell, then press one button per beat: **Reveal answers**, **Open betting**, **Score round**, **Next**. The clocks run themselves — 60 seconds to answer, 45 to bet by default — so you can put the laptop down. Closing the laptop doesn't stop the game: the timing lives on the server, and if everyone has answered the phase ends early rather than burning the clock.
 
+**Who picks the next category** is decided for you, so it is never the host's favourite. The first pick is drawn at random when you press Start — the TV spins a wheel with every table on it and lands on one. After that the pick goes to the table that wrote the winning answer; if several tables wrote it, to whichever of them is furthest behind, and if nobody wrote it at all, to the lowest-scoring table in the room. The board says whose pick it is and why, the live page gives you the same sentence to read out, and that table's phone says "it's your pick".
+
 **If a table's phone dies**, tap their name on the live page and read out the four-digit code it gives you. That's the only way back in, on purpose — with twenty names on a TV screen, letting somebody pick a team off a list would let anyone play as anyone.
 
 **The final wager** is the one round where a table risks its own money: they set a stake when they answer, before seeing anyone else's number, then put it on whichever revealed answer they like. Right doubles it, wrong loses it, and $0 is a real choice — it's the leader's defensive play. Nobody can finish below $0.

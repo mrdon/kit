@@ -1,4 +1,4 @@
-import { boardIsEmpty, money, type HostFrame, type HostLastRound, type HostTeam } from './common';
+import { boardIsEmpty, money, pickerWhy, type HostFrame, type HostTeam } from './common';
 
 // The round that has already been put away.
 //
@@ -8,12 +8,15 @@ import { boardIsEmpty, money, type HostFrame, type HostLastRound, type HostTeam 
 // nowhere else on the page, which is why this block gets the full width and a
 // heading rather than a line in the panel.
 
-export function pickLine(last: HostLastRound): string {
-  if (!last.winners.length) {
-    return 'Nobody wrote the winning card — you pick the next category';
-  }
-  const verb = last.winners.length > 1 ? 'pick' : 'picks';
-  return `${last.winners.join(' & ')} ${verb} the next category`;
+// The sentence the host reads out. It comes from frame.picker and NOT from
+// the last round any more: the winners of a round are one to many tables, say
+// nothing at all when the pseudo-slot took it, and do not exist before the
+// first question — which used to leave the host quietly picking for
+// themselves. The server settles all three and this just phrases it.
+export function pickLine(frame: HostFrame): string | null {
+  if (!frame.picker) return null;
+  const why = pickerWhy(frame.pickerReason);
+  return `${frame.picker.name} picks the next category${why ? ` · ${why}` : ''}`;
 }
 
 export function LastRoundRecap({ frame }: { frame: HostFrame }) {
@@ -22,11 +25,11 @@ export function LastRoundRecap({ frame }: { frame: HostFrame }) {
   const answer = last.correctText || String(last.correctValue);
   // With the board emptied there is no category left to pick, so saying so
   // would send the host looking for a cell that is not there.
-  const picks = frame.phase === 'board' && !boardIsEmpty(frame);
+  const picks = frame.phase === 'board' && !boardIsEmpty(frame) ? pickLine(frame) : null;
   return (
     <section className="panel trivia-recap">
       <h2>Last round · {last.isFinal ? 'the final' : `question ${last.ordinal}`}</h2>
-      {picks ? <p className="trivia-say">{pickLine(last)}</p> : null}
+      {picks ? <p className="trivia-say">{picks}</p> : null}
       <p className="card-desc">{last.text}</p>
       <p className="trivia-answer">
         Answer was <strong>{answer}</strong>
