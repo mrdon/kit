@@ -113,6 +113,12 @@ export function teamPill(frame: HostFrame, t: HostTeam): string {
 // that is locked-or-not and never the amount: the stake belongs to the phone
 // that typed it until the round is scored.
 export function teamState(frame: HostFrame, t: HostTeam): string {
+  // A table that joined mid-question is not waiting on anything — it is
+  // sitting this one out — so it gets the question it comes in on rather than
+  // a status it cannot act on. The ordinal is derived here rather than read
+  // off the team: `inFromQuestion` rides on the phone's private frame only,
+  // and the host already has the round in play.
+  if (!t.eligible && frame.round) return ` in from Q${frame.round.ordinal + 1}`;
   if (frame.phase === 'wager') return t.stakeLocked ? ' 🔒 locked' : ' waiting';
   if (frame.phase === 'question') return t.answered ? ' in' : ' waiting';
   if (frame.phase === 'betting') return ` ${t.chipsPlaced}/${frame.tokens.length}`;

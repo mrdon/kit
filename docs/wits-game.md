@@ -167,8 +167,11 @@ Decisions worth stating explicitly:
   at that point there is no answer to hang it on, and there may never be one: a table
   can wager and then fail to type a number, and its chip still plays.
 - **`teams.eligible_from_ordinal`** excludes a team joining mid-question from that
-  question's denominator. Without it, "12 of 20 answered" ticks *backwards* and the
-  "everyone's in" early-close never fires. Easy to miss, visibly breaks the TV.
+  question's denominator, and gates its answer *and* its chips for that round. Without
+  it, "12 of 20 answered" ticks *backwards* and the "everyone's in" early-close never
+  fires. Easy to miss, visibly breaks the TV. Joining stays open all night — a $0 seat
+  plus the betting and the final wager is still a real game — and closes only once the
+  current round `is_final`, in every phase the final passes through.
 - **`DOUBLE PRECISION`, not `NUMERIC`.** Every integer below 2^53 is exact and trivia
   answers live far below that, and it keeps the pure scoring engine free of `pgtype`
   imports.
