@@ -32,9 +32,13 @@ type Round struct {
 	// it opened. Same reasoning as Points: a played round must not change
 	// because somebody edited the bank afterwards -- and a live round must
 	// not have its answer swapped underneath it by a re-upload mid-game.
-	Prompt        string
-	AnswerValue   float64
-	AnswerText    string
+	Prompt      string
+	AnswerValue float64
+	AnswerText  string
+	// Topic is the category label, copied for the same reason. The wager
+	// phase puts it on the wall while the prompt is still withheld, so the
+	// round has to carry it independently of the question row.
+	Topic         string
 	IsFinal       bool
 	Ordinal       int
 	Points        int
@@ -44,13 +48,13 @@ type Round struct {
 }
 
 const roundColumns = `id, game_id, cell_id, question_id, prompt,
-	COALESCE(answer_value, 0), answer_text, is_final, ordinal, points,
+	COALESCE(answer_value, 0), answer_text, topic, is_final, ordinal, points,
 	winning_slot_id, started_at, scored_at`
 
 func scanRound(row pgx.Row) (*Round, error) {
 	var r Round
 	err := row.Scan(&r.ID, &r.GameID, &r.CellID, &r.QuestionID,
-		&r.Prompt, &r.AnswerValue, &r.AnswerText, &r.IsFinal, &r.Ordinal,
+		&r.Prompt, &r.AnswerValue, &r.AnswerText, &r.Topic, &r.IsFinal, &r.Ordinal,
 		&r.Points, &r.WinningSlotID, &r.StartedAt, &r.ScoredAt)
 	if err != nil {
 		return nil, err
@@ -162,27 +166,27 @@ func LastScoredRoundSummary(ctx context.Context, q Querier, tenantID, gameID uui
 	return &r, nil
 }
 
-// Answer is what one team typed. Stake is set only in a final, where it is
-// committed with the answer -- before the team has seen anyone else's number.
+// Answer is what one team typed. There is no stake here any more: migration
+// 098 moved the final's wager to its own table and its own phase, in front of
+// the question rather than alongside the answer. The column survives so
+// finals already played still read back; nothing writes it.
 type Answer struct {
 	TeamID      uuid.UUID
 	Value       float64
 	Raw         string
-	Stake       *int
 	SubmittedAt time.Time
 }
 
 // UpsertAnswer records or replaces a team's answer. Resubmitting until the
 // deadline is allowed on purpose -- and said so on the phone -- because
 // fat-finger anxiety on a 60-second clock is worse than a late edit.
-func UpsertAnswer(ctx context.Context, pool *pgxpool.Pool, tenantID, roundID, teamID uuid.UUID, value float64, raw string, stake *int) error {
+func UpsertAnswer(ctx context.Context, pool *pgxpool.Pool, tenantID, roundID, teamID uuid.UUID, value float64, raw string) error {
 	_, err := pool.Exec(ctx, `
-		INSERT INTO app_trivia_answers (tenant_id, round_id, team_id, value, raw, stake)
-		VALUES ($1,$2,$3,$4,$5,$6)
+		INSERT INTO app_trivia_answers (tenant_id, round_id, team_id, value, raw)
+		VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (tenant_id, round_id, team_id) DO UPDATE
-		   SET value = EXCLUDED.value, raw = EXCLUDED.raw,
-		       stake = EXCLUDED.stake, submitted_at = now()`,
-		tenantID, roundID, teamID, value, raw, stake)
+		   SET value = EXCLUDED.value, raw = EXCLUDED.raw, submitted_at = now()`,
+		tenantID, roundID, teamID, value, raw)
 	if err != nil {
 		return fmt.Errorf("upserting answer: %w", err)
 	}
@@ -192,7 +196,7 @@ func UpsertAnswer(ctx context.Context, pool *pgxpool.Pool, tenantID, roundID, te
 // ListAnswers returns a round's answers in submission order.
 func ListAnswers(ctx context.Context, q Querier, tenantID, roundID uuid.UUID) ([]Answer, error) {
 	rows, err := q.Query(ctx,
-		`SELECT team_id, value, raw, stake, submitted_at FROM app_trivia_answers
+		`SELECT team_id, value, raw, submitted_at FROM app_trivia_answers
 		  WHERE tenant_id = $1 AND round_id = $2 ORDER BY submitted_at, team_id`,
 		tenantID, roundID)
 	if err != nil {
@@ -202,7 +206,7 @@ func ListAnswers(ctx context.Context, q Querier, tenantID, roundID uuid.UUID) ([
 	var out []Answer
 	for rows.Next() {
 		var a Answer
-		if err := rows.Scan(&a.TeamID, &a.Value, &a.Raw, &a.Stake, &a.SubmittedAt); err != nil {
+		if err := rows.Scan(&a.TeamID, &a.Value, &a.Raw, &a.SubmittedAt); err != nil {
 			return nil, fmt.Errorf("scanning answer: %w", err)
 		}
 		out = append(out, a)

@@ -62,6 +62,10 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/trivia/{game}/join", pub(a.handleJoin))
 	mux.Handle("POST /{slug}/trivia/{game}/reclaim", pub(a.handleRedeemReclaim))
 	mux.Handle("POST /{slug}/trivia/{game}/answer", pub(a.handleAnswer))
+	// A PUT, like /bets and for the same reason: it is a statement of the
+	// desired wager rather than an event, so a retry over bar wifi is
+	// idempotent and a double-tap cannot stack two bets.
+	mux.Handle("PUT /{slug}/trivia/{game}/wager", pub(a.handleWager))
 	mux.Handle("PUT /{slug}/trivia/{game}/bets", pub(a.handleBet))
 	mux.Handle("GET /{slug}/trivia/{game}/state", pub(a.handlePlayerState))
 	mux.Handle("GET /{slug}/trivia/{game}/stream", pub(a.handlePlayerStream))
@@ -240,9 +244,11 @@ func (a *App) setTeamCookie(w http.ResponseWriter, r *http.Request, slug, gameNa
 	})
 }
 
+// answerRequest carries no stake since 098 -- the wager is committed a phase
+// earlier, through /wager. A stale phone still sending one is simply ignored
+// by the decoder, which is the right outcome: it is out of date, not hostile.
 type answerRequest struct {
 	Answer string `json:"answer"`
-	Stake  *int   `json:"stake"`
 }
 
 func (a *App) handleAnswer(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +265,7 @@ func (a *App) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		clientError(w, r, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	err := a.svc.SubmitAnswer(r.Context(), game.TenantID, game.ID, teamID, req.Answer, req.Stake)
+	err := a.svc.SubmitAnswer(r.Context(), game.TenantID, game.ID, teamID, req.Answer)
 	switch {
 	case errors.Is(err, ErrClosed):
 		clientError(w, r, http.StatusConflict, err.Error())
@@ -269,6 +275,49 @@ func (a *App) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		serverError(w, "submitting trivia answer", err)
+		return
+	}
+	a.writePlayerState(w, r, game, teamID)
+}
+
+type wagerRequest struct {
+	Amount int `json:"amount"`
+}
+
+// handleWager locks a table's blind bet on the final.
+//
+// 409 outside the wager phase, and that is the mechanic rather than a
+// validation rule: once the question is on the wall the amount is frozen. The
+// amount itself is never rejected -- the service clamps it to the table's bank
+// -- because a table that loses its final to a typo has been failed by the
+// software, not by the question.
+func (a *App) handleWager(w http.ResponseWriter, r *http.Request) {
+	game, _, ok := a.resolveGame(w, r)
+	if !ok {
+		return
+	}
+	teamID, ok := a.requireTeam(w, r, game)
+	if !ok {
+		return
+	}
+	var req wagerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		clientError(w, r, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	err := a.svc.SetWager(r.Context(), game.TenantID, game.ID, teamID, req.Amount)
+	switch {
+	case errors.Is(err, ErrClosed):
+		clientError(w, r, http.StatusConflict, "the wager is closed")
+		return
+	case errors.Is(err, ErrBadRequest):
+		clientError(w, r, http.StatusBadRequest, err.Error())
+		return
+	case errors.Is(err, ErrNotFound):
+		clientError(w, r, http.StatusBadRequest, "unknown table")
+		return
+	case err != nil:
+		serverError(w, "locking trivia wager", err)
 		return
 	}
 	a.writePlayerState(w, r, game, teamID)

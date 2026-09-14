@@ -193,11 +193,11 @@ func TestHTTPAcceptsBothChipsOnOneAnswer(t *testing.T) {
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
 
 	teamID, _, _ := ParseCookieValue(cookie.Value)
-	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, teamID, "10", nil)
+	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, teamID, "10")
 	teams, _ := ListTeams(f.ctx, f.pool, f.tenant.ID, game.ID)
 	for _, t2 := range teams {
 		if t2.ID != teamID {
-			_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, t2.ID, "20", nil)
+			_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, t2.ID, "20")
 		}
 	}
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
@@ -224,6 +224,72 @@ func TestHTTPAcceptsBothChipsOnOneAnswer(t *testing.T) {
 	}
 	if got := snap.Standings[teamID]; got != 300 {
 		t.Fatalf("standing = %d after a stacked win, want 300", got)
+	}
+}
+
+// The wager endpoint over HTTP: refused outside the phase, clamped inside it,
+// and never reachable without a cookie.
+//
+// The 409 is the mechanic rather than a validation rule. Once the question is
+// on the wall the amount is frozen, and a phone that missed the transition has
+// to be told so rather than quietly having its bet accepted late.
+func TestHTTPWagerOnlyInsideTheWagerPhase(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(oneCellSettings(), []string{"space"})
+	cookie := f.joinOverHTTP(game, "Bar Flies")
+	f.joinOverHTTP(game, "Quiz Khalifa")
+	teamID, _, _ := ParseCookieValue(cookie.Value)
+	teams, _ := ListTeams(f.ctx, f.pool, f.tenant.ID, game.ID)
+	var a, b *Team
+	for i := range teams {
+		if teams[i].ID == teamID {
+			a = &teams[i]
+		} else {
+			b = &teams[i]
+		}
+	}
+
+	path := f.gamePath(game) + "/wager"
+	// Lobby: nothing to bet on.
+	if rec := f.request(http.MethodPut, path, wagerRequest{Amount: 100}, cookie); rec.Code != http.StatusConflict {
+		t.Fatalf("wagering from the lobby returned %d, want 409", rec.Code)
+	}
+	// No cookie at all is a 401, not a silent no-op.
+	if rec := f.request(http.MethodPut, path, wagerRequest{Amount: 100}, nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("a wager with no identity returned %d, want 401", rec.Code)
+	}
+
+	f.openFinal(game, a, b)
+	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	bank := snap.Standings[a.ID]
+	if bank <= 0 {
+		t.Fatalf("the winner's bank is %d — nothing to wager", bank)
+	}
+
+	// Ten times the bank is CLAMPED, not rejected: a table must not lose its
+	// final to a typo.
+	rec := f.request(http.MethodPut, path, wagerRequest{Amount: bank * 10}, cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("wager returned %d: %s", rec.Code, rec.Body.String())
+	}
+	var frame PlayerFrame
+	if err := json.Unmarshal(rec.Body.Bytes(), &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.You == nil || frame.You.Stake == nil || *frame.You.Stake != bank {
+		t.Fatalf("the phone was told its wager is %+v, want it clamped to %d", frame.You, bank)
+	}
+	// And the response is still the wager phase's frame: a category, no
+	// question.
+	if frame.Round == nil || frame.Round.Text != "" || frame.Round.Category == "" {
+		t.Fatalf("the wager response leaked the question: %+v", frame.Round)
+	}
+
+	// The host asks the question; the bet is now frozen.
+	f.do(game.ID, ActionRequest{Action: ActionAsk, FromPhase: PhaseWager})
+	if rec := f.request(http.MethodPut, path, wagerRequest{Amount: 0}, cookie); rec.Code != http.StatusConflict {
+		t.Fatalf("wagering after the question went up returned %d, want 409", rec.Code)
 	}
 }
 
@@ -417,7 +483,7 @@ func TestTVVersionIsStableWhileAGameIsPlayed(t *testing.T) {
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "42", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "42"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -431,7 +497,7 @@ func TestTVVersionIsStableWhileAGameIsPlayed(t *testing.T) {
 	if _, err := UpdateSettings(f.ctx, f.pool, f.tenant.ID, game.ID, Settings{
 		Title: "Renamed Night", BoardRows: 2, BoardColumns: 5,
 		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
-		AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
+		AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45, WagerSeconds: 30,
 	}); err != nil {
 		t.Fatal(err)
 	}

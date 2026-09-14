@@ -77,10 +77,10 @@ func TestClusterSweepAdvancesOnceAndBuildsOneReveal(t *testing.T) {
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -125,10 +125,10 @@ func TestClusterSweepScoresARoundExactlyOnce(t *testing.T) {
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
 	correct := snapCorrect(t, f, game)
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, FormatValue(correct), nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, FormatValue(correct)); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, FormatValue(correct+1000), nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, FormatValue(correct+1000)); err != nil {
 		t.Fatal(err)
 	}
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
@@ -202,7 +202,7 @@ func TestClusterHostClickRacingTheSweepAdvancesOnce(t *testing.T) {
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10"); err != nil {
 		t.Fatal(err)
 	}
 

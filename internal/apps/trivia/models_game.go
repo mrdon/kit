@@ -19,19 +19,22 @@ import (
 // absolute server timestamp -- never a duration, never client-supplied --
 // which is what makes the host a controller rather than an authority.
 type Game struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	Name           string
-	Title          string
-	Phase          Phase
-	BoardRows      int
-	BoardColumns   int
-	CellValues     []int
-	TokenValues    []int
-	FinalWager     bool
-	AnswerSeconds  int
-	RevealSeconds  int
-	BetSeconds     int
+	ID            uuid.UUID
+	TenantID      uuid.UUID
+	Name          string
+	Title         string
+	Phase         Phase
+	BoardRows     int
+	BoardColumns  int
+	CellValues    []int
+	TokenValues   []int
+	FinalWager    bool
+	AnswerSeconds int
+	RevealSeconds int
+	BetSeconds    int
+	// WagerSeconds is the blind-bet clock in front of the final's question,
+	// and it is meaningless with FinalWager off -- the phase never opens.
+	WagerSeconds   int
 	CurrentRoundID *uuid.UUID
 	PhaseDeadline  *time.Time
 	StateVersion   int64
@@ -63,25 +66,26 @@ type Settings struct {
 	AnswerSeconds int    `json:"answer_seconds"`
 	RevealSeconds int    `json:"reveal_seconds"`
 	BetSeconds    int    `json:"bet_seconds"`
+	WagerSeconds  int    `json:"wager_seconds"`
 }
 
 const gameColumns = `id, tenant_id, name, title, phase, board_rows, board_columns,
 	cell_values, token_values, final_wager, answer_seconds, reveal_seconds, bet_seconds,
-	current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
+	wager_seconds, current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
 	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, '')`
 
 // gameColumnsQualified is the same list with a table alias, for the one query
 // that joins tenants.
 const gameColumnsQualified = `g.id, g.tenant_id, g.name, g.title, g.phase, g.board_rows, g.board_columns,
 	g.cell_values, g.token_values, g.final_wager, g.answer_seconds, g.reveal_seconds, g.bet_seconds,
-	g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
+	g.wager_seconds, g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
 	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, '')`
 
 func scanGame(row pgx.Row) (*Game, error) {
 	var g Game
 	err := row.Scan(&g.ID, &g.TenantID, &g.Name, &g.Title, &g.Phase,
 		&g.BoardRows, &g.BoardColumns, &g.CellValues, &g.TokenValues, &g.FinalWager,
-		&g.AnswerSeconds, &g.RevealSeconds, &g.BetSeconds,
+		&g.AnswerSeconds, &g.RevealSeconds, &g.BetSeconds, &g.WagerSeconds,
 		&g.CurrentRoundID, &g.PhaseDeadline, &g.StateVersion,
 		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode,
 		&g.PickerTeamID, &g.PickerReason)
@@ -96,11 +100,13 @@ func CreateGame(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 	g, err := scanGame(pool.QueryRow(ctx, `
 		INSERT INTO app_trivia_games
 		    (tenant_id, name, title, phase, board_rows, board_columns, cell_values, token_values,
-		     final_wager, answer_seconds, reveal_seconds, bet_seconds, created_by, join_code)
-		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		     final_wager, answer_seconds, reveal_seconds, bet_seconds, wager_seconds,
+		     created_by, join_code)
+		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING `+gameColumns,
 		tenantID, name, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
-		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, createdBy, NewJoinCode()))
+		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds,
+		createdBy, NewJoinCode()))
 	if err != nil {
 		return nil, fmt.Errorf("inserting trivia game: %w", err)
 	}
@@ -165,12 +171,12 @@ func UpdateSettings(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.U
 		UPDATE app_trivia_games
 		   SET title = $3, board_rows = $4, board_columns = $5, cell_values = $6,
 		       token_values = $7, final_wager = $8, answer_seconds = $9,
-		       reveal_seconds = $10, bet_seconds = $11,
+		       reveal_seconds = $10, bet_seconds = $11, wager_seconds = $12,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2
 		RETURNING `+gameColumns,
 		tenantID, id, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
-		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds))
+		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

@@ -126,12 +126,19 @@ type wireScoring struct {
 }
 
 // wireRound is the question in play, WITHOUT its answer.
+//
+// Text and Category are separately withheld, which is the wager phase's whole
+// requirement: the room is shown a category and a clock and must not be able
+// to read the prompt out of a frame it already has. So during `wager` this
+// struct ships with Category set and Text empty, and the prompt does not exist
+// on any public surface until the phase closes.
 type wireRound struct {
 	ID       string `json:"id"`
 	IsFinal  bool   `json:"isFinal"`
 	Ordinal  int    `json:"ordinal"`
 	Points   int    `json:"points"`
 	Text     string `json:"text"`
+	Category string `json:"category"`
 	Answered int    `json:"answered"`
 	Eligible int    `json:"eligible"`
 }
@@ -206,10 +213,17 @@ func revealed(s *Snapshot) bool {
 	switch s.Phase {
 	case PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseQuestion:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager, PhaseQuestion:
 		return false
 	}
 	return false
+}
+
+// roundVisible reports whether there is anything at all to say about the round
+// in play. True one phase earlier than questionVisible, because `wager` shows
+// the category, the ordinal and the clock with the prompt still withheld.
+func roundVisible(s *Snapshot) bool {
+	return questionVisible(s) || s.Phase == PhaseWager
 }
 
 // questionVisible reports whether the prompt may be shown. It is on screen in
@@ -219,7 +233,10 @@ func questionVisible(s *Snapshot) bool {
 	switch s.Phase {
 	case PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager:
+		// WAGER IS THE LOAD-BEARING ONE. The final's prompt must not reach a
+		// phone or a TV while the room is still committing money against the
+		// category, and this is the line that stops it.
 		return false
 	}
 	return false
@@ -273,8 +290,8 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 	// this file. publicTeams carries stakeLocked and stops there, so the TV
 	// and the other nineteen phones know a table has committed without
 	// knowing to what -- and the phone that staked it can show the table its
-	// own number, in the betting phase especially, where its single chip IS
-	// the stake.
+	// own number: on the wager screen, where "Locked in" has to name the
+	// amount, and in betting, where its single chip IS the wager.
 	if team.Stake != nil {
 		stake := *team.Stake
 		you.Stake = &stake
@@ -324,15 +341,24 @@ func publicBoard(s *Snapshot) []wireCell {
 
 // publicRound carries the prompt but never the answer. The answer lives in
 // SnapRound by necessity; this function is where it stops.
+//
+// It is also where the PROMPT stops during `wager`: the category goes out, the
+// question does not, and the field is left empty rather than the whole round
+// being withheld -- the wager screen needs the ordinal, the category and the
+// eligible count to render at all.
 func publicRound(s *Snapshot) *wireRound {
-	if s.Round == nil || !questionVisible(s) {
+	if s.Round == nil || !roundVisible(s) {
 		return nil
 	}
-	return &wireRound{
+	w := &wireRound{
 		ID: s.Round.ID.String(), IsFinal: s.Round.IsFinal, Ordinal: s.Round.Ordinal,
-		Points: s.Round.Points, Text: s.Round.Text,
+		Points: s.Round.Points, Category: s.Round.Topic,
 		Answered: s.Round.AnsweredCount, Eligible: s.Round.EligibleCount,
 	}
+	if questionVisible(s) {
+		w.Text = s.Round.Text
+	}
+	return w
 }
 
 // betsVisible reports whether other tables' chips may be shown.
@@ -355,7 +381,7 @@ func betsVisible(s *Snapshot) bool {
 	switch s.Phase {
 	case PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseQuestion, PhaseReveal:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager, PhaseQuestion, PhaseReveal:
 		return false
 	}
 	return false

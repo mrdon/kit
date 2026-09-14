@@ -16,16 +16,24 @@ import (
 // without matching on pgx.ErrNoRows all over the place.
 var ErrNotFound = errors.New("trivia: not found")
 
-// Phase names where a game is in its lifecycle. There is deliberately no
-// separate phase for the final: it re-enters PhaseQuestion with the round
-// marked final, so every screen, timer and transition already handles it.
+// Phase names where a game is in its lifecycle.
+//
+// The final adds exactly ONE phase, and only because it has to: `wager` is
+// where the room commits an amount with the question still unread. Everything
+// after it is the ordinary machinery -- the final re-enters PhaseQuestion with
+// the round marked final, and reveal, betting and scoring never learn that
+// this round was different.
 type Phase string
 
-// The eight phases. See the state machine in service.go.
+// The nine phases. See the state machine in service.go.
 const (
-	PhaseSetup    Phase = "setup"
-	PhaseLobby    Phase = "lobby"
-	PhaseBoard    Phase = "board"
+	PhaseSetup Phase = "setup"
+	PhaseLobby Phase = "lobby"
+	PhaseBoard Phase = "board"
+	// PhaseWager precedes the final's question and only the final's. The
+	// category is on the wall, the prompt is not, and every eligible table
+	// locks a number before it learns what it is betting on.
+	PhaseWager    Phase = "wager"
 	PhaseQuestion Phase = "question"
 	PhaseReveal   Phase = "reveal"
 	PhaseBetting  Phase = "betting"

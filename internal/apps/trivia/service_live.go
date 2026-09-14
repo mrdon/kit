@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // ErrPhaseConflict means the host clicked from a phase the game has already
@@ -29,6 +30,7 @@ type Action string
 const (
 	ActionStart       Action = "start"
 	ActionPickCell    Action = "pick_cell"
+	ActionAsk         Action = "ask"
 	ActionReveal      Action = "reveal"
 	ActionOpenBetting Action = "open_betting"
 	ActionScore       Action = "score"
@@ -104,6 +106,11 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	case ActionPickCell:
 		return s.openCell(ctx, game, req.CellID)
+	case ActionAsk:
+		// The wager clock cut short by a human: every table has committed (or
+		// the host has decided the stragglers have had long enough) and the
+		// question goes up.
+		return s.closePhase(ctx, game, PhaseWager, false)
 	case ActionReveal:
 		return s.closePhase(ctx, game, PhaseQuestion, false)
 	case ActionOpenBetting:
@@ -191,13 +198,31 @@ func (s *Service) openCell(ctx context.Context, game *Game, cellID *uuid.UUID) e
 	if cell.PlayedAt != nil {
 		return fmt.Errorf("%w: that cell has already been played", ErrPhaseConflict)
 	}
-	return s.startRound(ctx, game, cell.QuestionID, &cell.ID, cell.Points, false)
+	return s.startRound(ctx, game, roundSeed{
+		QuestionID: cell.QuestionID, CellID: &cell.ID,
+		Points: cell.Points, Topic: cell.Topic,
+	})
 }
 
-// openFinal starts the one round that stakes a team's own money. It re-enters
-// PhaseQuestion with is_final set: no new phase, no new table, and the
-// partial unique index on (tenant_id, game_id) WHERE is_final means a second
-// "final" click cannot open a second one.
+// roundSeed is everything a round needs to exist, gathered by whichever of
+// openCell/openFinal is opening it. Two call sites and six values is exactly
+// where a parameter list stops being readable.
+type roundSeed struct {
+	QuestionID uuid.UUID
+	CellID     *uuid.UUID
+	Points     int
+	// Topic is the column a board round came from. Empty for a final, whose
+	// category is looked up from the question inside the transaction.
+	Topic   string
+	IsFinal bool
+}
+
+// openFinal starts the one round that stakes a team's own money.
+//
+// It opens into PhaseWager rather than PhaseQuestion: the room sees the
+// category and a clock, commits an amount, and only then is the question read
+// out. The partial unique index on (tenant_id, game_id) WHERE is_final means a
+// second "final" click cannot open a second one.
 func (s *Service) openFinal(ctx context.Context, game *Game, questionID *uuid.UUID) error {
 	if !game.FinalWager {
 		// With the final switched off this action does not exist. The host
@@ -227,68 +252,120 @@ func (s *Service) openFinal(ctx context.Context, game *Game, questionID *uuid.UU
 	if len(game.CellValues) > 0 {
 		points = game.CellValues[len(game.CellValues)-1]
 	}
-	return s.startRound(ctx, game, qID, nil, points, true)
+	return s.startRound(ctx, game, roundSeed{QuestionID: qID, Points: points, IsFinal: true})
 }
 
-// startRound writes the round, marks its cell played, and arms the answer
+// startRound writes the round, marks its cell played, and arms the opening
 // clock -- all in one transaction, so a game can never be pointed at a round
 // that does not exist.
-func (s *Service) startRound(ctx context.Context, game *Game, questionID uuid.UUID, cellID *uuid.UUID, points int, isFinal bool) error {
+func (s *Service) startRound(ctx context.Context, game *Game, seed roundSeed) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning round: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var ordinal int
-	if err := tx.QueryRow(ctx,
-		`SELECT COALESCE(max(ordinal), 0) + 1 FROM app_trivia_rounds WHERE tenant_id = $1 AND game_id = $2`,
-		game.TenantID, game.ID).Scan(&ordinal); err != nil {
-		return fmt.Errorf("computing round ordinal: %w", err)
-	}
-
-	// Copy the question onto the round as it opens. From here the round is
-	// self-contained: the recap, the scoring and the TV all read this copy,
-	// so a re-upload or a deleted dataset cannot change what the room was
-	// asked or what it was marked against.
-	question, err := getQuestionTx(ctx, tx, game.TenantID, questionID)
+	roundID, err := insertRoundTx(ctx, tx, game, seed)
 	if err != nil {
 		return err
 	}
-
-	var roundID uuid.UUID
-	err = tx.QueryRow(ctx, `
-		INSERT INTO app_trivia_rounds
-		    (tenant_id, game_id, cell_id, question_id, prompt, answer_value, answer_text,
-		     is_final, ordinal, points)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-		game.TenantID, game.ID, cellID, questionID,
-		question.Prompt, question.AnswerValue, question.AnswerText,
-		isFinal, ordinal, points).Scan(&roundID)
-	if err != nil {
-		return fmt.Errorf("inserting round: %w", err)
-	}
-	if cellID != nil {
+	if seed.CellID != nil {
 		if _, err := tx.Exec(ctx,
 			`UPDATE app_trivia_board_cells SET played_at = now()
 			  WHERE tenant_id = $1 AND id = $2 AND played_at IS NULL`,
-			game.TenantID, *cellID); err != nil {
+			game.TenantID, *seed.CellID); err != nil {
 			return fmt.Errorf("marking cell played: %w", err)
 		}
 	}
-	deadline := time.Now().UTC().Add(time.Duration(game.AnswerSeconds) * time.Second)
+	phase, deadline := openingPhase(game, seed.IsFinal)
 	if _, err := tx.Exec(ctx, `
 		UPDATE app_trivia_games
 		   SET phase = $3, phase_deadline = $4, current_round_id = $5,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2`,
-		game.TenantID, game.ID, PhaseQuestion, deadline, roundID); err != nil {
-		return fmt.Errorf("arming question phase: %w", err)
+		game.TenantID, game.ID, phase, deadline, roundID); err != nil {
+		return fmt.Errorf("arming %s phase: %w", phase, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing round: %w", err)
 	}
 	return nil
+}
+
+// openingPhase is where a round lands the moment it opens, and how long it
+// has there.
+//
+// A board round goes straight to the question. The final stops at `wager`
+// first, which is the ONE structural difference between the two: the room
+// commits an amount against a category, and the prompt does not exist on any
+// public surface until that clock runs out.
+func openingPhase(game *Game, isFinal bool) (Phase, time.Time) {
+	now := time.Now().UTC()
+	if isFinal {
+		return PhaseWager, now.Add(time.Duration(game.WagerSeconds) * time.Second)
+	}
+	return PhaseQuestion, now.Add(time.Duration(game.AnswerSeconds) * time.Second)
+}
+
+// insertRoundTx copies the question onto a new round.
+//
+// From here the round is self-contained: the recap, the scoring, the wager
+// screen and the TV all read this copy, so a re-upload or a deleted dataset
+// cannot change what the room was asked, what it was marked against, or what
+// category it was told it was betting on.
+func insertRoundTx(ctx context.Context, tx pgx.Tx, game *Game, seed roundSeed) (uuid.UUID, error) {
+	var ordinal int
+	if err := tx.QueryRow(ctx,
+		`SELECT COALESCE(max(ordinal), 0) + 1 FROM app_trivia_rounds WHERE tenant_id = $1 AND game_id = $2`,
+		game.TenantID, game.ID).Scan(&ordinal); err != nil {
+		return uuid.Nil, fmt.Errorf("computing round ordinal: %w", err)
+	}
+	question, err := getQuestionTx(ctx, tx, game.TenantID, seed.QuestionID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	topic := seed.Topic
+	if topic == "" {
+		// A final has no board column to inherit, so its category is the
+		// question's own first topic. Blank is survivable -- the wager screen
+		// simply has no category line -- so a question filed under nothing
+		// does not stop the final opening.
+		if topic, err = firstTopicTx(ctx, tx, game.TenantID, seed.QuestionID); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	var roundID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		INSERT INTO app_trivia_rounds
+		    (tenant_id, game_id, cell_id, question_id, prompt, answer_value, answer_text,
+		     topic, is_final, ordinal, points)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+		game.TenantID, game.ID, seed.CellID, seed.QuestionID,
+		question.Prompt, question.AnswerValue, question.AnswerText,
+		topic, seed.IsFinal, ordinal, seed.Points).Scan(&roundID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("inserting round: %w", err)
+	}
+	return roundID, nil
+}
+
+// firstTopicTx reads a question's category, alphabetically first when it
+// carries several. Alphabetical rather than "whichever the index returns"
+// because the room is shown this string and a final reopened from a backup
+// should say the same word it said the first time.
+func firstTopicTx(ctx context.Context, tx pgx.Tx, tenantID, questionID uuid.UUID) (string, error) {
+	var topic string
+	err := tx.QueryRow(ctx, `
+		SELECT topic FROM app_trivia_question_topics
+		 WHERE tenant_id = $1 AND question_id = $2
+		 ORDER BY topic_key LIMIT 1`, tenantID, questionID).Scan(&topic)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("reading question topic: %w", err)
+	}
+	return topic, nil
 }
 
 // afterScoring is the host's "next": back to the board, or -- when the board

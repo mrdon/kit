@@ -78,12 +78,12 @@ type SnapTeam struct {
 	StakeLocked bool
 	ChipsPlaced int
 
-	// Stake is the final's locked wager, and it is the one number in here
-	// that only ONE surface may ever see. StakeLocked is the public tell --
-	// the room knows a table has committed -- while the amount rides down to
-	// that table's own phone and nowhere else: not knowing whether the leader
-	// defended or sat out is most of the tension. Nil outside a final, and
-	// nil for a table that has not locked one in yet.
+	// Stake is the final's locked wager, read off the wager row, and it is
+	// the one number in here that only ONE surface may ever see. StakeLocked
+	// is the public tell -- the room knows a table has committed -- while the
+	// amount rides down to that table's own phone and nowhere else: not
+	// knowing whether the leader defended or sat out is most of the tension.
+	// Nil outside a final, and nil for a table that has not locked one in yet.
 	Stake *int
 }
 
@@ -104,6 +104,11 @@ type SnapRound struct {
 	Ordinal int
 	Points  int
 	Text    string
+
+	// Topic is the category. It is the ONE thing about the question that the
+	// wager phase may show -- the room bets on a word, not on a prompt -- so
+	// it has to be separable from Text all the way out to the wire.
+	Topic string
 
 	// CorrectValue and CorrectText are host-only until scoring. They live
 	// here because the snapshot is the single source every surface projects

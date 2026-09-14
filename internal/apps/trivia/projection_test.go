@@ -43,6 +43,7 @@ func snapshotIn(phase Phase, scored bool) (*Snapshot, uuid.UUID) {
 		Round: &SnapRound{
 			ID: fixedID("cdcdcdcd", "cdcd", "cdcd", "cdcd", "cdcdcdcdcdcd"), Ordinal: 3, Points: 500,
 			Text:         "How many metres tall is the Eiffel Tower?",
+			Topic:        "Landmarks",
 			CorrectValue: 867530.0, CorrectText: "867530",
 			AnsweredCount: 1, EligibleCount: 2,
 		},
@@ -68,7 +69,8 @@ func snapshotIn(phase Phase, scored bool) (*Snapshot, uuid.UUID) {
 // this is the only thing standing between it and twenty phones.
 func TestProjectionsNeverLeakTheAnswer(t *testing.T) {
 	const answer = "867530"
-	preScoring := []Phase{PhaseSetup, PhaseLobby, PhaseBoard, PhaseQuestion, PhaseReveal, PhaseBetting}
+	preScoring := []Phase{PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager,
+		PhaseQuestion, PhaseReveal, PhaseBetting}
 
 	for _, phase := range preScoring {
 		snap, teamID := snapshotIn(phase, false)
@@ -213,6 +215,48 @@ func finalWithStake(phase Phase) (*Snapshot, uuid.UUID, int) {
 	return snap, teamA, stake
 }
 
+// The wager phase's ONE rule: the room bets against a category, and the
+// prompt does not exist on any public surface until the phase closes.
+//
+// A substring search over the marshalled frame rather than a field check,
+// because the way this breaks is somebody widening a public struct later and
+// the prompt riding out on a field nobody was thinking about.
+func TestWagerPhaseCarriesTheCategoryAndNotTheQuestion(t *testing.T) {
+	snap, teamA, _ := finalWithStake(PhaseWager)
+	const prompt = "Eiffel Tower"
+
+	frames := map[string]any{
+		"the TV":      ProjectDisplay(snap),
+		"the phone":   ProjectPlayer(snap, teamA),
+		"a spectator": ProjectPlayer(snap, uuid.Nil),
+	}
+	for label, frame := range frames {
+		raw, err := json.Marshal(frame)
+		if err != nil {
+			t.Fatalf("marshalling %s: %v", label, err)
+		}
+		if strings.Contains(string(raw), prompt) {
+			t.Fatalf("%s carries the final's question during the wager:\n%s", label, raw)
+		}
+		if !strings.Contains(string(raw), "Landmarks") {
+			t.Fatalf("%s has no category to bet against:\n%s", label, raw)
+		}
+	}
+
+	// And the round itself is present -- the wager screen needs its ordinal
+	// and its eligible count -- with the text field simply empty.
+	r := ProjectDisplay(snap).Round
+	if r == nil || r.Category != "Landmarks" || r.Text != "" || !r.IsFinal {
+		t.Fatalf("wager round = %+v, want the category with no text", r)
+	}
+
+	// One phase later the prompt is public, on the same snapshot.
+	snap.Phase = PhaseQuestion
+	if got := ProjectDisplay(snap).Round; got == nil || !strings.Contains(got.Text, prompt) {
+		t.Fatalf("the question never appeared once the wager closed: %+v", got)
+	}
+}
+
 // The final's tension is that nobody knows whether the leader defended or sat
 // out. The TV shows LOCKED, never the amount, until scoring.
 func TestPublicFramesShowStakeLockedWithoutTheAmount(t *testing.T) {
@@ -233,7 +277,10 @@ func TestPublicFramesShowStakeLockedWithoutTheAmount(t *testing.T) {
 // that phone's single chip IS the stake, and with nothing to render it the
 // chip read $0 -- and it must reach no other surface.
 func TestOwnStakeReachesOnlyTheTableThatStakedIt(t *testing.T) {
-	for _, phase := range []Phase{PhaseQuestion, PhaseBetting} {
+	// The wager phase is in this list because that is where the amount is
+	// typed: "Locked in — $7,400" has to render on the phone that typed it
+	// while the other nineteen see only a lit pip.
+	for _, phase := range []Phase{PhaseWager, PhaseQuestion, PhaseBetting} {
 		snap, teamA, stake := finalWithStake(phase)
 
 		own := ProjectPlayer(snap, teamA)

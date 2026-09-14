@@ -153,6 +153,26 @@ func (s *Service) everyoneIn(ctx context.Context, game *Game) (bool, error) {
 	}
 
 	switch game.Phase {
+	case PhaseWager:
+		// Everybody has put their money up, with nobody having seen the
+		// question. Holding the room on a countdown at that point is twenty
+		// seconds of silence before the one moment of the night everybody
+		// came for.
+		wagers, err := ListWagers(ctx, s.pool, game.TenantID, round.ID)
+		if err != nil {
+			return false, err
+		}
+		in := map[uuid.UUID]bool{}
+		for _, w := range wagers {
+			in[w.TeamID] = true
+		}
+		for _, id := range eligible {
+			if !in[id] {
+				return false, nil
+			}
+		}
+		return true, nil
+
 	case PhaseQuestion:
 		answers, err := ListAnswers(ctx, s.pool, game.TenantID, round.ID)
 		if err != nil {

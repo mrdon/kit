@@ -29,7 +29,7 @@ func (f *fixture) playOneRound(game *Game, answers map[uuid.UUID]string) *Game {
 	}
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
 	for teamID, raw := range answers {
-		if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, teamID, raw, nil); err != nil {
+		if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, teamID, raw); err != nil {
 			f.t.Fatalf("SubmitAnswer: %v", err)
 		}
 	}
@@ -72,10 +72,10 @@ func TestRoundFlowEndToEnd(t *testing.T) {
 	correct := snap.Round.CorrectValue
 
 	// One team is exactly right, the other overshoots.
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, FormatValue(correct), nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, FormatValue(correct)); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, FormatValue(correct+50), nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, FormatValue(correct+50)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,45 +149,142 @@ func TestDoubleClickedActionIsRefused(t *testing.T) {
 	}
 }
 
-// A stake larger than the team's bank is CLAMPED, not rejected: rejecting
-// would let a table lose its final to a typo.
-func TestFinalStakeIsClampedToTheBank(t *testing.T) {
-	f := newFixture(t)
-	f.seedBank(topicSet(), 4)
+// openFinal drives a one-cell game through its board round and into the
+// final's WAGER phase, which is where every final test now starts: the room
+// has money, the category is up, and the question is not.
+func (f *fixture) openFinal(game *Game, teams ...*Team) *Game {
+	f.t.Helper()
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	answers := map[uuid.UUID]string{}
+	correct := snapCorrect(f.t, f, game)
+	for i, tm := range teams {
+		// The first team writes the winning answer and takes the cell, so the
+		// room goes into the final with an uneven set of banks.
+		answers[tm.ID] = FormatValue(correct - float64(i))
+	}
+	f.playOneRound(game, answers)
+	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	g := f.reload(game.ID)
+	if g.Phase != PhaseWager {
+		f.t.Fatalf("the final opened into %s, want wager — the bet must precede the question", g.Phase)
+	}
+	return g
+}
+
+// oneCellSettings is the smallest game that still reaches a final: one board
+// question to earn a bank with, then the final.
+func oneCellSettings() Settings {
 	s := defaultSettings()
 	s.BoardColumns, s.BoardRows = 1, 1
 	s.CellValues = []int{500}
-	game := f.newGame(s, []string{"space"})
+	return s
+}
+
+// The whole shape of the final, end to end: the wager lands before the
+// question exists, the question then opens, the answer carries no stake, and
+// the chip in betting is worth exactly what was locked a phase earlier.
+func TestFinalWagerPrecedesTheQuestion(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(oneCellSettings(), []string{"space"})
 	a := f.join(game.ID, "Bar Flies")
-	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	b := f.join(game.ID, "Quiz Khalifa")
+	f.openFinal(game, a, b)
 
-	// Play the one board question so the team has a bank of exactly $500.
+	// Nothing about the question is public while the wager is open.
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
-	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
-	_ = snap
-	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-
-	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
-	bank := snap.Standings[a.ID]
-	if bank <= 0 {
-		t.Fatalf("team bank is %d — the setup did not earn anything to stake", bank)
+	if snap.Round == nil || snap.Round.Topic == "" {
+		t.Fatalf("the wager phase has no category to bet against: %+v", snap.Round)
+	}
+	banks := map[uuid.UUID]int{a.ID: snap.Standings[a.ID], b.ID: snap.Standings[b.ID]}
+	if banks[a.ID] <= 0 {
+		t.Fatalf("the winner's bank is %d — the setup earned nothing to wager", banks[a.ID])
 	}
 
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
-	huge := bank * 10
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "1", &huge); err != nil {
-		t.Fatalf("SubmitAnswer with an oversized stake: %v", err)
+	// A wants half of it; B tries for ten times its bank and is clamped.
+	half := banks[a.ID] / 2
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, a.ID, half); err != nil {
+		t.Fatalf("SetWager: %v", err)
 	}
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, b.ID, banks[b.ID]*10+1000); err != nil {
+		t.Fatalf("SetWager (oversized): %v", err)
+	}
+
+	// Both eligible tables are in, so the wager phase closed itself and the
+	// question is now on the wall.
 	g := f.reload(game.ID)
-	answers, err := ListAnswers(f.ctx, f.pool, f.tenant.ID, *g.CurrentRoundID)
+	if g.Phase != PhaseQuestion {
+		t.Fatalf("phase = %s after every table locked in, want question", g.Phase)
+	}
+	wagers, err := ListWagers(f.ctx, f.pool, f.tenant.ID, *g.CurrentRoundID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(answers) != 1 || answers[0].Stake == nil {
-		t.Fatalf("answers = %+v", answers)
+	got := map[uuid.UUID]int{}
+	for _, w := range wagers {
+		got[w.TeamID] = w.Amount
 	}
-	if *answers[0].Stake != bank {
-		t.Fatalf("stake stored as %d, want it clamped to the bank %d", *answers[0].Stake, bank)
+	if got[a.ID] != half {
+		t.Fatalf("wager stored as %d, want %d", got[a.ID], half)
+	}
+	if got[b.ID] != banks[b.ID] {
+		t.Fatalf("oversized wager stored as %d, want it clamped to the bank %d", got[b.ID], banks[b.ID])
+	}
+
+	// The answers carry no stake at all now.
+	correct := snapCorrect(t, f, game)
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, FormatValue(correct)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, FormatValue(correct+1000)); err != nil {
+		t.Fatal(err)
+	}
+	if g := f.reload(game.ID); g.Phase == PhaseQuestion {
+		f.do(game.ID, ActionRequest{Action: ActionReveal, FromPhase: PhaseQuestion})
+	}
+	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
+
+	// One chip each, and the server prices it off the wager row.
+	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	target := snap.Slots[0].ID
+	for _, tm := range []*Team{a, b} {
+		if err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, tm.ID, 0, &target, 0); err != nil {
+			t.Fatalf("PlaceChip: %v", err)
+		}
+	}
+	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	placed := map[uuid.UUID]int{}
+	for _, bet := range snap.Bets {
+		placed[bet.TeamID] = bet.Amount
+	}
+	if placed[a.ID] != half || placed[b.ID] != banks[b.ID] {
+		t.Fatalf("chips are worth %v, want the locked wagers %d and %d",
+			placed, half, banks[b.ID])
+	}
+}
+
+// A wager cannot be placed once the question is on the wall. THIS is the
+// mechanic: a bet a table can revise after reading the question is not a bet.
+func TestWagerIsRefusedOnceTheQuestionIsUp(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(oneCellSettings(), []string{"space"})
+	a := f.join(game.ID, "Bar Flies")
+	f.join(game.ID, "Quiz Khalifa")
+	f.openFinal(game, a)
+
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, a.ID, 100); err != nil {
+		t.Fatal(err)
+	}
+	// Two tables are eligible and only one has locked, so the phase is still
+	// open; the host asks the question anyway.
+	f.do(game.ID, ActionRequest{Action: ActionAsk, FromPhase: PhaseWager})
+	if g := f.reload(game.ID); g.Phase != PhaseQuestion {
+		t.Fatalf("phase = %s after the host asked the question, want question", g.Phase)
+	}
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, a.ID, 400); !errors.Is(err, ErrClosed) {
+		t.Fatalf("re-wagering after the question went up returned %v, want ErrClosed", err)
 	}
 }
 
@@ -215,57 +312,57 @@ func snapCorrect(t *testing.T, f *fixture, game *Game) float64 {
 	return round.AnswerValue
 }
 
-// A stake cannot be changed once the answer phase has closed -- that is what
-// separates a wager from a calculation.
-func TestStakeCannotChangeAfterTheAnswerPhaseCloses(t *testing.T) {
+// Everybody locked in, so the clock is cut short. A room that has already
+// decided should not sit out twenty more seconds of silence before the one
+// moment of the night everybody came for.
+func TestWagerPhaseClosesEarlyWhenEveryTableHasLocked(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
-	s := defaultSettings()
-	s.BoardColumns, s.BoardRows = 1, 1
-	s.CellValues = []int{500}
-	game := f.newGame(s, []string{"space"})
+	game := f.newGame(oneCellSettings(), []string{"space"})
 	a := f.join(game.ID, "Bar Flies")
-	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
-	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
-	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	b := f.join(game.ID, "Quiz Khalifa")
+	f.openFinal(game, a, b)
 
-	stake := 100
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "1", &stake); err != nil {
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, a.ID, 100); err != nil {
 		t.Fatal(err)
 	}
-	// The one team answered, so the phase closed early.
-	if g := f.reload(game.ID); g.Phase == PhaseQuestion {
-		f.do(game.ID, ActionRequest{Action: ActionReveal, FromPhase: PhaseQuestion})
+	if g := f.reload(game.ID); g.Phase != PhaseWager {
+		t.Fatalf("phase = %s with one of two tables locked in, want wager", g.Phase)
 	}
-	bigger := 400
-	err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "1", &bigger)
-	if !errors.Is(err, ErrClosed) {
-		t.Fatalf("re-staking after the answer phase returned %v, want ErrClosed", err)
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, b.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	g := f.reload(game.ID)
+	if g.Phase != PhaseQuestion {
+		t.Fatalf("phase = %s once both tables were in, want question", g.Phase)
+	}
+	// $0 is a real wager, not an absence: it still counts as being in.
+	if g.PhaseDeadline == nil {
+		t.Fatal("the question opened with no clock")
 	}
 }
 
-// A team that joined during the final cannot stake into it: it is not in that
-// round's denominator, and letting it wager would put money on a question it
-// was excluded from.
-func TestTeamJoiningDuringTheFinalCannotStake(t *testing.T) {
+// A team that joined during the final cannot wager into it: it is not in that
+// round's denominator, and letting it bet would put money on a question it
+// was excluded from. It must also not hold the wager phase open.
+func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
-	s := defaultSettings()
-	s.BoardColumns, s.BoardRows = 1, 1
-	s.CellValues = []int{500}
-	game := f.newGame(s, []string{"space"})
+	game := f.newGame(oneCellSettings(), []string{"space"})
 	a := f.join(game.ID, "Bar Flies")
-	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
-	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
-	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	f.openFinal(game, a)
 
 	late := f.join(game.ID, "Latecomers")
-	stake := 100
-	err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, late.ID, "1", &stake)
-	if !errors.Is(err, ErrClosed) {
-		t.Fatalf("a team that joined mid-final was allowed to stake: %v", err)
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, late.ID, 100); !errors.Is(err, ErrClosed) {
+		t.Fatalf("a team that joined mid-final was allowed to wager: %v", err)
+	}
+	// And the one eligible table locking in still closes the phase, rather
+	// than the room waiting on a table that cannot play.
+	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, a.ID, 100); err != nil {
+		t.Fatal(err)
+	}
+	if g := f.reload(game.ID); g.Phase != PhaseQuestion {
+		t.Fatalf("phase = %s — a latecomer held the wager phase open", g.Phase)
 	}
 }
 
@@ -351,7 +448,7 @@ func TestDeadlineHasAGraceWindow(t *testing.T) {
 		f.tenant.ID, game.ID, justPast); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "42", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "42"); err != nil {
 		t.Fatalf("a submission 200ms past the deadline was refused: %v", err)
 	}
 }
@@ -368,10 +465,10 @@ func TestBothChipsCanStackOnOneAnswer(t *testing.T) {
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20"); err != nil {
 		t.Fatal(err)
 	}
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
@@ -411,8 +508,8 @@ func TestMovingAChipDoesNotDuplicateIt(t *testing.T) {
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
-	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10", nil)
-	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20", nil)
+	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10")
+	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20")
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
 
 	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
@@ -515,10 +612,10 @@ func TestBettingClosesEarlyWhenEveryTableHasPlaced(t *testing.T) {
 	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20", nil); err != nil {
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, b.ID, "20"); err != nil {
 		t.Fatal(err)
 	}
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})

@@ -37,6 +37,11 @@ func DefaultSettings() Settings {
 		BoardRows: 2, BoardColumns: 5,
 		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
+		// Thirty seconds to commit a number against nothing but a category.
+		// Shorter than the answer clock on purpose: there is nothing to work
+		// out, only a nerve to settle, and a long blind-bet clock is dead air
+		// in a bar.
+		WagerSeconds: 30,
 	}
 }
 
@@ -64,6 +69,9 @@ func normaliseSettings(s Settings) Settings {
 	}
 	if s.BetSeconds == 0 {
 		s.BetSeconds = d.BetSeconds
+	}
+	if s.WagerSeconds == 0 {
+		s.WagerSeconds = d.WagerSeconds
 	}
 	return s
 }
@@ -95,6 +103,7 @@ func validateSettings(s Settings) error {
 	}
 	for name, v := range map[string]int{
 		"answer": s.AnswerSeconds, "reveal": s.RevealSeconds, "betting": s.BetSeconds,
+		"wager": s.WagerSeconds,
 	} {
 		if v < minPhaseSeconds || v > maxPhaseSeconds {
 			return fmt.Errorf("the %s timer must be %d to %d seconds, got %d",

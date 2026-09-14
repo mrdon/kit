@@ -52,9 +52,11 @@ func (s *Service) closePhase(ctx context.Context, game *Game, from Phase, byTime
 		if err := s.scoreRound(ctx, tx, game); err != nil {
 			return err
 		}
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseReveal, PhaseScoring, PhasePodium:
-		// Reveal -> betting moves the phase and nothing else; the rest are
-		// not timed phases and never reach here.
+	case PhaseWager, PhaseSetup, PhaseLobby, PhaseBoard, PhaseReveal, PhaseScoring, PhasePodium:
+		// Wager -> question and reveal -> betting move the phase and nothing
+		// else. The wager rows are already written and are read where they
+		// are needed; there is no reveal to build and nothing to score. The
+		// rest are not timed phases and never reach here.
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -73,6 +75,11 @@ func nextPhase(game *Game, from Phase) (Phase, *time.Time) {
 		return &d
 	}
 	switch from {
+	case PhaseWager:
+		// The blind bet is over; NOW the room sees the question. From here on
+		// the final is an ordinary round -- same answer clock, same reveal,
+		// same betting -- which is why there is one extra phase and not four.
+		return PhaseQuestion, arm(game.AnswerSeconds)
 	case PhaseQuestion:
 		return PhaseReveal, arm(game.RevealSeconds)
 	case PhaseReveal:

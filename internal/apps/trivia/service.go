@@ -181,14 +181,26 @@ func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, tea
 	if err != nil {
 		return err
 	}
+	wagers, err := ListWagers(ctx, s.pool, tenantID, round.ID)
+	if err != nil {
+		return err
+	}
 
 	sr := &SnapRound{
 		ID: round.ID, IsFinal: round.IsFinal, Ordinal: round.Ordinal, Points: round.Points,
-		Text: round.Prompt, CorrectValue: round.AnswerValue, CorrectText: round.AnswerText,
+		Text: round.Prompt, Topic: round.Topic,
+		CorrectValue: round.AnswerValue, CorrectText: round.AnswerText,
 	}
 	answered := map[uuid.UUID]Answer{}
 	for _, a := range answers {
 		answered[a.TeamID] = a
+	}
+	// The wager rows, not the answer rows: since 098 the two are committed a
+	// phase apart, and a table can hold one without the other in either
+	// direction.
+	staked := map[uuid.UUID]int{}
+	for _, w := range wagers {
+		staked[w.TeamID] = w.Amount
 	}
 	// A team that joined after this round opened is not in its denominator.
 	// Without that, "12 of 20 answered" ticks BACKWARDS on the TV as
@@ -200,16 +212,17 @@ func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, tea
 	for i := range snap.Teams {
 		t := &snap.Teams[i]
 		t.Eligible = eligibleFrom[t.ID] <= round.Ordinal
-		if a, ok := answered[t.ID]; ok {
+		if _, ok := answered[t.ID]; ok {
 			t.Answered = true
-			t.StakeLocked = a.Stake != nil
-			if a.Stake != nil {
-				// Copied, never aliased into the Answer row: the snapshot is
-				// fanned out to every connection and a shared pointer is one
-				// stray write away from twenty phones seeing the same wager.
-				stake := *a.Stake
-				t.Stake = &stake
-			}
+		}
+		if amount, ok := staked[t.ID]; ok {
+			t.StakeLocked = true
+			// Copied into a fresh int, never aliased out of the map: the
+			// snapshot is fanned out to every connection and a shared pointer
+			// is one stray write away from twenty phones seeing the same
+			// wager.
+			stake := amount
+			t.Stake = &stake
 		}
 		if t.Eligible {
 			sr.EligibleCount++

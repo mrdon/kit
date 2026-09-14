@@ -86,7 +86,8 @@ func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader 
 		Settings: Settings{
 			Title: g.Title, BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,
 			CellValues: g.CellValues, TokenValues: g.TokenValues, FinalWager: g.FinalWager,
-			AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds,
+			AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds,
+			BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
 		},
 	}
 }
@@ -238,7 +239,7 @@ func (a *App) settingsForNewGame(r *http.Request, tenantID uuid.UUID, asked *Set
 		BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,
 		CellValues: g.CellValues, TokenValues: g.TokenValues,
 		FinalWager: g.FinalWager, AnswerSeconds: g.AnswerSeconds,
-		RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds,
+		RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
 	}), nil
 }
 

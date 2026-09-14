@@ -75,7 +75,7 @@ func GameByJoinCode(ctx context.Context, pool *pgxpool.Pool, code string) (*Game
 	var game Game
 	err := row.Scan(&game.ID, &game.TenantID, &game.Name, &game.Title, &game.Phase,
 		&game.BoardRows, &game.BoardColumns, &game.CellValues, &game.TokenValues, &game.FinalWager,
-		&game.AnswerSeconds, &game.RevealSeconds, &game.BetSeconds,
+		&game.AnswerSeconds, &game.RevealSeconds, &game.BetSeconds, &game.WagerSeconds,
 		&game.CurrentRoundID, &game.PhaseDeadline, &game.StateVersion,
 		&game.CreatedBy, &game.CreatedAt, &game.UpdatedAt, &game.JoinCode,
 		&game.PickerTeamID, &game.PickerReason, &slug)

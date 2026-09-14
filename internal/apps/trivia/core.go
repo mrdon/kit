@@ -215,7 +215,7 @@ func phaseSentence(snap *Snapshot) string {
 		return "teams joining"
 	case PhasePodium:
 		return "finished"
-	case PhaseBoard, PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring:
+	case PhaseBoard, PhaseWager, PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring:
 		return fmt.Sprintf("in play, %d of %d questions done", played, total)
 	}
 	return string(snap.Phase)

@@ -92,12 +92,17 @@ func (s *Service) Join(ctx context.Context, tenantID, gameID uuid.UUID, name str
 	return team, token, nil
 }
 
-// SubmitAnswer records a team's number, and in a final its stake too.
+// SubmitAnswer records a team's number.
+//
+// There is no stake here any more. In a final the wager was committed a phase
+// earlier, against the category alone -- see SetWager -- so by the time this
+// runs the final is an ordinary question and this function has no idea it is
+// one.
 //
 // Resubmitting until the deadline is allowed on purpose, and the phone says
 // so: on a sixty-second clock, fat-finger anxiety costs more than a late
 // edit does.
-func (s *Service) SubmitAnswer(ctx context.Context, tenantID, gameID, teamID uuid.UUID, raw string, stake *int) error {
+func (s *Service) SubmitAnswer(ctx context.Context, tenantID, gameID, teamID uuid.UUID, raw string) error {
 	if err := s.SweepDue(ctx, tenantID, gameID); err != nil {
 		return err
 	}
@@ -126,11 +131,7 @@ func (s *Service) SubmitAnswer(ctx context.Context, tenantID, gameID, teamID uui
 		return fmt.Errorf("%w: you joined during this question — you're in from the next one", ErrClosed)
 	}
 
-	clamped, err := s.clampStake(ctx, game, round, teamID, stake)
-	if err != nil {
-		return err
-	}
-	if err := UpsertAnswer(ctx, s.pool, tenantID, round.ID, teamID, value, strings.TrimSpace(raw), clamped); err != nil {
+	if err := UpsertAnswer(ctx, s.pool, tenantID, round.ID, teamID, value, strings.TrimSpace(raw)); err != nil {
 		return err
 	}
 	if err := BumpVersion(ctx, s.pool, tenantID, gameID); err != nil {
@@ -145,21 +146,67 @@ func (s *Service) SubmitAnswer(ctx context.Context, tenantID, gameID, teamID uui
 	return nil
 }
 
-// clampStake bounds a final's wager to the team's own bank, SERVER-SIDE. The
-// phone mirrors the clamp so the slider cannot express an impossible bet, but
-// a hand-edited request has to be clamped rather than rejected: rejecting
-// would let a team lose its final to a typo.
+// SetWager locks a table's blind bet on the final, before the question exists
+// on any public surface.
 //
-// A stake outside a final is ignored rather than an error -- there is nothing
-// to stake during the board, and a phone that sends one is stale, not
-// malicious.
-func (s *Service) clampStake(ctx context.Context, game *Game, round *Round, teamID uuid.UUID, stake *int) (*int, error) {
-	if !round.IsFinal || stake == nil || !game.FinalWager {
-		return nil, nil //nolint:nilnil // "no stake" is the normal outside-a-final result, not an error
+// Legal ONLY during PhaseWager. That is the whole mechanic: once the prompt is
+// on the wall the amount is frozen, because a wager a table can revise after
+// reading the question is not a wager, it is a calculation. The phase machinery
+// enforces it rather than a flag -- ErrClosed here is the same refusal a late
+// answer gets.
+func (s *Service) SetWager(ctx context.Context, tenantID, gameID, teamID uuid.UUID, amount int) error {
+	if err := s.SweepDue(ctx, tenantID, gameID); err != nil {
+		return err
 	}
+	game, err := GetGame(ctx, s.pool, tenantID, gameID)
+	if err != nil {
+		return err
+	}
+	if game.Phase != PhaseWager || game.CurrentRoundID == nil {
+		return ErrClosed
+	}
+	round, err := GetRound(ctx, s.pool, tenantID, *game.CurrentRoundID)
+	if err != nil {
+		return err
+	}
+	team, err := teamByID(ctx, s.pool, tenantID, gameID, teamID)
+	if err != nil {
+		return err
+	}
+	if team.EligibleFromOrdinal > round.Ordinal {
+		// A table that walked in during the final is not in its denominator,
+		// so it has no wager to make either. Letting it bet would put money on
+		// a question it was excluded from.
+		return fmt.Errorf("%w: you joined during the final — this one is not yours", ErrClosed)
+	}
+
+	clamped, err := s.clampWager(ctx, game, teamID, amount)
+	if err != nil {
+		return err
+	}
+	if err := UpsertWager(ctx, s.pool, tenantID, round.ID, teamID, clamped); err != nil {
+		return err
+	}
+	if err := BumpVersion(ctx, s.pool, tenantID, gameID); err != nil {
+		return err
+	}
+	// Everybody is in: read the question rather than watching a room that has
+	// already decided sit out the rest of the clock.
+	if reloaded, err := GetGame(ctx, s.pool, tenantID, gameID); err == nil {
+		s.maybeCloseEarly(ctx, reloaded)
+	}
+	s.publish(ctx, tenantID, gameID)
+	return nil
+}
+
+// clampWager bounds a wager to the team's own bank, SERVER-SIDE. The phone
+// mirrors the clamp so the slider cannot express an impossible bet, but a
+// hand-edited request has to be CLAMPED rather than rejected: rejecting would
+// let a table lose its final to a typo.
+func (s *Service) clampWager(ctx context.Context, game *Game, teamID uuid.UUID, amount int) (int, error) {
 	standings, err := Leaderboard(ctx, s.pool, game.TenantID, game.ID)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	bank := 0
 	for _, st := range standings {
@@ -167,8 +214,7 @@ func (s *Service) clampStake(ctx context.Context, game *Game, round *Round, team
 			bank = st.Total
 		}
 	}
-	v := min(max(*stake, 0), bank)
-	return &v, nil
+	return min(max(amount, 0), bank), nil
 }
 
 // PlaceChip puts one token on one card, or lifts it off with a nil slot.
@@ -229,23 +275,22 @@ func (s *Service) PlaceChip(ctx context.Context, tenantID, gameID, teamID uuid.U
 
 // chipAmount decides what a chip is worth, server-side. During the board it
 // is the game's token value for that index -- a client cannot name its own
-// number. In a final it is the stake the team locked WITH ITS ANSWER, before
-// it saw anybody else's, which is what makes the final a wager rather than a
-// calculation.
+// number. In a final it is the wager the team locked BEFORE IT SAW THE
+// QUESTION, which is what makes the final a wager rather than a calculation.
 func (s *Service) chipAmount(ctx context.Context, game *Game, round *Round, teamID uuid.UUID, tokenIndex, _ int) (int, error) {
 	if round.IsFinal {
-		answers, err := ListAnswers(ctx, s.pool, game.TenantID, round.ID)
+		wagers, err := ListWagers(ctx, s.pool, game.TenantID, round.ID)
 		if err != nil {
 			return 0, err
 		}
-		for _, a := range answers {
-			if a.TeamID == teamID && a.Stake != nil {
-				return *a.Stake, nil
+		for _, w := range wagers {
+			if w.TeamID == teamID {
+				return w.Amount, nil
 			}
 		}
-		// A team that never answered the final never locked a stake, so it
-		// has nothing to place. $0 is a legal bet, so this is a no-op rather
-		// than an error.
+		// A table that sat out the wager phase has nothing to place. $0 is a
+		// legal bet, so this is a no-op rather than an error -- and its chip
+		// still lands on a card, which is how the room sees it played along.
 		return 0, nil
 	}
 	if tokenIndex < 0 || tokenIndex >= len(game.TokenValues) {
