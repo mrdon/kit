@@ -94,6 +94,26 @@ export interface HostScoring {
   betDeltas: Record<string, number>;
 }
 
+// The round that was scored most recently — which is NOT the round in play.
+// It survives the host pressing next (which clears the current round), and it
+// is the only thing that knows who picks the next category. Host frame only.
+export interface HostLastRound {
+  ordinal: number;
+  isFinal: boolean;
+  points: number;
+  text: string;
+  correctValue: number;
+  correctText: string;
+  winningSlot: string;
+  winningLabel: string;
+  // Parallel arrays, same order — the server aggregates them together.
+  winners: string[];
+  winnerIds: string[];
+  deltas: Record<string, number>;
+  boardPoints: Record<string, number>;
+  betDeltas: Record<string, number>;
+}
+
 export interface HostFrame {
   version: number;
   game: string;
@@ -107,6 +127,7 @@ export interface HostFrame {
   round: HostRound | null;
   slots: HostSlot[];
   scoring: HostScoring | null;
+  lastRound: HostLastRound | null;
   answer: { value: number; text: string } | null;
   tokens: number[];
   progress: { cellsPlayed: number; cellsTotal: number; finalPlayed: boolean };
@@ -158,6 +179,12 @@ export const PHASE_LABEL: Record<Phase, string> = {
   scoring: 'Scored',
   podium: 'Finished',
 };
+
+// Every cell played. It decides what the primary button offers and whether
+// there is still a category for the last round's winner to pick.
+export function boardIsEmpty(frame: HostFrame): boolean {
+  return frame.progress.cellsTotal > 0 && frame.progress.cellsPlayed === frame.progress.cellsTotal;
+}
 
 // The label on the one big primary button, per phase. Naming it by what
 // happens next is what lets the host drive the night without reading the

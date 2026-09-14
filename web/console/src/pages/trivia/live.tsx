@@ -3,15 +3,17 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
-import { PHASE_LABEL, money, primaryAction, type HostFrame } from './common';
+import { PHASE_LABEL, money, type HostFrame } from './common';
+import { StatusPanel } from './live_panel';
+import { LastRoundRecap, roundMovement, signed } from './live_lastround';
 
 // The live driver: the page a host runs the night from.
 //
-// Board on the left, phase panel on the right, one big primary button labelled
-// by what happens next. The host is a CONTROLLER, not an authority — closing
-// this tab does not stop the clock — so nothing here holds state the game
-// depends on. Every click carries the phase it was made from, and a 409 just
-// means the stream already moved on.
+// Board on the left, status panel on the right, one big primary button
+// labelled by what happens next. The host is a CONTROLLER, not an authority —
+// closing this tab does not stop the clock — so nothing here holds state the
+// game depends on. Every click carries the phase it was made from, and a 409
+// just means the stream already moved on.
 export default function TriviaLive() {
   useSetChatContext('the Trivia live page');
   const { id = '' } = useParams();
@@ -51,9 +53,10 @@ export default function TriviaLive() {
     return <p className="page-sub">{err ?? 'Connecting…'}</p>;
   }
 
-  const boardEmpty = frame.progress.cellsTotal > 0 && frame.progress.cellsPlayed === frame.progress.cellsTotal;
-  const primary = primaryAction(frame.phase, boardEmpty, frame.finalWager, frame.progress.finalPlayed);
   const secs = msLeft === null ? null : Math.ceil(msLeft / 1000);
+  // Between questions the cards belong to a round that is over; the recap
+  // below says what happened to them, so showing them twice is noise.
+  const showCards = frame.slots.length > 0 && frame.phase !== 'board';
 
   return (
     <>
@@ -101,51 +104,12 @@ export default function TriviaLive() {
         <section>
           <BoardGrid frame={frame} busy={busy} onPick={(cellId) => void act({ action: 'pick_cell', cell_id: cellId })} />
         </section>
-
-        <aside className="trivia-panel">
-          {/* The host sees the correct answer in every phase. They are reading
-              it out and adjudicating nothing, so hiding it would be theatre
-              with a cost. */}
-          {frame.round ? (
-            <>
-              <p className="card-desc">
-                {frame.round.isFinal ? 'FINAL · ' : ''}Question {frame.round.ordinal} · {money(frame.round.points)}
-              </p>
-              <p className="trivia-question">{frame.round.text}</p>
-              {frame.answer ? (
-                <p className="trivia-answer">Answer: <strong>{frame.answer.text || frame.answer.value}</strong></p>
-              ) : null}
-            </>
-          ) : (
-            <p className="card-desc">
-              {frame.phase === 'board' ? 'Pick a cell to ask it.' : 'No question in play.'}
-            </p>
-          )}
-
-          {secs !== null ? <div className="trivia-clock">{secs}</div> : null}
-          {frame.round && frame.phase === 'question' ? (
-            <p className="card-desc">{frame.round.answered} of {frame.round.eligible} in</p>
-          ) : null}
-
-          <div className="page-head-actions">
-            {primary ? (
-              <button className="btn" disabled={busy} onClick={() => void act({ action: primary.action })}>
-                {primary.label}
-              </button>
-            ) : null}
-            {secs !== null ? (
-              <button className="btn btn-danger" disabled={busy}
-                onClick={() => void act({ action: 'extend', seconds: 15 })}>
-                +15s
-              </button>
-            ) : null}
-          </div>
-
-          <TeamChips frame={frame} gameId={id} />
-        </aside>
+        <StatusPanel frame={frame} busy={busy} secs={secs} gameId={id}
+          onAct={(body) => void act(body)} />
       </div>
 
-      {frame.slots.length ? <Cards frame={frame} /> : null}
+      {frame.phase === 'board' || frame.phase === 'podium' ? <LastRoundRecap frame={frame} /> : null}
+      {showCards ? <Cards frame={frame} /> : null}
       <Leaderboard frame={frame} />
     </>
   );
@@ -185,47 +149,6 @@ function BoardGrid({ frame, busy, onPick }: { frame: HostFrame; busy: boolean; o
   );
 }
 
-// One chip per table, lighting as answers and bets land — so the host can see
-// WHICH table is holding everyone up rather than just a count.
-function TeamChips({ frame, gameId }: { frame: HostFrame; gameId: string }) {
-  const [code, setCode] = useState<{ team: string; code: string } | null>(null);
-
-  const reissue = async (teamId: string, name: string) => {
-    try {
-      const r = await api.triviaReclaim(gameId, teamId);
-      setCode({ team: name, code: r.code });
-    } catch {
-      /* the host can just try again */
-    }
-  };
-
-  return (
-    <>
-      <h3 className="card-title">Tables</h3>
-      <div className="teamlist">
-        {frame.teams.map((t) => {
-          const cls = t.stakeLocked ? 'pill pill-ok' : t.answered ? 'pill pill-ok' : 'pill pill-off';
-          return (
-            <button key={t.id} className={cls} title="Reissue this table's code"
-              onClick={() => void reissue(t.id, t.name)}>
-              {t.name}
-              {frame.phase === 'betting' ? ` ${t.chipsPlaced}/${frame.tokens.length}` : ''}
-              {t.stakeLocked ? ' 🔒' : ''}
-            </button>
-          );
-        })}
-      </div>
-      {code ? (
-        <p className="banner banner-ok">
-          Read <strong>{code.code}</strong> to {code.team}. Their old phone is signed out.
-        </p>
-      ) : (
-        <p className="card-desc">Tap a table to reissue its code if their phone died.</p>
-      )}
-    </>
-  );
-}
-
 function Cards({ frame }: { frame: HostFrame }) {
   return (
     <section className="panel">
@@ -234,7 +157,10 @@ function Cards({ frame }: { frame: HostFrame }) {
         {frame.slots.map((s) => (
           <li key={s.id} className={frame.scoring?.winningSlot === s.id ? 'card trivia-win' : 'card'}>
             <div className="card-main">
-              <span className="card-title">{s.label}</span>
+              <span className="card-title">
+                {s.label}
+                {frame.scoring?.winningSlot === s.id ? ' · WINNER' : ''}
+              </span>
               <span className="card-desc">{s.teams.join(' · ') || 'nobody wrote this'}</span>
             </div>
             <div className="card-side">
@@ -250,19 +176,32 @@ function Cards({ frame }: { frame: HostFrame }) {
   );
 }
 
+// Standings with the rank in front and this round's movement behind, split
+// into the two channels — a table that took the cell and a table whose chip
+// paid did different things, and the host calls them out differently.
 function Leaderboard({ frame }: { frame: HostFrame }) {
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
+  const move = roundMovement(frame);
   return (
     <section className="panel">
       <h2>Standings</h2>
       <ul className="card-list">
         {sorted.map((t, i) => {
-          const d = frame.scoring?.deltas?.[t.id];
+          const card = move?.board[t.id] ?? 0;
+          const bet = move?.bets[t.id] ?? 0;
           return (
-            <li key={t.id} className="card">
+            <li key={t.id} className={i === 0 ? 'card trivia-win' : 'card'}>
               <div className="card-main">
-                <span className="card-title">{i + 1}. {t.name}</span>
-                {d ? <span className="card-desc">{d > 0 ? '+' : ''}{money(d)} this round</span> : null}
+                <span className="card-title">
+                  {i + 1}. {t.name}{i === 0 && t.score > 0 ? ' · leader' : ''}
+                </span>
+                {card || bet ? (
+                  <span className="card-desc">
+                    {signed(card + bet)} last round
+                    {card ? ` · ${signed(card)} card` : ''}
+                    {bet ? ` · ${signed(bet)} bets` : ''}
+                  </span>
+                ) : null}
               </div>
               <div className="card-side"><span className="pill pill-ok">{money(t.score)}</span></div>
             </li>

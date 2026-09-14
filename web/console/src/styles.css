@@ -1930,6 +1930,39 @@ h2.view-title:hover {
   border-radius: var(--radius);
 }
 
+/* The line the host reads out. It is the first thing on the panel and the
+   biggest thing in it, because the host is looking up from a laptop into a
+   noisy room and needs the sentence, not the phase name. */
+.trivia-say {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0 0 0.6rem;
+  color: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding-left: 0.6rem;
+}
+
+/* Who is holding the room up. Names, not a count: a count tells the host to
+   wait, a list tells them which table to go and lean on. */
+.trivia-wait {
+  margin: 0.5rem 0 0.2rem;
+}
+
+/* The secondary half of a pill — a score, a chip count, a delta — kept
+   lighter so the table name still reads first at a glance. */
+.trivia-split {
+  opacity: 0.75;
+  font-weight: 500;
+}
+
+/* The round that has already been put away. */
+.trivia-recap .trivia-say {
+  border-left: none;
+  padding-left: 0;
+  font-size: 1.15rem;
+}
+
 .trivia-question {
   font-size: 1.05rem;
   font-weight: 600;
