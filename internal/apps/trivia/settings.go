@@ -11,6 +11,10 @@ const (
 	minPhaseSeconds = 5
 	maxPhaseSeconds = 600
 	maxTokens       = 4
+	// minRevealSeconds is lower than every other floor because the reveal is
+	// not think time. It is a DEAL: the cards fly in, the room reads five
+	// numbers, betting opens. Three seconds is enough to deal a hand.
+	minRevealSeconds = 3
 	// maxGraceSeconds bounds the beat after everyone is in. A minute of it
 	// would not be a grace, it would be the phase.
 	maxGraceSeconds = 60
@@ -39,7 +43,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
 		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
-		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
+		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 5, BetSeconds: 45,
 		// Thirty seconds to commit a number against nothing but a category.
 		// Shorter than the answer clock on purpose: there is nothing to work
 		// out, only a nerve to settle, and a long blind-bet clock is dead air
@@ -115,9 +119,14 @@ func validateSettings(s Settings) error {
 		"answer": s.AnswerSeconds, "reveal": s.RevealSeconds, "betting": s.BetSeconds,
 		"wager": s.WagerSeconds,
 	} {
-		if v < minPhaseSeconds || v > maxPhaseSeconds {
+		// The reveal alone gets a lower floor: it is a deal, not a think.
+		floor := minPhaseSeconds
+		if name == "reveal" {
+			floor = minRevealSeconds
+		}
+		if v < floor || v > maxPhaseSeconds {
 			return fmt.Errorf("the %s timer must be %d to %d seconds, got %d",
-				name, minPhaseSeconds, maxPhaseSeconds, v)
+				name, floor, maxPhaseSeconds, v)
 		}
 	}
 	// Zero is legal and means no grace at all, so this is the one timer whose

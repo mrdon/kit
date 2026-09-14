@@ -134,8 +134,21 @@ child tables included, and every query filters on it.
 
 `app_trivia_games` settings columns: `board_rows` default 2, `board_columns` default 5,
 `cell_values` default `{500,1000}`, `token_values` default `{100,200}`,
-`final_wager BOOLEAN NOT NULL DEFAULT TRUE`, `answer_seconds` 60, `reveal_seconds` 15,
-`bet_seconds` 45, `wager_seconds` 30.
+`final_wager BOOLEAN NOT NULL DEFAULT TRUE`, `answer_seconds` 60, `reveal_seconds` 5,
+`bet_seconds` 45, `wager_seconds` 30, `grace_seconds` 5 (**100**).
+
+`reveal_seconds` is a DEAL, not think time — the cards fly in, the room reads five
+numbers, betting opens — which is why it defaults to 5 and is the one timer whose floor
+is 3 seconds rather than 5. It was 15 originally, on the theory that the room needed to
+study the cards; watching a room do it, five is the beat and fifteen is a sag.
+
+`grace_seconds` is what the room still gets once every eligible table is in. "Everyone's
+in" does not close the phase — it SHORTENS it, pulling `phase_deadline` in to
+`now() + grace_seconds` (`ShortenDeadline`, models_phase.go) so the phase then ends by the
+ordinary timer path. The reason is that an instant close punishes exactly one table per
+round: the one that acted last, which alone never got to look at the wall with its own
+chip on it. `0` restores the instant close, and is therefore the one setting
+`normaliseSettings` deliberately does not fill in from the default.
 
 `phase` enum: `setup`, `lobby`, `board`, `wager`, `question`, `reveal`, `betting`,
 `scoring`, `podium`. **The final adds exactly one phase** — `wager`, where the amount
@@ -178,13 +191,13 @@ setup ──open_lobby──▶ lobby ──start──▶ board
                                         │ host picks a cell   (arms answer_seconds)
                                         ▼
                                     question
-                    timer expiry │ all eligible answered │ host
+                    timer expiry │ all eligible answered → clock drops to grace_seconds │ host
                                         ▼                (builds slots, arms reveal_seconds)
                                      reveal
                           timer expiry │ host
                                         ▼                (arms bet_seconds)
                                     betting
-                   timer expiry │ all chips placed │ host
+                   timer expiry │ all chips placed → clock drops to grace_seconds │ host
                                         ▼                (ScoreRound, persist, clear deadline)
                                     scoring
                      host "next" ───────┴─────── board empty
@@ -518,10 +531,10 @@ back*, not *did you personally know it*.
   version collected the amount alongside the answer; that was the right instinct and it
   did not go far enough.
 
-**One new phase, one new table.** `wager` (timed by `games.wager_seconds`, closing early
-once every eligible table is in) and `app_trivia_wagers`. After that a `rounds` row with
-`is_final = true` and a null `cell_id` runs the ordinary question → reveal → betting →
-scoring flow.
+**One new phase, one new table.** `wager` (timed by `games.wager_seconds`, its clock
+dropping to `grace_seconds` once every eligible table is in) and `app_trivia_wagers`.
+After that a `rounds` row with `is_final = true` and a null `cell_id` runs the ordinary
+question → reveal → betting → scoring flow.
 
 **Optional per game.** `games.final_wager BOOLEAN NOT NULL DEFAULT TRUE`. With it off,
 an emptied board transitions straight to `podium`, the host console never offers the
@@ -893,12 +906,15 @@ Files are pre-split to stay under the 500-line limit; keep functions under 60.
   not block a publisher; unsubscribe racing a publish, under `-race`. Plus the relay: a
   snapshot published on one broker reaches a subscriber on a second broker sharing a Redis,
   **and a process does not re-deliver its own relayed message**.
+- `service_grace_test.go` — the grace: everyone-in shortens rather than closes, the
+  shortened clock is then closed by the ordinary sweep, a chip moved inside the grace
+  lands **without re-arming it**, and `grace_seconds = 0` still closes on the spot.
 - `projection_test.go` — **the withholding test.** Includes `wager`: every public frame
   carries the category and none of them carries the prompt, on the same snapshot that
   releases it one phase later.
 - `service_round_test.go` — the final end to end: it opens into `wager`, a wager above the
-  team's bank is clamped rather than rejected, the phase closes early once every eligible
-  table is in, the answer carries no stake, and the betting chip is worth exactly what was
+  team's bank is clamped rather than rejected, the phase's clock drops to the grace once
+  every eligible table is in, the answer carries no stake, and the betting chip is worth exactly what was
   locked; a wager cannot be placed once the question is up; a team joining during the final
   cannot wager **and cannot hold the phase open**; and **with `final_wager` off, an emptied
   board goes straight to `podium` and the "final" action is refused**.

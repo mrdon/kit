@@ -486,7 +486,9 @@ Cells are worth $100 and $200 by default, the same as the chips, which makes bet
 
 **Run it.** Put the QR code where people can scan it. Teams join by scanning; each table types its own name. Up to 20 teams.
 
-From the live page you pick a cell, then press one button per beat: **Reveal answers**, **Open betting**, **Score round**, **Next**. The clocks run themselves — 60 seconds to answer, 45 to bet by default — so you can put the laptop down. Closing the laptop doesn't stop the game: the timing lives on the server, and if everyone has answered the phase ends early rather than burning the clock.
+From the live page you pick a cell, then press one button per beat: **Reveal answers**, **Open betting**, **Score round**, **Next**. The clocks run themselves — 60 seconds to answer, 5 to deal the cards, 45 to bet by default — so you can put the laptop down. Closing the laptop doesn't stop the game: the timing lives on the server, and once everyone is in the clock drops to a few seconds rather than burning the rest of it.
+
+**Nobody gets cut off mid-thought.** When the last table answers or puts down its last chip, the phase doesn't end on the spot — the clock drops to 5 seconds (**Settings → Grace after everyone's in**), so the table that acted last still gets to look at the room and change its mind, which every other table had time to do. Set it to 0 if you'd rather the night moved.
 
 **Who picks the next category** is decided for you, so it is never the host's favourite. The first pick is drawn at random when you press Start — the TV spins a wheel with every table on it and lands on one. After that the pick goes to the table that wrote the winning answer; if several tables wrote it, to whichever of them is furthest behind, and if nobody wrote it at all, to the lowest-scoring table in the room. The board says whose pick it is and why, the live page gives you the same sentence to read out, and that table's phone says "it's your pick".
 

@@ -233,7 +233,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
             onChange={(e) => edit({ ...s, answer_seconds: Number(e.target.value) })} />
         </label>
         <label className="field">
-          <span>Reveal — after answers are in, before betting opens (s)</span>
+          <span>Deal — cards shown before betting opens (s)</span>
           <input type="number" min={5} max={600} value={s.reveal_seconds} disabled={locked}
             onChange={(e) => edit({ ...s, reveal_seconds: Number(e.target.value) })} />
         </label>
@@ -258,9 +258,9 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         </label>
       </div>
       <p className="page-sub">
-        The reveal is the beat between the last answer landing and the chips coming out: the cards
-        go up on the screen with nobody's money on them yet, and the room reads them. Fifteen
-        seconds is enough for five cards and not so long that the night sags.
+        The deal is the beat between the last answer landing and the chips coming out: the cards
+        fly up on the screen with nobody&rsquo;s money on them yet. It is a deal, not think time —
+        five seconds is enough for five cards, and longer just sags.
       </p>
       <p className="page-sub">
         The grace is what the last table gets. When everyone is in, the clock drops to this instead

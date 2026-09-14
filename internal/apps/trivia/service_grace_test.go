@@ -225,3 +225,25 @@ func TestGraceValidationAllowsZeroAndBoundsTheTop(t *testing.T) {
 		}
 	}
 }
+
+// The reveal is a deal, not think time, so it alone may go below the floor
+// every other timer carries.
+func TestTheDealBeatMayBeShorterThanEveryOtherTimer(t *testing.T) {
+	s := DefaultSettings()
+	if s.RevealSeconds != 5 {
+		t.Fatalf("the shipped deal is %ds; it is a deal, not a think", s.RevealSeconds)
+	}
+	s.RevealSeconds = 3
+	if err := validateSettings(s); err != nil {
+		t.Fatalf("a 3s deal was rejected: %v", err)
+	}
+	s.RevealSeconds = 2
+	if err := validateSettings(s); err == nil {
+		t.Fatal("a 2s deal was accepted; the cards cannot be read that fast")
+	}
+	s = DefaultSettings()
+	s.BetSeconds = 3
+	if err := validateSettings(s); err == nil {
+		t.Fatal("a 3s betting clock was accepted; only the reveal gets the lower floor")
+	}
+}

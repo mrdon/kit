@@ -270,7 +270,7 @@ export function defaultSettings(): TriviaSettings {
     token_values: [100, 200],
     final_wager: true,
     answer_seconds: 60,
-    reveal_seconds: 15,
+    reveal_seconds: 5,
     bet_seconds: 45,
     wager_seconds: 30,
     grace_seconds: 5,
