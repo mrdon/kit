@@ -745,6 +745,26 @@
       size -= 2;
       apply(size);
     }
+    fitRailNames(size);
+  }
+
+  /* A name only gets the width the score and the swing leave it, and at the
+     full row size "Norwegian Wood" does not fit that -- which would be a
+     three-table room paying for a twenty-table rule. So each name gives up a
+     little type of its own before it gives up letters; the ellipsis is for
+     names no size saves. */
+  function fitRailNames(rowSize) {
+    var names = document.querySelectorAll('#rail-rows .row .name');
+    var floor = Math.max(14, Math.round(rowSize * 0.7));
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      var size = rowSize;
+      n.style.fontSize = '';
+      while (n.scrollWidth > n.clientWidth && size > floor) {
+        size -= 1;
+        n.style.fontSize = size + 'px';
+      }
+    }
   }
 
   /* --- 8. podium --- */
