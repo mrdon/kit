@@ -50,6 +50,11 @@ Rules 1–5 are the whole game with the final switched off.
   right is half the fun of deciding where to put your chips.
 - The **question bank is per workspace** and grows. Creating a game picks topics from
   it — with an **Auto button** — preferring questions used least recently.
+- **A question is asked once per workspace.** "Asked" means a round row in a game that
+  still exists, matched on `prompt_key` so the same question in two packs counts once.
+  A board cell nobody opened stays fresh; deleting a game frees everything it asked,
+  which is the only reset. Per-game `repeat_questions` (**101**, default false) turns
+  the rule off for a venue whose bank has run thin.
 - Up to **20 teams**.
 - A game's name is **three hyphenated common words** (`brave-otter-lamp`), typeable off
   a TV screen.
@@ -120,12 +125,12 @@ child tables included, and every query filters on it.
 
 | Table | Purpose | Constraint that matters |
 |---|---|---|
-| `app_trivia_questions` | the **workspace** bank: `prompt`, `prompt_key`, `answer_value DOUBLE PRECISION`, `answer_text`, `last_used_at` | `UNIQUE (tenant_id, prompt_key)` — re-uploading a corrected CSV is a no-op, not a duplicate |
+| `app_trivia_questions` | the **workspace** bank: `prompt`, `prompt_key`, `answer_value DOUBLE PRECISION`, `answer_text`, `last_used_at` (an **ordering tiebreak only** since 101 — it is stamped at board build, so it burns questions a short night never opened) | `UNIQUE (tenant_id, prompt_key)` — re-uploading a corrected CSV is a no-op, not a duplicate |
 | `app_trivia_question_topics` | `(question_id, topic_key)` + display spelling | `PRIMARY KEY (question_id, topic_key)`; a plain index on `(tenant_id, topic_key)` is enough |
 | `app_trivia_games` | name, title, `phase`, settings, `current_round_id`, `phase_deadline`, `state_version BIGINT` | `UNIQUE (tenant_id, name)` — the public URL contract |
 | `app_trivia_board_cells` | `round_index` (default 0), `col_index`, `row_index`, `topic`, `points`, `question_id`, `played_at` | `UNIQUE (tenant_id, game_id, question_id)` — a multi-topic question appears on the board **once**; without it the room gets asked the same thing twice |
 | `app_trivia_teams` | `name`, `name_key`, `token_hash`, `eligible_from_ordinal` | `UNIQUE (tenant_id, game_id, name_key)` — enforced by index, not app code, or two phones racing both pass |
-| `app_trivia_rounds` | `cell_id` (**nullable** — a final has no cell), `is_final`, `question_id`, `ordinal`, `points`, `topic`, `winning_slot_id` | `UNIQUE (tenant_id, cell_id)` — a double-clicked cell can't open two rounds; partial `UNIQUE (tenant_id, game_id) WHERE is_final` — at most one final |
+| `app_trivia_rounds` | `cell_id` (**nullable** — a final has no cell), `is_final`, `question_id`, `ordinal`, `points`, `topic`, `winning_slot_id`, and the copies: `prompt`, `prompt_key` (**101**), `answer_value`, `answer_text` | `UNIQUE (tenant_id, cell_id)` — a double-clicked cell can't open two rounds; partial `UNIQUE (tenant_id, game_id) WHERE is_final` — at most one final. The row is also the record that its question has been **asked**, which is why it carries `prompt_key` rather than leaning on `question_id` |
 | `app_trivia_answers` | `value`, `raw`, `stake` (**dead since 098** — kept so played finals still read back; nothing writes it) | `UNIQUE (tenant_id, round_id, team_id)` — editing is an upsert |
 | `app_trivia_wagers` | `amount`, `locked_at` — the final's blind bet, added by **098** | `UNIQUE (tenant_id, round_id, team_id)` — changing your wager is an upsert. Keyed on the round, not the answer: at lock time there is no answer, and a table can wager without ever typing a number |
 | `app_trivia_slots` + `app_trivia_slot_teams` | the revealed cards; `position 0` is the "Smaller" pseudo-slot; `odds` stays `1` in v1 | `UNIQUE (tenant_id, round_id, position)` |
@@ -135,7 +140,8 @@ child tables included, and every query filters on it.
 `app_trivia_games` settings columns: `board_rows` default 2, `board_columns` default 5,
 `cell_values` default `{500,1000}`, `token_values` default `{100,200}`,
 `final_wager BOOLEAN NOT NULL DEFAULT TRUE`, `answer_seconds` 60, `reveal_seconds` 5,
-`bet_seconds` 45, `wager_seconds` 30, `grace_seconds` 5 (**100**).
+`bet_seconds` 45, `wager_seconds` 30, `grace_seconds` 5 (**100**),
+`repeat_questions BOOLEAN NOT NULL DEFAULT FALSE` (**101**).
 
 `reveal_seconds` is a DEAL, not think time — the cards fly in, the room reads five
 numbers, betting opens — which is why it defaults to 5 and is the one timer whose floor
@@ -563,10 +569,18 @@ size, and either produces a full board or proves none exists. Errors carry the
 shortfall: `topic "Space" has 3 questions but the board needs 5`. `seed` makes it
 deterministic in tests.
 
+The `bank` handed to it is already filtered: `drawBoard` loads it through
+`QuestionsForTopics` with the game's `Freshness`, so with repeats off it only ever
+contains questions no surviving game has asked. The matcher does not know that, which is
+why the caller stamps `ShortfallError.Fresh` on the way out — the message then reads
+`3 fresh questions`, and the console adds "allow repeats on this game, or upload more
+questions". Same number, different fix.
+
 Column choice is a host decision in setup — **"Sports" vs "Sportsball" in a CSV is a real
 thing and the host has to see and fix it** — defaulted to the N topics with the most
-unused questions, with the **Auto button** picking randomly among viable ones. Prefer
-questions with the oldest `last_used_at` so a weekly quiz doesn't repeat.
+unused questions, with the **Auto button** picking randomly among viable ones. Viability
+is counted in unused rather than total, or the default would walk the host into a
+shortfall. Within what is allowed, prefer the oldest `last_used_at`.
 
 ---
 
