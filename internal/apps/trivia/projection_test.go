@@ -465,3 +465,50 @@ func TestRulesAreServedAndMatchTheGame(t *testing.T) {
 		t.Fatal("a spectator cannot see the rules")
 	}
 }
+
+// A latecomer's own frame has to say WHICH question it is in from, because
+// "sitting this one out" with no number reads like a punishment rather than a
+// two-minute wait. A table that has been here all along is told nothing —
+// there is nothing to tell it.
+func TestPrivateFrameTellsALatecomerWhichQuestionItIsIn(t *testing.T) {
+	snap, early := snapshotIn(PhaseQuestion, false)
+	late := snap.Teams[1].ID
+	snap.Teams[1].Eligible = false
+	snap.Teams[1].EligibleFrom = snap.Round.Ordinal + 1
+	snap.Teams[0].EligibleFrom = 1
+
+	lateYou := ProjectPlayer(snap, late).You
+	if lateYou == nil {
+		t.Fatal("the latecomer has no private block at all")
+	}
+	if lateYou.Eligible {
+		t.Fatal("a table that joined mid-question is told it is eligible")
+	}
+	if lateYou.InFromQuestion != 4 {
+		t.Fatalf("inFromQuestion = %d, want 4 — the question after the one in play", lateYou.InFromQuestion)
+	}
+
+	earlyYou := ProjectPlayer(snap, early).You
+	if !earlyYou.Eligible {
+		t.Fatal("a table that was here all along is told it is sitting out")
+	}
+	if earlyYou.InFromQuestion != 0 {
+		t.Fatalf("inFromQuestion = %d for a table already in; it should be omitted", earlyYou.InFromQuestion)
+	}
+	// omitempty, so the field is not on the wire at all for a table already in.
+	raw, err := json.Marshal(ProjectPlayer(snap, early))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "inFromQuestion") {
+		t.Fatalf("an eligible table's frame carries inFromQuestion:\n%s", raw)
+	}
+
+	// The public list says only whether a table is in, never from when: the
+	// rest of the room does not need the other tables' arrival times.
+	for _, wt := range ProjectDisplay(snap).Teams {
+		if wt.ID == late.String() && wt.Eligible {
+			t.Fatal("the TV thinks the latecomer is in this round")
+		}
+	}
+}

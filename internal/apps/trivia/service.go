@@ -115,6 +115,7 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	for _, t := range teams {
 		snap.Teams = append(snap.Teams, SnapTeam{
 			ID: t.ID, Name: t.Name, Score: snap.Standings[t.ID], Eligible: true,
+			EligibleFrom: t.EligibleFromOrdinal,
 		})
 	}
 

@@ -198,6 +198,17 @@ type wireYou struct {
 	Stake       *int          `json:"stake"`
 	Delta       *int          `json:"delta"`
 	WroteWinner bool          `json:"wroteWinner"`
+
+	// Eligible and InFromQuestion are how a latecomer's phone knows to show
+	// a waiting screen instead of an answer box. publicTeams carries
+	// `eligible` for everybody, but only the table itself gets told WHICH
+	// question it is in from -- "you're in from question 7" is a sentence
+	// worth reading, and "sitting out" on its own reads like a punishment.
+	//
+	// InFromQuestion is omitempty because zero is not a question number: a
+	// table that is already in has nothing to be told.
+	Eligible       bool `json:"eligible"`
+	InFromQuestion int  `json:"inFromQuestion,omitempty"`
 }
 
 type wireOwnChip struct {
@@ -285,6 +296,10 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 	you := &wireYou{
 		TeamID: teamID.String(), Name: team.Name, Score: team.Score,
 		Answered: team.Answered, Chips: []wireOwnChip{},
+		Eligible: team.Eligible,
+	}
+	if !team.Eligible {
+		you.InFromQuestion = team.EligibleFrom
 	}
 	// The final's wager, and this is the ONLY assignment of it anywhere in
 	// this file. publicTeams carries stakeLocked and stops there, so the TV

@@ -352,6 +352,46 @@ func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
 	a := f.join(game.ID, "Bar Flies")
 	f.openFinal(game, a)
 
+	phases := []struct {
+		label string
+		enter func()
+	}{
+		{"question", func() {}},
+		{"reveal", func() { f.do(game.ID, ActionRequest{Action: ActionReveal, FromPhase: PhaseQuestion}) }},
+		{"betting", func() { f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal}) }},
+		{"scoring", func() { f.do(game.ID, ActionRequest{Action: ActionScore, FromPhase: PhaseBetting}) }},
+	}
+	for _, p := range phases {
+		p.enter()
+		_, _, err := f.svc.Join(f.ctx, f.tenant.ID, game.ID, "Latecomers "+p.label)
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("%s: a table joined while the final was under way: %v", p.label, err)
+		}
+		if !strings.Contains(err.Error(), "this game is closing") {
+			t.Fatalf("%s: refusal reads %q, which does not tell the phone why", p.label, err)
+		}
+	}
+}
+
+// A team that joined during the final cannot stake into it either. Belt and
+// braces behind the closed door above: the answer path has its own eligibility
+// gate, and a row created any other way must still hit it.
+func TestTeamJoiningDuringTheFinalCannotStake(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	s := defaultSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{500}
+	game := f.newGame(s, []string{"space"})
+	a := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
+	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
+
+	// The door is shut once the final opens, so the only way to get an
+	// ineligible table into a final now is to write the row -- which is
+	// exactly what this test wants: the gate on the answer path must hold
+	// however the row got there, not only where Join happens to be careful.
 	late := f.join(game.ID, "Latecomers")
 	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, late.ID, 100); !errors.Is(err, ErrClosed) {
 		t.Fatalf("a team that joined mid-final was allowed to wager: %v", err)
@@ -363,6 +403,43 @@ func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
 	}
 	if g := f.reload(game.ID); g.Phase != PhaseQuestion {
 		t.Fatalf("phase = %s — a latecomer held the wager phase open", g.Phase)
+	}
+}
+
+// The chip had NO eligibility check at all: a table that joined mid-question
+// was correctly barred from answering and then walked straight into the
+// betting on that same question -- which in this game is the half of the round
+// that actually pays.
+func TestLateJoinerCannotBetOnTheQuestionItMissed(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(defaultSettings(), topicSet())
+	early := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	cellID := snap.Board[0].ID
+	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
+
+	late := f.join(game.ID, "Latecomers")
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, early.ID, "10"); err != nil {
+		t.Fatal(err)
+	}
+	// The only eligible table has answered, so the question may already have
+	// closed itself — which is the point: the latecomer is not counted.
+	if f.reload(game.ID).Phase == PhaseQuestion {
+		f.do(game.ID, ActionRequest{Action: ActionReveal, FromPhase: PhaseQuestion})
+	}
+	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
+
+	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	slot := snap.Slots[0].ID
+	err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, late.ID, 0, &slot, 0)
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("a table that joined mid-question placed a chip on it: %v", err)
+	}
+	// The table that was here all along is of course unaffected.
+	if err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, early.ID, 0, &slot, 0); err != nil {
+		t.Fatalf("an eligible table could not place a chip: %v", err)
 	}
 }
 

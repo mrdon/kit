@@ -307,6 +307,30 @@ func TestHTTPRefusesTheTwentyFirstTeam(t *testing.T) {
 	}
 }
 
+// A phone that scans the QR during the final gets a 400 and a sentence it can
+// put on screen, not a 500 and not a seat it cannot use.
+func TestHTTPRefusesAJoinOnceTheFinalBegins(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	s := defaultSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{500}
+	game := f.newGame(s, []string{"space"})
+	a := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playOneRound(game, map[uuid.UUID]string{a.ID: "10"})
+	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+
+	rec := f.request(http.MethodPost, f.gamePath(game)+"/join", joinRequest{Name: "Latecomers"}, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a join during the final returned %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "this game is closing") {
+		t.Fatalf("the refusal body is %q, which does not tell the phone why", rec.Body.String())
+	}
+}
+
 // A game in one workspace is not reachable from another workspace's URL.
 func TestGameIsNotReachableFromAnotherTenantsSlug(t *testing.T) {
 	f := newFixture(t)

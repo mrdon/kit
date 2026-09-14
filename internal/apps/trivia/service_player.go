@@ -65,16 +65,9 @@ func (s *Service) Join(ctx context.Context, tenantID, gameID uuid.UUID, name str
 		return nil, "", ErrGameFull
 	}
 
-	// A team joining mid-question is not in that question's denominator, so
-	// it becomes eligible from the NEXT round. Without this the TV's
-	// "12 of 20 answered" ticks backwards as latecomers arrive.
-	eligibleFrom := 1
-	if game.CurrentRoundID != nil {
-		round, err := GetRound(ctx, s.pool, tenantID, *game.CurrentRoundID)
-		if err != nil {
-			return nil, "", err
-		}
-		eligibleFrom = round.Ordinal + 1
+	eligibleFrom, err := s.joinEligibleFrom(ctx, tenantID, game)
+	if err != nil {
+		return nil, "", err
 	}
 
 	token := NewTeamToken()
@@ -90,6 +83,58 @@ func (s *Service) Join(ctx context.Context, tenantID, gameID uuid.UUID, name str
 	}
 	s.publish(ctx, tenantID, gameID)
 	return team, token, nil
+}
+
+// joinEligibleFrom decides which question a newcomer is in from, and closes
+// the door entirely once the final is under way.
+//
+// Joining late is deliberately open all night. Walk in on question seven,
+// take a $0 seat, and the betting plus the final's wager still leave a real
+// shot at the room -- which is most of what makes a 9pm arrival worth
+// selling. A table arriving mid-question is not in THAT question's
+// denominator though, so it becomes eligible from the next one; without that
+// the TV's "12 of 20 answered" ticks backwards as latecomers land.
+//
+// The final is where it stops. A table that arrives after the final opens
+// cannot answer it, cannot wager into it, and the next thing that happens is
+// the podium -- so the seat is a phone that says "waiting" until the lights
+// come up. Better to say so at the door than sell a ticket to nothing.
+//
+// The test is the current round being FINAL rather than the phase name, on
+// purpose: the final re-enters the ordinary question phase and passes through
+// reveal, betting and scoring on its way out, and a wager phase may land in
+// front of it. One condition covers all of them, including phases that do not
+// exist yet.
+func (s *Service) joinEligibleFrom(ctx context.Context, tenantID uuid.UUID, game *Game) (int, error) {
+	if game.CurrentRoundID == nil {
+		return 1, nil
+	}
+	round, err := GetRound(ctx, s.pool, tenantID, *game.CurrentRoundID)
+	if err != nil {
+		return 0, err
+	}
+	if round.IsFinal {
+		return 0, fmt.Errorf("%w: the final question is under way — this game is closing", ErrClosed)
+	}
+	return round.Ordinal + 1, nil
+}
+
+// assertEligible refuses an action from a table that joined after this round
+// opened.
+//
+// Shared by the answer and the chip deliberately. A latecomer that could not
+// answer but could still put money on the room's cards would be betting on a
+// question it was excluded from -- and in this game the chips are the half of
+// the round that actually pays, so that is the bigger hole of the two.
+func (s *Service) assertEligible(ctx context.Context, tenantID, gameID, teamID uuid.UUID, round *Round) error {
+	team, err := teamByID(ctx, s.pool, tenantID, gameID, teamID)
+	if err != nil {
+		return err
+	}
+	if team.EligibleFromOrdinal > round.Ordinal {
+		return fmt.Errorf("%w: you joined during this question — you're in from the next one", ErrClosed)
+	}
+	return nil
 }
 
 // SubmitAnswer records a team's number.
@@ -121,14 +166,10 @@ func (s *Service) SubmitAnswer(ctx context.Context, tenantID, gameID, teamID uui
 	if err != nil {
 		return err
 	}
-	team, err := teamByID(ctx, s.pool, tenantID, gameID, teamID)
-	if err != nil {
+	// A team that arrived mid-round watches this one out. Letting it answer
+	// would put it in a denominator it was excluded from.
+	if err := s.assertEligible(ctx, tenantID, gameID, teamID, round); err != nil {
 		return err
-	}
-	if team.EligibleFromOrdinal > round.Ordinal {
-		// A team that arrived mid-round watches this one out. Letting it
-		// answer would put it in a denominator it was excluded from.
-		return fmt.Errorf("%w: you joined during this question — you're in from the next one", ErrClosed)
 	}
 
 	if err := UpsertAnswer(ctx, s.pool, tenantID, round.ID, teamID, value, strings.TrimSpace(raw)); err != nil {
@@ -237,6 +278,12 @@ func (s *Service) PlaceChip(ctx context.Context, tenantID, gameID, teamID uuid.U
 	}
 	round, err := GetRound(ctx, s.pool, tenantID, *game.CurrentRoundID)
 	if err != nil {
+		return err
+	}
+	// The same gate the answer phase applies. This one was missing: a table
+	// that joined mid-question was correctly barred from answering and then
+	// walked straight into the betting on that very question.
+	if err := s.assertEligible(ctx, tenantID, gameID, teamID, round); err != nil {
 		return err
 	}
 	if slotID == nil {

@@ -78,6 +78,12 @@ type SnapTeam struct {
 	StakeLocked bool
 	ChipsPlaced int
 
+	// EligibleFrom is the ordinal this table is in from, carried raw so a
+	// phone can be told WHICH question it joins on rather than merely that
+	// it is sitting this one out. Eligible is that same fact compared
+	// against the round in play, and is the one every other surface wants.
+	EligibleFrom int
+
 	// Stake is the final's locked wager, read off the wager row, and it is
 	// the one number in here that only ONE surface may ever see. StakeLocked
 	// is the public tell -- the room knows a table has committed -- while the
