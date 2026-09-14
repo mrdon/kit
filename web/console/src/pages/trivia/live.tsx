@@ -103,12 +103,15 @@ export default function TriviaLive() {
       <div className="trivia-live">
         <section>
           <BoardGrid frame={frame} busy={busy} onPick={(cellId) => void act({ action: 'pick_cell', cell_id: cellId })} />
+          {/* Directly under the board, not after the table list: with twenty
+              tables that list is three screens tall, and the recap is the
+              thing the host reads BEFORE asking a table to pick. */}
+          {frame.phase === 'board' || frame.phase === 'podium' ? <LastRoundRecap frame={frame} /> : null}
         </section>
         <StatusPanel frame={frame} busy={busy} secs={secs} gameId={id}
           onAct={(body) => void act(body)} />
       </div>
 
-      {frame.phase === 'board' || frame.phase === 'podium' ? <LastRoundRecap frame={frame} /> : null}
       {showCards ? <Cards frame={frame} /> : null}
       <Leaderboard frame={frame} />
     </>
