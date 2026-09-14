@@ -588,14 +588,15 @@
     teams.forEach(function (t) {
       var row = el('div', 'row');
       row.dataset.teamId = t.id;
-      var left = el('div', '', t.name);
-      row.appendChild(left);
-      var right = el('div', 'score', money(t.score));
-      row.appendChild(right);
+      row.appendChild(el('div', 'name', t.name));
       var d = state.scoring && state.scoring.deltas ? state.scoring.deltas[t.id] : null;
-      if (d) { left.appendChild(el('span', 'delta', '  ' + (d > 0 ? '+' : '') + money(d))); }
+      row.appendChild(el('div', 'delta', d ? ((d > 0 ? '+' : '') + money(d)) : ''));
+      row.appendChild(el('div', 'score', money(t.score)));
       rail.appendChild(row);
     });
+    // Before the FLIP reads the new rects, or every row is measured at a size
+    // it is about to stop being.
+    fitRail();
     document.getElementById('rail').classList.add('in');
     document.getElementById('cards-screen').classList.add('railed');
 
@@ -611,6 +612,35 @@
       void rows[k].offsetWidth;
       rows[k].style.transition = '';
       rows[k].style.transform = '';
+    }
+  }
+
+  /* Twenty tables is what the game advertises, and twenty rows at the
+     five-table size are half again taller than the stage -- the tables at the
+     bottom of the standings, which are the ones most likely to be watching
+     the standings, simply were not on the screen. Measure and shrink, the
+     same loop as fitJoinRules: the row size and its padding move together so
+     the list stays a list rather than becoming a stack of thin stripes, and a
+     small room never enters the loop at all. */
+  function fitRail() {
+    var rail = document.getElementById('rail');
+    var rows = document.getElementById('rail-rows');
+    if (!rail || !rows || !rows.childElementCount) { return; }
+    // The rail is absolutely positioned, so it is the rows' offsetParent and
+    // offsetTop already carries the padding and the heading above them. The
+    // 48 is the rail's own bottom padding, which nothing else accounts for.
+    var avail = rail.offsetHeight - rows.offsetTop - 48;
+    var size = 38;
+    var apply = function (px) {
+      rows.style.setProperty('--row-size', px + 'px');
+      rows.style.setProperty('--row-pad', Math.max(3, Math.round(px * 0.37)) + 'px');
+    };
+    apply(size);
+    // 16px is the floor: below it the rail stops being readable from the bar
+    // and clipping the last row is the more honest failure.
+    while (rows.scrollHeight > avail && size > 16) {
+      size -= 2;
+      apply(size);
     }
   }
 

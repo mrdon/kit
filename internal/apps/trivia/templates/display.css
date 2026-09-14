@@ -301,14 +301,27 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
    underneath it, so the heading starts below the clock's baseline rather
    than colliding with it. */
 .rail h2 { font: 400 44px/1 var(--display); color: var(--accent-l); letter-spacing: .1em; margin: 44px 0 28px; }
+/* Twenty tables is the cap the game actually sells, and twenty rows at the
+   size below are 1360px of list inside a 1080px stage -- the bottom half of
+   the room used to be scored into a part of the rail nobody could see. The
+   size is therefore a variable that `fitRail` measures and shrinks, and the
+   values here are the FIVE-table look, left exactly as it was: a small room
+   never reaches the loop. */
+#rail-rows { --row-size: 38px; --row-pad: 14px; }
 .row {
-  display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 16px;
-  padding: 14px 0; border-bottom: 2px solid var(--line);
-  font: 700 38px/1.1 var(--body);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline; gap: 0 14px;
+  padding: var(--row-pad) 0; border-bottom: 2px solid var(--line);
+  font: 700 var(--row-size)/1.1 var(--body);
   transition: transform .5s cubic-bezier(.2,.9,.2,1);
 }
+/* The delta is its own column rather than a span inside the name, because as
+   a span it wrapped the row onto a second line at exactly the moment the row
+   is trying to say "this table just overtook you". A long name clips with an
+   ellipsis instead; the score and the swing are the load-bearing half. */
+.row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .score { font-variant-numeric: tabular-nums; color: var(--gold); }
-.row .delta { font: 700 26px/1 var(--body); color: var(--accent-l); }
+.row .delta { font: 700 calc(var(--row-size) * .68)/1 var(--body); color: var(--accent-l); }
 
 /* ---------- 7. final beat ---------- */
 .final-beat { height: 100%; display: grid; place-items: center; text-align: center; }
