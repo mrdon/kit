@@ -9,8 +9,35 @@ import (
 	"strings"
 )
 
-//go:embed templates/display.html.tmpl templates/display.css templates/display.js
+//go:embed templates/display.html.tmpl templates/display.css templates/tv/*.js
 var templateFS embed.FS
+
+// tvScripts is the TV client, one file per screen, in the order they are
+// concatenated into a single IIFE. Function declarations hoist across the
+// whole closure so a screen may call any other's helpers; the order only
+// matters for top-level statements, which is why core (the shared vars) is
+// first and boot (the first connect) is last.
+var tvScripts = []string{
+	"core.js", "join.js", "board.js", "question.js",
+	"cards.js", "scoring.js", "podium.js", "boot.js",
+}
+
+// tvScript assembles the client. Everything is indented as it would be
+// inside the function body; the wrapper is the only thing added.
+func tvScript() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteString("(function () {\n  'use strict';\n\n")
+	for _, name := range tvScripts {
+		src, err := templateFS.ReadFile("templates/tv/" + name)
+		if err != nil {
+			return nil, fmt.Errorf("reading tv/%s: %w", name, err)
+		}
+		b.Write(src)
+		b.WriteString("\n")
+	}
+	b.WriteString("})();\n")
+	return b.Bytes(), nil
+}
 
 //go:embed assets/bungee.woff2 assets/exo2.woff2 assets/wits-wagers-questions.csv
 var assetFS embed.FS
@@ -137,9 +164,9 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	if err != nil {
 		return "", err
 	}
-	js, err := templateFS.ReadFile("templates/display.js")
+	js, err := tvScript()
 	if err != nil {
-		return "", fmt.Errorf("reading display.js: %w", err)
+		return "", err
 	}
 	// The QR and the printed line both carry the SHORT link. It is the
 	// easiest thing to scan and also the easiest thing to type off a screen;

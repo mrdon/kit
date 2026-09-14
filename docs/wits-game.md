@@ -634,7 +634,7 @@ kiosk on a cheap TV stick: fonts inlined as base64 data URIs so it paints identi
 flaky wifi (`menu/render.go`'s comment is the earned lesson), and no dependence on
 `/console/assets/` being reachable. The animations are big, dumb, CSS-driven transforms
 and the page is `render(state)` over seven screens — React earns nothing here. Split the
-JS into `templates/display.js` injected as `template.JS`; the menu's inline script is
+JS in `templates/tv/*.js` (one file per screen, concatenated by render.go) injected as `template.JS`; the menu's inline script is
 already at the edge of readable and this one is ~400 lines.
 
 Use `template.CSS` / `template.URL` / `template.HTML` typed fields, or data URIs get
