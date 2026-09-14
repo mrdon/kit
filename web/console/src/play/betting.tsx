@@ -51,6 +51,7 @@ export function Betting({
   // One tap on a row, three possible meanings — resolved here so the row
   // itself stays dumb.
   const tapSlot = (slot: WireSlot) => {
+    if (drag.justDragged()) return; // the click that trails a drop
     if (armed !== null) {
       setArmed(null);
       void place(armed, slot.id);
@@ -99,7 +100,7 @@ export function Betting({
             dragProps={drag.dragProps}
             setRow={drag.setRow(s.id)}
             onTap={() => tapSlot(s)}
-            onLift={(chip) => void place(chip, null)}
+            onLift={(chip) => { if (!drag.justDragged()) void place(chip, null); }}
             asking={asking === s.id ? { chips, inHand, onPick: (picked) => answer(s, picked) } : null}
           />
         ))}
@@ -152,6 +153,7 @@ function useChipDrag({
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const rowRefs = useRef(new Map<string, HTMLElement>());
+  const endedAt = useRef(0);
 
   const setRow = (id: string) => (el: HTMLDivElement | null) => {
     if (el) rowRefs.current.set(id, el);
@@ -161,9 +163,15 @@ function useChipDrag({
   // slotUnder finds the answer row beneath a pointer. Our own rects rather
   // than elementFromPoint, because the chip under the finger would be the top
   // element every time.
+  //
+  // THE SUBTRACTION IS THE WHOLE DRAG BUG. framer-motion reports pageX/pageY
+  // and getBoundingClientRect is viewport space; the answers scroll, so the
+  // two disagree by exactly the scroll offset. Past the first screenful every
+  // drop landed on a row further down the list, or on nothing at all — which
+  // to the person holding the phone is simply "drag doesn't work".
   const slotUnder = (point: { x: number; y: number }): string | null => {
-    const x = point.x;
-    const y = point.y;
+    const x = point.x - window.scrollX;
+    const y = point.y - window.scrollY;
     for (const [id, el] of rowRefs.current) {
       const r = el.getBoundingClientRect();
       if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id;
@@ -193,6 +201,11 @@ function useChipDrag({
       setDragging(null);
       setOver(null);
       onEnd();
+      // A click still follows pointerup after a drag, and the row underneath
+      // would read it as a tap: placing the chip a second time, or popping
+      // the "which chip?" question open on top of the one that just landed.
+      // Stamp the drop; the tap handlers ignore anything this close behind.
+      endedAt.current = Date.now();
       if (!id) {
         // Dropped on nothing. Dragging a placed chip off its row is how you
         // take it back — the same gesture, no separate control.
@@ -209,6 +222,7 @@ function useChipDrag({
     over,
     setRow,
     dragProps,
+    justDragged: () => Date.now() - endedAt.current < 250,
   };
 }
 
