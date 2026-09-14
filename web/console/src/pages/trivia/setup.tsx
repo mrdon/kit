@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
+import { NumberField } from './NumberField';
 import { defaultSettings, money, type Dataset, type HostFrame, type TopicCount, type TriviaSettings } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
@@ -196,13 +197,13 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         </label>
         <label className="field">
           <span>Categories</span>
-          <input type="number" min={1} max={8} value={s.board_columns} disabled={locked}
-            onChange={(e) => edit({ ...s, board_columns: Number(e.target.value) })} />
+          <NumberField min={1} max={8} value={s.board_columns} disabled={locked}
+            onCommit={(n) => edit({ ...s, board_columns: n })} />
         </label>
         <label className="field">
           <span>Rows</span>
-          <input type="number" min={1} max={5} value={s.board_rows} disabled={locked}
-            onChange={(e) => setRows(Number(e.target.value))} />
+          <NumberField min={1} max={5} value={s.board_rows} disabled={locked}
+            onCommit={setRows} />
         </label>
       </div>
 
@@ -210,10 +211,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         {s.cell_values.map((v, i) => (
           <label className="field" key={i}>
             <span>Row {i + 1} cell value</span>
-            <input type="number" min={1} value={v} disabled={locked}
-              onChange={(e) => {
+            <NumberField min={1} value={v} disabled={locked}
+              onCommit={(n) => {
                 const next = s.cell_values.slice();
-                next[i] = Number(e.target.value);
+                next[i] = n;
                 edit({ ...s, cell_values: next });
               }} />
           </label>
@@ -229,32 +230,32 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       <div className="field-row field-row-bottom">
         <label className="field">
           <span>Answering (s)</span>
-          <input type="number" min={5} max={600} value={s.answer_seconds} disabled={locked}
-            onChange={(e) => edit({ ...s, answer_seconds: Number(e.target.value) })} />
+          <NumberField min={5} max={600} value={s.answer_seconds} disabled={locked}
+            onCommit={(n) => edit({ ...s, answer_seconds: n })} />
         </label>
         <label className="field">
           <span>Deal — cards shown before betting opens (s, 0 skips it)</span>
-          <input type="number" min={0} max={600} value={s.reveal_seconds} disabled={locked}
-            onChange={(e) => edit({ ...s, reveal_seconds: Number(e.target.value) })} />
+          <NumberField min={0} max={600} value={s.reveal_seconds} disabled={locked}
+            onCommit={(n) => edit({ ...s, reveal_seconds: n })} />
         </label>
         <label className="field">
           <span>Betting (s)</span>
-          <input type="number" min={5} max={600} value={s.bet_seconds} disabled={locked}
-            onChange={(e) => edit({ ...s, bet_seconds: Number(e.target.value) })} />
+          <NumberField min={5} max={600} value={s.bet_seconds} disabled={locked}
+            onCommit={(n) => edit({ ...s, bet_seconds: n })} />
         </label>
         {/* Only reachable with the final on — the phase never opens otherwise
             — so it says so rather than sitting there looking universal. */}
         <label className="field">
           <span>Wager — the final only (s)</span>
-          <input type="number" min={5} max={600} value={s.wager_seconds} disabled={locked}
-            onChange={(e) => edit({ ...s, wager_seconds: Number(e.target.value) })} />
+          <NumberField min={5} max={600} value={s.wager_seconds} disabled={locked}
+            onCommit={(n) => edit({ ...s, wager_seconds: n })} />
         </label>
         {/* Zero is a real choice here and the old behaviour, so the floor is
             0 rather than the 5 every other timer carries. */}
         <label className="field">
           <span>Grace after everyone&rsquo;s in (s)</span>
-          <input type="number" min={0} max={60} value={s.grace_seconds} disabled={locked}
-            onChange={(e) => edit({ ...s, grace_seconds: Number(e.target.value) })} />
+          <NumberField min={0} max={60} value={s.grace_seconds} disabled={locked}
+            onCommit={(n) => edit({ ...s, grace_seconds: n })} />
         </label>
       </div>
       <p className="page-sub">
