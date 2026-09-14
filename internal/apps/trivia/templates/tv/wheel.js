@@ -182,9 +182,5 @@ function fitWheelBand() {
   while (name.scrollWidth > 1600 && size > 40) {
     size -= 6;
     name.style.fontSize = size + 'px';
-    /* The arc a wedge gives a name shrinks as the room grows, so the clamp
-       has to as well -- a fixed max-width let twenty names overlap into an
-       unreadable ring. */
-    name.style.maxWidth = Math.max(92, Math.min(230, Math.round(1400 / teams.length))) + 'px';
   }
 }

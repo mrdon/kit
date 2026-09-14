@@ -199,7 +199,9 @@ function cardsChrome(mode) {
   band.classList.remove('shown');
   document.getElementById('rail').classList.remove('in');
   document.getElementById('cards-screen').classList.remove('railed');
-  document.getElementById('cards-question').textContent = state.round ? state.round.text : '';
+  var q = document.getElementById('cards-question');
+  q.textContent = state.round ? state.round.text : '';
+  fitCardsQuestion(q);
   // The chips are on the cards as they land, but a table that has placed
   // both and a table that has not started look the same from the back of
   // the room, so the tally still answers "are we waiting on anyone?".
@@ -217,4 +219,19 @@ function cardsChrome(mode) {
   document.getElementById('cards-footer').classList.toggle('scored', mode === 'scored');
   fitCardValues();
   startRing('cards');
+}
+
+/* The question above the cards has a fixed band (its row is what the deck
+   does not get), so a three-line question was clipped mid-sentence with no
+   ellipsis. Shrink until it fits; the floor is where it stops reading from
+   the bar, and a shorter question is the real fix below that. The starting
+   size is whatever the tier's CSS set, so the loop only ever goes down. */
+function fitCardsQuestion(q) {
+  q.style.fontSize = '';
+  var size = parseFloat(getComputedStyle(q).fontSize) || 44;
+  var max = parseFloat(getComputedStyle(q).maxHeight) || 112;
+  while (q.scrollHeight > max + 1 && size > 22) {
+    size -= 2;
+    q.style.fontSize = size + 'px';
+  }
 }
