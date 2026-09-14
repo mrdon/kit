@@ -39,9 +39,12 @@ type ShortfallError struct {
 }
 
 func (e *ShortfallError) Error() string {
-	kind := "questions"
+	kind := "question"
 	if e.Fresh {
-		kind = "fresh questions"
+		kind = "fresh question"
+	}
+	if e.Have != 1 {
+		kind += "s"
 	}
 	return fmt.Sprintf("topic %q has %d %s but the board needs %d", e.Topic, e.Have, kind, e.Needed)
 }

@@ -28,18 +28,36 @@ function loginRedirect(): never {
 
 async function parse<T>(r: Response): Promise<T> {
   if (r.status === 401) loginRedirect();
-  if (!r.ok) {
-    let msg = `${r.status} ${r.statusText}`;
-    try {
-      const body = await r.json();
-      if (body?.error) msg = body.error;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(msg);
-  }
+  if (!r.ok) throw new Error(await errorMessage(r));
   if (r.status === 204) return undefined as T;
   return r.json() as Promise<T>;
+}
+
+// The server refuses a request in two dialects: a JSON `{error}` body from
+// most handlers, and Go's `http.Error` plain text from the rest. Read both.
+// Reading only the JSON one turned every plain-text refusal into "400 Bad
+// Request" — throwing away a message the handler had gone to the trouble of
+// writing for exactly this moment ("topic "Space" has 0 fresh questions but
+// the board needs 2"), and leaving the host with nothing to act on.
+async function errorMessage(r: Response): Promise<string> {
+  const fallback = `${r.status} ${r.statusText}`;
+  let body: string;
+  try {
+    body = (await r.text()).trim();
+  } catch {
+    return fallback;
+  }
+  if (!body) return fallback;
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed?.error) return String(parsed.error);
+  } catch {
+    /* not JSON — fall through to the text itself */
+  }
+  // A proxy's error page is markup, not a sentence. Never put one in a
+  // banner; the status line is more use than a wall of HTML.
+  if (body.startsWith('<') || body.length > 300) return fallback;
+  return body;
 }
 
 export async function apiGet<T>(path: string): Promise<T> {

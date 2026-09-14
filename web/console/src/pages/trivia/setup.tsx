@@ -326,12 +326,18 @@ function BoardPanel({
   const cols = game.settings?.board_columns ?? 5;
   const rows = game.settings?.board_rows ?? 2;
   const repeats = game.settings?.repeat_questions ?? false;
-  // Viability is measured in FRESH questions, not total, because fresh is
-  // what the builder will actually be handed. Offering a category with nine
-  // questions the room has already heard and none it has not would walk the
-  // host straight into a shortfall. With repeats on the server reports
-  // everything as unused, so this is the same test either way.
-  const viable = topics.filter((t) => t.unused >= rows);
+  // What a category can actually field. Viability is measured in FRESH
+  // questions rather than total, because fresh is what the builder will be
+  // handed: offering a category with nine questions the room has heard and
+  // none it has not would walk the host straight into a shortfall.
+  //
+  // The `repeats ? total` branch is not redundant with the server, which
+  // reports unused === total for a game that allows them. It is what makes
+  // ticking the box update these numbers on the spot: the counts in hand
+  // were fetched under the OLD setting, and a host who ticks "allow repeats"
+  // to fix a shortfall should not have to reload to see it fixed.
+  const avail = (t: TopicCount) => (repeats ? t.total : t.unused);
+  const viable = topics.filter((t) => avail(t) >= rows);
 
   const toggle = (key: string) => {
     setChosen((c) =>
@@ -381,7 +387,8 @@ function BoardPanel({
               className={chosen.includes(t.key) ? 'pill pill-ok' : 'pill'}
               onClick={() => toggle(t.key)}
             >
-              {t.label} · {t.total} ({t.unused} {repeats ? 'unused' : 'fresh'})
+              {t.label} · {t.total}
+              {repeats ? '' : ` (${t.unused} fresh)`}
             </button>
           ))}
         </div>

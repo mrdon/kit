@@ -142,8 +142,14 @@ func TestBuildBoardNamesTheUnderSuppliedTopic(t *testing.T) {
 	if se.Topic != "food" || se.Have != 1 || se.Needed != 3 {
 		t.Fatalf("shortfall = %+v, want food 1/3", se)
 	}
-	if got := se.Error(); got != `topic "food" has 1 questions but the board needs 3` {
+	if got := se.Error(); got != `topic "food" has 1 question but the board needs 3` {
 		t.Fatalf("message = %q", got)
+	}
+	// With the repeat rule on, the same gap has a different fix, and the
+	// message has to say which number it is quoting.
+	se.Fresh = true
+	if got := se.Error(); got != `topic "food" has 1 fresh question but the board needs 3` {
+		t.Fatalf("message with repeats off = %q", got)
 	}
 }
 

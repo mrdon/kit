@@ -357,9 +357,12 @@ func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req
 	}
 	topics := PickTopics(hist, game.BoardColumns, game.BoardRows, seed)
 	if len(topics) < game.BoardColumns {
-		kind := "fresh questions"
+		kind := "fresh question"
 		if game.RepeatQuestions {
-			kind = "questions"
+			kind = "question"
+		}
+		if game.BoardRows != 1 {
+			kind += "s"
 		}
 		return nil, fmt.Errorf("only %d topics have at least %d %s — this board needs %d columns",
 			len(topics), game.BoardRows, kind, game.BoardColumns)
