@@ -52,6 +52,23 @@ func toolMetas() []services.ToolMeta {
 			}, "payload"),
 		},
 		{
+			Name: "set_menu_panels",
+			Description: "Replace the menu's rotating side panels, leaving the tap list and " +
+				"venue chrome untouched. Prefer this over set_menu_board for any panel edit — " +
+				"it cannot damage the taps or the wordmark. Pass the whole panels array; it " +
+				"replaces what is there, so include the panels you want to keep. Each panel is " +
+				"{kind, label} plus its own fields: agenda takes `events` (when, time, title, " +
+				"note), poster takes `image` and `alt`, cta takes `headline`, `body` and " +
+				"`contact`. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
+				"one-off calendar date into a panel: stored text does not expire, so a date " +
+				"typed here is still on the wall long after the event. Recurring wording " +
+				"('Every Wed') is safe; 'Today' and 'Sat 3 Oct' are not.",
+			AdminOnly: true,
+			Schema: services.PropsReq(map[string]any{
+				"panels": services.Field("string", "The panels as a JSON array."),
+			}, "panels"),
+		},
+		{
 			Name: "set_menu_asset",
 			Description: "Store an image the menu can show, by giving Kit a URL to fetch it from. " +
 				"Kit downloads and keeps the bytes, so the board page stays self-contained and the " +

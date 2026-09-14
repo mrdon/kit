@@ -402,6 +402,10 @@ The **Menu** page (`/<your-slug>/web/menu`) holds one tap list per workspace and
 
 The **screen address** is the wall display: a permanent public URL you paste into a kiosk board once. Point the menu at your Untappd digital board with `set_menu_source` (the id is the number in `business.untappd.com/boards/<id>`) and the tap list follows — staff keep curating in Untappd exactly as they do now, and the screen re-checks when it asks, at most once a minute.
 
+The **side panels** are the rotating rail beside the tap list — a weekly agenda, a poster, or a "book the space" call to action. Change them with `set_menu_panels`, which replaces the panels and **nothing else**: your taps, wordmark and footer are untouched whatever you pass. Use `set_menu_board` only when you mean to set the tap list or the venue chrome by hand, since that one replaces the whole document.
+
+Panels hold **text, not a calendar**. Nothing in a panel expires on its own, so a one-off date written into one is still on the wall weeks after the event — write recurring wording like "Every Wed" instead, and let a scheduled job refresh anything dated.
+
 Only beers that are **actually pouring** reach the printed menu — Kit takes that from whether Untappd prices a 4oz taster, which every tap has and nothing else does. A beer whose prices you clear in Untappd drops off the paper (and its heading with it, if it was the last one under it), and a can listed beside the taps never appears as though you could order a glass of it. Put cans and bottles in `extras` instead.
 
 **Printable menu** on the same page opens a letter-sized PDF for the tables: a coloured band per section, and a row per beer with its style, ABV, half-pour and full-pour prices, and a sentence about it. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size beside the price, so nobody is quoted a 16oz they cannot order.

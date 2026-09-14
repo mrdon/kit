@@ -31,6 +31,8 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return handleSetSource(a)
 	case "set_menu_board":
 		return handleSetBoard(a)
+	case "set_menu_panels":
+		return handleSetPanels(a)
 	case "set_menu_asset":
 		return handleSetAsset(a)
 	case "set_menu_print":
@@ -77,6 +79,16 @@ func handleSetBoard(a *App) tools.HandlerFunc {
 			return "", err
 		}
 		return saveBoard(ec.Ctx, ec.Pool, a, ec.Tenant.ID, args)
+	}
+}
+
+func handleSetPanels(a *App) tools.HandlerFunc {
+	return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+		var args setPanelsArgs
+		if err := decode(raw, &args, "set_menu_panels"); err != nil {
+			return "", err
+		}
+		return savePanels(ec.Ctx, ec.Pool, a, ec.Tenant.ID, args)
 	}
 }
 

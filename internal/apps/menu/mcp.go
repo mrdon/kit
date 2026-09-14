@@ -56,6 +56,14 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 				Payload: req.GetString("payload", ""),
 			})
 		})
+	case "set_menu_panels":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			args, err := panelsFromRequest(req)
+			if err != nil {
+				return "", err
+			}
+			return savePanels(ctx, pool, a, c.TenantID, args)
+		})
 	case "set_menu_asset":
 		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
 			return saveAsset(ctx, pool, a.fetcher, c.TenantID, setAssetArgs{
@@ -88,6 +96,25 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 	default:
 		return nil
 	}
+}
+
+// panelsFromRequest reads the panels argument off an MCP call.
+//
+// Re-encoded through json rather than cast in place, for the reason
+// notesFromRequest documents: clients differ on whether a structured argument
+// travels as the value itself or as a JSON string, and both are correct.
+func panelsFromRequest(req mcp.CallToolRequest) (setPanelsArgs, error) {
+	var args setPanelsArgs
+	raw, ok := req.GetArguments()["panels"]
+	if !ok {
+		return args, errors.New("panels is required")
+	}
+	blob, err := json.Marshal(raw)
+	if err != nil {
+		return args, fmt.Errorf("reading panels: %w", err)
+	}
+	args.Panels = blob
+	return args, nil
 }
 
 // notesFromRequest reads the notes map off an MCP call.
