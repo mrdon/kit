@@ -42,35 +42,12 @@ export function Betting({
     onStart: (chip) => { setArmed(chip); setAsking(null); },
     onEnd: () => setArmed(null),
   });
+  const taps = useRowTaps({ armed, setArmed, asking, setAsking, inHand, place, drag });
 
   useEffect(() => {
     setArmed(null);
     setAsking(null);
   }, [frame.round?.id]);
-
-  // One tap on a row, three possible meanings — resolved here so the row
-  // itself stays dumb.
-  const tapSlot = (slot: WireSlot) => {
-    if (drag.justDragged()) return; // the click that trails a drop
-    if (armed !== null) {
-      setArmed(null);
-      void place(armed, slot.id);
-      return;
-    }
-    if (inHand.length === 0) return;
-    if (inHand.length === 1) {
-      void place(inHand[0], slot.id);
-      return;
-    }
-    setAsking(asking === slot.id ? null : slot.id);
-  };
-
-  const answer = (slot: WireSlot, picked: number[]) => {
-    setAsking(null);
-    // Sequentially, because usePlacer serialises: two PUTs in flight at once
-    // come back in either order and the later frame wins.
-    picked.forEach((chip) => void place(chip, slot.id));
-  };
 
   return (
     <div className="body">
@@ -87,27 +64,53 @@ export function Betting({
         status={statusLine({ frame, chips, placedBy, isFinal })}
       />
 
-      <div className="slots">
-        {frame.slots.map((s) => (
-          <SlotRow
-            key={s.id}
-            slot={s}
-            mine={(frame.you?.chips ?? []).filter((c) => c.slotId === s.id)}
-            armed={armed !== null}
-            live={armed !== null || inHand.length > 0}
-            over={drag.over === s.id}
-            dragging={drag.dragging}
-            dragProps={drag.dragProps}
-            setRow={drag.setRow(s.id)}
-            onTap={() => tapSlot(s)}
-            onLift={(chip) => { if (!drag.justDragged()) void place(chip, null); }}
-            asking={asking === s.id ? { chips, inHand, onPick: (picked) => answer(s, picked) } : null}
-          />
-        ))}
-      </div>
+      <SlotList frame={frame} chips={chips} inHand={inHand} armed={armed !== null}
+        asking={asking} drag={drag} taps={taps} />
       <p className="err">{err}</p>
     </div>
   );
+}
+
+// useRowTaps resolves what a tap on an answer row means. Three possible
+// meanings, decided in one place so the row itself stays dumb.
+function useRowTaps({
+  armed, setArmed, asking, setAsking, inHand, place, drag,
+}: {
+  armed: number | null;
+  setArmed: (chip: number | null) => void;
+  asking: string | null;
+  setAsking: (slotID: string | null) => void;
+  inHand: number[];
+  place: (chip: number, slotId: string | null) => void;
+  drag: { justDragged: () => boolean };
+}) {
+  const tapSlot = (slot: WireSlot) => {
+    if (drag.justDragged()) return; // the click that trails a drop
+    if (armed !== null) {
+      setArmed(null);
+      place(armed, slot.id);
+      return;
+    }
+    if (inHand.length === 0) return;
+    if (inHand.length === 1) {
+      place(inHand[0], slot.id);
+      return;
+    }
+    setAsking(asking === slot.id ? null : slot.id);
+  };
+
+  const answerWith = (slot: WireSlot, picked: number[]) => {
+    setAsking(null);
+    // One at a time, because usePlacer serialises: two PUTs in flight come
+    // back in either order and the later frame wins.
+    picked.forEach((chip) => place(chip, slot.id));
+  };
+
+  const lift = (chip: number) => {
+    if (!drag.justDragged()) place(chip, null);
+  };
+
+  return { tapSlot, answerWith, lift };
 }
 
 // usePlacer owns every call to the bets endpoint.
@@ -140,6 +143,7 @@ function usePlacer(onDone: (f: PlayerFrame) => void) {
 }
 
 type DragProps = ReturnType<ReturnType<typeof useChipDrag>['dragProps']>;
+type Point = { x: number; y: number };
 
 // useChipDrag is the pointer half of the same two gestures.
 function useChipDrag({
@@ -169,7 +173,7 @@ function useChipDrag({
   // two disagree by exactly the scroll offset. Past the first screenful every
   // drop landed on a row further down the list, or on nothing at all — which
   // to the person holding the phone is simply "drag doesn't work".
-  const slotUnder = (point: { x: number; y: number }): string | null => {
+  const slotUnder = (point: Point): string | null => {
     const x = point.x - window.scrollX;
     const y = point.y - window.scrollY;
     for (const [id, el] of rowRefs.current) {
@@ -179,7 +183,32 @@ function useChipDrag({
     return null;
   };
 
-  const dragProps = (chip: number) => ({
+  const dragProps = (chip: number) => chipDragProps(chip, {
+    slotUnder, placedBy, place, setDragging, setOver, onStart, onEnd, endedAt,
+  });
+
+  return {
+    dragging,
+    over,
+    setRow,
+    dragProps,
+    justDragged: () => Date.now() - endedAt.current < 250,
+  };
+}
+
+// chipDragProps is the framer-motion drag contract for one chip, kept out of
+// the hook so the hook stays readable.
+function chipDragProps(chip: number, d: {
+  slotUnder: (p: Point) => string | null;
+  placedBy: Map<number, string>;
+  place: (chip: number, slotId: string | null) => void;
+  setDragging: (chip: number | null) => void;
+  setOver: (slotID: string | null) => void;
+  onStart: (chip: number) => void;
+  onEnd: () => void;
+  endedAt: { current: number };
+}) {
+  return {
     drag: true as const,
     // Snap home on release. The chip's real position is decided by the
     // server round-trip, so animating it to where it was dropped would be a
@@ -190,39 +219,31 @@ function useChipDrag({
     // land on a row in a moving bar.
     dragElastic: 0,
     onDragStart: () => {
-      setDragging(chip);
-      onStart(chip);
+      d.setDragging(chip);
+      d.onStart(chip);
     },
-    onDrag: (_: unknown, info: { point: { x: number; y: number } }) => {
-      setOver(slotUnder(info.point));
+    onDrag: (_: unknown, info: { point: Point }) => {
+      d.setOver(d.slotUnder(info.point));
     },
-    onDragEnd: (_: unknown, info: { point: { x: number; y: number } }) => {
-      const id = slotUnder(info.point);
-      setDragging(null);
-      setOver(null);
-      onEnd();
+    onDragEnd: (_: unknown, info: { point: Point }) => {
+      const id = d.slotUnder(info.point);
+      d.setDragging(null);
+      d.setOver(null);
+      d.onEnd();
       // A click still follows pointerup after a drag, and the row underneath
       // would read it as a tap: placing the chip a second time, or popping
       // the "which chip?" question open on top of the one that just landed.
       // Stamp the drop; the tap handlers ignore anything this close behind.
-      endedAt.current = Date.now();
+      d.endedAt.current = Date.now();
       if (!id) {
         // Dropped on nothing. Dragging a placed chip off its row is how you
         // take it back — the same gesture, no separate control.
-        if (placedBy.has(chip)) place(chip, null);
+        if (d.placedBy.has(chip)) d.place(chip, null);
         return;
       }
-      if (placedBy.get(chip) === id) return; // already there
-      place(chip, id);
+      if (d.placedBy.get(chip) === id) return; // already there
+      d.place(chip, id);
     },
-  });
-
-  return {
-    dragging,
-    over,
-    setRow,
-    dragProps,
-    justDragged: () => Date.now() - endedAt.current < 250,
   };
 }
 
@@ -267,6 +288,45 @@ function ChipTray({
   );
 }
 
+type Taps = ReturnType<typeof useRowTaps>;
+type Drag = ReturnType<typeof useChipDrag>;
+
+// The answers, in reveal order.
+function SlotList({
+  frame, chips, inHand, armed, asking, drag, taps,
+}: {
+  frame: PlayerFrame;
+  chips: number[];
+  inHand: number[];
+  armed: boolean;
+  asking: string | null;
+  drag: Drag;
+  taps: Taps;
+}) {
+  return (
+    <div className="slots">
+      {frame.slots.map((s) => (
+        <SlotRow
+          key={s.id}
+          slot={s}
+          mine={(frame.you?.chips ?? []).filter((c) => c.slotId === s.id)}
+          armed={armed}
+          live={armed || inHand.length > 0}
+          over={drag.over === s.id}
+          dragging={drag.dragging}
+          dragProps={drag.dragProps}
+          setRow={drag.setRow(s.id)}
+          onTap={() => taps.tapSlot(s)}
+          onLift={taps.lift}
+          asking={asking === s.id
+            ? { chips, inHand, onPick: (picked: number[]) => taps.answerWith(s, picked) }
+            : null}
+        />
+      ))}
+    </div>
+  );
+}
+
 // One answer card: its value, who wrote it, your chips on it, and — when the
 // row has been asked a question it cannot answer on its own — the chooser.
 function SlotRow({
@@ -296,41 +356,49 @@ function SlotRow({
   ].filter(Boolean).join(' ');
 
   return (
-    <motion.div
-      key={slot.id}
-      ref={setRow}
-      className={cls}
-      onClick={onTap}
-      whileTap={live ? { scale: 0.98 } : undefined}
-    >
+    <motion.div ref={setRow} className={cls} onClick={onTap}
+      whileTap={live ? { scale: 0.98 } : undefined}>
       <div>
         <div className="val">{slot.label}</div>
         {slot.teams.length ? <div className="names">{slot.teams.join(' · ')}</div> : null}
       </div>
       <div className="mine">
         {mine.map((c) => (
-          // A placed chip stays draggable, so moving it to another answer is
-          // the same gesture that put it there — and while the clock is still
-          // running, moving is the whole game.
-          <motion.button
-            key={c.tokenIndex}
-            className={`chip c${c.tokenIndex} ${dragging === c.tokenIndex ? 'dragging' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onLift(c.tokenIndex);
-            }}
-            whileDrag={{ scale: 1.15, zIndex: 30 }}
-            aria-label={`${money(c.amount)} chip — drag to move it, tap to take it back`}
-            {...dragProps(c.tokenIndex)}
-          >
-            {money(c.amount)}
-          </motion.button>
+          <PlacedChip key={c.tokenIndex} chip={c} dragging={dragging === c.tokenIndex}
+            dragProps={dragProps} onLift={onLift} />
         ))}
       </div>
       {asking ? (
         <ChipChooser label={slot.label} chips={asking.chips} inHand={asking.inHand} onPick={asking.onPick} />
       ) : null}
     </motion.div>
+  );
+}
+
+// A chip that is already down stays draggable, so moving it to another answer
+// is the same gesture that put it there — and while the clock is still
+// running, moving is the whole game.
+function PlacedChip({
+  chip, dragging, dragProps, onLift,
+}: {
+  chip: { tokenIndex: number; amount: number };
+  dragging: boolean;
+  dragProps: (chip: number) => DragProps;
+  onLift: (chip: number) => void;
+}) {
+  return (
+    <motion.button
+      className={`chip c${chip.tokenIndex} ${dragging ? 'dragging' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onLift(chip.tokenIndex);
+      }}
+      whileDrag={{ scale: 1.15, zIndex: 30 }}
+      aria-label={`${money(chip.amount)} chip — drag to move it, tap to take it back`}
+      {...dragProps(chip.tokenIndex)}
+    >
+      {money(chip.amount)}
+    </motion.button>
   );
 }
 
