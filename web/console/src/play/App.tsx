@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { join, me, money, reclaim, type PlayerFrame } from './api';
 import { useStream, useWakeLock } from './useStream';
-import { Answer, Clock, Waiting } from './screens';
+import { Answer, Clock, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';
 import { Podium, Result, Standings } from './results';
 
@@ -130,8 +130,19 @@ function Playing({
       // is the right time to tell them where they stand. "Next question
       // coming up" told them nothing they could not see on the wall.
       return <BetweenQuestions frame={frame} />;
+    case 'wager': {
+      // The blind bet. No prompt has been sent, so there is nothing else this
+      // screen could show even if it wanted to.
+      //
+      // A table that walked in during the final is not in this round at all —
+      // the server refuses its wager — so it watches rather than being handed
+      // a slider that 409s.
+      const seat = frame.teams.find((t) => t.id === you.teamId);
+      if (seat && !seat.eligible) return <WagerWatching frame={frame} msLeft={msLeft} />;
+      return <Wager frame={frame} msLeft={msLeft} onDone={apply} />;
+    }
     case 'question':
-      if (!you.answered || frame.round?.isFinal) {
+      if (!you.answered) {
         return <Answer frame={frame} msLeft={msLeft} onDone={apply} />;
       }
       return (
@@ -267,6 +278,10 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
 
   const full = frame.teams.length >= 20;
   const finished = frame.phase === 'podium';
+  // Joining mid-final is allowed — the room is still a room — but the wager
+  // is closed to anybody not already in it, so say that rather than letting a
+  // latecomer type a name and then find a dead slider.
+  const wagering = frame.phase === 'wager';
 
   const doJoin = async () => {
     if (running.current) return;
@@ -340,6 +355,12 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
         </>
       ) : (
         <>
+          {wagering ? (
+            <div className="banner">
+              Final question &mdash; tables are setting their wagers. Join now and you&rsquo;ll
+              be watching this one.
+            </div>
+          ) : null}
           <input
             className="field" type="text" enterKeyHint="go" maxLength={40}
             placeholder="your table&rsquo;s name" value={name}

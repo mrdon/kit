@@ -38,7 +38,10 @@ export interface WireRound {
   isFinal: boolean;
   ordinal: number;
   points: number;
+  // Empty during `wager` — the prompt does not leave the server until the
+  // blind bets are in. `category` is what the room bets against.
   text: string;
+  category: string;
   answered: number;
   eligible: number;
 }
@@ -80,7 +83,7 @@ export interface WirePicker {
 export type PickerReason = '' | 'drawn' | 'wrote_winner' | 'lowest';
 
 export type Phase =
-  | 'setup' | 'lobby' | 'board' | 'question'
+  | 'setup' | 'lobby' | 'board' | 'wager' | 'question'
   | 'reveal' | 'betting' | 'scoring' | 'podium';
 
 export interface PlayerFrame {
@@ -127,8 +130,22 @@ export function reclaim(teamId: string, code: string) {
   return post<{ teamId: string }>('/reclaim', { teamId, code });
 }
 
-export function submitAnswer(answer: string, stake: number | null) {
-  return post<PlayerFrame>('/answer', { answer, stake });
+export function submitAnswer(answer: string) {
+  return post<PlayerFrame>('/answer', { answer });
+}
+
+// A PUT for the same reason /bets is one: a statement of the desired wager
+// rather than an event, so a retry over flaky bar wifi is idempotent and a
+// double-tap cannot stack two bets. The server clamps to the table's bank.
+export async function setWager(amount: number) {
+  const res = await fetch(base + '/wager', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ amount }),
+  });
+  if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+  return (await res.json()) as PlayerFrame;
 }
 
 // A PUT of the desired placement for ONE chip, so every retry over flaky bar

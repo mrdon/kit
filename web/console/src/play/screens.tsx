@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { money, parseAnswer, submitAnswer, type PlayerFrame } from './api';
+import { money, parseAnswer, setWager, submitAnswer, type PlayerFrame } from './api';
 
 // Countdown reads from the locally-ticked millisecond value, never from a
 // server tick.
@@ -26,6 +26,12 @@ export function Waiting({ title, sub }: { title: string; sub?: string }) {
 
 // Answer is the screen a table spends most of the night on, so the details
 // that decide whether it actually works all live here.
+//
+// It is the SAME screen in the final. The wager was committed a phase earlier,
+// against nothing but the category, so by the time the question appears there
+// is no money decision left to make — only a number to type. All the final
+// gets here is a label saying which question this is, and that is the point:
+// the bet is behind them.
 export function Answer({
   frame, msLeft, onDone,
 }: {
@@ -34,42 +40,25 @@ export function Answer({
   onDone: (f: PlayerFrame) => void;
 }) {
   const [raw, setRaw] = useState('');
-  const [stake, setStake] = useState(0);
-  const [confirming, setConfirming] = useState(false);
-  // changing is the one thing the locked screen remembers: this table asked to
-  // reopen the form. Everything else about being locked in comes off the
-  // frame, so a phone that reloads mid-final is still locked in.
-  const [changing, setChanging] = useState(false);
   const [err, setErr] = useState('');
   // The synchronous ref guard, because setState is async and two fast taps
   // both see busy === false.
   const running = useRef(false);
   const [, force] = useState(0);
 
-  const isFinal = !!frame.round?.isFinal && frame.finalWager;
-  const bank = frame.you?.score ?? 0;
+  const isFinal = !!frame.round?.isFinal;
   const parsed = parseAnswer(raw);
   const submitted = frame.you?.answered ?? false;
-  // The server's copy of the wager. $0 is a real answer here — the leader's
-  // defensive play — so this is a null check, never a truthiness one.
-  const locked = isFinal && submitted ? (frame.you?.stake ?? null) : null;
 
-  useEffect(() => {
-    setRaw('');
-    setConfirming(false);
-    setChanging(false);
-    setStake(0);
-  }, [frame.round?.id]);
+  useEffect(() => { setRaw(''); }, [frame.round?.id]);
 
   const send = async () => {
     if (running.current || parsed === null) return;
     running.current = true;
     force((n) => n + 1);
     try {
-      onDone(await submitAnswer(raw, isFinal ? stake : null));
+      onDone(await submitAnswer(raw));
       setErr('');
-      setConfirming(false);
-      setChanging(false);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'could not send that');
     } finally {
@@ -78,31 +67,10 @@ export function Answer({
     }
   };
 
-  if (isFinal && confirming) {
-    return (
-      <ConfirmWager
-        bank={bank} stake={stake} answer={parsed} err={err} busy={running.current}
-        onLock={() => void send()} onBack={() => setConfirming(false)}
-      />
-    );
-  }
-
-  // The phase is STILL `question` after a table locks in — the host has not
-  // closed it and the rest of the room is still typing — so this component
-  // stays mounted and has to announce the change itself. Leaving the confirm
-  // screen up is what made "Lock it in" read as a button that did nothing.
-  if (locked !== null && !changing) {
-    return (
-      <LockedIn
-        msLeft={msLeft} stake={locked} answer={parsed}
-        onChange={() => { setStake(locked); setChanging(true); }}
-      />
-    );
-  }
-
   return (
     <div className="body">
       <Clock msLeft={msLeft} />
+      {isFinal ? <p className="final-tag">FINAL QUESTION</p> : null}
       <h2>{frame.round?.text}</h2>
       <input
         className="field big"
@@ -117,9 +85,7 @@ export function Answer({
         placeholder="your number"
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !isFinal) void send();
-        }}
+        onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
       />
       {/* Echo the parsed value back BEFORE submit. Without it you get silent
           zeros and an argument at the bar. */}
@@ -129,71 +95,118 @@ export function Answer({
           : <>we read that as <strong>{parsed.toLocaleString('en-US')}</strong></>}
       </div>
 
-      {isFinal ? (
-        <StakeControl bank={bank} stake={stake} onChange={setStake} />
-      ) : null}
-
-      <button
-        className="btn"
-        disabled={parsed === null || running.current}
-        onClick={() => (isFinal ? setConfirming(true) : void send())}
-      >
-        {isFinal ? 'Review wager' : submitted ? 'Change my answer' : 'Send it'}
+      <button className="btn" disabled={parsed === null || running.current} onClick={() => void send()}>
+        {submitted ? 'Change my answer' : 'Send it'}
       </button>
       {/* Saying so removes fat-finger anxiety on a 60-second clock. */}
       <p className="sub" style={{ textAlign: 'center' }}>
-        {submitted ? 'In! You can change it until time\u2019s up.' : 'You can change it until time\u2019s up.'}
+        {submitted ? 'In! You can change it until time’s up.' : 'You can change it until time’s up.'}
       </p>
       <p className="err">{err}</p>
     </div>
   );
 }
 
-// The confirm beat. A final wager is the whole night's money, so it gets its
-// own screen rather than a second tap on the same button.
-function ConfirmWager({
-  bank, stake, answer, err, busy, onLock, onBack,
+// Wager is the blind bet, and the screen that makes the final a wager rather
+// than a calculation: a category, a clock, and an amount — with the question
+// nowhere on the wire, let alone on this screen.
+//
+// Locked state is derived from the SERVER's copy (`you.stake`), never from
+// having tapped the button, so a phone that reloads mid-wager comes back
+// locked in rather than showing an empty slider over money it already
+// committed. $0 is a real wager — the leader's defensive play — so this is a
+// null check and never a truthiness one.
+export function Wager({
+  frame, msLeft, onDone,
 }: {
-  bank: number;
-  stake: number;
-  answer: number | null;
-  err: string;
-  busy: boolean;
-  onLock: () => void;
-  onBack: () => void;
+  frame: PlayerFrame;
+  msLeft: number | null;
+  onDone: (f: PlayerFrame) => void;
 }) {
+  const locked = frame.you?.stake ?? null;
+  const [amount, setAmount] = useState(locked ?? 0);
+  const [changing, setChanging] = useState(false);
+  const [err, setErr] = useState('');
+  const running = useRef(false);
+  const [, force] = useState(0);
+
+  const bank = frame.you?.score ?? 0;
+
+  useEffect(() => { setChanging(false); }, [frame.round?.id]);
+
+  const lock = async () => {
+    if (running.current) return;
+    running.current = true;
+    force((n) => n + 1);
+    try {
+      onDone(await setWager(amount));
+      setErr('');
+      setChanging(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'could not lock that in');
+    } finally {
+      running.current = false;
+      force((n) => n + 1);
+    }
+  };
+
+  if (locked !== null && !changing) {
+    return (
+      <LockedIn
+        msLeft={msLeft} stake={locked}
+        onChange={() => { setAmount(locked); setChanging(true); }}
+      />
+    );
+  }
+
   return (
     <div className="body">
-      <h2>Lock it in?</h2>
-      <div className="stake-amount">{money(stake)}</div>
-      <p className="sub">
-        Your answer: <strong>{answer !== null ? answer.toLocaleString('en-US') : '—'}</strong>
+      <Clock msLeft={msLeft} />
+      <p className="final-tag">FINAL QUESTION</p>
+      {/* The category, and it is ALL they get. Betting against a word is the
+          whole mechanic — how hard the question turns out to be is not
+          something this decision is allowed to know. */}
+      {frame.round?.category ? <h1 className="category">{frame.round.category}</h1> : null}
+      <p className="sub" style={{ textAlign: 'center' }}>
+        Put your money up now. You&rsquo;ll see the question next.
       </p>
-      <div className="outcomes">
-        <span className="win">win → {money(bank + stake)}</span>
-        <span className="lose">lose → {money(bank - stake)}</span>
-      </div>
-      {/* The button says what it is doing. On bar wifi the round trip is long
-          enough that a button which just sits there gets tapped again. */}
-      <button className="btn gold" disabled={busy} onClick={onLock}>
-        {busy ? 'Locking it in…' : 'Lock it in'}
+
+      <StakeControl bank={bank} stake={amount} onChange={setAmount} />
+
+      <button className="btn gold" disabled={running.current} onClick={() => void lock()}>
+        {running.current ? 'Locking it in…' : 'Lock it in'}
       </button>
-      <button className="btn ghost" disabled={busy} onClick={onBack}>Back</button>
       <p className="err">{err}</p>
     </div>
   );
 }
 
-// What a table sees for the rest of the final's clock. The amount is the hero
+// What everybody who is NOT betting sees while the room bets: a spectator, a
+// table that walked in during the final, a phone with no cookie. Read-only,
+// and still the category rather than the question — there is no privileged
+// view here, the prompt does not exist on the wire yet for anyone.
+export function WagerWatching({ frame, msLeft }: { frame: PlayerFrame; msLeft: number | null }) {
+  return (
+    <div className="body">
+      <Clock msLeft={msLeft} />
+      <p className="final-tag">FINAL QUESTION</p>
+      {frame.round?.category ? <h1 className="category">{frame.round.category}</h1> : null}
+      <p className="sub" style={{ textAlign: 'center' }}>
+        Tables are setting their wagers.
+      </p>
+    </div>
+  );
+}
+
+// What a table sees for the rest of the wager clock. The amount is the hero
 // because it is what they will argue about at the table, and "you can still
 // change it" is on screen because the alternative is a table that believes it
-// is stuck with a number it typed in a hurry.
+// is stuck with a number it dragged in a hurry.
 function LockedIn({
-  msLeft, stake, answer, onChange,
+  msLeft, stake, onChange,
 }: {
   msLeft: number | null;
   stake: number;
-  answer: number | null;
   onChange: () => void;
 }) {
   return (
@@ -201,14 +214,6 @@ function LockedIn({
       <Clock msLeft={msLeft} />
       <h1 style={{ textAlign: 'center' }}>Locked in.</h1>
       <div className="stake-amount">{money(stake)}</div>
-      {/* The answer is local state, so a phone that reloaded mid-final has the
-          wager back from the server but not the number it typed. Better to
-          show the wager alone than to show a dash where their answer was. */}
-      {answer !== null ? (
-        <p className="sub" style={{ textAlign: 'center' }}>
-          Your answer: <strong>{answer.toLocaleString('en-US')}</strong>
-        </p>
-      ) : null}
       <p className="sub" style={{ textAlign: 'center' }}>
         Waiting for the other tables &mdash; you can change it until time&rsquo;s up.
       </p>

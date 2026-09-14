@@ -313,3 +313,26 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   .celebrate-line, .badge-gold { animation: none; }
 }
+
+/* The final's two new pieces of type. FINAL QUESTION is a label, not a
+   heading — it sits above whatever the screen is actually for — and the
+   category is the hero of the wager screen because a word is the only thing
+   the room is allowed to bet against. */
+.final-tag {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  color: var(--gold);
+}
+.category {
+  margin: 0;
+  text-align: center;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.05;
+  /* Long category names exist ("Science & Nature"); wrapping is fine, a word
+     running off the side of a phone is not. */
+  overflow-wrap: anywhere;
+}
