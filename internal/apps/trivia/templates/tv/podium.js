@@ -24,7 +24,11 @@ function renderPodium(phaseChanged) {
       if (idx === 0) { host.insertBefore(p, host.children[1] || null); }
       else if (idx === 1) { host.insertBefore(p, host.firstChild); }
       else { host.appendChild(p); }
-      if (idx === 0) { burst(p); }
+      // Three waves over roughly four seconds, not one. A single burst is
+      // over before the bar has finished looking up from the plinth rising,
+      // and the winner's moment is the only thing left on the wall -- there
+      // is nothing for it to be competing with.
+      if (idx === 0) { burstWaves(p, 3, 1300, { count: 26, dist: 200, spread: 380 }); }
     });
   });
 }

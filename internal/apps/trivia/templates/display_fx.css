@@ -30,10 +30,29 @@
    over the right card. */
 .cards { position: relative; }
 .fx { position: absolute; pointer-events: none; z-index: 28; }
-/* Smaller than the podium's, because a card is a quarter of a plinth -- but
-   with a glow, or eleven gold dots crossing a cream numeral from thirty feet
-   are not dots, they are nothing. */
+/* A flat gold disc at 16px is a pixel from the back of a bar. The glow is
+   what makes a spark read as a spark at thirty feet; it costs one shadow. */
+.spark { box-shadow: 0 0 22px rgba(245, 196, 81, .85); }
+/* Smaller over a card, because a card is a quarter of a plinth. */
 .spark.small { width: 13px; height: 13px; box-shadow: 0 0 14px rgba(245, 196, 81, .95); }
+
+/* ---------- the podium ---------- */
+
+/* The winner's plinth breathes gold for as long as the podium is up. The
+   bursts are the moment; this is what keeps the eye on the right column
+   afterwards, while the host is still finding the microphone.
+
+   `rise` is restated because a second `animation` declaration would replace
+   the first outright rather than adding to it, and the choreography of the
+   three plinths landing is the part nobody should have to notice changed. */
+.plinth.p1 {
+  animation: rise .6s cubic-bezier(.2, .9, .3, 1.1) both,
+             p1glow 2.6s ease-in-out .6s infinite;
+}
+@keyframes p1glow {
+  0%, 100% { box-shadow: 0 0 40px rgba(245, 196, 81, .18); }
+  50%      { box-shadow: 0 0 130px rgba(245, 196, 81, .60); }
+}
 
 /* The round's biggest winner, flashed gold in the rail for a second and a
    half. The delta column already says +$300; this says WHOSE +$300 was the

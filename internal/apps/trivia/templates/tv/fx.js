@@ -6,9 +6,17 @@
    and it reads as celebration from thirty feet, which is the only test that
    matters on a wall. */
 
-/* burst scatters sparks outward from a point inside `node`, which must be a
-   positioned element (the sparks are absolute). Defaults are the podium's;
-   a card wants fewer and shorter, which is what the options are for. */
+/* burst scatters sparks outward from a point inside `node`.
+
+   The sparks are absolutely positioned, so the origin is 50%/`top` of the
+   nearest POSITIONED ancestor, not of `node` itself. The podium leans on
+   that: a plinth is unpositioned, so its sparks resolve against the screen
+   and spray across the middle of the stage rather than being penned into a
+   420px column. Where that is not wanted -- the scoring beat's card --
+   sparkleOver supplies a positioned box of its own.
+
+   Defaults are the podium's; a card wants fewer and shorter, which is what
+   the options are for. */
 function burst(node, opts) {
   opts = opts || {};
   var count = opts.count || 20;
@@ -20,7 +28,7 @@ function burst(node, opts) {
     var angle = Math.random() * Math.PI * 2;
     var dist = near + Math.random() * far;
     s.style.left = '50%'; s.style.top = top;
-    s.style.transition = 'transform ' + (700 + Math.random() * 600) + 'ms ease-out, opacity 1s';
+    s.style.transition = 'transform ' + (700 + Math.random() * 600) + 'ms ease-out, opacity 1.3s';
     node.appendChild(s);
     (function (node2, angle2, dist2) {
       setTimeout(function () {
