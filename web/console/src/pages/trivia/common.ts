@@ -230,7 +230,7 @@ export function boardIsEmpty(frame: HostFrame): boolean {
 // happens next is what lets the host drive the night without reading the
 // screen — the button is always in the same place and always says the thing
 // they are about to do.
-export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boolean, finalPlayed: boolean):
+export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boolean, finalPlayed: boolean, skipReveal = false):
   { action: Action; label: string } | null {
   switch (phase) {
     // A game is joinable from the moment it exists, so there is no state to
@@ -244,7 +244,7 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
     // The wager is the one phase whose primary button reveals nothing and
     // scores nothing: it puts the question on the wall. Named for that.
     case 'wager': return { action: 'ask', label: 'Ask the question' };
-    case 'question': return { action: 'reveal', label: 'Reveal answers' };
+    case 'question': return { action: 'reveal', label: skipReveal ? 'Reveal and open betting' : 'Reveal answers' };
     case 'reveal': return { action: 'open_betting', label: 'Open betting' };
     case 'betting': return { action: 'score', label: 'Score the round' };
     case 'scoring': return { action: 'next', label: 'Next' };
@@ -282,7 +282,7 @@ export function defaultSettings(): TriviaSettings {
     token_values: [100, 200],
     final_wager: true,
     answer_seconds: 60,
-    reveal_seconds: 5,
+    reveal_seconds: 0,
     bet_seconds: 45,
     wager_seconds: 30,
     grace_seconds: 5,

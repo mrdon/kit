@@ -139,14 +139,15 @@ child tables included, and every query filters on it.
 
 `app_trivia_games` settings columns: `board_rows` default 2, `board_columns` default 5,
 `cell_values` default `{500,1000}`, `token_values` default `{100,200}`,
-`final_wager BOOLEAN NOT NULL DEFAULT TRUE`, `answer_seconds` 60, `reveal_seconds` 5,
+`final_wager BOOLEAN NOT NULL DEFAULT TRUE`, `answer_seconds` 60, `reveal_seconds` 0,
 `bet_seconds` 45, `wager_seconds` 30, `grace_seconds` 5 (**100**),
 `repeat_questions BOOLEAN NOT NULL DEFAULT FALSE` (**101**).
 
-`reveal_seconds` is a DEAL, not think time — the cards fly in, the room reads five
-numbers, betting opens — which is why it defaults to 5 and is the one timer whose floor
-is 3 seconds rather than 5. It was 15 originally, on the theory that the room needed to
-study the cards; watching a room do it, five is the beat and fifteen is a sag.
+`reveal_seconds` is a DEAL, not think time — the cards fly in and betting opens — and it
+defaults to 0, which skips the reveal phase entirely: the question closes straight into
+betting and the room reads the cards while it bets. A non-zero value (floor 3, not 5) puts
+a beat in front of the chips. It was 15 originally, on the theory that the room needed to
+study the cards; watching a room do it, nobody knew what the pause was for.
 
 `grace_seconds` is what the room still gets once every eligible table is in. "Everyone's
 in" does not close the phase — it SHORTENS it, pulling `phase_deadline` in to

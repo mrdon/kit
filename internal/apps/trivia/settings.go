@@ -43,7 +43,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
 		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
-		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 5, BetSeconds: 45,
+		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 0, BetSeconds: 45,
 		// Thirty seconds to commit a number against nothing but a category.
 		// Shorter than the answer clock on purpose: there is nothing to work
 		// out, only a nerve to settle, and a long blind-bet clock is dead air
@@ -79,15 +79,15 @@ func normaliseSettings(s Settings) Settings {
 	if s.AnswerSeconds == 0 {
 		s.AnswerSeconds = d.AnswerSeconds
 	}
-	if s.RevealSeconds == 0 {
-		s.RevealSeconds = d.RevealSeconds
-	}
 	if s.BetSeconds == 0 {
 		s.BetSeconds = d.BetSeconds
 	}
 	if s.WagerSeconds == 0 {
 		s.WagerSeconds = d.WagerSeconds
 	}
+	// RevealSeconds is NOT filled in either: zero means the deal beat is
+	// skipped and the cards open straight into betting, which is the shipped
+	// default -- the room reads the cards while it bets.
 	// GraceSeconds is deliberately NOT filled in. Zero is a real setting here
 	// -- it means "close the instant the last table is in", the behaviour the
 	// game shipped with -- so treating it as "unset" would make that choice
@@ -125,9 +125,15 @@ func validateSettings(s Settings) error {
 		"answer": s.AnswerSeconds, "reveal": s.RevealSeconds, "betting": s.BetSeconds,
 		"wager": s.WagerSeconds,
 	} {
-		// The reveal alone gets a lower floor: it is a deal, not a think.
+		// The reveal alone gets a lower floor: it is a deal, not a think --
+		// and zero is legal there, meaning no deal beat at all: the question
+		// closes straight into betting and the room reads the cards while
+		// it bets.
 		floor := minPhaseSeconds
 		if name == "reveal" {
+			if v == 0 {
+				continue
+			}
 			floor = minRevealSeconds
 		}
 		if v < floor || v > maxPhaseSeconds {

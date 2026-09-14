@@ -233,8 +233,8 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
             onChange={(e) => edit({ ...s, answer_seconds: Number(e.target.value) })} />
         </label>
         <label className="field">
-          <span>Deal — cards shown before betting opens (s)</span>
-          <input type="number" min={5} max={600} value={s.reveal_seconds} disabled={locked}
+          <span>Deal — cards shown before betting opens (s, 0 skips it)</span>
+          <input type="number" min={0} max={600} value={s.reveal_seconds} disabled={locked}
             onChange={(e) => edit({ ...s, reveal_seconds: Number(e.target.value) })} />
         </label>
         <label className="field">
@@ -259,8 +259,9 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       </div>
       <p className="page-sub">
         The deal is the beat between the last answer landing and the chips coming out: the cards
-        fly up on the screen with nobody&rsquo;s money on them yet. It is a deal, not think time —
-        five seconds is enough for five cards, and longer just sags.
+        fly up on the screen with nobody&rsquo;s money on them yet. Off by default (0), so betting
+        opens the moment the cards do and the room reads them while it bets; a few seconds is
+        plenty if you want the beat, and longer just sags.
       </p>
       <p className="page-sub">
         The grace is what the last table gets. When everyone is in, the clock drops to this instead

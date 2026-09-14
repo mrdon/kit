@@ -230,8 +230,11 @@ func TestGraceValidationAllowsZeroAndBoundsTheTop(t *testing.T) {
 // every other timer carries.
 func TestTheDealBeatMayBeShorterThanEveryOtherTimer(t *testing.T) {
 	s := DefaultSettings()
-	if s.RevealSeconds != 5 {
-		t.Fatalf("the shipped deal is %ds; it is a deal, not a think", s.RevealSeconds)
+	if s.RevealSeconds != 0 {
+		t.Fatalf("the shipped deal is %ds; by default there is none", s.RevealSeconds)
+	}
+	if err := validateSettings(s); err != nil {
+		t.Fatalf("a skipped deal was rejected: %v", err)
 	}
 	s.RevealSeconds = 3
 	if err := validateSettings(s); err != nil {
@@ -245,5 +248,37 @@ func TestTheDealBeatMayBeShorterThanEveryOtherTimer(t *testing.T) {
 	s.BetSeconds = 3
 	if err := validateSettings(s); err == nil {
 		t.Fatal("a 3s betting clock was accepted; only the reveal gets the lower floor")
+	}
+}
+
+// With no deal beat the question closes straight into betting: the cards are
+// built on the way out all the same, and the betting clock is armed.
+func TestZeroDealSkipsTheRevealPhase(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	s := defaultSettings()
+	s.RevealSeconds = 0
+	game := f.newGame(s, topicSet())
+	a := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	cellID := snap.Board[0].ID
+	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
+	if err := f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, a.ID, "10"); err != nil {
+		t.Fatal(err)
+	}
+	if f.reload(game.ID).Phase == PhaseQuestion {
+		f.do(game.ID, ActionRequest{Action: ActionReveal, FromPhase: PhaseQuestion})
+	}
+	g := f.reload(game.ID)
+	if g.Phase != PhaseBetting {
+		t.Fatalf("phase = %s after the question closed with no deal beat, want betting", g.Phase)
+	}
+	if g.PhaseDeadline == nil {
+		t.Fatal("betting opened with no clock")
+	}
+	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if len(snap.Slots) == 0 {
+		t.Fatal("no cards were built on the way into betting")
 	}
 }

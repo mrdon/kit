@@ -81,6 +81,13 @@ func nextPhase(game *Game, from Phase) (Phase, *time.Time) {
 		// same betting -- which is why there is one extra phase and not four.
 		return PhaseQuestion, arm(game.AnswerSeconds)
 	case PhaseQuestion:
+		// A deal beat of zero skips the reveal phase outright: the cards are
+		// still built (closePhase does that on the way out of the question),
+		// but the room sees them for the first time with betting already
+		// open. Reading the cards and betting on them is the same act.
+		if game.RevealSeconds <= 0 {
+			return PhaseBetting, arm(game.BetSeconds)
+		}
 		return PhaseReveal, arm(game.RevealSeconds)
 	case PhaseReveal:
 		return PhaseBetting, arm(game.BetSeconds)

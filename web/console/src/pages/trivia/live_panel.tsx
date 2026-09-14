@@ -13,14 +13,16 @@ import { TeamBoard } from './live_tables';
 // The one big primary button stays exactly where it was, because a host
 // learns its position and stops reading the screen.
 
-export function StatusPanel({ frame, busy, secs, gameId, onAct }: {
+export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
   frame: HostFrame;
   busy: boolean;
   secs: number | null;
   gameId: string;
+  // With no deal beat the same click opens betting, and the button says so.
+  skipReveal: boolean;
   onAct: (body: Record<string, unknown>) => void;
 }) {
-  const primary = primaryAction(frame.phase, boardIsEmpty(frame), frame.finalWager, frame.progress.finalPlayed);
+  const primary = primaryAction(frame.phase, boardIsEmpty(frame), frame.finalWager, frame.progress.finalPlayed, skipReveal);
 
   return (
     <aside className="trivia-panel">
