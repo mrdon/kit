@@ -174,7 +174,9 @@ export const PHASE_LABEL: Record<Phase, string> = {
   lobby: 'Teams joining',
   board: 'On the board',
   question: 'Answering',
-  reveal: 'Answers revealed',
+  // Named for what the host does next, not for what just happened: the cards
+  // are up and betting is the thing that has not started yet.
+  reveal: 'Cards up, betting next',
   betting: 'Placing bets',
   scoring: 'Scored',
   podium: 'Finished',

@@ -226,14 +226,14 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         the room.
       </p>
 
-      <div className="field-row">
+      <div className="field-row field-row-bottom">
         <label className="field">
           <span>Answering (s)</span>
           <input type="number" min={5} max={600} value={s.answer_seconds} disabled={locked}
             onChange={(e) => edit({ ...s, answer_seconds: Number(e.target.value) })} />
         </label>
         <label className="field">
-          <span>Reveal (s)</span>
+          <span>Reveal — after answers are in, before betting opens (s)</span>
           <input type="number" min={5} max={600} value={s.reveal_seconds} disabled={locked}
             onChange={(e) => edit({ ...s, reveal_seconds: Number(e.target.value) })} />
         </label>
@@ -243,6 +243,11 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
             onChange={(e) => edit({ ...s, bet_seconds: Number(e.target.value) })} />
         </label>
       </div>
+      <p className="page-sub">
+        The reveal is the beat between the last answer landing and the chips coming out: the cards
+        go up on the screen with nobody's money on them yet, and the room reads them. Fifteen
+        seconds is enough for five cards and not so long that the night sags.
+      </p>
 
       <label className="field">
         <span>

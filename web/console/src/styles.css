@@ -1147,6 +1147,12 @@ h2.view-title:hover {
   flex: 1;
 }
 
+/* A row whose labels are sentences rather than words: one of them wraps to
+   two lines and the inputs would otherwise sit at three different heights. */
+.field-row-bottom {
+  align-items: end;
+}
+
 .stack-form {
   display: flex;
   flex-direction: column;
