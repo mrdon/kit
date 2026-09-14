@@ -3,6 +3,7 @@ import { join, me, money, reclaim, type PlayerFrame } from './api';
 import { useStream, useWakeLock } from './useStream';
 import { Answer, Clock, Waiting } from './screens';
 import { Betting } from './betting';
+import { Podium, Result, Standings } from './results';
 
 // LOCAL_KEY mirrors {gameId, teamId, teamName} — never the token — purely so
 // the UI can render "rejoining as Bar Flies…" before the first round trip.
@@ -171,36 +172,6 @@ function Playing({
   }
 }
 
-// The delta is the hero, counted up, because "what did that round do to us"
-// is the only question anybody has at this moment.
-function Result({ frame }: { frame: PlayerFrame }) {
-  const target = frame.you?.delta ?? 0;
-  const shown = useCountUp(target, frame.round?.id ?? '');
-  const cls = target > 0 ? 'delta up' : target < 0 ? 'delta down' : 'delta flat';
-  return (
-    <div className="body">
-      <p className="sub" style={{ textAlign: 'center' }}>The answer was</p>
-      <h1 style={{ textAlign: 'center' }}>{frame.scoring?.correctText || frame.scoring?.correctValue}</h1>
-      <div className={cls}>{target > 0 ? '+' : ''}{money(shown)}</div>
-      {frame.you?.wroteWinner ? (
-        <p className="sub" style={{ textAlign: 'center' }}>You wrote the winning answer.</p>
-      ) : null}
-      <Standings frame={frame} />
-    </div>
-  );
-}
-
-function Podium({ frame }: { frame: PlayerFrame }) {
-  const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
-  const winner = sorted[0];
-  return (
-    <div className="body">
-      <h1>{winner ? `${winner.name} wins` : 'That\u2019s the game'}</h1>
-      <Standings frame={frame} />
-    </div>
-  );
-}
-
 // BetweenQuestions: where this table stands, with their own row called out.
 function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
@@ -257,21 +228,6 @@ function ordinal(n: number): string {
     case 3: return `${n}rd`;
     default: return `${n}th`;
   }
-}
-
-function Standings({ frame }: { frame: PlayerFrame }) {
-  const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
-  return (
-    <div className="board-list">
-      {sorted.map((t, i) => (
-        <div key={t.id} className={`brow ${t.id === frame.you?.teamId ? 'you' : ''}`}>
-          <span className="rank">{i + 1}</span>
-          <span>{t.name}</span>
-          <span className="sc">{money(t.score)}</span>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 // Rules, straight from the server so this and the TV always agree.
@@ -403,24 +359,4 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
       )}
     </div>
   );
-}
-
-// useCountUp animates a number toward its target with rAF. Resets whenever
-// the round changes so a new delta counts from zero rather than from the last
-// round's number.
-function useCountUp(target: number, key: string): number {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    setValue(0);
-    let raf = 0;
-    const start = performance.now();
-    const step = (now: number) => {
-      const t = Math.min(1, (now - start) / 900);
-      setValue(Math.round(target * (1 - Math.pow(1 - t, 3))));
-      if (t < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target, key]);
-  return value;
 }
