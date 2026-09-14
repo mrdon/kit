@@ -189,7 +189,15 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   max-height: 400px; overflow: hidden;
 }
 .q-text.final { color: var(--accent-l); }
-.ring-wrap { display: grid; place-items: center; position: relative; height: 300px; }
+/* place-content as well as place-items: the ring's svg is 300px of layout box
+   whatever it is scaled to, so in the 190px footer the ROW overflows, and a
+   row that starts at the top of the box puts the ring 55px below the numeral
+   that is supposed to sit inside it. Centring the track fixes what centring
+   the item cannot. */
+.ring-wrap {
+  display: grid; place-items: center; place-content: center;
+  position: relative; height: 300px;
+}
 /* Pinned to the last row. The bet tally above it is display:none outside the
    betting phase, and a display:none element is not a grid item at all -- so
    the footer used to auto-place itself one row early and leave the last row
