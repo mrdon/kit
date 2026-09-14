@@ -23,7 +23,7 @@ var tvSheets = []string{"display.css", "display_fx.css"}
 // matters for top-level statements, which is why core (the shared vars) is
 // first and boot (the first connect) is last.
 var tvScripts = []string{
-	"core.js", "fx.js", "join.js", "board.js", "wheel.js", "question.js",
+	"core.js", "fx.js", "join.js", "board.js", "wheel.js", "wager.js", "question.js",
 	"cards.js", "scoring.js", "podium.js", "boot.js",
 }
 

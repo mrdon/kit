@@ -546,6 +546,23 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 @keyframes slam { from { transform: scale(2.4); opacity: 0; } to { transform: none; opacity: 1; } }
 
+/* ---------- 9. the wager ---------- */
+/* Same three-row shape as the question screen, because it IS the question
+   screen with the question taken out: hero, clock, progress. Keeping the
+   layout identical is what makes the cut from wager to question read as the
+   prompt arriving rather than as a different screen. */
+.wager-wrap { height: 100%; display: grid; grid-template-rows: 1fr auto auto; gap: 40px; align-items: center; }
+.wager-tag {
+  text-align: center; font: 700 44px/1 var(--body); color: var(--accent);
+  letter-spacing: .22em; margin-bottom: 28px;
+}
+/* The category is the hero and it is the ONLY thing about the question up
+   here. Sized by fitCategory rather than by a clamp(). */
+.wager-cat {
+  text-align: center; font: 400 200px/1 var(--display); color: var(--gold);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- 8. podium ---------- */
 .podium { height: 100%; display: flex; gap: 40px; align-items: flex-end; justify-content: center; padding-bottom: 60px; }
 .plinth {

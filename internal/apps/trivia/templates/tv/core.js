@@ -135,6 +135,7 @@ function render(prev) {
     case 'setup':
     case 'lobby':   renderJoin(); break;
     case 'board':   renderBoard(prev); break;
+    case 'wager':   renderWager(phaseChanged); break;
     case 'question': renderQuestion(phaseChanged); break;
     case 'reveal':  renderCards('reveal'); break;
     case 'betting': renderCards('betting'); break;

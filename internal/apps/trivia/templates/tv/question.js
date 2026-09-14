@@ -23,11 +23,10 @@ function renderQuestion(phaseChanged) {
       return;
     }
   }
-  if (phaseChanged && state.round && state.round.isFinal) {
-    show('s-final');
-    later(1800, paint);
-    return;
-  }
+  // No slam here any more. The final announces itself one phase earlier, on
+  // the way into the wager (see wager.js); by the time the question goes up
+  // the room has had its beat and a second one would only hold the prompt
+  // back from people who are now waiting for it.
   paint();
 }
 
@@ -47,13 +46,12 @@ function renderAnsweredStrip() {
   var strip = document.getElementById('answered-strip');
   strip.innerHTML = '';
   var eligible = state.teams.filter(function (t) { return t.eligible; });
+  // Answered, and nothing else -- in the final too. The lock pips belong to
+  // the wager screen a phase earlier (see wager.js); leaving them lit here
+  // would have the strip reporting a decision the room has already watched
+  // land while saying nothing about the one it is waiting on.
   eligible.forEach(function (t) {
-    var cls = 'tbar' + (t.answered ? ' in' : '') + (t.stakeLocked ? ' locked' : '');
-    var bar = el('div', cls);
-    // In the final each pip flips to LOCKED as the stake lands -- WITHOUT
-    // the amount. Not knowing whether the leader defended or sat out is
-    // most of the tension.
-    if (t.stakeLocked) { bar.appendChild(el('span', '', 'LOCK')); }
+    var bar = el('div', 'tbar' + (t.answered ? ' in' : ''));
     bar.title = t.name;
     strip.appendChild(bar);
   });
@@ -74,9 +72,9 @@ function startRing(where) {
   if (ringTimer && key === ringKey) { return; }
   ringKey = key;
   if (ringTimer) { clearInterval(ringTimer); }
-  var ids = where === 'cards'
-    ? ['cards-ring-arc', 'cards-ring', 'cards-countdown']
-    : ['ring-arc', 'ring', 'countdown'];
+  var ids = ['ring-arc', 'ring', 'countdown'];
+  if (where === 'cards') { ids = ['cards-ring-arc', 'cards-ring', 'cards-countdown']; }
+  if (where === 'wager') { ids = ['wager-ring-arc', 'wager-ring', 'wager-countdown']; }
   var arc = document.getElementById(ids[0]);
   var ring = document.getElementById(ids[1]);
   var label = document.getElementById(ids[2]);
