@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { join, me, money, reclaim, type PlayerFrame } from './api';
 import { useStream, useWakeLock } from './useStream';
-import { Answer, Betting, Clock, Waiting } from './screens';
+import { Answer, Clock, Waiting } from './screens';
+import { Betting } from './betting';
 
 // LOCAL_KEY mirrors {gameId, teamId, teamName} — never the token — purely so
 // the UI can render "rejoining as Bar Flies…" before the first round trip.
