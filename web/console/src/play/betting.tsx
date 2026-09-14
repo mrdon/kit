@@ -61,7 +61,7 @@ export function Betting({
         dragging={drag.dragging}
         dragProps={drag.dragProps}
         onArm={(i) => { setAsking(null); setArmed(armed === i ? null : i); }}
-        status={statusLine({ frame, chips, placedBy, isFinal })}
+        status={statusLine({ frame, chips, placedBy, isFinal, msLeft })}
       />
 
       <SlotList frame={frame} chips={chips} inHand={inHand} armed={armed !== null}
@@ -428,16 +428,32 @@ function ChipChooser({
   );
 }
 
+// everyoneIn is the phone's read of the same test the server ran before it
+// shortened the clock. It is a MIRROR, never the authority -- the phase ends
+// because the server's deadline passed, not because this said so.
+function everyoneIn(frame: PlayerFrame, total: number): boolean {
+  return frame.teams.filter((t) => t.eligible && t.chipsPlaced < total).length === 0;
+}
+
+// closingIn puts the grace into words. The number comes off the same clock
+// the phone is already counting down, so it cannot disagree with the ring on
+// the TV; at zero it stops promising seconds it no longer has.
+function closingIn(msLeft: number | null): string {
+  const secs = msLeft === null ? 0 : Math.ceil(msLeft / 1000);
+  return secs > 0 ? `Everyone’s in — closing in ${secs}.` : 'Everyone’s in — closing.';
+}
+
 // Plain words, not a progress bar. On a phone at a noisy table the only thing
 // that reliably lands is a sentence saying what to do next, or that there is
 // nothing left to do.
 function statusLine({
-  frame, chips, placedBy, isFinal,
+  frame, chips, placedBy, isFinal, msLeft,
 }: {
   frame: PlayerFrame;
   chips: number[];
   placedBy: Map<number, string>;
   isFinal: boolean;
+  msLeft: number | null;
 }): string {
   const total = chips.length;
   const down = placedBy.size;
@@ -445,15 +461,18 @@ function statusLine({
 
   if (isFinal) {
     return down === total
-      ? 'Wager placed. Waiting for the other tables.'
+      ? `Wager placed.${everyoneIn(frame, total) ? ` ${closingIn(msLeft)}` : ' Waiting for the other tables.'}`
       : 'Put your wager on whichever answer you think wins.';
   }
   if (down === total) {
     const waiting = frame.teams.filter((t) => t.eligible && t.chipsPlaced < total).length;
     const all = total === 2 ? 'Both chips down.' : `All ${total} chips down.`;
+    // "Waiting for 0 more tables" is nobody's sentence. With the room in, the
+    // server has already pulled the clock in to the grace, so say what that
+    // clock now means: there is time to move a chip, and how much.
     return waiting > 0
       ? `${all} Waiting for ${waiting} more ${waiting === 1 ? 'table' : 'tables'}.`
-      : all;
+      : `${all} ${closingIn(msLeft)}`;
   }
   if (down === 0) {
     return `You have ${total} chips. Tap an answer — both on one is allowed.`;

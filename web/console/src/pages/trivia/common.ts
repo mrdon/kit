@@ -18,6 +18,11 @@ export interface TriviaSettings {
   // The blind-bet clock in front of the final's question. Only meaningful
   // with final_wager on — the phase never opens otherwise.
   wager_seconds: number;
+  // The beat the room still gets once every table is in. The deadline is
+  // pulled in to this rather than the phase closing on the spot, so the table
+  // that acted last gets the look-at-it beat everyone else had. 0 means close
+  // immediately, which is what the game did before this existed.
+  grace_seconds: number;
 }
 
 export interface TriviaGame {
@@ -268,5 +273,6 @@ export function defaultSettings(): TriviaSettings {
     reveal_seconds: 15,
     bet_seconds: 45,
     wager_seconds: 30,
+    grace_seconds: 5,
   };
 }

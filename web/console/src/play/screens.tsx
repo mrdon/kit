@@ -49,6 +49,11 @@ export function Answer({
   const isFinal = !!frame.round?.isFinal;
   const parsed = parseAnswer(raw);
   const submitted = frame.you?.answered ?? false;
+  // A mirror of the server's own everyone-in test, never the authority: the
+  // phase ends because the shortened deadline passes, not because this is
+  // true. It only decides which sentence to print.
+  const roomIsIn = submitted && !!frame.round
+    && frame.round.answered >= frame.round.eligible;
 
   useEffect(() => { setRaw(''); }, [frame.round?.id]);
 
@@ -98,9 +103,14 @@ export function Answer({
       <button className="btn" disabled={parsed === null || running.current} onClick={() => void send()}>
         {submitted ? 'Change my answer' : 'Send it'}
       </button>
-      {/* Saying so removes fat-finger anxiety on a 60-second clock. */}
+      {/* Saying so removes fat-finger anxiety on a 60-second clock. Once the
+          room is in, the clock is no longer the 60 it was — the server has
+          pulled it in to the grace — so the sentence stops promising "time's
+          up" and starts promising the few seconds that are actually left. */}
       <p className="sub" style={{ textAlign: 'center' }}>
-        {submitted ? 'In! You can change it until time’s up.' : 'You can change it until time’s up.'}
+        {roomIsIn
+          ? 'Everyone’s in — you have a few seconds to change it.'
+          : submitted ? 'In! You can change it until time’s up.' : 'You can change it until time’s up.'}
       </p>
       <p className="err">{err}</p>
     </div>
@@ -154,6 +164,7 @@ export function Wager({
     return (
       <LockedIn
         msLeft={msLeft} stake={locked}
+        roomIsIn={frame.teams.filter((t) => t.eligible && !t.stakeLocked).length === 0}
         onChange={() => { setAmount(locked); setChanging(true); }}
       />
     );
@@ -203,10 +214,11 @@ export function WagerWatching({ frame, msLeft }: { frame: PlayerFrame; msLeft: n
 // change it" is on screen because the alternative is a table that believes it
 // is stuck with a number it dragged in a hurry.
 function LockedIn({
-  msLeft, stake, onChange,
+  msLeft, stake, roomIsIn, onChange,
 }: {
   msLeft: number | null;
   stake: number;
+  roomIsIn: boolean;
   onChange: () => void;
 }) {
   return (
@@ -214,8 +226,12 @@ function LockedIn({
       <Clock msLeft={msLeft} />
       <h1 style={{ textAlign: 'center' }}>Locked in.</h1>
       <div className="stake-amount">{money(stake)}</div>
+      {/* "Waiting for the other tables" is a lie once there are none, and it
+          is the moment the clock has just dropped to the grace. */}
       <p className="sub" style={{ textAlign: 'center' }}>
-        Waiting for the other tables &mdash; you can change it until time&rsquo;s up.
+        {roomIsIn
+          ? <>Everyone&rsquo;s in &mdash; you have a few seconds to change it.</>
+          : <>Waiting for the other tables &mdash; you can change it until time&rsquo;s up.</>}
       </p>
       <button className="btn ghost" onClick={onChange}>Change it</button>
     </div>

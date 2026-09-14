@@ -249,11 +249,24 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
           <input type="number" min={5} max={600} value={s.wager_seconds} disabled={locked}
             onChange={(e) => edit({ ...s, wager_seconds: Number(e.target.value) })} />
         </label>
+        {/* Zero is a real choice here and the old behaviour, so the floor is
+            0 rather than the 5 every other timer carries. */}
+        <label className="field">
+          <span>Grace after everyone&rsquo;s in (s)</span>
+          <input type="number" min={0} max={60} value={s.grace_seconds} disabled={locked}
+            onChange={(e) => edit({ ...s, grace_seconds: Number(e.target.value) })} />
+        </label>
       </div>
       <p className="page-sub">
         The reveal is the beat between the last answer landing and the chips coming out: the cards
         go up on the screen with nobody's money on them yet, and the room reads them. Fifteen
         seconds is enough for five cards and not so long that the night sags.
+      </p>
+      <p className="page-sub">
+        The grace is what the last table gets. When everyone is in, the clock drops to this instead
+        of the phase ending on the spot, so whoever answered or placed last still gets a few seconds
+        to look at the room and change their mind. Set it to 0 to close the instant the last table
+        is in.
       </p>
 
       <label className="field">
