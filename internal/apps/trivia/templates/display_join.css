@@ -1,4 +1,4 @@
-/* The join corner: the way into a game that has already started.
+/* The join corner and the arrivals toast.
 
    A separate sheet from display.css for the reason display_fx.css is one: the
    screens file is at the length where nobody reads it any more, and this is a
@@ -60,6 +60,23 @@
 #joincorner.small .jc-qr svg { width: 130px; height: 130px; border-radius: 10px; }
 #joincorner.small .jc-label { grid-area: label; margin: 0; font-size: 20px; align-self: end; }
 #joincorner.small .jc-url { grid-area: url; margin: 0; font-size: 16px; align-self: start; }
+
+/* ---------- the arrivals toast ---------- */
+/* Top centre, above the clock, and it slides DOWN from off the stage so the
+   movement itself is what catches an eye that was on the cards. Four seconds
+   is long enough to read a table name from across a bar and short enough that
+   it is gone before anybody resents it. */
+#jointoast {
+  position: absolute; top: 0; left: 50%; z-index: 45;
+  transform: translate(-50%, -140%);
+  transition: transform .45s cubic-bezier(.2, .9, .3, 1.15);
+  padding: 18px 44px; border-radius: 0 0 26px 26px;
+  background: var(--accent); color: #fff;
+  font: 400 42px/1 var(--display); letter-spacing: .04em;
+  max-width: 1200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .45);
+}
+#jointoast.on { transform: translate(-50%, 0); }
 
 /* ---------- making room ---------- */
 /* Every screen the corner appears on gives up the strip under it. A QR with a

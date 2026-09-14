@@ -150,6 +150,7 @@ function render(prev) {
     case 'podium':  renderPodium(phaseChanged); break;
     default:        show('s-hold');
   }
+  noticeArrivals(prev);
   // The corner shows the night's NAME as the host typed it ("Tuesday
   // Quiz"), not the two-word URL slug. The slug is only useful where
   // somebody has to type it, which is the join screen.

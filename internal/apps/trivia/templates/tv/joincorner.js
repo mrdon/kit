@@ -66,3 +66,55 @@ function renderJoinCorner() {
   cards.classList.toggle('cornered-left', left);
 }
 
+/* ---------- the arrivals toast ---------- */
+
+/* Somebody scanned the corner and joined. That is worth four seconds of the
+   wall, because it is the one thing that happens in this game with nobody
+   watching: a table joins mid-question, its name appears in a list on a screen
+   nobody is looking at, and the room never knows they arrived. A pill sliding
+   in from the top says it out loud, and the new table sees its own name on the
+   wall within seconds of typing it -- which is the whole welcome.
+
+   The comparison is against the PREVIOUS frame, which core.js hands to
+   render(). The first frame after a reload has no previous, so a TV that was
+   restarted mid-game does not announce all twenty tables at once. */
+var toastUntil = 0;
+
+function noticeArrivals(prev) {
+  var host = document.getElementById('jointoast');
+  if (!host || !state) { return; }
+  // The lobby is nothing but arrivals -- the pills there already say it, and a
+  // toast per table would be a strobe.
+  if (prev && state.phase !== 'lobby' && state.phase !== 'setup') {
+    var had = {};
+    (prev.teams || []).forEach(function (t) { had[t.id] = true; });
+    var fresh = (state.teams || []).filter(function (t) { return !had[t.id]; });
+    if (fresh.length) {
+      host.textContent = arrivalLine(fresh);
+      host.classList.add('on');
+      toastUntil = Date.now() + 4000;
+    }
+  }
+  armToast(host);
+}
+
+/* Re-armed on EVERY frame, not set once when the pill appears.
+   `later` is the cancellable timer, and every frame clears the lot -- so a
+   one-shot four-second timeout would be wiped by the next chip landing and the
+   pill would stay on the wall for the rest of the night. Holding the deadline
+   as an absolute and re-arming against it gets the cancel-safety without the
+   stuck pill. */
+function armToast(host) {
+  if (!host.classList.contains('on')) { return; }
+  var left = toastUntil - Date.now();
+  if (left <= 0) { host.classList.remove('on'); return; }
+  later(left, function () { host.classList.remove('on'); });
+}
+
+/* Names, up to two. Past that the pill would be a paragraph nobody reads from
+   thirty feet, and "3 MORE TABLES JOINED" says the thing that matters. */
+function arrivalLine(fresh) {
+  if (fresh.length === 1) { return fresh[0].name + ' JOINED'; }
+  if (fresh.length === 2) { return fresh[0].name + ' AND ' + fresh[1].name + ' JOINED'; }
+  return fresh.length + ' MORE TABLES JOINED';
+}
