@@ -464,7 +464,7 @@ A live pub quiz that runs on three screens at once: a host console you drive fro
 1. Everybody types a number. Closest **without going over** wins.
 2. If everyone's too high, "smaller than all of these" wins.
 3. Whoever wrote the winning answer takes the board money.
-4. Then everyone bets: your $100 chip and your $200 chip, on **two different** answers.
+4. Then everyone bets: your $100 chip and your $200 chip — on **one answer or split across two**.
 5. Chips on the winning answer pay their value. Wrong chips cost you nothing.
 6. *(final wager on)* Last question: set your bet **when you answer**, before you see anything. Then put it on whichever answer you like. Right doubles it, wrong loses it.
 

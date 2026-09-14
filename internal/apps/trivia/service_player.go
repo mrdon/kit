@@ -174,9 +174,10 @@ func (s *Service) clampStake(ctx context.Context, game *Game, round *Round, team
 // PlaceChip puts one token on one card, or lifts it off with a nil slot.
 //
 // A PUT of the desired placement rather than an append, so every retry over
-// flaky bar wifi is idempotent. The two-different-answers rule is the unique
-// index on (round, team, slot_id) -- enforced by the database rather than a
-// handler check that two racing taps could both pass.
+// flaky bar wifi is idempotent. Both chips may sit on the SAME card -- see
+// migration 097 for why the forced spread went away. The one unique index
+// left is (round, team, token_index), which makes moving a chip an UPDATE so
+// a double-tap cannot double a team's money.
 func (s *Service) PlaceChip(ctx context.Context, tenantID, gameID, teamID uuid.UUID, tokenIndex int, slotID *uuid.UUID, amount int) error {
 	if err := s.SweepDue(ctx, tenantID, gameID); err != nil {
 		return err
@@ -206,7 +207,12 @@ func (s *Service) PlaceChip(ctx context.Context, tenantID, gameID, teamID uuid.U
 		}
 		if err := PlaceBet(ctx, s.pool, tenantID, round.ID, teamID, tokenIndex, amount, *slotID); err != nil {
 			if isUniqueViolation(err) {
-				return fmt.Errorf("%w: your two chips must go on different answers", ErrBadRequest)
+				// The token index is the only unique key left, and PlaceBet
+				// upserts on it -- so a violation here is no longer a rule
+				// being enforced, it is two requests for the SAME chip
+				// racing each other. There is nothing a player can do about
+				// that by tapping somewhere else, so report what it was.
+				return fmt.Errorf("placing chip %d: two placements raced: %w", tokenIndex, err)
 			}
 			return fmt.Errorf("placing bet: %w", err)
 		}

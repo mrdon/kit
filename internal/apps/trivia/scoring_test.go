@@ -186,11 +186,33 @@ func TestScoreZeroBetsIsFine(t *testing.T) {
 	}
 }
 
-// The forced spread caps betting income at ONE chip: two chips on two
-// different answers, only one answer wins, so $200 a round is the ceiling --
-// not $300. Sizing the economy against $300 is an easy mistake to make and
-// this is the guard against it.
-func TestScoreBettingIncomeIsCappedAtOneChip(t *testing.T) {
+// Stacking pays BOTH chips: $100 and $200 on the same winning card is $300,
+// which is the round ceiling now that migration 097 dropped the forced
+// spread. It used to be $200 — sizing the economy against the old number is
+// an easy mistake, and this is the guard against it.
+func TestScoreStackedChipsBothPay(t *testing.T) {
+	ids := teamIDs(3)
+	slots := slotsFrom(
+		TeamAnswer{TeamID: ids[0], Value: 10},
+		TeamAnswer{TeamID: ids[1], Value: 20},
+		TeamAnswer{TeamID: ids[2], Value: 30},
+	)
+	win := posOf(t, slots, 20)
+	res := ScoreRound(RoundInput{
+		Correct: 25, CellPoints: 500, Slots: slots,
+		Bets: []RoundBet{
+			{TeamID: ids[0], Amount: 200, SlotPos: win, TokenIdx: 1},
+			{TeamID: ids[0], Amount: 100, SlotPos: win, TokenIdx: 0},
+		},
+	})
+	if got := res.Deltas[ids[0]].BetDelta; got != 300 {
+		t.Fatalf("betting income = %d, want 300 — both stacked chips pay", got)
+	}
+}
+
+// A hedge still pays only the chip that landed: two chips on two cards, one
+// winner, so the other is simply dead.
+func TestScoreHedgedChipsPayOnlyTheWinner(t *testing.T) {
 	ids := teamIDs(3)
 	slots := slotsFrom(
 		TeamAnswer{TeamID: ids[0], Value: 10},
@@ -205,6 +227,6 @@ func TestScoreBettingIncomeIsCappedAtOneChip(t *testing.T) {
 		},
 	})
 	if got := res.Deltas[ids[0]].BetDelta; got != 200 {
-		t.Fatalf("betting income = %d, want 200 — only one of two chips can win", got)
+		t.Fatalf("betting income = %d, want 200 — only the $200 chip landed", got)
 	}
 }

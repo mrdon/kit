@@ -178,9 +178,10 @@ func TestCookieFromAnotherGameIsNotAnIdentity(t *testing.T) {
 	}
 }
 
-// Placing both chips on one answer is refused over HTTP too, with a message
-// that explains the rule rather than a bare 400.
-func TestHTTPRefusesBothChipsOnOneAnswer(t *testing.T) {
+// Both chips on one answer goes through over HTTP, and BOTH pay when that
+// card wins. The stacking rule is only half-shipped if the second chip is
+// accepted and then quietly ignored by scoring.
+func TestHTTPAcceptsBothChipsOnOneAnswer(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
@@ -201,19 +202,28 @@ func TestHTTPRefusesBothChipsOnOneAnswer(t *testing.T) {
 	}
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
 
+	// Every seeded answer is above 100, so both guesses undershoot and the
+	// higher card (20) is the one that wins. Stack both chips on it.
 	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
-	target := snap.Slots[1].ID.String()
-	if rec := f.request(http.MethodPut, f.gamePath(game)+"/bets",
-		betRequest{Chip: 0, SlotID: &target}, cookie); rec.Code != http.StatusOK {
-		t.Fatalf("first chip returned %d: %s", rec.Code, rec.Body.String())
+	target := snap.Slots[len(snap.Slots)-1].ID.String()
+	for chip := range 2 {
+		rec := f.request(http.MethodPut, f.gamePath(game)+"/bets",
+			betRequest{Chip: chip, SlotID: &target}, cookie)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("chip %d returned %d: %s", chip, rec.Code, rec.Body.String())
+		}
 	}
-	rec := f.request(http.MethodPut, f.gamePath(game)+"/bets",
-		betRequest{Chip: 1, SlotID: &target}, cookie)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("second chip on the same answer returned %d, want 400", rec.Code)
+
+	f.do(game.ID, ActionRequest{Action: ActionScore, FromPhase: PhaseBetting})
+	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if snap.Scoring == nil {
+		t.Fatal("the round scored but the snapshot carries no scoring block")
 	}
-	if !strings.Contains(rec.Body.String(), "different answers") {
-		t.Fatalf("body = %q, want it to explain the spread rule", rec.Body.String())
+	if got := snap.Scoring.Deltas[teamID].BetDelta; got != 300 {
+		t.Fatalf("stacked chips paid %d, want 300 — both the $100 and the $200", got)
+	}
+	if got := snap.Standings[teamID]; got != 300 {
+		t.Fatalf("standing = %d after a stacked win, want 300", got)
 	}
 }
 

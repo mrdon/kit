@@ -24,8 +24,8 @@ This is the forcing function for scope. If it grows past six lines, cut somethin
 > 1. Everybody types a number. Closest **without going over** wins.
 > 2. If everyone's too high, "smaller than all of these" wins.
 > 3. Whoever wrote the winning answer takes the board money.
-> 4. Then everyone bets: your $100 chip and your $200 chip, on **two different**
->    answers.
+> 4. Then everyone bets: your $100 chip and your $200 chip — on **one answer or
+>    split across two**.
 > 5. Chips on the winning answer pay their value. Wrong chips cost you nothing.
 > 6. *(final wager on)* Last question: set your bet **when you answer**, before you
 >    see anything. Then put it on whichever answer you like. Right doubles it, wrong
@@ -40,8 +40,8 @@ Rules 1–5 are the whole game with the final switched off.
   all of these" slot for when every guess overshoots.
 - The host drives the beats (pick the cell, reveal, next); **phase timers run
   automatically** — when the question appears the answer clock is already ticking.
-- Each team gets **two tokens, $100 and $200**, and they **must go on two different
-  answers**. **Wrong tokens lose nothing** — during the board, scores only go up.
+- Each team gets **two tokens, $100 and $200**, and may put them **on one answer or on
+  two**. **Wrong tokens lose nothing** — during the board, scores only go up.
 - **No odds mat.** Every answer pays its token's face value.
 - **Default board: 5 categories × 2 rows, cells worth $500 and $1000.** Ten questions.
 - **One optional Final Wager** ends the game — the only round staking your own money.
@@ -128,7 +128,7 @@ child tables included, and every query filters on it.
 | `app_trivia_rounds` | `cell_id` (**nullable** — a final has no cell), `is_final`, `question_id`, `ordinal`, `points`, `winning_slot_id` | `UNIQUE (tenant_id, cell_id)` — a double-clicked cell can't open two rounds; partial `UNIQUE (tenant_id, game_id) WHERE is_final` — at most one final |
 | `app_trivia_answers` | `value`, `raw`, `stake` (null outside a final) | `UNIQUE (tenant_id, round_id, team_id)` — editing is an upsert |
 | `app_trivia_slots` + `app_trivia_slot_teams` | the revealed cards; `position 0` is the "Smaller" pseudo-slot; `odds` stays `1` in v1 | `UNIQUE (tenant_id, round_id, position)` |
-| `app_trivia_bets` | `token_index` (0/1; always 0 in a final), `amount`, `slot_id` | `UNIQUE (tenant_id, round_id, team_id, token_index)` — a chip is in one place, moving it is an UPDATE, so a double-tap can't double a team's money. **Plus `UNIQUE (tenant_id, round_id, team_id, slot_id)`** — the two chips must land on different answers, by index rather than a handler check two racing taps could both pass |
+| `app_trivia_bets` | `token_index` (0/1; always 0 in a final), `amount`, `slot_id` | `UNIQUE (tenant_id, round_id, team_id, token_index)` — a chip is in one place, moving it is an UPDATE, so a double-tap can't double a team's money. (088 also carried `UNIQUE (…, slot_id)` for the forced spread; **097 drops it** — both chips may stack on one answer) |
 | `app_trivia_round_scores` | materialized per-round delta | leaderboard is a `SUM`, not a replay of the engine |
 
 `app_trivia_games` settings columns: `board_rows` default 2, `board_columns` default 5,
@@ -429,19 +429,20 @@ Odds therefore fail both criteria at once — harder to explain *and* worse for 
 problem they appear to solve. Keep `app_trivia_slots.odds` defaulting to `1` as the
 seam for an optional Casino mode later, and price nothing into it.
 
-### Betting: two tokens, two different answers
+### Betting: two tokens, one answer or two
 
-$100 and $200, one each on two distinct answers. Payout is face value; no
-multiplication anywhere.
+$100 and $200, on one answer or split across two — the table's choice. Payout is face
+value; no multiplication anywhere.
 
-The forced spread is what makes the denominations a decision rather than decoration.
-Under a no-loss rule with free stacking, both chips optimally go on the single likeliest
-answer and the denominations change nothing. Requiring two different answers turns the
-round into *name your top two, and decide which deserves the big chip* — the same
-decision the odds mat would have bought, with no arithmetic and one fewer concept.
+v1 forced the spread (a unique index on `(round, team, slot_id)`), on the theory that
+free stacking collapses the decision: under a no-loss rule both chips optimally go on the
+single likeliest answer and the denominations change nothing. That is true of the optimal
+line and false of the room. At a bar table the refusal reads as the game saying no to a
+perfectly sensible bet — *we are sure, we want both on 1969* — and a rule you meet by
+being rejected is the worst kind of rule. Migration 097 drops the index; the chips are now
+a confidence dial (both on one, or hedge across two) rather than a forced split.
 
-This is Wits & Wagers Party's betting (two tokens, $100/$200, nothing lost) plus one
-clause.
+This is Wits & Wagers Party's betting (two tokens, $100/$200, nothing lost).
 
 ### Board size and the value balance
 
@@ -463,10 +464,11 @@ This self-corrects somewhat: identical guesses collapse into one slot and *every
 it takes full cell value, so at 20 teams popular round-number answers spread board
 points across several tables.
 
-**The forced spread caps betting income at one chip.** Two chips on two different
-answers, only one answer wins, so at most the $200 chip pays: **$200 per round
-maximum**, not $300. State this in the balance comments — it is easy to size the economy
-against $300 by mistake.
+**Betting income tops out at $300 a round**, both chips on the winning answer. Before
+migration 097 the forced spread capped it at the $200 chip; stacking raises the ceiling,
+and it is worth saying out loud in the balance comments because a room that always stacks
+earns half again as much from betting as one that hedges. Cells at $500/$1000 still keep
+writing the winning answer worth several good bets.
 
 ### The Final Wager
 
@@ -780,10 +782,9 @@ Interaction details that decide whether it actually works:
   `onDragEnd`. In a dark bar with greasy hands, drag fights a scrolling list.
   `PUT .../bets {chip, slotId}` — a PUT of the desired placement per chip, so every retry
   is idempotent.
-- **The two chips are visually distinct and the spread is enforced in the UI, not just the
-  API.** Once the $200 chip is on a row, that row stops accepting the $100 chip and says
-  why in three words. A rule you discover by being rejected is a bad rule; a rule the
-  interface makes obvious is not felt as a rule at all.
+- **The two chips are visually distinct, and a row accepts both.** Tapping a row while
+  two chips are still in hand asks which one — `$100`, `$200`, or `Both` — anchored to
+  that row; with one chip left the tap just places it, because there is nothing to ask.
 - Guard double-dispatch with the synchronous `runningRef` pattern from `SwipeCard.tsx` —
   `setState` is async and two fast taps both see `busy === false`.
 - `viewport-fit=cover`; **`100dvh`, never `100vh`** (iOS Safari's collapsing toolbar

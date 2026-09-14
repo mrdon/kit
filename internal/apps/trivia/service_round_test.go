@@ -96,8 +96,8 @@ func TestRoundFlowEndToEnd(t *testing.T) {
 	f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal})
 	snap, _ = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 
-	// B backs A's correct card with the $200 chip and the pseudo-slot with
-	// the $100 -- two different answers, as the rule requires.
+	// B backs A's correct card with the $200 chip and leaves the $100 in
+	// hand, so the assertion below is about that one chip and nothing else.
 	var winningSlot uuid.UUID
 	for _, sl := range snap.Slots {
 		if sl.Value != nil && *sl.Value == correct {
@@ -356,9 +356,9 @@ func TestDeadlineHasAGraceWindow(t *testing.T) {
 	}
 }
 
-// Two chips on one answer is refused, and it is the unique index that
-// refuses it -- so two racing taps cannot both succeed.
-func TestBothChipsOnOneAnswerIsRefused(t *testing.T) {
+// Both chips on one answer is a legal bet: migration 097 dropped the index
+// that used to forbid it, so a sure table can go all-in on one card.
+func TestBothChipsCanStackOnOneAnswer(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(defaultSettings(), topicSet())
@@ -381,12 +381,22 @@ func TestBothChipsOnOneAnswerIsRefused(t *testing.T) {
 	if err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, a.ID, 0, &target, 0); err != nil {
 		t.Fatalf("first chip: %v", err)
 	}
-	err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, a.ID, 1, &target, 0)
-	if err == nil {
-		t.Fatal("both chips landed on one answer")
+	if err := f.svc.PlaceChip(f.ctx, f.tenant.ID, game.ID, a.ID, 1, &target, 0); err != nil {
+		t.Fatalf("second chip on the same answer: %v", err)
 	}
-	if !strings.Contains(err.Error(), "different answers") {
-		t.Fatalf("error = %v, want it to explain the spread rule", err)
+
+	bets, err := ListBets(f.ctx, f.pool, f.tenant.ID, *f.reload(game.ID).CurrentRoundID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stacked := 0
+	for _, bet := range bets {
+		if bet.TeamID == a.ID && bet.SlotID == target {
+			stacked += bet.Amount
+		}
+	}
+	if stacked != 300 {
+		t.Fatalf("stacked %d on one card, want both chips (300)", stacked)
 	}
 }
 

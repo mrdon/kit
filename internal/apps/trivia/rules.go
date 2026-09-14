@@ -17,7 +17,7 @@ func Rules(finalWager bool) []string {
 		"Everybody types a number. Closest without going over wins.",
 		"If everyone's too high, “smaller than all of these” wins.",
 		"Whoever wrote the winning answer takes the board money.",
-		"Then everyone bets: your $100 chip and your $200 chip, on two different answers.",
+		"Then everyone bets: your $100 chip and your $200 chip — on one answer or split across two.",
 		"Chips on the winning answer pay their value. Wrong chips cost you nothing.",
 	}
 	if finalWager {
