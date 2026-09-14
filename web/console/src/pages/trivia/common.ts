@@ -49,6 +49,10 @@ export interface TriviaGame {
   leader: string;
   created_at: string;
   settings: TriviaSettings;
+  // Set when a settings change redrew the board and the bank could not
+  // fill the new shape. The board is empty until the host fixes one or the
+  // other.
+  board_error?: string;
 }
 
 // One bar of the setup page's category picker. `unused` means FRESH — no

@@ -59,7 +59,9 @@ export default function TriviaSetup() {
       {err ? <p className="banner banner-error">{err}</p> : null}
 
       <DatasetPicker datasets={datasets} selected={selected} onChanged={load} />
-      <SettingsPanel game={game} onSaved={(g) => setGame(g)} />
+      {/* A saved shape redraws the board server-side, so the preview and the
+          topic counts are reloaded along with the game. */}
+      <SettingsPanel game={game} onSaved={(g) => { setGame(g); load(); }} />
       <BoardPanel game={game} topics={topics} state={state} onBuilt={(s) => { setState(s); load(); }} />
     </>
   );
@@ -161,6 +163,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       api.updateTriviaGame(game.id, s)
         .then((g) => {
           onSaved(g);
+          if (g.board_error) {
+            setErr(`Saved, but the board could not be redrawn: ${g.board_error}`);
+            return;
+          }
           setSaved(true);
           window.setTimeout(() => setSaved(false), 1500);
         })

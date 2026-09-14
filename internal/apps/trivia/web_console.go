@@ -73,6 +73,10 @@ type gameJSON struct {
 	Leader    string    `json:"leader"`
 	CreatedAt time.Time `json:"created_at"`
 	Settings  Settings  `json:"settings"`
+	// BoardError is set when a settings change redrew the board and the
+	// bank could not fill the new shape; the board is empty until the host
+	// fixes the supply or the shape.
+	BoardError string `json:"board_error,omitempty"`
 }
 
 func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader string) gameJSON {
@@ -329,7 +333,41 @@ func (a *App) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "updating trivia settings", err)
 		return
 	}
-	writeJSON(w, a.gameToJSON(updated, tenant.Slug, 0, 0, 0, ""))
+	out := a.gameToJSON(updated, tenant.Slug, 0, 0, 0, "")
+	// A board is a rendering of the shape settings, so a new shape means a
+	// new board. Leaving the old one in place -- five columns of cells under
+	// a setting that now says two -- was the confusing thing: the host typed
+	// 2, the preview and the TV still showed 5, and nothing said why.
+	if boardShapeChanged(game, updated) {
+		if err := a.autoBuildBoard(r, tenant.ID, updated); err != nil {
+			// The settings stand; the board does not. An empty board is an
+			// honest state the setup page already knows how to explain, and
+			// Start refuses it -- whereas a stale board would play.
+			if clear := ReplaceBoard(r.Context(), a.pool, tenant.ID, game.ID, nil); clear != nil {
+				serverError(w, "clearing trivia board", clear)
+				return
+			}
+			out.BoardError = err.Error()
+		}
+	}
+	writeJSON(w, out)
+}
+
+// boardShapeChanged reports whether a settings change needs the board
+// redrawn: the columns, the rows, or what the cells are worth.
+func boardShapeChanged(before, after *Game) bool {
+	if before.BoardColumns != after.BoardColumns || before.BoardRows != after.BoardRows {
+		return true
+	}
+	if len(before.CellValues) != len(after.CellValues) {
+		return true
+	}
+	for i := range before.CellValues {
+		if before.CellValues[i] != after.CellValues[i] {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) handleDeleteGame(w http.ResponseWriter, r *http.Request) {
