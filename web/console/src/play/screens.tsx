@@ -32,6 +32,12 @@ export function Waiting({ title, sub }: { title: string; sub?: string }) {
 // is no money decision left to make — only a number to type. All the final
 // gets here is a label saying which question this is, and that is the point:
 // the bet is behind them.
+// "4 of 6 tables have answered." — the line the old wrapper used to carry.
+function answeredCount(frame: PlayerFrame): string {
+  const r = frame.round;
+  return r ? `${r.answered} of ${r.eligible} tables in. ` : '';
+}
+
 export function Answer({
   frame, msLeft, onDone,
 }: {
@@ -110,7 +116,7 @@ export function Answer({
       <p className="sub" style={{ textAlign: 'center' }}>
         {roomIsIn
           ? 'Everyone’s in — you have a few seconds to change it.'
-          : submitted ? 'In! You can change it until time’s up.' : 'You can change it until time’s up.'}
+          : submitted ? `In! ${answeredCount(frame)}You can change it until time’s up.` : 'You can change it until time’s up.'}
       </p>
       <p className="err">{err}</p>
     </div>

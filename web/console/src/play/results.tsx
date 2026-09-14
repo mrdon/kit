@@ -33,7 +33,7 @@ export function Result({ frame }: { frame: PlayerFrame }) {
       <h1 style={{ textAlign: 'center' }}>{frame.scoring?.correctText || frame.scoring?.correctValue}</h1>
       <div className={cls}>{target > 0 ? '+' : ''}{money(shown)}</div>
       {wrote ? <p className="celebrate-line">You nailed it</p> : null}
-      {top ? <div className="badge-gold">Top earner this round</div> : null}
+      {top && !wrote ? <div className="badge-gold">Top earner this round</div> : null}
       {wrote ? (
         <p className="sub" style={{ textAlign: 'center' }}>You wrote the winning answer.</p>
       ) : null}
