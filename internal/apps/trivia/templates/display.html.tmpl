@@ -130,6 +130,15 @@
     <div class="podium" id="podium"></div>
   </section>
 
+  <!-- The join corner. A sibling of the screens rather than a copy inside
+       each one, so there is one QR in the DOM and it survives every screen
+       swap. joincorner.js decides which phases it is on for. -->
+  <div id="joincorner">
+    <div class="jc-label">SCAN TO JOIN</div>
+    <div class="jc-qr">{{ .QR }}</div>
+    <div class="jc-url">{{ .JoinHost }}</div>
+  </div>
+
   <section class="screen" id="s-hold">
     <div class="hold"><div><h1>{{ .Title }}</h1><p>Waiting for the host.</p></div></div>
   </section>

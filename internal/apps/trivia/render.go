@@ -13,9 +13,10 @@ import (
 var templateFS embed.FS
 
 // tvSheets is the TV stylesheet, concatenated in order. display.css is the
-// screens; display_fx.css is the celebration layer on top of them, split off
-// so neither file drifts past the length where nobody reads it any more.
-var tvSheets = []string{"display.css", "display_fx.css"}
+// screens; display_fx.css is the celebration layer on top of them and
+// display_join.css the join corner laid over them, both split off so no file
+// drifts past the length where nobody reads it any more.
+var tvSheets = []string{"display.css", "display_fx.css", "display_join.css"}
 
 // tvScripts is the TV client, one file per screen, in the order they are
 // concatenated into a single IIFE. Function declarations hoist across the
@@ -23,8 +24,8 @@ var tvSheets = []string{"display.css", "display_fx.css"}
 // matters for top-level statements, which is why core (the shared vars) is
 // first and boot (the first connect) is last.
 var tvScripts = []string{
-	"core.js", "fx.js", "join.js", "board.js", "wheel.js", "wager.js", "question.js",
-	"cards.js", "scoring.js", "podium.js", "boot.js",
+	"core.js", "fx.js", "join.js", "joincorner.js", "board.js", "wheel.js",
+	"wager.js", "question.js", "cards.js", "scoring.js", "podium.js", "boot.js",
 }
 
 // tvScript assembles the client. Everything is indented as it would be

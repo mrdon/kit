@@ -131,6 +131,13 @@ function render(prev) {
   var phaseChanged = key !== lastPhaseKey;
   lastPhaseKey = key;
 
+  // BEFORE the screen, not after. The corner narrows the board and the deck,
+  // and both of those measure-and-shrink their own type against the width they
+  // have been given -- so a corner applied afterwards left every numeral fitted
+  // to a box 320px wider than the one it ended up in, and a 21-card reveal came
+  // out with "104" clipped to "10".
+  renderJoinCorner();
+
   switch (state.phase) {
     case 'setup':
     case 'lobby':   renderJoin(); break;

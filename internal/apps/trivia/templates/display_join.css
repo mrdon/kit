@@ -1,0 +1,85 @@
+/* The join corner: the way into a game that has already started.
+
+   A separate sheet from display.css for the reason display_fx.css is one: the
+   screens file is at the length where nobody reads it any more, and this is a
+   layer laid OVER those screens rather than part of any of them. Concatenated
+   after it by `tvSheets`, so anything here that has to win, wins. */
+
+/* ---------- the join corner ---------- */
+/* Positioned against the stage, not against a screen: it is a sibling of the
+   sections and outlives every screen swap, which is the point -- the code does
+   not flicker out and back as the game moves from the board to the cards. */
+/* The width is PINNED rather than left to the content. The join line is a
+   host's domain plus a five-character code, and left to size itself it made
+   the box 60px wider than the strip the board had been told to leave -- so the
+   code sat on a cell, which is the one thing this element must never do. Fixed
+   width, and the line below wraps into it. */
+#joincorner {
+  position: absolute; right: 48px; bottom: 44px; z-index: 30;
+  display: none; text-align: center; width: 300px;
+  padding: 18px 20px 16px; border-radius: 24px;
+  background: rgba(0, 0, 0, .42); border: 3px solid var(--line);
+  animation: jc-in .45s cubic-bezier(.2, .9, .3, 1.1) both;
+}
+#joincorner.on { display: block; }
+/* The standings rail owns the right-hand 540px during scoring, so the corner
+   crosses over rather than being covered by it. */
+#joincorner.left { right: auto; left: 48px; }
+@keyframes jc-in { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.jc-label {
+  font: 400 24px/1 var(--display); color: var(--accent-l);
+  letter-spacing: .1em; margin-bottom: 12px;
+}
+/* The QR is the same generated SVG as the lobby's, sized down here rather than
+   rendered twice: it carries width/height attributes, and a CSS width beats
+   them. 220px on a 1920 stage is roughly a 140mm square on a 55" panel, which
+   scans from a table away -- which is the range that matters, because nobody
+   walks up to a wall to join. */
+.jc-qr svg {
+  display: block; width: 220px; height: 220px;
+  border-radius: 14px; background: #fff;
+}
+.jc-url {
+  margin-top: 12px; font: 700 21px/1.2 var(--body); color: var(--cream);
+  overflow-wrap: anywhere;
+}
+
+/* The compact form, for scoring. Laid out as a row so the whole thing is
+   short enough to live inside the footer's band, which is what lets the deck
+   above it keep its full width on the one screen that has the least to spare.
+   The QR shrinks and stays square; everything else stacks beside it. */
+#joincorner.small {
+  display: none; padding: 14px 18px; text-align: left; width: 400px;
+}
+#joincorner.small.on {
+  display: grid; grid-template-columns: auto auto; align-items: center; gap: 18px;
+  grid-template-areas: "qr label" "qr url";
+}
+#joincorner.small .jc-qr { grid-area: qr; }
+#joincorner.small .jc-qr svg { width: 130px; height: 130px; border-radius: 10px; }
+#joincorner.small .jc-label { grid-area: label; margin: 0; font-size: 20px; align-self: end; }
+#joincorner.small .jc-url { grid-area: url; margin: 0; font-size: 16px; align-self: start; }
+
+/* ---------- making room ---------- */
+/* Every screen the corner appears on gives up the strip under it. A QR with a
+   board cell showing through it is a QR that does not scan, and scanning is
+   the only thing this element is for.
+
+   The board keeps its rows and narrows its COLUMNS. Taking the height out
+   instead would have cost a whole row of tiles most of its face, whereas a
+   column that is 20% narrower still sets $1,000 at the size `fitCellValues`
+   was always going to shrink it to anyway. */
+#s-board.cornered { padding-right: 380px; }
+/* On the cards screen only the FOOTER gives ground, because the compact form
+   is short enough to stay inside its band. The countdown ring and the answer
+   band are both centred in that row, so they simply shift; the DECK ABOVE
+   LOSES NOTHING.
+
+   That is the whole reason the compact form exists. Taking the width off the
+   cards instead cost `fitCardValues` a type size across all twenty-one of
+   them, to make room for a code -- and the cards are what the room is looking
+   at. Reveal reserves on the right, scoring on the left, because scoring's
+   right-hand 540px is already the standings rail. */
+.cards-screen.cornered .cards-footer { padding-right: 490px; }
+.cards-screen.cornered-left .cards-footer { padding-left: 490px; }
