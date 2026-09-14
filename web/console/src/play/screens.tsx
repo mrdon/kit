@@ -220,6 +220,10 @@ function LockedIn({
 // The stake control. Presets alongside a slider because a slider alone is
 // imprecise with a thumb, and $0 is a first-class choice — the leader's
 // defensive play — so it reads as a button rather than as giving up.
+function preset(on: boolean): string {
+  return on ? 'btn ghost on' : 'btn ghost';
+}
+
 function StakeControl({ bank, stake, onChange }: { bank: number; stake: number; onChange: (n: number) => void }) {
   const clamp = (n: number) => Math.max(0, Math.min(bank, Math.round(n)));
   return (
@@ -235,10 +239,12 @@ function StakeControl({ bank, stake, onChange }: { bank: number; stake: number; 
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
         aria-label="wager"
       />
+      {/* Which preset is lit comes from the VALUE, not from which button was
+          tapped, so a form reopened with the old wager still shows it. */}
       <div className="presets">
-        <button className="btn ghost" onClick={() => onChange(0)}>$0</button>
-        <button className="btn ghost" onClick={() => onChange(clamp(bank / 2))}>Half</button>
-        <button className="btn ghost" onClick={() => onChange(bank)}>All in</button>
+        <button className={preset(stake === 0)} onClick={() => onChange(0)}>$0</button>
+        <button className={preset(stake === clamp(bank / 2) && bank > 0)} onClick={() => onChange(clamp(bank / 2))}>Half</button>
+        <button className={preset(stake === bank && bank > 0)} onClick={() => onChange(bank)}>All in</button>
       </div>
       <div className="outcomes">
         <span className="win">win → {money(bank + stake)}</span>

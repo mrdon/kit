@@ -251,3 +251,6 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 
 /* The row being asked about stays visible while the question is open. */
 .slot.asking { border-color: var(--accent-l); background: rgba(255, 180, 163, .12); }
+
+/* The preset that matches the wager in force. */
+.presets .btn.on { border-color: var(--gold); color: var(--gold); }
