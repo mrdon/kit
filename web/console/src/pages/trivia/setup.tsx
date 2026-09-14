@@ -242,6 +242,13 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
           <input type="number" min={5} max={600} value={s.bet_seconds} disabled={locked}
             onChange={(e) => edit({ ...s, bet_seconds: Number(e.target.value) })} />
         </label>
+        {/* Only reachable with the final on — the phase never opens otherwise
+            — so it says so rather than sitting there looking universal. */}
+        <label className="field">
+          <span>Wager — the final only (s)</span>
+          <input type="number" min={5} max={600} value={s.wager_seconds} disabled={locked}
+            onChange={(e) => edit({ ...s, wager_seconds: Number(e.target.value) })} />
+        </label>
       </div>
       <p className="page-sub">
         The reveal is the beat between the last answer landing and the chips coming out: the cards
@@ -257,9 +264,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         </span>
       </label>
       <p className="page-sub">
-        The only round where a table stakes its own money. Switch it off for a first night and
-        scores only ever go up — the emptied board goes straight to the podium and no stake
-        control appears on any phone.
+        The only round where a table stakes its own money, and the bet comes first: the room
+        sees the category, puts an amount up blind, and only then gets the question. Switch it
+        off for a first night and scores only ever go up — the emptied board goes straight to
+        the podium and no stake control appears on any phone.
       </p>
 
       {err ? <p className="banner banner-error">{err}</p> : null}

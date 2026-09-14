@@ -22,7 +22,7 @@ func Rules(finalWager bool) []string {
 	}
 	if finalWager {
 		rules = append(rules,
-			"Last question: set your bet when you answer, before you see anything. "+
+			"Last question: you'll see the category first — set your wager before the question. "+
 				"Then put it on whichever answer you like. Right doubles it, wrong loses it.")
 	}
 	return rules

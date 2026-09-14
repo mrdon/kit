@@ -27,9 +27,9 @@ This is the forcing function for scope. If it grows past six lines, cut somethin
 > 4. Then everyone bets: your $100 chip and your $200 chip — on **one answer or
 >    split across two**.
 > 5. Chips on the winning answer pay their value. Wrong chips cost you nothing.
-> 6. *(final wager on)* Last question: set your bet **when you answer**, before you
->    see anything. Then put it on whichever answer you like. Right doubles it, wrong
->    loses it.
+> 6. *(final wager on)* Last question: you'll see the **category first** — set your
+>    wager before the question. Then put it on whichever answer you like. Right
+>    doubles it, wrong loses it.
 
 Rules 1–5 are the whole game with the final switched off.
 
@@ -125,8 +125,9 @@ child tables included, and every query filters on it.
 | `app_trivia_games` | name, title, `phase`, settings, `current_round_id`, `phase_deadline`, `state_version BIGINT` | `UNIQUE (tenant_id, name)` — the public URL contract |
 | `app_trivia_board_cells` | `round_index` (default 0), `col_index`, `row_index`, `topic`, `points`, `question_id`, `played_at` | `UNIQUE (tenant_id, game_id, question_id)` — a multi-topic question appears on the board **once**; without it the room gets asked the same thing twice |
 | `app_trivia_teams` | `name`, `name_key`, `token_hash`, `eligible_from_ordinal` | `UNIQUE (tenant_id, game_id, name_key)` — enforced by index, not app code, or two phones racing both pass |
-| `app_trivia_rounds` | `cell_id` (**nullable** — a final has no cell), `is_final`, `question_id`, `ordinal`, `points`, `winning_slot_id` | `UNIQUE (tenant_id, cell_id)` — a double-clicked cell can't open two rounds; partial `UNIQUE (tenant_id, game_id) WHERE is_final` — at most one final |
-| `app_trivia_answers` | `value`, `raw`, `stake` (null outside a final) | `UNIQUE (tenant_id, round_id, team_id)` — editing is an upsert |
+| `app_trivia_rounds` | `cell_id` (**nullable** — a final has no cell), `is_final`, `question_id`, `ordinal`, `points`, `topic`, `winning_slot_id` | `UNIQUE (tenant_id, cell_id)` — a double-clicked cell can't open two rounds; partial `UNIQUE (tenant_id, game_id) WHERE is_final` — at most one final |
+| `app_trivia_answers` | `value`, `raw`, `stake` (**dead since 098** — kept so played finals still read back; nothing writes it) | `UNIQUE (tenant_id, round_id, team_id)` — editing is an upsert |
+| `app_trivia_wagers` | `amount`, `locked_at` — the final's blind bet, added by **098** | `UNIQUE (tenant_id, round_id, team_id)` — changing your wager is an upsert. Keyed on the round, not the answer: at lock time there is no answer, and a table can wager without ever typing a number |
 | `app_trivia_slots` + `app_trivia_slot_teams` | the revealed cards; `position 0` is the "Smaller" pseudo-slot; `odds` stays `1` in v1 | `UNIQUE (tenant_id, round_id, position)` |
 | `app_trivia_bets` | `token_index` (0/1; always 0 in a final), `amount`, `slot_id` | `UNIQUE (tenant_id, round_id, team_id, token_index)` — a chip is in one place, moving it is an UPDATE, so a double-tap can't double a team's money. (088 also carried `UNIQUE (…, slot_id)` for the forced spread; **097 drops it** — both chips may stack on one answer) |
 | `app_trivia_round_scores` | materialized per-round delta | leaderboard is a `SUM`, not a replay of the engine |
@@ -134,10 +135,11 @@ child tables included, and every query filters on it.
 `app_trivia_games` settings columns: `board_rows` default 2, `board_columns` default 5,
 `cell_values` default `{500,1000}`, `token_values` default `{100,200}`,
 `final_wager BOOLEAN NOT NULL DEFAULT TRUE`, `answer_seconds` 60, `reveal_seconds` 15,
-`bet_seconds` 45.
+`bet_seconds` 45, `wager_seconds` 30.
 
-`phase` enum: `setup`, `lobby`, `board`, `question`, `reveal`, `betting`, `scoring`,
-`podium`. **There is no separate final phase** — see the state machine.
+`phase` enum: `setup`, `lobby`, `board`, `wager`, `question`, `reveal`, `betting`,
+`scoring`, `podium`. **The final adds exactly one phase** — `wager`, where the amount
+is committed against the category alone — and nothing after it; see the state machine.
 
 Decisions worth stating explicitly:
 
@@ -146,8 +148,11 @@ Decisions worth stating explicitly:
   `updated_at` — a timestamp gives no atomicity under two concurrent host clicks. It
   is the SSE frame id, the poll fallback's cursor, and the display's staleness
   watchdog, for one column.
-- **`answers.stake` lives on the answer, not on `bets`,** because in a final it is
-  committed *with the answer*, before any bet exists.
+- **The final's wager lives in `app_trivia_wagers`, keyed on the round.** It started
+  on the answer row (088) on the reasoning that it was committed *with* the answer.
+  098 moved the commitment one phase earlier still — before the question exists — and
+  at that point there is no answer to hang it on, and there may never be one: a table
+  can wager and then fail to type a number, and its chip still plays.
 - **`teams.eligible_from_ordinal`** excludes a team joining mid-question from that
   question's denominator. Without it, "12 of 20 answered" ticks *backwards* and the
   "everyone's in" early-close never fires. Easy to miss, visibly breaks the TV.
@@ -186,17 +191,23 @@ setup ──open_lobby──▶ lobby ──start──▶ board
                           ▼                              │
                         board            final_wager on? ├── no ──▶ podium
                                                          │
-                                          host "final" ──└──▶ question (is_final)
+                                          host "final" ──└──▶ wager (is_final)
+                                                                    │
+                                     timer expiry │ everyone locked │ host "ask"
+                                                                    ▼
+                                                            question (is_final)
                                                                     │
                           ┌─────────────────────────────────────────┘
                           ▼   …reveal → betting → scoring, all identical…
                        podium
 ```
 
-**The final introduces no new phase.** It re-enters `question` with
-`rounds.is_final = true`; the only differences are that the answer screen also collects
-a stake, the bet carries that amount rather than a fixed token value, and scoring
-branches once. `finish` is legal from any phase and jumps straight to `podium`;
+**The final introduces exactly one phase: `wager`.** The category is on the wall, the
+prompt is not — `questionVisible` is false there and the frame carries `category` with
+an empty `text` — and every eligible table locks an amount through
+`PUT /{slug}/trivia/{game}/wager`. It then re-enters `question` with
+`rounds.is_final = true`, and from there the only differences are that the bet carries
+the locked amount rather than a fixed token value and that scoring branches once. `finish` is legal from any phase and jumps straight to `podium`;
 `podium` is terminal. The final's question is drawn from the bank by the host (or at
 random) rather than from a cell, which is why `rounds.cell_id` is nullable.
 
@@ -499,12 +510,18 @@ back*, not *did you personally know it*.
   leader's dilemma: at half risk the leader simply bets big too, ratios are preserved,
   and the mechanism stops working. Losing it all is also the *simpler* sentence, and a
   team wanting safety has a real option: bet $0.
-- **The stake is locked before the reveal, the placement after.** If the amount were
-  chosen after seeing the field it would be a calculation rather than a wager. Locking
-  it early costs no new screen — the player is already on the answer screen.
+- **The stake is locked before the QUESTION, the placement after the reveal.** This is
+  Jeopardy's blind bet and it is the half of Jeopardy worth copying: a table that has
+  read the question knows how hard it is, and "how confident am I about this one" is
+  precisely the calculation a wager is supposed to be free of. The *target* is still
+  chosen after the reveal, which is this game's own half — reading the room. An earlier
+  version collected the amount alongside the answer; that was the right instinct and it
+  did not go far enough.
 
-**No new phases, no new tables.** A `rounds` row with `is_final = true` and a null
-`cell_id`, running the ordinary question → reveal → betting → scoring flow.
+**One new phase, one new table.** `wager` (timed by `games.wager_seconds`, closing early
+once every eligible table is in) and `app_trivia_wagers`. After that a `rounds` row with
+`is_final = true` and a null `cell_id` runs the ordinary question → reveal → betting →
+scoring flow.
 
 **Optional per game.** `games.final_wager BOOLEAN NOT NULL DEFAULT TRUE`. With it off,
 an emptied board transitions straight to `podium`, the host console never offers the
@@ -696,11 +713,12 @@ The screens:
    overtake is *visible as motion*. ~5s total. **If the next server frame arrives
    mid-choreography, cancel the timers and render it immediately — the server always
    wins.** Never drive animation beats from the server; that couples timing to bar wifi.
-7. **The final** — the empty board gives way to a full-screen *"FINAL QUESTION"* beat,
-   then the ordinary question → reveal → betting screens styled hotter. The one addition
-   is on the question screen: alongside the answered strip, each team's pip flips to
-   **LOCKED** as its stake comes in — **without showing the amount**. Not knowing whether
-   the leader defended or sat out is most of the tension; keep it hidden until scoring.
+7. **The final** — the empty board gives way to a full-screen *"FINAL QUESTION"* slam,
+   then the **wager screen**: the category set huge, a countdown ring, and a strip of
+   pips flipping to **LOCK** as each table commits — **without the amount**. Not knowing
+   whether the leader defended or sat out is most of the tension; keep it hidden until
+   scoring. When the wager closes the question appears with no second slam, and from
+   there the ordinary question → reveal → betting screens run styled hotter.
 8. **Podium** — ranks 3, 2, 1 bottom-up at 900ms intervals; the winner gets a crown, a
    gold gradient, a scale overshoot, and a CSS particle burst (20 absolutely positioned
    divs on randomised keyframes, no library). Holds forever.
@@ -759,13 +777,17 @@ team list from the spectator stream so a latecomer sees the party is real) → *
 **Answer** → **Submitted** → **Betting** → **Waiting for scoring** → **Result** (delta as
 the hero, counted up) → **Podium**.
 
-In the final, the **answer screen** grows a stake control — the one place a player commits
-real money, so it gets the most care: preset buttons (`$0`, `Half`, `All in`) alongside a
-slider, because a slider alone is imprecise with a thumb; both outcomes spelled out before
-committing (*"win → $3,200 · lose → $0"*); and a confirm step, since this is the only
-irreversible action in the game. Clamp to the team's bank server-side and mirror the clamp
-in the UI. `$0` is a first-class choice, not a fallback — it is the leader's defensive play
-and should read that way.
+In the final, a **wager screen** sits in front of the question — the one place a player
+commits real money, so it gets the most care: the category, a clock, preset buttons
+(`$0`, `Half`, `All in`) alongside a slider, because a slider alone is imprecise with a
+thumb, and both outcomes spelled out (*"win → $3,200 · lose → $0"*). Locking it in swaps
+to a "Locked in" card naming the amount, with **Change it** live until the clock runs
+out; the locked state is read off the server's `you.stake`, so a phone that reloads comes
+back locked rather than showing an empty slider over money it already committed. Clamp to
+the team's bank server-side and mirror the clamp in the UI. `$0` is a first-class choice,
+not a fallback — it is the leader's defensive play and should read that way. The final's
+**answer screen** is then an ordinary answer screen with a FINAL label: no stake control,
+nothing left to decide but the number.
 
 Interaction details that decide whether it actually works:
 
@@ -871,12 +893,18 @@ Files are pre-split to stay under the 500-line limit; keep functions under 60.
   not block a publisher; unsubscribe racing a publish, under `-race`. Plus the relay: a
   snapshot published on one broker reaches a subscriber on a second broker sharing a Redis,
   **and a process does not re-deliver its own relayed message**.
-- `projection_test.go` — **the withholding test.**
-- `service_round_test.go` — a stake above the team's bank is clamped, not rejected; a stake
-  cannot change once the answer phase closes; a team joining during the final cannot stake;
-  and **with `final_wager` off, an emptied board goes straight to `podium` and the "final"
-  action is refused**.
-- `web_public_test.go` — no cookie can't answer or bet but *can* stream; another team's
+- `projection_test.go` — **the withholding test.** Includes `wager`: every public frame
+  carries the category and none of them carries the prompt, on the same snapshot that
+  releases it one phase later.
+- `service_round_test.go` — the final end to end: it opens into `wager`, a wager above the
+  team's bank is clamped rather than rejected, the phase closes early once every eligible
+  table is in, the answer carries no stake, and the betting chip is worth exactly what was
+  locked; a wager cannot be placed once the question is up; a team joining during the final
+  cannot wager **and cannot hold the phase open**; and **with `final_wager` off, an emptied
+  board goes straight to `podium` and the "final" action is refused**.
+- `web_public_test.go` — `PUT /wager` is 409 outside the wager phase and 401 with no
+  cookie, and clamps to the bank inside it, answering with a frame that still carries the
+  category and no question; no cookie can't answer or bet but *can* stream; another team's
   cookie can't submit your answer; the 21st team is refused; **placing both chips on one
   answer is refused**, and two racing requests that would land both chips on the same slot
   can't both succeed (the unique index, not a handler check); a game name in tenant A is
@@ -901,13 +929,16 @@ Files are pre-split to stay under the 500-line limit; keep functions under 60.
    Try to put both chips on one answer and confirm the phone refuses before the request is
    sent. Place chips properly, let betting expire, then **re-derive every number by hand**
    and compare all three surfaces.
-8. Empty the board, then play the final: from one phone stake `All in`, from another `$0`.
-   Confirm the TV shows **LOCKED** without revealing amounts, the losing wager goes to zero
-   and the winning one doubles, and a team on $0 finishes at $0 rather than negative. Then
-   edit a request by hand to stake more than the bank and confirm the server clamps it.
+8. Empty the board, then play the final. On the **wager screen** confirm the TV shows the
+   category and no question, and that `curl .../state` carries neither; from one phone lock
+   `All in`, from another `$0`, and watch the pips flip to **LOCK** without amounts. The
+   phase should close itself once both are in. Then answer — no stake control on either
+   phone — and confirm the losing wager goes to zero, the winning one doubles, and a team
+   on $0 finishes at $0 rather than negative. `PUT /wager` with more than the bank must be
+   clamped, and the same call after the question is up must 409.
 9. Run a second game with **`final_wager` off** and confirm the emptied board goes straight
-   to the podium, the host console offers no "Final question" action, and no stake control
-   appears on any phone.
+   to the podium, the host console offers no "Final question" action, the `wager` phase is
+   never entered, and no stake control appears on any phone.
 10. **Kill the Go process mid-round and restart.** Phase and remaining time must be correct
     from the DB alone — the proof that the deadline is server-authoritative.
 11. Airplane-mode a phone for 30s; it resyncs from the snapshot without rejoining.

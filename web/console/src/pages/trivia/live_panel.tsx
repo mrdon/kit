@@ -34,7 +34,11 @@ export function StatusPanel({ frame, busy, secs, gameId, onAct }: {
         <>
           <p className="card-desc">
             {frame.round.isFinal ? 'FINAL · ' : ''}Question {frame.round.ordinal} · {money(frame.round.points)}
+            {frame.round.category ? ` · ${frame.round.category}` : ''}
           </p>
+          {/* Blank during the wager, and that is the point: the prompt is not
+              on this frame either, so the host cannot read it out before the
+              room has put its money up. */}
           <p className="trivia-question">{frame.round.text}</p>
           {frame.answer ? (
             <p className="trivia-answer">Answer: <strong>{frame.answer.text || frame.answer.value}</strong></p>
@@ -84,18 +88,16 @@ export function waitingTeams(frame: HostFrame): HostTeam[] {
   // A table that joined mid-round is not in this round's denominator, and it
   // is not something the host is waiting for either.
   const live = frame.teams.filter((t) => t.eligible);
-  if (frame.phase === 'question') {
-    return frame.round?.isFinal
-      ? live.filter((t) => !t.stakeLocked)
-      : live.filter((t) => !t.answered);
-  }
+  if (frame.phase === 'wager') return live.filter((t) => !t.stakeLocked);
+  if (frame.phase === 'question') return live.filter((t) => !t.answered);
   if (frame.phase === 'betting') return live.filter((t) => t.chipsPlaced < frame.tokens.length);
   return [];
 }
 
 function waitingLabel(frame: HostFrame): string {
   if (frame.phase === 'betting') return 'Still placing chips';
-  return frame.round?.isFinal ? 'No stake locked yet' : 'Not answered yet';
+  if (frame.phase === 'wager') return 'No wager yet';
+  return 'Not answered yet';
 }
 
 // One chip per table, lighting as answers, stakes and bets land — so the host
@@ -145,10 +147,8 @@ function teamPill(frame: HostFrame, t: HostTeam): string {
 // that is locked-or-not and never the amount: the stake belongs to the phone
 // that typed it until the round is scored.
 function teamState(frame: HostFrame, t: HostTeam): string {
-  if (frame.phase === 'question') {
-    if (frame.round?.isFinal) return t.stakeLocked ? ' 🔒 locked' : ' waiting';
-    return t.answered ? ' in' : ' waiting';
-  }
+  if (frame.phase === 'wager') return t.stakeLocked ? ' 🔒 locked' : ' waiting';
+  if (frame.phase === 'question') return t.answered ? ' in' : ' waiting';
   if (frame.phase === 'betting') return ` ${t.chipsPlaced}/${frame.tokens.length}`;
   const d = frame.scoring?.deltas?.[t.id] ?? frame.lastRound?.deltas?.[t.id];
   return d === undefined || d === 0 ? '' : ` ${signed(d)}`;
@@ -161,6 +161,7 @@ export function cueFor(frame: HostFrame, secs: number | null): string {
     case 'setup':
     case 'lobby': return cueLobby(frame);
     case 'board': return cueBoard(frame);
+    case 'wager': return cueWager(frame, secs);
     case 'question': return cueQuestion(frame, secs);
     case 'reveal': return `Cards are up — betting opens in ${secs ?? 0}s`;
     case 'betting': return cueBetting(frame, secs);
@@ -184,14 +185,22 @@ function cueBoard(frame: HostFrame): string {
   return pickLine(frame) ?? 'Pick a cell to ask the first question';
 }
 
+// The wager line names the CATEGORY, because that is the only thing the host
+// has to read out at this point — and the only thing they are allowed to.
+function cueWager(frame: HostFrame, secs: number | null): string {
+  const r = frame.round;
+  if (!r) return 'The final is opening';
+  const locked = frame.teams.filter((t) => t.eligible && t.stakeLocked).length;
+  const cat = r.category ? `${r.category} — ` : '';
+  if (r.eligible > 0 && locked >= r.eligible) return `${cat}all ${r.eligible} wagers locked — ask the question`;
+  return `${cat}${locked} of ${r.eligible} wagers locked${secs === null ? '' : ` — ${secs}s`}`;
+}
+
 function cueQuestion(frame: HostFrame, secs: number | null): string {
   const r = frame.round;
   if (!r) return 'A question is in play';
-  const final = r.isFinal;
-  const done = final ? frame.teams.filter((t) => t.eligible && t.stakeLocked).length : r.answered;
-  const what = final ? 'stakes locked' : 'in';
-  if (r.eligible > 0 && done >= r.eligible) return `All ${r.eligible} ${what} — reveal the cards`;
-  return `${done} of ${r.eligible} ${what}${secs === null ? '' : ` — ${secs}s`}`;
+  if (r.eligible > 0 && r.answered >= r.eligible) return `All ${r.eligible} in — reveal the cards`;
+  return `${r.answered} of ${r.eligible} in${secs === null ? '' : ` — ${secs}s`}`;
 }
 
 function cueBetting(frame: HostFrame, secs: number | null): string {

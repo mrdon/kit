@@ -466,7 +466,7 @@ A live pub quiz that runs on three screens at once: a host console you drive fro
 3. Whoever wrote the winning answer takes the board money.
 4. Then everyone bets: your $100 chip and your $200 chip — on **one answer or split across two**.
 5. Chips on the winning answer pay their value. Wrong chips cost you nothing.
-6. *(final wager on)* Last question: set your bet **when you answer**, before you see anything. Then put it on whichever answer you like. Right doubles it, wrong loses it.
+6. *(final wager on)* Last question: you'll see the **category first** — set your wager before the question. Then put it on whichever answer you like. Right doubles it, wrong loses it.
 
 There is no buzzer and no adjudication — every team answers every question, all the guesses are revealed together, and because answers are numbers the round scores itself.
 
@@ -492,7 +492,7 @@ From the live page you pick a cell, then press one button per beat: **Reveal ans
 
 **If a table's phone dies**, tap their name on the live page and read out the four-digit code it gives you. That's the only way back in, on purpose — with twenty names on a TV screen, letting somebody pick a team off a list would let anyone play as anyone.
 
-**The final wager** is the one round where a table risks its own money: they set a stake when they answer, before seeing anyone else's number, then put it on whichever revealed answer they like. Right doubles it, wrong loses it, and $0 is a real choice — it's the leader's defensive play. Nobody can finish below $0.
+**The final wager** is the one round where a table risks its own money, and the bet comes **before** the question. The screen shows the category alone, every table locks an amount blind (30s by default — **Settings → Wager**), and only then is the question read out. After the reveal they put that stake on whichever answer they like. Right doubles it, wrong loses it, and $0 is a real choice — it's the leader's defensive play. Nobody can finish below $0.
 
 You can switch the final off per game (**Settings → Final wager**). With it off, scores only ever go up, the emptied board goes straight to the podium, and no stake control appears on any phone. That's the setting to use for a first night.
 

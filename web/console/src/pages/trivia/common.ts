@@ -2,7 +2,7 @@
 // pages/tasks/common.ts.
 
 export type Phase =
-  | 'setup' | 'lobby' | 'board' | 'question'
+  | 'setup' | 'lobby' | 'board' | 'wager' | 'question'
   | 'reveal' | 'betting' | 'scoring' | 'podium';
 
 export interface TriviaSettings {
@@ -15,6 +15,9 @@ export interface TriviaSettings {
   answer_seconds: number;
   reveal_seconds: number;
   bet_seconds: number;
+  // The blind-bet clock in front of the final's question. Only meaningful
+  // with final_wager on — the phase never opens otherwise.
+  wager_seconds: number;
 }
 
 export interface TriviaGame {
@@ -80,7 +83,10 @@ export interface HostRound {
   isFinal: boolean;
   ordinal: number;
   points: number;
+  // Empty during `wager`: the prompt is withheld from every surface, the
+  // console included, so the host cannot read it out early by accident.
   text: string;
+  category: string;
   answered: number;
   eligible: number;
 }
@@ -180,13 +186,14 @@ export interface ImportReport {
 }
 
 export type Action =
-  | 'start' | 'pick_cell' | 'reveal' | 'open_betting'
+  | 'start' | 'pick_cell' | 'ask' | 'reveal' | 'open_betting'
   | 'score' | 'next' | 'final' | 'extend' | 'finish';
 
 export const PHASE_LABEL: Record<Phase, string> = {
   setup: 'Teams joining',
   lobby: 'Teams joining',
   board: 'On the board',
+  wager: 'Wagers in',
   question: 'Answering',
   // Named for what the host does next, not for what just happened: the cards
   // are up and betting is the thing that has not started yet.
@@ -217,6 +224,9 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
       if (boardEmpty && finalWager && !finalPlayed) return { action: 'final', label: 'Final question' };
       if (boardEmpty) return { action: 'finish', label: 'Go to the podium' };
       return null; // waiting for the host to pick a cell
+    // The wager is the one phase whose primary button reveals nothing and
+    // scores nothing: it puts the question on the wall. Named for that.
+    case 'wager': return { action: 'ask', label: 'Ask the question' };
     case 'question': return { action: 'reveal', label: 'Reveal answers' };
     case 'reveal': return { action: 'open_betting', label: 'Open betting' };
     case 'betting': return { action: 'score', label: 'Score the round' };
@@ -257,5 +267,6 @@ export function defaultSettings(): TriviaSettings {
     answer_seconds: 60,
     reveal_seconds: 15,
     bet_seconds: 45,
+    wager_seconds: 30,
   };
 }
