@@ -218,6 +218,9 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   position: absolute; font: 400 150px/1 var(--display); color: var(--cream);
   font-variant-numeric: tabular-nums;
 }
+/* A transform rather than a font-size, so it stacks on top of whichever
+   footer/tier size rule is already in force. */
+.countdown.wide { transform: scale(.7); }
 /* The ring is 300px across with a 130px radius, so a 200px numeral collides
    with the stroke on two digits. 150px clears it and still reads from the
    back of the room. */
@@ -298,7 +301,20 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
   overflow-wrap: anywhere;
 }
-.card .tray { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; min-height: 70px; align-content: end; }
+.card .tray {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; min-height: 70px; align-content: end;
+  /* Never taller than the card can spare: the value row is the card's
+     purpose and the tray must not squeeze it to nothing. A pixel cap, not a
+     percentage -- a percentage max-height is ignored while the card's grid
+     sizes its rows, so the tray's track kept growing past the clipped box
+     and the value row went to zero anyway. */
+  max-height: 300px; overflow: hidden;
+}
+.cards.tier-2 .card .tray { max-height: 120px; }
+.cards.tier-3 .card .tray { max-height: 64px; }
+.tray.crowded { gap: 4px; }
+.tray.crowded .chip { font-size: 13px; padding: 3px 9px; gap: 0; grid-template-columns: auto; }
+.tray.crowded .chip .who { display: none; }
 /* Chips land as they are placed now, so the room reads them one at a time --
    and a bare $200 disc says money moved without saying who moved it, which is
    the half of it worth watching. A 54px circle has nowhere to put a name, so
@@ -354,13 +370,16 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .cards.tier-2 .card .pot { font-size: 30px; }
 .cards.tier-3 .card .pot { font-size: 24px; }
 /* The tray and the chips are the betting work's furniture; these are tier
-   overrides of it rather than edits to it, so the two can be read apart. */
+   overrides of it rather than edits to it, so the two can be read apart.
+   A chip is a pill carrying a name, not a disc, so the tiers scale its type
+   and padding and never pin a width: a 26px box around "$200 · Bar Flies"
+   would clip the name to nothing and the amount to a digit. */
 .cards.tier-2 .card .tray { min-height: 44px; gap: 4px; }
 .cards.tier-3 .card .tray { min-height: 30px; gap: 3px; }
-.cards.tier-2 .chip.c100 { width: 38px; height: 38px; font-size: 14px; }
-.cards.tier-2 .chip.c200 { width: 48px; height: 48px; font-size: 15px; }
-.cards.tier-3 .chip.c100 { width: 26px; height: 26px; font-size: 10px; }
-.cards.tier-3 .chip.c200 { width: 32px; height: 32px; font-size: 11px; }
+.cards.tier-2 .chip.c100 { font-size: 14px; padding: 4px 9px; gap: 5px; border-radius: 14px; }
+.cards.tier-2 .chip.c200 { font-size: 16px; padding: 5px 11px; gap: 5px; border-radius: 16px; }
+.cards.tier-3 .chip.c100 { font-size: 11px; padding: 3px 7px; gap: 4px; border-radius: 11px; }
+.cards.tier-3 .chip.c200 { font-size: 12px; padding: 3px 8px; gap: 4px; border-radius: 12px; }
 /* The countdown and the answer band share the footer row, so both follow it
    down as the cards claim the height back. */
 .cards-screen.tier-2 .cards-footer .ring-wrap { height: 170px; }

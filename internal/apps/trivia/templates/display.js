@@ -429,6 +429,10 @@
       if (total === null) { total = Math.max(left, 1); }
       var secs = Math.ceil(left / 1000);
       label.textContent = secs;
+      // Three digits are wider than the ring's inside; a host who sets a
+      // two-minute clock, or leans on +15s, gets a numeral scaled to fit
+      // rather than one that spills out both sides of the track.
+      label.classList.toggle('wide', secs >= 100);
       arc.style.strokeDashoffset = C * (1 - Math.min(1, left / total));
       ring.classList.toggle('warn', secs <= 15 && secs > 5);
       ring.classList.toggle('hot', secs <= 5);
@@ -473,7 +477,7 @@
     for (var i = 0; i < vals.length; i++) {
       var v = vals[i];
       var pseudo = v.parentNode.classList.contains('pseudo');
-      var size = fitOneValue(v, pseudo ? 40 : 120, pseudo ? 14 : 24);
+      var size = fitOneValue(v, pseudo ? 40 : 120, pseudo ? 14 : 24, !pseudo);
       if (!pseudo) { numeric.push(v); smallest = Math.min(smallest, size); }
     }
     // One size for all of them. Fitting each card alone is correct and looks
@@ -486,14 +490,19 @@
   /* Measured as a block: centred grid content overflows its box equally top
      and bottom and scrollHeight only counts the bottom half of that, so the
      loop would stop while half the numeral was still off the card. */
-  function fitOneValue(v, size, floor) {
+  function fitOneValue(v, size, floor, nowrap) {
     v.style.display = 'block';
+    // A numeral is measured on ONE line: with break-anywhere it would wrap
+    // "1000000" into two lines that fit the height, and the loop would stop
+    // at a size that reads as a hundred thousand and a zero.
+    if (nowrap) { v.style.whiteSpace = 'nowrap'; }
     v.style.fontSize = size + 'px';
-    while (v.scrollHeight > v.clientHeight + 1 && size > floor) {
+    while ((v.scrollHeight > v.clientHeight + 1 || v.scrollWidth > v.clientWidth + 1) && size > floor) {
       size -= 2;
       v.style.fontSize = size + 'px';
     }
     v.style.display = '';
+    v.style.whiteSpace = '';
     return size;
   }
 
@@ -542,6 +551,7 @@
       if (showsChips(mode)) {
         (s.chips || []).forEach(function (c, ci) { tray.appendChild(chipNode(c, ci * 60)); });
       }
+      markCrowded(tray);
       card.appendChild(tray);
       // The pot line is always in the DOM, hidden while it is zero, so the
       // card does not change height the moment the first chip lands on it.
@@ -575,6 +585,16 @@
      most one chip per card (the DB says so), so team+amount identifies it.
      Counting rather than comparing lists means two tables with the same name
      still come out right. */
+  /* A popular answer at twenty tables can carry a dozen chips, and a dozen
+     named pills stacked in one card climb straight out of it, over the value
+     they are betting on. Past six the tray goes compact: amounts only, so
+     the shape of the pile still reads and the pot underneath says what it
+     adds up to. The names on a crowded card were never legible from the bar
+     anyway. */
+  function markCrowded(tray) {
+    tray.classList.toggle('crowded', tray.querySelectorAll('.chip').length > 6);
+  }
+
   function chipKey(c) { return c.amount + '@' + (c.team || ''); }
 
   function syncChips(tray, chips) {
@@ -593,6 +613,7 @@
       want[k2]--;
       tray.appendChild(chipNode(c, 0));
     });
+    markCrowded(tray);
   }
 
   /* The chip says WHOSE it is. A $200 disc told the room that money had
