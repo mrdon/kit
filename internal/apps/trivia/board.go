@@ -30,10 +30,20 @@ type ShortfallError struct {
 	Topic  string
 	Have   int
 	Needed int
+	// Fresh says the count above was of UNASKED questions only, which is the
+	// difference between "buy more questions" and "you already used them".
+	// The matcher cannot know -- it is handed a bank and does not ask where
+	// it came from -- so the caller that applied the filter stamps this on
+	// the way out. See assignBoard.
+	Fresh bool
 }
 
 func (e *ShortfallError) Error() string {
-	return fmt.Sprintf("topic %q has %d questions but the board needs %d", e.Topic, e.Have, e.Needed)
+	kind := "questions"
+	if e.Fresh {
+		kind = "fresh questions"
+	}
+	return fmt.Sprintf("topic %q has %d %s but the board needs %d", e.Topic, e.Have, kind, e.Needed)
 }
 
 // BuildBoard assigns one question to every cell of a topics x rows grid.
@@ -184,10 +194,16 @@ func checkPerTopicSupply(topics []string, rows int, bank []BoardCandidate) error
 // because "Sports" and "Sportsball" arriving from a CSV as two topics is a
 // real thing and the host has to see it and fix it. The Auto button rerolls
 // among the viable ones.
+//
+// VIABILITY IS MEASURED IN UNUSED, NOT TOTAL, because unused is what the
+// board builder will actually be handed. Offering a column with nine
+// questions the room has already heard and none it has not would default the
+// host straight into a shortfall. With repeats allowed the histogram reports
+// every question as unused, so this is the same test in both modes.
 func PickTopics(hist []TopicCount, columns, rows int, seed int64) []string {
 	viable := make([]TopicCount, 0, len(hist))
 	for _, tc := range hist {
-		if tc.Total >= rows {
+		if tc.Unused >= rows {
 			viable = append(viable, tc)
 		}
 	}

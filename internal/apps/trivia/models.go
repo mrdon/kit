@@ -182,6 +182,11 @@ func ExistingPromptKeys(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 
 // TopicCount is one bar of the setup page's histogram: how many questions a
 // topic has, and how many of those the room has never been asked.
+//
+// "Unused" means FRESH -- no round in any surviving game has asked it -- and
+// not "last_used_at is null". The two used to be one number and are not: a
+// board stamps last_used_at on ten questions and a night that runs short
+// opens four of them. See Freshness.
 type TopicCount struct {
 	Key    string `json:"key"`
 	Label  string `json:"label"`
@@ -202,17 +207,18 @@ type TopicCount struct {
 // The counts are DISTINCT on the question text rather than on the row,
 // because two selected datasets may hold the same question and the board will
 // only ever ask it once.
-func TopicHistogram(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, datasetIDs []uuid.UUID) ([]TopicCount, error) {
+func TopicHistogram(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, datasetIDs []uuid.UUID, fresh Freshness) ([]TopicCount, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT t.topic_key, min(t.topic),
 		       count(DISTINCT q.prompt_key)::int,
-		       count(DISTINCT q.prompt_key) FILTER (WHERE q.last_used_at IS NULL)::int
+		       count(DISTINCT q.prompt_key) FILTER (WHERE `+freshSQL("$3", "$4")+`)::int
 		  FROM app_trivia_question_topics t
 		  JOIN app_trivia_questions q ON q.id = t.question_id AND q.tenant_id = t.tenant_id
 		 WHERE t.tenant_id = $1
 		   AND ($2::uuid[] IS NULL OR cardinality($2::uuid[]) = 0 OR q.dataset_id = ANY($2::uuid[]))
 		 GROUP BY t.topic_key
-		 ORDER BY count(DISTINCT q.prompt_key) DESC, t.topic_key`, tenantID, datasetIDs)
+		 ORDER BY count(DISTINCT q.prompt_key) DESC, t.topic_key`,
+		tenantID, datasetIDs, fresh.AllowRepeats, fresh.GameID)
 	if err != nil {
 		return nil, fmt.Errorf("querying topic histogram: %w", err)
 	}
@@ -232,24 +238,27 @@ func TopicHistogram(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 // least-recently-used first so a weekly quiz doesn't repeat itself. Each
 // question comes back with its full topic set, because the board builder has
 // to know that one question can fill either of two columns.
-// datasetIDs narrows to a game's selection; empty means every dataset.
+// datasetIDs narrows to a game's selection; empty means every dataset, and
+// fresh drops anything an earlier night already asked (see Freshness).
 //
 // DISTINCT ON (prompt_key) is what stops two selected datasets that share a
 // question from putting it on the board twice. The board's own unique index
 // is on question_id, which would not catch it — those are two different rows
 // saying the same thing, and the room would notice.
-func QuestionsForTopics(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, topicKeys []string, datasetIDs []uuid.UUID) ([]Question, error) {
+func QuestionsForTopics(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, topicKeys []string, datasetIDs []uuid.UUID, fresh Freshness) ([]Question, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT * FROM (
 		  SELECT DISTINCT ON (q.prompt_key) `+questionColumns+`
 		    FROM app_trivia_questions q
 		   WHERE q.tenant_id = $1
 		     AND ($3::uuid[] IS NULL OR cardinality($3::uuid[]) = 0 OR q.dataset_id = ANY($3::uuid[]))
+		     AND `+freshSQL("$4", "$5")+`
 		     AND EXISTS (SELECT 1 FROM app_trivia_question_topics t
 		                  WHERE t.question_id = q.id AND t.topic_key = ANY($2))
 		   ORDER BY q.prompt_key, q.last_used_at ASC NULLS FIRST, q.id
 		) d
-		 ORDER BY d.last_used_at ASC NULLS FIRST, d.id`, tenantID, topicKeys, datasetIDs)
+		 ORDER BY d.last_used_at ASC NULLS FIRST, d.id`,
+		tenantID, topicKeys, datasetIDs, fresh.AllowRepeats, fresh.GameID)
 	if err != nil {
 		return nil, fmt.Errorf("querying questions for topics: %w", err)
 	}
@@ -326,7 +335,11 @@ func GetQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID
 // LeastUsedQuestion picks the bank question the room has heard least
 // recently that isn't already on this game's board. It's how the host gets a
 // final question without going shopping, and how the Auto button fills gaps.
-func LeastUsedQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, datasetIDs []uuid.UUID) (*Question, error) {
+//
+// With repeats off it will not reach for something another night has already
+// asked. The final is the round the whole room is watching and is the worst
+// place in the game to serve a rerun.
+func LeastUsedQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, datasetIDs []uuid.UUID, fresh Freshness) (*Question, error) {
 	q, err := scanQuestion(pool.QueryRow(ctx, `
 		SELECT `+questionColumns+`
 		  FROM app_trivia_questions q
@@ -336,8 +349,9 @@ func LeastUsedQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID
 		                    WHERE c.game_id = $2 AND c.question_id = q.id)
 		   AND NOT EXISTS (SELECT 1 FROM app_trivia_rounds r
 		                    WHERE r.game_id = $2 AND r.question_id = q.id)
+		   AND `+freshSQL("$4", "$2")+`
 		 ORDER BY q.last_used_at ASC NULLS FIRST, q.id
-		 LIMIT 1`, tenantID, gameID, datasetIDs))
+		 LIMIT 1`, tenantID, fresh.GameID, datasetIDs, fresh.AllowRepeats))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -349,8 +363,14 @@ func LeastUsedQuestion(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID
 
 // MarkQuestionsUsed stamps last_used_at so the next board prefers what the
 // room has not heard. Called when a board is built, not when a cell is
-// played: a question that made it onto tonight's board has been spent even if
-// the night ends early.
+// played.
+//
+// THIS IS AN ORDERING TIEBREAK, NOT THE REPEAT RULE. It used to be both, and
+// as the second it was wrong: a board stamps ten questions, a night that runs
+// short opens four, and six questions nobody ever heard were burned with no
+// way back. Whether a question may be asked AGAIN is Freshness's business --
+// rounds, which cascade with their game -- and this only decides what a board
+// reaches for first among the questions it is allowed to use at all.
 func MarkQuestionsUsed(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil

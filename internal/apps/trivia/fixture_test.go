@@ -94,40 +94,27 @@ func (f *fixture) newGame(s Settings, topics []string) *Game {
 
 func (f *fixture) buildBoard(game *Game, topics []string) {
 	f.t.Helper()
+	if err := f.tryBuildBoard(game, topics); err != nil {
+		f.t.Fatalf("building a board: %v", err)
+	}
+}
+
+// tryBuildBoard is the same draw the console does, errors and all, for the
+// tests that are about a build FAILING. Going through drawBoard rather than
+// assembling the bank by hand is the point: a test that built its own
+// candidate list would not notice the repeat rule at all.
+func (f *fixture) tryBuildBoard(game *Game, topics []string) error {
+	f.t.Helper()
 	keys := make([]string, len(topics))
 	for i, t := range topics {
 		keys[i] = FoldKey(t)
 	}
-	bank, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, keys, nil)
+	// A fixed seed, so a test can pin a bank to a board.
+	rows, err := drawBoard(f.ctx, f.pool, f.tenant.ID, game, keys, nil, 1)
 	if err != nil {
-		f.t.Fatalf("QuestionsForTopics: %v", err)
+		return err
 	}
-	cands := make([]BoardCandidate, 0, len(bank))
-	for _, q := range bank {
-		tk := make([]string, 0, len(q.Topics))
-		for _, t := range q.Topics {
-			tk = append(tk, t.Key)
-		}
-		cands = append(cands, BoardCandidate{QuestionID: q.ID.String(), TopicKeys: tk})
-	}
-	cells, err := BuildBoard(keys, game.BoardRows, game.CellValues, cands, 1)
-	if err != nil {
-		f.t.Fatalf("BuildBoard: %v", err)
-	}
-	rows := make([]BoardCell, 0, len(cells))
-	for _, c := range cells {
-		qid, err := uuid.Parse(c.QuestionID)
-		if err != nil {
-			f.t.Fatalf("bad question id: %v", err)
-		}
-		rows = append(rows, BoardCell{
-			ColIndex: c.ColIndex, RowIndex: c.RowIndex,
-			Topic: c.Topic, Points: c.Points, QuestionID: qid,
-		})
-	}
-	if err := ReplaceBoard(f.ctx, f.pool, f.tenant.ID, game.ID, rows); err != nil {
-		f.t.Fatalf("ReplaceBoard: %v", err)
-	}
+	return ReplaceBoard(f.ctx, f.pool, f.tenant.ID, game.ID, rows)
 }
 
 func (f *fixture) reload(gameID uuid.UUID) *Game {
@@ -167,11 +154,19 @@ func (f *fixture) do(gameID uuid.UUID, req ActionRequest) *Snapshot {
 // and $200 of winnings would fail if the engine ever swapped the two, whereas
 // identical values would let that bug pass silently. The shipped weighting is
 // covered separately by the tests that construct settings explicitly.
+//
+// RepeatQuestions is ON here for the same reason. Most of these tests run
+// several games off one small seeded bank in a single tenant, and they are
+// about scoring, phases and projections -- not about the bank. Leaving the
+// shipped no-repeats rule on would make half of them fail with a shortfall
+// that has nothing to do with what they assert. The rule itself is covered by
+// the tests in models_fresh_test.go, which set this false deliberately.
 func defaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
 		CellValues: []int{500, 1000}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
+		RepeatQuestions: true,
 	}
 }
 

@@ -54,6 +54,10 @@ type Game struct {
 	// the TV, the phones and the console cannot phrase it differently.
 	PickerTeamID *uuid.UUID
 	PickerReason PickerReason
+	// RepeatQuestions lets this game draw on questions an earlier night has
+	// already asked. Off by default, because the surprise is the product and
+	// a regular is the person most likely to notice a rerun.
+	RepeatQuestions bool
 }
 
 // Settings are the per-game knobs. Board size, values and the final are
@@ -75,19 +79,24 @@ type Settings struct {
 	// closing, 0 to 60. Zero means close immediately, which is what the game
 	// did before this existed.
 	GraceSeconds int `json:"grace_seconds"`
+	// RepeatQuestions allows questions earlier nights already asked. Off is
+	// the default and the interesting setting; on is an escape hatch for a
+	// venue whose bank has run thin, and for a host who wants to replay a
+	// board deliberately.
+	RepeatQuestions bool `json:"repeat_questions"`
 }
 
 const gameColumns = `id, tenant_id, name, title, phase, board_rows, board_columns,
 	cell_values, token_values, final_wager, answer_seconds, reveal_seconds, bet_seconds,
 	wager_seconds, grace_seconds, current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
-	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, '')`
+	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, ''), repeat_questions`
 
 // gameColumnsQualified is the same list with a table alias, for the one query
 // that joins tenants.
 const gameColumnsQualified = `g.id, g.tenant_id, g.name, g.title, g.phase, g.board_rows, g.board_columns,
 	g.cell_values, g.token_values, g.final_wager, g.answer_seconds, g.reveal_seconds, g.bet_seconds,
 	g.wager_seconds, g.grace_seconds, g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
-	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, '')`
+	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, ''), g.repeat_questions`
 
 func scanGame(row pgx.Row) (*Game, error) {
 	var g Game
@@ -96,7 +105,7 @@ func scanGame(row pgx.Row) (*Game, error) {
 		&g.AnswerSeconds, &g.RevealSeconds, &g.BetSeconds, &g.WagerSeconds, &g.GraceSeconds,
 		&g.CurrentRoundID, &g.PhaseDeadline, &g.StateVersion,
 		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode,
-		&g.PickerTeamID, &g.PickerReason)
+		&g.PickerTeamID, &g.PickerReason, &g.RepeatQuestions)
 	if err != nil {
 		return nil, err
 	}
@@ -109,12 +118,12 @@ func CreateGame(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 		INSERT INTO app_trivia_games
 		    (tenant_id, name, title, phase, board_rows, board_columns, cell_values, token_values,
 		     final_wager, answer_seconds, reveal_seconds, bet_seconds, wager_seconds,
-		     grace_seconds, created_by, join_code)
-		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		     grace_seconds, created_by, join_code, repeat_questions)
+		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		RETURNING `+gameColumns,
 		tenantID, name, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
 		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds,
-		s.GraceSeconds, createdBy, NewJoinCode()))
+		s.GraceSeconds, createdBy, NewJoinCode(), s.RepeatQuestions))
 	if err != nil {
 		return nil, fmt.Errorf("inserting trivia game: %w", err)
 	}
@@ -180,13 +189,13 @@ func UpdateSettings(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.U
 		   SET title = $3, board_rows = $4, board_columns = $5, cell_values = $6,
 		       token_values = $7, final_wager = $8, answer_seconds = $9,
 		       reveal_seconds = $10, bet_seconds = $11, wager_seconds = $12,
-		       grace_seconds = $13,
+		       grace_seconds = $13, repeat_questions = $14,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2
 		RETURNING `+gameColumns,
 		tenantID, id, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
 		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds,
-		s.GraceSeconds))
+		s.GraceSeconds, s.RepeatQuestions))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -197,6 +206,12 @@ func UpdateSettings(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.U
 }
 
 // DeleteGame removes a game and everything under it.
+//
+// That includes its rounds, which is also how a workspace gets its questions
+// back: "already asked" is a round row, so deleting the night that asked them
+// makes them fresh again. There is deliberately no separate "reset the bank"
+// button -- one source of truth, and an operation the host already
+// understands.
 func DeleteGame(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) error {
 	tag, err := pool.Exec(ctx,
 		`DELETE FROM app_trivia_games WHERE tenant_id = $1 AND id = $2`, tenantID, id)

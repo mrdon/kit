@@ -240,7 +240,7 @@ func (s *Service) openFinal(ctx context.Context, game *Game, questionID *uuid.UU
 		if err != nil {
 			return err
 		}
-		q, err := LeastUsedQuestion(ctx, s.pool, game.TenantID, game.ID, datasets)
+		q, err := LeastUsedQuestion(ctx, s.pool, game.TenantID, datasets, freshnessOf(game))
 		if err != nil {
 			return err
 		}
@@ -313,6 +313,10 @@ func openingPhase(game *Game, isFinal bool) (Phase, time.Time) {
 // screen and the TV all read this copy, so a re-upload or a deleted dataset
 // cannot change what the room was asked, what it was marked against, or what
 // category it was told it was betting on.
+//
+// prompt_key travels with the copy for one more reason: this row IS the
+// record that the question has been asked, and next week's board asks it
+// about a key, not an id. See Freshness.
 func insertRoundTx(ctx context.Context, tx pgx.Tx, game *Game, seed roundSeed) (uuid.UUID, error) {
 	var ordinal int
 	if err := tx.QueryRow(ctx,
@@ -337,11 +341,11 @@ func insertRoundTx(ctx context.Context, tx pgx.Tx, game *Game, seed roundSeed) (
 	var roundID uuid.UUID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO app_trivia_rounds
-		    (tenant_id, game_id, cell_id, question_id, prompt, answer_value, answer_text,
-		     topic, is_final, ordinal, points)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+		    (tenant_id, game_id, cell_id, question_id, prompt, prompt_key,
+		     answer_value, answer_text, topic, is_final, ordinal, points)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
 		game.TenantID, game.ID, seed.CellID, seed.QuestionID,
-		question.Prompt, question.AnswerValue, question.AnswerText,
+		question.Prompt, question.PromptKey, question.AnswerValue, question.AnswerText,
 		topic, seed.IsFinal, ordinal, seed.Points).Scan(&roundID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("inserting round: %w", err)

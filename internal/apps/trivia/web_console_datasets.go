@@ -128,7 +128,7 @@ func (a *App) handleSetGameDatasets(w http.ResponseWriter, r *http.Request) {
 
 	// Hand back the topics this game can now draw from, so the column picker
 	// updates in the same round trip rather than needing a reload.
-	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, ids)
+	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, ids, freshnessOf(game))
 	if err != nil {
 		serverError(w, "loading topic histogram", err)
 		return

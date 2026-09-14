@@ -52,6 +52,11 @@ func DefaultSettings() Settings {
 		// Five seconds for the last table to look at what it just did. See
 		// maybeCloseEarly.
 		GraceSeconds: 5,
+		// No reruns. A question the room has already been asked is not a
+		// question, and the regulars are exactly the people who notice. A
+		// host whose bank has run thin can turn this on per game; deleting
+		// an old night gives its questions back either way.
+		RepeatQuestions: false,
 	}
 }
 
@@ -86,7 +91,8 @@ func normaliseSettings(s Settings) Settings {
 	// GraceSeconds is deliberately NOT filled in. Zero is a real setting here
 	// -- it means "close the instant the last table is in", the behaviour the
 	// game shipped with -- so treating it as "unset" would make that choice
-	// unexpressable.
+	// unexpressable. RepeatQuestions is the same shape and needs no line at
+	// all: false is both the zero value and the default.
 	return s
 }
 

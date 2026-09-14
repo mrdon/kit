@@ -21,9 +21,14 @@ type Dataset struct {
 	Notes      string    `json:"notes"`
 	BuiltinKey string    `json:"builtin_key"`
 	Questions  int       `json:"questions"`
-	Topics     int       `json:"topics"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// Fresh is how many of those no game has asked yet -- the number that
+	// says whether this set still has a night in it. Counted workspace-wide
+	// and without regard to any game's repeat setting, because this is the
+	// bank's own state, not a particular game's view of it.
+	Fresh     int       `json:"fresh"`
+	Topics    int       `json:"topics"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ErrDatasetInUse means a dataset's questions are on the board of a game that
@@ -57,17 +62,29 @@ func DatasetInUse(ctx context.Context, q Querier, tenantID, datasetID uuid.UUID)
 	return name, nil
 }
 
-// ListDatasets returns the workspace's datasets with their question and topic
-// counts, so the picker can show what selecting one would actually buy.
+// ListDatasets returns the workspace's datasets with their question, fresh
+// and topic counts, so the picker can show what selecting one would actually
+// buy -- and the bank page can show a set that is used up.
+//
+// The freshness flag is computed in a subquery rather than in the FILTER, so
+// the correlated NOT EXISTS runs once per question rather than being tangled
+// up inside two aggregates over a three-way join.
 func ListDatasets(ctx context.Context, q Querier, tenantID uuid.UUID) ([]Dataset, error) {
 	rows, err := q.Query(ctx, `
 		SELECT d.id, d.name, d.notes, COALESCE(d.builtin_key, ''),
 		       count(DISTINCT qs.id)::int,
+		       count(DISTINCT qs.id) FILTER (WHERE qs.fresh)::int,
 		       count(DISTINCT t.topic_key)::int,
 		       d.created_at, d.updated_at
 		  FROM app_trivia_datasets d
-		  LEFT JOIN app_trivia_questions qs
-		         ON qs.dataset_id = d.id AND qs.tenant_id = d.tenant_id
+		  LEFT JOIN (
+		        SELECT q.id, q.dataset_id, q.tenant_id,
+		               NOT EXISTS (SELECT 1 FROM app_trivia_rounds r
+		                            WHERE r.tenant_id = q.tenant_id
+		                              AND r.prompt_key = q.prompt_key) AS fresh
+		          FROM app_trivia_questions q
+		         WHERE q.tenant_id = $1
+		       ) qs ON qs.dataset_id = d.id AND qs.tenant_id = d.tenant_id
 		  LEFT JOIN app_trivia_question_topics t
 		         ON t.question_id = qs.id AND t.tenant_id = d.tenant_id
 		 WHERE d.tenant_id = $1
@@ -81,7 +98,7 @@ func ListDatasets(ctx context.Context, q Querier, tenantID uuid.UUID) ([]Dataset
 	for rows.Next() {
 		var d Dataset
 		if err := rows.Scan(&d.ID, &d.Name, &d.Notes, &d.BuiltinKey,
-			&d.Questions, &d.Topics, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			&d.Questions, &d.Fresh, &d.Topics, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning trivia dataset: %w", err)
 		}
 		out = append(out, d)

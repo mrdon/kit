@@ -151,7 +151,7 @@ func (a *App) importPlan(r *http.Request, tenantID uuid.UUID, plan ImportPlan, o
 	}
 
 	resp.DatasetID = datasetID.String()
-	hist, err := TopicHistogram(r.Context(), a.pool, tenantID, []uuid.UUID{datasetID})
+	hist, err := TopicHistogram(r.Context(), a.pool, tenantID, []uuid.UUID{datasetID}, Freshness{})
 	if err != nil {
 		return resp, err
 	}
@@ -172,7 +172,7 @@ func (a *App) handleListQuestions(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "listing trivia datasets", err)
 		return
 	}
-	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, nil)
+	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, nil, Freshness{})
 	if err != nil {
 		serverError(w, "loading topic histogram", err)
 		return
@@ -345,7 +345,7 @@ func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req
 		}
 		return out, nil
 	}
-	hist, err := TopicHistogram(r.Context(), a.pool, tenantID, datasetIDs)
+	hist, err := TopicHistogram(r.Context(), a.pool, tenantID, datasetIDs, freshnessOf(game))
 	if err != nil {
 		return nil, err
 	}
@@ -357,61 +357,20 @@ func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req
 	}
 	topics := PickTopics(hist, game.BoardColumns, game.BoardRows, seed)
 	if len(topics) < game.BoardColumns {
-		return nil, fmt.Errorf("only %d topics have at least %d questions — this board needs %d columns",
-			len(topics), game.BoardRows, game.BoardColumns)
+		kind := "fresh questions"
+		if game.RepeatQuestions {
+			kind = "questions"
+		}
+		return nil, fmt.Errorf("only %d topics have at least %d %s — this board needs %d columns",
+			len(topics), game.BoardRows, kind, game.BoardColumns)
 	}
 	return topics, nil
 }
 
-// assignBoard runs the matching over the bank, least-recently-used first.
+// assignBoard runs the matching over the bank this game may draw on. The seed
+// is fresh per call, so pressing Auto twice gives two different boards from
+// the same questions.
 func (a *App) assignBoard(r *http.Request, tenantID uuid.UUID, game *Game, topics []string, datasetIDs []uuid.UUID) ([]BoardCell, error) {
-	bank, err := QuestionsForTopics(r.Context(), a.pool, tenantID, topics, datasetIDs)
-	if err != nil {
-		return nil, err
-	}
-	cands := make([]BoardCandidate, 0, len(bank))
-	for _, q := range bank {
-		keys := make([]string, 0, len(q.Topics))
-		for _, t := range q.Topics {
-			keys = append(keys, t.Key)
-		}
-		cands = append(cands, BoardCandidate{QuestionID: q.ID.String(), TopicKeys: keys})
-	}
-	labels := topicLabels(bank)
-
 	seed := rand.Int63() //nolint:gosec // board variety, not secrecy
-	placed, err := BuildBoard(topics, game.BoardRows, game.CellValues, cands, seed)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]BoardCell, 0, len(placed))
-	for _, c := range placed {
-		qid, err := uuid.Parse(c.QuestionID)
-		if err != nil {
-			return nil, fmt.Errorf("parsing question id: %w", err)
-		}
-		label := labels[c.Topic]
-		if label == "" {
-			label = c.Topic
-		}
-		out = append(out, BoardCell{
-			ColIndex: c.ColIndex, RowIndex: c.RowIndex,
-			Topic: label, Points: c.Points, QuestionID: qid,
-		})
-	}
-	return out, nil
-}
-
-// topicLabels maps a folded key back to a display spelling, so the board
-// header reads "Sports" rather than "sports".
-func topicLabels(bank []Question) map[string]string {
-	out := map[string]string{}
-	for _, q := range bank {
-		for _, t := range q.Topics {
-			if _, seen := out[t.Key]; !seen {
-				out[t.Key] = t.Label
-			}
-		}
-	}
-	return out
+	return drawBoard(r.Context(), a.pool, tenantID, game, topics, datasetIDs, seed)
 }

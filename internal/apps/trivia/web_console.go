@@ -89,7 +89,7 @@ func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader 
 			CellValues: g.CellValues, TokenValues: g.TokenValues, FinalWager: g.FinalWager,
 			AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds,
 			BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
-			GraceSeconds: g.GraceSeconds,
+			GraceSeconds: g.GraceSeconds, RepeatQuestions: g.RepeatQuestions,
 		},
 	}
 }
@@ -242,7 +242,7 @@ func (a *App) settingsForNewGame(r *http.Request, tenantID uuid.UUID, asked *Set
 		CellValues: g.CellValues, TokenValues: g.TokenValues,
 		FinalWager: g.FinalWager, AnswerSeconds: g.AnswerSeconds,
 		RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
-		GraceSeconds: g.GraceSeconds,
+		GraceSeconds: g.GraceSeconds, RepeatQuestions: g.RepeatQuestions,
 	}), nil
 }
 
@@ -270,7 +270,7 @@ func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "loading game datasets", err)
 		return
 	}
-	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, selected)
+	hist, err := TopicHistogram(r.Context(), a.pool, tenant.ID, selected, freshnessOf(game))
 	if err != nil {
 		serverError(w, "loading topic histogram", err)
 		return

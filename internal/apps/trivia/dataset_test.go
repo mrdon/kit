@@ -21,14 +21,14 @@ func TestGameDrawsOnlyFromSelectedDatasets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, []uuid.UUID{xmas})
+	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, []uuid.UUID{xmas}, freshnessOf(game))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hist) != 1 || hist[0].Key != "xmas" {
 		t.Fatalf("topics = %+v, want only xmas", hist)
 	}
-	got, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, []string{"xmas", "sportsball"}, []uuid.UUID{xmas})
+	got, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, []string{"xmas", "sportsball"}, []uuid.UUID{xmas}, freshnessOf(game))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestNoSelectionMeansEveryDataset(t *testing.T) {
 	if len(ids) != 0 {
 		t.Fatalf("a new game already has a selection: %v", ids)
 	}
-	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, ids)
+	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, ids, freshnessOf(game))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestDeletingTheSelectedDatasetLeavesTheGamePlayable(t *testing.T) {
 	if len(ids) != 0 {
 		t.Fatalf("the selection still points at a deleted set: %v", ids)
 	}
-	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, ids)
+	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, ids, freshnessOf(game))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,14 +127,14 @@ func TestTheSameQuestionInTwoDatasetsIsAskedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, []string{"sport"}, ids)
+	got, err := QuestionsForTopics(f.ctx, f.pool, f.tenant.ID, []string{"sport"}, ids, Freshness{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %d candidates for one question held in two datasets, want 1", len(got))
 	}
-	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, ids)
+	hist, err := TopicHistogram(f.ctx, f.pool, f.tenant.ID, ids, Freshness{})
 	if err != nil {
 		t.Fatal(err)
 	}
