@@ -401,6 +401,68 @@
     }, 100);
   }
 
+  /* --- 4/5. cards --- */
+
+  /* Twenty-one cards (twenty distinct answers plus "smaller than all of
+     these") in the one row that suited five tables is 85px a card. So past
+     seven the row splits, and the tier is a CLASS as much as a column count:
+     the padding, the names, the chips and the footer all have to tighten
+     together, and CSS says that better than JS does.
+
+     Seven per row is the ceiling because that is roughly where a three-digit
+     number stops fitting a card on a 1920 stage. Twenty-one is therefore
+     three full rows; sixteen is three rows of six with two gaps at the end,
+     which reads fine and is not worth extra markup to centre. */
+  function layoutCards(count) {
+    var host = document.getElementById('cards');
+    var screen = document.getElementById('cards-screen');
+    var rows = count <= 7 ? 1 : (count <= 14 ? 2 : 3);
+    var cols = Math.max(1, Math.ceil(count / rows));
+    ['tier-1', 'tier-2', 'tier-3'].forEach(function (c) {
+      host.classList.remove(c);
+      screen.classList.remove(c);
+    });
+    host.classList.add('tier-' + rows);
+    screen.classList.add('tier-' + rows);
+    host.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+    host.style.gridTemplateRows = 'repeat(' + rows + ', minmax(0, 1fr))';
+  }
+
+  /* One card says "7" and the next says "1,000", and at twenty-one cards they
+     share a 245px box -- so the size cannot be a constant any more than the
+     board tile's could. Measure per card, because the cards are not even the
+     same width as each other: the rail slides in during scoring and takes
+     540px off the row. */
+  function fitCardValues() {
+    var vals = document.querySelectorAll('#cards .card .val');
+    var numeric = [], smallest = 999;
+    for (var i = 0; i < vals.length; i++) {
+      var v = vals[i];
+      var pseudo = v.parentNode.classList.contains('pseudo');
+      var size = fitOneValue(v, pseudo ? 40 : 120, pseudo ? 14 : 24);
+      if (!pseudo) { numeric.push(v); smallest = Math.min(smallest, size); }
+    }
+    // One size for all of them. Fitting each card alone is correct and looks
+    // wrong: a card whose answer three tables picked has two lines of names
+    // and a smaller numeral than the card next to it, and a row of numerals
+    // at six different sizes reads as a mistake rather than as information.
+    for (var j = 0; j < numeric.length; j++) { numeric[j].style.fontSize = smallest + 'px'; }
+  }
+
+  /* Measured as a block: centred grid content overflows its box equally top
+     and bottom and scrollHeight only counts the bottom half of that, so the
+     loop would stop while half the numeral was still off the card. */
+  function fitOneValue(v, size, floor) {
+    v.style.display = 'block';
+    v.style.fontSize = size + 'px';
+    while (v.scrollHeight > v.clientHeight + 1 && size > floor) {
+      size -= 2;
+      v.style.fontSize = size + 'px';
+    }
+    v.style.display = '';
+    return size;
+  }
+
   /* --- 4/5. cards ---
 
      renderCards runs on EVERY frame, and during betting a frame arrives
@@ -452,6 +514,7 @@
       card.appendChild(potNode(s, mode));
       host.appendChild(card);
     });
+    layoutCards((state.slots || []).length);
   }
 
   function potNode(s, mode) {
@@ -536,6 +599,7 @@
     }
     // The footer holds either the countdown or the answer band, never both.
     document.getElementById('cards-footer').classList.toggle('scored', mode === 'scored');
+    fitCardValues();
     startRing('cards');
   }
 
@@ -599,6 +663,11 @@
     fitRail();
     document.getElementById('rail').classList.add('in');
     document.getElementById('cards-screen').classList.add('railed');
+    // The rail takes 540px off the cards row, so every value that was sized
+    // against the full stage is now too big for its card. Re-fit once the
+    // padding transition has landed -- measuring mid-transition would size
+    // them against a width that is still moving.
+    later(600, fitCardValues);
 
     if (!animate) { return; }
     var rows = rail.querySelectorAll('.row');
