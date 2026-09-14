@@ -122,6 +122,64 @@ func TestHostProjectionAlwaysCarriesTheAnswer(t *testing.T) {
 	}
 }
 
+// The board phase clears the current round on purpose, and that is exactly
+// when the host has to say who picks the next category. The host frame
+// remembers the last scored round; the public frames are not widened.
+func TestHostFrameRemembersTheLastScoredRound(t *testing.T) {
+	fresh, _ := snapshotIn(PhaseBoard, false)
+	fresh.Round, fresh.Scoring = nil, nil
+	if got := ProjectHost(fresh).LastRound; got != nil {
+		t.Fatalf("nothing has been scored yet but the host frame carries %+v", got)
+	}
+
+	snap, teamA := snapshotIn(PhaseBoard, false)
+	slot := fixedID("cccccccc", "cccc", "cccc", "cccc", "cccccccccccc")
+	value := 271828.0
+	// What the board phase actually looks like: no round in play, but a
+	// scored one behind it.
+	snap.Round, snap.Scoring, snap.Slots = nil, nil, nil
+	snap.LastRound = &SnapLastRound{
+		LastRoundSummary: LastRoundSummary{
+			RoundID: fixedID("cdcdcdcd", "cdcd", "cdcd", "cdcd", "cdcdcdcdcdcd"),
+			Ordinal: 3, Points: 500, Prompt: "How many metres tall is the Eiffel Tower?",
+			AnswerValue: 867530.0, AnswerText: "867530",
+			WinningSlotID: &slot, WinningLabel: "271828", WinningValue: &value,
+			WinnerIDs: []uuid.UUID{teamA}, WinnerNames: []string{"Bar Flies"},
+		},
+		Deltas: map[uuid.UUID]ScoreDelta{teamA: {BoardPoints: 500, BetDelta: 200}},
+	}
+
+	host := ProjectHost(snap)
+	if host.LastRound == nil {
+		t.Fatal("the host frame has forgotten the round it just scored")
+	}
+	if host.LastRound.WinningLabel != "271828" || len(host.LastRound.Winners) != 1 ||
+		host.LastRound.Winners[0] != "Bar Flies" {
+		t.Fatalf("winning card = %q by %v", host.LastRound.WinningLabel, host.LastRound.Winners)
+	}
+	if host.LastRound.WinningSlot != slot.String() ||
+		len(host.LastRound.WinnerIDs) != 1 || host.LastRound.WinnerIDs[0] != teamA.String() {
+		t.Fatalf("winning slot/team ids = %q %v", host.LastRound.WinningSlot, host.LastRound.WinnerIDs)
+	}
+	if host.LastRound.Deltas[teamA.String()] != 700 ||
+		host.LastRound.BoardPoints[teamA.String()] != 500 ||
+		host.LastRound.BetDeltas[teamA.String()] != 200 {
+		t.Fatalf("last round deltas = %+v", host.LastRound)
+	}
+	if host.LastRound.CorrectText != "867530" {
+		t.Fatalf("the host cannot read back the answer: %+v", host.LastRound)
+	}
+
+	// And it stays host-only: the TV and the phones have moved on.
+	display, _ := json.Marshal(ProjectDisplay(snap))
+	player, _ := json.Marshal(ProjectPlayer(snap, teamA))
+	for label, raw := range map[string][]byte{"TV": display, "phone": player} {
+		if strings.Contains(string(raw), "lastRound") {
+			t.Fatalf("the %s frame carries the last round:\n%s", label, raw)
+		}
+	}
+}
+
 // Cards must not carry values or team names before the reveal: a phone that
 // could read the field early would know exactly what to bet on.
 func TestPublicSlotsAreEmptyBeforeReveal(t *testing.T) {

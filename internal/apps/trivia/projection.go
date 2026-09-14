@@ -152,34 +152,6 @@ type wireOwnChip struct {
 	SlotID     string `json:"slotId"`
 }
 
-// HostFrame is the console's view. It carries the correct answer in every
-// phase -- the host is reading it out and adjudicating nothing, so hiding it
-// would be theatre with a cost.
-type HostFrame struct {
-	wireCommon
-	Teams    []wireTeam   `json:"teams"`
-	Board    []wireCell   `json:"board"`
-	Round    *wireRound   `json:"round"`
-	Slots    []wireSlot   `json:"slots"`
-	Scoring  *wireScoring `json:"scoring"`
-	Answer   *wireAnswer  `json:"answer"`
-	Tokens   []int        `json:"tokens"`
-	Progress wireProgress `json:"progress"`
-}
-
-// wireAnswer is the host-only correct answer.
-type wireAnswer struct {
-	Value float64 `json:"value"`
-	Text  string  `json:"text"`
-}
-
-// wireProgress is the host's at-a-glance board state.
-type wireProgress struct {
-	CellsPlayed int  `json:"cellsPlayed"`
-	CellsTotal  int  `json:"cellsTotal"`
-	FinalPlayed bool `json:"finalPlayed"`
-}
-
 // revealed reports whether the cards may carry their values and team names
 // yet. Before reveal they must not: a phone that could read the field early
 // would know exactly what to bet on.
@@ -265,34 +237,6 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 	return f
 }
 
-// ProjectHost builds the console's frame, answer included.
-func ProjectHost(s *Snapshot) HostFrame {
-	f := HostFrame{
-		wireCommon: commonOf(s),
-		Teams:      publicTeams(s),
-		Board:      publicBoard(s),
-		Round:      publicRound(s),
-		Scoring:    publicScoring(s),
-		Tokens:     s.TokenValues,
-	}
-	// The host sees the cards from the moment they exist, and the answer in
-	// every phase.
-	f.Slots = allSlots(s)
-	if s.Round != nil {
-		f.Answer = &wireAnswer{Value: s.Round.CorrectValue, Text: s.Round.CorrectText}
-	}
-	for _, c := range s.Board {
-		f.Progress.CellsTotal++
-		if c.Played {
-			f.Progress.CellsPlayed++
-		}
-	}
-	if s.Round != nil && s.Round.IsFinal {
-		f.Progress.FinalPlayed = true
-	}
-	return f
-}
-
 func publicTeams(s *Snapshot) []wireTeam {
 	out := make([]wireTeam, 0, len(s.Teams))
 	for _, t := range s.Teams {
@@ -359,10 +303,6 @@ func publicSlots(s *Snapshot) []wireSlot {
 		return []wireSlot{}
 	}
 	return slotsWith(s, betsVisible(s))
-}
-
-func allSlots(s *Snapshot) []wireSlot {
-	return slotsWith(s, true)
 }
 
 // slotsWith builds the cards, optionally carrying the chips on them.

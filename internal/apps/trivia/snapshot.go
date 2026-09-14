@@ -41,6 +41,12 @@ type Snapshot struct {
 	Bets      []SnapBet
 	Standings map[uuid.UUID]int
 
+	// LastRound is the round scored most recently, which is NOT the same
+	// thing as Scoring: it survives "next" clearing the current round, and
+	// is what the board phase is told. Host frame only -- see
+	// SnapLastRound.
+	LastRound *SnapLastRound
+
 	// Scoring is non-nil only once the round has been scored. It is a
 	// separate type rather than a set of fields on Snapshot precisely so the
 	// correct answer cannot be populated early by accident: there is no
@@ -125,6 +131,25 @@ type SnapScoring struct {
 	CorrectText   string
 	WinningSlotID *uuid.UUID
 	Deltas        map[uuid.UUID]ScoreDelta
+}
+
+// SnapLastRound is the previous question's result, carried into the phases
+// where nothing is in play.
+//
+// The host needs it at exactly one moment and needs it badly: the round has
+// been scored, they have pressed next, the game is sitting on the board, and
+// the table that wrote the winning answer picks the next category. Without
+// this the console has forgotten who that was.
+//
+// It is projected into the HOST frame only. The answer in a scored round is
+// already public, so this is not a withholding rule -- it is that the TV and
+// the phones have moved on to the next question and would only be confused
+// by the last one.
+type SnapLastRound struct {
+	LastRoundSummary
+	// Deltas is the per-team movement for that round, same shape as
+	// SnapScoring.Deltas, so the host can read the swing back out.
+	Deltas map[uuid.UUID]ScoreDelta
 }
 
 // ScoreDelta is one team's movement for the round, split so the phone can

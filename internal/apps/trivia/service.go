@@ -2,6 +2,7 @@ package trivia
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
 
@@ -116,13 +117,47 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 		})
 	}
 
-	if game.CurrentRoundID == nil {
-		return snap, nil
+	if game.CurrentRoundID != nil {
+		if err := s.fillRound(ctx, snap, game, teams); err != nil {
+			return nil, err
+		}
 	}
-	if err := s.fillRound(ctx, snap, game, teams); err != nil {
+	if err := s.fillLastRound(ctx, snap, game); err != nil {
 		return nil, err
 	}
 	return snap, nil
+}
+
+// fillLastRound carries the previous question's result forward.
+//
+// It reads the most recent scored round rather than the current one on
+// purpose: the board phase has no current round at all (afterScoring clears
+// it), and that is precisely the phase where the host has to name the table
+// that picks next. Two extra indexed reads per snapshot buys the console a
+// memory it otherwise cannot have without un-clearing the round -- which
+// would put a finished question back on the TV.
+func (s *Service) fillLastRound(ctx context.Context, snap *Snapshot, game *Game) error {
+	sum, err := LastScoredRoundSummary(ctx, s.pool, game.TenantID, game.ID)
+	if errors.Is(err, ErrNotFound) {
+		// Nothing scored yet -- the first question of the night. Not a
+		// problem, just nothing to remember.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	last := &SnapLastRound{LastRoundSummary: *sum, Deltas: map[uuid.UUID]ScoreDelta{}}
+	rows, err := ScoredRoundScores(ctx, s.pool, game.TenantID, game.ID)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if r.RoundID == sum.RoundID {
+			last.Deltas[r.TeamID] = ScoreDelta{BoardPoints: r.BoardPoints, BetDelta: r.BetDelta}
+		}
+	}
+	snap.LastRound = last
+	return nil
 }
 
 // fillRound adds the in-play round, its cards, its chips and -- once the

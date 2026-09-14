@@ -92,6 +92,76 @@ func ListRounds(ctx context.Context, q Querier, tenantID, gameID uuid.UUID) ([]R
 	return out, rows.Err()
 }
 
+// LastRoundSummary is the recap of one scored round: what was asked, what the
+// answer was, which card won and who wrote it.
+//
+// It exists because "next" clears current_round_id (see afterScoring) -- the
+// game is between questions and nothing is in play -- which leaves the host
+// with no round at exactly the moment they have to say who picks the next
+// category. Rather than keep a finished question loaded, the summary rides
+// alongside, and only the host frame ever projects it.
+type LastRoundSummary struct {
+	RoundID     uuid.UUID
+	Ordinal     int
+	IsFinal     bool
+	Points      int
+	Prompt      string
+	AnswerValue float64
+	AnswerText  string
+
+	// The winning card and the tables who wrote it. Nobody may have: a round
+	// where every table missed still scores, and then WinningSlotID is nil
+	// and WinnerNames is empty.
+	WinningSlotID *uuid.UUID
+	WinningLabel  string
+	WinningValue  *float64
+	WinnerIDs     []uuid.UUID
+	WinnerNames   []string
+}
+
+// LastScoredRoundSummary loads the most recently scored round of a game, with
+// its winning card and that card's tables. Returns ErrNotFound when nothing
+// has been scored yet, which is the ordinary state of the first question of
+// the night rather than a problem.
+//
+// The ids and the names are aggregated under the SAME ORDER BY so the two
+// arrays stay parallel: a host reading "Bar Flies picks next" off a name that
+// belongs to a different id is a quiet way to hand the pick to the wrong
+// table.
+func LastScoredRoundSummary(ctx context.Context, q Querier, tenantID, gameID uuid.UUID) (*LastRoundSummary, error) {
+	var r LastRoundSummary
+	err := q.QueryRow(ctx, `
+		SELECT r.id, r.ordinal, r.is_final, r.points, r.prompt,
+		       COALESCE(r.answer_value, 0), r.answer_text, r.winning_slot_id,
+		       COALESCE(s.label, ''), s.value,
+		       COALESCE(array_agg(st.team_id ORDER BY t.name)
+		                FILTER (WHERE st.team_id IS NOT NULL), '{}'),
+		       COALESCE(array_agg(t.name ORDER BY t.name)
+		                FILTER (WHERE st.team_id IS NOT NULL), '{}')
+		  FROM app_trivia_rounds r
+		  LEFT JOIN app_trivia_slots s
+		         ON s.id = r.winning_slot_id AND s.tenant_id = r.tenant_id
+		  LEFT JOIN app_trivia_slot_teams st
+		         ON st.slot_id = s.id AND st.tenant_id = s.tenant_id
+		  LEFT JOIN app_trivia_teams t
+		         ON t.id = st.team_id AND t.tenant_id = st.tenant_id
+		 WHERE r.tenant_id = $1 AND r.game_id = $2 AND r.scored_at IS NOT NULL
+		 GROUP BY r.id, r.ordinal, r.is_final, r.points, r.prompt,
+		          r.answer_value, r.answer_text, r.winning_slot_id, s.label, s.value
+		 ORDER BY r.scored_at DESC, r.ordinal DESC
+		 LIMIT 1`, tenantID, gameID).
+		Scan(&r.RoundID, &r.Ordinal, &r.IsFinal, &r.Points, &r.Prompt,
+			&r.AnswerValue, &r.AnswerText, &r.WinningSlotID,
+			&r.WinningLabel, &r.WinningValue, &r.WinnerIDs, &r.WinnerNames)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying last scored round: %w", err)
+	}
+	return &r, nil
+}
+
 // Answer is what one team typed. Stake is set only in a final, where it is
 // committed with the answer -- before the team has seen anyone else's number.
 type Answer struct {
