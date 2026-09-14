@@ -5,26 +5,81 @@
 // one part of the phone that is allowed to be loud — and because App.tsx is
 // the router, which should stay legible as a router.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { money, type PlayerFrame } from './api';
+import { confetti } from './confetti';
 
 // The delta is the hero, counted up, because "what did that round do to us"
-// is the only question anybody has at this moment.
+// is the only question anybody has at this moment. The celebration is layered
+// OVER that, never in place of it: a table that just took $600 off the room
+// wants the number first and the fuss second.
 export function Result({ frame }: { frame: PlayerFrame }) {
   const target = frame.you?.delta ?? 0;
-  const shown = useCountUp(target, frame.round?.id ?? '');
+  const roundId = frame.round?.id ?? '';
+  const shown = useCountUp(target, roundId);
   const cls = target > 0 ? 'delta up' : target < 0 ? 'delta down' : 'delta flat';
+  const wrote = !!frame.you?.wroteWinner;
+  const top = topEarner(frame);
+
+  // Writing the winning answer is the round's big moment, so it gets the
+  // confetti. Being top earner without writing it is the quieter one, so it
+  // gets a gold wash and a badge -- two showers a round would stop meaning
+  // anything by the third question.
+  useOncePerKey(roundId, wrote, () => confetti({ durationMs: 2400, count: 90 }));
+
   return (
-    <div className="body">
+    <div className={`body ${top && !wrote ? 'gold-flash' : ''}`}>
       <p className="sub" style={{ textAlign: 'center' }}>The answer was</p>
       <h1 style={{ textAlign: 'center' }}>{frame.scoring?.correctText || frame.scoring?.correctValue}</h1>
       <div className={cls}>{target > 0 ? '+' : ''}{money(shown)}</div>
-      {frame.you?.wroteWinner ? (
+      {wrote ? <p className="celebrate-line">You nailed it</p> : null}
+      {top ? <div className="badge-gold">Top earner this round</div> : null}
+      {wrote ? (
         <p className="sub" style={{ textAlign: 'center' }}>You wrote the winning answer.</p>
       ) : null}
       <Standings frame={frame} />
     </div>
   );
+}
+
+// topEarner: did this table take more off the round than anybody else?
+//
+// Ties count, deliberately. Two tables that both swung +$400 both earned the
+// most, and picking one of them by map order would be arbitrary in a way the
+// room can check against the wall. A flat or negative round is never a "top
+// earner", however far ahead of everyone else it is -- the badge is about the
+// round, not the standings.
+function topEarner(frame: PlayerFrame): boolean {
+  const deltas = frame.scoring?.deltas;
+  const teamId = frame.you?.teamId;
+  if (!deltas || !teamId) return false;
+  const mine = deltas[teamId];
+  if (typeof mine !== 'number' || mine <= 0) return false;
+  for (const id of Object.keys(deltas)) {
+    if (deltas[id] > mine) return false;
+  }
+  return true;
+}
+
+// useOncePerKey fires an effect at most once for a given key, and cleans up
+// whatever it returns.
+//
+// The guard is the whole point. Every reconnect re-delivers the current
+// frame, and a phone that locks and wakes gets the scoring frame again -- a
+// second confetti burst over a screen the table has been reading for twenty
+// seconds reads as a glitch rather than as a celebration. The ref survives
+// re-renders; the key is the round (or the phase) so the NEXT round still
+// fires.
+function useOncePerKey(key: string, armed: boolean, fire: () => (() => void) | void) {
+  const firedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!armed || !key || firedFor.current === key) return;
+    firedFor.current = key;
+    return fire();
+    // `fire` is a fresh closure every render and is deliberately not a
+    // dependency: it would re-run this on every frame that lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, armed]);
 }
 
 export function Podium({ frame }: { frame: PlayerFrame }) {

@@ -267,3 +267,49 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 
 /* The preset that matches the wager in force. */
 .presets .btn.on { border-color: var(--gold); color: var(--gold); }
+
+/* ---------- celebration ----------
+   The one part of the phone that is allowed to be loud, and it is rationed:
+   confetti for writing the winning answer or winning the night, a gold wash
+   for the quieter wins. Two showers in one round would stop meaning anything
+   by the third question. */
+
+/* The confetti canvas is appended to <body> by play/confetti.ts, outside the
+   React tree, so a hundred falling rectangles never share a render pass with
+   the count-up on the delta. */
+.confetti-layer {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 60;
+}
+
+.celebrate-line {
+  text-align: center; margin: 0;
+  font-size: 27px; font-weight: 800; letter-spacing: -.01em; color: var(--gold);
+  animation: pop .5s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+.celebrate-line.big { font-size: 46px; line-height: 1.05; }
+@keyframes pop { from { transform: scale(.55); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.badge-gold {
+  align-self: center;
+  padding: 10px 20px; border-radius: 999px;
+  background: rgba(245, 196, 81, .16); border: 2px solid var(--gold); color: var(--gold);
+  font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  animation: pop .5s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+
+/* The gold wash. Fixed rather than absolute so it covers the whole phone, and
+   a one-shot `both` animation so a reconnect -- which re-renders but does not
+   remount this node -- cannot replay it. */
+.body.gold-flash::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 55;
+  background: radial-gradient(circle at 50% 32%, rgba(245, 196, 81, .45), rgba(245, 196, 81, 0) 62%);
+  animation: goldwash 1.5s ease-out both;
+}
+@keyframes goldwash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Somebody who asked the OS for less movement still gets told they won: the
+   wash stays (it is a fade, not motion) and the pops become plain text. */
+@media (prefers-reduced-motion: reduce) {
+  .celebrate-line, .badge-gold { animation: none; }
+}
