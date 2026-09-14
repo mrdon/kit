@@ -82,15 +82,65 @@ function useOncePerKey(key: string, armed: boolean, fire: () => (() => void) | v
   }, [key, armed]);
 }
 
+// The podium. The winning table's phone is the one screen in the room that
+// should be impossible to mistake for anybody else's, so it gets a shower
+// that keeps falling for six seconds -- long enough that the table next to
+// them looks over, which is the whole point of putting it on the phone rather
+// than only on the wall.
 export function Podium({ frame }: { frame: PlayerFrame }) {
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
   const winner = sorted[0];
+  const place = podiumPlace(frame, sorted);
+
+  // Keyed on the phase rather than a round: there is only ever one podium, and
+  // the frame for it arrives again on every reconnect.
+  useOncePerKey(
+    place > 0 ? `podium:${place}` : '',
+    place > 0,
+    () => (place === 1
+      ? confetti({ durationMs: 6000, count: 140 })
+      : confetti({ durationMs: 1800, count: 45 })),
+  );
+
+  if (place === 1) {
+    return (
+      <div className="body">
+        <p className="celebrate-line big">You won</p>
+        <p className="sub" style={{ textAlign: 'center' }}>{money(winner.score)} — that&rsquo;s the game.</p>
+        <Standings frame={frame} />
+      </div>
+    );
+  }
+  if (place === 2 || place === 3) {
+    return (
+      <div className="body">
+        <p className="celebrate-line big">{place === 2 ? '2nd place' : '3rd place'}</p>
+        <p className="sub" style={{ textAlign: 'center' }}>{winner.name} wins the night.</p>
+        <Standings frame={frame} />
+      </div>
+    );
+  }
   return (
     <div className="body">
       <h1>{winner ? `${winner.name} wins` : 'That’s the game'}</h1>
       <Standings frame={frame} />
     </div>
   );
+}
+
+// podiumPlace is this table's finishing position, or 0 if it is off the
+// podium (or watching).
+//
+// Shared score means shared place, the same rule BetweenQuestions uses: two
+// tables tied on $1,400 both won, and telling one of them it came second
+// would be wrong in a way it can check against the wall.
+function podiumPlace(frame: PlayerFrame, sorted: PlayerFrame['teams']): number {
+  const teamId = frame.you?.teamId;
+  if (!teamId) return 0;
+  const mine = sorted.find((t) => t.id === teamId);
+  if (!mine) return 0;
+  const place = sorted.findIndex((t) => t.score === mine.score) + 1;
+  return place >= 1 && place <= 3 ? place : 0;
 }
 
 export function Standings({ frame }: { frame: PlayerFrame }) {
