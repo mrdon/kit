@@ -42,6 +42,11 @@ type Game struct {
 	// /{slug}/trivia/{name} URL keeps working; this exists only to make the
 	// code on the wall scannable from further away.
 	JoinCode string
+	// PickerTeamID is the table that picks the next category, and
+	// PickerReason is why (see picker.go). State rather than a derivation, so
+	// the TV, the phones and the console cannot phrase it differently.
+	PickerTeamID *uuid.UUID
+	PickerReason PickerReason
 }
 
 // Settings are the per-game knobs. Board size, values and the final are
@@ -63,14 +68,14 @@ type Settings struct {
 const gameColumns = `id, tenant_id, name, title, phase, board_rows, board_columns,
 	cell_values, token_values, final_wager, answer_seconds, reveal_seconds, bet_seconds,
 	current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
-	COALESCE(join_code, '')`
+	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, '')`
 
 // gameColumnsQualified is the same list with a table alias, for the one query
 // that joins tenants.
 const gameColumnsQualified = `g.id, g.tenant_id, g.name, g.title, g.phase, g.board_rows, g.board_columns,
 	g.cell_values, g.token_values, g.final_wager, g.answer_seconds, g.reveal_seconds, g.bet_seconds,
 	g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
-	COALESCE(g.join_code, '')`
+	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, '')`
 
 func scanGame(row pgx.Row) (*Game, error) {
 	var g Game
@@ -78,7 +83,8 @@ func scanGame(row pgx.Row) (*Game, error) {
 		&g.BoardRows, &g.BoardColumns, &g.CellValues, &g.TokenValues, &g.FinalWager,
 		&g.AnswerSeconds, &g.RevealSeconds, &g.BetSeconds,
 		&g.CurrentRoundID, &g.PhaseDeadline, &g.StateVersion,
-		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode)
+		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode,
+		&g.PickerTeamID, &g.PickerReason)
 	if err != nil {
 		return nil, err
 	}

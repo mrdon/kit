@@ -76,6 +76,43 @@ type wireChip struct {
 	Amount int    `json:"amount"`
 }
 
+// wirePicker is the table whose pick the next category is. Nil before the
+// game starts, and never nil after -- the server chooses, always, so no
+// surface has to invent a fallback sentence.
+//
+// It rides on ALL THREE frames rather than just the console's, because all
+// three say something about it: the TV spins a wheel for the draw and then
+// carries a callout on the board, the phone tells one table it is their turn,
+// and the console gives the host the sentence to read out. One field, three
+// phrasings, no room for them to disagree about who it is.
+type wirePicker struct {
+	TeamID string `json:"teamId"`
+	Name   string `json:"name"`
+}
+
+// publicPicker resolves the stored team id against the room. A picker whose
+// team has left resolves to nil rather than to a blank name.
+func publicPicker(s *Snapshot) *wirePicker {
+	if s.PickerTeamID == nil {
+		return nil
+	}
+	t := s.TeamByID(*s.PickerTeamID)
+	if t == nil {
+		return nil
+	}
+	return &wirePicker{TeamID: t.ID.String(), Name: t.Name}
+}
+
+// pickerReasonOf is the reason as the wire carries it, and it is blanked when
+// there is no picker to attach it to -- a reason with nobody holding it is
+// half a sentence a surface would render anyway.
+func pickerReasonOf(s *Snapshot) string {
+	if publicPicker(s) == nil {
+		return ""
+	}
+	return string(s.PickerReason)
+}
+
 // wireScoring is nilable and a DISTINCT TYPE rather than a set of fields on
 // the frame, so the correct answer cannot be populated early by accident:
 // there is no assignment that half-fills it.
@@ -113,6 +150,11 @@ type DisplayFrame struct {
 	Slots   []wireSlot   `json:"slots"`
 	Scoring *wireScoring `json:"scoring"`
 	Tokens  []int        `json:"tokens"`
+	// Picker and PickerReason are who picks the next category and why. The
+	// board screen announces it, and the first one of the night is what the
+	// wheel spins for.
+	Picker       *wirePicker `json:"picker"`
+	PickerReason string      `json:"pickerReason"`
 }
 
 // PlayerFrame is what a phone sees: the display's view plus its own team's
@@ -125,7 +167,12 @@ type PlayerFrame struct {
 	Slots   []wireSlot   `json:"slots"`
 	Scoring *wireScoring `json:"scoring"`
 	Tokens  []int        `json:"tokens"`
-	You     *wireYou     `json:"you"`
+	// Picker is how a phone knows it is that table's turn to choose. Public,
+	// not private: every phone shows the same name, and only the one whose
+	// teamId matches says "it's your pick".
+	Picker       *wirePicker `json:"picker"`
+	PickerReason string      `json:"pickerReason"`
+	You          *wireYou    `json:"you"`
 	// Rules come from the server so the phone and the TV cannot tell a room
 	// different games. Cheap enough to ride on every frame (a few hundred
 	// bytes against a 3-6 KB snapshot) and that way there is no second fetch
@@ -188,6 +235,9 @@ func ProjectDisplay(s *Snapshot) DisplayFrame {
 		Slots:      publicSlots(s),
 		Scoring:    publicScoring(s),
 		Tokens:     s.TokenValues,
+
+		Picker:       publicPicker(s),
+		PickerReason: pickerReasonOf(s),
 	}
 }
 
@@ -204,6 +254,9 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 		Scoring:    publicScoring(s),
 		Tokens:     s.TokenValues,
 		Rules:      Rules(s.FinalWager),
+
+		Picker:       publicPicker(s),
+		PickerReason: pickerReasonOf(s),
 	}
 	if teamID == uuid.Nil {
 		return f

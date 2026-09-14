@@ -34,6 +34,13 @@ type Snapshot struct {
 	BoardRows   int
 	BoardCols   int
 
+	// PickerTeamID is the table whose pick the next category is, and
+	// PickerReason is why it is theirs. Both ride on EVERY surface's frame --
+	// the TV announces it, the phone tells one table it is their turn, and
+	// the console reads the sentence out. Nil before the game starts.
+	PickerTeamID *uuid.UUID
+	PickerReason PickerReason
+
 	Teams     []SnapTeam
 	Board     []SnapCell
 	Round     *SnapRound

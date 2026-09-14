@@ -98,6 +98,9 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		if len(cells) == 0 {
 			return fmt.Errorf("%w: this game has no board yet — add some questions and build one on the setup page", ErrBadRequest)
 		}
+		if err := s.drawFirstPicker(ctx, game); err != nil {
+			return err
+		}
 		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	case ActionPickCell:
 		return s.openCell(ctx, game, req.CellID)
@@ -121,6 +124,29 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 	default:
 		return fmt.Errorf("%w: unknown action %q", ErrBadRequest, req.Action)
 	}
+}
+
+// drawFirstPicker pulls the first category's picker out of the hat, before
+// the game moves onto the board.
+//
+// Written BEFORE the move rather than after it so the very first board frame
+// the TV ever sees already names a table -- the wheel has something to land
+// on in the same frame the board arrives in, and there is no half-second
+// where the wall says nothing. The move bumps the state version for both.
+//
+// An empty room draws nobody and that is fine: a game started with no tables
+// has no picker, every surface renders the absence, and the next scored round
+// will fill it in.
+func (s *Service) drawFirstPicker(ctx context.Context, game *Game) error {
+	teams, err := ListTeams(ctx, s.pool, game.TenantID, game.ID)
+	if err != nil {
+		return err
+	}
+	teamID, ok := DrawPicker(teams)
+	if !ok {
+		return nil
+	}
+	return SetPicker(ctx, s.pool, game.TenantID, game.ID, &teamID, PickerDrawn)
 }
 
 func (s *Service) moveTo(ctx context.Context, game *Game, to Phase, deadline *time.Time, roundID *uuid.UUID) error {

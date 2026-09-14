@@ -59,6 +59,11 @@ func IsValidJoinCode(s string) bool {
 // safe because the code IS the identifier — it selects exactly one row, and
 // the page it leads to is public by design. Everything downstream is scoped
 // by the tenant this returns.
+//
+// The scan below is hand-rolled rather than scanGame's, because of the extra
+// slug column — so IT HAS TO TRACK gameColumnsQualified. Add a column there
+// and forget this and the slug lands in the new field, the scan errors, and
+// every QR in the room 404s. (Ask how that is known.)
 func GameByJoinCode(ctx context.Context, pool *pgxpool.Pool, code string) (*Game, string, error) {
 	var slug string
 	row := pool.QueryRow(ctx, `
@@ -72,7 +77,8 @@ func GameByJoinCode(ctx context.Context, pool *pgxpool.Pool, code string) (*Game
 		&game.BoardRows, &game.BoardColumns, &game.CellValues, &game.TokenValues, &game.FinalWager,
 		&game.AnswerSeconds, &game.RevealSeconds, &game.BetSeconds,
 		&game.CurrentRoundID, &game.PhaseDeadline, &game.StateVersion,
-		&game.CreatedBy, &game.CreatedAt, &game.UpdatedAt, &game.JoinCode, &slug)
+		&game.CreatedBy, &game.CreatedAt, &game.UpdatedAt, &game.JoinCode,
+		&game.PickerTeamID, &game.PickerReason, &slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", ErrNotFound

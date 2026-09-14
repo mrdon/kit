@@ -130,54 +130,11 @@ func (s *Service) scoreRound(ctx context.Context, tx pgx.Tx, game *Game) error {
 	if err != nil {
 		return err
 	}
-	slotRows, err := ListSlots(ctx, tx, game.TenantID, roundID)
+	in, slotRows, err := roundInput(ctx, tx, game, round)
 	if err != nil {
 		return err
 	}
-	betRows, err := ListBets(ctx, tx, game.TenantID, roundID)
-	if err != nil {
-		return err
-	}
-	standings, err := Leaderboard(ctx, tx, game.TenantID, game.ID)
-	if err != nil {
-		return err
-	}
-
-	slotByPos := map[int]uuid.UUID{}
-	slots := make([]Slot, 0, len(slotRows))
-	for _, r := range slotRows {
-		slotByPos[r.Position] = r.ID
-		slots = append(slots, Slot{
-			Position: r.Position, Value: r.Value, Label: r.Label,
-			TeamIDs: r.TeamIDs, Odds: r.Odds,
-		})
-	}
-	posBySlot := map[uuid.UUID]int{}
-	for _, r := range slotRows {
-		posBySlot[r.ID] = r.Position
-	}
-	bets := make([]RoundBet, 0, len(betRows))
-	for _, b := range betRows {
-		bets = append(bets, RoundBet{
-			TeamID: b.TeamID, Amount: b.Amount,
-			SlotPos: posBySlot[b.SlotID], TokenIdx: b.TokenIndex,
-		})
-	}
-	banks := map[uuid.UUID]int{}
-	for _, st := range standings {
-		banks[st.TeamID] = st.Total
-	}
-
-	result := ScoreRound(RoundInput{
-		// The round's own copy, not the bank's: the room is marked against
-		// the answer it was actually asked.
-		Correct:    round.AnswerValue,
-		CellPoints: round.Points,
-		Slots:      slots,
-		Bets:       bets,
-		IsFinal:    round.IsFinal,
-		Banks:      banks,
-	})
+	result := ScoreRound(in)
 
 	scores := make([]RoundScore, 0, len(result.Deltas))
 	for teamID, d := range result.Deltas {
@@ -190,14 +147,76 @@ func (s *Service) scoreRound(ctx context.Context, tx pgx.Tx, game *Game) error {
 		return err
 	}
 
-	winningID := slotByPos[result.WinningPos]
+	// The winning card, and the tables that wrote it. Both come off the same
+	// row, because "which slot won" and "who picks next" must never be able
+	// to disagree about which card that was.
+	var winningID uuid.UUID
+	var wroteWinner []uuid.UUID
+	for _, r := range slotRows {
+		if r.Position == result.WinningPos {
+			winningID, wroteWinner = r.ID, r.TeamIDs
+		}
+	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE app_trivia_rounds SET winning_slot_id = $3, scored_at = now()
 		  WHERE tenant_id = $1 AND id = $2`,
 		game.TenantID, roundID, winningID); err != nil {
 		return fmt.Errorf("recording winning slot: %w", err)
 	}
-	return nil
+	// Who picks the next category, in the SAME transaction that scored the
+	// round -- this is the only moment the post-round scores exist, and the
+	// rule needs them. See picker.go.
+	return s.pickerAfterRound(ctx, tx, game, round.Ordinal+1, in.Banks, result.Deltas, wroteWinner)
+}
+
+// roundInput gathers what the pure engine needs: the cards, the chips against
+// the positions they sit on, and every table's bank going in. Split out of
+// scoreRound because assembling the input and materialising the result are
+// two jobs, and together they were a function nobody could hold in their head.
+func roundInput(ctx context.Context, tx pgx.Tx, game *Game, round *Round) (RoundInput, []SlotRow, error) {
+	slotRows, err := ListSlots(ctx, tx, game.TenantID, round.ID)
+	if err != nil {
+		return RoundInput{}, nil, err
+	}
+	betRows, err := ListBets(ctx, tx, game.TenantID, round.ID)
+	if err != nil {
+		return RoundInput{}, nil, err
+	}
+	standings, err := Leaderboard(ctx, tx, game.TenantID, game.ID)
+	if err != nil {
+		return RoundInput{}, nil, err
+	}
+
+	slots := make([]Slot, 0, len(slotRows))
+	posBySlot := map[uuid.UUID]int{}
+	for _, r := range slotRows {
+		posBySlot[r.ID] = r.Position
+		slots = append(slots, Slot{
+			Position: r.Position, Value: r.Value, Label: r.Label,
+			TeamIDs: r.TeamIDs, Odds: r.Odds,
+		})
+	}
+	bets := make([]RoundBet, 0, len(betRows))
+	for _, b := range betRows {
+		bets = append(bets, RoundBet{
+			TeamID: b.TeamID, Amount: b.Amount,
+			SlotPos: posBySlot[b.SlotID], TokenIdx: b.TokenIndex,
+		})
+	}
+	banks := map[uuid.UUID]int{}
+	for _, st := range standings {
+		banks[st.TeamID] = st.Total
+	}
+	return RoundInput{
+		// The round's own copy, not the bank's: the room is marked against
+		// the answer it was actually asked.
+		Correct:    round.AnswerValue,
+		CellPoints: round.Points,
+		Slots:      slots,
+		Bets:       bets,
+		IsFinal:    round.IsFinal,
+		Banks:      banks,
+	}, slotRows, nil
 }
 
 // getQuestionTx reads a question inside the scoring transaction. The answer

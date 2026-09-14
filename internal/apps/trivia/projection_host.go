@@ -23,6 +23,12 @@ type HostFrame struct {
 	LastRound *wireLastRound `json:"lastRound"`
 	Tokens    []int          `json:"tokens"`
 	Progress  wireProgress   `json:"progress"`
+	// Picker is the table that picks the next category, decided by the
+	// server. The console's board cue and the recap's pick line both read
+	// THIS and never lastRound -- lastRound knows who wrote the winning card
+	// and nothing about ties, an empty card, or the first question.
+	Picker       *wirePicker `json:"picker"`
+	PickerReason string      `json:"pickerReason"`
 }
 
 // wireAnswer is the host-only correct answer.
@@ -67,6 +73,9 @@ func ProjectHost(s *Snapshot) HostFrame {
 		Scoring:    publicScoring(s),
 		LastRound:  hostLastRound(s),
 		Tokens:     s.TokenValues,
+
+		Picker:       publicPicker(s),
+		PickerReason: pickerReasonOf(s),
 	}
 	// The host sees the cards from the moment they exist, and the answer in
 	// every phase.

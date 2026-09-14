@@ -99,6 +99,7 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 		ServerNow:    time.Now().UTC(), Deadline: game.PhaseDeadline,
 		FinalWager: game.FinalWager, TokenValues: game.TokenValues,
 		CellValues: game.CellValues, BoardRows: game.BoardRows, BoardCols: game.BoardColumns,
+		PickerTeamID: game.PickerTeamID, PickerReason: game.PickerReason,
 		Standings:   map[uuid.UUID]int{},
 		PublisherID: processID,
 	}
