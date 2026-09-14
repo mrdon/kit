@@ -1924,13 +1924,24 @@ h2.view-title:hover {
    by shape rather than by value. */
 .trivia-live {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 1.25rem;
   align-items: start;
 }
 
+/* Wide: board top-left, cards under it, panel down the whole right-hand
+   side. The panel SPANS BOTH ROWS on purpose — a sticky element can only
+   travel as far as its own grid area, and the cards are what makes the page
+   long enough to need it. */
+.trivia-boardcol { grid-column: 1; grid-row: 1; }
+.trivia-panel { grid-column: 2; grid-row: 1 / span 2; }
+.trivia-cards { grid-column: 1; grid-row: 2; margin-top: 0; }
+
+/* Narrow: one column, and everything falls back to document order — which is
+   board, panel, cards. The button comes before the reading material. */
 @media (max-width: 760px) {
   .trivia-live { grid-template-columns: 1fr; }
+  .trivia-live > * { grid-column: 1; grid-row: auto; }
 }
 
 .trivia-panel {
@@ -1938,6 +1949,40 @@ h2.view-title:hover {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+
+/* The panel follows the host down the page. It carries the cue, the clock
+   and the one big primary button, and a host who has to scroll back up to
+   press "reveal" is a host who has stopped looking at the room. The board is
+   the tall thing on the left; this rides alongside it.
+
+   Stacked (below), sticky would pin the panel over the board, so it only
+   applies once there are two columns to be beside. */
+@media (min-width: 761px) {
+  .trivia-panel {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+}
+
+/* The answer cards live in the left column now, so they have to fit a column
+   rather than the page. Side by side, a row of five table-and-amount chips
+   sets the column's minimum width and shoves the panel off a 1024px laptop —
+   and squeezing them instead breaks the card's LABEL down to one word per
+   line, which is the part being read aloud. So the chips go under the label
+   and wrap, which is also the order the host says them in. */
+.trivia-cards .card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.trivia-cards .card-side {
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
 }
 
 /* The line the host reads out. It is the first thing on the panel and the
@@ -1957,6 +2002,15 @@ h2.view-title:hover {
    wait, a list tells them which table to go and lean on. */
 .trivia-wait {
   margin: 0.5rem 0 0.2rem;
+}
+
+/* Capped, because early in a question the answer is "all twenty of them" and
+   an uncapped list of twenty names pushed the primary button off a 768px
+   laptop entirely. Three rows is enough to see who is left once it matters;
+   before that the count in the cue line is the real answer. */
+.trivia-wait .teamlist {
+  max-height: 5.4rem;
+  overflow-y: auto;
 }
 
 /* The secondary half of a pill — a score, a chip count, a delta — kept
@@ -2082,41 +2136,6 @@ h2.view-title:hover {
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--muted);
-}
-
-/* The line the host reads out. It is the first thing on the panel and the
-   biggest thing in it, because the host is looking up from a laptop into a
-   noisy room and needs the sentence, not the phase name. */
-.trivia-say {
-  font-size: 1.05rem;
-  font-weight: 700;
-  line-height: 1.35;
-  margin: 0 0 0.6rem;
-  color: var(--ink);
-  border-left: 3px solid var(--accent);
-  padding-left: 0.6rem;
-}
-
-/* Who is holding the room up. Names, not a count: a count tells the host to
-   wait, a list tells them which table to go and lean on. */
-.trivia-wait {
-  margin: 0.5rem 0 0.2rem;
-}
-
-/* Capped, because early in a question the answer is "all twenty of them" and
-   an uncapped list of twenty names pushed the primary button off a 768px
-   laptop entirely. Three rows is enough to see who is left once it matters;
-   before that the count in the cue line is the real answer. */
-.trivia-wait .teamlist {
-  max-height: 5.4rem;
-  overflow-y: auto;
-}
-
-/* The secondary half of a pill — a score, a chip count, a delta — kept
-   lighter so the table name still reads first at a glance. */
-.trivia-split {
-  opacity: 0.75;
-  font-weight: 500;
 }
 
 /* The round that has already been put away. */

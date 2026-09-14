@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
-import { PHASE_LABEL, money, type HostFrame } from './common';
+import { PHASE_LABEL, money, type HostFrame, type Phase } from './common';
 import { StatusPanel } from './live_panel';
 import { LastRoundRecap } from './live_lastround';
 
@@ -54,9 +54,12 @@ export default function TriviaLive() {
   }
 
   const secs = msLeft === null ? null : Math.ceil(msLeft / 1000);
-  // Between questions the cards belong to a round that is over; the recap
-  // below says what happened to them, so showing them twice is noise.
-  const showCards = frame.slots.length > 0 && frame.phase !== 'board';
+  // The cards earn the full width from the moment they go up until the round
+  // is put away — that is the stretch where the host is reading them out,
+  // watching chips land on them and calling the winner. Outside it they
+  // belong to a round that is over, and the recap under the board already
+  // says what happened to them.
+  const showCards = frame.slots.length > 0 && CARD_PHASES.has(frame.phase);
 
   return (
     <>
@@ -100,22 +103,32 @@ export default function TriviaLive() {
 
       {err ? <p className="banner banner-error">{err}</p> : null}
 
+      {/* Three children, not two, and the cards come LAST in the document —
+          stacked on a narrow screen that puts the panel above them, which is
+          the order a host needs when the button is the thing they are
+          reaching for. Two columns wide, the stylesheet puts the cards back
+          under the board and lets the panel span both rows, which is what
+          makes it possible for the panel to stay on screen at all. */}
       <div className="trivia-live">
-        <section>
+        <section className="trivia-boardcol">
           <BoardGrid frame={frame} busy={busy} onPick={(cellId) => void act({ action: 'pick_cell', cell_id: cellId })} />
-          {/* Directly under the board, not after the table list: with twenty
-              tables that list is three screens tall, and the recap is the
-              thing the host reads BEFORE asking a table to pick. */}
+          {/* Directly under the board: the recap is the thing the host reads
+              BEFORE asking a table to pick, so it sits where their eyes
+              already are rather than below everything else on the page. */}
           {frame.phase === 'board' || frame.phase === 'podium' ? <LastRoundRecap frame={frame} /> : null}
         </section>
         <StatusPanel frame={frame} busy={busy} secs={secs} gameId={id}
           onAct={(body) => void act(body)} />
+        {showCards ? <Cards frame={frame} /> : null}
       </div>
-
-      {showCards ? <Cards frame={frame} /> : null}
     </>
   );
 }
+
+// The phases where the answer cards are worth a full-width block of their
+// own: up on the screen, being bet on, or just scored — plus the podium,
+// where the final's cards are the last thing anyone argues about.
+const CARD_PHASES = new Set<Phase>(['reveal', 'betting', 'scoring', 'podium']);
 
 function BoardGrid({ frame, busy, onPick }: { frame: HostFrame; busy: boolean; onPick: (id: string) => void }) {
   const cols = Math.max(1, ...frame.board.map((c) => c.col + 1));
@@ -153,7 +166,7 @@ function BoardGrid({ frame, busy, onPick }: { frame: HostFrame; busy: boolean; o
 
 function Cards({ frame }: { frame: HostFrame }) {
   return (
-    <section className="panel">
+    <section className="panel trivia-cards">
       <h2>Answers</h2>
       <ul className="card-list">
         {frame.slots.map((s) => (
