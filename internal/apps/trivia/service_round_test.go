@@ -342,10 +342,17 @@ func TestWagerPhaseClosesEarlyWhenEveryTableHasLocked(t *testing.T) {
 	}
 }
 
-// A team that joined during the final cannot wager into it: it is not in that
-// round's denominator, and letting it bet would put money on a question it
-// was excluded from. It must also not hold the wager phase open.
-func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
+// Once the final is under way the door is shut. A table arriving then cannot
+// answer the final, cannot wager into it, and the next thing that happens is
+// the podium -- so the honest answer at the door is no, not a phone that says
+// "waiting" until the lights come up.
+//
+// The refusal has to hold through EVERY phase the final passes through, not
+// just the question: it opens on the wager, re-enters the ordinary question
+// phase and travels out through reveal, betting and scoring, and the rule
+// keys off the round being final rather than the phase name so all of them
+// are covered at once.
+func TestJoinIsRefusedOnceTheFinalBegins(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	game := f.newGame(oneCellSettings(), []string{"space"})
@@ -356,7 +363,8 @@ func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
 		label string
 		enter func()
 	}{
-		{"question", func() {}},
+		{"wager", func() {}},
+		{"question", func() { f.do(game.ID, ActionRequest{Action: ActionAsk, FromPhase: PhaseWager}) }},
 		{"reveal", func() { f.do(game.ID, ActionRequest{Action: ActionReveal, FromPhase: PhaseQuestion}) }},
 		{"betting", func() { f.do(game.ID, ActionRequest{Action: ActionOpenBetting, FromPhase: PhaseReveal}) }},
 		{"scoring", func() { f.do(game.ID, ActionRequest{Action: ActionScore, FromPhase: PhaseBetting}) }},
@@ -373,26 +381,24 @@ func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
 	}
 }
 
-// A team that joined during the final cannot stake into it either. Belt and
-// braces behind the closed door above: the answer path has its own eligibility
-// gate, and a row created any other way must still hit it.
-func TestTeamJoiningDuringTheFinalCannotStake(t *testing.T) {
+// A team that is not in the final's denominator cannot wager into it: letting
+// it bet would put money on a question it was excluded from. It must also not
+// hold the wager phase open. Belt and braces behind the closed door above:
+// Join refuses such a table now, so the row is made ineligible by hand -- the
+// gate on the wager path must hold however the row got there.
+func TestTeamJoiningDuringTheFinalCannotWager(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
-	s := defaultSettings()
-	s.BoardColumns, s.BoardRows = 1, 1
-	s.CellValues = []int{500}
-	game := f.newGame(s, []string{"space"})
+	game := f.newGame(oneCellSettings(), []string{"space"})
 	a := f.join(game.ID, "Bar Flies")
-	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
-	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(snapCorrect(t, f, game))})
-	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-
-	// The door is shut once the final opens, so the only way to get an
-	// ineligible table into a final now is to write the row -- which is
-	// exactly what this test wants: the gate on the answer path must hold
-	// however the row got there, not only where Join happens to be careful.
 	late := f.join(game.ID, "Latecomers")
+	if _, err := f.pool.Exec(f.ctx,
+		`UPDATE app_trivia_teams SET eligible_from_ordinal = 99 WHERE tenant_id = $1 AND id = $2`,
+		f.tenant.ID, late.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.openFinal(game, a)
+
 	if err := f.svc.SetWager(f.ctx, f.tenant.ID, game.ID, late.ID, 100); !errors.Is(err, ErrClosed) {
 		t.Fatalf("a team that joined mid-final was allowed to wager: %v", err)
 	}
