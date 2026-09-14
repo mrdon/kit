@@ -29,25 +29,6 @@ function renderPodium(phaseChanged) {
   });
 }
 
-/* Twenty absolutely positioned divs on randomised keyframes. No library,
-   and it reads as celebration from thirty feet. */
-function burst(node) {
-  for (var i = 0; i < 20; i++) {
-    var s = el('div', 'spark');
-    var angle = Math.random() * Math.PI * 2;
-    var dist = 180 + Math.random() * 260;
-    s.style.left = '50%'; s.style.top = '30%';
-    s.style.transition = 'transform ' + (700 + Math.random() * 600) + 'ms ease-out, opacity 1s';
-    node.appendChild(s);
-    (function (node2, angle2, dist2) {
-      setTimeout(function () {
-        node2.style.transform = 'translate(' + Math.cos(angle2) * dist2 + 'px,' + Math.sin(angle2) * dist2 + 'px)';
-        node2.style.opacity = '0';
-      }, 20);
-    })(s, angle, dist);
-  }
-}
-
 /* The version poll, same shape as the menu board's.
    The SSE stream carries live state, but the QR code, the join words and
    the heading are baked into the HTML at render time -- so a renamed night,

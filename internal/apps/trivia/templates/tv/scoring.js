@@ -15,23 +15,55 @@ function renderScoring(phaseChanged) {
 function paintScored() {
   if (!state.scoring) { return; }
   var win = state.scoring.winningSlot;
+  var winner = null;
   var cards = document.querySelectorAll('#cards .card');
   for (var i = 0; i < cards.length; i++) {
     var isWin = cards[i].dataset.slotId === win;
     cards[i].classList.toggle('win', isWin);
+    if (isWin) { winner = cards[i]; }
     if (!isWin) {
       var chips = cards[i].querySelectorAll('.chip');
       for (var j = 0; j < chips.length; j++) { chips[j].classList.add('falling'); }
     }
   }
   document.getElementById('cards').classList.add('dim');
+  paintBand();
+  // The card is already gold and scaled; the sparkle is what makes the room
+  // look at it rather than at the band sliding in underneath.
+  if (winner) { sparkleOver(winner); }
+}
+
+/* The band says the number and then who wrote it. Two nodes rather than one
+   textContent, because the credit sets smaller than the answer and a single
+   string cannot be two sizes. */
+function paintBand() {
   var band = document.getElementById('answer-band');
-  band.textContent = state.scoring.correctText || String(state.scoring.correctValue);
+  band.innerHTML = '';
+  band.appendChild(el('div', 'band-answer', state.scoring.correctText || String(state.scoring.correctValue)));
+  band.appendChild(el('div', 'band-who', winnerCredit()));
   band.classList.add('shown');
   // Force a reflow so the slide-in runs from off-stage rather than being
   // collapsed into the same frame as the display change.
   void band.offsetWidth;
   band.classList.add('in');
+}
+
+/* Who wrote the winning answer.
+
+   The pseudo-slot ("smaller than all of these") has no teams by definition --
+   nobody wrote it, the room simply all went high -- and that is worth saying
+   out loud rather than leaving a blank line where a name goes. The empty
+   `teams` case is the same sentence for the same reason. */
+function winnerCredit() {
+  var win = state.scoring.winningSlot;
+  var slots = state.slots || [];
+  for (var i = 0; i < slots.length; i++) {
+    if (slots[i].id !== win) { continue; }
+    var teams = slots[i].teams || [];
+    if (!teams.length) { break; }
+    return teams.join(' & ') + ' wrote it';
+  }
+  return 'Nobody had it';
 }
 
 /* Rows reorder by FLIP so an overtake is visible AS MOTION rather than as
@@ -44,6 +76,7 @@ function renderRail(animate) {
     before[existing[i].dataset.teamId] = existing[i].getBoundingClientRect().top;
   }
   var teams = state.teams.slice().sort(function (a, b) { return b.score - a.score; });
+  var best = bestSwing();
   rail.innerHTML = '';
   teams.forEach(function (t) {
     var row = el('div', 'row');
@@ -52,6 +85,10 @@ function renderRail(animate) {
     var d = state.scoring && state.scoring.deltas ? state.scoring.deltas[t.id] : null;
     row.appendChild(el('div', 'delta', d ? ((d > 0 ? '+' : '') + money(d)) : ''));
     row.appendChild(el('div', 'score', money(t.score)));
+    // Only on the choreographed pass. The rail is rebuilt on every frame that
+    // lands during scoring, and a flash that re-fires each time would be a
+    // strobe rather than a callout.
+    if (animate && best > 0 && d === best) { row.classList.add('mover'); }
     rail.appendChild(row);
   });
   // Before the FLIP reads the new rects, or every row is measured at a size
@@ -78,6 +115,21 @@ function renderRail(animate) {
     rows[k].style.transition = '';
     rows[k].style.transform = '';
   }
+}
+
+/* The biggest positive swing of the round, or 0 if nobody gained.
+
+   Ties flash together, deliberately: two tables that both took $300 both had
+   the round of it, and picking one of them by map order would be arbitrary in
+   a way the room can check against the rail it is reading. */
+function bestSwing() {
+  var deltas = state.scoring && state.scoring.deltas;
+  if (!deltas) { return 0; }
+  var best = 0;
+  Object.keys(deltas).forEach(function (id) {
+    if (deltas[id] > best) { best = deltas[id]; }
+  });
+  return best;
 }
 
 /* Twenty tables is what the game advertises, and twenty rows at the

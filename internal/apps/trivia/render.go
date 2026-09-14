@@ -9,8 +9,13 @@ import (
 	"strings"
 )
 
-//go:embed templates/display.html.tmpl templates/display.css templates/tv/*.js
+//go:embed templates/display.html.tmpl templates/display*.css templates/tv/*.js
 var templateFS embed.FS
+
+// tvSheets is the TV stylesheet, concatenated in order. display.css is the
+// screens; display_fx.css is the celebration layer on top of them, split off
+// so neither file drifts past the length where nobody reads it any more.
+var tvSheets = []string{"display.css", "display_fx.css"}
 
 // tvScripts is the TV client, one file per screen, in the order they are
 // concatenated into a single IIFE. Function declarations hoist across the
@@ -18,7 +23,7 @@ var templateFS embed.FS
 // matters for top-level statements, which is why core (the shared vars) is
 // first and boot (the first connect) is last.
 var tvScripts = []string{
-	"core.js", "join.js", "board.js", "wheel.js", "question.js",
+	"core.js", "fx.js", "join.js", "board.js", "wheel.js", "question.js",
 	"cards.js", "scoring.js", "podium.js", "boot.js",
 }
 
@@ -237,16 +242,19 @@ func stylesheet() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	base, err := templateFS.ReadFile("templates/display.css")
-	if err != nil {
-		return "", fmt.Errorf("reading display.css: %w", err)
-	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "@font-face{font-family:bungee;src:url(%s) format(\"woff2\");"+
 		"font-weight:400;font-style:normal;font-display:block}\n", bungee)
 	fmt.Fprintf(&b, "@font-face{font-family:exo2;src:url(%s) format(\"woff2\");"+
 		"font-weight:400 700;font-style:normal;font-display:block}\n", exo)
-	b.Write(base)
+	for _, name := range tvSheets {
+		src, err := templateFS.ReadFile("templates/" + name)
+		if err != nil {
+			return "", fmt.Errorf("reading %s: %w", name, err)
+		}
+		b.Write(src)
+		b.WriteString("\n")
+	}
 	return b.String(), nil
 }
 

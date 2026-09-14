@@ -1,0 +1,47 @@
+/* The celebration layer: everything the TV does to say "that one mattered".
+
+   Split out of display.css rather than appended to it because display.css is
+   the layout of eight screens and was already at the length where nobody
+   reads to the bottom. This file is concatenated after it (see tvSheets in
+   render.go), so a rule here deliberately wins over the same selector there.
+
+   ---------- the scoring beat ---------- */
+
+/* The answer band carries two lines now -- the number, and who wrote it --
+   so it gives up padding to stay inside the 190px footer row. Without this
+   the second line pushes the band into the cards above it. */
+.answer-band { padding: 16px 64px; }
+.cards-screen.tier-2 .answer-band { padding: 14px 56px; }
+.cards-screen.tier-3 .answer-band { padding: 10px 48px; }
+
+/* "Bar Flies wrote it". The credit is the half of the beat the room actually
+   argues about, and it was only ever on the card -- in 32px names, dimmed,
+   behind a burst. Here it is under the number, in the band that already has
+   everybody's eyes. */
+.band-who {
+  font: 700 34px/1.15 var(--body); color: rgba(255, 255, 255, .84);
+  margin-top: 6px; letter-spacing: .02em;
+}
+.cards-screen.tier-2 .band-who { font-size: 30px; }
+.cards-screen.tier-3 .band-who { font-size: 26px; }
+
+/* The layer a card's sparkle is drawn on. Absolute, so it takes no part in
+   the deck's grid; `.cards` has to be its containing block for that to land
+   over the right card. */
+.cards { position: relative; }
+.fx { position: absolute; pointer-events: none; z-index: 28; }
+/* Smaller than the podium's, because a card is a quarter of a plinth -- but
+   with a glow, or eleven gold dots crossing a cream numeral from thirty feet
+   are not dots, they are nothing. */
+.spark.small { width: 13px; height: 13px; box-shadow: 0 0 14px rgba(245, 196, 81, .95); }
+
+/* The round's biggest winner, flashed gold in the rail for a second and a
+   half. The delta column already says +$300; this says WHOSE +$300 was the
+   one to beat, which a column of numbers makes you work out. */
+.row.mover { animation: moverflash 1.5s ease-out both; }
+.row.mover .delta { color: var(--gold); }
+@keyframes moverflash {
+  0%   { background: rgba(245, 196, 81, 0); box-shadow: inset 4px 0 0 rgba(245, 196, 81, 0); }
+  12%  { background: rgba(245, 196, 81, .44); box-shadow: inset 4px 0 0 var(--gold); }
+  100% { background: rgba(245, 196, 81, 0); box-shadow: inset 4px 0 0 rgba(245, 196, 81, 0); }
+}
