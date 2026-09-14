@@ -100,6 +100,11 @@ type wireRound struct {
 }
 
 // DisplayFrame is what the TV sees.
+//
+// Tokens is here for one reason: the wall's "N OF M TABLES IN" tally cannot
+// say whether a table is finished without knowing how many chips a table
+// holds. Lacking it the TV assumed one, and counted a table that had placed
+// the first of two as in.
 type DisplayFrame struct {
 	wireCommon
 	Teams   []wireTeam   `json:"teams"`
@@ -107,6 +112,7 @@ type DisplayFrame struct {
 	Round   *wireRound   `json:"round"`
 	Slots   []wireSlot   `json:"slots"`
 	Scoring *wireScoring `json:"scoring"`
+	Tokens  []int        `json:"tokens"`
 }
 
 // PlayerFrame is what a phone sees: the display's view plus its own team's
@@ -209,6 +215,7 @@ func ProjectDisplay(s *Snapshot) DisplayFrame {
 		Round:      publicRound(s),
 		Slots:      publicSlots(s),
 		Scoring:    publicScoring(s),
+		Tokens:     s.TokenValues,
 	}
 }
 

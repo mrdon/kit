@@ -360,7 +360,15 @@
 
   /* An SVG ring around the numeral, because a ring reads from across a room
      and a bare number does not. */
+  var ringKey = '';
   function startRing(where) {
+    // Same screen, same deadline: leave the ring alone. It is restarted from
+    // scratch on every call otherwise, which re-baselines the arc to full --
+    // during betting that is once per chip, and the countdown appeared to
+    // jump backwards every time somebody bet.
+    var key = where + ':' + (state ? state.deadlineMs : 0);
+    if (ringTimer && key === ringKey) { return; }
+    ringKey = key;
     if (ringTimer) { clearInterval(ringTimer); }
     var ids = where === 'cards'
       ? ['cards-ring-arc', 'cards-ring', 'cards-countdown']
@@ -387,17 +395,41 @@
     }, 100);
   }
 
-  /* --- 4/5. cards --- */
+  /* --- 4/5. cards ---
+
+     renderCards runs on EVERY frame, and during betting a frame arrives
+     every time any table moves a chip. The first version rebuilt the deck
+     each time -- innerHTML = '' and every card re-created with its `card-in`
+     entrance -- so one table placing $100 made twenty cards flinch, and
+     because the chips themselves were withheld from the wire back then,
+     nothing else changed. That is exactly what "it flashes but nothing
+     changes" was.
+
+     So the deck is BUILT ONCE per (phase, round) and diffed after that: a
+     chip that is new lands with its own animation, a chip that was lifted is
+     removed, the pot and the tally are text. Nothing already on screen is
+     touched, so nothing already on screen can re-animate. */
   function renderCards(mode) {
     show('s-cards');
     var host = document.getElementById('cards');
+    var key = mode + ':' + (state.round ? state.round.id : '');
+    // 'scored' rebuilds every time: it is a phase change, and paintScored
+    // wants a clean deck to dim, knock the losing chips off and re-mark the
+    // winner.
+    if (mode === 'scored' || host.dataset.builtFor !== key) {
+      buildCards(host, mode);
+      host.dataset.builtFor = key;
+    } else {
+      syncCards(host, mode);
+    }
+    cardsChrome(mode);
+  }
+
+  function showsChips(mode) { return mode === 'betting' || mode === 'scored'; }
+
+  function buildCards(host, mode) {
     host.className = 'cards';
     host.innerHTML = '';
-    var band = document.getElementById('answer-band');
-    band.classList.remove('in');
-    band.classList.remove('shown');
-    document.getElementById('rail').classList.remove('in');
-
     (state.slots || []).forEach(function (s, i) {
       var card = el('div', 'card' + (s.value === null ? ' pseudo' : ''));
       card.style.animationDelay = (i * 120) + 'ms';   // a stagger, so they land like dealt cards
@@ -405,21 +437,87 @@
       card.appendChild(el('div', 'val', s.label));
       card.appendChild(el('div', 'names', (s.teams || []).join(' · ')));
       var tray = el('div', 'tray');
-      if (mode === 'betting' || mode === 'scored') {
-        (s.chips || []).forEach(function (c, ci) {
-          var chip = el('div', 'chip ' + (c.amount >= 200 ? 'c200' : 'c100'), money(c.amount));
-          chip.style.animationDelay = (ci * 60) + 'ms';
-          tray.appendChild(chip);
-        });
+      if (showsChips(mode)) {
+        (s.chips || []).forEach(function (c, ci) { tray.appendChild(chipNode(c, ci * 60)); });
       }
       card.appendChild(tray);
-      if ((mode === 'betting' || mode === 'scored') && s.pot) { card.appendChild(el('div', 'pot', money(s.pot))); }
+      // The pot line is always in the DOM, hidden while it is zero, so the
+      // card does not change height the moment the first chip lands on it.
+      card.appendChild(potNode(s, mode));
       host.appendChild(card);
     });
+  }
+
+  function potNode(s, mode) {
+    var pot = el('div', 'pot', money(s.pot || 0));
+    pot.style.visibility = (showsChips(mode) && s.pot) ? '' : 'hidden';
+    return pot;
+  }
+
+  /* The diff. Cards are matched by slot id, never by index, so a card node
+     outlives every frame of the phase it was dealt in. */
+  function syncCards(host, mode) {
+    (state.slots || []).forEach(function (s) {
+      var card = host.querySelector('.card[data-slot-id="' + s.id + '"]');
+      if (!card) { return; }
+      if (showsChips(mode)) { syncChips(card.querySelector('.tray'), s.chips || []); }
+      var pot = card.querySelector('.pot');
+      if (!pot) { return; }
+      pot.textContent = money(s.pot || 0);
+      pot.style.visibility = (showsChips(mode) && s.pot) ? '' : 'hidden';
+    });
+  }
+
+  /* A chip has no id on the wire, and it does not need one: a table has at
+     most one chip per card (the DB says so), so team+amount identifies it.
+     Counting rather than comparing lists means two tables with the same name
+     still come out right. */
+  function chipKey(c) { return c.amount + '@' + (c.team || ''); }
+
+  function syncChips(tray, chips) {
+    if (!tray) { return; }
+    var want = {};
+    chips.forEach(function (c) { var k = chipKey(c); want[k] = (want[k] || 0) + 1; });
+    var have = tray.querySelectorAll('.chip');
+    for (var i = have.length - 1; i >= 0; i--) {
+      var k = have[i].dataset.chipKey;
+      if (want[k]) { want[k]--; } else { tray.removeChild(have[i]); }   // lifted
+    }
+    // Whatever is still owed is genuinely new, so only those animate in.
+    chips.forEach(function (c) {
+      var k2 = chipKey(c);
+      if (!want[k2]) { return; }
+      want[k2]--;
+      tray.appendChild(chipNode(c, 0));
+    });
+  }
+
+  /* The chip says WHOSE it is. A $200 disc told the room that money had
+     moved and nothing about who was chasing what, which is half the fun of
+     watching the betting -- and at 54px there is nowhere to put a name. So
+     it is a pill: amount, then the table, clipped rather than wrapped so one
+     long name cannot reflow a tray. */
+  function chipNode(c, delay) {
+    var chip = el('div', 'chip ' + (c.amount >= 200 ? 'c200' : 'c100'));
+    chip.dataset.chipKey = chipKey(c);
+    chip.style.animationDelay = (delay || 0) + 'ms';
+    chip.appendChild(el('b', 'amt', money(c.amount)));
+    if (c.team) { chip.appendChild(el('span', 'who', c.team)); }
+    return chip;
+  }
+
+  /* Everything around the deck: the question, the tally, the footer and the
+     bits of the scoring beat that have to be put back to neutral. */
+  function cardsChrome(mode) {
+    var band = document.getElementById('answer-band');
+    band.classList.remove('in');
+    band.classList.remove('shown');
+    document.getElementById('rail').classList.remove('in');
+    document.getElementById('cards-screen').classList.remove('railed');
     document.getElementById('cards-question').textContent = state.round ? state.round.text : '';
-    // During betting the chips are deliberately not on the cards yet, so the
-    // room needs some other sign of progress — otherwise the screen looks
-    // frozen while five tables think.
+    // The chips are on the cards as they land, but a table that has placed
+    // both and a table that has not started look the same from the back of
+    // the room, so the tally still answers "are we waiting on anyone?".
     var tally = document.getElementById('bet-tally');
     if (mode === 'betting') {
       var want = (state.tokens || []).length || 1;
@@ -431,9 +529,7 @@
       tally.style.display = 'none';
     }
     // The footer holds either the countdown or the answer band, never both.
-    var footer = document.getElementById('cards-footer');
-    footer.classList.toggle('scored', mode === 'scored');
-    document.getElementById('cards-screen').classList.remove('railed');
+    document.getElementById('cards-footer').classList.toggle('scored', mode === 'scored');
     startRing('cards');
   }
 
