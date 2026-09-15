@@ -161,3 +161,35 @@ func mustQuote(t *testing.T, s string) string {
 	}
 	return string(b)
 }
+
+func TestDescribePanelsIsRoundTrippable(t *testing.T) {
+	in := []Panel{
+		{Kind: PanelCTA, Label: "Holiday parties", Headline: "Host your holiday party here.", Body: "Text", Contact: []string{"a@b.c"}},
+		{Kind: PanelPoster, Label: "Don't miss", Image: "asset:oktoberfest", Alt: "A poster"},
+	}
+	out := describePanels(in)
+	if !strings.Contains(out, "set_menu_panels") {
+		t.Errorf("description should name the tool that accepts it: %s", out)
+	}
+	// The whole point: what it prints must parse straight back.
+	start := strings.Index(out, "[")
+	if start < 0 {
+		t.Fatalf("no JSON array in %s", out)
+	}
+	back, err := ParsePanels([]byte(out[start:]))
+	if err != nil {
+		t.Fatalf("describePanels output did not round-trip: %v\n%s", err, out)
+	}
+	if len(back) != len(in) {
+		t.Fatalf("got %d panels back, want %d", len(back), len(in))
+	}
+	if back[0].Headline != in[0].Headline || back[1].Image != in[1].Image {
+		t.Errorf("round-trip lost content: %+v", back)
+	}
+}
+
+func TestDescribePanelsEmptyRail(t *testing.T) {
+	if got := describePanels(nil); !strings.Contains(got, "empty") {
+		t.Errorf("got %q, want it to say the rail is empty", got)
+	}
+}

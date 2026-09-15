@@ -165,3 +165,24 @@ func joinWords(parts []string) string {
 	}
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
+
+// describePanels renders the rail as the JSON set_menu_panels accepts.
+//
+// The exact document, not a summary. Anything editing one panel has to send
+// the whole array back, so the only useful answer to "what is on the rail" is
+// one that can be modified and returned verbatim -- a prose description would
+// leave a caller reconstructing the panels it means to keep, which is how a
+// nightly job quietly drops the one panel nobody asked it to touch.
+func describePanels(panels []Panel) string {
+	if len(panels) == 0 {
+		return "  the rail is empty — no panels\n"
+	}
+	pretty, err := json.MarshalIndent(panels, "  ", "  ")
+	if err != nil {
+		// The panels came out of a document that already parsed, so this is
+		// unreachable short of a broken encoder; say so rather than pretend
+		// the rail is empty.
+		return fmt.Sprintf("  (could not render panels: %v)\n", err)
+	}
+	return "\n  Panels, as set_menu_panels takes them:\n  " + string(pretty) + "\n"
+}

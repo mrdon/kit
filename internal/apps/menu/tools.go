@@ -444,6 +444,7 @@ func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uui
 		}
 		if board, perr := ParseBoard(row.Payload); perr == nil {
 			fmt.Fprintf(&b, "  %d taps, %d panels\n", len(board.Taps), len(board.Panels))
+			b.WriteString(describePanels(board.Panels))
 		} else {
 			fmt.Fprintf(&b, "  WILL NOT RENDER: %s\n", perr)
 		}
