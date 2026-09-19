@@ -167,10 +167,14 @@ func TestBuildICS_RecurringCarriesRuleAndZone(t *testing.T) {
 func TestBuildICS_RepeatDatesBecomeRdate(t *testing.T) {
 	sf := newSyncFixture(t)
 
+	// Relative, because this series is FINITE. Literal dates here would put
+	// the whole event behind the feed's window the week after the last one
+	// passed, and the test would then fail claiming RDATE was missing.
+	start, second, third := dayOut(7), dayOut(14), dayOut(28)
 	sf.publishedPublic(t, CreateParams{
 		Title:       "Live Music",
-		StartsAt:    "2026-09-15 19:00",
-		RepeatDates: []string{"2026-09-22 19:00", "2026-10-06 19:00"},
+		StartsAt:    start,
+		RepeatDates: []string{second, third},
 		Timezone:    "America/Denver",
 	})
 
@@ -178,9 +182,22 @@ func TestBuildICS_RepeatDatesBecomeRdate(t *testing.T) {
 	if !strings.Contains(got, "RDATE;TZID=America/Denver:") {
 		t.Errorf("RDATE missing or unzoned:\n%s", got)
 	}
-	if !strings.Contains(got, "20260922T190000") || !strings.Contains(got, "20261006T190000") {
-		t.Errorf("RDATE does not carry both extra dates:\n%s", got)
+	for _, d := range []string{second, third} {
+		if want := icsLocalStamp(t, d); !strings.Contains(got, want) {
+			t.Errorf("RDATE does not carry %s (%s):\n%s", d, want, got)
+		}
 	}
+}
+
+// icsLocalStamp renders a fixture date the way ICS writes it inside a
+// TZID-qualified property: local wall clock, no zone suffix.
+func icsLocalStamp(t *testing.T, s string) string {
+	t.Helper()
+	parsed, err := time.Parse("2006-01-02 15:04", s)
+	if err != nil {
+		t.Fatalf("parsing fixture date %q: %v", s, err)
+	}
+	return parsed.Format("20060102T150405")
 }
 
 // An all-day event is a DATE value, not a midnight timestamp: rendered in a

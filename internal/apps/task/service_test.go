@@ -592,8 +592,20 @@ func TestFeedShowsOnlyUrgent(t *testing.T) {
 	ctx := context.Background()
 	caller := f.caller(t, f.bob)
 
+	// Offsets come from the DATABASE's today, not the runner's.
+	//
+	// due_date is a DATE, and the urgency window is CURRENT_DATE + INTERVAL
+	// evaluated in the database's zone. Once UTC has ticked over -- every
+	// evening after 6pm Mountain -- that stops being the same date as the
+	// runner's local one, and "just past the window" lands exactly ON the
+	// edge instead of past it. Anchoring both sides to the same day is what
+	// makes the edge mean one thing.
+	var dbToday time.Time
+	if err := f.pool.QueryRow(ctx, "SELECT CURRENT_DATE").Scan(&dbToday); err != nil {
+		t.Fatalf("reading the database's today: %v", err)
+	}
 	day := func(offset int) *time.Time {
-		d := time.Now().AddDate(0, 0, offset)
+		d := dbToday.AddDate(0, 0, offset)
 		return &d
 	}
 	mk := func(title, priority string, due *time.Time) uuid.UUID {

@@ -36,13 +36,26 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{pool: pool, svc: NewService(pool), tenant: tenant, ctx: ctx}
 }
 
+// defaultFixtureStart is a start time comfortably inside every window the code
+// under test applies -- the public feed reaches two months ahead, and an event
+// outside it is correctly absent rather than missing.
+//
+// Relative to now, never a literal. The literal this replaces was "2026-09-15
+// 19:00", which was a perfectly good future date until 2026-09-15. On the 18th
+// eight tests began failing at once with empty feeds and an index out of
+// range, which reads as a bug in the feed rather than as a calendar page
+// turning -- the worst kind of failure, because it points away from its cause.
+func defaultFixtureStart() string {
+	return time.Now().AddDate(0, 0, 7).Format("2006-01-02") + " 19:00"
+}
+
 func (f *fixture) create(t *testing.T, p CreateParams) *Event {
 	t.Helper()
 	if p.Title == "" {
 		p.Title = "Test Event"
 	}
 	if p.StartsAt == "" {
-		p.StartsAt = "2026-09-15 19:00"
+		p.StartsAt = defaultFixtureStart()
 	}
 	e, err := f.svc.Create(f.ctx, f.tenant.ID, p)
 	if err != nil {
