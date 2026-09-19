@@ -257,3 +257,36 @@ func TestStandingOfferCoversBothFloorValues(t *testing.T) {
 		t.Fatal("a real event is not a standing offer")
 	}
 }
+
+// The floor has to survive a round trip to the database, not just a comparison
+// in memory.
+//
+// Migration 102 widened the event's own prominence and stopped there. A
+// channel's floor is the same vocabulary written out a second time, in
+// migration 087, and it kept refusing `amenity` long after the Go side
+// accepted it everywhere -- which surfaced as a constraint violation in front
+// of whoever was setting up a destination rather than at deploy.
+func TestChannelTools_AmenityFloorRoundTrips(t *testing.T) {
+	sf := newSyncFixture(t)
+
+	sf.tool(t, "events_add_channel", map[string]any{
+		"name": "DBA newsletter", "campaign": "submit_once", "min_prominence": "amenity",
+	})
+
+	channels, err := sf.svc.ListChannels(sf.ctx, sf.tenant.ID)
+	if err != nil {
+		t.Fatalf("ListChannels: %v", err)
+	}
+	if len(channels) != 1 || channels[0].MinProminence != ProminenceAmenity {
+		t.Fatalf("channels = %+v, want one with an amenity floor", channels)
+	}
+
+	// And the whole vocabulary is storable, so no value is half-added again.
+	for _, p := range []Prominence{ProminenceFeatured, ProminenceNormal, ProminenceBackground, ProminenceAmenity} {
+		if err := sf.toolErr(t, "events_update_channel", map[string]any{
+			"channel": "DBA newsletter", "min_prominence": string(p),
+		}); err != nil {
+			t.Fatalf("setting the floor to %s: %v", p, err)
+		}
+	}
+}
