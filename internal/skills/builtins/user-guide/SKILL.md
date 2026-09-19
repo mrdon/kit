@@ -191,6 +191,15 @@ Three things describe an event, and they're independent rather than one "type":
 - **venue** — `onsite`, or `offsite` for a festival you're attending. An offsite event can still be public: "come see us there" belongs on the site.
 - **space impact** — whether it reserves part of the room, so whoever's working knows
 
+**Prominence** is how loudly an event speaks, and whose it is. Most events need nothing set — `normal` is the default and already headlines its own day.
+
+- `featured` — the website leads with it. A superlative most real events never earn: the anniversary party is featured, the bike night isn't, and both still headline their day. Several can be marked at once; the site leads with the next one.
+- `normal` — a real event. The default.
+- `background` — **your** standing offer rather than a happening: NFL Sundays, happy hour, a weekly cask tapping. Printed and published, but it never takes the headline off a real event on the same day.
+- `amenity` — a **partner's** standing offer sold in your room: the pizza deal, a food truck's regular night. Everything `background` is, and below it.
+
+That last distinction only shows up on a day with no real event, and then it decides everything. A Monday carrying Double D's pizza deal at 4pm and your own football night at 6pm used to print **BOGO PIZZA** with the football mentioned underneath — chosen on door time, which is an accident of the clock rather than a judgement about what the taproom is for. Marking the pizza `amenity` flips it. Set it once on the recurring deal and it stays right.
+
 **Labels** say what kind of thing an event is, so your website can group events onto their own page without Kit needing to know that page exists. An event can carry several. Tick the usual ones — `giveback`, `food`, `trivia`, `music`, `release`, `family`, `community` — or type your own for anything else. They are lowercased and hyphenated on save, and a few obvious synonyms fold automatically ("charity" and "Give Back" both become `giveback`). Reuse a label that already exists rather than inventing a synonym for it: the website matches the exact word, so a second spelling quietly splits the group in two. Labels are not prominence (how loudly an event speaks) and not venue (where it happens) — they are the subject.
 
 **Staff notes** go on the calendar entry, where the bartender working that night is already looking. They never appear on the website.
@@ -216,7 +225,7 @@ chamber of commerce, a city calendar or a regular's phone can follow along inste
 being told about each event separately. They are nested — each one is a smaller version
 of the last:
 
-- `/events.ics` — **everything**, standing offers like happy hour included. For regulars.
+- `/events.ics` — **everything**, standing offers like happy hour and the food partner's deals included. For regulars.
 - `/events-highlights.ics` — real happenings, no standing offers. For a trade guild or
   business association.
 - `/events-featured.ics` — just the big ones. For a chamber or town calendar.

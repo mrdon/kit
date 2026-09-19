@@ -81,7 +81,7 @@ func validateEvent(e *Event) error {
 		return invalid("venue must be onsite or offsite")
 	}
 	if !ValidProminence(e.Prominence) {
-		return invalid("prominence must be featured, normal or background")
+		return invalid("prominence must be featured, normal, background or amenity")
 	}
 	if !ValidSpaceImpact(e.SpaceImpact) {
 		return invalid("space impact must be none or partial")

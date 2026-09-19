@@ -315,7 +315,7 @@ func (a *App) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"statuses":      []Status{StatusDraft, StatusPublished, StatusCancelled},
 		"visibilities":  []Visibility{VisibilityPrivate, VisibilityPublic},
 		"venues":        []Venue{VenueOnsite, VenueOffsite},
-		"prominences":   []Prominence{ProminenceFeatured, ProminenceNormal, ProminenceBackground},
+		"prominences":   []Prominence{ProminenceFeatured, ProminenceNormal, ProminenceBackground, ProminenceAmenity},
 		"space_impacts": []SpaceImpact{SpaceImpactNone, SpaceImpactPartial},
 		"settings":      publicSettings(settings),
 	})

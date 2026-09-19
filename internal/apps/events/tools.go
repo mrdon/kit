@@ -17,6 +17,18 @@ func stringList(desc string) map[string]any {
 	}
 }
 
+// prominenceFieldDoc is the editorial axis, spelled once. Both create and
+// update show it, because the distinction that matters most -- our standing
+// offer versus the food partner's -- is the one a caller is least likely to
+// guess from the word alone.
+const prominenceFieldDoc = "How loudly this speaks, and whose it is. " +
+	"\"featured\": the website leads with it; several may be marked at once. " +
+	"\"normal\": a real event, and the default — it already headlines its own day, so most events need nothing set. " +
+	"\"background\": OUR standing offer rather than a happening — NFL Sundays, happy hour, a weekly cask tapping. " +
+	"Printed and published, but never takes the headline off a real event on the same day. " +
+	"\"amenity\": a PARTNER's standing offer sold in our room — the pizza deal, a food truck's regular night. " +
+	"Everything background is, and below it, so a day carrying only the pizza deal and our own football night headlines the football."
+
 // summaryFieldDoc tells a caller what the summary has room for. It is the
 // listing line everywhere -- the website, the feed, the promo card -- but the
 // table topper is the one with a hard edge, and the numbers are measured off
@@ -50,7 +62,7 @@ var eventsTools = []services.ToolMeta{
 			"ends_at":     services.Field("string", "End. Defaults to one hour after the start."),
 			"timezone":    services.Field("string", "IANA zone such as America/Denver. Defaults to the venue's."),
 			"all_day":     services.Field("boolean", "True for an all-day event. Cannot be combined with repeats."),
-			"prominence":  services.Field("string", "How loudly this speaks: \"featured\" (the website leads with it; several may be marked at once), \"normal\" (a real event, the default), or \"background\" (a standing offer such as a weekly pizza deal or happy hour — it still gets printed and published, but never takes the headline off a real event on the same day)."),
+			"prominence":  services.Field("string", prominenceFieldDoc),
 			"summary":     services.Field("string", summaryFieldDoc),
 			"description": services.Field("string", "Public description (markdown)."),
 			"prep_notes":  services.Field("string", "Internal brief for staff. Goes on the calendar, never on the website."),
@@ -96,7 +108,7 @@ var eventsTools = []services.ToolMeta{
 			"ends_at":      services.Field("string", "New end. Pass an empty string to clear it."),
 			"timezone":     services.Field("string", "New IANA zone. The wall-clock time is preserved."),
 			"all_day":      services.Field("boolean", "All-day flag."),
-			"prominence":   services.Field("string", "New prominence: \"featured\", \"normal\" or \"background\". Background is for standing offers that must not headline a day that has a real event on it."),
+			"prominence":   services.Field("string", "New prominence. "+prominenceFieldDoc),
 			"summary":      services.Field("string", "New teaser. "+summaryFieldDoc),
 			"description":  services.Field("string", "New public description."),
 			"prep_notes":   services.Field("string", "New internal staff brief."),
@@ -289,7 +301,7 @@ var eventsTools = []services.ToolMeta{
 			"name":            services.Field("string", "What to call it, e.g. 'Louisville Chamber of Commerce'."),
 			"campaign":        services.Field("string", "submit_once | announce_and_remind | day_of_only | every_few_weeks"),
 			"submit_url":      services.Field("string", "Deep link to their submit form, or your account page. Opened straight from the checklist, so the deeper the better."),
-			"min_prominence":  services.Field("string", "Lowest prominence this destination wants: 'featured' for a chamber that only takes your big events, 'normal' for real events but not standing offers, 'background' for everything including happy hour. Defaults to normal."),
+			"min_prominence":  services.Field("string", "Lowest prominence this destination wants: 'featured' for a chamber that only takes your big events, 'normal' for real events but not standing offers, 'background' to include your own standing offers such as happy hour, 'amenity' for absolutely everything including the food partner's deals. Defaults to normal."),
 			"lead_time_days":  services.Field("integer", "How far ahead they need telling. This sets urgency: a calendar wanting 14 days is already late for an event 10 days out. Defaults to 0."),
 			"include_offsite": services.Field("boolean", "Whether to send events you are only ATTENDING rather than hosting. Usually false for a community calendar (the organiser already lists it) and true for your own social accounts. Defaults to false."),
 			"submit_label":    services.Field("string", "Wording for the checklist row on a submit_once channel, e.g. 'Add to the chamber calendar'."),
@@ -308,7 +320,7 @@ var eventsTools = []services.ToolMeta{
 			"feed_tier":       services.Field("string", "For a subscribed channel, which feed they pull: all | highlights | featured."),
 			"verified":        services.Field("boolean", "Pass true to record that you have confirmed a subscribed channel really is pulling the feed."),
 			"submit_url":      services.Field("string", "Deep link to their submit form."),
-			"min_prominence":  services.Field("string", "background | normal | featured."),
+			"min_prominence":  services.Field("string", "amenity | background | normal | featured."),
 			"lead_time_days":  services.Field("integer", "How far ahead they need telling."),
 			"include_offsite": services.Field("boolean", "Whether to send events you are only attending."),
 			"active":          services.Field("boolean", "False stops the reminders but keeps the history."),

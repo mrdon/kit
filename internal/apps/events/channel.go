@@ -111,19 +111,23 @@ type Channel struct {
 // prominenceRank orders the editorial axis so a floor can be compared against
 // an event. Background is genuinely below normal here: that is the whole point
 // of the axis, and it is what keeps happy hour off the chamber's calendar
-// without anyone maintaining a list of exceptions.
+// without anyone maintaining a list of exceptions. Amenity is below that
+// again, so a destination can take our standing offers without also taking
+// the food partner's.
 func prominenceRank(p Prominence) int {
 	switch p {
-	case ProminenceBackground:
+	case ProminenceAmenity:
 		return 0
-	case ProminenceNormal:
+	case ProminenceBackground:
 		return 1
-	case ProminenceFeatured:
+	case ProminenceNormal:
 		return 2
+	case ProminenceFeatured:
+		return 3
 	}
 	// An unset or unrecognised value ranks as normal, which is the same
 	// default the column itself carries.
-	return 1
+	return 2
 }
 
 // meetsFloor reports whether an event clears a minimum prominence.

@@ -76,7 +76,7 @@ func includeInTier(e *Event, tier Tier) bool {
 		// Everything, offsite included: this is the "what we are up to" feed.
 		return true
 	case TierHighlights:
-		return e.Venue != VenueOffsite && e.Prominence != ProminenceBackground
+		return e.Venue != VenueOffsite && !e.IsStandingOffer()
 	case TierFeatured:
 		return e.Venue != VenueOffsite && e.Prominence == ProminenceFeatured
 	}

@@ -66,7 +66,10 @@ const (
 // standing offer that must never take the headline off a real event.
 //
 // So callers opt DOWN or UP, never into the middle, which is what keeps this
-// from becoming the priority number migration 072 rightly refused.
+// from becoming the priority number migration 072 rightly refused. Amenity
+// (migration 102) is one more step down, not the thin end of a rank: it
+// answers "whose standing offer is this, ours or a partner's?", which has an
+// obvious answer per event and never needs revisiting.
 type Prominence string
 
 const (
@@ -75,13 +78,35 @@ const (
 	ProminenceFeatured Prominence = "featured"
 	// ProminenceNormal is a real event, and the default.
 	ProminenceNormal Prominence = "normal"
-	// ProminenceBackground is a standing offer rather than a happening -- a
-	// weekly pizza deal, happy hour, kids eat free. Real, public, worth
-	// printing, but never the headline of a day that has an actual event on
-	// it. On a day with nothing else, it headlines by default rather than by
-	// promotion, which is exactly right: it is what is on.
+	// ProminenceBackground is a standing offer of OURS rather than a
+	// happening -- NFL Sundays, happy hour, a weekly cask tapping. Real,
+	// public, worth printing, but never the headline of a day that has an
+	// actual event on it. On a day with nothing else, it headlines by default
+	// rather than by promotion, which is exactly right: it is what is on.
 	ProminenceBackground Prominence = "background"
+	// ProminenceAmenity is a standing offer of a PARTNER's, sold in our room:
+	// Double D's pizza deal, a food truck's regular night. Everything
+	// background is, and below it -- because on a day where nothing else is
+	// on, the taproom's own standing thing should headline ahead of the
+	// kitchen's. See migration 102: the card was choosing between them on
+	// door time, which is an accident of the clock rather than a judgement.
+	ProminenceAmenity Prominence = "amenity"
 )
+
+// IsStandingOffer reports whether an event is an ongoing offer rather than a
+// happening.
+//
+// Every surface that asks "is this news?" asks it through here -- the
+// highlights feed, the shift notice, the syndication floor -- so a value added
+// below normal is handled everywhere at once. Asking `== ProminenceBackground`
+// directly is how amenity would have quietly leaked into the chamber's
+// calendar the day it was added.
+func (e *Event) IsStandingOffer() bool {
+	if e == nil {
+		return false
+	}
+	return e.Prominence == ProminenceBackground || e.Prominence == ProminenceAmenity
+}
 
 // IsFeatured is what the website's feed asks. It exists so the wire contract
 // keeps its boolean shape while the database holds three values -- renaming
@@ -122,7 +147,8 @@ func ValidSpaceImpact(s SpaceImpact) bool {
 }
 
 func ValidProminence(p Prominence) bool {
-	return p == ProminenceFeatured || p == ProminenceNormal || p == ProminenceBackground
+	return p == ProminenceFeatured || p == ProminenceNormal ||
+		p == ProminenceBackground || p == ProminenceAmenity
 }
 
 // ResolveProminence maps an API request's two spellings onto one value.

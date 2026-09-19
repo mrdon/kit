@@ -216,3 +216,44 @@ func TestChannelTools_SubmitLabelAloneRenamesTheStep(t *testing.T) {
 		t.Errorf("submit_label alone should rename the step:\n%s", out)
 	}
 }
+
+// A destination's floor can now separate our standing offers from the food
+// partner's. The DBA newsletter takes happy hour; it does not need Double D's
+// pizza deal unless it asks for it by name.
+func TestChannelFloorSeparatesPartnerOffers(t *testing.T) {
+	ours := &Event{Prominence: ProminenceBackground, Visibility: VisibilityPublic, Status: StatusPublished}
+	theirs := &Event{Prominence: ProminenceAmenity, Visibility: VisibilityPublic, Status: StatusPublished}
+
+	if !meetsFloor(ours, ProminenceBackground) {
+		t.Fatal("a background floor should take our own standing offer")
+	}
+	if meetsFloor(theirs, ProminenceBackground) {
+		t.Fatal("a background floor should not take the food partner's offer")
+	}
+	if !meetsFloor(theirs, ProminenceAmenity) {
+		t.Fatal("an amenity floor should take everything")
+	}
+	// The top of the scale is undisturbed.
+	if meetsFloor(ours, ProminenceNormal) || !meetsFloor(&Event{Prominence: ProminenceFeatured}, ProminenceNormal) {
+		t.Fatal("amenity should not have shifted the normal floor")
+	}
+}
+
+// Every surface that asks "is this news?" has to agree, or amenity leaks into
+// the chamber's calendar the day it is added.
+func TestStandingOfferCoversBothFloorValues(t *testing.T) {
+	for _, p := range []Prominence{ProminenceBackground, ProminenceAmenity} {
+		if !(&Event{Prominence: p}).IsStandingOffer() {
+			t.Fatalf("%s should count as a standing offer", p)
+		}
+		if includeInTier(&Event{Prominence: p, Venue: VenueOnsite}, TierHighlights) {
+			t.Fatalf("%s should stay out of the highlights feed", p)
+		}
+		if noticeworthy(&Event{Prominence: p}) {
+			t.Fatalf("%s should not earn a day a shift notice", p)
+		}
+	}
+	if (&Event{Prominence: ProminenceNormal}).IsStandingOffer() {
+		t.Fatal("a real event is not a standing offer")
+	}
+}

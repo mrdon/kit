@@ -86,10 +86,13 @@ type FeedItem struct {
 	// widening it here would break them for no gain, since "lead with this" is
 	// still exactly one question. Prominence carries the rest.
 	Featured bool `json:"featured,omitempty"`
-	// Prominence is the full editorial axis: "featured", "normal" or
-	// "background". Additive and optional, so a site that ignores it behaves
-	// exactly as before -- but a site that reads it can stop giving a standing
-	// pizza offer the same full event page as the anniversary party.
+	// Prominence is the full editorial axis: "featured", "normal",
+	// "background" or "amenity". Additive and optional, so a site that ignores
+	// it behaves exactly as before -- but a site that reads it can stop giving
+	// a standing pizza offer the same full event page as the anniversary
+	// party. A site switching on the value should treat anything it does not
+	// recognise as "normal", which is what the column itself defaults to:
+	// "amenity" arrived after "background" and more may follow.
 	Prominence string `json:"prominence,omitempty"`
 	// Labels say what KIND of thing this is -- "giveback", "food", "trivia".
 	// Additive and optional: a site that ignores them behaves exactly as

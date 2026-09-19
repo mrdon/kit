@@ -486,3 +486,53 @@ func TestTopperMultiWeekdayStandingOffer(t *testing.T) {
 		t.Fatalf("monday bullets = %q, want the offer demoted", mon.Bullets)
 	}
 }
+
+// A day carrying only standing offers still has to headline one of them, and
+// the clock is the wrong way to choose. Double D's pizza deal opens at 4pm and
+// our own football night at 6pm, so before amenity existed the card printed
+// MON / BOGO PIZZA and mentioned the football underneath it.
+func TestTopperPartnerOfferYieldsToOurOwnStandingEvent(t *testing.T) {
+	loc := denver(t)
+	start := time.Date(2026, 8, 2, 0, 0, 0, 0, loc)
+	mon := start.AddDate(0, 0, 1)
+	events := []Event{{
+		Title:      "BOGO Pizza",
+		StartsAt:   mon.Add(16 * time.Hour),
+		Timezone:   "America/Denver",
+		Status:     StatusPublished,
+		Visibility: VisibilityPublic,
+		Prominence: ProminenceAmenity,
+	}, {
+		Title:      "Monday Night Football",
+		StartsAt:   mon.Add(18 * time.Hour),
+		Timezone:   "America/Denver",
+		Status:     StatusPublished,
+		Visibility: VisibilityPublic,
+		Prominence: ProminenceBackground,
+	}}
+
+	rows := topperRows(events, start, start.AddDate(0, 0, 7), loc)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want one band for the day", len(rows))
+	}
+	if rows[0].Title != "Monday Night Football" {
+		t.Fatalf("headliner = %q, want ours to outrank the food partner's", rows[0].Title)
+	}
+	if rows[0].Supports != 1 || !strings.Contains(rows[0].Bullets[len(rows[0].Bullets)-1], "BOGO Pizza") {
+		t.Fatalf("bullets = %q, want the pizza deal named underneath", rows[0].Bullets)
+	}
+}
+
+// A real event still outranks both, and amenity has not disturbed the top of
+// the scale.
+func TestBillingRankOrdersTheWholeAxis(t *testing.T) {
+	order := []Prominence{ProminenceFeatured, ProminenceNormal, ProminenceBackground, ProminenceAmenity}
+	for i := 1; i < len(order); i++ {
+		if billingRank(order[i-1]) >= billingRank(order[i]) {
+			t.Fatalf("%s should outrank %s", order[i-1], order[i])
+		}
+	}
+	if billingRank(Prominence("wat")) != billingRank(ProminenceNormal) {
+		t.Fatal("an unknown prominence should still behave like an ordinary event")
+	}
+}

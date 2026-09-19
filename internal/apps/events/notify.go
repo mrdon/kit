@@ -392,7 +392,7 @@ func worthNoticing(events []dayEvent) bool {
 // arrival of something that is not part of the usual week -- a one-off, a
 // booking, anything reserving the room -- that starts the conversation.
 func noticeworthy(e *Event) bool {
-	if e.Prominence == ProminenceBackground {
+	if e.IsStandingOffer() {
 		return false
 	}
 	if !e.Repeats() {

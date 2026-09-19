@@ -70,7 +70,9 @@ func channelLine(c Channel) string {
 	case ProminenceFeatured:
 		parts = append(parts, "big events only")
 	case ProminenceBackground:
-		parts = append(parts, "everything incl. standing offers")
+		parts = append(parts, "everything incl. our standing offers")
+	case ProminenceAmenity:
+		parts = append(parts, "everything incl. the food partner's offers")
 	case ProminenceNormal:
 		// The default needs no annotation; saying "normal events" on most rows
 		// would just be noise on every line.

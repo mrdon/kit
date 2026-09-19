@@ -243,7 +243,9 @@ func bandBullets(own, supports []string) ([]string, int) {
 //
 // Prominence first, which is the whole point of the axis: a standing pizza
 // offer must never take the headline off a bike night, and the anniversary
-// party outranks both. Then the earlier door time, because on a day with two
+// party outranks both. A partner's offer sits below our own standing thing,
+// so a Monday carrying only the pizza deal and the football headlines the
+// football. Then the earlier door time, because on a day with two genuine
 // equals the one that starts first is the one someone reading the card at
 // lunchtime can still make.
 func compareBilling(a, b topperOccurrence) int {
@@ -263,6 +265,8 @@ func billingRank(p Prominence) int {
 		return 0
 	case ProminenceBackground:
 		return 2
+	case ProminenceAmenity:
+		return 3
 	case ProminenceNormal:
 		return 1
 	default:
