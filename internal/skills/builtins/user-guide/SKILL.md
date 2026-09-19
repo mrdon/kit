@@ -269,7 +269,11 @@ is a chore retired rather than a chore made faster.
 
 The cog menu on the Events page prints the week's card for the taproom tables — **Table topper — this week** or **next week** — a coloured band per event with the day, the door time, a couple of lines about it, and the event's own poster. It's a PDF: two identical 4x6in cards on one landscape sheet, with dashed lines to cut along. One sheet covers two tables, and a cut card drops straight into a standard 4x6 table frame.
 
-Nothing to lay out: it's built from the events you already entered, and only from **published, public** ones — a private booking never appears on a card sitting in front of customers. The bullets come from the event's description (one per line if you wrote it that way) or from its summary. Repeating events show the date they land on *this* week, so a weekly quiz prints with this Wednesday on it.
+Nothing to lay out: it's built from the events you already entered, and only from **published, public** ones — a private booking never appears on a card sitting in front of customers. The bullets come from the event's **summary** — the one-line teaser — or, if you wrote the description as a list of short lines, from those lines instead. Repeating events show the date they land on *this* week, so a weekly quiz prints with this Wednesday on it.
+
+**Write the summary for the card.** A band prints about two lines of 46 characters, so keep the first sentence under about 45 and the whole summary under about 90. The first sentence is the one that always survives: on a day with a second event on it, the band spends its other line naming that event, and the first sentence is all the headliner gets. Publishing an event tells you if its summary is longer than that.
+
+**Don't repeat the day, the door time or the title.** The card already prints all three in the largest type on the page, so a summary that opens "Quiz night every Wednesday at 6:30pm" spends its only line saying what the reader can already see. Kit takes those back out where it can do so cleanly, but a line written to say something new beats one that had to be edited down. Say what the thing *is* and why someone would come.
 
 Pick **next week** on a Friday and the card is ready before the weekend. Seven events is the most that fits on one card; anything beyond that is counted at the bottom rather than dropped silently.
 

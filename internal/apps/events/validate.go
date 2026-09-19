@@ -200,5 +200,14 @@ func publishWarnings(e *Event, s Settings) []string {
 	if e.Capacity != nil && e.ExpectedAttendance != nil && *e.ExpectedAttendance > *e.Capacity {
 		out = append(out, "expected attendance is higher than the capacity")
 	}
+	// Said at publish because that is when the copy starts printing. The
+	// summary is what the table topper puts on the table, and a summary too
+	// long for a band is not caught anywhere else -- it just quietly arrives
+	// as a clipped line on a card in front of a customer.
+	if e.IsPubliclyVisible() {
+		if advice := SummaryAdvice(e.Summary); advice != "" {
+			out = append(out, advice)
+		}
+	}
 	return out
 }

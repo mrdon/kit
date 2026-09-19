@@ -33,6 +33,27 @@ const (
 	maxBulletLines = 3
 )
 
+// bulletOverhang is how far past its bottom margin a line of detail may sit,
+// as a fraction of a line.
+//
+// The margin is comfort space rather than the edge of the band, and a line's
+// height is mostly leading -- 22% of it is air below the letters, not ink. So
+// a line that misses the budget by a fraction still prints clear of the band
+// edge, while refusing it costs the band a whole line.
+//
+// That cost is not abstract: a band missing by six hundredths of a millimetre
+// dropped the line naming the other event on that day, and printed a Monday
+// with nothing on it but a pizza offer.
+const bulletOverhang = 0.25
+
+// bulletRoom is how many lines of detail fit in avail at this line height.
+func bulletRoom(avail, lineH float64) int {
+	if lineH <= 0 {
+		return 0
+	}
+	return max(int((avail+lineH*bulletOverhang)/lineH), 0)
+}
+
 // maxBulletSize is the largest detail type a band of this height may use.
 // Proportional so a busy week scales down together, with a floor that keeps a
 // seven-day week legible rather than merely fitted.
@@ -123,6 +144,11 @@ func spaced(s string) string {
 type bandLine struct {
 	text   string
 	indent float64
+	// pinned marks a line that names another event on the same day. When the
+	// band cannot print everything it has, these are what it keeps: a second
+	// thing on tonight changes whether someone comes in, and a third adjective
+	// about the first thing does not.
+	pinned bool
 }
 
 // fitBullets wraps the bullets and picks the largest size whose wrapped form
@@ -131,7 +157,7 @@ type bandLine struct {
 // Wrapping and sizing cannot be separated: a smaller size fits more characters
 // per line, so it may need fewer lines, so it may fit where the larger size
 // needed one line too many. Hence the re-wrap inside the loop.
-func fitBullets(pdf *fpdf.Fpdf, bullets []string, w, avail, bandH float64) (float64, []bandLine) {
+func fitBullets(pdf *fpdf.Fpdf, bullets []string, supports int, w, avail, bandH float64) (float64, []bandLine) {
 	if len(bullets) == 0 || avail <= 0 {
 		return minBulletPt, nil
 	}
@@ -139,21 +165,29 @@ func fitBullets(pdf *fpdf.Fpdf, bullets []string, w, avail, bandH float64) (floa
 	size := maxBulletSize(bandH)
 	for ; size > minBulletPt; size-- {
 		pdf.SetFont(fontText, "", size)
-		lines = clampBullets(pdf, bulletLines(pdf, bullets, w), w, maxBulletLines)
-		if float64(len(lines))*ptToMM(size)*1.22 <= avail {
+		lineH := ptToMM(size) * 1.22
+		lines = clampBullets(pdf, bulletLines(pdf, bullets, supports, w), w, maxBulletLines)
+		if len(lines) <= bulletRoom(avail, lineH) {
 			return size, lines
 		}
 	}
 	// At the floor, drop whole lines rather than shrinking into illegibility.
 	pdf.SetFont(fontText, "", minBulletPt)
-	lines = bulletLines(pdf, bullets, w)
-	return minBulletPt, clampBullets(pdf, lines, w, int(avail/(ptToMM(minBulletPt)*1.22)))
+	lines = bulletLines(pdf, bullets, supports, w)
+	return minBulletPt, clampBullets(pdf, lines, w, bulletRoom(avail, ptToMM(minBulletPt)*1.22))
 }
 
 // clampBullets trims the wrapped detail to whatever the band will actually
 // print -- the smaller of the caller's room and the hard line budget -- and
-// ellipsises what survives so a truncated band reads as edited rather than
-// broken off.
+// ellipsises what survives when the cut lands mid-sentence, so a band broken
+// off in the middle of a clause reads as edited rather than as a fault.
+//
+// The cut comes out of the headliner's own detail. Lines naming another event
+// on the same day are kept: bandBullets already decided they were worth a slot
+// on the reasoning that a second thing on tonight is news, and it budgeted in
+// bullets while this budgets in wrapped lines. A two-line headliner bullet
+// used to silently overrun that and print a quiet Friday that actually had a
+// beer launch on it.
 func clampBullets(pdf *fpdf.Fpdf, lines []bandLine, w float64, room int) []bandLine {
 	room = max(min(room, maxBulletLines), 0)
 	if len(lines) <= room {
@@ -162,10 +196,69 @@ func clampBullets(pdf *fpdf.Fpdf, lines []bandLine, w float64, room int) []bandL
 	if room == 0 {
 		return nil
 	}
-	lines = lines[:room]
-	last := &lines[len(lines)-1]
-	last.text = clipWordsToWidth(pdf, last.text, w-last.indent)
-	return lines
+	own, pinned := splitPinned(lines)
+	// Never below the headliner's opening line: a title with nothing under it
+	// but another event's name reads as the wrong event on the band.
+	if len(pinned) > room-1 {
+		pinned = pinned[:room-1]
+	}
+	keep := max(room-len(pinned), 1)
+	if keep >= len(own) {
+		return append(own, pinned...)
+	}
+	kept := own[:keep]
+	last := &kept[len(kept)-1]
+	if cutMidSentence(*last, own[keep]) {
+		last.text = clipWordsToWidth(pdf, last.text, w-last.indent)
+	}
+	return append(kept, pinned...)
+}
+
+// splitPinned divides the lines at the start of the pinned tail. Pinned lines
+// are always last because bandBullets appends the support acts after the
+// headliner's own detail.
+func splitPinned(lines []bandLine) (own, pinned []bandLine) {
+	i := len(lines)
+	for i > 0 && lines[i-1].pinned {
+		i--
+	}
+	return lines[:i], lines[i:]
+}
+
+// cutMidSentence reports whether dropping next leaves the last printed line
+// hanging, which is the only case the ellipsis is for.
+//
+// Two cuts are clean. One is a line that ends a sentence: a full stop followed
+// by "…" reads as a printing fault, not as an edit, and the reader has already
+// been told the thought finished. The other is a line that ends its bullet --
+// what follows opens with its own dot, so the break is visible in the layout
+// and a marker only says again what the missing dot already says.
+//
+// What is left is a line cut in the middle of a clause, where nothing on the
+// card would otherwise show that words were taken out.
+func cutMidSentence(last, next bandLine) bool {
+	if next.indent == 0 {
+		// The next line opens a new bullet, so the kept text is whole.
+		return false
+	}
+	return !endsClosed(last.text)
+}
+
+// endsClosed reports whether a line comes to a stop of its own -- a sentence
+// end, or an ellipsis a narrower cut already put there. Trailing quotes and
+// brackets are stepped over so ("like this.") still counts. A colon does not:
+// a line ending in one is promising more, which is precisely when the reader
+// needs telling that the rest is elsewhere.
+func endsClosed(s string) bool {
+	s = strings.TrimRight(strings.TrimSpace(s), `"')]`)
+	if s == "" {
+		return false
+	}
+	switch s[len(s)-1] {
+	case '.', '!', '?':
+		return true
+	}
+	return strings.HasSuffix(s, "\u2026")
 }
 
 // bulletDot opens a bullet's first line. Named because clipWordsToWidth has to
@@ -174,18 +267,21 @@ func clampBullets(pdf *fpdf.Fpdf, lines []bandLine, w float64, room int) []bandL
 const bulletDot = "•"
 
 // bulletLines renders the bullets at the current font size as drawable lines.
-func bulletLines(pdf *fpdf.Fpdf, bullets []string, w float64) []bandLine {
+// The last supports of them name other events on the day, and their lines are
+// marked so the clamp knows not to cut them first.
+func bulletLines(pdf *fpdf.Fpdf, bullets []string, supports int, w float64) []bandLine {
 	dot := bulletDot + " "
 	indent := pdf.GetStringWidth(dot)
+	pinnedFrom := len(bullets) - max(supports, 0)
 	var out []bandLine
-	for _, b := range bullets {
+	for n, b := range bullets {
 		wrapped := wrapToWidth(pdf, strings.ToUpper(b), w-indent)
 		for i, line := range wrapped {
+			l := bandLine{text: line, indent: indent, pinned: n >= pinnedFrom}
 			if i == 0 {
-				out = append(out, bandLine{text: dot + line})
-				continue
+				l.text, l.indent = dot+line, 0
 			}
-			out = append(out, bandLine{text: line, indent: indent})
+			out = append(out, l)
 		}
 	}
 	return out

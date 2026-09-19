@@ -54,6 +54,10 @@ type TopperRow struct {
 	Time    string // "6:30 PM"; empty for an all-day event
 	Title   string
 	Bullets []string
+	// Supports is how many of the trailing Bullets name another event on the
+	// same day rather than describing this one. The renderer needs it: those
+	// lines outlive the headliner's adjectives when the band runs out of room.
+	Supports int
 	// Poster is the event's own artwork, already decoded to something the PDF
 	// writer can embed. Nil when the event has none -- the band then simply
 	// runs full width rather than showing a placeholder.
@@ -154,13 +158,19 @@ func topperRows(events []Event, start, end time.Time, loc *time.Location) []Topp
 			o := topperOccurrence{
 				at:         at,
 				title:      strings.TrimSpace(e.Title),
-				bullets:    topperBullets(e),
 				prominence: e.Prominence,
 				posterID:   e.HeroAttachmentID,
 			}
 			if !e.AllDay {
 				o.timeLabel = topperTime(at)
 			}
+			// The band's own facts are settled first: the bullets are written
+			// against them, not the other way round.
+			o.bullets = topperBullets(e, bandFacts{
+				Weekday: at.Format("Monday"),
+				Time:    o.timeLabel,
+				Title:   o.title,
+			})
 			day := int(at.Sub(start) / (24 * time.Hour))
 			byDay[day] = append(byDay[day], o)
 		}
@@ -184,11 +194,13 @@ func topperDayRow(occs []topperOccurrence) TopperRow {
 	for _, o := range occs[1:] {
 		supports = append(supports, supportBullet(o))
 	}
+	bullets, pinned := bandBullets(head.bullets, supports)
 	return TopperRow{
 		Day:      strings.ToUpper(head.at.Format("Mon")),
 		Time:     head.timeLabel,
 		Title:    head.title,
-		Bullets:  bandBullets(head.bullets, supports),
+		Bullets:  bullets,
+		Supports: pinned,
 		posterID: head.posterID,
 		at:       head.at,
 	}
@@ -205,9 +217,9 @@ func topperDayRow(occs []topperOccurrence) TopperRow {
 //
 // Reading order still puts the headliner's own bullets first. Priority decides
 // what survives, not what goes where.
-func bandBullets(own, supports []string) []string {
+func bandBullets(own, supports []string) ([]string, int) {
 	if len(supports) == 0 {
-		return own
+		return own, 0
 	}
 	if len(supports) > topperMaxSupports {
 		// Name as many as fit and count the rest. Silently dropping them would
@@ -224,7 +236,7 @@ func bandBullets(own, supports []string) []string {
 	if len(own) > room {
 		own = own[:room]
 	}
-	return append(own, supports...)
+	return append(own, supports...), len(supports)
 }
 
 // compareBilling decides who headlines the day.
@@ -271,29 +283,18 @@ func supportBullet(o topperOccurrence) string {
 	return o.title + " · " + o.timeLabel
 }
 
-// topperBullets turns an event's prose into the two or three lines that fit
-// under a title.
+// topperBullets turns an event's own copy into the lines that fit under a
+// title, with the band's own facts taken back out.
 //
-// Description first, because someone who wrote a multi-line description was
-// already writing bullets; summary is the fallback, split at sentences. Either
-// way this is a view of copy written for the web, not a new field to maintain
-// -- one more place to keep in step is exactly what this feature exists to
-// avoid.
-func topperBullets(e *Event) []string {
-	source := strings.TrimSpace(e.Description)
-	lines := splitLines(source)
-	if len(lines) < 2 {
-		source = strings.TrimSpace(e.Summary)
-		if source == "" {
-			source = strings.TrimSpace(e.Description)
-		}
-		lines = splitSentences(source)
-	}
-
+// This is still a view of copy written for the web, not a new field to
+// maintain -- one more place to keep in step is exactly what this feature
+// exists to avoid. What changed is which copy: see topperSource for why the
+// summary usually wins, and trimBandEcho for what the band stops it repeating.
+func topperBullets(e *Event, band bandFacts) []string {
 	var out []string
-	for _, line := range lines {
-		line = strings.TrimSpace(strings.TrimLeft(line, "-*•· \t"))
-		if line == "" {
+	for _, line := range topperSource(e) {
+		line = trimBandEcho(stripBulletMarker(line), band)
+		if !keepsALine(line) {
 			continue
 		}
 		out = append(out, truncateWords(line, topperBulletChars))
@@ -324,34 +325,30 @@ func splitLines(s string) []string {
 	return out
 }
 
-// splitSentences breaks a summary at sentence ends. Deliberately crude: it
-// only has to turn "Quiz night every Wednesday. Free to play." into two
-// bullets, and a mis-split reads as a slightly odd line break on a poster
-// rather than as a bug.
-func splitSentences(s string) []string {
-	var out []string
-	for len(s) > 0 {
-		i := strings.Index(s, ". ")
-		if i < 0 {
-			out = append(out, strings.TrimSuffix(strings.TrimSpace(s), "."))
-			break
-		}
-		out = append(out, strings.TrimSpace(s[:i]))
-		s = s[i+2:]
-	}
-	return out
-}
-
 // truncateWords clips at a word boundary so a cut bullet still reads as words.
+//
+// The marker is only added where the cut interrupts something. A clip that
+// happens to land on a full stop has taken away a following sentence, not the
+// end of this one, and "EVERY WEDNESDAY.…" reads as a fault on a printed card
+// where "EVERY WEDNESDAY." reads as a line that was written that short.
 func truncateWords(s string, limit int) string {
 	if len([]rune(s)) <= limit {
 		return s
 	}
 	r := []rune(s)[:limit]
 	if i := strings.LastIndex(string(r), " "); i > limit/2 {
-		return strings.TrimRight(string(r)[:i], " ,;:") + "…"
+		return markClipped(string(r)[:i])
 	}
-	return strings.TrimRight(string(r), " ,;:") + "…"
+	return markClipped(string(r))
+}
+
+// markClipped tidies a clipped line's tail and marks it as cut.
+func markClipped(s string) string {
+	s = strings.TrimRight(s, " ,;:")
+	if endsClosed(s) {
+		return s
+	}
+	return s + "…"
 }
 
 // attachPosters loads each row's artwork, decoding once per attachment even

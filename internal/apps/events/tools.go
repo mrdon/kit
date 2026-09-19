@@ -1,6 +1,10 @@
 package events
 
-import "github.com/mrdon/kit/internal/services"
+import (
+	"fmt"
+
+	"github.com/mrdon/kit/internal/services"
+)
 
 // stringList describes an array-of-string parameter. Spelled out rather than
 // built with services.Field because that helper emits no "items", and a typed
@@ -12,6 +16,19 @@ func stringList(desc string) map[string]any {
 		"description": desc,
 	}
 }
+
+// summaryFieldDoc tells a caller what the summary has room for. It is the
+// listing line everywhere -- the website, the feed, the promo card -- but the
+// table topper is the one with a hard edge, and the numbers are measured off
+// that card rather than chosen.
+var summaryFieldDoc = fmt.Sprintf(
+	"One-line teaser for listings, and the copy the printed table topper puts on the table. "+
+		"Keep the FIRST sentence under about %d characters: on a day that has another event on it, "+
+		"that sentence is the only line the band prints. Keep the whole thing under about %d. "+
+		"Do not repeat the day, the door time or the title -- the card already prints all three in "+
+		"large type, and a summary that repeats them spends its only line saying nothing new. "+
+		"Say what the thing IS and why someone would come.",
+	SummaryFirstSentenceChars, SummaryChars)
 
 // eventsTools is the single source of tool metadata. Both the agent registry
 // and the MCP server build their surfaces from this slice, so a field added
@@ -34,7 +51,7 @@ var eventsTools = []services.ToolMeta{
 			"timezone":    services.Field("string", "IANA zone such as America/Denver. Defaults to the venue's."),
 			"all_day":     services.Field("boolean", "True for an all-day event. Cannot be combined with repeats."),
 			"prominence":  services.Field("string", "How loudly this speaks: \"featured\" (the website leads with it; several may be marked at once), \"normal\" (a real event, the default), or \"background\" (a standing offer such as a weekly pizza deal or happy hour — it still gets printed and published, but never takes the headline off a real event on the same day)."),
-			"summary":     services.Field("string", "One-line teaser for listings."),
+			"summary":     services.Field("string", summaryFieldDoc),
 			"description": services.Field("string", "Public description (markdown)."),
 			"prep_notes":  services.Field("string", "Internal brief for staff. Goes on the calendar, never on the website."),
 			"location":    services.Field("string", "Where, if not the main room, e.g. 'Back room'."),
@@ -80,7 +97,7 @@ var eventsTools = []services.ToolMeta{
 			"timezone":     services.Field("string", "New IANA zone. The wall-clock time is preserved."),
 			"all_day":      services.Field("boolean", "All-day flag."),
 			"prominence":   services.Field("string", "New prominence: \"featured\", \"normal\" or \"background\". Background is for standing offers that must not headline a day that has a real event on it."),
-			"summary":      services.Field("string", "New teaser."),
+			"summary":      services.Field("string", "New teaser. "+summaryFieldDoc),
 			"description":  services.Field("string", "New public description."),
 			"prep_notes":   services.Field("string", "New internal staff brief."),
 			"location":     services.Field("string", "New location."),

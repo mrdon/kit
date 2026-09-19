@@ -66,7 +66,7 @@ func uniformBulletSize(pdf *fpdf.Fpdf, rows []TopperRow, x, w, h float64) float6
 		}
 		textX, textRight := bandTextSpan(x, w, h, row.Poster != nil)
 		_, avail := bandTextTop(pdf, row, textRight-textX, h)
-		size, _ := fitBullets(pdf, row.Bullets, textRight-textX, avail, h)
+		size, _ := fitBullets(pdf, row.Bullets, row.Supports, textRight-textX, avail, h)
 		smallest = min(smallest, size)
 	}
 	return smallest
@@ -151,7 +151,7 @@ func drawBandText(pdf *fpdf.Fpdf, row TopperRow, x, right, y, h, bulletPt float6
 
 	pdf.SetFont(fontText, "", bulletPt)
 	lineH := ptToMM(bulletPt) * 1.22
-	lines := clampBullets(pdf, bulletLines(pdf, row.Bullets, w), w, int(avail/lineH))
+	lines := clampBullets(pdf, bulletLines(pdf, row.Bullets, row.Supports, w), w, bulletRoom(avail, lineH))
 	baseline := y + top + lineH
 	for _, line := range lines {
 		pdf.Text(x+line.indent, baseline, line.text)

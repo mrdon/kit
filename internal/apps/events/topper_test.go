@@ -119,13 +119,15 @@ func TestTopperRowsAllDayHasNoTime(t *testing.T) {
 }
 
 func TestTopperBullets(t *testing.T) {
+	wed := bandFacts{Weekday: "Wednesday", Time: "6:30pm", Title: "Trivia"}
 	tests := []struct {
 		name string
 		e    Event
+		band bandFacts
 		want []string
 	}{
 		{
-			name: "multi-line description becomes bullets",
+			name: "a description written as a list keeps its lines",
 			e:    Event{Description: "Buy one get one\nMembers only\nDine in only\nAnd a fourth"},
 			want: []string{"Buy one get one", "Members only"},
 		},
@@ -137,12 +139,32 @@ func TestTopperBullets(t *testing.T) {
 		{
 			name: "summary splits at sentences",
 			e:    Event{Summary: "Quiz night every Wednesday. Free to play."},
-			want: []string{"Quiz night every Wednesday", "Free to play"},
+			band: wed,
+			want: []string{"Quiz night", "Free to play"},
 		},
 		{
-			name: "one-line description falls back to summary",
-			e:    Event{Summary: "Short and sweet.", Description: "One line only"},
-			want: []string{"Short and sweet"},
+			// The old rule took the description because it had more than one
+			// line. Its first paragraph is a lede, so the band printed
+			// "THE FIRST GAME SHOW WE HAVE BREWED OURSELVES. ONE HOUR ON A …"
+			// while the sentence written for exactly this sat unused.
+			name: "prose paragraphs lose to the summary",
+			e: Event{
+				Summary:     "Trivia crossed with betting.",
+				Description: "The first game show we have brewed ourselves. One hour on a Thursday night, in the taproom.\n\nIt is trivia crossed with betting, and the points come from reading the room rather than from knowing the answer.",
+			},
+			band: bandFacts{Weekday: "Thursday", Time: "6:30pm"},
+			want: []string{"Trivia crossed with betting"},
+		},
+		{
+			name: "no summary falls back to the description",
+			e:    Event{Description: "One line only"},
+			want: []string{"One line only"},
+		},
+		{
+			name: "a bullet that is only the title is dropped",
+			e:    Event{Summary: "Battles & Brews. Free to play."},
+			band: bandFacts{Weekday: "Tuesday", Title: "Battles & Brews"},
+			want: []string{"Free to play"},
 		},
 		{
 			name: "nothing to say",
@@ -152,7 +174,7 @@ func TestTopperBullets(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := topperBullets(&tt.e)
+			got := topperBullets(&tt.e, tt.band)
 			if strings.Join(got, "|") != strings.Join(tt.want, "|") {
 				t.Fatalf("bullets = %q, want %q", got, tt.want)
 			}
@@ -373,21 +395,28 @@ func TestTopperBackgroundHeadlinesAQuietDay(t *testing.T) {
 func TestBandBullets(t *testing.T) {
 	own := []string{"first", "second", "third"}
 
-	// No support acts: the headliner keeps its own list.
-	if got := bandBullets(own, nil); strings.Join(got, "|") != "first|second|third" {
-		t.Fatalf("alone = %q", got)
+	// No support acts: the headliner keeps its own list, and none of it is
+	// pinned.
+	got, pinned := bandBullets(own, nil)
+	if strings.Join(got, "|") != "first|second|third" || pinned != 0 {
+		t.Fatalf("alone = %q, %d pinned", got, pinned)
 	}
 	// Two support acts squeeze the headliner's detail, never below one line,
 	// and reading order still puts the headliner's own bullets first.
-	got := bandBullets(own, []string{"Bike Night · 6pm", "Cask tapping · 7pm"})
+	got, pinned = bandBullets(own, []string{"Bike Night · 6pm", "Cask tapping · 7pm"})
 	if strings.Join(got, "|") != "first|Also: Bike Night · 6pm|Cask tapping · 7pm" {
 		t.Fatalf("with supports = %q", got)
 	}
+	// The count is what tells the renderer which lines to keep when the band
+	// runs short of room.
+	if pinned != 2 {
+		t.Fatalf("pinned = %d, want the two support acts", pinned)
+	}
 	// A very busy day names what fits and counts the rest rather than
 	// pretending the others are not happening.
-	got = bandBullets(own, []string{"A · 1pm", "B · 2pm", "C · 3pm", "D · 4pm", "E · 5pm"})
-	if strings.Join(got, "|") != "first|Also: A · 1pm|B · 2pm|+3 more" {
-		t.Fatalf("busy day = %q", got)
+	got, pinned = bandBullets(own, []string{"A · 1pm", "B · 2pm", "C · 3pm", "D · 4pm", "E · 5pm"})
+	if strings.Join(got, "|") != "first|Also: A · 1pm|B · 2pm|+3 more" || pinned != 3 {
+		t.Fatalf("busy day = %q, %d pinned", got, pinned)
 	}
 }
 
