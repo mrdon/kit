@@ -2,8 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
+import { BoardPanel } from './board_panel';
 import { NumberField } from './NumberField';
-import { defaultSettings, money, type Dataset, type HostFrame, type TopicCount, type TriviaSettings } from './common';
+import {
+  defaultSettings,
+  type BoardQuestion, type Dataset, type HostFrame, type TopicCount, type TriviaSettings,
+} from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
 // the shape of the game, choose the board's columns, and check the preview.
@@ -15,6 +19,9 @@ export default function TriviaSetup() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [state, setState] = useState<HostFrame | null>(null);
+  // The questions behind the board, which the SSE frames deliberately do not
+  // carry — see board_panel.tsx.
+  const [cells, setCells] = useState<BoardQuestion[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const load = () => {
@@ -25,6 +32,7 @@ export default function TriviaSetup() {
         setDatasets(r.datasets ?? []);
         setSelected(r.selected ?? []);
         setState(r.state);
+        setCells(r.cells ?? []);
       })
       .catch((e) => setErr(e.message));
   };
@@ -62,7 +70,8 @@ export default function TriviaSetup() {
       {/* A saved shape redraws the board server-side, so the preview and the
           topic counts are reloaded along with the game. */}
       <SettingsPanel game={game} onSaved={(g) => { setGame(g); load(); }} />
-      <BoardPanel game={game} topics={topics} state={state} onBuilt={(s) => { setState(s); load(); }} />
+      <BoardPanel game={game} topics={topics} state={state} cells={cells}
+        onBuilt={(s) => { setState(s); load(); }} onCells={setCells} />
     </>
   );
 }
@@ -310,135 +319,6 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
 
       {err ? <p className="banner banner-error">{err}</p> : null}
       {!locked ? <p className="page-sub">{saved ? 'Saved.' : 'Changes save themselves.'}</p> : null}
-    </section>
-  );
-}
-
-// The column picker and the board preview.
-//
-// Columns are a HOST decision, defaulted rather than imposed, because
-// "Sports" and "Sportsball" arriving from a CSV as two topics is a real thing
-// and the host has to see it and fix it. Auto rerolls among the viable ones.
-function BoardPanel({
-  game, topics, state, onBuilt,
-}: {
-  game: TriviaGame;
-  topics: TopicCount[];
-  state: HostFrame | null;
-  onBuilt: (s: HostFrame) => void;
-}) {
-  const [chosen, setChosen] = useState<string[]>([]);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const cols = game.settings?.board_columns ?? 5;
-  const rows = game.settings?.board_rows ?? 2;
-  const repeats = game.settings?.repeat_questions ?? false;
-  // What a category can actually field. Viability is measured in FRESH
-  // questions rather than total, because fresh is what the builder will be
-  // handed: offering a category with nine questions the room has heard and
-  // none it has not would walk the host straight into a shortfall.
-  //
-  // The `repeats ? total` branch is not redundant with the server, which
-  // reports unused === total for a game that allows them. It is what makes
-  // ticking the box update these numbers on the spot: the counts in hand
-  // were fetched under the OLD setting, and a host who ticks "allow repeats"
-  // to fix a shortfall should not have to reload to see it fixed.
-  const avail = (t: TopicCount) => (repeats ? t.total : t.unused);
-  const viable = topics.filter((t) => avail(t) >= rows);
-
-  const toggle = (key: string) => {
-    setChosen((c) =>
-      c.includes(key) ? c.filter((k) => k !== key) : c.length >= cols ? c : [...c, key],
-    );
-  };
-
-  const build = async (auto: boolean) => {
-    setBusy(true);
-    setErr(null);
-    try {
-      onBuilt(await api.buildTriviaBoard(game.id, auto ? [] : chosen, auto));
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const board = state?.board ?? [];
-  const byPos = new Map(board.map((c) => [`${c.col}:${c.row}`, c]));
-  const headers: string[] = [];
-  board.forEach((c) => { headers[c.col] = c.topic; });
-
-  return (
-    <section className="panel">
-      <h2>The board</h2>
-      <p className="page-sub">
-        Pick {cols} categor{cols === 1 ? 'y' : 'ies'}, or hit Auto.{' '}
-        {repeats
-          ? 'This game may reuse questions from past nights; the ones the room heard longest ago come first.'
-          : 'Only questions no game has asked yet are on offer — the count in brackets is what each category has left.'}
-      </p>
-
-      {viable.length === 0 ? (
-        <p className="page-sub">
-          No category has {rows} {repeats ? '' : 'fresh '}question{rows === 1 ? '' : 's'} left.{' '}
-          {repeats
-            ? 'Upload a sheet above.'
-            : 'Upload more questions, delete an old game to free the ones it asked, or allow repeats above.'}
-        </p>
-      ) : (
-        <div className="teamlist">
-          {viable.map((t) => (
-            <button
-              key={t.key}
-              className={chosen.includes(t.key) ? 'pill pill-ok' : 'pill'}
-              onClick={() => toggle(t.key)}
-            >
-              {t.label} · {t.total}
-              {repeats ? '' : ` (${t.unused} fresh)`}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* A shortfall counted in FRESH questions is a different problem from
-          a shortfall counted in questions, and it has a different fix. Say
-          which one it is rather than leaving the host to hunt for questions
-          that are sitting in the set, already asked. */}
-      {err ? (
-        <p className="banner banner-error">
-          {err}
-          {err.includes('fresh question')
-            ? ' — allow repeats on this game, or upload more questions.'
-            : ''}
-        </p>
-      ) : null}
-      <div className="page-head-actions">
-        <button className="btn btn-spaced" onClick={() => void build(false)}
-          disabled={busy || chosen.length !== cols}>
-          Build with these {cols}
-        </button>
-        <button className="btn btn-spaced btn-danger" onClick={() => void build(true)} disabled={busy}>
-          Auto
-        </button>
-      </div>
-
-      {board.length ? (
-        <div className="trivia-board" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-          {headers.map((h, i) => <div key={`h${i}`} className="trivia-cat">{h}</div>)}
-          {Array.from({ length: rows }, (_, r) =>
-            Array.from({ length: cols }, (_, c) => {
-              const cell = byPos.get(`${c}:${r}`);
-              return (
-                <div key={`${c}:${r}`} className={cell?.played ? 'trivia-cell played' : 'trivia-cell'}>
-                  {cell ? money(cell.points) : '—'}
-                </div>
-              );
-            }),
-          )}
-        </div>
-      ) : null}
     </section>
   );
 }

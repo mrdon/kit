@@ -1918,6 +1918,51 @@ h2.view-title:hover {
   text-decoration: line-through;
 }
 
+/* --- The questions behind the board (setup page) ---
+
+   A grid of money is the SHAPE of the board; this is its contents, and the
+   host reads it one category at a time, cheapest first. Grouped rather than
+   laid out in grid order for exactly that reason: five columns of prompt text
+   is unreadable, and nobody checks a board row by row. */
+.trivia-qhead {
+  margin: 1.5rem 0 0.25rem;
+  font-size: 1rem;
+}
+
+.trivia-qgroup {
+  margin-top: 1rem;
+}
+
+.trivia-qcat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+.trivia-qspare {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The prompt is the thing being read, so it wraps rather than being clipped
+   to one line the way a card title normally would. */
+.trivia-q .card-title {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.trivia-q.played {
+  opacity: 0.5;
+}
+
 /* The panel got wider when it took the standings in: twenty table names next
    to a rank, a movement and a score do not fit in 320px without the names
    being the thing that gives, and the name is the only column a host reads

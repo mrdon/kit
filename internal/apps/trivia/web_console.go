@@ -31,6 +31,7 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("DELETE /{slug}/api/trivia/games/{id}", jsonRoute(a.handleDeleteGame))
 	mux.Handle("DELETE /{slug}/api/trivia/games", jsonRoute(a.handleDeleteAllGames))
 	mux.Handle("POST /{slug}/api/trivia/games/{id}/board", jsonRoute(a.handleBuildBoard))
+	mux.Handle("POST /{slug}/api/trivia/games/{id}/board/cells/{cellID}/swap", jsonRoute(a.handleSwapCell))
 	mux.Handle("POST /{slug}/api/trivia/games/{id}/action", jsonRoute(a.handleAction))
 	mux.Handle("GET /{slug}/api/trivia/games/{id}/state", jsonRoute(a.handleHostState))
 	mux.Handle("GET /{slug}/api/trivia/games/{id}/stream", jsonRoute(a.handleHostStream))
@@ -288,6 +289,15 @@ func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	for _, id := range selected {
 		ids = append(ids, id.String())
 	}
+	// The questions BEHIND the board, which the host frame deliberately does
+	// not carry (see web_console_board.go). This is the page where a host
+	// reads their own board before the doors open, so it is the page that
+	// gets them.
+	board, err := a.boardCells(r, tenant.ID, game)
+	if err != nil {
+		serverError(w, "loading the trivia board", err)
+		return
+	}
 	teams, cells, played, leader := a.gameCounts(r, game)
 	writeJSON(w, map[string]any{
 		"game":     a.gameToJSON(game, tenant.Slug, teams, cells, played, leader),
@@ -295,6 +305,7 @@ func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {
 		"datasets": sets,
 		"selected": ids,
 		"state":    ProjectHost(snap),
+		"cells":    board,
 	})
 }
 

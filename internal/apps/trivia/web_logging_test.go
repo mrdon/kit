@@ -39,6 +39,9 @@ func (f *fixture) serveConsole(t *testing.T, method, path string, body any) (int
 	tenantMW := auth.TenantFromPath(f.pool)
 	mux.Handle("PATCH /{slug}/api/trivia/games/{id}", tenantMW(http.HandlerFunc(app.handleUpdateGame)))
 	mux.Handle("POST /{slug}/api/trivia/games/{id}/action", tenantMW(http.HandlerFunc(app.handleAction)))
+	mux.Handle("GET /{slug}/api/trivia/games/{id}", tenantMW(http.HandlerFunc(app.handleGetGame)))
+	mux.Handle("POST /{slug}/api/trivia/games/{id}/board/cells/{cellID}/swap",
+		tenantMW(http.HandlerFunc(app.handleSwapCell)))
 	raw, _ := json.Marshal(body)
 	req := httptest.NewRequest(method, path, bytes.NewReader(raw))
 	rec := httptest.NewRecorder()

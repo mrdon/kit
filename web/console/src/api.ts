@@ -275,6 +275,7 @@ export interface KioskBoard {
 // silently skipping a question.
 
 export type {
+  BoardQuestion,
   BuiltinPack,
   Dataset,
   TriviaGame,
@@ -284,6 +285,7 @@ export type {
   HostFrame,
 } from './pages/trivia/common';
 import type {
+  BoardQuestion as BoardQuestionT,
   TriviaGame as TriviaGameT,
   TriviaSettings as TriviaSettingsT,
   TopicCount as TopicCountT,
@@ -975,6 +977,9 @@ export const api = {
       datasets: DatasetT[];
       selected: string[];
       state: HostFrameT;
+      // What each tile will actually ask. Host-only, and fetched with the
+      // page rather than ridden in on the SSE frames.
+      cells: BoardQuestionT[];
     }>(`/trivia/games/${id}`),
   // Omitting settings means "same as last time" — the server carries the
   // previous game's setup forward.
@@ -986,6 +991,12 @@ export const api = {
   deleteAllTriviaGames: () => apiDelete<{ deleted: number }>('/trivia/games'),
   buildTriviaBoard: (id: string, topics: string[], auto: boolean) =>
     apiPost<HostFrameT>(`/trivia/games/${id}/board`, { topics, auto }),
+  // Rotate one tile's question out for another in the same column, leaving
+  // the rest of the board alone. Comes back with the whole board because
+  // spending a spare in one column changes what its other cells have left.
+  swapTriviaCell: (gameId: string, cellId: string) =>
+    apiPost<{ cells: BoardQuestionT[] }>(
+      `/trivia/games/${gameId}/board/cells/${cellId}/swap`, {}),
   // The single host action endpoint. from_phase is what makes a double click
   // a 409 rather than a skipped question.
   triviaAction: (id: string, body: Record<string, unknown>) =>

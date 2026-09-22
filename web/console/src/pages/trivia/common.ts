@@ -77,6 +77,26 @@ export interface HostTeam {
   chipsPlaced: number;
 }
 
+// One tile as the SETUP page sees it: the cell plus the question behind it.
+//
+// This is NOT HostCell. HostCell rides on every SSE frame and shares its shape
+// with the TV and the phones, so the prompts stay off it; these are fetched
+// once, by request, on the page where the host is reading their own board
+// before the doors open.
+export interface BoardQuestion {
+  id: string;
+  col: number;
+  row: number;
+  topic: string;
+  points: number;
+  played: boolean;
+  prompt: string;
+  answer: string;
+  // How many other questions this column could swap in. Zero means the Swap
+  // button would fail, so it is disabled and says why.
+  spares: number;
+}
+
 export interface HostCell {
   id: string;
   col: number;
