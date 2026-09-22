@@ -78,7 +78,7 @@ func GameByJoinCode(ctx context.Context, pool *pgxpool.Pool, code string) (*Game
 		&game.AnswerSeconds, &game.RevealSeconds, &game.BetSeconds, &game.WagerSeconds,
 		&game.GraceSeconds, &game.CurrentRoundID, &game.PhaseDeadline, &game.StateVersion,
 		&game.CreatedBy, &game.CreatedAt, &game.UpdatedAt, &game.JoinCode,
-		&game.PickerTeamID, &game.PickerReason, &game.RepeatQuestions, &slug)
+		&game.PickerTeamID, &game.PickerReason, &game.RepeatQuestions, &game.BoardRounds, &slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", ErrNotFound

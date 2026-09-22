@@ -92,13 +92,23 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 		return nil, err
 	}
 
+	// Which board is in play, derived from the cells rather than stored --
+	// see CurrentBoardRound. An exhausted board reports the round count,
+	// which leaves the final drawing on the last round's scaling.
+	boardRound := CurrentBoardRound(cells)
+	if n := BoardRoundCount(cells); boardRound >= n && n > 0 {
+		boardRound = n - 1
+	}
+
 	snap := &Snapshot{
 		GameID: gameID, TenantID: tenantID,
 		Name: game.Name, Title: game.Title, Phase: game.Phase,
 		StateVersion: game.StateVersion,
 		ServerNow:    time.Now().UTC(), Deadline: game.PhaseDeadline,
-		FinalWager: game.FinalWager, TokenValues: game.TokenValues,
-		CellValues: game.CellValues, BoardRows: game.BoardRows, BoardCols: game.BoardColumns,
+		FinalWager: game.FinalWager, TokenValues: scaleValues(game.TokenValues, boardRound),
+		CellValues: scaleValues(game.CellValues, boardRound),
+		BoardRows:  game.BoardRows, BoardCols: game.BoardColumns,
+		BoardRound: boardRound, BoardRounds: BoardRoundCount(cells),
 		PickerTeamID: game.PickerTeamID, PickerReason: game.PickerReason,
 		Standings:   map[uuid.UUID]int{},
 		PublisherID: processID,
@@ -106,7 +116,11 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	for _, st := range standings {
 		snap.Standings[st.TeamID] = st.Total
 	}
-	for _, c := range cells {
+	// ONLY THE ROUND IN PLAY. Every surface projects from this slice, so
+	// filtering here is what stops the TV showing twenty tiles and the phone
+	// offering a cell from a board the room has not reached. The setup page
+	// wants the whole thing and reads the cells directly instead.
+	for _, c := range CellsInRound(cells, boardRound) {
 		snap.Board = append(snap.Board, SnapCell{
 			ID: c.ID, Col: c.ColIndex, Row: c.RowIndex,
 			Topic: c.Topic, Points: c.Points, Played: c.PlayedAt != nil,

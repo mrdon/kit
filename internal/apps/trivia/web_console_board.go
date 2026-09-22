@@ -20,7 +20,10 @@ import (
 
 // cellJSON is one tile plus the question behind it.
 type cellJSON struct {
-	ID     string `json:"id"`
+	ID string `json:"id"`
+	// Round is which board this tile belongs to, zero-based. The setup page
+	// shows every round; the room only ever sees the one in play.
+	Round  int    `json:"round"`
 	Col    int    `json:"col"`
 	Row    int    `json:"row"`
 	Topic  string `json:"topic"`
@@ -75,7 +78,7 @@ func (a *App) boardCells(r *http.Request, tenantID uuid.UUID, game *Game) ([]cel
 	for _, c := range cells {
 		q := questions[c.QuestionID]
 		out = append(out, cellJSON{
-			ID: c.ID.String(), Col: c.ColIndex, Row: c.RowIndex,
+			ID: c.ID.String(), Round: c.RoundIndex, Col: c.ColIndex, Row: c.RowIndex,
 			Topic: c.Topic, Points: c.Points, Played: c.PlayedAt != nil,
 			Prompt: q.Prompt, Answer: q.AnswerText,
 			Spares: spares[cellTopicKey(c)],

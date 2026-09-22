@@ -19,12 +19,29 @@ import (
 // does routing and status codes; this does the game.
 func drawBoard(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 	game *Game, topics []string, datasetIDs []uuid.UUID, seed int64) ([]BoardCell, error) {
+	return drawRound(ctx, pool, tenantID, game, topics, datasetIDs, seed, 0, nil)
+}
+
+// drawRound is drawBoard for one round of a multi-round night.
+//
+// round stamps the cells and scales what they are worth -- every cell in a
+// round is the same value, and the round doubles (see boardMultiplier). taken
+// is the question ids already placed by EARLIER rounds of this same build,
+// which the bank query cannot know about: it reads the database, and nothing
+// has been written yet. Without it round two happily re-places round one's
+// questions and the room is asked the same thing after the break.
+func drawRound(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
+	game *Game, topics []string, datasetIDs []uuid.UUID, seed int64,
+	round int, taken map[uuid.UUID]bool) ([]BoardCell, error) {
 	bank, err := QuestionsForTopics(ctx, pool, tenantID, topics, datasetIDs, freshnessOf(game))
 	if err != nil {
 		return nil, err
 	}
 	cands := make([]BoardCandidate, 0, len(bank))
 	for _, q := range bank {
+		if taken[q.ID] {
+			continue
+		}
 		keys := make([]string, 0, len(q.Topics))
 		for _, t := range q.Topics {
 			keys = append(keys, t.Key)
@@ -57,8 +74,9 @@ func drawBoard(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 			label = c.Topic
 		}
 		out = append(out, BoardCell{
-			ColIndex: c.ColIndex, RowIndex: c.RowIndex,
-			Topic: label, Points: c.Points, QuestionID: qid,
+			RoundIndex: round,
+			ColIndex:   c.ColIndex, RowIndex: c.RowIndex,
+			Topic: label, Points: c.Points * boardMultiplier(round), QuestionID: qid,
 		})
 	}
 	return out, nil

@@ -33,6 +33,11 @@ type Snapshot struct {
 	CellValues  []int
 	BoardRows   int
 	BoardCols   int
+	// BoardRound is the board in play, zero-based, and BoardRounds is how
+	// many the night holds. Both ride on every frame so the TV can say
+	// "round 2 of 2" and the phone knows its chips just doubled.
+	BoardRound  int
+	BoardRounds int
 
 	// PickerTeamID is the table whose pick the next category is, and
 	// PickerReason is why it is theirs. Both ride on EVERY surface's frame --

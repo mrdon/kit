@@ -590,6 +590,19 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .spark { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); pointer-events: none; }
 
 /* ---------- placeholder ---------- */
+/* The break between boards. Read from across a room with a pint in hand, so
+   the standings are the biggest thing on it -- that is what people are
+   actually looking for when they glance up mid-conversation. */
+.breakwrap { height: 100%; display: grid; place-items: center; align-content: center; text-align: center; gap: 10px; }
+.breakhead { font: 400 130px/1 var(--display); color: var(--ink); margin: 0; }
+.breaksub { font: 400 40px/1.35 var(--body); color: var(--dim); margin: 0 0 18px; max-width: 24ch; }
+.breakscores { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 46vw; }
+.breakrow { display: grid; grid-template-columns: 2.4em 1fr auto; align-items: baseline; gap: 18px;
+  font: 400 46px/1.25 var(--body); color: var(--ink); }
+.breakrow .brank { color: var(--muted); font-size: 0.7em; text-align: right; }
+.breakrow .bname { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.breakrow .bscore { font-variant-numeric: tabular-nums; color: var(--dim); }
+
 .hold { height: 100%; display: grid; place-items: center; text-align: center; }
 .hold h1 { font: 400 120px/1.1 var(--display); color: var(--muted); margin: 0; }
 .hold p { font: 400 44px/1.4 var(--body); color: var(--dim); }

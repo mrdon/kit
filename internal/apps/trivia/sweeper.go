@@ -236,9 +236,11 @@ func (s *Service) everyoneIn(ctx context.Context, game *Game) (bool, error) {
 		}
 		return true, nil
 
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseReveal, PhaseScoring, PhasePodium:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseReveal, PhaseScoring, PhasePodium:
 		// No early close: reveal is a fixed beat the room watches, and the
-		// rest are not waiting on anybody's input.
+		// rest are not waiting on anybody's input. The break least of all --
+		// it ends when the host says the room is back, not when a count of
+		// somebodies reaches a total.
 		return false, nil
 	}
 	return false, nil

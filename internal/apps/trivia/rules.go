@@ -12,6 +12,12 @@ package trivia
 //
 // finalWager drops the last line when the game is not playing one, so a night
 // with it switched off is not told about a mechanic it does not have.
+//
+// BOARD ROUNDS ADD NOTHING HERE, and that is the test they had to pass. A
+// two-round night is the same five lines played twice with a break in the
+// middle; the doubling is a number on the wall, not a rule anybody has to be
+// told. If a future round type cannot be added without a sixth line, it is
+// the round type that is wrong.
 func Rules(finalWager bool) []string {
 	rules := []string{
 		"Everybody types a number. Closest without going over wins.",

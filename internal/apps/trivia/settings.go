@@ -8,6 +8,10 @@ import "fmt"
 const (
 	maxBoardColumns = 8
 	maxBoardRows    = 5
+	// Three boards plus a final is already over the hour. The cap is here to
+	// stop a typo turning into a night nobody can finish, not because a
+	// fourth round would break anything.
+	maxBoardRounds  = 3
 	minPhaseSeconds = 5
 	maxPhaseSeconds = 600
 	maxTokens       = 4
@@ -57,6 +61,9 @@ func DefaultSettings() Settings {
 		// host whose bank has run thin can turn this on per game; deleting
 		// an old night gives its questions back either way.
 		RepeatQuestions: false,
+		// One board, which is exactly the game as it shipped. Two is the pub
+		// hour with a break in the middle; see migration 104.
+		BoardRounds: 1,
 	}
 }
 
@@ -75,6 +82,9 @@ func normaliseSettings(s Settings) Settings {
 	}
 	if len(s.TokenValues) == 0 {
 		s.TokenValues = d.TokenValues
+	}
+	if s.BoardRounds == 0 {
+		s.BoardRounds = d.BoardRounds
 	}
 	if s.AnswerSeconds == 0 {
 		s.AnswerSeconds = d.AnswerSeconds
@@ -103,6 +113,9 @@ func validateSettings(s Settings) error {
 	}
 	if s.BoardRows < 1 || s.BoardRows > maxBoardRows {
 		return fmt.Errorf("a board has 1 to %d rows", maxBoardRows)
+	}
+	if s.BoardRounds < 1 || s.BoardRounds > maxBoardRounds {
+		return fmt.Errorf("a night plays 1 to %d board rounds", maxBoardRounds)
 	}
 	if len(s.CellValues) != s.BoardRows {
 		return fmt.Errorf("a board with %d rows needs %d cell values, got %d",

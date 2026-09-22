@@ -343,7 +343,19 @@ func (s *Service) chipAmount(ctx context.Context, game *Game, round *Round, team
 	if tokenIndex < 0 || tokenIndex >= len(game.TokenValues) {
 		return 0, fmt.Errorf("%w: no such chip", ErrBadRequest)
 	}
-	return game.TokenValues[tokenIndex], nil
+	// Scaled by the board round, exactly as the phone was shown it. The chips
+	// double when the cells do -- see boardMultiplier -- and deriving it here
+	// rather than trusting the client's number is what keeps a stale phone
+	// from betting round one's $100 into round two.
+	cells, err := ListBoardCells(ctx, s.pool, game.TenantID, game.ID)
+	if err != nil {
+		return 0, err
+	}
+	boardRound := CurrentBoardRound(cells)
+	if n := BoardRoundCount(cells); boardRound >= n && n > 0 {
+		boardRound = n - 1
+	}
+	return game.TokenValues[tokenIndex] * boardMultiplier(boardRound), nil
 }
 
 // assertSlotInRound stops a chip landing on a card from a different round --

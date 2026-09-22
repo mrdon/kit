@@ -6,7 +6,7 @@ import { BoardPanel } from './board_panel';
 import { NumberField } from './NumberField';
 import {
   defaultSettings,
-  type BoardQuestion, type Dataset, type HostFrame, type TopicCount, type TriviaSettings,
+  type BoardQuestion, type Dataset, type TopicCount, type TriviaSettings,
 } from './common';
 
 // Everything a host does before the doors open: upload a question sheet, set
@@ -18,7 +18,6 @@ export default function TriviaSetup() {
   const [topics, setTopics] = useState<TopicCount[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [state, setState] = useState<HostFrame | null>(null);
   // The questions behind the board, which the SSE frames deliberately do not
   // carry — see board_panel.tsx.
   const [cells, setCells] = useState<BoardQuestion[]>([]);
@@ -31,7 +30,6 @@ export default function TriviaSetup() {
         setTopics(r.topics ?? []);
         setDatasets(r.datasets ?? []);
         setSelected(r.selected ?? []);
-        setState(r.state);
         setCells(r.cells ?? []);
       })
       .catch((e) => setErr(e.message));
@@ -70,8 +68,10 @@ export default function TriviaSetup() {
       {/* A saved shape redraws the board server-side, so the preview and the
           topic counts are reloaded along with the game. */}
       <SettingsPanel game={game} onSaved={(g) => { setGame(g); load(); }} />
-      <BoardPanel game={game} topics={topics} state={state} cells={cells}
-        onBuilt={(s) => { setState(s); load(); }} onCells={setCells} />
+      {/* A rebuild changes the board, the topic counts and the spare counts
+          at once, so the page reloads rather than patching three of them. */}
+      <BoardPanel game={game} topics={topics} cells={cells}
+        onBuilt={load} onCells={setCells} />
     </>
   );
 }
@@ -240,6 +240,11 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
           <span>Rows</span>
           <NumberField min={1} max={5} value={s.board_rows} disabled={locked}
             onCommit={setRows} />
+        </label>
+        <label className="field">
+          <span>Board rounds</span>
+          <NumberField min={1} max={3} value={s.board_rounds} disabled={locked}
+            onCommit={(n) => edit({ ...s, board_rounds: n })} />
         </label>
       </div>
 

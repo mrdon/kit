@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../api';
-import { money, type BoardQuestion, type HostFrame, type TopicCount, type TriviaGame } from './common';
+import { money, type BoardQuestion, type TopicCount, type TriviaGame } from './common';
+
 
 // The column picker, the board preview, and the questions behind it.
 //
@@ -8,13 +9,12 @@ import { money, type BoardQuestion, type HostFrame, type TopicCount, type Trivia
 // "Sports" and "Sportsball" arriving from a CSV as two topics is a real thing
 // and the host has to see it and fix it. Auto rerolls among the viable ones.
 export function BoardPanel({
-  game, topics, state, cells, onBuilt, onCells,
+  game, topics, cells, onBuilt, onCells,
 }: {
   game: TriviaGame;
   topics: TopicCount[];
-  state: HostFrame | null;
   cells: BoardQuestion[];
-  onBuilt: (s: HostFrame) => void;
+  onBuilt: () => void;
   onCells: (cells: BoardQuestion[]) => void;
 }) {
   const [chosen, setChosen] = useState<string[]>([]);
@@ -23,6 +23,11 @@ export function BoardPanel({
 
   const cols = game.settings?.board_columns ?? 5;
   const rows = game.settings?.board_rows ?? 2;
+  const rounds = game.settings?.board_rounds ?? 1;
+  // EVERY ROUND GETS ITS OWN CATEGORIES, so a two-round night wants twice as
+  // many ticks. They are sliced in order server-side: the first `cols` are
+  // round one, the next `cols` are what the room comes back to.
+  const need = cols * rounds;
   const repeats = game.settings?.repeat_questions ?? false;
   const locked = game.phase !== 'setup' && game.phase !== 'lobby';
   // What a category can actually field. Viability is measured in FRESH
@@ -40,7 +45,7 @@ export function BoardPanel({
 
   const toggle = (key: string) => {
     setChosen((c) =>
-      c.includes(key) ? c.filter((k) => k !== key) : c.length >= cols ? c : [...c, key],
+      c.includes(key) ? c.filter((k) => k !== key) : c.length >= need ? c : [...c, key],
     );
   };
 
@@ -48,7 +53,8 @@ export function BoardPanel({
     setBusy(true);
     setErr(null);
     try {
-      onBuilt(await api.buildTriviaBoard(game.id, auto ? [] : chosen, auto));
+      await api.buildTriviaBoard(game.id, auto ? [] : chosen, auto);
+      onBuilt();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -71,18 +77,20 @@ export function BoardPanel({
 
   // How many categories the host still owes the board. Zero is the only
   // state in which an explicit build can go.
-  const short = cols - chosen.length;
-  const board = state?.board ?? [];
-  const byPos = new Map(board.map((c) => [`${c.col}:${c.row}`, c]));
-  const headers: string[] = [];
-  board.forEach((c) => { headers[c.col] = c.topic; });
+  const short = need - chosen.length;
+  // The rounds that were actually BUILT, which can lag the setting: a host
+  // who types 2 has a two-round night the moment they rebuild, not before.
+  const builtRounds = [...new Set(cells.map((c) => c.round))].sort((a, b) => a - b);
 
   return (
     <section className="panel">
       <h2>The board</h2>
       <p className="page-sub">
-        Tick {cols} categor{cols === 1 ? 'y' : 'ies'} below to choose the columns yourself, or hit
+        Tick {need} categor{need === 1 ? 'y' : 'ies'} below to choose the columns yourself, or hit
         Auto and Kit picks them.{' '}
+        {rounds > 1
+          ? `The first ${cols} are round one, the next ${cols} are what the room comes back to after the break. `
+          : ''}
         {repeats
           ? 'This game may reuse questions from past nights; the ones the room heard longest ago come first.'
           : 'Only questions no game has asked yet are on offer — the count in brackets is what each category has left.'}
@@ -142,7 +150,7 @@ export function BoardPanel({
           title={short > 0 ? `Tick ${short} more categor${short === 1 ? 'y' : 'ies'} above` : ''}
           disabled={busy || short !== 0}>
           {short === 0
-            ? `Build with these ${cols}`
+            ? `Build with these ${need}`
             : `Tick ${short} more categor${short === 1 ? 'y' : 'ies'}`}
         </button>
         <button className="btn btn-spaced btn-danger" onClick={() => void build(true)} disabled={busy}>
@@ -150,24 +158,63 @@ export function BoardPanel({
         </button>
       </div>
 
-      {board.length ? (
-        <div className="trivia-board" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-          {headers.map((h, i) => <div key={`h${i}`} className="trivia-cat">{h}</div>)}
-          {Array.from({ length: rows }, (_, r) =>
-            Array.from({ length: cols }, (_, c) => {
-              const cell = byPos.get(`${c}:${r}`);
-              return (
-                <div key={`${c}:${r}`} className={cell?.played ? 'trivia-cell played' : 'trivia-cell'}>
-                  {cell ? money(cell.points) : '—'}
-                </div>
-              );
-            }),
-          )}
-        </div>
-      ) : null}
-
-      <QuestionList cells={cells} locked={locked} busy={busy} repeats={repeats} onSwap={swap} />
+      {builtRounds.map((round) => (
+        <RoundPreview key={round} round={round} rounds={builtRounds.length}
+          cells={cells.filter((c) => c.round === round)}
+          cols={cols} rows={rows} locked={locked} busy={busy} repeats={repeats} onSwap={swap} />
+      ))}
     </section>
+  );
+}
+
+// One board: its grid of money, then the questions behind it.
+//
+// Built from the SETUP page's own cell list rather than the live frame,
+// because the frame carries only the round in play -- that is what stops the
+// TV showing a board the room has not reached, and it would equally stop the
+// host checking round two before the doors open.
+function RoundPreview({
+  round, rounds, cells, cols, rows, locked, busy, repeats, onSwap,
+}: {
+  round: number;
+  rounds: number;
+  cells: BoardQuestion[];
+  cols: number;
+  rows: number;
+  locked: boolean;
+  busy: boolean;
+  repeats: boolean;
+  onSwap: (cellID: string) => void;
+}) {
+  if (cells.length === 0) return null;
+  const byPos = new Map(cells.map((c) => [`${c.col}:${c.row}`, c]));
+  const headers: string[] = [];
+  cells.forEach((c) => { headers[c.col] = c.topic; });
+  const value = cells[0].points;
+
+  return (
+    <div className="trivia-round">
+      {rounds > 1 ? (
+        <h3 className="trivia-qhead">
+          Round {round + 1} of {rounds} · {money(value)} a cell
+          {round > 0 ? ' — double the round before, chips included' : ''}
+        </h3>
+      ) : null}
+      <div className="trivia-board" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+        {headers.map((h, i) => <div key={`h${i}`} className="trivia-cat">{h}</div>)}
+        {Array.from({ length: rows }, (_, r) =>
+          Array.from({ length: cols }, (_, c) => {
+            const cell = byPos.get(`${c}:${r}`);
+            return (
+              <div key={`${c}:${r}`} className={cell?.played ? 'trivia-cell played' : 'trivia-cell'}>
+                {cell ? money(cell.points) : '—'}
+              </div>
+            );
+          }),
+        )}
+      </div>
+      <QuestionList cells={cells} locked={locked} busy={busy} repeats={repeats} onSwap={onSwap} />
+    </div>
   );
 }
 

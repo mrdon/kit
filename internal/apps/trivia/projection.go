@@ -27,13 +27,22 @@ type wireCommon struct {
 	ServerNow  int64  `json:"serverNow"`
 	DeadlineMs int64  `json:"deadlineMs"`
 	FinalWager bool   `json:"finalWager"`
+	// BoardRound is the board in play, ONE-BASED for the wire because every
+	// reader of it is a sentence in front of a room ("round 2 of 2"), and
+	// BoardRounds is how many the night holds. Both are 1 on a single-board
+	// night, which is what lets a surface hide the whole idea by testing
+	// boardRounds > 1.
+	BoardRound  int `json:"boardRound"`
+	BoardRounds int `json:"boardRounds"`
 }
 
 func commonOf(s *Snapshot) wireCommon {
 	return wireCommon{
 		Version: s.StateVersion, Game: s.Name, Title: s.Title, Phase: string(s.Phase),
 		ServerNow: s.ServerNow.UnixMilli(), DeadlineMs: s.DeadlineMillis(),
-		FinalWager: s.FinalWager,
+		FinalWager:  s.FinalWager,
+		BoardRound:  s.BoardRound + 1,
+		BoardRounds: max(s.BoardRounds, 1),
 	}
 }
 
@@ -224,7 +233,7 @@ func revealed(s *Snapshot) bool {
 	switch s.Phase {
 	case PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager, PhaseQuestion:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager, PhaseQuestion:
 		return false
 	}
 	return false
@@ -244,7 +253,7 @@ func questionVisible(s *Snapshot) bool {
 	switch s.Phase {
 	case PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager:
 		// WAGER IS THE LOAD-BEARING ONE. The final's prompt must not reach a
 		// phone or a TV while the room is still committing money against the
 		// category, and this is the line that stops it.
@@ -396,7 +405,7 @@ func betsVisible(s *Snapshot) bool {
 	switch s.Phase {
 	case PhaseBetting, PhaseScoring, PhasePodium:
 		return true
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseWager, PhaseQuestion, PhaseReveal:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager, PhaseQuestion, PhaseReveal:
 		return false
 	}
 	return false

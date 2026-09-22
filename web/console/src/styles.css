@@ -1924,6 +1924,14 @@ h2.view-title:hover {
    host reads it one category at a time, cheapest first. Grouped rather than
    laid out in grid order for exactly that reason: five columns of prompt text
    is unreadable, and nobody checks a board row by row. */
+/* One board's worth of the setup preview: grid, then its questions. The gap
+   is what keeps two rounds from reading as one long board. */
+.trivia-round + .trivia-round {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
 .trivia-qhead {
   margin: 1.5rem 0 0.25rem;
   font-size: 1rem;

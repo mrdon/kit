@@ -35,6 +35,7 @@ const (
 	ActionOpenBetting Action = "open_betting"
 	ActionScore       Action = "score"
 	ActionNext        Action = "next"
+	ActionResume      Action = "resume"
 	ActionFinal       Action = "final"
 	ActionExtend      Action = "extend"
 	ActionFinish      Action = "finish"
@@ -119,6 +120,10 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		return s.closePhase(ctx, game, PhaseBetting, false)
 	case ActionNext:
 		return s.afterScoring(ctx, game)
+	case ActionResume:
+		// The break is over. Nothing was on a clock, so there is no phase to
+		// close -- the host says the room is back and the next board opens.
+		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	case ActionFinal:
 		return s.openFinal(ctx, game, req.QuestionID)
 	case ActionExtend:
@@ -379,15 +384,20 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 	if err != nil {
 		return err
 	}
-	played := 0
-	for _, c := range cells {
-		if c.PlayedAt != nil {
-			played++
-		}
+	if len(cells) == 0 {
+		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	}
-	boardEmpty := len(cells) > 0 && played == len(cells)
+	round, total := CurrentBoardRound(cells), BoardRoundCount(cells)
 
-	if !boardEmpty {
+	if round < total {
+		// Crossing into a round nobody has touched yet is the seam in the
+		// night, and it is the only signal needed: the round just played is
+		// exhausted (or CurrentBoardRound would still be on it) and the next
+		// one has not started. Round 0 is excluded because the top of the
+		// night is not a break.
+		if round > 0 && !anyPlayedInRound(cells, round) {
+			return s.moveTo(ctx, game, PhaseIntermission, nil, nil)
+		}
 		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	}
 	if !game.FinalWager {
@@ -406,4 +416,14 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 	// Wait on the board with nothing left to pick: the host presses "Final
 	// question" when the room is ready for it.
 	return s.moveTo(ctx, game, PhaseBoard, nil, nil)
+}
+
+// anyPlayedInRound reports whether a round has been started at all.
+func anyPlayedInRound(cells []BoardCell, round int) bool {
+	for _, c := range cells {
+		if c.RoundIndex == round && c.PlayedAt != nil {
+			return true
+		}
+	}
+	return false
 }

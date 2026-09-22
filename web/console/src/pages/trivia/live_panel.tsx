@@ -135,6 +135,7 @@ export function cueFor(frame: HostFrame, secs: number | null): string {
     case 'setup':
     case 'lobby': return cueLobby(frame);
     case 'board': return cueBoard(frame);
+    case 'intermission': return cueIntermission(frame);
     case 'wager': return cueWager(frame, secs);
     case 'question': return cueQuestion(frame, secs);
     case 'reveal': return `Cards are up — betting opens in ${secs ?? 0}s`;
@@ -148,6 +149,15 @@ function cueLobby(frame: HostFrame): string {
   const n = frame.teams.length;
   if (!n) return 'No tables yet — the join code is on the screen';
   return `${n} ${plural(n, 'table')} in — start when ready`;
+}
+
+// The break. The host is holding the room, not a clock, so the cue tells them
+// what to say and what is coming rather than counting anything down.
+function cueIntermission(frame: HostFrame): string {
+  const next = frame.boardRound + 1;
+  const leader = [...frame.teams].sort((a, b) => b.score - a.score)[0];
+  const lead = leader ? ` ${leader.name} leads on ${money(leader.score)}.` : '';
+  return `Break — round ${next} of ${frame.boardRounds} is next, and everything in it is worth double.${lead}`;
 }
 
 function cueBoard(frame: HostFrame): string {

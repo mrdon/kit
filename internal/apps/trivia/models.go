@@ -25,11 +25,18 @@ var ErrNotFound = errors.New("trivia: not found")
 // this round was different.
 type Phase string
 
-// The nine phases. See the state machine in service.go.
+// The ten phases. See the state machine in service.go.
 const (
 	PhaseSetup Phase = "setup"
 	PhaseLobby Phase = "lobby"
 	PhaseBoard Phase = "board"
+	// PhaseIntermission is the break between board rounds: scores up, join
+	// code still on the wall, nothing on a clock. It exists because the
+	// point of a second board is the seam in the middle of the night --
+	// people get up, get a drink, argue about question four -- and a game
+	// that rolls straight from one board into the next does not give them
+	// that. The host ends it when the room is back.
+	PhaseIntermission Phase = "intermission"
 	// PhaseWager precedes the final's question and only the final's. The
 	// category is on the wall, the prompt is not, and every eligible table
 	// locks a number before it learns what it is betting on.

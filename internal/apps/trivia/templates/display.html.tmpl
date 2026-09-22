@@ -144,6 +144,17 @@
        mid-game otherwise arrives with nobody in the room noticing. -->
   <div id="jointoast"></div>
 
+  <!-- The break between boards. Scores stay up and the join code stays in
+       the corner, because the room is still the room -- people are at the bar,
+       not gone. Nothing counts down: the host decides when everybody is back. -->
+  <section class="screen" id="s-break">
+    <div class="breakwrap">
+      <h1 class="breakhead">Break</h1>
+      <p class="breaksub" id="break-next"></p>
+      <ol class="breakscores" id="break-scores"></ol>
+    </div>
+  </section>
+
   <section class="screen" id="s-hold">
     <div class="hold"><div><h1>{{ .Title }}</h1><p>Waiting for the host.</p></div></div>
   </section>

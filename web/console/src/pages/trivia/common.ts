@@ -2,7 +2,7 @@
 // pages/tasks/common.ts.
 
 export type Phase =
-  | 'setup' | 'lobby' | 'board' | 'wager' | 'question'
+  | 'setup' | 'lobby' | 'board' | 'intermission' | 'wager' | 'question'
   | 'reveal' | 'betting' | 'scoring' | 'podium';
 
 export interface TriviaSettings {
@@ -27,6 +27,10 @@ export interface TriviaSettings {
   // Off by default: a question the room has heard is not a question, and the
   // regulars are the people most likely to notice.
   repeat_questions: boolean;
+  // How many boards the night plays before the final. One is the game as it
+  // shipped; two is the pub hour, with a break in between. Each round has its
+  // own categories and is worth double the one before it.
+  board_rounds: number;
 }
 
 export interface TriviaGame {
@@ -85,6 +89,9 @@ export interface HostTeam {
 // before the doors open.
 export interface BoardQuestion {
   id: string;
+  // Which board this tile belongs to, zero-based. The setup page shows every
+  // round; the room only ever sees the one in play.
+  round: number;
   col: number;
   row: number;
   topic: string;
@@ -178,6 +185,10 @@ export interface HostFrame {
   serverNow: number;
   deadlineMs: number;
   finalWager: boolean;
+  // One-based, for the sentence a host reads out. Both are 1 on a
+  // single-board night, which is how every surface hides the whole idea.
+  boardRound: number;
+  boardRounds: number;
   teams: HostTeam[];
   board: HostCell[];
   round: HostRound | null;
@@ -228,12 +239,13 @@ export interface ImportReport {
 
 export type Action =
   | 'start' | 'pick_cell' | 'ask' | 'reveal' | 'open_betting'
-  | 'score' | 'next' | 'final' | 'extend' | 'finish';
+  | 'score' | 'next' | 'final' | 'extend' | 'finish' | 'resume';
 
 export const PHASE_LABEL: Record<Phase, string> = {
   setup: 'Teams joining',
   lobby: 'Teams joining',
   board: 'On the board',
+  intermission: 'Break',
   wager: 'Wagers in',
   question: 'Answering',
   // Named for what the host does next, not for what just happened: the cards
@@ -265,6 +277,9 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
       if (boardEmpty && finalWager && !finalPlayed) return { action: 'final', label: 'Final question' };
       if (boardEmpty) return { action: 'finish', label: 'Go to the podium' };
       return null; // waiting for the host to pick a cell
+    // Nothing is on a clock during the break. The host decides when the room
+    // has finished its drink, which is the entire point of the phase.
+    case 'intermission': return { action: 'resume', label: 'Start the next round' };
     // The wager is the one phase whose primary button reveals nothing and
     // scores nothing: it puts the question on the wall. Named for that.
     case 'wager': return { action: 'ask', label: 'Ask the question' };
@@ -295,8 +310,8 @@ export function money(n: number): string {
 
 // defaultSettings is the shipped game, mirrored from the server's
 // DefaultSettings so a new game is created with the same shape the docs and
-// the host's card describe: 5 categories x 2 rows at $500/$1000, ten
-// questions, two chips at $100/$200, and a final.
+// the host's card describe: one board of 5 categories x 2 rows at $100/$200,
+// ten questions, two chips at $100/$200, and a final.
 export function defaultSettings(): TriviaSettings {
   return {
     title: '',
@@ -311,5 +326,6 @@ export function defaultSettings(): TriviaSettings {
     wager_seconds: 30,
     grace_seconds: 5,
     repeat_questions: false,
+    board_rounds: 1,
   };
 }

@@ -497,6 +497,12 @@ A **set** is just a named group of questions, and each game draws from whichever
 
 **Build the board.** Pick your categories (or hit **Auto**) and Kit fills a 5 × 2 grid — ten questions, about half an hour. If a category doesn't have enough questions, you're told which one and by how much, at setup time rather than three questions into the night. "Not enough *fresh* questions" is a different problem with a different fix: upload more, delete an old game, or allow repeats.
 
+**Two boards and a break fill a pub hour.** Set **Board rounds** to 2 and the night becomes: a board, an intermission, a second board, then the final. The break is a real stop — the TV puts the standings up and the join code stays in the corner, nothing counts down, and the night resumes when you press the button. That is the point of it: people get up, get a drink, and argue about question four.
+
+Each round draws its own categories, so you tick ten rather than five (the first five are round one), and **everything in round two is worth double** — the cells and the chips together. That keeps the balance where round one set it and gives a table that had a bad first half a real way back. It adds no rule: the room is told the same five lines and plays them twice.
+
+Every cell inside a round is worth the same, on purpose. Questions carry no difficulty grade, and the board fills each column by topic and a shuffle — so a dearer row would look harder without being harder. Rounds escalate; rows don't.
+
 **Read the board before the room does.** Under the grid, the setup page lists what every tile will actually ask — grouped by category, cheapest first, with the answer beside each question. A category of ten good questions still has the one that landed wrong, or the one the regulars had last month at another pub, and you're the only person who can tell.
 
 **Swap** rotates a single tile to the next question in that category and leaves the other nine alone — no rebuilding a board you were happy with to fix one cell. Press it again for another. The column and the money never move, so nothing changes for anyone but you. Each category header says how many spare questions it has to reach for; at *nothing spare* the button is off, and the fix is the usual one: upload more, delete an old game, or allow repeats. Questions freeze once the game starts.

@@ -332,6 +332,11 @@ func (a *App) handleBuildBoard(w http.ResponseWriter, r *http.Request) {
 // resolveTopics turns the request into a column list, defaulting to the
 // topics with the most unused questions.
 func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req buildBoardRequest, datasetIDs []uuid.UUID) ([]string, error) {
+	// EVERY ROUND GETS ITS OWN CATEGORIES, so a two-round night wants twice
+	// the columns. They arrive as one flat list and are sliced per round in
+	// assignBoard, in the order the host ticked them -- the first five are
+	// round one, the next five are what the room comes back to.
+	want := game.BoardColumns * boardRoundsOf(game)
 	if len(req.Topics) > 0 && !req.Auto {
 		out := make([]string, 0, len(req.Topics))
 		for _, t := range req.Topics {
@@ -339,9 +344,9 @@ func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req
 				out = append(out, k)
 			}
 		}
-		if len(out) != game.BoardColumns {
-			return nil, fmt.Errorf("this board has %d columns but %d topics were chosen",
-				game.BoardColumns, len(out))
+		if len(out) != want {
+			return nil, fmt.Errorf("this night needs %d categories but %d were chosen",
+				want, len(out))
 		}
 		return out, nil
 	}
@@ -355,8 +360,8 @@ func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req
 		// does not silently change the host's columns underneath them.
 		seed = time.Now().UnixNano()
 	}
-	topics := PickTopics(hist, game.BoardColumns, game.BoardRows, seed)
-	if len(topics) < game.BoardColumns {
+	topics := PickTopics(hist, want, game.BoardRows, seed)
+	if len(topics) < want {
 		kind := "fresh question"
 		if game.RepeatQuestions {
 			kind = "question"
@@ -364,16 +369,43 @@ func (a *App) resolveTopics(r *http.Request, tenantID uuid.UUID, game *Game, req
 		if game.BoardRows != 1 {
 			kind += "s"
 		}
-		return nil, fmt.Errorf("only %d topics have at least %d %s — this board needs %d columns",
-			len(topics), game.BoardRows, kind, game.BoardColumns)
+		return nil, fmt.Errorf("only %d categories have at least %d %s — this night needs %d",
+			len(topics), game.BoardRows, kind, want)
 	}
 	return topics, nil
+}
+
+// boardRoundsOf reads the round count off a game, defaulting a zero to one so
+// a row written before migration 104 -- or a test that built a Game by hand
+// -- still describes a playable night.
+func boardRoundsOf(g *Game) int {
+	if g.BoardRounds < 1 {
+		return 1
+	}
+	return g.BoardRounds
 }
 
 // assignBoard runs the matching over the bank this game may draw on. The seed
 // is fresh per call, so pressing Auto twice gives two different boards from
 // the same questions.
 func (a *App) assignBoard(r *http.Request, tenantID uuid.UUID, game *Game, topics []string, datasetIDs []uuid.UUID) ([]BoardCell, error) {
-	seed := rand.Int63() //nolint:gosec // board variety, not secrecy
-	return drawBoard(r.Context(), a.pool, tenantID, game, topics, datasetIDs, seed)
+	rounds := boardRoundsOf(game)
+	cols := game.BoardColumns
+	// taken carries across rounds because the bank query cannot: it reads the
+	// database, and none of this is written until every round has been drawn.
+	taken := map[uuid.UUID]bool{}
+	out := make([]BoardCell, 0, cols*game.BoardRows*rounds)
+	for round := range rounds {
+		seed := rand.Int63() //nolint:gosec // board variety, not secrecy
+		slice := topics[round*cols : (round+1)*cols]
+		cells, err := drawRound(r.Context(), a.pool, tenantID, game, slice, datasetIDs, seed, round, taken)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range cells {
+			taken[c.QuestionID] = true
+		}
+		out = append(out, cells...)
+	}
+	return out, nil
 }
