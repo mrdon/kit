@@ -280,7 +280,15 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
       return null; // waiting for the host to pick a cell
     // Nothing is on a clock during the break. The host decides when the room
     // has finished its drink, which is the entire point of the phase.
-    case PHASE.INTERMISSION: return { action: ACTION.RESUME, label: 'Start the next round' };
+    //
+    // WHAT IS NEXT depends on whether a board is left. The break before the
+    // final is still a break -- the biggest one of the night -- but resuming
+    // from it opens the wager, not another board.
+    case PHASE.INTERMISSION:
+      if (boardEmpty && finalWager && !finalPlayed) {
+        return { action: ACTION.FINAL, label: 'Start the final' };
+      }
+      return { action: ACTION.RESUME, label: 'Start the next round' };
     // The wager is the one phase whose primary button reveals nothing and
     // scores nothing: it puts the question on the wall. Named for that.
     case PHASE.WAGER: return { action: ACTION.ASK, label: 'Ask the question' };

@@ -164,7 +164,9 @@ func (f *fixture) openFinal(game *Game, teams ...*Team) *Game {
 	}
 	f.playOneRound(game, answers)
 	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	// The boards are done, so the night is at the break that precedes the
+	// final -- the biggest one of the night. The final opens out of it.
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseIntermission})
 	g := f.reload(game.ID)
 	if g.Phase != PhaseWager {
 		f.t.Fatalf("the final opened into %s, want wager — the bet must precede the question", g.Phase)

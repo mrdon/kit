@@ -320,7 +320,7 @@ func TestHTTPRefusesAJoinOnceTheFinalBegins(t *testing.T) {
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 	f.playOneRound(game, map[uuid.UUID]string{a.ID: "10"})
 	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseIntermission})
 
 	rec := f.request(http.MethodPost, f.gamePath(game)+"/join", joinRequest{Name: "Latecomers"}, nil)
 	if rec.Code != http.StatusBadRequest {

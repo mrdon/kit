@@ -10,6 +10,12 @@ function renderBreak() {
      round about to be played -- the break is entered by crossing into it. */
   /* The frame already carries the NEXT round's cells and chips, so the wall
      names the real numbers instead of asserting a multiple. */
+  /* The last break has the FINAL behind it rather than a board, so there are
+     no new cell or chip values to put on the wall. */
+  if (boardIsSpent() && state.finalWager) {
+    next.textContent = 'The final is next — one question, and you stake on it first';
+    return;
+  }
   var cell = state.board && state.board[0] ? money(state.board[0].points) + ' a cell · ' : '';
   var chips = (state.tokens || []).map(function (t) { return money(t); }).join(' / ');
   next.textContent = 'Round ' + state.roundNumber + ' of ' + state.roundCount +

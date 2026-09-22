@@ -494,7 +494,7 @@ func TestTheFinalCountsAsARound(t *testing.T) {
 	f.playNextCell(f.reload(game.ID), team)
 	f.do(game.ID, ActionRequest{Action: ActionResume, FromPhase: PhaseIntermission})
 	f.playNextCell(f.reload(game.ID), team)
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseIntermission})
 
 	snap, err = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	if err != nil {
@@ -537,14 +537,15 @@ func TestAddingARoundFromASpentBoardGoesThroughTheBreak(t *testing.T) {
 	s.BoardColumns, s.BoardRows = 1, 1
 	s.CellValues = []int{100}
 	s.BoardRounds = 1
-	s.FinalWager = true
+	// No final, which is now the only way to be sitting on a SPENT BOARD: a
+	// night with a final gets its break as soon as the boards are done.
+	s.FinalWager = false
 	game := f.newGame(s, nil)
 	f.buildRounds(game, tenTopics()[:1])
 	team := f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 	f.playNextCell(f.reload(game.ID), team)
 
-	// Waiting on a spent board, final still to come.
 	if got := f.reload(game.ID).Phase; got != PhaseBoard {
 		t.Fatalf("phase = %q, want it waiting on the spent board", got)
 	}
@@ -570,5 +571,61 @@ func TestTheRulesNameTheRoundsOwnChips(t *testing.T) {
 	}
 	if strings.Contains(second[3], "$100") {
 		t.Fatalf("round two rules mention a chip nobody has: %q", second[3])
+	}
+}
+
+// The final gets a break in front of it too -- the biggest one of the night.
+// Going from a struck-through board straight into a blind wager gave the one
+// moment everybody came for no run-up at all.
+func TestTheFinalGetsABreakInFrontOfIt(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	s.FinalWager = true
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:1])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playNextCell(f.reload(game.ID), team)
+
+	if got := f.reload(game.ID).Phase; got != PhaseIntermission {
+		t.Fatalf("phase with the boards done and a final to come = %q, want the break", got)
+	}
+	// And the break ends into the final rather than into another board.
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseIntermission})
+	g := f.reload(game.ID)
+	if g.CurrentRoundID == nil {
+		t.Fatal("no round opened out of the break")
+	}
+	round, err := GetRound(f.ctx, f.pool, f.tenant.ID, *g.CurrentRoundID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !round.IsFinal {
+		t.Fatal("the round out of the last break is not the final")
+	}
+}
+
+// A night with no final still has no break at the end -- there is nothing
+// behind it to break FOR.
+func TestNoFinalMeansNoBreakAtTheEnd(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	s.FinalWager = false
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:1])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playNextCell(f.reload(game.ID), team)
+
+	if got := f.reload(game.ID).Phase; got != PhaseBoard {
+		t.Fatalf("phase = %q, want it waiting on the spent board with no break", got)
 	}
 }

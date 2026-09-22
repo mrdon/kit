@@ -67,6 +67,15 @@ export function useStream(): Stream {
       setConnected(true);
       lastFrameAt.current = Date.now();
     });
+    // The server's liveness beat. It carries nothing and is not a frame — it
+    // exists so that a quiet game is distinguishable from a dead socket.
+    // Without it the watchdog below fires through every intermission and
+    // every wait on an emptied board, and the phone spends the break
+    // reconnecting instead of showing the standings.
+    es.addEventListener('ping', () => {
+      setConnected(true);
+      lastFrameAt.current = Date.now();
+    });
     es.addEventListener('error', () => setConnected(false));
     esRef.current = es;
   }, [apply]);

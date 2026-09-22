@@ -181,13 +181,22 @@ function Playing({
 // phone just started handing out bigger chips.
 function Break({ frame }: { frame: PlayerFrame }) {
   const chips = frame.tokens.map((t) => money(t)).join(' and ');
+  // The last break of the night has the final behind it, not a board, so
+  // there are no new cell or chip values to promise.
+  const boardSpent = frame.board.length > 0 && frame.board.every((c) => c.played);
+  const finalNext = boardSpent && frame.finalWager;
   return (
     <div className="body">
       <h1>Break</h1>
       <p className="sub" style={{ textAlign: 'center' }}>
         Back in a few minutes — get a drink.
       </p>
-      {frame.roundCount > 1 ? (
+      {finalNext ? (
+        <p className="sub" style={{ textAlign: 'center' }}>
+          <strong>The final is next.</strong> One question — you&rsquo;ll see the category and
+          stake an amount before you get it.
+        </p>
+      ) : frame.roundCount > 1 ? (
         <p className="sub" style={{ textAlign: 'center' }}>
           <strong>Round {frame.roundNumber} of {frame.roundCount}</strong> is next.
           Every question is worth more, and your chips go up to {chips}.

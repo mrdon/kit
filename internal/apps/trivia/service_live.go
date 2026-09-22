@@ -417,6 +417,16 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 			}
 		}
 	}
+	// The boards are done and a final is still to come: that is a break too,
+	// and the biggest one of the night. The room is about to do the single
+	// moment everybody came for, so it gets the same beat the other rounds
+	// get -- standings up, a last drink, and the host starts it when the room
+	// is back. Going straight from a struck-through board into a blind wager
+	// gave the final no run-up at all.
+	if game.FinalWager {
+		return s.moveTo(ctx, game, PhaseIntermission, nil, nil)
+	}
+
 	// Wait on the emptied board. THE GAME DOES NOT END ITSELF.
 	//
 	// With a final this was always the behaviour -- the host presses "Final

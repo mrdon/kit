@@ -171,6 +171,11 @@ function cueIntermission(frame: HostFrame): string {
   // The frame already carries the NEXT round's cells and chips — the break is
   // entered by crossing into it — so the cue can name the real numbers rather
   // than assert a multiple.
+  // The break before the final has no board behind it, so it names the round
+  // rather than money nobody is about to play for.
+  if (boardIsEmpty(frame) && frame.finalWager && !frame.progress.finalPlayed) {
+    return `Break — the final is next. One question, and they wager on it first.${lead}`;
+  }
   const cell = frame.board[0] ? `${money(frame.board[0].points)} a cell, ` : '';
   const chips = frame.tokens.map((t) => money(t)).join(' / ');
   return `Break — ${roundLabel(frame).toLowerCase()} is next: ${cell}chips ${chips}.${lead}`;

@@ -52,12 +52,16 @@ function connect() {
     try { apply(JSON.parse(ev.data)); } catch (e) { /* a malformed frame is not worth a blank wall */ }
   });
   es.addEventListener('open', function () { lastFrameAt = Date.now(); setDot(false); });
+  /* The liveness beat — see web_stream.go. A break or an emptied board can
+     sit unchanged for minutes, and without this the watchdog below reads that
+     quiet as a dead socket and rebuilds the stream under the room. */
+  es.addEventListener('ping', function () { lastFrameAt = Date.now(); setDot(false); });
   es.addEventListener('error', function () { setDot(true); });
 }
 
 /* A suspended EventSource frequently LOOKS open and is dead, so silence is
-   the signal rather than an error event: no frame and no keep-alive for
-   20s means reopen. */
+   the signal rather than an error event: no frame and no ping for 20s means
+   reopen. The server beats every 8s, so this only fires on a real stall. */
 setInterval(function () {
   var quiet = Date.now() - lastFrameAt;
   if (quiet > 20000) { setDot(true); connect(); poll(); }

@@ -11,9 +11,31 @@ import (
 	"github.com/mrdon/kit/internal/sse"
 )
 
-// snapshotEvent is the only event type on these streams. Every frame is a
-// full snapshot, so there is nothing else to name.
+// snapshotEvent carries a full snapshot. Every frame is one, so there is
+// nothing else to name about it.
 const snapshotEvent sse.EventType = "state"
+
+// pingEvent is the liveness beat, and it exists because SILENCE IS NOT
+// DISTINGUISHABLE FROM DEATH on a phone.
+//
+// The client cannot trust an EventSource that looks open -- a suspended iOS
+// tab frequently does -- so it treats a gap with no frames as a dead
+// connection and reconnects. That was survivable when the quiet stretches
+// were a few seconds between questions. It stopped being survivable when the
+// game grew an intermission the host holds for as long as the room wants a
+// drink, and an emptied board that waits indefinitely: nothing changes, so
+// nothing is published, so every phone in the room tears its stream down and
+// rebuilds it every twenty seconds for eight minutes, flashing "reconnecting"
+// the whole time.
+//
+// An SSE COMMENT would keep the socket alive but fire no event in the
+// browser, so the client's watchdog would still not see it. This is a real
+// named event with no payload for exactly that reason.
+const pingEvent sse.EventType = "ping"
+
+// pingEvery is well inside the client's 20s silence watchdog, with room for
+// one to be lost.
+const pingEvery = 8 * time.Second
 
 // streamGame is the shared plumbing behind all three streams. project turns
 // the snapshot into whatever that surface is allowed to see.
@@ -69,6 +91,9 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, gameID, tenantI
 		return
 	}
 
+	beat := time.NewTicker(pingEvery)
+	defer beat.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
@@ -78,6 +103,12 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, gameID, tenantI
 				return
 			}
 			if !emit(next) {
+				return
+			}
+		case <-beat.C:
+			// Nothing has changed and that is fine -- say so, rather than
+			// letting the room read the silence as a broken connection.
+			if err := writer.Emit(pingEvent, struct{}{}); err != nil {
 				return
 			}
 		}

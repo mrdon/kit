@@ -66,6 +66,14 @@ export function useHostStream(gameId: string | undefined): HostStream {
       setConnected(true);
       lastFrameAt.current = Date.now();
     });
+    // The server's liveness beat — see web_stream.go. A quiet game (a break,
+    // an emptied board waiting on the host) publishes nothing, and without
+    // this the silence watchdog reads that as a dead socket and reconnects
+    // every twenty seconds while the host is mid-sentence.
+    es.addEventListener('ping', () => {
+      setConnected(true);
+      lastFrameAt.current = Date.now();
+    });
     es.addEventListener('error', () => setConnected(false));
     esRef.current = es;
   }, [gameId, apply]);

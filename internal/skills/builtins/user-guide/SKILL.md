@@ -529,7 +529,9 @@ From the live page you pick a cell, then press one button per beat: **Reveal ans
 
 The final is **on by default**. You can switch it off per game (**Settings → Final wager**), and with it off scores only ever go up and no stake control appears on any phone — the setting to use for a first night, when the one rule where you can *lose* money is the one people get wrong.
 
-**The night never ends itself.** When the last cell is played the board waits, whether or not there is a final to come, and you choose what happens next: **Final question**, **Add another round**, or **Go to the podium**. The room is in front of you and the decision is yours, not the board's.
+**There's a break before the final too** — the biggest one of the night. When the last board is spent, the game goes to the break rather than straight into a blind wager: standings up, a last drink, and you press **Start the final** when the room is back.
+
+**The night never ends itself.** You choose what happens next — **Start the final**, **Add a board**, or **Go to the podium**. The room is in front of you and the decision is yours, not the board's.
 
 **Ask about it afterwards.** In Slack:
 
