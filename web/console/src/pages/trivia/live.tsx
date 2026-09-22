@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
-import { ACTION, PHASE, PHASE_LABEL, money, roundLabel, type HostFrame, type Phase } from './common';
+import { ACTION, PHASE, PHASE_LABEL, boardIsEmpty, finishIsOffered, money, roundLabel, type HostFrame, type Phase } from './common';
 import { StatusPanel } from './live_panel';
 import { LastRoundRecap } from './live_lastround';
 
@@ -55,6 +55,16 @@ export default function TriviaLive() {
 
   const secs = msLeft === null ? null : Math.ceil(msLeft / 1000);
   const inLobby = frame.phase === PHASE.LOBBY || frame.phase === PHASE.SETUP;
+  // Once the night has reached its own end, "Go to the podium" IS the way to
+  // finish, and it is the primary button. "End game" sends the identical
+  // action, so offering both put a red two-tap "abandon" next to a one-tap
+  // "finish properly" that did exactly the same thing. The red one goes back
+  // to meaning what it says: bailing out mid-night because the kitchen is
+  // closing, which is the only case that deserves a confirmation.
+  const endedNaturally = finishIsOffered(
+    frame.phase, boardIsEmpty(frame), frame.finalWager,
+    frame.progress.finalPlayed, game.settings.reveal_seconds === 0,
+  );
   // The cards earn the full width from the moment they go up until the round
   // is put away — that is the stretch where the host is reading them out,
   // watching chips land on them and calling the winner. Outside it they
@@ -93,7 +103,7 @@ export default function TriviaLive() {
             <button className="btn" disabled={busy} onClick={() => void act({ action: ACTION.START })}>
               Start the game
             </button>
-          ) : ending ? (
+          ) : endedNaturally ? null : ending ? (
             <>
               <button className="btn btn-danger" disabled={busy}
                 onClick={() => void act({ action: ACTION.FINISH })}>

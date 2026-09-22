@@ -292,6 +292,17 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
   }
 }
 
+// Whether the night has reached its natural end, so the primary button is
+// already "Go to the podium".
+//
+// Asked through primaryAction rather than by restating its conditions, so the
+// two can never disagree about what the host is being offered.
+export function finishIsOffered(
+  phase: Phase, boardEmpty: boolean, finalWager: boolean, finalPlayed: boolean, skipReveal = false,
+): boolean {
+  return primaryAction(phase, boardEmpty, finalWager, finalPlayed, skipReveal)?.action === ACTION.FINISH;
+}
+
 // The SECOND button, when the night has a choice to offer rather than a next
 // step to take.
 //
