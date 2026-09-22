@@ -290,6 +290,23 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
   }
 }
 
+// The SECOND button, when the night has a choice to offer rather than a next
+// step to take.
+//
+// Kept apart from primaryAction on purpose: that one is the thing the host
+// presses without reading, always in the same place, and it must not become a
+// pair of equal options. This is the one that only appears at the two moments
+// a host is genuinely asked a question by the room — the break, and an
+// emptied board with the final still to come.
+export function extraAction(phase: Phase, boardEmpty: boolean):
+  { action: Action; label: string } | null {
+  if (phase === PHASE.INTERMISSION) return { action: ACTION.ADD_ROUND, label: 'Add another round' };
+  if (phase === PHASE.BOARD && boardEmpty) {
+    return { action: ACTION.ADD_ROUND, label: 'Add another round' };
+  }
+  return null;
+}
+
 // The reason in the host's words, appended to the pick line. Short, because
 // it is read aloud over a room: the sentence has to end before anybody stops
 // listening.

@@ -306,6 +306,47 @@ func ReplaceBoard(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid
 	return nil
 }
 
+// AppendBoardCells adds cells to a board without disturbing what is there.
+//
+// The counterpart to ReplaceBoard, and deliberately not a flag on it: replace
+// is a setup-time act over a board nobody has played, while this runs MID-GAME
+// against a board with scores already hanging off it. A single function with
+// a boolean would put those two a typo apart.
+func AppendBoardCells(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, cells []BoardCell) error {
+	if len(cells) == 0 {
+		return nil
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning board append: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	ids := make([]uuid.UUID, 0, len(cells))
+	for _, c := range cells {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app_trivia_board_cells
+			    (tenant_id, game_id, round_index, col_index, row_index, topic, points, question_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+			tenantID, gameID, c.RoundIndex, c.ColIndex, c.RowIndex, c.Topic, c.Points, c.QuestionID); err != nil {
+			return fmt.Errorf("inserting board cell: %w", err)
+		}
+		ids = append(ids, c.QuestionID)
+	}
+	if err := MarkQuestionsUsed(ctx, tx, tenantID, ids); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE app_trivia_games SET state_version = state_version + 1, updated_at = now()
+		  WHERE tenant_id = $1 AND id = $2`, tenantID, gameID); err != nil {
+		return fmt.Errorf("bumping state version: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing board append: %w", err)
+	}
+	return nil
+}
+
 // ListBoardCells returns a game's board in display order.
 func ListBoardCells(ctx context.Context, q Querier, tenantID, gameID uuid.UUID) ([]BoardCell, error) {
 	rows, err := q.Query(ctx, `

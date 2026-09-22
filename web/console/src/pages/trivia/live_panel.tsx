@@ -1,4 +1,4 @@
-import { ACTION, boardIsEmpty, money, PHASE, primaryAction, type HostFrame, type HostTeam } from './common';
+import { ACTION, boardIsEmpty, extraAction, money, PHASE, primaryAction, type HostFrame, type HostTeam } from './common';
 import { pickLine, signed } from './live_lastround';
 import { TeamBoard } from './live_tables';
 
@@ -23,6 +23,7 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
   onAct: (body: Record<string, unknown>) => void;
 }) {
   const primary = primaryAction(frame.phase, boardIsEmpty(frame), frame.finalWager, frame.progress.finalPlayed, skipReveal);
+  const extra = extraAction(frame.phase, boardIsEmpty(frame));
 
   return (
     <aside className="trivia-panel">
@@ -55,6 +56,15 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
         {primary ? (
           <button className="btn" disabled={busy} onClick={() => onAct({ action: primary.action })}>
             {primary.label}
+          </button>
+        ) : null}
+        {/* Ghost, not primary: "another round?" is the room's decision and
+            the host relays it, so it must not sit in the same place and the
+            same weight as the button they press without looking. */}
+        {extra ? (
+          <button className="btn btn-ghost btn-spaced" disabled={busy}
+            onClick={() => onAct({ action: extra.action })}>
+            {extra.label}
           </button>
         ) : null}
         {secs !== null ? (
@@ -159,7 +169,12 @@ function cueIntermission(frame: HostFrame): string {
   const next = frame.boardRound;
   const leader = [...frame.teams].sort((a, b) => b.score - a.score)[0];
   const lead = leader ? ` ${leader.name} leads on ${money(leader.score)}.` : '';
-  return `Break — round ${next} of ${frame.boardRounds} is next, and everything in it is worth double.${lead}`;
+  // The frame already carries the NEXT round's cells and chips — the break is
+  // entered by crossing into it — so the cue can name the real numbers rather
+  // than assert a multiple.
+  const cell = frame.board[0] ? `${money(frame.board[0].points)} a cell, ` : '';
+  const chips = frame.tokens.map((t) => money(t)).join(' / ');
+  return `Break — round ${next} of ${frame.boardRounds} is next: ${cell}chips ${chips}.${lead}`;
 }
 
 function cueBoard(frame: HostFrame): string {

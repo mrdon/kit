@@ -8,8 +8,12 @@ function renderBreak() {
   var next = document.getElementById('break-next');
   /* boardRound is ALREADY one-based on the wire, and it already points at the
      round about to be played -- the break is entered by crossing into it. */
+  /* The frame already carries the NEXT round's cells and chips, so the wall
+     names the real numbers instead of asserting a multiple. */
+  var cell = state.board && state.board[0] ? money(state.board[0].points) + ' a cell · ' : '';
+  var chips = (state.tokens || []).map(function (t) { return money(t); }).join(' / ');
   next.textContent = 'Round ' + state.boardRound + ' of ' + state.boardRounds +
-    ' is next — every question and every chip worth double.';
+    ' is next — ' + cell + 'chips ' + chips;
 
   var host = document.getElementById('break-scores');
   host.innerHTML = '';

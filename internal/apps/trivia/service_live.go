@@ -36,6 +36,7 @@ const (
 	ActionScore       Action = "score"
 	ActionNext        Action = "next"
 	ActionResume      Action = "resume"
+	ActionAddRound    Action = "add_round"
 	ActionFinal       Action = "final"
 	ActionExtend      Action = "extend"
 	ActionFinish      Action = "finish"
@@ -120,6 +121,10 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		return s.closePhase(ctx, game, PhaseBetting, false)
 	case ActionNext:
 		return s.afterScoring(ctx, game)
+	case ActionAddRound:
+		// Legal from the break and from an emptied board, which are the two
+		// moments a host is actually asked "shall we do another?".
+		return s.AddBoardRound(ctx, game.TenantID, game.ID)
 	case ActionResume:
 		// The break is over. Nothing was on a clock, so there is no phase to
 		// close -- the host says the room is back and the next board opens.

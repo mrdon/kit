@@ -161,7 +161,8 @@ export function BoardPanel({
       {builtRounds.map((round) => (
         <RoundPreview key={round} round={round} rounds={builtRounds.length}
           cells={cells.filter((c) => c.round === round)}
-          cols={cols} rows={rows} locked={locked} busy={busy} repeats={repeats} onSwap={swap} />
+          cols={cols} rows={rows} tokenValues={game.settings?.token_values ?? [100, 200]}
+          locked={locked} busy={busy} repeats={repeats} onSwap={swap} />
       ))}
     </section>
   );
@@ -174,10 +175,11 @@ export function BoardPanel({
 // TV showing a board the room has not reached, and it would equally stop the
 // host checking round two before the doors open.
 function RoundPreview({
-  round, rounds, cells, cols, rows, locked, busy, repeats, onSwap,
+  round, rounds, cells, cols, rows, tokenValues, locked, busy, repeats, onSwap,
 }: {
   round: number;
   rounds: number;
+  tokenValues: number[];
   cells: BoardQuestion[];
   cols: number;
   rows: number;
@@ -191,13 +193,16 @@ function RoundPreview({
   const headers: string[] = [];
   cells.forEach((c) => { headers[c.col] = c.topic; });
   const value = cells[0].points;
+  // The chips scale with the cells, so the header can state both and nobody
+  // has to be told a rule about multiples.
+  const chips = tokenValues.map((v) => v * (round + 1));
 
   return (
     <div className="trivia-round">
       {rounds > 1 ? (
         <h3 className="trivia-qhead">
-          Round {round + 1} of {rounds} · {money(value)} a cell
-          {round > 0 ? ' — double the round before, chips included' : ''}
+          Round {round + 1} of {rounds} · {money(value)} a cell · chips{' '}
+          {chips.map((c) => money(c)).join(' / ')}
         </h3>
       ) : null}
       <div className="trivia-board" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>

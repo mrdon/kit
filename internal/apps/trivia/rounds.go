@@ -9,23 +9,30 @@ package trivia
 
 // boardMultiplier is what a board round is worth against the first one.
 //
-// Doubling, and it applies to the CELLS AND THE CHIPS TOGETHER. That pairing
-// is the whole point: only the table that wrote the winning answer takes a
-// cell, but every table bets every round, so the betting is meant to be the
-// bigger channel. Double the cells alone and knowing starts to outrun reading
-// the room; double the chips alone and the board stops mattering. Doubling
-// both leaves the balance exactly where round one set it and simply raises
-// the stakes -- which is Double Jeopardy's actual job, comeback potential. A
-// table that had a bad first half is still live after the break.
+// LINEAR -- round one at 1x, round two at 2x, round three at 3x -- and it
+// applies to the CELLS AND THE CHIPS TOGETHER. That pairing is the whole
+// point: only the table that wrote the winning answer takes a cell, but every
+// table bets every round, so the betting is meant to be the bigger channel.
+// Scale the cells alone and knowing starts to outrun reading the room; scale
+// the chips alone and the board stops mattering. Scaling both leaves the
+// balance exactly where round one set it and simply raises the stakes.
+//
+// It used to double (1, 2, 4, 8), which is what Jeopardy does and is fine at
+// two rounds. It compounds badly past that: at four rounds the last board is
+// worth 53% of the night and everything before it is noise -- a table can
+// play badly for two hours and win on the last board, which is not comeback
+// potential, it is erasure, and the tables that played well will say so.
+// Linear keeps a round-one sweep worth a quarter of a round-four one instead
+// of an eighth, so the early boards still decide something in a long night.
 //
 // There is deliberately no setting for this. A per-round value knob would be
-// a rule the host has to explain to the room; a flat "round two is worth
-// double" is one sentence and nobody has to be told it twice.
+// a rule the host has to explain to the room; "each round is worth one more
+// than the last" is a sentence nobody has to be told twice.
 func boardMultiplier(round int) int {
-	if round <= 0 {
+	if round < 0 {
 		return 1
 	}
-	return 1 << round
+	return round + 1
 }
 
 // scaleValues applies a round's multiplier to a list of chip values.

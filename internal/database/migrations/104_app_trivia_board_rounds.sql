@@ -15,10 +15,15 @@
 -- So the night grows along the round axis instead. Each round is its own
 -- small board with its own categories, every cell in it worth the same -- no
 -- ladder, nothing to imply a difficulty that is not there -- and the whole
--- round doubles: round one is $100 cells and $100/$200 chips, round two is
--- $200 cells and $200/$400 chips. That is Double Jeopardy's actual job,
--- which is comeback potential: a table that had a bad first half is still
--- live after the break because everything after it swings twice as hard.
+-- round scales with it: round one is $100 cells and $100/$200 chips, round
+-- two is $200 and $200/$400, round three $300 and $300/$600. That is Double
+-- Jeopardy's actual job, which is comeback potential: a table that had a bad
+-- first half is still live after the break because everything after it
+-- swings harder.
+--
+-- Linear rather than doubling, because doubling compounds: by round four the
+-- last board would be worth more than everything before it put together, and
+-- a night can grow to three rounds here.
 --
 -- Crucially this adds NO RULE. The room is told the same five lines; it just
 -- plays them twice with a break. See Rules() -- if the game cannot be

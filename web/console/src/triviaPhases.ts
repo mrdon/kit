@@ -42,6 +42,8 @@ export const ACTION = {
   FINISH: 'finish',
   // Ends the break and opens the next board.
   RESUME: 'resume',
+  // Appends one more board to a night that is going well.
+  ADD_ROUND: 'add_round',
 } as const;
 
 export type Action = (typeof ACTION)[keyof typeof ACTION];

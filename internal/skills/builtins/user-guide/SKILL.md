@@ -499,7 +499,9 @@ A **set** is just a named group of questions, and each game draws from whichever
 
 **Two boards and a break fill a pub hour**, and that is the default — Jeopardy's shape. The night runs: a board, an intermission, a second board, then the final. Set **Board rounds** to 1 for a short night or 3 for a long one; it does not count the final. The break is a real stop — the TV puts the standings up and the join code stays in the corner, nothing counts down, and the night resumes when you press the button. That is the point of it: people get up, get a drink, and argue about question four.
 
-Each round draws its own categories, so you tick ten rather than five (the first five are round one), and **everything in round two is worth double** — the cells and the chips together. That keeps the balance where round one set it and gives a table that had a bad first half a real way back. It adds no rule: the room is told the same five lines and plays them twice.
+Each round draws its own categories, so you tick ten rather than five (the first five are round one), and **each round is worth one more than the last** — $100 a cell, then $200, then $300, with the chips scaling to match. That keeps the balance where round one set it and gives a table that had a bad first half a real way back. It adds no rule: the room is told the same five lines and plays them twice.
+
+**Going well? Add a round while it runs.** At the break, and on an emptied board with the final still to come, the live page offers **Add another round** — a fresh board of categories the night hasn't used, at the next value up. You don't have to guess the room's appetite at seven o'clock. It stops at three rounds, and it will tell you if the question bank has run out of unused categories rather than failing after you've announced it.
 
 Every cell inside a round is worth the same, on purpose. Questions carry no difficulty grade, and the board fills each column by topic and a shuffle — so a dearer row would look harder without being harder. Rounds escalate; rows don't.
 

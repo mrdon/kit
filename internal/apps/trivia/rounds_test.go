@@ -57,11 +57,11 @@ func tenTopics() []string {
 	}
 }
 
-// A round is worth double the one before it -- CELLS AND CHIPS TOGETHER.
-// Doubling only one of them is the bug this pins: double the cells alone and
-// knowing outruns reading the room, double the chips alone and the board
-// stops mattering.
-func TestSecondRoundDoublesCellsAndChips(t *testing.T) {
+// Each round is worth one more than the one before -- CELLS AND CHIPS
+// TOGETHER. Scaling only one of them is the bug this pins: scale the cells
+// alone and knowing outruns reading the room, scale the chips alone and the
+// board stops mattering.
+func TestLaterRoundsScaleCellsAndChipsTogether(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(tenTopics(), 4)
 	s := twoRoundSettings()
@@ -69,7 +69,7 @@ func TestSecondRoundDoublesCellsAndChips(t *testing.T) {
 	cells := f.buildRounds(game, tenTopics())
 
 	for _, c := range cells {
-		want := s.CellValues[0] * (1 << c.RoundIndex)
+		want := s.CellValues[0] * (c.RoundIndex + 1)
 		if c.Points != want {
 			t.Fatalf("a round-%d cell is worth %d, want %d", c.RoundIndex, c.Points, want)
 		}
@@ -373,5 +373,88 @@ func TestProgressCountsTheNightNotTheRound(t *testing.T) {
 	}
 	if got := phaseSentence(snap); !strings.Contains(got, "1 of 2") {
 		t.Fatalf("phaseSentence = %q, want it to count the night", got)
+	}
+}
+
+// The host decides at the bar, not at setup. A night that is going well has
+// to be extendable without rebuilding the board the room is playing.
+func TestTheHostCanAddARoundMidGame(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	// The final ON, because that is what leaves the night WAITING on an
+	// emptied board -- which is the moment a host is asked "another one?".
+	// With it off the game goes straight to the podium and there is no such
+	// moment; see TestFinalWagerOffGoesStraightToPodium.
+	s.FinalWager = true
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:1])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+
+	// One round, one cell: playing it empties the night, and with no final
+	// the game would otherwise be over.
+	f.playNextCell(f.reload(game.ID), team)
+
+	if err := f.svc.AddBoardRound(f.ctx, f.tenant.ID, game.ID); err != nil {
+		t.Fatalf("adding a round: %v", err)
+	}
+	cells, err := ListBoardCells(f.ctx, f.pool, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := BoardRoundCount(cells); got != 2 {
+		t.Fatalf("the night has %d rounds, want 2", got)
+	}
+
+	// The new board is the round in play, it is worth twice round one, and
+	// the question it asks was not already asked tonight.
+	snap, err := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Board) != 1 || snap.Board[0].Points != 200 {
+		t.Fatalf("added board = %+v, want one cell worth 200", snap.Board)
+	}
+	if snap.TokenValues[0] != 200 {
+		t.Fatalf("chips are %v, want them scaled with the cells", snap.TokenValues)
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, c := range cells {
+		if seen[c.QuestionID] {
+			t.Fatalf("the added round repeats a question from earlier tonight")
+		}
+		seen[c.QuestionID] = true
+	}
+	// And a fresh category, not a second helping of the first one.
+	if cellTopicKey(cells[0]) == cellTopicKey(cells[1]) {
+		t.Fatalf("the added round reuses category %q", cells[1].Topic)
+	}
+}
+
+// A bank with nothing left has to say so in a sentence the host can act on,
+// not fail silently at the moment they have told the room there is more.
+func TestAddingARoundSaysSoWhenTheBankIsSpent(t *testing.T) {
+	f := newFixture(t)
+	// One category, and round one used it.
+	f.seedBank([]string{"space"}, 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	s.FinalWager = true
+	game := f.newGame(s, []string{"space"})
+	f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+
+	err := f.svc.AddBoardRound(f.ctx, f.tenant.ID, game.ID)
+	if err == nil {
+		t.Fatal("adding a round with no unused categories was allowed")
+	}
+	if !strings.Contains(err.Error(), "another round") {
+		t.Fatalf("refusal is not actionable: %v", err)
 	}
 }
