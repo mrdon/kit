@@ -303,6 +303,36 @@ export function pickerWhy(reason: PickerReason): string {
   }
 }
 
+// Roughly how long a night of this shape runs, in minutes.
+//
+// The reason this exists on the setup page at all: a host is not choosing
+// "5 columns, 2 rows, 1 round", they are choosing "an hour". Three abstract
+// numbers do not answer that question, and the only way to find out used to
+// be to run the night and see.
+//
+// HONEST ABOUT ITS ASSUMPTIONS, because a confident wrong number is worse
+// than none. The clocks are exact — they come from these same settings — but
+// the human time between them is an estimate: reading the answer out, the
+// scores landing, whoever picks taking a moment to pick. Thirty seconds a
+// question is what that costs in a room that is enjoying itself, and it is
+// the single biggest source of error here.
+const SECONDS_OF_TALK_PER_QUESTION = 30;
+const MINUTES_PER_BREAK = 8;
+
+export function estimateMinutes(s: TriviaSettings): { minutes: number; questions: number } {
+  const perQuestion =
+    s.answer_seconds + s.reveal_seconds + s.bet_seconds + SECONDS_OF_TALK_PER_QUESTION;
+  const rounds = Math.max(1, s.board_rounds);
+  const questions = s.board_columns * s.board_rows * rounds;
+  let seconds = questions * perQuestion;
+  // The final adds its blind-wager phase in front of an otherwise ordinary
+  // question.
+  if (s.final_wager) seconds += s.wager_seconds + perQuestion;
+  // Breaks sit BETWEEN boards, so there is one fewer than there are rounds.
+  seconds += (rounds - 1) * MINUTES_PER_BREAK * 60;
+  return { minutes: Math.round(seconds / 60), questions };
+}
+
 export function money(n: number): string {
   const neg = n < 0;
   return (neg ? '-$' : '$') + Math.abs(n).toLocaleString('en-US');

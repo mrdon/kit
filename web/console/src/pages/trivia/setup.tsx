@@ -5,7 +5,7 @@ import { useSetChatContext } from '../../chatContext';
 import { BoardPanel } from './board_panel';
 import { NumberField } from './NumberField';
 import {
-  defaultSettings,
+  defaultSettings, estimateMinutes,
   type BoardQuestion, type Dataset, type TopicCount, type TriviaSettings,
 } from './common';
 
@@ -192,32 +192,22 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
   };
 
   const setRows = (rows: number) => {
-    // Cell values follow the row count, cheapest first, so the two can never
-    // disagree — the server rejects a mismatch and the host should never see
-    // that error.
+    // Every cell in a round is worth the SAME, so the values follow the row
+    // count by repeating, not by climbing.
     //
-    // They are drawn from the CHIP values rather than climbing in hundreds,
-    // which is what the ladder here used to do: (i + 1) * 100 put a $500 cell
-    // on a five-row board while the biggest chip was still $200, and that
-    // quietly inverts the game. Only the table that wrote the winning answer
-    // takes a cell; every table bets every round. Once a cell outruns the
-    // chips, knowing beats reading the room and the betting stops mattering.
+    // The escalation lives on the round axis instead (round two is worth
+    // double, chips included), and that is the only place it makes sense: a
+    // question carries no difficulty grade and the board fills each column by
+    // topic and a shuffle, so the row a question lands in is chance. A ladder
+    // down the rows would tell the room the bottom one is harder when it is
+    // not -- and once a cell outruns the biggest chip it also inverts the
+    // game, because only the table that WROTE the winning answer takes a
+    // cell while every table bets every round.
     //
-    // Escalating also implies a difficulty ladder that does not exist. A
-    // question carries a prompt, an answer and its topics — no grade — and
-    // the board builder fills a column by topic and a shuffle, so the row a
-    // question lands in is chance. A $500 bottom row tells the room the
-    // question is harder, and it is not.
-    //
-    // So the rows spread across the chip vocabulary, cheapest first: two rows
-    // give 100/200 (unchanged, the shipped default), five give
-    // 100/100/100/200/200. The host can still set any row by hand below.
-    const chips = s.token_values.length > 0 ? s.token_values : [100, 200];
-    const values = Array.from(
-      { length: rows },
-      (_, i) => chips[Math.min(Math.floor((i * chips.length) / rows), chips.length - 1)],
-    );
-    edit({ ...s, board_rows: rows, cell_values: values });
+    // Rows are therefore pure length: five rows is a longer round, not a
+    // steeper one.
+    const value = s.cell_values[0] ?? 100;
+    edit({ ...s, board_rows: rows, cell_values: Array.from({ length: rows }, () => value) });
   };
 
   return (
@@ -242,24 +232,35 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
             onCommit={setRows} />
         </label>
         <label className="field">
-          <span>Board rounds</span>
+          <span>Board rounds (not counting the final)</span>
           <NumberField min={1} max={3} value={s.board_rounds} disabled={locked}
             onCommit={(n) => edit({ ...s, board_rounds: n })} />
         </label>
       </div>
+      {/* A host is not choosing three numbers, they are choosing a length.
+          This is the only line on the page that answers the question they
+          actually have. */}
+      <p className="page-sub">
+        <strong>About {estimateMinutes(s).minutes} minutes</strong> —{' '}
+        {estimateMinutes(s).questions} question{estimateMinutes(s).questions === 1 ? '' : 's'}
+        {s.board_rounds > 1 ? ` across ${s.board_rounds} rounds` : ''}
+        {s.final_wager ? ', plus the final' : ''}
+        {s.board_rounds > 1 ? ', with 8 minutes a break' : ''}. Rows are what make a round longer;
+        rounds are what add a break and double the money.
+      </p>
 
+      {/* ONE field, not one per row. Every cell in a round is worth the same,
+          so a column of per-row boxes was offering a ladder the game does not
+          have — and the first thing anybody did with it was build one. */}
       <div className="field-row">
-        {s.cell_values.map((v, i) => (
-          <label className="field" key={i}>
-            <span>Row {i + 1} cell value</span>
-            <NumberField min={1} value={v} disabled={locked}
-              onCommit={(n) => {
-                const next = s.cell_values.slice();
-                next[i] = n;
-                edit({ ...s, cell_values: next });
-              }} />
-          </label>
-        ))}
+        <label className="field">
+          <span>Cell value</span>
+          <NumberField min={1} value={s.cell_values[0] ?? 100} disabled={locked}
+            onCommit={(n) => edit({
+              ...s,
+              cell_values: Array.from({ length: s.board_rows }, () => n),
+            })} />
+        </label>
       </div>
       <p className="page-sub">
         Cells and chips are the same size by default, which makes betting the larger half of the
@@ -268,10 +269,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         the room — but keep them near the chips, or the betting stops mattering.
       </p>
       <p className="page-sub">
-        Rows are not difficulty. Questions carry no grade, and the board fills a column by topic
-        and a shuffle, so a dearer row is worth more but is no harder — adding rows repeats the
-        chip values rather than climbing, and a row you set by hand stays until you change the
-        row count.
+        Every cell in a round is worth this. Rows are <em>length</em>, not difficulty: questions
+        carry no grade and the board fills each column by topic and a shuffle, so a dearer bottom
+        row would look harder without being harder. The escalation lives on the rounds instead —
+        round two is worth double, chips included.
       </p>
 
       <div className="field-row field-row-bottom">
