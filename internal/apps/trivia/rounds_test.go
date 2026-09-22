@@ -236,10 +236,15 @@ func TestAFinishedRoundStopsAtTheIntermission(t *testing.T) {
 		t.Fatalf("round two chips are %v, want them doubled to 200/400", snap.TokenValues)
 	}
 
-	// Playing round two empties the night, and with no final that is the podium.
+	// Playing round two empties the night. It waits on the board -- there is
+	// no third round to break for and the host calls the end.
 	f.playNextCell(reloaded, team)
+	if got := f.reload(game.ID).Phase; got != PhaseBoard {
+		t.Fatalf("phase after the last round = %q, want it waiting on the board", got)
+	}
+	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
 	if got := f.reload(game.ID).Phase; got != PhasePodium {
-		t.Fatalf("phase after the last round = %q, want the podium", got)
+		t.Fatalf("phase after the host called it = %q, want the podium", got)
 	}
 }
 
@@ -256,9 +261,12 @@ func TestASingleRoundNightNeverBreaks(t *testing.T) {
 	team := f.join(game.ID, "Bar Flies")
 	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
 
+	// The night waits on its emptied board rather than breaking: there is no
+	// second round to break FOR. (It waits rather than ending because the
+	// host calls the end -- see TestFinalWagerOffWaitsOnTheEmptiedBoard.)
 	f.playNextCell(f.reload(game.ID), team)
-	if got := f.reload(game.ID).Phase; got != PhasePodium {
-		t.Fatalf("a one-round night ended in %q, want the podium with no break", got)
+	if got := f.reload(game.ID).Phase; got != PhaseBoard {
+		t.Fatalf("a one-round night went to %q, want it waiting on the board with no break", got)
 	}
 }
 

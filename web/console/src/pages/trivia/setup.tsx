@@ -249,7 +249,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         </label>
         <label className="field">
           <span>Board rounds (not counting the final)</span>
-          <NumberField min={1} max={3} value={s.board_rounds} disabled={locked}
+          <NumberField min={1} max={5} value={s.board_rounds} disabled={locked}
             onCommit={(n) => edit({ ...s, board_rounds: n })} />
         </label>
       </div>
@@ -343,10 +343,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         </span>
       </label>
       <p className="page-sub">
-        The only round where a table stakes its own money, and the bet comes first: the room
-        sees the category, puts an amount up blind, and only then gets the question. Switch it
-        off for a first night and scores only ever go up — the emptied board goes straight to
-        the podium and no stake control appears on any phone.
+        On by default. The only round where a table stakes its own money, and the bet comes
+        first: the room sees the category, puts an amount up blind, and only then gets the
+        question. Switch it off for a first night and scores only ever go up, with no stake
+        control on any phone — the board still waits for you at the end either way.
       </p>
 
       {/* Locked with the rest once the game starts: the board is already

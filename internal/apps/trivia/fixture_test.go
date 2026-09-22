@@ -167,6 +167,12 @@ func defaultSettings() Settings {
 		CellValues: []int{500, 1000}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
 		RepeatQuestions: true,
+		// ONE round, explicitly, unlike the shipped default of two. Almost
+		// every test here is about scoring, phases or projections and wants
+		// the smallest night that exercises them; leaving this at zero would
+		// normalise to the shipped two and silently double every board these
+		// tests build. The round machinery has its own tests, which set it.
+		BoardRounds: 1,
 	}
 }
 

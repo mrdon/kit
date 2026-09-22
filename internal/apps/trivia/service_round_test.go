@@ -449,9 +449,13 @@ func TestLateJoinerCannotBetOnTheQuestionItMissed(t *testing.T) {
 	}
 }
 
-// With final_wager off, an emptied board goes STRAIGHT to the podium and the
-// "final" action is refused. This is the path a first-ever night runs.
-func TestFinalWagerOffGoesStraightToPodium(t *testing.T) {
+// With final_wager off, an emptied board WAITS rather than ending itself, and
+// the "final" action stays refused. This is the path a first-ever night runs.
+//
+// It used to jump to the podium. That took the decision off the host at the
+// one moment they most want it -- the room is up for more, the board is spent
+// -- and the podium is still one click away.
+func TestFinalWagerOffWaitsOnTheEmptiedBoard(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(topicSet(), 4)
 	s := defaultSettings()
@@ -464,12 +468,18 @@ func TestFinalWagerOffGoesStraightToPodium(t *testing.T) {
 	f.playOneRound(game, map[uuid.UUID]string{a.ID: "1"})
 
 	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
-	if g := f.reload(game.ID); g.Phase != PhasePodium {
-		t.Fatalf("phase = %s with the board empty and no final, want podium", g.Phase)
+	if g := f.reload(game.ID); g.Phase != PhaseBoard {
+		t.Fatalf("phase = %s with the board empty and no final, want it waiting on the board", g.Phase)
 	}
-	_, err := f.svc.Do(f.ctx, f.tenant.ID, game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhasePodium})
+	_, err := f.svc.Do(f.ctx, f.tenant.ID, game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
 	if err == nil {
 		t.Fatal("the final action was accepted on a game with final_wager off")
+	}
+	// And the host ends it when they mean to, from the button the console has
+	// been offering for this state all along.
+	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
+	if g := f.reload(game.ID); g.Phase != PhasePodium {
+		t.Fatalf("phase = %s after the host called it, want podium", g.Phase)
 	}
 }
 

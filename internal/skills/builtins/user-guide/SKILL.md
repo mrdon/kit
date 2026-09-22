@@ -527,7 +527,9 @@ From the live page you pick a cell, then press one button per beat: **Reveal ans
 
 **The final wager** is the one round where a table risks its own money, and the bet comes **before** the question. The screen shows the category alone, every table locks an amount blind (30s by default — **Settings → Wager**), and only then is the question read out. After the reveal they put that stake on whichever answer they like. Right doubles it, wrong loses it, and $0 is a real choice — it's the leader's defensive play. Nobody can finish below $0.
 
-You can switch the final off per game (**Settings → Final wager**). With it off, scores only ever go up, the emptied board goes straight to the podium, and no stake control appears on any phone. That's the setting to use for a first night.
+The final is **on by default**. You can switch it off per game (**Settings → Final wager**), and with it off scores only ever go up and no stake control appears on any phone — the setting to use for a first night, when the one rule where you can *lose* money is the one people get wrong.
+
+**The night never ends itself.** When the last cell is played the board waits, whether or not there is a final to come, and you choose what happens next: **Final question**, **Add another round**, or **Go to the podium**. The room is in front of you and the decision is yours, not the board's.
 
 **Ask about it afterwards.** In Slack:
 

@@ -52,6 +52,9 @@ func TestTriviaResultsGivesTheLeaderboardAndRecap(t *testing.T) {
 	correct := snapCorrect(t, f, game)
 	f.playOneRound(game, map[uuid.UUID]string{a.ID: FormatValue(correct)})
 	f.do(game.ID, ActionRequest{Action: ActionNext, FromPhase: PhaseScoring})
+	// The night no longer ends itself on an emptied board -- the host calls
+	// it, which is what this recap is a recap OF.
+	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
 
 	out, err := dispatchCore(f.ctx, f.caller(), f.pool, f.svc,
 		"trivia_results", json.RawMessage(`{"game":"`+game.Name+`"}`))

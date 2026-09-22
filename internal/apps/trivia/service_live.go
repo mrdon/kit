@@ -405,21 +405,31 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 		}
 		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	}
-	if !game.FinalWager {
-		return s.moveTo(ctx, game, PhasePodium, nil, nil)
-	}
-	rounds, err := ListRounds(ctx, s.pool, game.TenantID, game.ID)
-	if err != nil {
-		return err
-	}
-	for _, r := range rounds {
-		if r.IsFinal {
-			// The final has already been played; that was the end.
-			return s.moveTo(ctx, game, PhasePodium, nil, nil)
+	if game.FinalWager {
+		rounds, err := ListRounds(ctx, s.pool, game.TenantID, game.ID)
+		if err != nil {
+			return err
+		}
+		for _, r := range rounds {
+			if r.IsFinal {
+				// The final has been played; that really was the end.
+				return s.moveTo(ctx, game, PhasePodium, nil, nil)
+			}
 		}
 	}
-	// Wait on the board with nothing left to pick: the host presses "Final
-	// question" when the room is ready for it.
+	// Wait on the emptied board. THE GAME DOES NOT END ITSELF.
+	//
+	// With a final this was always the behaviour -- the host presses "Final
+	// question" when the room is ready. Without one the board used to go
+	// straight to the podium, which took the decision off the host at the one
+	// moment they most want it: the room is enjoying itself, the board is
+	// spent, and the honest question is "another round, or shall we call it?"
+	// Ending automatically answered it for them, and it also left the
+	// console's own "Go to the podium" button unreachable -- the UI had
+	// expected this wait all along.
+	//
+	// The podium is one click away (ActionFinish, legal from any phase) and
+	// the host is standing in the room; nothing is lost by asking.
 	return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 }
 
