@@ -8,10 +8,12 @@ import "fmt"
 const (
 	maxBoardColumns = 8
 	maxBoardRows    = 5
-	// Three boards plus a final is already over the hour. The cap is here to
-	// stop a typo turning into a night nobody can finish, not because a
-	// fourth round would break anything.
-	maxBoardRounds  = 3
+	// Five boards plus a final is a long evening -- roughly two and a half
+	// hours at the default clocks -- and the cap is only here to stop a typo
+	// becoming a night nobody can finish. Nothing breaks above it: the values
+	// scale linearly, so a fifth round is worth 5x the first rather than the
+	// 16x a doubling ladder would have made it.
+	maxBoardRounds  = 5
 	minPhaseSeconds = 5
 	maxPhaseSeconds = 600
 	maxTokens       = 4

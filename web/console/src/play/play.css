@@ -168,6 +168,20 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 /* The rules. Shown while joining and while waiting for the first question —
    the only two moments a player has nothing else to do. */
 .rules { margin-top: 8px; }
+
+/* The folded copy, for mid-game. Quiet: a table that needs it opens it, and
+   a table that does not never sees more than one line. */
+.rules-reminder { margin-top: 14px; }
+.rules-reminder summary {
+  font-size: 15px; color: var(--dim); font-weight: 700;
+  cursor: pointer; padding: 6px 0;
+}
+.rules-reminder ol {
+  margin: 6px 0 0; padding-left: 20px;
+  font-size: 15px; line-height: 1.45; color: var(--dim);
+}
+.rules-reminder li { margin-bottom: 6px; }
+.rules-reminder li::marker { color: var(--accent); font-weight: 700; }
 .rules h2 { font-size: 16px; color: var(--dim); font-weight: 700; margin: 0 0 8px; }
 .rules ol {
   margin: 0; padding-left: 22px;

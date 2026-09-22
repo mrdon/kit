@@ -88,9 +88,16 @@ func (s *Service) AddBoardRound(ctx context.Context, tenantID, gameID uuid.UUID)
 	if err := AppendBoardCells(ctx, s.pool, tenantID, gameID, next); err != nil {
 		return err
 	}
-	// A night sitting on an emptied board was waiting for the final; it now
-	// has somewhere to go, and the board phase picks the new round up on its
-	// own because the round in play is derived.
+	// A night sitting on a SPENT board goes through the break on its way into
+	// the new one, rather than swapping the grid out underneath the room.
+	//
+	// The break screen is the only surface in the product that explains the
+	// scaling -- it names the next round's cell and chip values -- so skipping
+	// it is exactly the moment the room would be given new money with no
+	// announcement. From the intermission this is already where we are.
+	if game.Phase == PhaseBoard {
+		return s.moveTo(ctx, game, PhaseIntermission, nil, nil)
+	}
 	s.publish(ctx, tenantID, gameID)
 	return nil
 }

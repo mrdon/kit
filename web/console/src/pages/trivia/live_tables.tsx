@@ -23,10 +23,19 @@ import { teamPill, teamState } from './live_panel';
 
 export function TeamBoard({ frame, gameId }: { frame: HostFrame; gameId: string }) {
   const [code, setCode] = useState<{ team: string; code: string } | null>(null);
+  // Which row is asking to be confirmed. Reissuing SIGNS A PHONE OUT: the
+  // table's cookie stops matching and, mid-question, they land back on the
+  // join form where nothing stops them entering as a fresh team on $0. This
+  // list is also the standings, the waiting-on indicator and the movement
+  // column -- the thing the host scans all night -- so a single mis-tap on
+  // the row a host is reading cost that table the question. Two taps, like
+  // "End game" and "Delete" already are.
+  const [confirming, setConfirming] = useState<string | null>(null);
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
   const move = roundMovement(frame);
 
   const reissue = async (teamId: string, name: string) => {
+    setConfirming(null);
     try {
       const r = await api.triviaReclaim(gameId, teamId);
       setCode({ team: name, code: r.code });
@@ -42,7 +51,10 @@ export function TeamBoard({ frame, gameId }: { frame: HostFrame; gameId: string 
         <div className="trivia-rows">
           {sorted.map((t, i) => (
             <TeamRow key={t.id} frame={frame} team={t} rank={i + 1} move={move}
-              onTap={() => void reissue(t.id, t.name)} />
+              confirming={confirming === t.id}
+              onTap={() => (confirming === t.id
+                ? void reissue(t.id, t.name)
+                : setConfirming(t.id))} />
           ))}
         </div>
       ) : (
@@ -52,8 +64,14 @@ export function TeamBoard({ frame, gameId }: { frame: HostFrame; gameId: string 
         <p className="banner banner-ok">
           Read <strong>{code.code}</strong> to {code.team}. Their old phone is signed out.
         </p>
+      ) : confirming ? (
+        <p className="card-desc">
+          Tap again to sign that phone out and get a new code.{' '}
+          <button type="button" className="btn btn-ghost btn-sm"
+            onClick={() => setConfirming(null)}>Cancel</button>
+        </p>
       ) : (
-        <p className="card-desc">Tap a table to reissue its code if their phone died.</p>
+        <p className="card-desc">Tap a table twice to reissue its code if their phone died.</p>
       )}
     </div>
   );
@@ -61,11 +79,12 @@ export function TeamBoard({ frame, gameId }: { frame: HostFrame; gameId: string 
 
 type Movement = { board: Record<string, number>; bets: Record<string, number> } | null;
 
-function TeamRow({ frame, team, rank, move, onTap }: {
+function TeamRow({ frame, team, rank, move, confirming, onTap }: {
   frame: HostFrame;
   team: HostTeam;
   rank: number;
   move: Movement;
+  confirming: boolean;
   onTap: () => void;
 }) {
   const card = move?.board[team.id] ?? 0;
@@ -84,8 +103,16 @@ function TeamRow({ frame, team, rank, move, onTap }: {
   const chip = state && state !== signed(delta) ? state : '';
 
   return (
-    <button type="button" className={leader ? 'trivia-row trivia-row-top' : 'trivia-row'}
-      title={`Reissue ${team.name}'s code`} onClick={onTap}>
+    <button type="button"
+      className={[
+        'trivia-row',
+        leader ? 'trivia-row-top' : '',
+        confirming ? 'trivia-row-confirm' : '',
+      ].filter(Boolean).join(' ')}
+      title={confirming
+        ? `Tap again to sign ${team.name} out and issue a new code`
+        : `${team.name} — tap twice to reissue their code`}
+      onClick={onTap}>
       {/* One line, and it does not wrap: the name gives up characters so that
           the score, the state and the tag all stay where the host's eye
           expects them down a list of twenty. */}

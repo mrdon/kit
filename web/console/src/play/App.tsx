@@ -132,13 +132,16 @@ function Playing({
         </div>
       );
     case PHASE.BOARD:
-    // The break is the same situation with more of it: nothing to do, and a
-    // table that wants to know where it stands before the next board.
-    case PHASE.INTERMISSION:
       // Between questions is the one moment a table has nothing to do, so it
       // is the right time to tell them where they stand. "Next question
       // coming up" told them nothing they could not see on the wall.
       return <BetweenQuestions frame={frame} />;
+    case PHASE.INTERMISSION:
+      // NOT the same screen as the board, though it looked close enough to
+      // reuse. Between questions the pick line is the one thing to act on;
+      // during a ten-minute break it is an instruction to shout a category
+      // at a host who is at the bar, about a board that does not exist yet.
+      return <Break frame={frame} />;
     case PHASE.WAGER: {
       // The blind bet. No prompt has been sent, so there is nothing else this
       // screen could show even if it wanted to.
@@ -169,6 +172,33 @@ function Playing({
   }
 }
 
+// Break: the room is at the bar and this table wants two things — to know
+// the night paused on purpose rather than stalled, and to know where they
+// stand going into the next board.
+//
+// It also carries the ONE announcement the phone never made: the money goes
+// up. The TV says it, the host says it, and until this screen existed the
+// phone just started handing out bigger chips.
+function Break({ frame }: { frame: PlayerFrame }) {
+  const chips = frame.tokens.map((t) => money(t)).join(' and ');
+  return (
+    <div className="body">
+      <h1>Break</h1>
+      <p className="sub" style={{ textAlign: 'center' }}>
+        Back in a few minutes — get a drink.
+      </p>
+      {frame.roundCount > 1 ? (
+        <p className="sub" style={{ textAlign: 'center' }}>
+          <strong>Round {frame.roundNumber} of {frame.roundCount}</strong> is next.
+          Every question is worth more, and your chips go up to {chips}.
+        </p>
+      ) : null}
+      <Standings frame={frame} />
+      <RulesReminder frame={frame} />
+    </div>
+  );
+}
+
 // BetweenQuestions: where this table stands, with their own row called out.
 function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
   const sorted = [...frame.teams].sort((a, b) => b.score - a.score);
@@ -185,7 +215,11 @@ function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
   // Whose pick it is, above the rank, because it is the only thing on this
   // screen anybody has to ACT on: a table holding the pick has to shout a
   // category at the host, and a table that is not gets a name to grumble at.
-  const picker = frame.picker;
+  // A spent board has nothing left to pick, so the pick line would send a
+  // table shouting a category at a grid that is struck through. The host
+  // console has guarded this all along; the phone did not.
+  const boardSpent = frame.board.length > 0 && frame.board.every((c) => c.played);
+  const picker = boardSpent ? null : frame.picker;
   const mine = !!picker && !!me && picker.teamId === me.teamId;
 
   return (
@@ -203,15 +237,21 @@ function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
             <span className="of"> of {sorted.length}</span>
           </div>
           <p className="sub" style={{ textAlign: 'center' }}>
-            {rank === 1
-              ? `Leading.${picker ? '' : ' Next question shortly.'}`
-              : `${money(behind)} behind ${leader.name}.`}
+            {leader && leader.score === 0
+              // Everybody on nothing is not a leader, it is question one.
+              // Crowning six tables at once makes the word mean nothing by
+              // the time somebody has actually earned it.
+              ? 'Nothing on the board yet.'
+              : rank === 1
+                ? `Leading.${picker ? '' : ' Next question shortly.'}`
+                : `${money(behind)} behind ${leader.name}.`}
           </p>
         </>
       ) : (
         picker ? null : <h1>Next question shortly</h1>
       )}
       <Standings frame={frame} />
+      <RulesReminder frame={frame} />
     </div>
   );
 }
@@ -238,6 +278,25 @@ function Rules({ frame }: { frame: PlayerFrame }) {
         {frame.rules.map((r, i) => <li key={i}>{r}</li>)}
       </ol>
     </div>
+  );
+}
+
+// The same rules, folded away, for the screens where a table already knows
+// roughly what is going on.
+//
+// They used to appear on the lobby and the join form and NOWHERE ELSE, so a
+// table that joined at question seven -- which the join corner deliberately
+// invites all night -- got one look while typing a name and never again.
+// Between questions is the one screen with nothing else on it.
+function RulesReminder({ frame }: { frame: PlayerFrame }) {
+  if (!frame.rules?.length) return null;
+  return (
+    <details className="rules-reminder">
+      <summary>How it works</summary>
+      <ol>
+        {frame.rules.map((r, i) => <li key={i}>{r}</li>)}
+      </ol>
+    </details>
   );
 }
 

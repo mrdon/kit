@@ -47,6 +47,16 @@ function renderBoard(prev) {
 function renderPickCallout() {
   var box = document.getElementById('pick-callout');
   box.innerHTML = '';
+  /* A SPENT BOARD HAS NOTHING TO PICK. The night now waits here for the host
+     to call the final, add a board, or go to the podium, so this screen can
+     sit in front of the room for a minute with every cell struck through --
+     and "Bar Flies picks" over the top of it sends a table hunting for a
+     tile that is not there. The host console has always guarded this; the
+     wall did not. */
+  if (boardIsSpent()) {
+    box.classList.remove('on');
+    return;
+  }
   if (!state.picker) {
     // No picker: a room where nobody has joined. Collapse rather than leave a
     // gap the board could have used.
@@ -133,4 +143,13 @@ function flipFrom(cellId, done) {
   // tile stuck over the whole screen until somebody reloaded the TV.
   setTimeout(function () { clone.style.opacity = '0'; }, 620);
   later(620, done);
+}
+
+/* boardIsSpent reports a board with every cell played. */
+function boardIsSpent() {
+  if (!state.board || !state.board.length) { return false; }
+  for (var i = 0; i < state.board.length; i++) {
+    if (!state.board[i].played) { return false; }
+  }
+  return true;
 }

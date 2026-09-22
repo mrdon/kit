@@ -300,13 +300,25 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
 // pair of equal options. This is the one that only appears at the two moments
 // a host is genuinely asked a question by the room — the break, and an
 // emptied board with the final still to come.
-export function extraAction(phase: Phase, boardEmpty: boolean):
+export function extraAction(phase: Phase, boardEmpty: boolean, roundCount = 0):
   { action: Action; label: string } | null {
-  if (phase === PHASE.INTERMISSION) return { action: ACTION.ADD_ROUND, label: 'Add another round' };
-  if (phase === PHASE.BOARD && boardEmpty) {
-    return { action: ACTION.ADD_ROUND, label: 'Add another round' };
-  }
+  // "Add another ROUND" next to "Start the next ROUND" is the same sentence
+  // twice, at a laptop in a loud room. One resumes the night; the other
+  // appends a whole board to be played later. So this one says BOARD, and
+  // names which one it would be.
+  const nth = roundCount > 0 ? ` ${ordinal(roundCount + 1)}` : '';
+  const label = `Add a${nth} board`;
+  if (phase === PHASE.INTERMISSION) return { action: ACTION.ADD_ROUND, label };
+  if (phase === PHASE.BOARD && boardEmpty) return { action: ACTION.ADD_ROUND, label };
   return null;
+}
+
+// ordinal for the small numbers a night of trivia ever reaches.
+function ordinal(n: number): string {
+  const suffix = n % 10 === 1 && n % 100 !== 11 ? 'st'
+    : n % 10 === 2 && n % 100 !== 12 ? 'nd'
+      : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th';
+  return `${n}${suffix}`;
 }
 
 // The reason in the host's words, appended to the pick line. Short, because

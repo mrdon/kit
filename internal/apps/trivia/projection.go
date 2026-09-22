@@ -312,7 +312,7 @@ func ProjectPlayer(s *Snapshot, teamID uuid.UUID) PlayerFrame {
 		Slots:      publicSlots(s),
 		Scoring:    publicScoring(s),
 		Tokens:     s.TokenValues,
-		Rules:      Rules(s.FinalWager),
+		Rules:      Rules(s.FinalWager, s.TokenValues),
 
 		Picker:       publicPicker(s),
 		PickerReason: pickerReasonOf(s),

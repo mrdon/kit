@@ -216,7 +216,7 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 		StreamURL:  template.URL(base + "/tv/stream"),
 		PollURL:    template.URL(base + "/tv/state"),
 		GameName:   game.Name,
-		Rules:      Rules(game.FinalWager),
+		Rules:      Rules(game.FinalWager, game.TokenValues),
 		Version:    displayVersion(game),
 		VersionURL: template.URL(versionURL),
 	})

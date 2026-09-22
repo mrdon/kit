@@ -102,6 +102,13 @@ export interface PlayerFrame {
   serverNow: number;
   deadlineMs: number;
   finalWager: boolean;
+  // Where the night is, as a human says it: one-based, final counted. The
+  // server has always sent these; the phone was the one surface that never
+  // read them, so a table's chips trebled in round three with nothing
+  // anywhere on the phone saying why.
+  roundNumber: number;
+  roundCount: number;
+  isFinal: boolean;
   teams: WireTeam[];
   board: WireCell[];
   round: WireRound | null;

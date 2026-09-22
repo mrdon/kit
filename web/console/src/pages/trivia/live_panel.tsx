@@ -23,7 +23,7 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
   onAct: (body: Record<string, unknown>) => void;
 }) {
   const primary = primaryAction(frame.phase, boardIsEmpty(frame), frame.finalWager, frame.progress.finalPlayed, skipReveal);
-  const extra = extraAction(frame.phase, boardIsEmpty(frame));
+  const extra = extraAction(frame.phase, boardIsEmpty(frame), frame.roundCount);
 
   return (
     <aside className="trivia-panel">

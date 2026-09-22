@@ -1924,6 +1924,13 @@ h2.view-title:hover {
    host reads it one category at a time, cheapest first. Grouped rather than
    laid out in grid order for exactly that reason: five columns of prompt text
    is unreadable, and nobody checks a board row by row. */
+/* The row a second tap would sign out. Loud on purpose: it is the only
+   destructive thing in a list the host scans all night. */
+.trivia-row-confirm {
+  border-color: var(--danger, #b42318);
+  box-shadow: inset 0 0 0 1px var(--danger, #b42318);
+}
+
 /* One board's worth of the setup preview: grid, then its questions. The gap
    is what keeps two rounds from reading as one long board. */
 .trivia-round + .trivia-round {

@@ -526,3 +526,49 @@ func TestWithoutAFinalTheCountIsTheBoards(t *testing.T) {
 		t.Fatalf("a final-less night counts %d rounds, want 2", got.RoundCount)
 	}
 }
+
+// The break is the only surface that explains the money going up, so adding
+// a board from a spent one has to go THROUGH it rather than swapping the
+// grid out underneath the room.
+func TestAddingARoundFromASpentBoardGoesThroughTheBreak(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	s.FinalWager = true
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:1])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playNextCell(f.reload(game.ID), team)
+
+	// Waiting on a spent board, final still to come.
+	if got := f.reload(game.ID).Phase; got != PhaseBoard {
+		t.Fatalf("phase = %q, want it waiting on the spent board", got)
+	}
+	if err := f.svc.AddBoardRound(f.ctx, f.tenant.ID, game.ID); err != nil {
+		t.Fatalf("adding a board: %v", err)
+	}
+	if got := f.reload(game.ID).Phase; got != PhaseIntermission {
+		t.Fatalf("phase = %q after adding a board, want the break that announces it", got)
+	}
+}
+
+// The rules a table reads have to name the chips that table actually holds.
+// The break is the best entry of the night, so the most likely new player of
+// the evening reads them in round two.
+func TestTheRulesNameTheRoundsOwnChips(t *testing.T) {
+	first := Rules(true, []int{100, 200})
+	if !strings.Contains(first[3], "$100") || !strings.Contains(first[3], "$200") {
+		t.Fatalf("round one rules do not name its chips: %q", first[3])
+	}
+	second := Rules(true, []int{200, 400})
+	if !strings.Contains(second[3], "$200") || !strings.Contains(second[3], "$400") {
+		t.Fatalf("round two rules still name round one's chips: %q", second[3])
+	}
+	if strings.Contains(second[3], "$100") {
+		t.Fatalf("round two rules mention a chip nobody has: %q", second[3])
+	}
+}

@@ -199,9 +199,12 @@ function RoundPreview({
 
   return (
     <div className="trivia-round">
+      {/* BOARD, not round. The live page counts the final as a round, so
+          "Round 2 of 2" here and "Round 2 of 3" there would be the same board
+          called two different things on two pages. */}
       {rounds > 1 ? (
         <h3 className="trivia-qhead">
-          Round {round + 1} of {rounds} · {money(value)} a cell · chips{' '}
+          Board {round + 1} of {rounds} · {money(value)} a cell · chips{' '}
           {chips.map((c) => money(c)).join(' / ')}
         </h3>
       ) : null}
