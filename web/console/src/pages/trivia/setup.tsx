@@ -259,10 +259,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       <p className="page-sub">
         <strong>About {estimateMinutes(s).minutes} minutes</strong> —{' '}
         {estimateMinutes(s).questions} question{estimateMinutes(s).questions === 1 ? '' : 's'}
-        {s.board_rounds > 1 ? ` across ${s.board_rounds} rounds` : ''}
-        {s.final_wager ? ', plus the final' : ''}
+        {' '}across {s.board_rounds + (s.final_wager ? 1 : 0)} rounds
+        {s.final_wager ? ' counting the final' : ''}
         {s.board_rounds > 1 ? ', with 8 minutes a break' : ''}. Rows are what make a round longer;
-        rounds are what add a break and double the money.
+        rounds are what add a break and step the money up.
       </p>
 
       {/* ONE field, not one per row. Every cell in a round is worth the same,

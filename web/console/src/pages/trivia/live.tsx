@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
-import { ACTION, PHASE, PHASE_LABEL, money, type HostFrame, type Phase } from './common';
+import { ACTION, PHASE, PHASE_LABEL, money, roundLabel, type HostFrame, type Phase } from './common';
 import { StatusPanel } from './live_panel';
 import { LastRoundRecap } from './live_lastround';
 
@@ -69,6 +69,7 @@ export default function TriviaLive() {
         <div>
           <h1>{frame.title}</h1>
           <p className="page-sub">
+            {roundLabel(frame) ? `${roundLabel(frame)} · ` : ''}
             {PHASE_LABEL[frame.phase]} · {frame.progress.cellsPlayed}/{frame.progress.cellsTotal} played
             {!connected ? ' · reconnecting…' : ''}
           </p>

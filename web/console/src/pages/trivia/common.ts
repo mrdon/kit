@@ -188,10 +188,12 @@ export interface HostFrame {
   serverNow: number;
   deadlineMs: number;
   finalWager: boolean;
-  // One-based, for the sentence a host reads out. Both are 1 on a
-  // single-board night, which is how every surface hides the whole idea.
-  boardRound: number;
-  boardRounds: number;
+  // The night's position as a human says it: one-based, and the final counts
+  // as a round. Two boards plus a final is "round 1 of 3".
+  roundNumber: number;
+  roundCount: number;
+  // The round in play IS the final, so print the word, not the number.
+  isFinal: boolean;
   teams: HostTeam[];
   board: HostCell[];
   round: HostRound | null;
@@ -317,6 +319,14 @@ export function pickerWhy(reason: PickerReason): string {
     case 'lowest': return 'lowest score picks';
     default: return '';
   }
+}
+
+// How the host says where the night is. The final is named rather than
+// numbered — "Final" tells a room more than "round 3 of 3" does.
+export function roundLabel(frame: { roundNumber: number; roundCount: number; isFinal: boolean }): string {
+  if (frame.isFinal) return 'Final round';
+  if (frame.roundCount <= 1) return '';
+  return `Round ${frame.roundNumber} of ${frame.roundCount}`;
 }
 
 // Whether two settings describe the same game.

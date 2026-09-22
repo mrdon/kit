@@ -339,8 +339,8 @@ func TestTheWireRoundNumberIsTheOneToReadOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ProjectHost(snap); got.BoardRound != 1 || got.BoardRounds != 2 {
-		t.Fatalf("round one reports %d of %d, want 1 of 2", got.BoardRound, got.BoardRounds)
+	if got := ProjectHost(snap); got.RoundNumber != 1 || got.RoundCount != 2 {
+		t.Fatalf("round one reports %d of %d, want 1 of 2", got.RoundNumber, got.RoundCount)
 	}
 
 	f.playNextCell(f.reload(game.ID), team)
@@ -350,8 +350,8 @@ func TestTheWireRoundNumberIsTheOneToReadOut(t *testing.T) {
 	}
 	// At the break the wire already names the round ABOUT TO BE PLAYED, so a
 	// surface reads it straight out with no arithmetic of its own.
-	if got := ProjectHost(snap); got.BoardRound != 2 || got.BoardRounds != 2 {
-		t.Fatalf("the break reports %d of %d, want 2 of 2", got.BoardRound, got.BoardRounds)
+	if got := ProjectHost(snap); got.RoundNumber != 2 || got.RoundCount != 2 {
+		t.Fatalf("the break reports %d of %d, want 2 of 2", got.RoundNumber, got.RoundCount)
 	}
 }
 
@@ -464,5 +464,65 @@ func TestAddingARoundSaysSoWhenTheBankIsSpent(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "another round") {
 		t.Fatalf("refusal is not actionable: %v", err)
+	}
+}
+
+// The final is a round as far as the room is concerned, so two boards and a
+// final is "round 1 of 3" -- not "round 1 of 2" followed by a surprise.
+func TestTheFinalCountsAsARound(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 4)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.FinalWager = true
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:2])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+
+	snap, err := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ProjectHost(snap); got.RoundNumber != 1 || got.RoundCount != 3 || got.IsFinal {
+		t.Fatalf("opening reports %d of %d (final %v), want 1 of 3",
+			got.RoundNumber, got.RoundCount, got.IsFinal)
+	}
+
+	// Play both boards out, then open the final.
+	f.playNextCell(f.reload(game.ID), team)
+	f.do(game.ID, ActionRequest{Action: ActionResume, FromPhase: PhaseIntermission})
+	f.playNextCell(f.reload(game.ID), team)
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+
+	snap, err = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ProjectHost(snap); got.RoundNumber != 3 || got.RoundCount != 3 || !got.IsFinal {
+		t.Fatalf("the final reports %d of %d (final %v), want 3 of 3 and flagged",
+			got.RoundNumber, got.RoundCount, got.IsFinal)
+	}
+}
+
+// With no final the count is the boards alone, so a surface never promises a
+// round the night is not going to play.
+func TestWithoutAFinalTheCountIsTheBoards(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 4)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.FinalWager = false
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:2])
+
+	snap, err := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ProjectHost(snap); got.RoundCount != 2 {
+		t.Fatalf("a final-less night counts %d rounds, want 2", got.RoundCount)
 	}
 }

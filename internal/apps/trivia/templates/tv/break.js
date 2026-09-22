@@ -12,7 +12,7 @@ function renderBreak() {
      names the real numbers instead of asserting a multiple. */
   var cell = state.board && state.board[0] ? money(state.board[0].points) + ' a cell · ' : '';
   var chips = (state.tokens || []).map(function (t) { return money(t); }).join(' / ');
-  next.textContent = 'Round ' + state.boardRound + ' of ' + state.boardRounds +
+  next.textContent = 'Round ' + state.roundNumber + ' of ' + state.roundCount +
     ' is next — ' + cell + 'chips ' + chips;
 
   var host = document.getElementById('break-scores');

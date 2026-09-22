@@ -1,4 +1,4 @@
-import { ACTION, boardIsEmpty, extraAction, money, PHASE, primaryAction, type HostFrame, type HostTeam } from './common';
+import { ACTION, boardIsEmpty, extraAction, money, PHASE, primaryAction, roundLabel, type HostFrame, type HostTeam } from './common';
 import { pickLine, signed } from './live_lastround';
 import { TeamBoard } from './live_tables';
 
@@ -166,7 +166,6 @@ function cueLobby(frame: HostFrame): string {
 function cueIntermission(frame: HostFrame): string {
   // Already one-based on the wire, and already pointing at the round that is
   // about to start: the break is entered by crossing into it.
-  const next = frame.boardRound;
   const leader = [...frame.teams].sort((a, b) => b.score - a.score)[0];
   const lead = leader ? ` ${leader.name} leads on ${money(leader.score)}.` : '';
   // The frame already carries the NEXT round's cells and chips — the break is
@@ -174,7 +173,7 @@ function cueIntermission(frame: HostFrame): string {
   // than assert a multiple.
   const cell = frame.board[0] ? `${money(frame.board[0].points)} a cell, ` : '';
   const chips = frame.tokens.map((t) => money(t)).join(' / ');
-  return `Break — round ${next} of ${frame.boardRounds} is next: ${cell}chips ${chips}.${lead}`;
+  return `Break — ${roundLabel(frame).toLowerCase()} is next: ${cell}chips ${chips}.${lead}`;
 }
 
 function cueBoard(frame: HostFrame): string {

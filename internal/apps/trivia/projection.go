@@ -27,23 +27,45 @@ type wireCommon struct {
 	ServerNow  int64  `json:"serverNow"`
 	DeadlineMs int64  `json:"deadlineMs"`
 	FinalWager bool   `json:"finalWager"`
-	// BoardRound is the board in play, ONE-BASED for the wire because every
-	// reader of it is a sentence in front of a room ("round 2 of 2"), and
-	// BoardRounds is how many the night holds. Both are 1 on a single-board
-	// night, which is what lets a surface hide the whole idea by testing
-	// boardRounds > 1.
-	BoardRound  int `json:"boardRound"`
-	BoardRounds int `json:"boardRounds"`
+	// RoundNumber and RoundCount are the night's position as a human says it
+	// out loud: one-based, and THE FINAL COUNTS AS A ROUND. Two boards plus a
+	// final is "round 1 of 3".
+	//
+	// Named apart from Snapshot.BoardRound/BoardRounds on purpose. Those are
+	// zero-based and count boards only; these are one-based and count the
+	// final. The two lived under the same name once and both readers added
+	// one to an already-one-based number, so a two-round night announced
+	// "Round 3 of 2" on the wall.
+	RoundNumber int `json:"roundNumber"`
+	RoundCount  int `json:"roundCount"`
+	// IsFinal says the round in play IS the final, so a surface can print the
+	// word rather than its number.
+	IsFinal bool `json:"isFinal"`
+}
+
+// roundNumbersOf places the night for a human: which round of how many, with
+// the final counted as the last one.
+func roundNumbersOf(s *Snapshot) (number, count int, isFinal bool) {
+	count = max(s.BoardRounds, 1)
+	if s.FinalWager {
+		count++
+	}
+	number = s.BoardRound + 1
+	if s.Round != nil && s.Round.IsFinal {
+		// The final is the last round by definition, whatever the boards did.
+		return count, count, true
+	}
+	return min(number, count), count, false
 }
 
 func commonOf(s *Snapshot) wireCommon {
-	return wireCommon{
+	c := wireCommon{
 		Version: s.StateVersion, Game: s.Name, Title: s.Title, Phase: string(s.Phase),
 		ServerNow: s.ServerNow.UnixMilli(), DeadlineMs: s.DeadlineMillis(),
-		FinalWager:  s.FinalWager,
-		BoardRound:  s.BoardRound + 1,
-		BoardRounds: max(s.BoardRounds, 1),
+		FinalWager: s.FinalWager,
 	}
+	c.RoundNumber, c.RoundCount, c.IsFinal = roundNumbersOf(s)
+	return c
 }
 
 // wireTeam is a table as the public surfaces see it. No answer, no stake
