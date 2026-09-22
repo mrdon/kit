@@ -205,15 +205,28 @@ func icsLocalStamp(t *testing.T, s string) string {
 func TestBuildICS_AllDayUsesDateValues(t *testing.T) {
 	sf := newSyncFixture(t)
 
+	// Relative, and the assertion derived from the same day the fixture
+	// writes. The literal this replaces ("2026-09-19") was a fine future date
+	// until 2026-09-19; after it, a ONE-OFF falls behind the feed's window and
+	// the calendar comes back with no VEVENT at all -- so the test failed
+	// claiming DTSTART was not a DATE value, over a document that had no
+	// DTSTART in it. That points away from its cause, which is the same trap
+	// the fixtures in 15f47d9 were pulled out of.
+	//
+	// Midnight explicitly rather than dayOut's wall clock: an all-day event
+	// is resolved in the event's zone, and a fixture created at 23:30 local
+	// could otherwise land on the next day and take the assertion with it.
+	day := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
 	sf.publishedPublic(t, CreateParams{
 		Title:    "Anniversary Weekend",
-		StartsAt: "2026-09-19 00:00",
+		StartsAt: day + " 00:00",
 		AllDay:   true,
 	})
 
 	got := unfold(sf.ics(t, TierHighlights))
-	if !strings.Contains(got, "DTSTART;VALUE=DATE:20260919") {
-		t.Errorf("all-day DTSTART is not a DATE value:\n%s", got)
+	want := "DTSTART;VALUE=DATE:" + strings.ReplaceAll(day, "-", "")
+	if !strings.Contains(got, want) {
+		t.Errorf("all-day DTSTART is not a DATE value (%s):\n%s", want, got)
 	}
 }
 
