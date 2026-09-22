@@ -1,5 +1,5 @@
 import { Clock } from './screens';
-import type { PlayerFrame } from './api';
+import { PHASE, type PlayerFrame } from './api';
 
 // The screens a table sees while it is IN THE ROOM but not in the round.
 //
@@ -38,8 +38,8 @@ export function sittingOutLine(frame: PlayerFrame): string {
 // server would refuse: the answer box and the chip tray.
 export function sittingOutScreen(frame: PlayerFrame, msLeft: number | null) {
   if (frame.you?.eligible !== false) return null;
-  if (frame.phase === 'question') return <SittingOut frame={frame} msLeft={msLeft} />;
-  if (frame.phase === 'betting') {
+  if (frame.phase === PHASE.QUESTION) return <SittingOut frame={frame} msLeft={msLeft} />;
+  if (frame.phase === PHASE.BETTING) {
     return <WatchingCards frame={frame} msLeft={msLeft} note="until the cards are scored" sittingOut />;
   }
   return null;

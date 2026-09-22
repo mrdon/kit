@@ -261,7 +261,8 @@ func QuestionsForTopics(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.U
 		     AND ($3::uuid[] IS NULL OR cardinality($3::uuid[]) = 0 OR q.dataset_id = ANY($3::uuid[]))
 		     AND `+freshSQL("$4", "$5")+`
 		     AND EXISTS (SELECT 1 FROM app_trivia_question_topics t
-		                  WHERE t.question_id = q.id AND t.topic_key = ANY($2))
+		                  WHERE t.question_id = q.id AND t.tenant_id = q.tenant_id
+		                    AND t.topic_key = ANY($2))
 		   ORDER BY q.prompt_key, q.last_used_at ASC NULLS FIRST, q.id
 		) d
 		 ORDER BY d.last_used_at ASC NULLS FIRST, d.id`,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../api';
-import { money, type HostFrame, type HostTeam } from './common';
+import { money, PHASE, type HostFrame, type HostTeam } from './common';
 import { roundMovement, signed } from './live_lastround';
 import { teamPill, teamState } from './live_panel';
 
@@ -76,7 +76,7 @@ function TeamRow({ frame, team, rank, move, onTap }: {
   const leader = rank === 1 && team.score > 0;
   // Only on the board, and only while it is still their turn to choose: once
   // a cell is picked the tag is answering a question nobody is asking.
-  const picksNext = frame.phase === 'board' && frame.picker?.teamId === team.id;
+  const picksNext = frame.phase === PHASE.BOARD && frame.picker?.teamId === team.id;
   const state = teamState(frame, team).trim();
   // Outside question/betting teamState falls back to the round's delta, which
   // is the number the movement column is already showing. One of them has to

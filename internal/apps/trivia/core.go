@@ -202,12 +202,10 @@ func displayTitle(g *Game) string {
 
 // phaseSentence turns a phase into something worth reading in Slack.
 func phaseSentence(snap *Snapshot) string {
-	played, total := 0, len(snap.Board)
-	for _, c := range snap.Board {
-		if c.Played {
-			played++
-		}
-	}
+	// The NIGHT's counts, not the round in play's. snap.Board carries only
+	// the current board, so counting it reported "0 of 10 done" from the
+	// break of a two-round night.
+	played, total := snap.CellsPlayed, snap.CellsTotal
 	switch snap.Phase {
 	case PhaseSetup:
 		return "not opened yet"

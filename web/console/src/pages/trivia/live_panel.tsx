@@ -1,4 +1,4 @@
-import { boardIsEmpty, money, primaryAction, type HostFrame, type HostTeam } from './common';
+import { ACTION, boardIsEmpty, money, PHASE, primaryAction, type HostFrame, type HostTeam } from './common';
 import { pickLine, signed } from './live_lastround';
 import { TeamBoard } from './live_tables';
 
@@ -59,7 +59,7 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
         ) : null}
         {secs !== null ? (
           <button className="btn btn-danger" disabled={busy}
-            onClick={() => onAct({ action: 'extend', seconds: 15 })}>
+            onClick={() => onAct({ action: ACTION.EXTEND, seconds: 15 })}>
             +15s
           </button>
         ) : null}
@@ -92,15 +92,15 @@ export function waitingTeams(frame: HostFrame): HostTeam[] {
   // A table that joined mid-round is not in this round's denominator, and it
   // is not something the host is waiting for either.
   const live = frame.teams.filter((t) => t.eligible);
-  if (frame.phase === 'wager') return live.filter((t) => !t.stakeLocked);
-  if (frame.phase === 'question') return live.filter((t) => !t.answered);
-  if (frame.phase === 'betting') return live.filter((t) => t.chipsPlaced < frame.tokens.length);
+  if (frame.phase === PHASE.WAGER) return live.filter((t) => !t.stakeLocked);
+  if (frame.phase === PHASE.QUESTION) return live.filter((t) => !t.answered);
+  if (frame.phase === PHASE.BETTING) return live.filter((t) => t.chipsPlaced < frame.tokens.length);
   return [];
 }
 
 function waitingLabel(frame: HostFrame): string {
-  if (frame.phase === 'betting') return 'Still placing chips';
-  if (frame.phase === 'wager') return 'No wager yet';
+  if (frame.phase === PHASE.BETTING) return 'Still placing chips';
+  if (frame.phase === PHASE.WAGER) return 'No wager yet';
   return 'Not answered yet';
 }
 
@@ -121,9 +121,9 @@ export function teamState(frame: HostFrame, t: HostTeam): string {
   // off the team: `inFromQuestion` rides on the phone's private frame only,
   // and the host already has the round in play.
   if (!t.eligible && frame.round) return ` in from Q${frame.round.ordinal + 1}`;
-  if (frame.phase === 'wager') return t.stakeLocked ? ' 🔒 locked' : ' waiting';
-  if (frame.phase === 'question') return t.answered ? ' in' : ' waiting';
-  if (frame.phase === 'betting') return ` ${t.chipsPlaced}/${frame.tokens.length}`;
+  if (frame.phase === PHASE.WAGER) return t.stakeLocked ? ' 🔒 locked' : ' waiting';
+  if (frame.phase === PHASE.QUESTION) return t.answered ? ' in' : ' waiting';
+  if (frame.phase === PHASE.BETTING) return ` ${t.chipsPlaced}/${frame.tokens.length}`;
   const d = frame.scoring?.deltas?.[t.id] ?? frame.lastRound?.deltas?.[t.id];
   return d === undefined || d === 0 ? '' : ` ${signed(d)}`;
 }
@@ -132,16 +132,16 @@ export function teamState(frame: HostFrame, t: HostTeam): string {
 // happening and what to say about it.
 export function cueFor(frame: HostFrame, secs: number | null): string {
   switch (frame.phase) {
-    case 'setup':
-    case 'lobby': return cueLobby(frame);
-    case 'board': return cueBoard(frame);
-    case 'intermission': return cueIntermission(frame);
-    case 'wager': return cueWager(frame, secs);
-    case 'question': return cueQuestion(frame, secs);
-    case 'reveal': return `Cards are up — betting opens in ${secs ?? 0}s`;
-    case 'betting': return cueBetting(frame, secs);
-    case 'scoring': return cueScoring(frame);
-    case 'podium': return cuePodium(frame);
+    case PHASE.SETUP:
+    case PHASE.LOBBY: return cueLobby(frame);
+    case PHASE.BOARD: return cueBoard(frame);
+    case PHASE.INTERMISSION: return cueIntermission(frame);
+    case PHASE.WAGER: return cueWager(frame, secs);
+    case PHASE.QUESTION: return cueQuestion(frame, secs);
+    case PHASE.REVEAL: return `Cards are up — betting opens in ${secs ?? 0}s`;
+    case PHASE.BETTING: return cueBetting(frame, secs);
+    case PHASE.SCORING: return cueScoring(frame);
+    case PHASE.PODIUM: return cuePodium(frame);
   }
 }
 
@@ -154,7 +154,9 @@ function cueLobby(frame: HostFrame): string {
 // The break. The host is holding the room, not a clock, so the cue tells them
 // what to say and what is coming rather than counting anything down.
 function cueIntermission(frame: HostFrame): string {
-  const next = frame.boardRound + 1;
+  // Already one-based on the wire, and already pointing at the round that is
+  // about to start: the break is entered by crossing into it.
+  const next = frame.boardRound;
   const leader = [...frame.teams].sort((a, b) => b.score - a.score)[0];
   const lead = leader ? ` ${leader.name} leads on ${money(leader.score)}.` : '';
   return `Break — round ${next} of ${frame.boardRounds} is next, and everything in it is worth double.${lead}`;

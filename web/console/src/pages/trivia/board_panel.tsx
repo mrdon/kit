@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../api';
-import { money, type BoardQuestion, type TopicCount, type TriviaGame } from './common';
+import { money, PHASE, type BoardQuestion, type TopicCount, type TriviaGame } from './common';
 
 
 // The column picker, the board preview, and the questions behind it.
@@ -29,7 +29,7 @@ export function BoardPanel({
   // round one, the next `cols` are what the room comes back to.
   const need = cols * rounds;
   const repeats = game.settings?.repeat_questions ?? false;
-  const locked = game.phase !== 'setup' && game.phase !== 'lobby';
+  const locked = game.phase !== PHASE.SETUP && game.phase !== PHASE.LOBBY;
   // What a category can actually field. Viability is measured in FRESH
   // questions rather than total, because fresh is what the builder will be
   // handed: offering a category with nine questions the room has heard and

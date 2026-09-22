@@ -1,6 +1,8 @@
 package trivia
 
 import (
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,5 +259,119 @@ func TestASingleRoundNightNeverBreaks(t *testing.T) {
 	f.playNextCell(f.reload(game.ID), team)
 	if got := f.reload(game.ID).Phase; got != PhasePodium {
 		t.Fatalf("a one-round night ended in %q, want the podium with no break", got)
+	}
+}
+
+// Every field of a Game has to survive the trip out to the console and back,
+// because the console PATCHes the whole settings object on any edit.
+//
+// board_rounds was dropped from a hand-written literal and the failure was
+// nothing like "a field is missing": the picker read 0 rounds as 0 columns and
+// refused every category tick on every game, and editing an unrelated timer
+// silently collapsed a two-round night to one. This test is cheap insurance
+// against the next field.
+func TestSettingsSurviveTheRoundTrip(t *testing.T) {
+	f := newFixture(t)
+	want := Settings{
+		Title: "Tuesday Quiz", BoardRows: 2, BoardColumns: 4,
+		CellValues: []int{150, 150}, TokenValues: []int{100, 200},
+		FinalWager: true, AnswerSeconds: 55, RevealSeconds: 10, BetSeconds: 40,
+		WagerSeconds: 25, GraceSeconds: 3, RepeatQuestions: true, BoardRounds: 3,
+	}
+	name, err := UniqueName(f.ctx, f.pool, f.tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	game, err := CreateGame(f.ctx, f.pool, f.tenant.ID, name, want, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := SettingsOf(f.reload(game.ID)); !settingsEqual(got, want) {
+		t.Fatalf("settings came back as %+v, want %+v", got, want)
+	}
+
+	// And the same object, sent straight back, must not change anything --
+	// which is exactly what the console does on every edit.
+	updated, err := UpdateSettings(f.ctx, f.pool, f.tenant.ID, game.ID, normaliseSettings(SettingsOf(game)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := SettingsOf(updated); !settingsEqual(got, want) {
+		t.Fatalf("a no-op save changed the settings to %+v, want %+v", got, want)
+	}
+}
+
+func settingsEqual(a, b Settings) bool {
+	if a.Title != b.Title || a.BoardRows != b.BoardRows || a.BoardColumns != b.BoardColumns ||
+		a.FinalWager != b.FinalWager || a.AnswerSeconds != b.AnswerSeconds ||
+		a.RevealSeconds != b.RevealSeconds || a.BetSeconds != b.BetSeconds ||
+		a.WagerSeconds != b.WagerSeconds || a.GraceSeconds != b.GraceSeconds ||
+		a.RepeatQuestions != b.RepeatQuestions || a.BoardRounds != b.BoardRounds {
+		return false
+	}
+	return slices.Equal(a.CellValues, b.CellValues) && slices.Equal(a.TokenValues, b.TokenValues)
+}
+
+// The wire's round number is what the TV and the host cue read out, and both
+// of them added one to it on top of the one the projection already added --
+// so a two-round night announced "Round 3 of 2" in front of the room.
+func TestTheWireRoundNumberIsTheOneToReadOut(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank([]string{"space", "sports"}, 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.FinalWager = false
+	game := f.newGame(s, nil)
+	f.buildRounds(game, []string{"space", "sports"})
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+
+	snap, err := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ProjectHost(snap); got.BoardRound != 1 || got.BoardRounds != 2 {
+		t.Fatalf("round one reports %d of %d, want 1 of 2", got.BoardRound, got.BoardRounds)
+	}
+
+	f.playNextCell(f.reload(game.ID), team)
+	snap, err = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// At the break the wire already names the round ABOUT TO BE PLAYED, so a
+	// surface reads it straight out with no arithmetic of its own.
+	if got := ProjectHost(snap); got.BoardRound != 2 || got.BoardRounds != 2 {
+		t.Fatalf("the break reports %d of %d, want 2 of 2", got.BoardRound, got.BoardRounds)
+	}
+}
+
+// snap.Board is the round in play, so anything counting progress has to read
+// the night-wide totals instead -- or the break reports "0 of 10 done" when
+// half the night is behind you.
+func TestProgressCountsTheNightNotTheRound(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank([]string{"space", "sports"}, 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.FinalWager = false
+	game := f.newGame(s, nil)
+	f.buildRounds(game, []string{"space", "sports"})
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playNextCell(f.reload(game.ID), team)
+
+	snap, err := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.CellsTotal != 2 || snap.CellsPlayed != 1 {
+		t.Fatalf("progress is %d of %d, want 1 of 2 across the whole night",
+			snap.CellsPlayed, snap.CellsTotal)
+	}
+	if got := phaseSentence(snap); !strings.Contains(got, "1 of 2") {
+		t.Fatalf("phaseSentence = %q, want it to count the night", got)
 	}
 }

@@ -95,10 +95,7 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	// Which board is in play, derived from the cells rather than stored --
 	// see CurrentBoardRound. An exhausted board reports the round count,
 	// which leaves the final drawing on the last round's scaling.
-	boardRound := CurrentBoardRound(cells)
-	if n := BoardRoundCount(cells); boardRound >= n && n > 0 {
-		boardRound = n - 1
-	}
+	boardRound := PlayingBoardRound(cells)
 
 	snap := &Snapshot{
 		GameID: gameID, TenantID: tenantID,
@@ -120,6 +117,12 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	// filtering here is what stops the TV showing twenty tiles and the phone
 	// offering a cell from a board the room has not reached. The setup page
 	// wants the whole thing and reads the cells directly instead.
+	snap.CellsTotal = len(cells)
+	for _, c := range cells {
+		if c.PlayedAt != nil {
+			snap.CellsPlayed++
+		}
+	}
 	for _, c := range CellsInRound(cells, boardRound) {
 		snap.Board = append(snap.Board, SnapCell{
 			ID: c.ID, Col: c.ColIndex, Row: c.RowIndex,

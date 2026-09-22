@@ -17,8 +17,19 @@
 /* An ALLOW-list, not a deny-list, because a phase this file has never heard of
    must default to hiding the corner rather than painting it over whatever that
    screen turns out to be. `wager` is in here for the final's staking phase; if
-   it never ships, the entry costs nothing. */
-var JOIN_PHASES = { board: true, reveal: true, scoring: true, wager: true };
+   it never ships, the entry costs nothing.
+
+   THE BREAK IS THE BEST ENTRY OF THE NIGHT and was missing from this list when
+   the phase was added -- allow-lists fail closed, which is the right default
+   and also the reason a new phase has to be remembered here. Nothing is on a
+   clock, the room is up at the bar, and a newcomer has a whole board ahead of
+   them rather than half a question. */
+var JOIN_PHASES = {};
+JOIN_PHASES[PHASE.BOARD] = true;
+JOIN_PHASES[PHASE.INTERMISSION] = true;
+JOIN_PHASES[PHASE.REVEAL] = true;
+JOIN_PHASES[PHASE.SCORING] = true;
+JOIN_PHASES[PHASE.WAGER] = true;
 
 function joinCornerIsDue() {
   if (!state || !JOIN_PHASES[state.phase]) { return false; }
@@ -53,14 +64,14 @@ function renderJoinCorner() {
   // `fitCardValues` then had to shrink every numeral to fit the narrower box
   // -- a wall of three-digit numbers a size smaller, to make room for a code.
   // Wrong trade: the cards are what the room is looking at.
-  var small = on && state.phase !== 'board';
+  var small = on && state.phase !== PHASE.BOARD;
   // Scoring is the one phase where the right-hand 540px already belongs to
   // the standings rail, so the corner crosses to the left.
-  var left = on && state.phase === 'scoring';
+  var left = on && state.phase === PHASE.SCORING;
   box.classList.toggle('small', small);
   box.classList.toggle('left', left);
 
-  document.getElementById('s-board').classList.toggle('cornered', on && state.phase === 'board');
+  document.getElementById('s-board').classList.toggle('cornered', on && state.phase === PHASE.BOARD);
   var cards = document.getElementById('cards-screen');
   cards.classList.toggle('cornered', small && !left);
   cards.classList.toggle('cornered-left', left);
@@ -85,7 +96,7 @@ function noticeArrivals(prev) {
   if (!host || !state) { return; }
   // The lobby is nothing but arrivals -- the pills there already say it, and a
   // toast per table would be a strobe.
-  if (prev && state.phase !== 'lobby' && state.phase !== 'setup') {
+  if (prev && state.phase !== PHASE.LOBBY && state.phase !== PHASE.SETUP) {
     var had = {};
     (prev.teams || []).forEach(function (t) { had[t.id] = true; });
     var fresh = (state.teams || []).filter(function (t) { return !had[t.id]; });

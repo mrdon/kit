@@ -25,7 +25,7 @@ var wheel = { game: '', picker: '', startedAt: 0, done: false };
    start of the night, not a pick that followed a round), nothing has been
    played yet, and this browser has not already watched it. */
 function wheelIsDue() {
-  if (!state || state.phase !== 'board') { return false; }
+  if (!state || state.phase !== PHASE.BOARD) { return false; }
   if (state.pickerReason !== 'drawn' || !state.picker) { return false; }
   for (var i = 0; i < state.board.length; i++) {
     if (state.board[i].played) { return false; }

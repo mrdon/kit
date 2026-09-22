@@ -43,29 +43,3 @@ function renderPodium(phaseChanged) {
    or a newer game appearing on the stable address, leaves the screen
    showing something wrong until somebody walks over to it. A few bytes
    every 15s, and a reload only when they actually change. */
-
-/* --- the break between boards --- */
-/* Standings, and what the room is coming back to. No clock: the whole point
-   of the phase is that the night stops for a minute, and a countdown on the
-   wall would put it straight back on. */
-function renderBreak() {
-  show('s-break');
-  var next = document.getElementById('break-next');
-  next.textContent = 'Round ' + (state.boardRound + 1) + ' of ' + state.boardRounds +
-    ' is next — every question and every chip worth double.';
-
-  var host = document.getElementById('break-scores');
-  host.innerHTML = '';
-  var teams = state.teams.slice().sort(function (a, b) { return b.score - a.score; });
-  teams.forEach(function (t) {
-    /* Competition rank, same as the podium: two tables on the same money are
-       both in the same place, and the room will say so if the screen does
-       not. */
-    var rank = 1 + teams.filter(function (o) { return o.score > t.score; }).length;
-    var row = el('li', 'breakrow');
-    row.appendChild(el('span', 'brank', '#' + rank));
-    row.appendChild(el('span', 'bname', t.name));
-    row.appendChild(el('span', 'bscore', money(t.score)));
-    host.appendChild(row);
-  });
-}

@@ -497,7 +497,7 @@ A **set** is just a named group of questions, and each game draws from whichever
 
 **Build the board.** Pick your categories (or hit **Auto**) and Kit fills a 5 × 2 grid — ten questions, about half an hour. If a category doesn't have enough questions, you're told which one and by how much, at setup time rather than three questions into the night. "Not enough *fresh* questions" is a different problem with a different fix: upload more, delete an old game, or allow repeats.
 
-**Two boards and a break fill a pub hour.** Set **Board rounds** to 2 and the night becomes: a board, an intermission, a second board, then the final. The break is a real stop — the TV puts the standings up and the join code stays in the corner, nothing counts down, and the night resumes when you press the button. That is the point of it: people get up, get a drink, and argue about question four.
+**Two boards and a break fill a pub hour**, and that is the default — Jeopardy's shape. The night runs: a board, an intermission, a second board, then the final. Set **Board rounds** to 1 for a short night or 3 for a long one; it does not count the final. The break is a real stop — the TV puts the standings up and the join code stays in the corner, nothing counts down, and the night resumes when you press the button. That is the point of it: people get up, get a drink, and argue about question four.
 
 Each round draws its own categories, so you tick ten rather than five (the first five are round one), and **everything in round two is worth double** — the cells and the chips together. That keeps the balance where round one set it and gives a table that had a bad first half a real way back. It adds no rule: the room is told the same five lines and plays them twice.
 

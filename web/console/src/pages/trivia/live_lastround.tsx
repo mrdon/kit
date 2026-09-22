@@ -1,4 +1,4 @@
-import { boardIsEmpty, money, pickerWhy, type HostFrame, type HostTeam } from './common';
+import { boardIsEmpty, money, PHASE, pickerWhy, type HostFrame, type HostTeam } from './common';
 
 // The round that has already been put away.
 //
@@ -25,7 +25,7 @@ export function LastRoundRecap({ frame }: { frame: HostFrame }) {
   const answer = last.correctText || String(last.correctValue);
   // With the board emptied there is no category left to pick, so saying so
   // would send the host looking for a cell that is not there.
-  const picks = frame.phase === 'board' && !boardIsEmpty(frame) ? pickLine(frame) : null;
+  const picks = frame.phase === PHASE.BOARD && !boardIsEmpty(frame) ? pickLine(frame) : null;
   return (
     <section className="panel trivia-recap">
       <h2>Last round · {last.isFinal ? 'the final' : `question ${last.ordinal}`}</h2>

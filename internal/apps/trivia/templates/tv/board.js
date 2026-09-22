@@ -32,7 +32,7 @@ function renderBoard(prev) {
       grid.appendChild(d);
     }
   }
-  if (prev && prev.phase === 'scoring') { /* returning from a round: no flip */ }
+  if (prev && prev.phase === PHASE.SCORING) { /* returning from a round: no flip */ }
   fitCellValues();
 }
 

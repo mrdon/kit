@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type TriviaGame } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { useHostStream } from './useStream';
-import { PHASE_LABEL, money, type HostFrame, type Phase } from './common';
+import { ACTION, PHASE, PHASE_LABEL, money, type HostFrame, type Phase } from './common';
 import { StatusPanel } from './live_panel';
 import { LastRoundRecap } from './live_lastround';
 
@@ -54,7 +54,7 @@ export default function TriviaLive() {
   }
 
   const secs = msLeft === null ? null : Math.ceil(msLeft / 1000);
-  const inLobby = frame.phase === 'lobby' || frame.phase === 'setup';
+  const inLobby = frame.phase === PHASE.LOBBY || frame.phase === PHASE.SETUP;
   // The cards earn the full width from the moment they go up until the round
   // is put away — that is the stretch where the host is reading them out,
   // watching chips land on them and calling the winner. Outside it they
@@ -89,13 +89,13 @@ export default function TriviaLive() {
               down the panel read as a page with no start at all. Ending an
               unstarted game is the list page's Delete. */}
           {inLobby ? (
-            <button className="btn" disabled={busy} onClick={() => void act({ action: 'start' })}>
+            <button className="btn" disabled={busy} onClick={() => void act({ action: ACTION.START })}>
               Start the game
             </button>
           ) : ending ? (
             <>
               <button className="btn btn-danger" disabled={busy}
-                onClick={() => void act({ action: 'finish' })}>
+                onClick={() => void act({ action: ACTION.FINISH })}>
                 Really end it
               </button>
               <button className="btn btn-danger" disabled={busy}
@@ -119,11 +119,12 @@ export default function TriviaLive() {
           makes it possible for the panel to stay on screen at all. */}
       <div className="trivia-live">
         <section className="trivia-boardcol">
-          <BoardGrid frame={frame} busy={busy} onPick={(cellId) => void act({ action: 'pick_cell', cell_id: cellId })} />
+          <BoardGrid frame={frame} busy={busy} onPick={(cellId) => void act({ action: ACTION.PICK_CELL, cell_id: cellId })} />
           {/* Directly under the board: the recap is the thing the host reads
               BEFORE asking a table to pick, so it sits where their eyes
               already are rather than below everything else on the page. */}
-          {frame.phase === 'board' || frame.phase === 'podium' ? <LastRoundRecap frame={frame} /> : null}
+          {frame.phase === PHASE.BOARD || frame.phase === PHASE.INTERMISSION || frame.phase === PHASE.PODIUM
+            ? <LastRoundRecap frame={frame} /> : null}
         </section>
         <StatusPanel frame={frame} busy={busy} secs={secs} gameId={id}
           skipReveal={game.settings.reveal_seconds === 0}
@@ -137,7 +138,7 @@ export default function TriviaLive() {
 // The phases where the answer cards are worth a full-width block of their
 // own: up on the screen, being bet on, or just scored — plus the podium,
 // where the final's cards are the last thing anyone argues about.
-const CARD_PHASES = new Set<Phase>(['reveal', 'betting', 'scoring', 'podium']);
+const CARD_PHASES = new Set<Phase>([PHASE.REVEAL, PHASE.BETTING, PHASE.SCORING, PHASE.PODIUM]);
 
 function BoardGrid({ frame, busy, onPick }: { frame: HostFrame; busy: boolean; onPick: (id: string) => void }) {
   const cols = Math.max(1, ...frame.board.map((c) => c.col + 1));
@@ -145,7 +146,7 @@ function BoardGrid({ frame, busy, onPick }: { frame: HostFrame; busy: boolean; o
   const byPos = new Map(frame.board.map((c) => [`${c.col}:${c.row}`, c]));
   const headers: string[] = [];
   frame.board.forEach((c) => { headers[c.col] = c.topic; });
-  const pickable = frame.phase === 'board';
+  const pickable = frame.phase === PHASE.BOARD;
 
   if (!frame.board.length) {
     return <p className="page-sub">No board yet — build one on the setup page.</p>;

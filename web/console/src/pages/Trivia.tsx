@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, type TriviaGame } from '../api';
 import { useSetChatContext } from '../chatContext';
 import { SLUG } from '../workspace';
-import { PHASE_LABEL } from './trivia/common';
+import { PHASE, PHASE_LABEL } from './trivia/common';
 
 // The game list, and the one button that starts a night.
 //
@@ -129,7 +129,7 @@ export default function Trivia() {
               </span>
             </div>
             <div className="card-side">
-              <span className={g.phase === 'podium' ? 'pill pill-off' : 'pill pill-ok'}>
+              <span className={g.phase === PHASE.PODIUM ? 'pill pill-off' : 'pill pill-ok'}>
                 {PHASE_LABEL[g.phase]}
               </span>
               <Link className="card-manage" to={`/trivia/${g.id}`}>Set up</Link>

@@ -46,7 +46,12 @@ const (
 func DefaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
-		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
+		// FLAT. Every cell in a round is worth the same -- the escalation is
+		// on the round axis, not down the rows, because a question carries no
+		// difficulty and the row it lands in is a shuffle. A 100/200 ladder
+		// here was the shipped counter-example to the rule the rest of the
+		// app states.
+		CellValues: []int{100, 100}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 0, BetSeconds: 45,
 		// Thirty seconds to commit a number against nothing but a category.
 		// Shorter than the answer clock on purpose: there is nothing to work
@@ -61,9 +66,31 @@ func DefaultSettings() Settings {
 		// host whose bank has run thin can turn this on per game; deleting
 		// an old night gives its questions back either way.
 		RepeatQuestions: false,
-		// One board, which is exactly the game as it shipped. Two is the pub
-		// hour with a break in the middle; see migration 104.
-		BoardRounds: 1,
+		// Two boards and a final, which is Jeopardy's shape and about an
+		// hour: twenty questions plus the final, with a break in the middle
+		// where people get up and get a drink. One board is still a setting
+		// for a short night; it is no longer the default.
+		BoardRounds: 2,
+	}
+}
+
+// SettingsOf is the one Game -> Settings mapping.
+//
+// It exists because there were two, hand-written field by field, and BOTH
+// forgot board_rounds the day it was added. The console then shipped
+// "board_rounds": 0 on every response, which the picker read as a zero-column
+// night and refused every category tick; and a new game inherited a round
+// count of nothing. A literal that has to list twenty fields correctly in two
+// places will eventually list nineteen in one of them, so there is one place
+// now and a round-trip test over it.
+func SettingsOf(g *Game) Settings {
+	return Settings{
+		Title: g.Title, BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,
+		CellValues: g.CellValues, TokenValues: g.TokenValues, FinalWager: g.FinalWager,
+		AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds,
+		BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
+		GraceSeconds: g.GraceSeconds, RepeatQuestions: g.RepeatQuestions,
+		BoardRounds: g.BoardRounds,
 	}
 }
 

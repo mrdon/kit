@@ -119,6 +119,23 @@ function el(tag, cls, text) {
   return e;
 }
 
+/* The phase vocabulary, as constants rather than forty string literals
+   scattered over twelve files. Mirrors Phase in models.go and PHASE in
+   triviaPhases.ts -- the wire values are the Go constants, so this is the
+   third and last copy, and it is the one a screen file should reach for. */
+var PHASE = {
+  SETUP: 'setup',
+  LOBBY: 'lobby',
+  BOARD: 'board',
+  INTERMISSION: 'intermission',
+  WAGER: 'wager',
+  QUESTION: 'question',
+  REVEAL: 'reveal',
+  BETTING: 'betting',
+  SCORING: 'scoring',
+  PODIUM: 'podium'
+};
+
 function money(n) {
   var neg = n < 0;
   var s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -139,16 +156,16 @@ function render(prev) {
   renderJoinCorner();
 
   switch (state.phase) {
-    case 'setup':
-    case 'lobby':   renderJoin(); break;
-    case 'board':   renderBoard(prev); break;
-    case 'intermission': renderBreak(); break;
-    case 'wager':   renderWager(phaseChanged); break;
-    case 'question': renderQuestion(phaseChanged); break;
-    case 'reveal':  renderCards('reveal'); break;
-    case 'betting': renderCards('betting'); break;
-    case 'scoring': renderScoring(phaseChanged); break;
-    case 'podium':  renderPodium(phaseChanged); break;
+    case PHASE.SETUP:
+    case PHASE.LOBBY:   renderJoin(); break;
+    case PHASE.BOARD:   renderBoard(prev); break;
+    case PHASE.INTERMISSION: renderBreak(); break;
+    case PHASE.WAGER:   renderWager(phaseChanged); break;
+    case PHASE.QUESTION: renderQuestion(phaseChanged); break;
+    case PHASE.REVEAL:  renderCards(PHASE.REVEAL); break;
+    case PHASE.BETTING: renderCards(PHASE.BETTING); break;
+    case PHASE.SCORING: renderScoring(phaseChanged); break;
+    case PHASE.PODIUM:  renderPodium(phaseChanged); break;
     default:        show('s-hold');
   }
   noticeArrivals(prev);

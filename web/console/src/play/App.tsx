@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { join, me, money, reclaim, type PlayerFrame } from './api';
+import { join, me, money, PHASE, reclaim, type PlayerFrame } from './api';
 import { useStream, useWakeLock } from './useStream';
 import { Answer, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';
@@ -119,8 +119,8 @@ function Playing({
   const out = sittingOutScreen(frame, msLeft);
   if (out) return out;
   switch (frame.phase) {
-    case 'setup':
-    case 'lobby':
+    case PHASE.SETUP:
+    case PHASE.LOBBY:
       return (
         <div className="body">
           <h1>You&rsquo;re in.</h1>
@@ -131,12 +131,15 @@ function Playing({
           <Rules frame={frame} />
         </div>
       );
-    case 'board':
+    case PHASE.BOARD:
+    // The break is the same situation with more of it: nothing to do, and a
+    // table that wants to know where it stands before the next board.
+    case PHASE.INTERMISSION:
       // Between questions is the one moment a table has nothing to do, so it
       // is the right time to tell them where they stand. "Next question
       // coming up" told them nothing they could not see on the wall.
       return <BetweenQuestions frame={frame} />;
-    case 'wager': {
+    case PHASE.WAGER: {
       // The blind bet. No prompt has been sent, so there is nothing else this
       // screen could show even if it wanted to.
       //
@@ -147,19 +150,19 @@ function Playing({
       if (seat && !seat.eligible) return <WagerWatching frame={frame} msLeft={msLeft} />;
       return <Wager frame={frame} msLeft={msLeft} onDone={apply} />;
     }
-    case 'question':
+    case PHASE.QUESTION:
       // ONE tree whether or not the answer is in. Wrapping the answered case
       // in its own panel remounted <Answer> the moment the flag flipped, which
       // stacked a second clock above its own and wiped the number the table
       // had just typed. The answered count lives inside Answer now.
       return <Answer frame={frame} msLeft={msLeft} onDone={apply} />;
-    case 'reveal':
+    case PHASE.REVEAL:
       return <WatchingCards frame={frame} msLeft={msLeft} note="until betting opens" />;
-    case 'betting':
+    case PHASE.BETTING:
       return <Betting frame={frame} msLeft={msLeft} onDone={apply} />;
-    case 'scoring':
+    case PHASE.SCORING:
       return <Result frame={frame} />;
-    case 'podium':
+    case PHASE.PODIUM:
       return <Podium frame={frame} />;
     default:
       return <Waiting title="Hold on" />;
@@ -265,7 +268,7 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
   }
 
   const full = frame.teams.length >= 20;
-  const finished = frame.phase === 'podium';
+  const finished = frame.phase === PHASE.PODIUM;
   return (
     <div className="body">
       {/* The night's name, big, so somebody who just scanned a QR can confirm
@@ -305,7 +308,7 @@ function JoinForm({ frame, onJoined, onReclaim }: {
   const [err, setErr] = useState('');
   const running = useRef(false);
 
-  const inProgress = frame.phase !== 'lobby' && frame.phase !== 'setup';
+  const inProgress = frame.phase !== PHASE.LOBBY && frame.phase !== PHASE.SETUP;
   // The final is where the door shuts. The round in flight being final covers
   // every phase the final passes through; the refusal text covers the race
   // where the host started it between this frame landing and the tap.

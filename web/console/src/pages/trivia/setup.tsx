@@ -5,7 +5,7 @@ import { useSetChatContext } from '../../chatContext';
 import { BoardPanel } from './board_panel';
 import { NumberField } from './NumberField';
 import {
-  defaultSettings, estimateMinutes,
+  defaultSettings, estimateMinutes, PHASE, sameSettings,
   type BoardQuestion, type Dataset, type TopicCount, type TriviaSettings,
 } from './common';
 
@@ -156,22 +156,43 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
   const [s, setS] = useState<TriviaSettings>(game.settings ?? defaultSettings());
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const locked = game.phase !== 'setup' && game.phase !== 'lobby';
-  const dirty = useRef(false);
+  const locked = game.phase !== PHASE.SETUP && game.phase !== PHASE.LOBBY;
+  // What the server last told us it has. The save below fires only when the
+  // form has drifted from THIS, which is the only reliable way to tell an
+  // edit from an echo.
+  const onServer = useRef<TriviaSettings>(game.settings ?? defaultSettings());
+  // Held in a ref so re-rendering the parent cannot re-arm the save. It used
+  // to sit in the dependency array, where a new closure every render was
+  // enough on its own to fire it again.
+  const notify = useRef(onSaved);
+  notify.current = onSaved;
 
-  useEffect(() => setS(game.settings ?? defaultSettings()), [game]);
+  useEffect(() => {
+    const next = game.settings ?? defaultSettings();
+    onServer.current = next;
+    setS(next);
+  }, [game]);
 
   // Settings save themselves. There is nothing to confirm here — every field
   // is a number or a checkbox, and a host who changes the timer and walks off
   // to start the game should not lose it to a button they did not know about.
   // Debounced so typing in a number field is one write, not one per keystroke.
+  //
+  // THE GUARD IS A VALUE COMPARISON, not a dirty flag, because a dirty flag
+  // cannot tell an edit from the echo of one. This used to be `dirty.current`,
+  // set on the first edit and never cleared, and the result was a save loop:
+  // the PATCH reloaded the game, the reload handed back a fresh settings
+  // object, the new identity re-fired this effect, and the tab wrote to the
+  // database every 600ms for as long as it stayed open — bumping
+  // state_version, redrawing the board, and flashing "Saved." the whole time.
   useEffect(() => {
-    if (!dirty.current || locked) return;
+    if (locked || sameSettings(s, onServer.current)) return;
     const t = window.setTimeout(() => {
       setErr(null);
       api.updateTriviaGame(game.id, s)
         .then((g) => {
-          onSaved(g);
+          onServer.current = g.settings ?? s;
+          notify.current(g);
           if (g.board_error) {
             setErr(`Saved, but the board could not be redrawn: ${g.board_error}`);
             return;
@@ -182,14 +203,9 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         .catch((e) => setErr((e as Error).message));
     }, 600);
     return () => window.clearTimeout(t);
-  }, [s, locked, game.id, onSaved]);
+  }, [s, locked, game.id]);
 
-  // edit marks the form dirty so the effect above only fires for real edits,
-  // not for the initial load or a refresh from the server.
-  const edit = (next: TriviaSettings) => {
-    dirty.current = true;
-    setS(next);
-  };
+  const edit = (next: TriviaSettings) => setS(next);
 
   const setRows = (rows: number) => {
     // Every cell in a round is worth the SAME, so the values follow the row

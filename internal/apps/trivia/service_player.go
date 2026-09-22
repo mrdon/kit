@@ -351,11 +351,7 @@ func (s *Service) chipAmount(ctx context.Context, game *Game, round *Round, team
 	if err != nil {
 		return 0, err
 	}
-	boardRound := CurrentBoardRound(cells)
-	if n := BoardRoundCount(cells); boardRound >= n && n > 0 {
-		boardRound = n - 1
-	}
-	return game.TokenValues[tokenIndex] * boardMultiplier(boardRound), nil
+	return game.TokenValues[tokenIndex] * boardMultiplier(PlayingBoardRound(cells)), nil
 }
 
 // assertSlotInRound stops a chip landing on a card from a different round --

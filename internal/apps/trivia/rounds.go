@@ -50,8 +50,9 @@ func scaleValues(values []int, round int) []int {
 // round in play, by definition, and it needs no migration, cannot drift, and
 // is correct again the moment a cell is played.
 //
-// An exhausted board returns the count of rounds, which is what
-// boardRoundExhausted and afterScoring both test against.
+// An exhausted board returns the count of rounds, which is what afterScoring
+// tests against to know the night's boards are done. Callers that need "which
+// round's SCALING applies" want PlayingBoardRound instead.
 func CurrentBoardRound(cells []BoardCell) int {
 	best := -1
 	rounds := 0
@@ -91,4 +92,24 @@ func BoardRoundCount(cells []BoardCell) int {
 		}
 	}
 	return rounds
+}
+
+// PlayingBoardRound is CurrentBoardRound clamped to a real round.
+//
+// The difference matters exactly once: when every cell has been played,
+// CurrentBoardRound reports the round COUNT -- one past the end -- which is
+// what tells afterScoring the boards are done. But the final still has to be
+// scaled like something, and the last round is the honest answer.
+//
+// This is one function rather than the four lines it replaces because those
+// four lines decided two things that must agree by construction: what a chip
+// is WORTH when it lands (chipAmount) and what the phone was SHOWN before it
+// was placed (the snapshot). They agreed by copy-paste, which is the same
+// thing right up until one of them is edited.
+func PlayingBoardRound(cells []BoardCell) int {
+	round := CurrentBoardRound(cells)
+	if n := BoardRoundCount(cells); n > 0 && round >= n {
+		return n - 1
+	}
+	return round
 }

@@ -38,6 +38,12 @@ type Snapshot struct {
 	// "round 2 of 2" and the phone knows its chips just doubled.
 	BoardRound  int
 	BoardRounds int
+	// CellsTotal and CellsPlayed count the WHOLE NIGHT, every round of it,
+	// because Board carries only the round in play. Anything answering "how
+	// far through are we" wants these -- counting Board instead reports "0 of
+	// 10 done" during the break, which is both wrong and demoralising.
+	CellsTotal  int
+	CellsPlayed int
 
 	// PickerTeamID is the table whose pick the next category is, and
 	// PickerReason is why it is theirs. Both ride on EVERY surface's frame --
@@ -210,18 +216,4 @@ func (s *Snapshot) DeadlineMillis() int64 {
 		return 0
 	}
 	return s.Deadline.UnixMilli()
-}
-
-// BoardComplete reports whether every cell has been played, which is what
-// ends the board and sends the game to the final or the podium.
-func (s *Snapshot) BoardComplete() bool {
-	if len(s.Board) == 0 {
-		return false
-	}
-	for _, c := range s.Board {
-		if !c.Played {
-			return false
-		}
-	}
-	return true
 }

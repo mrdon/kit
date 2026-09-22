@@ -1,9 +1,12 @@
 // Shared types and formatters for the trivia console pages, mirroring
 // pages/tasks/common.ts.
+//
+// The phase and action vocabularies live in ../../triviaPhases so the phone
+// bundle shares them rather than keeping a second copy.
+import { ACTION, PHASE, type Action, type Phase } from '../../triviaPhases';
 
-export type Phase =
-  | 'setup' | 'lobby' | 'board' | 'intermission' | 'wager' | 'question'
-  | 'reveal' | 'betting' | 'scoring' | 'podium';
+export { ACTION, PHASE };
+export type { Action, Phase };
 
 export interface TriviaSettings {
   title: string;
@@ -237,23 +240,19 @@ export interface ImportReport {
   topics: TopicCount[];
 }
 
-export type Action =
-  | 'start' | 'pick_cell' | 'ask' | 'reveal' | 'open_betting'
-  | 'score' | 'next' | 'final' | 'extend' | 'finish' | 'resume';
-
 export const PHASE_LABEL: Record<Phase, string> = {
-  setup: 'Teams joining',
-  lobby: 'Teams joining',
-  board: 'On the board',
-  intermission: 'Break',
-  wager: 'Wagers in',
-  question: 'Answering',
+  [PHASE.SETUP]: 'Teams joining',
+  [PHASE.LOBBY]: 'Teams joining',
+  [PHASE.BOARD]: 'On the board',
+  [PHASE.INTERMISSION]: 'Break',
+  [PHASE.WAGER]: 'Wagers in',
+  [PHASE.QUESTION]: 'Answering',
   // Named for what the host does next, not for what just happened: the cards
   // are up and betting is the thing that has not started yet.
-  reveal: 'Cards up, betting next',
-  betting: 'Placing bets',
-  scoring: 'Scored',
-  podium: 'Finished',
+  [PHASE.REVEAL]: 'Cards up, betting next',
+  [PHASE.BETTING]: 'Placing bets',
+  [PHASE.SCORING]: 'Scored',
+  [PHASE.PODIUM]: 'Finished',
 };
 
 // Every cell played. It decides what the primary button offers and whether
@@ -271,23 +270,23 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
   switch (phase) {
     // A game is joinable from the moment it exists, so there is no state to
     // announce before starting: the host's controls are start and end.
-    case 'setup':
-    case 'lobby': return { action: 'start', label: 'Start the game' };
-    case 'board':
-      if (boardEmpty && finalWager && !finalPlayed) return { action: 'final', label: 'Final question' };
-      if (boardEmpty) return { action: 'finish', label: 'Go to the podium' };
+    case PHASE.SETUP:
+    case PHASE.LOBBY: return { action: ACTION.START, label: 'Start the game' };
+    case PHASE.BOARD:
+      if (boardEmpty && finalWager && !finalPlayed) return { action: ACTION.FINAL, label: 'Final question' };
+      if (boardEmpty) return { action: ACTION.FINISH, label: 'Go to the podium' };
       return null; // waiting for the host to pick a cell
     // Nothing is on a clock during the break. The host decides when the room
     // has finished its drink, which is the entire point of the phase.
-    case 'intermission': return { action: 'resume', label: 'Start the next round' };
+    case PHASE.INTERMISSION: return { action: ACTION.RESUME, label: 'Start the next round' };
     // The wager is the one phase whose primary button reveals nothing and
     // scores nothing: it puts the question on the wall. Named for that.
-    case 'wager': return { action: 'ask', label: 'Ask the question' };
-    case 'question': return { action: 'reveal', label: skipReveal ? 'Reveal and open betting' : 'Reveal answers' };
-    case 'reveal': return { action: 'open_betting', label: 'Open betting' };
-    case 'betting': return { action: 'score', label: 'Score the round' };
-    case 'scoring': return { action: 'next', label: 'Next' };
-    case 'podium': return null;
+    case PHASE.WAGER: return { action: ACTION.ASK, label: 'Ask the question' };
+    case PHASE.QUESTION: return { action: ACTION.REVEAL, label: skipReveal ? 'Reveal and open betting' : 'Reveal answers' };
+    case PHASE.REVEAL: return { action: ACTION.OPEN_BETTING, label: 'Open betting' };
+    case PHASE.BETTING: return { action: ACTION.SCORE, label: 'Score the round' };
+    case PHASE.SCORING: return { action: ACTION.NEXT, label: 'Next' };
+    case PHASE.PODIUM: return null;
   }
 }
 
@@ -301,6 +300,25 @@ export function pickerWhy(reason: PickerReason): string {
     case 'lowest': return 'lowest score picks';
     default: return '';
   }
+}
+
+// Whether two settings describe the same game.
+//
+// This is what decides if there is anything to SAVE, and it compares values
+// rather than identity on purpose: every reload from the server hands back a
+// fresh object that is field-for-field what the form already holds, and an
+// identity check treats that as an edit.
+export function sameSettings(a: TriviaSettings, b: TriviaSettings): boolean {
+  const numbers = [
+    'board_rows', 'board_columns', 'answer_seconds', 'reveal_seconds',
+    'bet_seconds', 'wager_seconds', 'grace_seconds', 'board_rounds',
+  ] as const;
+  if (a.title !== b.title) return false;
+  if (a.final_wager !== b.final_wager || a.repeat_questions !== b.repeat_questions) return false;
+  if (numbers.some((k) => a[k] !== b[k])) return false;
+  const lists = ['cell_values', 'token_values'] as const;
+  return lists.every((k) =>
+    a[k].length === b[k].length && a[k].every((v, i) => v === b[k][i]));
 }
 
 // Roughly how long a night of this shape runs, in minutes.
@@ -340,8 +358,8 @@ export function money(n: number): string {
 
 // defaultSettings is the shipped game, mirrored from the server's
 // DefaultSettings so a new game is created with the same shape the docs and
-// the host's card describe: one board of 5 categories x 2 rows at $100/$200,
-// ten questions, two chips at $100/$200, and a final.
+// the host's card describe: two boards of 5 categories x 2 rows, twenty
+// questions at $100 then $200 a cell, two chips at $100/$200, and a final.
 export function defaultSettings(): TriviaSettings {
   return {
     title: '',
@@ -356,6 +374,7 @@ export function defaultSettings(): TriviaSettings {
     wager_seconds: 30,
     grace_seconds: 5,
     repeat_questions: false,
-    board_rounds: 1,
+    // Two boards and a final — Jeopardy's shape, and about an hour.
+    board_rounds: 2,
   };
 }

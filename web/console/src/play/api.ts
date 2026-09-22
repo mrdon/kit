@@ -85,11 +85,14 @@ export interface WirePicker {
   name: string;
 }
 
-export type PickerReason = '' | 'drawn' | 'wrote_winner' | 'lowest';
+// Re-exported from the shared vocabulary rather than written again. The copy
+// that used to live here had already drifted: it was missing `intermission`,
+// so the break between board rounds fell through the phone's switch to a
+// bare "Hold on" instead of the standings the table wanted to see.
+import type { Phase, PickerReason } from '../triviaPhases';
 
-export type Phase =
-  | 'setup' | 'lobby' | 'board' | 'wager' | 'question'
-  | 'reveal' | 'betting' | 'scoring' | 'podium';
+export { PHASE, PICKER_REASON } from '../triviaPhases';
+export type { Phase, PickerReason };
 
 export interface PlayerFrame {
   version: number;

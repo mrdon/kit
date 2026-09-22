@@ -89,13 +89,7 @@ func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader 
 		TVURL:     JoinURL(a.baseURL, slug, g.Name) + "/tv",
 		Teams:     teams, Cells: cells, Played: played, Leader: leader,
 		CreatedAt: g.CreatedAt,
-		Settings: Settings{
-			Title: g.Title, BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,
-			CellValues: g.CellValues, TokenValues: g.TokenValues, FinalWager: g.FinalWager,
-			AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds,
-			BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
-			GraceSeconds: g.GraceSeconds, RepeatQuestions: g.RepeatQuestions,
-		},
+		Settings:  SettingsOf(g),
 	}
 }
 
@@ -137,12 +131,8 @@ func (a *App) gameCounts(r *http.Request, g *Game) (teams, cells, played int, le
 			best, leader = t.Score, t.Name
 		}
 	}
-	for _, c := range snap.Board {
-		cells++
-		if c.Played {
-			played++
-		}
-	}
+	// Every round of it. snap.Board is the round in play only.
+	cells, played = snap.CellsTotal, snap.CellsPlayed
 	return teams, cells, played, leader
 }
 
@@ -240,15 +230,11 @@ func (a *App) settingsForNewGame(r *http.Request, tenantID uuid.UUID, asked *Set
 		return DefaultSettings(), nil
 	}
 	g := games[0]
-	return normaliseSettings(Settings{
-		// The TITLE is not inherited. Everything else describes how the game
-		// is played and is stable week to week; the title names one night.
-		BoardRows: g.BoardRows, BoardColumns: g.BoardColumns,
-		CellValues: g.CellValues, TokenValues: g.TokenValues,
-		FinalWager: g.FinalWager, AnswerSeconds: g.AnswerSeconds,
-		RevealSeconds: g.RevealSeconds, BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
-		GraceSeconds: g.GraceSeconds, RepeatQuestions: g.RepeatQuestions,
-	}), nil
+	// The TITLE is not inherited. Everything else describes how the game is
+	// played and is stable week to week; the title names one night.
+	s := SettingsOf(g)
+	s.Title = ""
+	return normaliseSettings(s), nil
 }
 
 // defaultGameTitle names a night when the host has not. Dated, so a list of
@@ -368,6 +354,12 @@ func (a *App) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 // redrawn: the columns, the rows, or what the cells are worth.
 func boardShapeChanged(before, after *Game) bool {
 	if before.BoardColumns != after.BoardColumns || before.BoardRows != after.BoardRows {
+		return true
+	}
+	// Rounds are shape too. Leaving them out meant a host typed 2, the
+	// settings said two rounds, and the board stayed one -- the same "I typed
+	// it and nothing happened" this function exists to prevent.
+	if boardRoundsOf(before) != boardRoundsOf(after) {
 		return true
 	}
 	if len(before.CellValues) != len(after.CellValues) {
