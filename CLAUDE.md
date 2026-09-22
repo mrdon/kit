@@ -81,28 +81,29 @@ make db-reset    # Wipe and restart Postgres
 
 ## Production Debugging
 
-> **Prefix every remote command with `dokku`.** This key gets a plain shell,
-> not Dokku's `sshcommand` force-command wrapper, so nothing injects the binary
-> for you:
+> **Do NOT prefix remote commands with `dokku`.** The key now goes through
+> Dokku's `sshcommand` force-command wrapper, which injects the binary for
+> you:
 >
 > ```bash
-> ssh dokku@apps.twdata.org 'dokku logs kit --num 200'      # works
-> ssh dokku@apps.twdata.org 'logs kit --num 200'            # "command not found"
+> ssh dokku@apps.twdata.org 'logs kit --num 200'            # works
+> ssh dokku@apps.twdata.org 'dokku logs kit --num 200'      # "is not a dokku command"
 > ```
 >
 > Same for `postgres:connect`, `config:get`, and the rest.
 >
-> This is the "added by hand" case: a key installed via `dokku ssh-keys:add` /
-> `sshcommand acl-add dokku <name>` gets a `command="..."` entry in
-> `/home/dokku/.ssh/authorized_keys` that injects `/usr/bin/dokku`, and those
-> keys take the bare form instead. Ours does not — `ssh dokku@host 'whoami'`
-> returns `dokku` from a real shell rather than being refused, which is the
-> quick way to tell. Re-adding the key properly would flip this; until someone
-> does, prefix.
+> This flipped at some point: the key used to get a plain shell, so everything
+> needed the binary named explicitly, and this file said to prefix. It has
+> since been re-added properly (via `dokku ssh-keys:add` / `sshcommand acl-add
+> dokku <name>`, which writes a `command="..."` entry in
+> `/home/dokku/.ssh/authorized_keys`). Verify with `ssh dokku@host 'version'`:
+> a bare subcommand that answers means the wrapper is in place.
 >
-> The failure is quiet in a pipeline: `command not found` goes to stderr, so
-> `ssh ... 'logs kit' | grep -i error` prints nothing and reads as "no errors"
-> rather than as a broken command.
+> **The failure is quiet in a pipeline**, in BOTH directions. The refusal goes
+> to stderr, so `ssh ... 'dokku logs kit' 2>&1 | grep -i error` prints nothing
+> and reads as "no errors" rather than as a broken command. If a log check
+> comes back suspiciously clean after a deploy, check the command form before
+> believing it.
 
 ### Logs
 ```bash

@@ -192,7 +192,15 @@ function RoundPreview({
   const byPos = new Map(cells.map((c) => [`${c.col}:${c.row}`, c]));
   const headers: string[] = [];
   cells.forEach((c) => { headers[c.col] = c.topic; });
-  const value = cells[0].points;
+  // Games built before cell values were flattened can still carry a ladder
+  // down the rows, so this reports the RANGE rather than asserting the first
+  // cell's value is the board's. Claiming "$100 a cell" over a board whose
+  // bottom row is $200 is the kind of wrong a host only finds out about in
+  // front of the room.
+  const points = cells.map((c) => c.points);
+  const low = Math.min(...points);
+  const high = Math.max(...points);
+  const value = low === high ? money(low) : `${money(low)}–${money(high)}`;
   // The chips scale with the cells, so the header can state both and nobody
   // has to be told a rule about multiples.
   const chips = tokenValues.map((v) => v * (round + 1));
@@ -204,7 +212,7 @@ function RoundPreview({
           called two different things on two pages. */}
       {rounds > 1 ? (
         <h3 className="trivia-qhead">
-          Board {round + 1} of {rounds} · {money(value)} a cell · chips{' '}
+          Board {round + 1} of {rounds} · {value} a cell · chips{' '}
           {chips.map((c) => money(c)).join(' / ')}
         </h3>
       ) : null}
