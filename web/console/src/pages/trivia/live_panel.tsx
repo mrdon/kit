@@ -27,7 +27,7 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
 
   return (
     <aside className="trivia-panel">
-      <p className="trivia-say">{cueFor(frame, secs)}</p>
+      <p className="trivia-say">{cueFor(frame)}</p>
 
       {/* The host sees the correct answer in every phase. They are reading it
           out and adjudicating nothing, so hiding it would be theatre with a
@@ -140,16 +140,16 @@ export function teamState(frame: HostFrame, t: HostTeam): string {
 
 // The line the host reads out. One sentence, per phase, saying what is
 // happening and what to say about it.
-export function cueFor(frame: HostFrame, secs: number | null): string {
+export function cueFor(frame: HostFrame): string {
   switch (frame.phase) {
     case PHASE.SETUP:
     case PHASE.LOBBY: return cueLobby(frame);
     case PHASE.BOARD: return cueBoard(frame);
     case PHASE.INTERMISSION: return cueIntermission(frame);
-    case PHASE.WAGER: return cueWager(frame, secs);
-    case PHASE.QUESTION: return cueQuestion(frame, secs);
-    case PHASE.REVEAL: return `Cards are up — betting opens in ${secs ?? 0}s`;
-    case PHASE.BETTING: return cueBetting(frame, secs);
+    case PHASE.WAGER: return cueWager(frame);
+    case PHASE.QUESTION: return cueQuestion(frame);
+    case PHASE.REVEAL: return 'Cards are up. Betting opens next.';
+    case PHASE.BETTING: return cueBetting(frame);
     case PHASE.SCORING: return cueScoring(frame);
     case PHASE.PODIUM: return cuePodium(frame);
   }
@@ -157,8 +157,8 @@ export function cueFor(frame: HostFrame, secs: number | null): string {
 
 function cueLobby(frame: HostFrame): string {
   const n = frame.teams.length;
-  if (!n) return 'No tables yet — the join code is on the screen';
-  return `${n} ${plural(n, 'table')} in — start when ready`;
+  if (!n) return 'No tables yet. The join code is on the screen.';
+  return `${n} ${plural(n, 'table')} in. Start when ready.`;
 }
 
 // The break. The host is holding the room, not a clock, so the cue tells them
@@ -174,44 +174,52 @@ function cueIntermission(frame: HostFrame): string {
   // The break before the final has no board behind it, so it names the round
   // rather than money nobody is about to play for.
   if (boardIsEmpty(frame) && frame.finalWager && !frame.progress.finalPlayed) {
-    return `Break — the final is next. One question, and they wager on it first.${lead}`;
+    return `Break. The final is next. They set their wagers before they see the question.${lead}`;
   }
-  const cell = frame.board[0] ? `${money(frame.board[0].points)} a cell, ` : '';
-  const chips = frame.tokens.map((t) => money(t)).join(' / ');
-  return `Break — ${roundLabel(frame).toLowerCase()} is next: ${cell}chips ${chips}.${lead}`;
+  const cell = frame.board[0] ? `Every square is ${money(frame.board[0].points)}. ` : '';
+  const chips = frame.tokens.map((t) => money(t)).join(' and ');
+  return `Break. ${roundLabel(frame)} is next. ${cell}Chips are ${chips}.${lead}`;
 }
 
 function cueBoard(frame: HostFrame): string {
   const boardEmpty = boardIsEmpty(frame);
   if (boardEmpty && frame.finalWager && !frame.progress.finalPlayed) {
-    return 'Board is empty — the final is next';
+    return 'The board is empty. The final is next.';
   }
-  if (boardEmpty) return 'Board is empty — take them to the podium';
+  if (boardEmpty) return 'The board is empty. Take them to the podium.';
   return pickLine(frame) ?? 'Pick a cell to ask the first question';
 }
 
 // The wager line names the CATEGORY, because that is the only thing the host
 // has to read out at this point — and the only thing they are allowed to.
-function cueWager(frame: HostFrame, secs: number | null): string {
+function cueWager(frame: HostFrame): string {
   const r = frame.round;
   if (!r) return 'The final is opening';
   const locked = frame.teams.filter((t) => t.eligible && t.stakeLocked).length;
-  const cat = r.category ? `${r.category} — ` : '';
-  if (r.eligible > 0 && locked >= r.eligible) return `${cat}all ${r.eligible} wagers locked — ask the question`;
-  return `${cat}${locked} of ${r.eligible} wagers locked${secs === null ? '' : ` — ${secs}s`}`;
+  const cat = r.category ? `${r.category}. ` : '';
+  if (r.eligible > 0 && locked >= r.eligible) return `${cat}All ${r.eligible} wagers are locked. Ask the question.`;
+  return `${cat}${locked} of ${r.eligible} wagers locked.`;
 }
 
-function cueQuestion(frame: HostFrame, secs: number | null): string {
+// THE CLOCK IS NOT IN THE SENTENCE. It has its own slot on this panel, big,
+// directly under the cue, so repeating it here printed the same number twice
+// and cost the host's spoken line its ending. What a host says out loud is
+// "nine of twelve tables in"; the seconds are something they glance at.
+//
+// Every cue used to be <state> — <instruction>, seven of them, heard forty
+// times in ninety minutes. The dash stays where it is a real interruption and
+// goes where it was a comma wearing a hat.
+function cueQuestion(frame: HostFrame): string {
   const r = frame.round;
-  if (!r) return 'A question is in play';
-  if (r.eligible > 0 && r.answered >= r.eligible) return `All ${r.eligible} in — reveal the cards`;
-  return `${r.answered} of ${r.eligible} in${secs === null ? '' : ` — ${secs}s`}`;
+  if (!r) return 'A question is up';
+  if (r.eligible > 0 && r.answered >= r.eligible) return `All ${r.eligible} tables are in. Reveal the cards.`;
+  return `${r.answered} of ${r.eligible} tables in.`;
 }
 
-function cueBetting(frame: HostFrame, secs: number | null): string {
+function cueBetting(frame: HostFrame): string {
   const n = waitingTeams(frame).length;
-  if (!n) return 'All chips are down — score it';
-  return `${n} ${plural(n, 'table')} still placing${secs === null ? '' : ` — ${secs}s`}`;
+  if (!n) return 'All chips are down. Score the round.';
+  return `${n} ${plural(n, 'table')} still placing.`;
 }
 
 function cueScoring(frame: HostFrame): string {
@@ -220,7 +228,7 @@ function cueScoring(frame: HostFrame): string {
   const card = frame.slots.find((s) => s.id === sc.winningSlot);
   const answer = `Answer: ${sc.correctText || sc.correctValue}.`;
   const won = card
-    ? ` Winning card ${card.label}${card.teams.length ? ` (${card.teams.join(' & ')})` : ' — nobody wrote it'}.`
+    ? ` Winning card ${card.label}${card.teams.length ? ` (${card.teams.join(' and ')})` : '. Nobody wrote it'}.`
     : ' Nobody wrote it.';
   return `${answer}${won}${movers(frame, sc.deltas)}`;
 }
@@ -239,7 +247,7 @@ function movers(frame: HostFrame, deltas: Record<string, number>): string {
 
 function cuePodium(frame: HostFrame): string {
   const top = [...frame.teams].sort((a, b) => b.score - a.score)[0];
-  if (!top) return 'That is the night';
+  if (!top) return "That's the game";
   // A tie is a tie: two tables on the same money both won, and the phone
   // already tells each of them so.
   const winners = frame.teams.filter((t) => t.score === top.score).map((t) => t.name);

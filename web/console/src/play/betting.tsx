@@ -394,7 +394,7 @@ function PlacedChip({
         onLift(chip.tokenIndex);
       }}
       whileDrag={{ scale: 1.15, zIndex: 30 }}
-      aria-label={`${money(chip.amount)} chip — drag to move it, tap to take it back`}
+      aria-label={`${money(chip.amount)} chip. Drag to move it, tap to take it back.`}
       {...dragProps(chip.tokenIndex)}
     >
       {money(chip.amount)}
@@ -440,7 +440,7 @@ function everyoneIn(frame: PlayerFrame, total: number): boolean {
 // the TV; at zero it stops promising seconds it no longer has.
 function closingIn(msLeft: number | null): string {
   const secs = msLeft === null ? 0 : Math.ceil(msLeft / 1000);
-  return secs > 0 ? `Everyone’s in — closing in ${secs}.` : 'Everyone’s in — closing.';
+  return secs > 0 ? `Everyone’s in. Closing in ${secs}.` : 'Everyone’s in. Closing now.';
 }
 
 // Plain words, not a progress bar. On a phone at a noisy table the only thing
@@ -466,7 +466,9 @@ function statusLine({
   }
   if (down === total) {
     const waiting = frame.teams.filter((t) => t.eligible && t.chipsPlaced < total).length;
-    const all = total === 2 ? 'Both chips down.' : `All ${total} chips down.`;
+    const all = total === 1 ? 'Chip down.'
+      : total === 2 ? 'Both chips down.'
+        : `All ${total} chips down.`;
     // "Waiting for 0 more tables" is nobody's sentence. With the room in, the
     // server has already pulled the clock in to the grace, so say what that
     // clock now means: there is time to move a chip, and how much.
@@ -475,7 +477,11 @@ function statusLine({
       : `${all} ${closingIn(msLeft)}`;
   }
   if (down === 0) {
-    return `You have ${total} chips. Tap an answer — both on one is allowed.`;
+    // One chip is a legal setting, and "You have 1 chips" is nobody's
+    // sentence. rules.go already gets this right; this line did not.
+    return total === 1
+      ? `You have one ${money(chips[0] ?? 0)} chip. Tap an answer to put it down.`
+      : `You have ${total} chips. Tap an answer. You can put both on one.`;
   }
-  return `${down} of ${total} placed — your ${money(chips[inHand[0]] ?? 0)} chip still to go.`;
+  return `${down} of ${total} placed. Your ${money(chips[inHand[0]] ?? 0)} chip is still to go.`;
 }

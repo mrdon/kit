@@ -47,14 +47,14 @@ export default function TriviaSetup() {
         <div>
           <h1>{game.title}</h1>
           <p className="page-sub">
-            Players join at <code>{game.short_url}</code> — or by scanning the QR on the TV.
+            Players join at <code>{game.short_url}</code>, or by scanning the QR on the TV.
           </p>
           {/* The stable address leads, because it is the one that should end
               up on the screen. Advertising the per-game URL as "the TV URL"
               sends a host to retype it at the television every week, which is
               exactly the chore the stable one removes. */}
           <p className="page-sub">
-            Put the TV on <code>{game.screen_url}</code> once and leave it — it always shows the
+            Put the TV on <code>{game.screen_url}</code> once and leave it. It always shows the
             newest game. <a href={game.tv_url} target="_blank" rel="noreferrer">Open just this
             game&rsquo;s screen</a> if you need to pin one night.
           </p>
@@ -116,7 +116,7 @@ function DatasetPicker({
       <h2>Question sets</h2>
       {datasets.length === 0 ? (
         <p className="page-sub">
-          No question sets yet — add one on the{' '}
+          No question sets yet. Add one on the{' '}
           <Link to="/admin/trivia">Trivia questions</Link> page.
         </p>
       ) : (
@@ -230,7 +230,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
     <section className="panel">
       <h2>Settings</h2>
       {locked ? (
-        <p className="page-sub">The game has started — settings are frozen so scores can&rsquo;t be restated.</p>
+        <p className="page-sub">The game has started. Settings are frozen so scores cannot be restated.</p>
       ) : null}
       <div className="field-row">
         <label className="field">
@@ -257,7 +257,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
           This is the only line on the page that answers the question they
           actually have. */}
       <p className="page-sub">
-        <strong>About {estimateMinutes(s).minutes} minutes</strong> —{' '}
+        <strong>About {estimateMinutes(s).minutes} minutes.</strong>{' '}
         {estimateMinutes(s).questions} question{estimateMinutes(s).questions === 1 ? '' : 's'}
         {' '}across {s.board_rounds + (s.final_wager ? 1 : 0)} rounds
         {s.final_wager ? ' counting the final' : ''}
@@ -298,7 +298,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
             onCommit={(n) => edit({ ...s, answer_seconds: n })} />
         </label>
         <label className="field">
-          <span>Deal — cards shown before betting opens (s, 0 skips it)</span>
+          <span>Deal: cards shown before betting opens (s, 0 skips it)</span>
           <NumberField min={0} max={600} value={s.reveal_seconds} disabled={locked}
             onCommit={(n) => edit({ ...s, reveal_seconds: n })} />
         </label>
@@ -310,7 +310,7 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         {/* Only reachable with the final on — the phase never opens otherwise
             — so it says so rather than sitting there looking universal. */}
         <label className="field">
-          <span>Wager — the final only (s)</span>
+          <span>Wager: the final only (s)</span>
           <NumberField min={5} max={600} value={s.wager_seconds} disabled={locked}
             onCommit={(n) => edit({ ...s, wager_seconds: n })} />
         </label>

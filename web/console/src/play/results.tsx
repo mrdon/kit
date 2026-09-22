@@ -106,7 +106,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
     return (
       <div className="body">
         <p className="celebrate-line big">You won</p>
-        <p className="sub" style={{ textAlign: 'center' }}>{money(winner.score)} — that&rsquo;s the game.</p>
+        <p className="sub" style={{ textAlign: 'center' }}>{money(winner.score)}. That&rsquo;s the game.</p>
         <Standings frame={frame} />
       </div>
     );

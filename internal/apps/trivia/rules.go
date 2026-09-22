@@ -30,12 +30,12 @@ func Rules(finalWager bool, tokens []int) []string {
 		"Everybody types a number. Closest without going over wins.",
 		"If everyone's too high, “smaller than all of these” wins.",
 		"Whoever wrote the winning answer takes the board money.",
-		"Then everyone bets: " + chipSentence(tokens) + " — on one answer or split across two.",
+		"Then everyone bets. Put " + chipSentence(tokens) + " on one answer, or split them across two.",
 		"Chips on the winning answer pay their value. Wrong chips cost you nothing.",
 	}
 	if finalWager {
 		rules = append(rules,
-			"Last question: you'll see the category first — set your wager before the question. "+
+			"Last question. You see the category first, and set your wager before you see the question. "+
 				"Then put it on whichever answer you like. Right doubles it, wrong loses it.")
 	}
 	return rules

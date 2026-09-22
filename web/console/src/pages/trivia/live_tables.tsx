@@ -111,7 +111,7 @@ function TeamRow({ frame, team, rank, move, confirming, onTap }: {
       ].filter(Boolean).join(' ')}
       title={confirming
         ? `Tap again to sign ${team.name} out and issue a new code`
-        : `${team.name} — tap twice to reissue their code`}
+        : `${team.name}. Tap twice to reissue their code.`}
       onClick={onTap}>
       {/* One line, and it does not wrap: the name gives up characters so that
           the score, the state and the tag all stay where the host's eye

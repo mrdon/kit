@@ -160,7 +160,7 @@ function BoardGrid({ frame, busy, onPick }: { frame: HostFrame; busy: boolean; o
   const pickable = frame.phase === PHASE.BOARD;
 
   if (!frame.board.length) {
-    return <p className="page-sub">No board yet — build one on the setup page.</p>;
+    return <p className="page-sub">No board yet. Build one on the setup page.</p>;
   }
   return (
     <div className="trivia-board" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>

@@ -93,7 +93,7 @@ export function BoardPanel({
           : ''}
         {repeats
           ? 'This game may reuse questions from past nights; the ones the room heard longest ago come first.'
-          : 'Only questions no game has asked yet are on offer — the count in brackets is what each category has left.'}
+          : 'Only questions no game has asked yet are on offer. The count in brackets is what each category has left.'}
       </p>
       {/* Both buttons REDRAW, and one of them is the primary action sitting
           directly above a list of questions the host may have spent a few
@@ -136,7 +136,7 @@ export function BoardPanel({
         <p className="banner banner-error">
           {err}
           {err.includes('fresh question')
-            ? ' — allow repeats on this game, or upload more questions.'
+            ? ' Allow repeats on this game, or upload more questions.'
             : ''}
         </p>
       ) : null}
@@ -263,12 +263,12 @@ function QuestionList({
 
   // Why a Swap button is off, in the words the host needs to fix it.
   const whyNot = (c: BoardQuestion) => {
-    if (locked) return 'The game has started — questions are frozen.';
+    if (locked) return 'The game has started. Questions are frozen.';
     if (c.played) return 'That cell has already been asked.';
     if (c.spares === 0) {
       return repeats
         ? `Nothing else in ${c.topic} that this board isn't already using.`
-        : `No other fresh question in ${c.topic} — upload more, or allow repeats above.`;
+        : `No other fresh question in ${c.topic}. Upload more, or allow repeats above.`;
     }
     return '';
   };
@@ -278,7 +278,7 @@ function QuestionList({
       <h3 className="trivia-qhead">What it will ask</h3>
       <p className="page-sub">
         {locked
-          ? 'The game has started, so the board is frozen — this is what is left to come.'
+          ? 'The game has started, so the board is frozen. This is what is left to come.'
           : 'Read it before the room does. Swap rotates one tile to the next question in ' +
             'that category and leaves the rest of the board alone.'}
       </p>

@@ -13,13 +13,13 @@ function renderBreak() {
   /* The last break has the FINAL behind it rather than a board, so there are
      no new cell or chip values to put on the wall. */
   if (boardIsSpent() && state.finalWager) {
-    next.textContent = 'The final is next — one question, and you stake on it first';
+    next.textContent = 'The final is next. Set your wager before you see the question.';
     return;
   }
-  var cell = state.board && state.board[0] ? money(state.board[0].points) + ' a cell · ' : '';
-  var chips = (state.tokens || []).map(function (t) { return money(t); }).join(' / ');
-  next.textContent = 'Round ' + state.roundNumber + ' of ' + state.roundCount +
-    ' is next — ' + cell + 'chips ' + chips;
+  var cell = state.board && state.board[0] ? ' Every square is ' + money(state.board[0].points) + '.' : '';
+  var chips = (state.tokens || []).map(function (t) { return money(t); }).join(' and ');
+  next.textContent = 'Round ' + state.roundNumber + ' of ' + state.roundCount + ' is next.' +
+    cell + ' Your chips are ' + chips + '.';
 
   var host = document.getElementById('break-scores');
   host.innerHTML = '';

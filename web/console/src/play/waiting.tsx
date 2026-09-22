@@ -20,7 +20,7 @@ import { PHASE, type PlayerFrame } from './api';
 // final runs is watching the end of the night, not queuing for a turn.
 export function sittingOutLine(frame: PlayerFrame): string {
   if (frame.round?.isFinal) {
-    return 'The final question is already under way — you’re watching this one out.';
+    return 'The final question has already started. You are watching this one out.';
   }
   const n = frame.you?.inFromQuestion ?? 0;
   return n

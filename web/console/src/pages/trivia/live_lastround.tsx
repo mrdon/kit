@@ -35,7 +35,7 @@ export function LastRoundRecap({ frame }: { frame: HostFrame }) {
         Answer was <strong>{answer}</strong>
         {last.winningLabel
           ? <> · winning card <strong>{last.winningLabel}</strong>
-              {last.winners.length ? ` — ${last.winners.join(' & ')}` : ''}</>
+              {last.winners.length ? `. ${last.winners.join(' and ')}` : ''}</>
           : <> · nobody wrote it</>}
       </p>
       <Movement teams={frame.teams} board={last.boardPoints} bets={last.betDeltas} />

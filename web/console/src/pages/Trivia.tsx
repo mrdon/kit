@@ -83,7 +83,7 @@ export default function Trivia() {
           {/* One address for the screen, forever: it always shows the newest
               game, so nobody has to retype a URL at the TV each week. */}
           <p className="page-sub">
-            Point the TV at <code>{tvURL}</code> once and leave it — it follows the newest game.
+            Point the TV at <code>{tvURL}</code> once and leave it. It follows the newest game.
           </p>
         </div>
         <div className="page-head-actions">

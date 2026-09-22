@@ -476,7 +476,7 @@ Board addresses are **public and unauthenticated** — that's what lets a machin
 
 A live pub quiz that runs on three screens at once: a host console you drive from a laptop, a big TV the room watches, and every team's own phone.
 
-**The rules, as you read them out.** Six lines, and that is the whole game:
+**The rules, as you read them out.** Five lines — six with the final wager on — and that is the whole game:
 
 1. Everybody types a number. Closest **without going over** wins.
 2. If everyone's too high, "smaller than all of these" wins.
@@ -531,7 +531,7 @@ The final is **on by default**. You can switch it off per game (**Settings → F
 
 **There's a break before the final too** — the biggest one of the night. When the last board is spent, the game goes to the break rather than straight into a blind wager: standings up, a last drink, and you press **Start the final** when the room is back.
 
-**The night never ends itself.** You choose what happens next — **Start the final**, **Add a board**, or **Go to the podium**. The room is in front of you and the decision is yours, not the board's.
+**The night never ends itself.** When the last board is spent the game waits on the break screen with the standings up, and you press **Start the final**, **Add a board** or **Go to the podium** when the room tells you which it wants.
 
 **Ask about it afterwards.** In Slack:
 

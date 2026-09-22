@@ -189,12 +189,12 @@ function Break({ frame }: { frame: PlayerFrame }) {
     <div className="body">
       <h1>Break</h1>
       <p className="sub" style={{ textAlign: 'center' }}>
-        Back in a few minutes — get a drink.
+        Back in a few minutes. Get a drink.
       </p>
       {finalNext ? (
         <p className="sub" style={{ textAlign: 'center' }}>
-          <strong>The final is next.</strong> One question — you&rsquo;ll see the category and
-          stake an amount before you get it.
+          <strong>The final is next.</strong> You will see the category and set your wager
+          before you see the question.
         </p>
       ) : frame.roundCount > 1 ? (
         <p className="sub" style={{ textAlign: 'center' }}>
@@ -235,7 +235,7 @@ function BetweenQuestions({ frame }: { frame: PlayerFrame }) {
     <div className="body">
       {picker ? (
         mine
-          ? <h1 className="your-pick">It&rsquo;s your pick — tell the host which category</h1>
+          ? <h1 className="your-pick">It&rsquo;s your pick. Tell the host which category.</h1>
           : <p className="sub" style={{ textAlign: 'center' }}>{picker.name} picks the next category</p>
       ) : null}
       {me ? (
@@ -351,7 +351,7 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
         </>
       ) : full ? (
         <>
-          <div className="banner">This game is full — you&rsquo;re watching along.</div>
+          <div className="banner">This game is full. You can watch along.</div>
           <TeamList frame={frame} />
         </>
       ) : (
@@ -403,7 +403,7 @@ function JoinForm({ frame, onJoined, onReclaim }: {
     // somebody standing in the room can at least watch the end.
     return (
       <>
-        <div className="banner">The final question is under way — this game is closing</div>
+        <div className="banner">The final question has started. This game is closed to new tables.</div>
         <Standings frame={frame} />
       </>
     );
@@ -412,7 +412,7 @@ function JoinForm({ frame, onJoined, onReclaim }: {
   return (
     <>
       {inProgress ? (
-        <p className="sub">Game&rsquo;s in progress — you&rsquo;ll be in from the next question.</p>
+        <p className="sub">The game has started. You are in from the next question.</p>
       ) : null}
       <input
         className="field" type="text" enterKeyHint="go" maxLength={40}

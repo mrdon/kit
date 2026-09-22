@@ -115,7 +115,7 @@ export function Answer({
           up" and starts promising the few seconds that are actually left. */}
       <p className="sub" style={{ textAlign: 'center' }}>
         {roomIsIn
-          ? 'Everyone’s in — you have a few seconds to change it.'
+          ? 'Everyone’s in. You have a few seconds to change it.'
           : submitted ? `In! ${answeredCount(frame)}You can change it until time’s up.` : 'You can change it until time’s up.'}
       </p>
       <p className="err">{err}</p>
@@ -185,7 +185,7 @@ export function Wager({
           something this decision is allowed to know. */}
       {frame.round?.category ? <h1 className="category">{frame.round.category}</h1> : null}
       <p className="sub" style={{ textAlign: 'center' }}>
-        Put your money up now. You&rsquo;ll see the question next.
+        Set your wager now. You will see the question next.
       </p>
 
       <StakeControl bank={bank} stake={amount} onChange={setAmount} />
