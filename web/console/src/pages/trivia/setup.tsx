@@ -195,7 +195,28 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
     // Cell values follow the row count, cheapest first, so the two can never
     // disagree — the server rejects a mismatch and the host should never see
     // that error.
-    const values = Array.from({ length: rows }, (_, i) => s.cell_values[i] ?? (i + 1) * 100);
+    //
+    // They are drawn from the CHIP values rather than climbing in hundreds,
+    // which is what the ladder here used to do: (i + 1) * 100 put a $500 cell
+    // on a five-row board while the biggest chip was still $200, and that
+    // quietly inverts the game. Only the table that wrote the winning answer
+    // takes a cell; every table bets every round. Once a cell outruns the
+    // chips, knowing beats reading the room and the betting stops mattering.
+    //
+    // Escalating also implies a difficulty ladder that does not exist. A
+    // question carries a prompt, an answer and its topics — no grade — and
+    // the board builder fills a column by topic and a shuffle, so the row a
+    // question lands in is chance. A $500 bottom row tells the room the
+    // question is harder, and it is not.
+    //
+    // So the rows spread across the chip vocabulary, cheapest first: two rows
+    // give 100/200 (unchanged, the shipped default), five give
+    // 100/100/100/200/200. The host can still set any row by hand below.
+    const chips = s.token_values.length > 0 ? s.token_values : [100, 200];
+    const values = Array.from(
+      { length: rows },
+      (_, i) => chips[Math.min(Math.floor((i * chips.length) / rows), chips.length - 1)],
+    );
     edit({ ...s, board_rows: rows, cell_values: values });
   };
 
@@ -239,7 +260,13 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         Cells and chips are the same size by default, which makes betting the larger half of the
         game: only the table that wrote the winning answer takes a cell, but every table places
         chips every round. Raise the cell values if you want knowing the answer to outweigh reading
-        the room.
+        the room — but keep them near the chips, or the betting stops mattering.
+      </p>
+      <p className="page-sub">
+        Rows are not difficulty. Questions carry no grade, and the board fills a column by topic
+        and a shuffle, so a dearer row is worth more but is no harder — adding rows repeats the
+        chip values rather than climbing, and a row you set by hand stays until you change the
+        row count.
       </p>
 
       <div className="field-row field-row-bottom">

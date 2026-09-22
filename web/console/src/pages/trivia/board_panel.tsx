@@ -69,6 +69,9 @@ export function BoardPanel({
     }
   };
 
+  // How many categories the host still owes the board. Zero is the only
+  // state in which an explicit build can go.
+  const short = cols - chosen.length;
   const board = state?.board ?? [];
   const byPos = new Map(board.map((c) => [`${c.col}:${c.row}`, c]));
   const headers: string[] = [];
@@ -78,11 +81,22 @@ export function BoardPanel({
     <section className="panel">
       <h2>The board</h2>
       <p className="page-sub">
-        Pick {cols} categor{cols === 1 ? 'y' : 'ies'}, or hit Auto.{' '}
+        Tick {cols} categor{cols === 1 ? 'y' : 'ies'} below to choose the columns yourself, or hit
+        Auto and Kit picks them.{' '}
         {repeats
           ? 'This game may reuse questions from past nights; the ones the room heard longest ago come first.'
           : 'Only questions no game has asked yet are on offer — the count in brackets is what each category has left.'}
       </p>
+      {/* Both buttons REDRAW, and one of them is the primary action sitting
+          directly above a list of questions the host may have spent a few
+          minutes swapping. Saying so here is cheaper than a confirm dialog on
+          a button that is usually pressed on an untouched board. */}
+      {cells.length > 0 ? (
+        <p className="page-sub">
+          Either one redraws the whole board — every cell gets a new question, so any swaps you
+          have made below go with it.
+        </p>
+      ) : null}
 
       {viable.length === 0 ? (
         <p className="page-sub">
@@ -118,10 +132,18 @@ export function BoardPanel({
             : ''}
         </p>
       ) : null}
+      {/* The label carries the button's own state. "Build with these 5" reads
+          as a description of what is about to happen, not as an instruction
+          to go and tick five things, so a host landing on the page saw a dead
+          primary button next to a live one and pressed Auto. It now says what
+          is missing, and the title says it again on hover. */}
       <div className="page-head-actions">
         <button className="btn btn-spaced" onClick={() => void build(false)}
-          disabled={busy || chosen.length !== cols}>
-          Build with these {cols}
+          title={short > 0 ? `Tick ${short} more categor${short === 1 ? 'y' : 'ies'} above` : ''}
+          disabled={busy || short !== 0}>
+          {short === 0
+            ? `Build with these ${cols}`
+            : `Tick ${short} more categor${short === 1 ? 'y' : 'ies'}`}
         </button>
         <button className="btn btn-spaced btn-danger" onClick={() => void build(true)} disabled={busy}>
           Auto
