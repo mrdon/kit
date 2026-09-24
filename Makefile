@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -12,7 +12,7 @@ endif
 # Default target
 help: ## Show this help message
 	@echo "Available targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
+	@grep -h -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 # Pin the Go toolchain to the version CI uses.
 #
@@ -182,6 +182,34 @@ dev: up build ## Start Postgres + hot reload (requires air)
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."
 	@docker build -t $(BINARY_NAME) .
+
+# Wall displays
+#
+# The kiosk machines are configured by ~gravity/conf-kiosk ON EACH BOX, not from
+# this repo -- there is nothing here to deploy to them. These targets are only
+# shortcuts for the remote one-liner, so a stale screen can be refreshed without
+# leaving the checkout.
+#
+# BOX is REQUIRED and has no default on purpose. The two boxes show completely
+# different pages -- kiosk-01 is the taproom menu, laptop-02 is the conference
+# display -- so a default would silently refresh the wrong screen. They have no
+# DNS names either, hence the raw addresses. LAN only.
+#
+# kiosk-reload drives Chrome's DevTools port with Page.reload(ignoreCache): the
+# Ctrl+Shift+R someone would otherwise walk over and type, after Ctrl+Alt+K to
+# escape the kiosk. Restarting the browser is NOT the same -- the profile dir
+# outlives the process, so the disk cache can serve the same stale page back.
+KIOSK_01_HOST = gravity@192.168.50.185
+LAPTOP_02_HOST = gravity@192.168.50.6
+
+kiosk-reload: ## Hard-refresh a wall display: make kiosk-reload BOX=kiosk-01|laptop-02
+	@case "$(BOX)" in \
+	  kiosk-01)  host="$(KIOSK_01_HOST)" ;; \
+	  laptop-02) host="$(LAPTOP_02_HOST)" ;; \
+	  "") echo "BOX is required: kiosk-01 (taproom menu) or laptop-02 (conference display)" >&2; exit 2 ;; \
+	  *) echo "unknown BOX=$(BOX); expected kiosk-01 or laptop-02" >&2; exit 2 ;; \
+	esac; \
+	ssh "$$host" kiosk-reload
 
 # Module management
 deps: ## Download dependencies

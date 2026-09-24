@@ -35,6 +35,8 @@ var lastFrameAt = Date.now();
 var retryMs = 1000;        /* reconnect backoff, reset on a healthy socket */
 var retryTimer = null;
 var connectingSince = 0;   /* when the current socket started dialling */
+var stallSince = 0;        /* when the countdown first sat past its deadline */
+var lastStallPoll = 0;
 
 /* ---------- stage scaling ---------- */
 function fit() {
@@ -50,6 +52,13 @@ function fit() {
 window.addEventListener('resize', fit);
 
 /* ---------- transport ---------- */
+
+/* THIS IS A DELIBERATE MIRROR of web/console/src/liveStream.ts, which is the
+   one the phone and the host console share. It cannot import that module --
+   this file is inlined into a server-rendered page with no build step, on
+   purpose, so the wall paints from a cheap stick on flaky wifi -- so the two
+   are kept in step by hand and are meant to be changed together. Every rule
+   below has its reasoning written out over there. */
 function connect() {
   /* NEVER tear down a socket that is still trying to come up. This is the
      whole bug: the watchdog used to call connect() every 5s for as long as
@@ -119,6 +128,29 @@ setInterval(function () {
   var quiet = Date.now() - lastFrameAt;
   if (quiet > 20000) { setDot(true); scheduleRetry(); }
 }, 2000);
+
+/* THE COUNTDOWN AS A LIVENESS CHECK.
+
+   When a phase carries a deadline the SERVER ends it, so a clock sitting on
+   zero with no newer version is not a quiet moment that might be fine -- it
+   is proof the wall is not hearing this game, and it is exactly what a frozen
+   screen looks like from the room.
+
+   Silence alone cannot catch this: a socket delivering pings but no state
+   looks perfectly healthy to the watchdog above. The clock knows better.
+
+   And the poll is the CURE as well as the alarm -- /state sweeps an expired
+   phase on its way past, so a screen noticing the stall is a screen that ends
+   the phase the server should have ended. */
+setInterval(function () {
+  if (!state || !state.deadlineMs) { stallSince = 0; return; }
+  var past = Date.now() + skew - state.deadlineMs;
+  if (past < 1500) { stallSince = 0; return; }
+  if (stallSince === 0) { stallSince = Date.now(); }
+  var now = Date.now();
+  if (now - lastStallPoll >= 1000) { lastStallPoll = now; setDot(true); poll(); }
+  if (now - stallSince > 3000) { scheduleRetry(); }
+}, 500);
 
 /* Poll fallback. A captive portal or a proxy that eats SSE should cost a
    few seconds of latency, not a frozen screen. */
