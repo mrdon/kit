@@ -582,7 +582,7 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   border: 3px solid var(--line);
   background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
 }
-.award.landing { animation: awardland .55s cubic-bezier(.2,.9,.3,1.1) both; }
+.award { animation: awardland .55s cubic-bezier(.2,.9,.3,1.1) both; }
 @keyframes awardland { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 .award-title {
   grid-column: 1; font: 400 46px/1 var(--display); color: var(--gold);

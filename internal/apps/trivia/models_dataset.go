@@ -44,6 +44,11 @@ var ErrDatasetInUse = errors.New("trivia: that dataset is in use by a game still
 // DatasetInUse reports whether an unfinished game's board depends on this
 // dataset's questions. "Unfinished" is a phase, not a foreign key, which is
 // why this is a service-layer check rather than an ON DELETE RESTRICT.
+//
+// BOTH ending phases count as finished. The mentions are the last screen of a
+// night that is already over -- every cell played, every round scored -- and
+// a game parked there held its dataset hostage until somebody pressed once
+// more, which is a deletion failing for a reason nobody could see.
 func DatasetInUse(ctx context.Context, q Querier, tenantID, datasetID uuid.UUID) (string, error) {
 	var name string
 	err := q.QueryRow(ctx, `
@@ -51,7 +56,8 @@ func DatasetInUse(ctx context.Context, q Querier, tenantID, datasetID uuid.UUID)
 		  FROM app_trivia_board_cells c
 		  JOIN app_trivia_questions qs ON qs.id = c.question_id AND qs.tenant_id = c.tenant_id
 		  JOIN app_trivia_games g ON g.id = c.game_id AND g.tenant_id = c.tenant_id
-		 WHERE c.tenant_id = $1 AND qs.dataset_id = $2 AND g.phase <> 'podium'
+		 WHERE c.tenant_id = $1 AND qs.dataset_id = $2
+		   AND g.phase NOT IN ('awards', 'podium')
 		 LIMIT 1`, tenantID, datasetID).Scan(&name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

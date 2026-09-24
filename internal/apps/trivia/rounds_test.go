@@ -242,9 +242,15 @@ func TestAFinishedRoundStopsAtTheIntermission(t *testing.T) {
 	if got := f.reload(game.ID).Phase; got != PhaseBoard {
 		t.Fatalf("phase after the last round = %q, want it waiting on the board", got)
 	}
+	// The ending is two presses: the mentions go up, the host reads them
+	// out, and the second press brings the crown.
 	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
+	if got := f.reload(game.ID).Phase; got != PhaseAwards {
+		t.Fatalf("phase after the host called it = %q, want the honorable mentions", got)
+	}
+	f.do(game.ID, ActionRequest{Action: ActionShowWinner, FromPhase: PhaseAwards})
 	if got := f.reload(game.ID).Phase; got != PhasePodium {
-		t.Fatalf("phase after the host called it = %q, want the podium", got)
+		t.Fatalf("phase after showing the winner = %q, want the podium", got)
 	}
 }
 

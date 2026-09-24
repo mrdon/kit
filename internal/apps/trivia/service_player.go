@@ -54,7 +54,7 @@ func (s *Service) Join(ctx context.Context, tenantID, gameID uuid.UUID, name str
 	if err != nil {
 		return nil, "", err
 	}
-	if game.Phase == PhasePodium {
+	if game.Phase == PhaseAwards || game.Phase == PhasePodium {
 		return nil, "", fmt.Errorf("%w: this game has finished", ErrClosed)
 	}
 	n, err := CountTeams(ctx, s.pool, tenantID, gameID)

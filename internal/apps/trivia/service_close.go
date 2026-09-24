@@ -52,7 +52,7 @@ func (s *Service) closePhase(ctx context.Context, game *Game, from Phase, byTime
 		if err := s.scoreRound(ctx, tx, game); err != nil {
 			return err
 		}
-	case PhaseWager, PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseReveal, PhaseScoring, PhasePodium:
+	case PhaseWager, PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseReveal, PhaseScoring, PhaseAwards, PhasePodium:
 		// Wager -> question and reveal -> betting move the phase and nothing
 		// else. The wager rows are already written and are read where they
 		// are needed; there is no reveal to build and nothing to score. The
@@ -95,10 +95,11 @@ func nextPhase(game *Game, from Phase) (Phase, *time.Time) {
 		// Scoring waits on the host, so it carries no deadline. Clearing it
 		// is also what takes the game back out of the sweeper's query.
 		return PhaseScoring, nil
-	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseScoring, PhasePodium:
+	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseScoring, PhaseAwards, PhasePodium:
 		// Not timed: these wait on a human, which is correct -- the game
 		// should pause between questions, hold through the break for as long
-		// as the room needs, and stay on the podium forever.
+		// as the room needs, hold the mentions until the host has read them
+		// out, and stay on the podium forever.
 		return "", nil
 	}
 	return "", nil

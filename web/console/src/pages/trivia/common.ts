@@ -265,6 +265,7 @@ export const PHASE_LABEL: Record<Phase, string> = {
   [PHASE.REVEAL]: 'Cards up, betting next',
   [PHASE.BETTING]: 'Placing bets',
   [PHASE.SCORING]: 'Scored',
+  [PHASE.AWARDS]: 'Honorable mentions',
   [PHASE.PODIUM]: 'Finished',
 };
 
@@ -287,7 +288,7 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
     case PHASE.LOBBY: return { action: ACTION.START, label: 'Start the game' };
     case PHASE.BOARD:
       if (boardEmpty && finalWager && !finalPlayed) return { action: ACTION.FINAL, label: 'Final question' };
-      if (boardEmpty) return { action: ACTION.FINISH, label: 'Go to the podium' };
+      if (boardEmpty) return { action: ACTION.FINISH, label: 'End the night' };
       return null; // waiting for the host to pick a cell
     // Nothing is on a clock during the break. The host decides when the room
     // has finished its drink, which is the entire point of the phase.
@@ -307,6 +308,10 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
     case PHASE.REVEAL: return { action: ACTION.OPEN_BETTING, label: 'Open betting' };
     case PHASE.BETTING: return { action: ACTION.SCORE, label: 'Score the round' };
     case PHASE.SCORING: return { action: ACTION.NEXT, label: 'Next' };
+    // The ending is two presses. This is the second, and it is the only
+    // thing the host can do from here -- nothing is on a clock, so the
+    // mentions stay up for as long as it takes to read them out.
+    case PHASE.AWARDS: return { action: ACTION.SHOW_WINNER, label: 'Show the winner' };
     case PHASE.PODIUM: return null;
   }
 }

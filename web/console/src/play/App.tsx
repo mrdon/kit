@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { join, me, money, PHASE, reclaim, type PlayerFrame } from './api';
 import { useStream, useWakeLock } from './useStream';
+import { useBuildReload } from './useBuildReload';
 import { Answer, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';
-import { Podium, Result, Standings } from './results';
+import { Mentions, Podium, Result, Standings } from './results';
 import { sittingOutScreen, WatchingCards } from './waiting';
 
 // LOCAL_KEY mirrors {gameId, teamId, teamName} — never the token — purely so
@@ -41,6 +42,9 @@ export default function App() {
   const [identity, setIdentity] = useState<{ teamId: string; name: string } | null>(null);
   const [checked, setChecked] = useState(false);
   useWakeLock();
+  // Pick up a deploy without anybody touching the phone. Never mid-answer:
+  // see useBuildReload.
+  useBuildReload(frame);
 
   const gameName = frame?.game ?? '';
 
@@ -48,11 +52,31 @@ export default function App() {
     // Optimistic render from localStorage, then the authoritative answer.
     const cached = gameName ? readLocal(gameName) : null;
     if (cached) setIdentity({ teamId: cached.teamId, name: cached.name });
-    void me().then((v) => {
-      setIdentity(v);
-      setChecked(true);
-      if (v && gameName) writeLocal({ game: gameName, teamId: v.teamId, name: v.name });
-    });
+
+    // me() is a bare fetch, so a blip REJECTS. Without the catch below,
+    // setChecked(true) never ran and the phone sat on "One moment..." for the
+    // rest of the night with a perfectly healthy stream behind it: frames
+    // arriving, nothing wrong with the socket, and no way to reach the join
+    // form short of a reload. This effect only reruns when the game name
+    // changes, which happens once, so there was nothing else to retry it.
+    let cancelled = false;
+    let attempt = 0;
+    const ask = () => {
+      void me()
+        .then((v) => {
+          if (cancelled) return;
+          setIdentity(v);
+          setChecked(true);
+          if (v && gameName) writeLocal({ game: gameName, teamId: v.teamId, name: v.name });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          attempt += 1;
+          window.setTimeout(ask, Math.min(1000 * attempt, 5000));
+        });
+    };
+    ask();
+    return () => { cancelled = true; };
   }, [gameName]);
 
   if (!frame) {
@@ -165,6 +189,8 @@ function Playing({
       return <Betting frame={frame} msLeft={msLeft} onDone={apply} />;
     case PHASE.SCORING:
       return <Result frame={frame} />;
+    case PHASE.AWARDS:
+      return <Mentions frame={frame} />;
     case PHASE.PODIUM:
       return <Podium frame={frame} />;
     default:
@@ -336,7 +362,7 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
   }
 
   const full = frame.teams.length >= 20;
-  const finished = frame.phase === PHASE.PODIUM;
+  const finished = frame.phase === PHASE.AWARDS || frame.phase === PHASE.PODIUM;
   return (
     <div className="body">
       {/* The night's name, big, so somebody who just scanned a QR can confirm

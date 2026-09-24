@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/buildinfo"
 )
 
 // serveMux builds a mux with the app's public routes, plus a stand-in for the
@@ -469,8 +470,10 @@ func TestStableTVAddressFollowsTheNewestGame(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "No quiz tonight") {
 		t.Fatal("no placeholder for a workspace with no games")
 	}
-	if v := f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv.version", nil, nil); v.Body.String() != "empty" {
-		t.Fatalf("version = %q, want empty", v.Body.String())
+	// "empty" plus the build: a screen parked on the stable address with no
+	// game yet must notice both the first game AND a deploy.
+	if v := f.request(http.MethodGet, "/"+f.tenant.Slug+"/trivia/tv.version", nil, nil); !strings.HasPrefix(v.Body.String(), "empty-") {
+		t.Fatalf("version = %q, want it to start with empty-", v.Body.String())
 	}
 
 	first := f.newGame(defaultSettings(), nil)
@@ -672,5 +675,33 @@ func TestJoinCodesAvoidAmbiguousCharacters(t *testing.T) {
 				t.Fatalf("code %q contains the ambiguous character %q", code, bad)
 			}
 		}
+	}
+}
+
+// A deploy has to reach a wall that is already switched on, which is the
+// whole point of putting the build in the token: a fix shipped at question
+// four is no use to the screen it is fixing if that screen only repaints when
+// somebody creates a new game.
+func TestDisplayVersionChangesWithTheBuild(t *testing.T) {
+	f := newFixture(t)
+	game := f.newGame(defaultSettings(), nil)
+
+	before := displayVersion(game)
+	restore := buildinfo.Commit
+	buildinfo.Commit = "deadbee"
+	defer func() { buildinfo.Commit = restore }()
+	after := displayVersion(game)
+
+	if before == after {
+		t.Errorf("the same game reported %q across two builds; a deploy would never reach an open screen", before)
+	}
+	// The game half still has to move on its own, or a screen on the stable
+	// address would stop following the newest game.
+	if displayVersion(f.newGame(defaultSettings(), nil)) == after {
+		t.Error("two different games reported the same version on one build")
+	}
+	// And nothing is lost when there is no game at all.
+	if displayVersion(nil) == "" {
+		t.Error("an empty workspace reported no version")
 	}
 }

@@ -80,8 +80,16 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, gameID, tenantI
 		// Stamp the wall clock at send time, not at assembly time: a
 		// snapshot that sat in a mailbox would otherwise hand the client a
 		// skew sample that is milliseconds old and bias its countdown.
-		s.ServerNow = time.Now().UTC()
-		if err := writer.Emit(snapshotEvent, project(s)); err != nil {
+		//
+		// ON A COPY. The broker hands the SAME *Snapshot to every subscriber,
+		// so stamping it in place had all twenty-odd stream goroutines writing
+		// one time.Time while the others were marshalling the struct around
+		// it -- a real race, and a torn read becomes a garbage serverNow, a
+		// garbage skew, and a countdown stuck at zero on somebody's phone.
+		// Which is indistinguishable, from the table, from the game freezing.
+		local := *s
+		local.ServerNow = time.Now().UTC()
+		if err := writer.Emit(snapshotEvent, project(&local)); err != nil {
 			return false
 		}
 		sent = s.StateVersion

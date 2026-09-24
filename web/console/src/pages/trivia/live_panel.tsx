@@ -174,8 +174,17 @@ export function cueFor(frame: HostFrame): string {
     case PHASE.REVEAL: return 'Cards are up. Betting opens next.';
     case PHASE.BETTING: return cueBetting(frame);
     case PHASE.SCORING: return cueScoring(frame);
+    case PHASE.AWARDS: return cueAwards(frame);
     case PHASE.PODIUM: return cuePodium(frame);
   }
+}
+
+// The mentions are up and nothing is on a clock. The cue tells the host what
+// to say and reminds them the list is right below it.
+function cueAwards(frame: HostFrame): string {
+  const n = frame.awards.length;
+  if (!n) return 'Honorable mentions are up. Show the winner when ready.';
+  return `Honorable mentions are up. Read the ${n} below out, then show the winner.`;
 }
 
 function cueLobby(frame: HostFrame): string {

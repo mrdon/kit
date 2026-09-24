@@ -10,6 +10,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/buildinfo"
 	consoleassets "github.com/mrdon/kit/web/console"
 )
 
@@ -167,16 +168,24 @@ func (a *App) handleTVVersion(w http.ResponseWriter, r *http.Request) {
 //
 // "empty" is a real value: a screen on the stable address with no game yet
 // must notice the first one.
+//
+// THE BUILD RIDES ALONG so a deploy reaches a wall that is already switched
+// on. Without it the token moved only when a new game was created, which
+// meant a fix shipped during a quiz could not reach the screen it was fixing
+// -- the one case where getting it there quickly is the whole point. The
+// reload costs a second of black and nothing else: every piece of game state
+// lives on the server and the screen repaints from the stream.
 func displayVersion(game *Game) string {
+	build := buildinfo.Token()
 	if game == nil {
-		return "empty"
+		return "empty-" + build
 	}
 	v := strconv.FormatInt(game.CreatedAt.UnixNano(), 36)
 	if game.Title != "" {
 		sum := sha256.Sum256([]byte(game.Title))
 		v += "-" + hex.EncodeToString(sum[:3])
 	}
-	return v
+	return v + "-" + build
 }
 
 // writeNoGamePlaceholder is the stable TV URL before any game exists.

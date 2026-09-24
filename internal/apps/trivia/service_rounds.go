@@ -31,7 +31,7 @@ func (s *Service) AddBoardRound(ctx context.Context, tenantID, gameID uuid.UUID)
 	}
 	// Before the doors open the setting is the right tool -- it rebuilds the
 	// whole night coherently. This is for a night already running.
-	if game.Phase == PhaseSetup || game.Phase == PhasePodium {
+	if game.Phase == PhaseSetup || game.Phase == PhaseAwards || game.Phase == PhasePodium {
 		return fmt.Errorf("%w: rounds are added while the game is running, not before or after", ErrBadRequest)
 	}
 	cells, err := ListBoardCells(ctx, s.pool, tenantID, gameID)

@@ -26,8 +26,25 @@ const keepAliveInterval = 15 * time.Second
 // Writer emits framed SSE events to an HTTP response. Construct with New,
 // call Emit for each event, call Close when done. Safe for use from a
 // single goroutine (Emit serializes with the keep-alive ticker).
+// frameDeadline bounds ONE write rather than the stream.
+//
+// Clearing the deadline outright is what the stream needs (it must outlive
+// the server's WriteTimeout) but it also removed the only bound on a single
+// blocked write. A phone that leaves the bar without a FIN -- wifi gone,
+// battery flat -- leaves Emit parked in Fprintf with the socket's buffer
+// full and nothing to time it out; the request context is not cancelled
+// either, because the server only learns of that disconnect BY a write
+// failing. The goroutine, its broker subscription and the keep-alive all sit
+// there until TCP retransmission gives up, a quarter of an hour later. Over a
+// long night with twenty phones, they pile up.
+//
+// So the deadline is re-armed per frame instead: still no bound on the
+// stream's lifetime, a firm bound on any one write.
+const frameDeadline = 30 * time.Second
+
 type Writer struct {
 	w       http.ResponseWriter
+	rc      *http.ResponseController
 	flusher http.Flusher
 	ctx     context.Context
 
@@ -76,6 +93,7 @@ func New(w http.ResponseWriter, r *http.Request) (*Writer, error) {
 
 	sw := &Writer{
 		w:       w,
+		rc:      rc,
 		flusher: flusher,
 		ctx:     r.Context(),
 		stopKA:  make(chan struct{}),
@@ -99,6 +117,11 @@ func (s *Writer) Emit(event EventType, data any) error {
 	defer s.mu.Unlock()
 	if s.closed {
 		return errors.New("sse writer closed")
+	}
+	// Unsupported is fine to ignore: it means this ResponseWriter has no
+	// deadline to set, which is the case the old code was already living in.
+	if s.rc != nil {
+		_ = s.rc.SetWriteDeadline(time.Now().Add(frameDeadline))
 	}
 	if _, err := fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", event, payload); err != nil {
 		return fmt.Errorf("writing sse frame: %w", err)

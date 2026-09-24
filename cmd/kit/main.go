@@ -176,7 +176,8 @@ func main() {
 		}
 		rdb = redis.NewClient(opts)
 		if err := rdb.Ping(ctx).Err(); err != nil {
-			slog.Warn("redis not available, web_fetch caching disabled", "error", err)
+			slog.Warn("redis not available: web_fetch caching disabled, and trivia SSE fan-out is per-process "+
+				"(two web containers will not see each other's frames; clients fall back to polling)", "error", err)
 			rdb = nil
 		} else {
 			slog.Info("redis connected")

@@ -45,7 +45,16 @@ const (
 	PhaseReveal   Phase = "reveal"
 	PhaseBetting  Phase = "betting"
 	PhaseScoring  Phase = "scoring"
-	PhasePodium   Phase = "podium"
+	// PhaseAwards is the honourable mentions, and it is a PHASE rather than
+	// a stretch of choreography inside the podium because the host drives
+	// it. They press once to put the mentions up, read them out at whatever
+	// pace the room is going at, and press again for the winner -- and a
+	// host-driven advance is a state change every surface has to agree on,
+	// which is exactly what a phase is for here. Timed cards that moved on
+	// by themselves were the first attempt and the room could not keep up
+	// with them.
+	PhaseAwards Phase = "awards"
+	PhasePodium Phase = "podium"
 )
 
 // MaxTeams caps a game. Twenty tables is already a big room, and the TV

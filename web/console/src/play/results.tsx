@@ -109,6 +109,28 @@ function Awards({ frame }: { frame: PlayerFrame }) {
   );
 }
 
+// The mentions, while the host reads them out and before the winner is up.
+//
+// No standings on this screen, deliberately. They are public all night and
+// every table has seen them, but putting them here would let a phone answer
+// the question the wall is three sentences away from answering, and the
+// whole point of the extra press is that the room finds out together.
+export function Mentions({ frame }: { frame: PlayerFrame }) {
+  const mine = frame.you?.teamId;
+  const won = frame.awards?.find((a) => a.teamId === mine);
+  return (
+    <div className="body">
+      <h1>Honorable mentions</h1>
+      {won ? (
+        <p className="celebrate-line">You got one: {won.title}</p>
+      ) : (
+        <p className="sub" style={{ textAlign: 'center' }}>The winner is next.</p>
+      )}
+      <Awards frame={frame} />
+    </div>
+  );
+}
+
 // The podium. The winning table's phone is the one screen in the room that
 // should be impossible to mistake for anybody else's, so it gets a shower
 // that keeps falling for six seconds -- long enough that the table next to

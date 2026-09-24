@@ -120,6 +120,10 @@ export interface PlayerFrame {
   roundNumber: number;
   roundCount: number;
   isFinal: boolean;
+  // The server's build token. A phone that has been open since the first
+  // question compares it against the one it booted with, so a fix shipped
+  // mid-quiz reaches it. See useBuildReload.
+  build: string;
   teams: WireTeam[];
   board: WireCell[];
   round: WireRound | null;

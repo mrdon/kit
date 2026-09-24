@@ -480,8 +480,12 @@ func TestFinalWagerOffWaitsOnTheEmptiedBoard(t *testing.T) {
 	// And the host ends it when they mean to, from the button the console has
 	// been offering for this state all along.
 	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
+	if g := f.reload(game.ID); g.Phase != PhaseAwards {
+		t.Fatalf("phase = %s after the host called it, want the honorable mentions", g.Phase)
+	}
+	f.do(game.ID, ActionRequest{Action: ActionShowWinner, FromPhase: PhaseAwards})
 	if g := f.reload(game.ID); g.Phase != PhasePodium {
-		t.Fatalf("phase = %s after the host called it, want podium", g.Phase)
+		t.Fatalf("phase = %s after showing the winner, want podium", g.Phase)
 	}
 }
 

@@ -1,5 +1,7 @@
 package trivia
 
+import "github.com/mrdon/kit/internal/buildinfo"
+
 // Three surfaces, three projections, three endpoints -- deliberately NOT one
 // endpoint with a query parameter. A shared endpoint filtered by a param is
 // one typo away from serving the correct answer to twenty phones mid-question,
@@ -39,6 +41,10 @@ type wireCommon struct {
 	// IsFinal says the round in play IS the final, so a surface can print the
 	// word rather than its number.
 	IsFinal bool `json:"isFinal"`
+	// Build is the server's build token. A client compares it against the one
+	// it booted with and reloads when they differ, which is how a fix shipped
+	// mid-quiz reaches a phone that has been open since the first question.
+	Build string `json:"build"`
 }
 
 // roundNumbersOf places the night for a human: which round of how many, with
@@ -60,7 +66,7 @@ func commonOf(s *Snapshot) wireCommon {
 	c := wireCommon{
 		Version: s.StateVersion, Game: s.Name, Title: s.Title, Phase: string(s.Phase),
 		ServerNow: s.ServerNow.UnixMilli(), DeadlineMs: s.DeadlineMillis(),
-		FinalWager: s.FinalWager,
+		FinalWager: s.FinalWager, Build: buildinfo.Token(),
 	}
 	c.RoundNumber, c.RoundCount, c.IsFinal = roundNumbersOf(s)
 	return c
@@ -222,7 +228,7 @@ func publicAwards(s *Snapshot) []wireAward {
 // would know exactly what to bet on.
 func revealed(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
+	case PhaseReveal, PhaseBetting, PhaseScoring, PhaseAwards, PhasePodium:
 		return true
 	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager, PhaseQuestion:
 		return false
@@ -242,7 +248,7 @@ func roundVisible(s *Snapshot) bool {
 // onward carries it.
 func questionVisible(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
+	case PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring, PhaseAwards, PhasePodium:
 		return true
 	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager:
 		// WAGER IS THE LOAD-BEARING ONE. The final's prompt must not reach a
@@ -332,7 +338,7 @@ func publicRound(s *Snapshot) *wireRound {
 // previous life.
 func betsVisible(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseBetting, PhaseScoring, PhasePodium:
+	case PhaseBetting, PhaseScoring, PhaseAwards, PhasePodium:
 		return true
 	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager, PhaseQuestion, PhaseReveal:
 		return false

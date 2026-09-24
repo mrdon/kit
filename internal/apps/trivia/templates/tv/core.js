@@ -28,7 +28,13 @@ var timers = [];           // choreography timers, cancellable
 var lastPhaseKey = '';
 var lastVersion = -1;
 var es = null;
+/* Any traffic at all on the socket: a frame, a ping, or an open. Silence on
+   THIS is what the watchdog reads, and a connect ATTEMPT stamps it too, so a
+   socket that is still coming up is never mistaken for one that has died. */
 var lastFrameAt = Date.now();
+var retryMs = 1000;        /* reconnect backoff, reset on a healthy socket */
+var retryTimer = null;
+var connectingSince = 0;   /* when the current socket started dialling */
 
 /* ---------- stage scaling ---------- */
 function fit() {
@@ -45,27 +51,74 @@ window.addEventListener('resize', fit);
 
 /* ---------- transport ---------- */
 function connect() {
+  /* NEVER tear down a socket that is still trying to come up. This is the
+     whole bug: the watchdog used to call connect() every 5s for as long as
+     the stream was silent, and connect() closed whatever was there first, so
+     a handshake needing six seconds on bad wifi was killed at five, every
+     five seconds, forever. The recovery path was what prevented recovery. */
+  /* ...but not FOREVER. A socket can latch in CONNECTING and never resolve,
+     and an unconditional pass meant nothing could replace it: the wall would
+     run on the fallback poll for the rest of the night with the dot red.
+     Past twice the silence window it has had every chance. */
+  if (es && es.readyState === 0 /* CONNECTING */ && Date.now() - connectingSince < 40000) { return; }
   if (es) { es.close(); }
+  /* Give the new socket a full silence window to prove itself, or the
+     watchdog reads the OLD timestamp and kills it on the next tick. */
+  lastFrameAt = Date.now();
+  connectingSince = Date.now();
   es = new EventSource(STREAM);
+  var alive = function () { lastFrameAt = Date.now(); retryMs = 1000; setDot(false); };
   es.addEventListener('state', function (ev) {
-    lastFrameAt = Date.now();
+    alive();
     try { apply(JSON.parse(ev.data)); } catch (e) { /* a malformed frame is not worth a blank wall */ }
   });
-  es.addEventListener('open', function () { lastFrameAt = Date.now(); setDot(false); });
+  es.addEventListener('open', alive);
   /* The liveness beat — see web_stream.go. A break or an emptied board can
      sit unchanged for minutes, and without this the watchdog below reads that
      quiet as a dead socket and rebuilds the stream under the room. */
-  es.addEventListener('ping', function () { lastFrameAt = Date.now(); setDot(false); });
-  es.addEventListener('error', function () { setDot(true); });
+  es.addEventListener('ping', alive);
+  es.addEventListener('error', function () {
+    setDot(true);
+    /* EventSource retries on its own while it can. CLOSED means the browser
+       has given up for good and nothing will ever arrive on it. */
+    if (es && es.readyState === 2 /* CLOSED */) { scheduleRetry(); }
+  });
 }
+
+/* Reconnect with backoff rather than on a fixed beat, so a stall cannot
+   become a teardown loop. */
+function scheduleRetry() {
+  if (retryTimer !== null) { return; }
+  var wait = retryMs;
+  retryMs = Math.min(retryMs * 2, 15000);
+  retryTimer = setTimeout(function () {
+    retryTimer = null;
+    connect();
+    poll();
+  }, wait);
+}
+
+/* Any recovery the browser hands us is worth taking at once, and it resets
+   the backoff: an access point coming back is new information, not another
+   failure. */
+function revive() {
+  retryMs = 1000;
+  if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+  connect();
+  poll();
+}
+window.addEventListener('online', revive);
+window.addEventListener('pageshow', revive);
 
 /* A suspended EventSource frequently LOOKS open and is dead, so silence is
    the signal rather than an error event: no frame and no ping for 20s means
-   reopen. The server beats every 8s, so this only fires on a real stall. */
+   reopen. The server beats every 8s, so this only fires on a real stall.
+   Looking often is free; it is the 20s that decides, and conflating the two
+   is what produced the teardown loop. */
 setInterval(function () {
   var quiet = Date.now() - lastFrameAt;
-  if (quiet > 20000) { setDot(true); connect(); poll(); }
-}, 5000);
+  if (quiet > 20000) { setDot(true); scheduleRetry(); }
+}, 2000);
 
 /* Poll fallback. A captive portal or a proxy that eats SSE should cost a
    few seconds of latency, not a frozen screen. */
@@ -75,10 +128,25 @@ function poll() {
     if (r.status === 204) { return null; }
     return r.json();
   }).then(function (data) {
-    if (data) { lastFrameAt = Date.now(); apply(data); }
+    /* Deliberately does NOT stamp lastFrameAt. That clock means "the SOCKET
+       is alive", and a working poll used to refresh it -- which meant a dead
+       stream was never detected, never retried, and the wall ran on five
+       second polling for the rest of the night with the dot showing green. */
+    if (data) { apply(data); }
   }).catch(function () { /* offline; the watchdog will try again */ });
 }
-setInterval(poll, 5000);
+/* Slow while the stream is healthy, fast while it is not, rescheduling
+   itself rather than sitting on one fixed beat. A screen with a dead socket
+   should be two seconds behind, never frozen -- while the socket is down the
+   poll IS the wall. */
+function schedulePoll() {
+  var down = Date.now() - lastFrameAt > 20000;
+  setTimeout(function () {
+    poll();
+    schedulePoll();
+  }, down ? 2000 : 5000);
+}
+schedulePoll();
 
 function setDot(on) {
   var d = document.getElementById('dot');
@@ -137,6 +205,7 @@ var PHASE = {
   REVEAL: 'reveal',
   BETTING: 'betting',
   SCORING: 'scoring',
+  AWARDS: 'awards',
   PODIUM: 'podium'
 };
 
@@ -169,6 +238,7 @@ function render(prev) {
     case PHASE.REVEAL:  renderCards(PHASE.REVEAL); break;
     case PHASE.BETTING: renderCards(PHASE.BETTING); break;
     case PHASE.SCORING: renderScoring(phaseChanged); break;
+    case PHASE.AWARDS:  renderAwards(phaseChanged); break;
     case PHASE.PODIUM:  renderPodium(phaseChanged); break;
     default:        show('s-hold');
   }

@@ -223,6 +223,12 @@ func phaseSentence(snap *Snapshot) string {
 		return "not opened yet"
 	case PhaseLobby:
 		return "teams joining"
+	case PhaseAwards:
+		// An ENDING phase: every cell is played and every round is scored, so
+		// this reads as finished rather than as in play. The screen it is
+		// parked on is still worth naming, because a game sitting here the
+		// next morning means the host walked off before the last press.
+		return "finished, honorable mentions still up"
 	case PhasePodium:
 		return "finished"
 	case PhaseIntermission:
