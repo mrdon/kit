@@ -2058,6 +2058,19 @@ h2.view-title:hover {
   padding-left: 0.6rem;
 }
 
+/* The honorable mentions, for the host to read out ahead of the podium. In
+   the order the wall will show them, numbered, because the host is reading
+   down a list while talking and losing their place is the failure mode. */
+.trivia-awards { margin: 0 0 0.6rem; }
+.trivia-awards ol {
+  margin: 0.3rem 0 0;
+  padding-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.trivia-awards li { line-height: 1.35; }
+
 /* Who is holding the room up. Names, not a count: a count tells the host to
    wait, a list tells them which table to go and lean on. */
 .trivia-wait {

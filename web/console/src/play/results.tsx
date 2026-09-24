@@ -83,6 +83,32 @@ function useOncePerKey(key: string, armed: boolean, fire: () => (() => void) | v
   }, [key, armed]);
 }
 
+// The honorable mentions, above the standings on every phone.
+//
+// The whole list, not just this table's own. A table that won one wants to
+// see it named next to the others, and a table that won nothing still wants
+// to know who took "wildest guesses" -- showing each phone only its own would
+// turn a shared bit of the night into twenty private ones.
+//
+// The card for your own table is marked, because on a phone at a dark table
+// you are scanning for your name and nothing else.
+function Awards({ frame }: { frame: PlayerFrame }) {
+  if (!frame.awards?.length) return null;
+  const mine = frame.you?.teamId;
+  return (
+    <div className="awards">
+      <h2 className="awards-head">Honorable mentions</h2>
+      {frame.awards.map((a) => (
+        <div key={a.key} className={`award${a.teamId === mine ? ' mine' : ''}`}>
+          <div className="award-title">{a.title}</div>
+          <div className="award-team">{a.teamName}</div>
+          <div className="award-detail">{a.detail}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // The podium. The winning table's phone is the one screen in the room that
 // should be impossible to mistake for anybody else's, so it gets a shower
 // that keeps falling for six seconds -- long enough that the table next to
@@ -108,6 +134,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
       <div className="body">
         <p className="celebrate-line big">You won</p>
         <p className="sub" style={{ textAlign: 'center' }}>{money(winner.score)}. That&rsquo;s the game.</p>
+        <Awards frame={frame} />
         <Standings frame={frame} />
         <RateNight game={frame.game} />
       </div>
@@ -118,6 +145,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
       <div className="body">
         <p className="celebrate-line big">{place === 2 ? '2nd place' : '3rd place'}</p>
         <p className="sub" style={{ textAlign: 'center' }}>{winner.name} wins the night.</p>
+        <Awards frame={frame} />
         <Standings frame={frame} />
         <RateNight game={frame.game} />
       </div>
@@ -126,6 +154,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
   return (
     <div className="body">
       <h1>{winner ? `${winner.name} wins` : 'That’s the game'}</h1>
+      <Awards frame={frame} />
       <Standings frame={frame} />
       <RateNight game={frame.game} />
     </div>

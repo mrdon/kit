@@ -106,6 +106,18 @@ func coreResults(ctx context.Context, caller *services.Caller, pool *pgxpool.Poo
 		fmt.Fprintf(&b, "%d. %s — %s\n", i+1, t.Name, FormatMoney(t.Score))
 	}
 
+	// The honourable mentions, which the snapshot fills in only on the
+	// podium -- so a game abandoned mid-board simply has none, which is
+	// correct rather than missing.
+	if len(snap.Awards) > 0 {
+		b.WriteString("\n*Honorable mentions*\n")
+		for _, a := range snap.Awards {
+			// No em-dash: the house copy skill bans them, and a new line
+			// should not add one just because its neighbours predate the rule.
+			fmt.Fprintf(&b, "*%s*: %s. %s\n", a.Title, a.TeamName, a.Detail)
+		}
+	}
+
 	recap, err := roundRecap(ctx, pool, caller.TenantID, game, snap)
 	if err != nil {
 		return "", err

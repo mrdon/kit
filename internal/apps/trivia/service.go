@@ -144,7 +144,28 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	if err := s.fillLastRound(ctx, snap, game); err != nil {
 		return nil, err
 	}
+	if game.Phase == PhasePodium {
+		if err := s.fillAwards(ctx, snap, game); err != nil {
+			return nil, err
+		}
+	}
 	return snap, nil
+}
+
+// fillAwards resolves the honourable mentions.
+//
+// Podium only, which is what keeps four extra reads off every frame of the
+// night. It is also the only phase where they are a fixed answer: the inputs
+// stop moving when the last round is scored, so recomputing on each frame
+// gives the same list rather than a screen that changes while the room
+// watches it.
+func (s *Service) fillAwards(ctx context.Context, snap *Snapshot, game *Game) error {
+	in, err := AwardRows(ctx, s.pool, game.TenantID, game.ID)
+	if err != nil {
+		return err
+	}
+	snap.Awards = Awards(in)
+	return nil
 }
 
 // fillLastRound carries the previous question's result forward.

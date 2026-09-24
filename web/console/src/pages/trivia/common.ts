@@ -205,6 +205,17 @@ export interface HostFrame {
   progress: { cellsPlayed: number; cellsTotal: number; finalPlayed: boolean };
   picker: Picker | null;
   pickerReason: PickerReason;
+  // The honorable mentions the TV is about to show. Empty until the podium.
+  awards: HostAward[];
+}
+
+// One honorable mention, as the host reads it out.
+export interface HostAward {
+  key: string;
+  title: string;
+  teamId: string;
+  teamName: string;
+  detail: string;
 }
 
 // A dataset is a named set of questions. It is the only "set of questions"

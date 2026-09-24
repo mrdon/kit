@@ -29,6 +29,10 @@ type HostFrame struct {
 	// and nothing about ties, an empty card, or the first question.
 	Picker       *wirePicker `json:"picker"`
 	PickerReason string      `json:"pickerReason"`
+	// Awards are the honourable mentions the TV is about to show. The host
+	// gets them so they can read them out with some showmanship instead of
+	// squinting at the wall over their own shoulder.
+	Awards []wireAward `json:"awards"`
 }
 
 // wireAnswer is the host-only correct answer.
@@ -76,6 +80,7 @@ func ProjectHost(s *Snapshot) HostFrame {
 
 		Picker:       publicPicker(s),
 		PickerReason: pickerReasonOf(s),
+		Awards:       publicAwards(s),
 	}
 	// The host sees the cards from the moment they exist, and the answer in
 	// every phase.

@@ -50,6 +50,8 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
 
       {secs !== null ? <div className="trivia-clock">{secs}</div> : null}
 
+      <AwardList frame={frame} />
+
       <WaitingOn frame={frame} />
 
       <div className="page-head-actions">
@@ -94,6 +96,27 @@ function WaitingOn({ frame }: { frame: HostFrame }) {
       <div className="teamlist">
         {waiting.map((t) => <span key={t.id} className="pill pill-off">{t.name}</span>)}
       </div>
+    </div>
+  );
+}
+
+// The honorable mentions, in the order the wall is about to show them.
+//
+// The host is meant to read these out, which is the entire reason they are
+// here: without them the host is reading the TV over their own shoulder,
+// backwards, in the dark.
+function AwardList({ frame }: { frame: HostFrame }) {
+  if (!frame.awards?.length) return null;
+  return (
+    <div className="trivia-awards">
+      <p className="card-desc">Honorable mentions, in this order</p>
+      <ol>
+        {frame.awards.map((a) => (
+          <li key={a.key}>
+            <strong>{a.title}</strong>: {a.teamName}. {a.detail}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

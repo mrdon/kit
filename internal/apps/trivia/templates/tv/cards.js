@@ -107,7 +107,8 @@ function buildCards(host, mode) {
     card.style.animationDelay = (i * 120) + 'ms';   // a stagger, so they land like dealt cards
     card.dataset.slotId = s.id;
     card.appendChild(el('div', 'val', s.label));
-    card.appendChild(el('div', 'names', (s.teams || []).join(' · ')));
+    // "and", not a middot: read the card out loud and that is what you say.
+    card.appendChild(el('div', 'names', (s.teams || []).join(' and ')));
     var tray = el('div', 'tray');
     if (showsChips(mode)) {
       (s.chips || []).forEach(function (c, ci) { tray.appendChild(chipNode(c, ci * 60)); });

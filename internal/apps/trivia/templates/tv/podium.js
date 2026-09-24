@@ -1,6 +1,21 @@
 /* Screen 8: the podium. */
 /* --- 8. podium --- */
+
+/* The podium phase is two screens in sequence: the honorable mentions, then
+   the plinths. This is the dispatcher between them, and awards.js owns the
+   run-up. A night with no awards in it (nobody qualified, or a room of two)
+   goes straight to the plinths, which is what the phase did before they
+   existed. */
 function renderPodium(phaseChanged) {
+  if (phaseChanged) { awardStep = 0; awardsOver = false; }
+  if (!awardsOver && (state.awards || []).length) {
+    renderAwards();
+    return;
+  }
+  renderPlinths(phaseChanged || !document.getElementById('podium').childElementCount);
+}
+
+function renderPlinths(phaseChanged) {
   show('s-podium');
   var host = document.getElementById('podium');
   if (!phaseChanged && host.childElementCount) { return; }

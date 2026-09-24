@@ -369,3 +369,23 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
 }
 .star.on { color: var(--gold); }
 .rate textarea.field { font: inherit; resize: vertical; }
+
+/* The honorable mentions, above the standings on the podium. One card each,
+   with this table's own marked in gold -- on a phone in a dark bar the only
+   thing anybody is doing with this list is looking for their own name. */
+.awards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.awards-head {
+  margin: 0; text-align: center; color: var(--dim);
+  font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+}
+.award {
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.award.mine { border-color: var(--gold); background: rgba(245, 196, 81, .10); }
+.award-title {
+  font-size: 13px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--gold);
+}
+.award-team { font-size: 19px; font-weight: 800; overflow-wrap: anywhere; }
+.award-detail { font-size: 14px; color: var(--dim); }

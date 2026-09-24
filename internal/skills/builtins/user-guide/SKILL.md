@@ -533,6 +533,10 @@ The final is **on by default**. You can switch it off per game (**Settings → F
 
 **The night never ends itself.** When the last board is spent the game waits on the break screen with the standings up, and you press **Start the final**, **Add a board** or **Go to the podium** when the room tells you which it wants.
 
+**Honorable mentions come before the winner.** Press **Go to the podium** and the screen gives out three to five side awards first, one per table, before the plinths rise. They come from a pool of seventeen, and most of them measure how a table played rather than how well: **Backed themselves** and **Trusted the room** for where a table put its chips, **Wildest guesses** for the numbers furthest outside the rest of the room, **So close all night** for the table that held the nearest guess that was over and got paid nothing for it, **Doubted themselves** for writing the winning answer and betting elsewhere. No table takes two, so the awards find three to five different tables on most nights, and a table that finished tenth can still get its name on the wall.
+
+The list is also on your own panel in the order the screen will show it, so you can read them out. Say something like "before we announce the winner, a few honorable mentions" and press the button. Each card sits up for about five seconds. A small room gets fewer of them rather than repeats, and a table that joined near the end is left out, because three questions is not a night.
+
 **Tables rate the night.** Once the podium is up, every table's phone asks for one to five stars and an optional comment, and posts them to Slack when they press **Send**. Pick the channel under **Admin → Trivia → Where ratings go**, and invite Kit to it first. Ratings aren't stored anywhere else, so until you pick a channel they go nowhere.
 
 **Ask about it afterwards.** In Slack:

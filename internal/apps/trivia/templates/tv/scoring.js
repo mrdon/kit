@@ -53,7 +53,12 @@ function paintBand() {
    The pseudo-slot ("smaller than all of these") has no teams by definition --
    nobody wrote it, the room simply all went high -- and that is worth saying
    out loud rather than leaving a blank line where a name goes. The empty
-   `teams` case is the same sentence for the same reason. */
+   `teams` case is the same sentence for the same reason.
+
+   And it says WHY rather than hinting at it. "Nobody had it" was a coy
+   understatement standing in for the fact, which the house copy skill bans by
+   name; the fact is that every guess overshot, and it is also the more useful
+   line, because it tells the room how the card was lost. */
 function winnerCredit() {
   var win = state.scoring.winningSlot;
   var slots = state.slots || [];
@@ -61,9 +66,9 @@ function winnerCredit() {
     if (slots[i].id !== win) { continue; }
     var teams = slots[i].teams || [];
     if (!teams.length) { break; }
-    return teams.join(' & ') + ' wrote it';
+    return teams.join(' and ') + ' wrote it';
   }
-  return 'Nobody had it';
+  return 'Every guess was too high';
 }
 
 /* Rows reorder by FLIP so an overtake is visible AS MOTION rather than as

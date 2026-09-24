@@ -85,6 +85,17 @@ export interface WirePicker {
   name: string;
 }
 
+// One honorable mention. Public on every surface: the point is that the room
+// sees which table took what, so a phone shows the whole list and marks its
+// own rather than showing only its own.
+export interface WireAward {
+  key: string;
+  title: string;
+  teamId: string;
+  teamName: string;
+  detail: string;
+}
+
 // Re-exported from the shared vocabulary rather than written again. The copy
 // that used to live here had already drifted: it was missing `intermission`,
 // so the break between board rounds fell through the phone's switch to a
@@ -121,6 +132,8 @@ export interface PlayerFrame {
   // Served by the server, not written here, so the phone and the TV cannot
   // tell a room different games.
   rules: string[];
+  // The honorable mentions. Empty until the podium.
+  awards: WireAward[];
 }
 
 // base is the game's own URL, with any trailing slash removed.

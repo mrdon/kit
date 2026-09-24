@@ -567,6 +567,36 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   overflow-wrap: anywhere;
 }
 
+/* ---------- 8a. honorable mentions ---------- */
+/* One column of cards that land one at a time while the host reads them out.
+   Sized so five fit the stage without measuring: five is MaxAwards in
+   awards.go, and the pool never returns more. */
+.awards-head {
+  margin: 0; padding: 40px 0 18px; text-align: center;
+  font: 400 76px/1 var(--display); color: var(--dim);
+}
+.awards { display: grid; gap: 14px; align-content: start; padding: 0 90px; }
+.award {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: 8px 40px; padding: 22px 36px; border-radius: 20px;
+  border: 3px solid var(--line);
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+}
+.award.landing { animation: awardland .55s cubic-bezier(.2,.9,.3,1.1) both; }
+@keyframes awardland { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.award-title {
+  grid-column: 1; font: 400 46px/1 var(--display); color: var(--gold);
+  text-transform: uppercase; letter-spacing: .02em;
+}
+/* The name is the biggest thing on the card. Somebody is looking for their
+   own table on this screen and nothing else on it is what they came for. */
+.award-team {
+  grid-column: 2; grid-row: 1 / span 2; text-align: right;
+  font: 700 58px/1.1 var(--body); color: var(--ink); overflow-wrap: anywhere;
+  max-width: 44%;
+}
+.award-detail { grid-column: 1; font: 400 34px/1.25 var(--body); color: var(--dim); }
+
 /* ---------- 8. podium ---------- */
 .podium { height: 100%; display: flex; gap: 40px; align-items: flex-end; justify-content: center; padding-bottom: 60px; }
 .plinth {

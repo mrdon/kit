@@ -71,6 +71,12 @@ type Snapshot struct {
 	// assignment that half-fills it.
 	Scoring *SnapScoring
 
+	// Awards are the honourable mentions, and they are resolved ONLY on the
+	// podium -- see awards.go. Nothing else would be served by carrying them
+	// earlier: they are read off frozen data, they cost four queries, and a
+	// half-played night has no honourable mentions in it.
+	Awards []Award
+
 	// PublisherID identifies the process that produced this snapshot, so a
 	// relayed message coming back around is recognised and dropped rather
 	// than re-fanned locally.

@@ -25,7 +25,7 @@ var tvSheets = []string{"display.css", "display_fx.css", "display_join.css"}
 // first and boot (the first connect) is last.
 var tvScripts = []string{
 	"core.js", "fx.js", "join.js", "joincorner.js", "board.js", "break.js", "wheel.js",
-	"wager.js", "question.js", "cards.js", "scoring.js", "podium.js", "boot.js",
+	"wager.js", "question.js", "cards.js", "scoring.js", "awards.js", "podium.js", "boot.js",
 }
 
 // tvScript assembles the client. Everything is indented as it would be
