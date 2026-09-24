@@ -635,3 +635,48 @@ func TestNoFinalMeansNoBreakAtTheEnd(t *testing.T) {
 		t.Fatalf("phase = %q, want it waiting on the spent board with no break", got)
 	}
 }
+
+// The last question of a board round is bet on AFTER its cell is marked
+// played, because played_at is stamped when a cell is opened rather than when
+// its round is scored. Pricing the chips off the board's remaining cells
+// therefore charged every round's last question at the NEXT round's rate --
+// $200/$400 in round one, which is what the room noticed.
+func TestChipsArePricedAtTheRoundTheQuestionBelongsTo(t *testing.T) {
+	cellID := uuid.New()
+	other := uuid.New()
+	// Round 0 fully opened (its last cell is the one in play), round 1 fresh.
+	played := nowForTest()
+	cells := []BoardCell{
+		{ID: other, RoundIndex: 0, PlayedAt: &played},
+		{ID: cellID, RoundIndex: 0, PlayedAt: &played},
+		{ID: uuid.New(), RoundIndex: 1},
+		{ID: uuid.New(), RoundIndex: 1},
+	}
+
+	// The board has moved on; the question on the wall has not.
+	if got := PlayingBoardRound(cells); got != 1 {
+		t.Fatalf("PlayingBoardRound = %d, want 1 once round 0 is fully opened", got)
+	}
+	live := &Round{CellID: &cellID}
+	if got := ScaleRoundOf(live, cells); got != 0 {
+		t.Errorf("ScaleRoundOf = %d, want 0: the live question is a round 0 cell", got)
+	}
+	if got := scaleValues([]int{100, 200}, ScaleRoundOf(live, cells)); got[0] != 100 || got[1] != 200 {
+		t.Errorf("round 0 chips = %v, want [100 200]", got)
+	}
+
+	// And round 1's own questions do double.
+	secondRound := cells[2].ID
+	if got := scaleValues([]int{100, 200}, ScaleRoundOf(&Round{CellID: &secondRound}, cells)); got[0] != 200 || got[1] != 400 {
+		t.Errorf("round 1 chips = %v, want [200 400]", got)
+	}
+
+	// A final has no cell and falls back to the board, which is also what the
+	// break screen wants when nothing is in play.
+	if got := ScaleRoundOf(&Round{IsFinal: true}, cells); got != 1 {
+		t.Errorf("ScaleRoundOf for a final = %d, want the board's own answer 1", got)
+	}
+	if got := ScaleRoundOf(nil, cells); got != 1 {
+		t.Errorf("ScaleRoundOf with nothing in play = %d, want 1", got)
+	}
+}

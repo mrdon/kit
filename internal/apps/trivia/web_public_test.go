@@ -467,7 +467,10 @@ func TestStableTVAddressFollowsTheNewestGame(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("empty workspace returned %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "No quiz tonight") {
+	// "No game yet", not "No quiz tonight": this screen goes up on the wall
+	// BEFORE the night is ready, so it must not read as a cancellation to a
+	// room that is about to play.
+	if !strings.Contains(rec.Body.String(), "No game yet") {
 		t.Fatal("no placeholder for a workspace with no games")
 	}
 	// "empty" plus the build: a screen parked on the stable address with no

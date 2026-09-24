@@ -10,12 +10,10 @@ package trivia
 // boardMultiplier is what a board round is worth against the first one.
 //
 // LINEAR -- round one at 1x, round two at 2x, round three at 3x -- and it
-// applies to the CELLS AND THE CHIPS TOGETHER. That pairing is the whole
-// point: only the table that wrote the winning answer takes a cell, but every
-// table bets every round, so the betting is meant to be the bigger channel.
-// Scale the cells alone and knowing starts to outrun reading the room; scale
-// the chips alone and the board stops mattering. Scaling both leaves the
-// balance exactly where round one set it and simply raises the stakes.
+// applies to THE CHIPS. A cell is worth what it was worth all night; what a
+// later round raises is what you can put on somebody else's answer. Writing
+// the winner is one table's moment, and it stays worth the same one; the
+// stakes the whole room plays for are the ones that climb.
 //
 // It used to double (1, 2, 4, 8), which is what Jeopardy does and is fine at
 // two rounds. It compounds badly past that: at four rounds the last board is
@@ -36,6 +34,9 @@ func boardMultiplier(round int) int {
 }
 
 // scaleValues applies a round's multiplier to a list of chip values.
+//
+// Chips only. Cell values are stored and paid unscaled, and passing them
+// through here would have the wall promising a number scoring does not pay.
 func scaleValues(values []int, round int) []int {
 	m := boardMultiplier(round)
 	if m == 1 {
@@ -113,6 +114,30 @@ func BoardRoundCount(cells []BoardCell) int {
 // is WORTH when it lands (chipAmount) and what the phone was SHOWN before it
 // was placed (the snapshot). They agreed by copy-paste, which is the same
 // thing right up until one of them is edited.
+// ScaleRoundOf is the board round whose chip values a round is played at.
+//
+// It reads the round's OWN CELL rather than the state of the board, because
+// played_at is stamped when a cell is OPENED, not when its round is scored.
+// So the moment the host opens the last cell of a round, that round has no
+// unplayed cells left and PlayingBoardRound has already moved on -- while the
+// question is still on the wall and the room is still betting on it. Every
+// board round's last question was therefore priced at the NEXT round's
+// chips: $200/$400 in round one.
+//
+// A final has no cell and takes its stake from the wager instead, so the
+// fallback here is only ever reached between rounds, where "the round about
+// to start" is exactly what the break screen means.
+func ScaleRoundOf(round *Round, cells []BoardCell) int {
+	if round != nil && round.CellID != nil {
+		for _, c := range cells {
+			if c.ID == *round.CellID {
+				return c.RoundIndex
+			}
+		}
+	}
+	return PlayingBoardRound(cells)
+}
+
 func PlayingBoardRound(cells []BoardCell) int {
 	round := CurrentBoardRound(cells)
 	if n := BoardRoundCount(cells); n > 0 && round >= n {

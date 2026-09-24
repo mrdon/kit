@@ -97,13 +97,31 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	// which leaves the final drawing on the last round's scaling.
 	boardRound := PlayingBoardRound(cells)
 
+	// The round on the wall, if any. Loaded HERE rather than inside fillRound
+	// because the chips have to be priced at the round the live question
+	// belongs to, and that is not the same thing as the board's state -- see
+	// ScaleRoundOf. Showing the phone one number and charging it another is
+	// the bug this prevents.
+	var live *Round
+	if game.CurrentRoundID != nil {
+		live, err = GetRound(ctx, s.pool, tenantID, *game.CurrentRoundID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	chipRound := ScaleRoundOf(live, cells)
+
 	snap := &Snapshot{
 		GameID: gameID, TenantID: tenantID,
 		Name: game.Name, Title: game.Title, Phase: game.Phase,
 		StateVersion: game.StateVersion,
 		ServerNow:    time.Now().UTC(), Deadline: game.PhaseDeadline,
-		FinalWager: game.FinalWager, TokenValues: scaleValues(game.TokenValues, boardRound),
-		CellValues: scaleValues(game.CellValues, boardRound),
+		FinalWager: game.FinalWager, TokenValues: scaleValues(game.TokenValues, chipRound),
+		// Cell values are NOT scaled. A cell is worth what it was worth all
+		// night, and the stored points scoring pays are the unscaled ones --
+		// passing them through scaleValues had the board promising a number
+		// no round would ever pay.
+		CellValues: game.CellValues,
 		BoardRows:  game.BoardRows, BoardCols: game.BoardColumns,
 		BoardRound: boardRound, BoardRounds: BoardRoundCount(cells),
 		PickerTeamID: game.PickerTeamID, PickerReason: game.PickerReason,
@@ -136,8 +154,8 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 		})
 	}
 
-	if game.CurrentRoundID != nil {
-		if err := s.fillRound(ctx, snap, game, teams); err != nil {
+	if live != nil {
+		if err := s.fillRound(ctx, snap, game, teams, live); err != nil {
 			return nil, err
 		}
 	}
@@ -202,12 +220,8 @@ func (s *Service) fillLastRound(ctx context.Context, snap *Snapshot, game *Game)
 
 // fillRound adds the in-play round, its cards, its chips and -- once the
 // round is scored -- the answer.
-func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, teams []Team) error {
+func (s *Service) fillRound(ctx context.Context, snap *Snapshot, game *Game, teams []Team, round *Round) error {
 	tenantID := game.TenantID
-	round, err := GetRound(ctx, s.pool, tenantID, *game.CurrentRoundID)
-	if err != nil {
-		return err
-	}
 	answers, err := ListAnswers(ctx, s.pool, tenantID, round.ID)
 	if err != nil {
 		return err

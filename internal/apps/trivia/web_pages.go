@@ -218,7 +218,7 @@ const noGameHTML = `<!doctype html>
 </style>
 </head>
 <body><div>
-  <h1>No quiz tonight</h1>
+  <h1>No game yet</h1>
   <p>This screen is working. Create a game and it will appear here.</p>
 </div></body>
 </html>

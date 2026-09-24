@@ -24,13 +24,24 @@ export function useHostStream(gameId: string | undefined): HostStream {
   const deadlineRef = useRef<number | null>(null);
   const lastFrameAt = useRef(Date.now());
   const esRef = useRef<EventSource | null>(null);
+  const connectingSince = useRef(0);
+  const bootBuild = useRef<string | null>(null);
 
   const apply = useCallback((next: HostFrame) => {
     if (next.version <= versionRef.current) return;
     versionRef.current = next.version;
+    // A deploy while a game is running leaves this laptop driving the night
+    // from the bundle it loaded an hour ago. That is how a host ended up with
+    // no "Show the winner" button: the server had the awards phase, the
+    // console did not, and primaryAction fell through to nothing. Unlike a
+    // phone there is nothing half-typed to protect here.
+    if (bootBuild.current === null) bootBuild.current = next.build ?? '';
+    else if (next.build && next.build !== bootBuild.current) window.location.reload();
     skewRef.current = next.serverNow - Date.now();
     deadlineRef.current = next.deadlineMs || null;
-    lastFrameAt.current = Date.now();
+    // Deliberately does NOT stamp lastFrameAt: that clock means "the SOCKET
+    // is alive", and this runs for poll frames too. Stamping it here meant a
+    // working poll hid a dead stream, which was then never retried.
     setFrame(next);
   }, []);
 
@@ -50,7 +61,17 @@ export function useHostStream(gameId: string | undefined): HostStream {
 
   const connect = useCallback(() => {
     if (!gameId) return;
-    esRef.current?.close();
+    const current = esRef.current;
+    // Never tear down a socket that is still dialling -- closing a CONNECTING
+    // EventSource every watchdog tick is what stopped a slow handshake from
+    // ever finishing -- but not forever, or a socket latched in CONNECTING
+    // could never be replaced.
+    if (current && current.readyState === EventSource.CONNECTING
+      && Date.now() - connectingSince.current < 40_000) return;
+    current?.close();
+    // Give the new socket a full silence window to prove itself.
+    lastFrameAt.current = Date.now();
+    connectingSince.current = Date.now();
     const es = new EventSource(`${API_BASE}/trivia/games/${gameId}/stream`, {
       withCredentials: true,
     });

@@ -194,6 +194,9 @@ export interface HostFrame {
   roundCount: number;
   // The round in play IS the final, so print the word, not the number.
   isFinal: boolean;
+  // The server's build token. The console reloads when it changes, so a host
+  // is never driving a live game from a bundle the server has replaced.
+  build: string;
   teams: HostTeam[];
   board: HostCell[];
   round: HostRound | null;
