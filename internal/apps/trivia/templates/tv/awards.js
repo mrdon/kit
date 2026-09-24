@@ -30,11 +30,79 @@ function renderAwards(phaseChanged) {
   list.forEach(function (a, i) {
     /* Everything is in the DOM immediately so a frame landing mid-deal
        repaints the whole list rather than a truncated one; the animation
-       delay is what staggers them, not the insertion. */
+       delay is what staggers them, not the insertion. It also means the fit
+       below measures the finished list: the landing animation moves the
+       cards with a transform, which does not touch layout. */
     var card = awardCard(a);
     card.style.animationDelay = (i * AWARD_DEAL_MS) + 'ms';
     host.appendChild(card);
   });
+  fitAwards();
+}
+
+/* Measure and shrink, the same loop as fitRail. Three mentions have room to
+   be enormous and five do not, and one fixed size suits neither -- so the
+   team name is sized to fill what is actually there and everything else on
+   the card is derived from it. The floor is where a name stops being legible
+   from the bar, and clipping the last card is the more honest failure past
+   that. */
+function fitAwards() {
+  var host = document.getElementById('awards');
+  var screen = document.getElementById('s-awards');
+  if (!host || !screen || !host.childElementCount) { return; }
+  var avail = screen.offsetHeight - host.offsetTop - 40;
+  /* Start at the CEILING and come down, so the size is set by how much room
+     there is rather than by a number that happened to suit five cards. Three
+     mentions fill the wall; five settle wherever they fit. */
+  var size = 110;
+  var apply = function (px) {
+    host.style.setProperty('--award-name', px + 'px');
+    host.style.setProperty('--award-title', Math.round(px * 0.5) + 'px');
+    host.style.setProperty('--award-detail', Math.round(px * 0.44) + 'px');
+    host.style.setProperty('--award-pad', Math.round(px * 0.28) + 'px');
+    host.style.setProperty('--award-gap', Math.round(px * 0.2) + 'px');
+  };
+  apply(size);
+  fitAwardNames(size);
+  while (host.scrollHeight > avail && size > 34) {
+    size -= 2;
+    apply(size);
+    // Re-fit the names at every step: the card size and the name size are
+    // not independent, and measuring the stack against names left at the
+    // previous size overshoots.
+    fitAwardNames(size);
+  }
+}
+
+/* One long name must not shrink everybody else's card.
+
+   "The Quizzards of Oz" is a normal team name and "Norwegian Wood
+   Appreciation Society" is not an unusual one. Left to wrap, a single long
+   name makes its card two lines taller, and the fit loop above then takes
+   that height out of every OTHER card on the screen -- so one table's long
+   name costs the other four their size. So each name gives up a little of
+   its own type first, exactly as fitRailNames does for the standings.
+
+   Past the floor it is allowed to wrap after all. A name nobody can read is
+   worse than a tall card, and truncating somebody's table name on the one
+   screen that exists to say it out loud is not on the table. */
+function fitAwardNames(base) {
+  var names = document.querySelectorAll('#awards .award-team');
+  var floor = Math.max(30, Math.round(base * 0.55));
+  for (var i = 0; i < names.length; i++) {
+    var n = names[i];
+    var size = base;
+    n.style.whiteSpace = 'nowrap';
+    n.style.fontSize = size + 'px';
+    while (n.scrollWidth > n.clientWidth && size > floor) {
+      size -= 2;
+      n.style.fontSize = size + 'px';
+    }
+    if (n.scrollWidth > n.clientWidth) {
+      // Still too wide at the floor: let it wrap and take the height.
+      n.style.whiteSpace = 'normal';
+    }
+  }
 }
 
 /* The title carries whatever joke the award has and the line under it states

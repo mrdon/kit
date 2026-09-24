@@ -568,34 +568,40 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 
 /* ---------- 8a. honorable mentions ---------- */
-/* One column of cards that land one at a time while the host reads them out.
-   Sized so five fit the stage without measuring: five is MaxAwards in
-   awards.go, and the pool never returns more. */
+/* One card per mention, stacked, and THE TEAM NAME IS THE BIGGEST THING ON
+   IT. The first version set the name beside the award in a second column
+   capped at 44% of the width, which made the one thing anybody is looking for
+   -- their own table -- the smallest type on the screen. It gets its own
+   line now and the rest of the card is sized off it.
+
+   Every size is a custom property because the card count varies: three
+   mentions have room to be enormous and five do not, and fitAwards measures
+   and shrinks rather than picking a size that suits neither. Same loop as
+   fitRail and fitJoinRules. */
 .awards-head {
-  margin: 0; padding: 40px 0 18px; text-align: center;
-  font: 400 76px/1 var(--display); color: var(--dim);
+  margin: 0; padding: 32px 0 14px; text-align: center;
+  font: 400 62px/1 var(--display); color: var(--dim);
 }
-.awards { display: grid; gap: 14px; align-content: start; padding: 0 90px; }
+.awards {
+  display: grid; gap: var(--award-gap, 14px);
+  align-content: start; padding: 0 90px;
+}
 .award {
-  display: grid; grid-template-columns: 1fr auto; align-items: center;
-  gap: 8px 40px; padding: 22px 36px; border-radius: 20px;
+  padding: var(--award-pad, 20px) 36px; border-radius: 20px;
   border: 3px solid var(--line);
   background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+  animation: awardland .55s cubic-bezier(.2,.9,.3,1.1) both;
 }
-.award { animation: awardland .55s cubic-bezier(.2,.9,.3,1.1) both; }
 @keyframes awardland { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 .award-title {
-  grid-column: 1; font: 400 46px/1 var(--display); color: var(--gold);
+  font: 400 var(--award-title, 34px)/1 var(--display); color: var(--gold);
   text-transform: uppercase; letter-spacing: .02em;
 }
-/* The name is the biggest thing on the card. Somebody is looking for their
-   own table on this screen and nothing else on it is what they came for. */
 .award-team {
-  grid-column: 2; grid-row: 1 / span 2; text-align: right;
-  font: 700 58px/1.1 var(--body); color: var(--ink); overflow-wrap: anywhere;
-  max-width: 44%;
+  font: 700 var(--award-name, 68px)/1.05 var(--body); color: var(--ink);
+  overflow-wrap: anywhere; margin: 4px 0 6px;
 }
-.award-detail { grid-column: 1; font: 400 34px/1.25 var(--body); color: var(--dim); }
+.award-detail { font: 400 var(--award-detail, 30px)/1.25 var(--body); color: var(--dim); }
 
 /* ---------- 8. podium ---------- */
 .podium { height: 100%; display: flex; gap: 40px; align-items: flex-end; justify-content: center; padding-bottom: 60px; }
