@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { money, type PlayerFrame } from './api';
 import { confetti } from './confetti';
+import { RateNight } from './feedback';
 
 // The delta is the hero, counted up, because "what did that round do to us"
 // is the only question anybody has at this moment. The celebration is layered
@@ -108,6 +109,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
         <p className="celebrate-line big">You won</p>
         <p className="sub" style={{ textAlign: 'center' }}>{money(winner.score)}. That&rsquo;s the game.</p>
         <Standings frame={frame} />
+        <RateNight game={frame.game} />
       </div>
     );
   }
@@ -117,6 +119,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
         <p className="celebrate-line big">{place === 2 ? '2nd place' : '3rd place'}</p>
         <p className="sub" style={{ textAlign: 'center' }}>{winner.name} wins the night.</p>
         <Standings frame={frame} />
+        <RateNight game={frame.game} />
       </div>
     );
   }
@@ -124,6 +127,7 @@ export function Podium({ frame }: { frame: PlayerFrame }) {
     <div className="body">
       <h1>{winner ? `${winner.name} wins` : 'That’s the game'}</h1>
       <Standings frame={frame} />
+      <RateNight game={frame.game} />
     </div>
   );
 }

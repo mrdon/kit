@@ -358,3 +358,14 @@ h2 { font-size: 21px; line-height: 1.25; margin: 0; }
      running off the side of a phone is not. */
   overflow-wrap: anywhere;
 }
+
+/* The end-of-night rating, under the podium. Big targets: a thumb, a dark
+   bar, and probably a drink in the other hand. */
+.rate { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.stars { display: flex; justify-content: center; gap: 6px; }
+.star {
+  font-size: 42px; line-height: 1; padding: 4px 6px;
+  background: none; border: 0; color: var(--line); cursor: pointer;
+}
+.star.on { color: var(--gold); }
+.rate textarea.field { font: inherit; resize: vertical; }

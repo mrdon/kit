@@ -830,6 +830,15 @@ export interface EventsChannelOption {
   is_private: boolean;
 }
 
+// Where end-of-night trivia ratings are posted. channel_id "" means nowhere,
+// which is where every workspace starts.
+export interface TriviaFeedbackChannel {
+  channel_id: string;
+  channel_name: string;
+  channels: EventsChannelOption[] | null;
+  channels_error?: string;
+}
+
 export interface EventsStaff {
   square_connected: boolean;
   // Server always sends [], never null — the client stays defensive anyway.
@@ -1010,6 +1019,10 @@ export const api = {
   // the folded prompt, so loading it twice adds nothing.
   loadTriviaPack: (key: string) =>
     apiPost<ImportReportT>(`/trivia/questions/packs/${key}`, {}),
+  triviaFeedbackChannel: () =>
+    apiGet<TriviaFeedbackChannel>('/trivia/feedback-channel'),
+  saveTriviaFeedbackChannel: (channelId: string) =>
+    apiPut<TriviaFeedbackChannel>('/trivia/feedback-channel', { channel_id: channelId }),
   triviaDatasets: () => apiGet<{ datasets: DatasetT[] }>('/trivia/datasets'),
   renameTriviaDataset: (id: string, name: string, notes: string) =>
     apiPatch<{ datasets: DatasetT[] }>(`/trivia/datasets/${id}`, { name, notes }),

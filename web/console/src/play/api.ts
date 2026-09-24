@@ -199,3 +199,14 @@ export function money(n: number): string {
   const s = Math.abs(n).toLocaleString('en-US');
   return (neg ? '-$' : '$') + s;
 }
+
+// The end-of-night rating: stars and an optional comment, posted once.
+export async function sendFeedback(stars: number, comment: string) {
+  const res = await fetch(base + '/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ stars, comment }),
+  });
+  if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+}

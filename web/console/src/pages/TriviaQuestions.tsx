@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { API_BASE, api, type BuiltinPack, type Dataset, type ImportReport } from '../api';
 import { useSetChatContext } from '../chatContext';
+import { FeedbackChannelPanel } from './trivia/feedback_channel';
 
 // Managing the workspace's question sets: add a set Kit ships, upload your
 // own, rename one, delete one.
@@ -216,6 +217,8 @@ export default function TriviaQuestions() {
           </div>
         ) : null}
       </section>
+
+      <FeedbackChannelPanel />
     </>
   );
 }

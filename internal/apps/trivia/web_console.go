@@ -47,6 +47,14 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/trivia/questions/starter", jsonRoute(a.handleLoadStarter))
 	mux.Handle("POST /{slug}/api/trivia/questions/packs/{key}", jsonRoute(a.handleLoadStarter))
 	mux.Handle("DELETE /{slug}/api/trivia/questions/{id}", jsonRoute(a.handleDeleteQuestion))
+
+	// Where ratings go is a workspace setting, so it is admin-only where the
+	// rest of this API is not.
+	adminRoute := func(h http.HandlerFunc) http.Handler {
+		return console.AdminJSON(a.pool, a.signer, h)
+	}
+	mux.Handle("GET /{slug}/api/trivia/feedback-channel", adminRoute(a.handleGetFeedbackChannel))
+	mux.Handle("PUT /{slug}/api/trivia/feedback-channel", adminRoute(a.handleSaveFeedbackChannel))
 }
 
 // gameJSON is the console's view of a game. The URLs are served rather than

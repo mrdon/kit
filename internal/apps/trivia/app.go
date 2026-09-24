@@ -25,6 +25,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -47,6 +48,10 @@ type App struct {
 	svc     *Service
 	signer  *auth.SessionSigner
 	baseURL string
+	// enc decrypts the workspace's bot token, for posting ratings and listing
+	// channels in Admin. feedback is nil without it, which posts nothing.
+	enc      *crypto.Encryptor
+	feedback feedbackPoster
 }
 
 // Init builds the service once the pool exists. Called by apps.Init.
@@ -57,18 +62,23 @@ func (a *App) Init(pool *pgxpool.Pool) {
 }
 
 // Configure wires the console session signer, the external base URL used to
-// build the join link a phone scans off the TV, and the optional Redis client
-// that relays live snapshots between web processes.
+// build the join link a phone scans off the TV, the encryptor that unlocks the
+// bot token end-of-night ratings are posted with, and the optional Redis
+// client that relays live snapshots between web processes.
 //
 // rdb may be nil: with no Redis the relay is simply absent, which is exactly
 // correct at one web process and degrades to per-process fan-out plus the
 // clients' poll fallback at two. Nothing here requires Redis to be up.
-func Configure(signer *auth.SessionSigner, baseURL string, rdb *redis.Client) {
+func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner, baseURL string, rdb *redis.Client) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
 	instance.baseURL = baseURL
+	instance.enc = enc
+	if enc != nil && instance.pool != nil {
+		instance.feedback = &slackFeedback{pool: instance.pool, enc: enc}
+	}
 	if instance.svc != nil {
 		instance.svc.ConfigureRelay(rdb)
 	}

@@ -533,6 +533,8 @@ The final is **on by default**. You can switch it off per game (**Settings → F
 
 **The night never ends itself.** When the last board is spent the game waits on the break screen with the standings up, and you press **Start the final**, **Add a board** or **Go to the podium** when the room tells you which it wants.
 
+**Tables rate the night.** Once the podium is up, every table's phone asks for one to five stars and an optional comment, and posts them to Slack when they press **Send**. Pick the channel under **Admin → Trivia → Where ratings go**, and invite Kit to it first. Ratings aren't stored anywhere else, so until you pick a channel they go nowhere.
+
 **Ask about it afterwards.** In Slack:
 
 > "How did trivia go last night?"

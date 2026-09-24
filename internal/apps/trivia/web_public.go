@@ -67,6 +67,7 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	// idempotent and a double-tap cannot stack two bets.
 	mux.Handle("PUT /{slug}/trivia/{game}/wager", pub(a.handleWager))
 	mux.Handle("PUT /{slug}/trivia/{game}/bets", pub(a.handleBet))
+	mux.Handle("POST /{slug}/trivia/{game}/feedback", pub(a.handleFeedback))
 	mux.Handle("GET /{slug}/trivia/{game}/state", pub(a.handlePlayerState))
 	mux.Handle("GET /{slug}/trivia/{game}/stream", pub(a.handlePlayerStream))
 

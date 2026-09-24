@@ -261,7 +261,7 @@ func main() {
 	// the join link the QR code on the TV encodes, and Redis to relay live
 	// snapshots between web processes. rdb may be nil -- fan-out then stays
 	// per-process, which is exactly correct at web=1.
-	trivia.Configure(sessionSigner, cfg.BaseURL, rdb)
+	trivia.Configure(enc, sessionSigner, cfg.BaseURL, rdb)
 	trivia.StartLive(ctx)
 
 	console.Configure(sessionSigner, enc)
