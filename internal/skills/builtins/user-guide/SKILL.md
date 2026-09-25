@@ -415,6 +415,8 @@ The **Menu** page (`/<your-slug>/web/menu`) holds one tap list per workspace and
 
 The **screen address** is the wall display: a permanent public URL you paste into a kiosk board once. Point the menu at your Untappd digital board with `set_menu_source` (the id is the number in `business.untappd.com/boards/<id>`) and the tap list follows — staff keep curating in Untappd exactly as they do now, and the screen re-checks when it asks, at most once a minute.
 
+A beer wears a gold **New** badge for its first week on the wall. The date comes from your Untappd board — each row there records when it was added — so nothing needs marking in Kit, and the badge goes out on its own seven days later. The catch is that it dates the *row*, not the beer: deleting a row in Untappd and adding it back starts the week over, so if the whole board suddenly reads as new, something reshuffled it. It ages out by itself either way. A tap list set by hand with `set_menu_board` carries no dates and gets no badges.
+
 The **side panels** are the rotating rail beside the tap list — a weekly agenda, a poster, or a "book the space" call to action. Change them with `set_menu_panels`, which replaces the panels and **nothing else**: your taps, wordmark and footer are untouched whatever you pass. Use `set_menu_board` only when you mean to set the tap list or the venue chrome by hand, since that one replaces the whole document.
 
 Panels hold **text, not a calendar**. Nothing in a panel expires on its own, so a one-off date written into one is still on the wall weeks after the event — write recurring wording like "Every Wed" instead, and let a scheduled job refresh anything dated.

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The tap list, normalised, once.
@@ -40,6 +41,11 @@ type Beer struct {
 
 	// Pours is every container Untappd prices this beer in, in its order.
 	Pours []Pour `json:"pours,omitempty"`
+
+	// AddedAt is when this row was added to the Untappd board -- the date
+	// behind the wall board's "New" badge. Zero when the board's markup does
+	// not carry one. See new_badge.go.
+	AddedAt time.Time `json:"added_at,omitzero"`
 
 	// Notes is the description. It never comes off the board -- that template
 	// carries no prose -- so it is filled in separately from the beer's page
@@ -225,6 +231,7 @@ func ParseBeers(raw string) []Beer {
 			Style:   firstGroup(styleRe, mk.item),
 			ABV:     firstGroup(abvRe, mk.item),
 			Pours:   parsePours(mk.item),
+			AddedAt: parseAddedAt(mk.item),
 		})
 	}
 	return beers

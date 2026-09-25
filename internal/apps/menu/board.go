@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // DefaultPour is the house pour. Rows matching it carry no size label: on a
@@ -59,6 +60,12 @@ type Tap struct {
 	ABV     string `json:"abv"`
 	Price   string `json:"price"`
 	Size    string `json:"size"`
+
+	// AddedAt is when this row went up on the Untappd board, which is what
+	// the "New" badge is derived from. Zero on a hand-authored tap list and on
+	// anything scraped before the field existed; both simply go unbadged. See
+	// new_badge.go.
+	AddedAt time.Time `json:"added_at,omitzero"`
 }
 
 // Panel kinds. Anything else is rejected at validation rather than silently

@@ -131,8 +131,15 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 // is not the same question as "has the tap list changed". A deploy that
 // touches only the stylesheet leaves updated_at alone, and a screen that
 // never notices keeps painting with the CSS it booted with.
+//
+// The badge count is the third, and it is there because a "New" badge expires
+// on a tap list nobody touched -- see newTapCount. It sits in the middle
+// rather than on the end so the render stamp stays the suffix, which is what
+// makes a version readable at a glance when a screen is misbehaving.
 func boardVersion(row *BoardRow) string {
-	return strconv.FormatInt(row.UpdatedAt.UnixNano(), 36) + "." + RenderStamp()
+	return strconv.FormatInt(row.UpdatedAt.UnixNano(), 36) +
+		"." + strconv.Itoa(newTapCount(row.Payload)) +
+		"." + RenderStamp()
 }
 
 // writePlaceholder serves the menu before anyone has set a tap list. A 200

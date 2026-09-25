@@ -36,7 +36,11 @@
           <div class="tap">
             <div class="tap-l">
               <p class="tap-meta"><span class="tap-style">{{ .Style }}</span>{{ if .ABV }}<span class="tap-sep">&middot;</span><span class="tap-abv">{{ .ABV }}</span>{{ end }}</p>
-              <p class="tap-name" data-fit>{{ .Name }}</p>
+              <!-- The badge sits INSIDE the fitted name, so the width pass
+                   measures the pill along with the letters and shrinks the row
+                   to make room for it. Hung outside, a long name would fit its
+                   column and push the badge off the edge. -->
+              <p class="tap-name" data-fit>{{ .Name }}{{ if .IsNew }}<span class="tap-new">New</span>{{ end }}</p>
             </div>
             <div class="tap-r">
               <p class="tap-price">{{ .Price }}</p>

@@ -100,6 +100,42 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
    treatment on the same row is what made the board feel busy. */
 .tap-meta { font-family: var(--beer); font-size: var(--meta-size, 19px); font-weight: 400; letter-spacing: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
 .tap-sep { padding: 0 .5em; opacity: .5; }
+/* "New" rides at the end of the beer name, which is the widest, brightest
+   thing on the row and so the place an eye crossing the board already lands.
+   It is a child of .tap-name and therefore inside the width fit pass: the pill
+   counts toward the name's measured width, so a long name shrinks to make room
+   rather than pushing the badge past the column edge.
+
+   Sized off --meta-size rather than as an em of the name, because an em of a
+   46px name is a 38px pill shouting over the beer it is labelling. Matching
+   the style-and-ABV line puts it at the size the rest of the row's small type
+   already is, and --meta-size is a fit-pass variable, so it comes down with
+   everything else on a long tap list. No calc(): the wall panel's browser is
+   older than the arithmetic is.
+
+   vertical-align centres the pill on the beer name's CAP height, not on its
+   baseline or its x-height -- the name is set in caps, so the caps are the
+   shape an eye reads the row's centre line off. .5em is measured rather than
+   guessed: it puts the pill's box centre within a third of a pixel of the cap
+   centre at the board's own scale. Two things it depends on, both of which
+   would move it if they changed -- the padding is symmetric, so the pill's box
+   centre and its lettering agree, and the fit pass holds --meta-size at a
+   fixed fraction of --name-size, so one em of the badge stays the same
+   fraction of the name it is centred against. (It drifts a hair once
+   --meta-size hits its 15px floor and the name keeps shrinking; at that size
+   the whole row is at the edge of legible anyway.)
+
+   Raising it does NOT move the name: the pill is shorter than the name's
+   ascent even lifted, so it never grows the line box, and a badged row sits on
+   the same baseline as every row above and below it. */
+.tap-new {
+  display: inline-block; font-family: var(--display); font-weight: 700;
+  font-size: var(--meta-size, 19px); line-height: 1;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--navy-2); background: var(--accent-hot);
+  border-radius: 3px; padding: .18em .42em; margin-left: .5em;
+  vertical-align: .5em;
+}
 .tap-abv { color: var(--accent-l); }
 /* Every size on a tap row is set by the fit pass, which shrinks the list until
    the longest column fits. Only the name used to scale, which put a floor

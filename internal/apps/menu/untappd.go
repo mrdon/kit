@@ -128,6 +128,7 @@ func ParseUntappdBoard(raw string) []Tap {
 			ABV:     b.ABV,
 			Price:   pour.Price,
 			Size:    boardPourSize(pour),
+			AddedAt: b.AddedAt,
 		})
 	}
 	if len(taps) == 0 {
