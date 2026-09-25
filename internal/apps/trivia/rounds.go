@@ -145,3 +145,22 @@ func PlayingBoardRound(cells []BoardCell) int {
 	}
 	return round
 }
+
+// ChipsPerTable is how many chips one table has to place before it counts as
+// in. Two on the board; ONE in a final, whose single chip is the wager it
+// locked before the question.
+//
+// It lives here, and rides on every frame, because it was being re-derived
+// from len(tokens) by each surface in turn -- and len(tokens) is 2 in a
+// final, so the wall's "N OF M TABLES IN" never completed, the console's
+// waiting list never emptied, and both sat there through the final saying
+// the room had not finished betting when it had.
+func ChipsPerTable(tokenValues []int, isFinal bool) int {
+	if isFinal {
+		return 1
+	}
+	if n := len(tokenValues); n > 0 {
+		return n
+	}
+	return 1
+}

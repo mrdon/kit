@@ -45,6 +45,10 @@ type wireCommon struct {
 	// it booted with and reloads when they differ, which is how a fix shipped
 	// mid-quiz reaches a phone that has been open since the first question.
 	Build string `json:"build"`
+	// ChipsPerTable is how many chips a table places THIS round: two on the
+	// board, one in a final. Sent rather than derived because every surface
+	// that worked it out from len(tokens) got the final wrong.
+	ChipsPerTable int `json:"chipsPerTable"`
 }
 
 // roundNumbersOf places the night for a human: which round of how many, with
@@ -67,6 +71,7 @@ func commonOf(s *Snapshot) wireCommon {
 		Version: s.StateVersion, Game: s.Name, Title: s.Title, Phase: string(s.Phase),
 		ServerNow: s.ServerNow.UnixMilli(), DeadlineMs: s.DeadlineMillis(),
 		FinalWager: s.FinalWager, Build: buildinfo.Token(),
+		ChipsPerTable: ChipsPerTable(s.TokenValues, s.Round != nil && s.Round.IsFinal),
 	}
 	c.RoundNumber, c.RoundCount, c.IsFinal = roundNumbersOf(s)
 	return c

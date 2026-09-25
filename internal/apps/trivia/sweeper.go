@@ -221,10 +221,7 @@ func (s *Service) everyoneIn(ctx context.Context, game *Game) (bool, error) {
 		// Every chip can always go down now that stacking is allowed -- even a
 		// round showing only the pseudo-slot takes both -- so the requirement
 		// is simply the chips the team was dealt.
-		want := len(game.TokenValues)
-		if round.IsFinal {
-			want = 1
-		}
+		want := ChipsPerTable(game.TokenValues, round.IsFinal)
 		count := map[uuid.UUID]int{}
 		for _, b := range bets {
 			count[b.TeamID]++

@@ -92,7 +92,7 @@ func SettingsOf(g *Game) Settings {
 		AnswerSeconds: g.AnswerSeconds, RevealSeconds: g.RevealSeconds,
 		BetSeconds: g.BetSeconds, WagerSeconds: g.WagerSeconds,
 		GraceSeconds: g.GraceSeconds, RepeatQuestions: g.RepeatQuestions,
-		BoardRounds: g.BoardRounds,
+		BoardRounds: g.BoardRounds, BreakBeforeFinal: g.BreakBeforeFinal,
 	}
 }
 

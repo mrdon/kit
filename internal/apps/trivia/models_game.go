@@ -62,6 +62,10 @@ type Game struct {
 	// is the shipped default and exactly what the game was; two is the pub
 	// hour, with an intermission between them.
 	BoardRounds int
+	// BreakBeforeFinal holds the room at the standings between the last board
+	// and the final. See migration 106: it reads as a run-up on a long night
+	// and as an interruption on a short one, so the host chooses.
+	BreakBeforeFinal bool
 }
 
 // Settings are the per-game knobs. Board size, values and the final are
@@ -92,19 +96,26 @@ type Settings struct {
 	// small board with its own categories, and the whole round doubles -- see
 	// migration 104 and boardMultiplier.
 	BoardRounds int `json:"board_rounds"`
+	// BreakBeforeFinal holds the room at the standings between the last board
+	// and the final. Off by default: on a short night it lands as an
+	// interruption one question from the end rather than a run-up. See
+	// migration 106.
+	BreakBeforeFinal bool `json:"break_before_final"`
 }
 
 const gameColumns = `id, tenant_id, name, title, phase, board_rows, board_columns,
 	cell_values, token_values, final_wager, answer_seconds, reveal_seconds, bet_seconds,
 	wager_seconds, grace_seconds, current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
-	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, ''), repeat_questions, board_rounds`
+	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, ''), repeat_questions, board_rounds,
+	break_before_final`
 
 // gameColumnsQualified is the same list with a table alias, for the one query
 // that joins tenants.
 const gameColumnsQualified = `g.id, g.tenant_id, g.name, g.title, g.phase, g.board_rows, g.board_columns,
 	g.cell_values, g.token_values, g.final_wager, g.answer_seconds, g.reveal_seconds, g.bet_seconds,
 	g.wager_seconds, g.grace_seconds, g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
-	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, ''), g.repeat_questions, g.board_rounds`
+	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, ''), g.repeat_questions, g.board_rounds,
+	g.break_before_final`
 
 func scanGame(row pgx.Row) (*Game, error) {
 	var g Game
@@ -113,7 +124,8 @@ func scanGame(row pgx.Row) (*Game, error) {
 		&g.AnswerSeconds, &g.RevealSeconds, &g.BetSeconds, &g.WagerSeconds, &g.GraceSeconds,
 		&g.CurrentRoundID, &g.PhaseDeadline, &g.StateVersion,
 		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode,
-		&g.PickerTeamID, &g.PickerReason, &g.RepeatQuestions, &g.BoardRounds)
+		&g.PickerTeamID, &g.PickerReason, &g.RepeatQuestions, &g.BoardRounds,
+		&g.BreakBeforeFinal)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +138,14 @@ func CreateGame(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 		INSERT INTO app_trivia_games
 		    (tenant_id, name, title, phase, board_rows, board_columns, cell_values, token_values,
 		     final_wager, answer_seconds, reveal_seconds, bet_seconds, wager_seconds,
-		     grace_seconds, created_by, join_code, repeat_questions, board_rounds)
-		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		     grace_seconds, created_by, join_code, repeat_questions, board_rounds,
+		     break_before_final)
+		VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		RETURNING `+gameColumns,
 		tenantID, name, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
 		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds,
-		s.GraceSeconds, createdBy, NewJoinCode(), s.RepeatQuestions, s.BoardRounds))
+		s.GraceSeconds, createdBy, NewJoinCode(), s.RepeatQuestions, s.BoardRounds,
+		s.BreakBeforeFinal))
 	if err != nil {
 		return nil, fmt.Errorf("inserting trivia game: %w", err)
 	}
@@ -198,12 +212,13 @@ func UpdateSettings(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.U
 		       token_values = $7, final_wager = $8, answer_seconds = $9,
 		       reveal_seconds = $10, bet_seconds = $11, wager_seconds = $12,
 		       grace_seconds = $13, repeat_questions = $14, board_rounds = $15,
+		       break_before_final = $16,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2
 		RETURNING `+gameColumns,
 		tenantID, id, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
 		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds,
-		s.GraceSeconds, s.RepeatQuestions, s.BoardRounds))
+		s.GraceSeconds, s.RepeatQuestions, s.BoardRounds, s.BreakBeforeFinal))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

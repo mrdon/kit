@@ -208,7 +208,10 @@ function cardsChrome(mode) {
   // the room, so the tally still answers "are we waiting on anyone?".
   var tally = document.getElementById('bet-tally');
   if (mode === 'betting') {
-    var want = (state.tokens || []).length || 1;
+    // From the server, not from tokens.length: a final deals ONE chip while
+    // tokens still lists two, so this used to demand a second chip that was
+    // never coming and the tally sat at "0 OF 6" through the whole final.
+    var want = state.chipsPerTable || 1;
     var eligible = state.teams.filter(function (t) { return t.eligible; });
     var inCount = eligible.filter(function (t) { return t.chipsPlaced >= want; }).length;
     tally.textContent = inCount + ' OF ' + eligible.length + ' TABLES IN';

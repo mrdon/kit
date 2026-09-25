@@ -34,6 +34,10 @@ export interface TriviaSettings {
   // shipped; two is the pub hour, with a break in between. Each round has its
   // own categories and is worth double the one before it.
   board_rounds: number;
+  // Hold the room at the standings between the last board and the final.
+  // Off by default: on a short night it lands as an interruption one question
+  // from the end rather than a run-up.
+  break_before_final: boolean;
 }
 
 export interface TriviaGame {
@@ -197,6 +201,9 @@ export interface HostFrame {
   // The server's build token. The console reloads when it changes, so a host
   // is never driving a live game from a bundle the server has replaced.
   build: string;
+  // How many chips a table places this round: two on the board, one in a
+  // final.
+  chipsPerTable: number;
   teams: HostTeam[];
   board: HostCell[];
   round: HostRound | null;
@@ -392,6 +399,7 @@ export function sameSettings(a: TriviaSettings, b: TriviaSettings): boolean {
   ] as const;
   if (a.title !== b.title) return false;
   if (a.final_wager !== b.final_wager || a.repeat_questions !== b.repeat_questions) return false;
+  if (a.break_before_final !== b.break_before_final) return false;
   if (numbers.some((k) => a[k] !== b[k])) return false;
   const lists = ['cell_values', 'token_values'] as const;
   return lists.every((k) =>
@@ -453,5 +461,8 @@ export function defaultSettings(): TriviaSettings {
     repeat_questions: false,
     // Two boards and a final — Jeopardy's shape, and about an hour.
     board_rounds: 2,
+    // No break before the final. On a short night it stops the room dead one
+    // question from the end, at the point they have finally stopped talking.
+    break_before_final: false,
   };
 }

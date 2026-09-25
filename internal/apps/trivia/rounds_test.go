@@ -500,7 +500,7 @@ func TestTheFinalCountsAsARound(t *testing.T) {
 	f.playNextCell(f.reload(game.ID), team)
 	f.do(game.ID, ActionRequest{Action: ActionResume, FromPhase: PhaseIntermission})
 	f.playNextCell(f.reload(game.ID), team)
-	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseIntermission})
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
 
 	snap, err = f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
 	if err != nil {
@@ -580,9 +580,46 @@ func TestTheRulesNameTheRoundsOwnChips(t *testing.T) {
 	}
 }
 
-// The final gets a break in front of it too -- the biggest one of the night.
-// Going from a struck-through board straight into a blind wager gave the one
-// moment everybody came for no run-up at all.
+// The break before the final is the HOST'S CHOICE, and it is off by default.
+//
+// It shipped unconditional, on the theory that the biggest moment of the
+// night deserves a run-up. On a single board plus a final that is not a
+// run-up, it is a stop one question from the end at the point the room has
+// finally gone quiet. So: off unless asked for.
+func TestTheBreakBeforeTheFinalIsOffByDefault(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	s.FinalWager = true
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:1])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playNextCell(f.reload(game.ID), team)
+
+	// Straight to the emptied board, where the primary button already says
+	// "Start the final". One press, not two.
+	if got := f.reload(game.ID).Phase; got != PhaseBoard {
+		t.Fatalf("phase with the boards done and a final to come = %q, want the board", got)
+	}
+	f.do(game.ID, ActionRequest{Action: ActionFinal, FromPhase: PhaseBoard})
+	g := f.reload(game.ID)
+	if g.CurrentRoundID == nil {
+		t.Fatal("no round opened off the emptied board")
+	}
+	round, err := GetRound(f.ctx, f.pool, f.tenant.ID, *g.CurrentRoundID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !round.IsFinal {
+		t.Fatal("the round off the emptied board is not the final")
+	}
+}
+
+// And with it switched on the room gets the beat it used to get always.
 func TestTheFinalGetsABreakInFrontOfIt(t *testing.T) {
 	f := newFixture(t)
 	f.seedBank(tenTopics(), 2)
@@ -591,6 +628,7 @@ func TestTheFinalGetsABreakInFrontOfIt(t *testing.T) {
 	s.CellValues = []int{100}
 	s.BoardRounds = 1
 	s.FinalWager = true
+	s.BreakBeforeFinal = true
 	game := f.newGame(s, nil)
 	f.buildRounds(game, tenTopics()[:1])
 	team := f.join(game.ID, "Bar Flies")
@@ -678,5 +716,28 @@ func TestChipsArePricedAtTheRoundTheQuestionBelongsTo(t *testing.T) {
 	}
 	if got := ScaleRoundOf(nil, cells); got != 1 {
 		t.Errorf("ScaleRoundOf with nothing in play = %d, want 1", got)
+	}
+}
+
+// A final deals ONE chip -- the wager locked before the question -- while the
+// game's token_values still lists two. Every surface that derived the
+// requirement from len(tokens) therefore demanded a second chip that was
+// never coming: the wall's tally sat at "0 OF 6" through the whole final, and
+// the console's waiting list never emptied.
+func TestAFinalAsksForOneChipNotTwo(t *testing.T) {
+	tokens := []int{100, 200}
+	if got := ChipsPerTable(tokens, false); got != 2 {
+		t.Errorf("board round asks for %d chips, want 2", got)
+	}
+	if got := ChipsPerTable(tokens, true); got != 1 {
+		t.Errorf("final asks for %d chips, want 1", got)
+	}
+	// A one-chip game is a legal setting, and a game with no tokens at all
+	// must still ask for something rather than counting everyone as in.
+	if got := ChipsPerTable([]int{100}, false); got != 1 {
+		t.Errorf("one-chip board round asks for %d, want 1", got)
+	}
+	if got := ChipsPerTable(nil, false); got != 1 {
+		t.Errorf("a game with no token values asks for %d, want 1", got)
 	}
 }

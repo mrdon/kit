@@ -424,14 +424,23 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 			}
 		}
 	}
-	// The boards are done and a final is still to come: that is a break too,
-	// and the biggest one of the night. The room is about to do the single
-	// moment everybody came for, so it gets the same beat the other rounds
-	// get -- standings up, a last drink, and the host starts it when the room
-	// is back. Going straight from a struck-through board into a blind wager
-	// gave the final no run-up at all.
-	if game.FinalWager {
+	// The boards are done and a final is still to come. Whether that deserves
+	// a break is the host's call and it defaults to NO.
+	//
+	// It used to be unconditional, on the theory that the final is the moment
+	// everybody came for and should get the same run-up every other round
+	// gets. True of a three-board night and wrong for most of them: on a
+	// single board plus a final, stopping the room dead one question from the
+	// end is not a run-up, it is an interruption at the point they have
+	// finally stopped talking. A host who wants the beat turns it on; a host
+	// who wants one unplanned still has "Add a board" and their own voice.
+	if game.FinalWager && game.BreakBeforeFinal {
 		return s.moveTo(ctx, game, PhaseIntermission, nil, nil)
+	}
+	// Straight to the emptied board, where the primary button is already
+	// "Start the final". The host presses once instead of twice.
+	if game.FinalWager {
+		return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 	}
 
 	// Wait on the emptied board. THE GAME DOES NOT END ITSELF.

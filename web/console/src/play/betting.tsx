@@ -431,8 +431,10 @@ function ChipChooser({
 // everyoneIn is the phone's read of the same test the server ran before it
 // shortened the clock. It is a MIRROR, never the authority -- the phase ends
 // because the server's deadline passed, not because this said so.
-function everyoneIn(frame: PlayerFrame, total: number): boolean {
-  return frame.teams.filter((t) => t.eligible && t.chipsPlaced < total).length === 0;
+function everyoneIn(frame: PlayerFrame): boolean {
+  // The server's own number. How many chips a table owes is a rule, and it
+  // belongs in one place -- see ChipsPerTable.
+  return frame.teams.filter((t) => t.eligible && t.chipsPlaced < frame.chipsPerTable).length === 0;
 }
 
 // closingIn puts the grace into words. The number comes off the same clock
@@ -461,7 +463,7 @@ function statusLine({
 
   if (isFinal) {
     return down === total
-      ? `Wager placed.${everyoneIn(frame, total) ? ` ${closingIn(msLeft)}` : ' Waiting for the other tables.'}`
+      ? `Wager placed.${everyoneIn(frame) ? ` ${closingIn(msLeft)}` : ' Waiting for the other tables.'}`
       : 'Put your wager on whichever answer you think wins.';
   }
   if (down === total) {

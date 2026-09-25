@@ -124,6 +124,10 @@ export interface PlayerFrame {
   // question compares it against the one it booted with, so a fix shipped
   // mid-quiz reaches it. See useBuildReload.
   build: string;
+  // How many chips a table places THIS round: two on the board, one in a
+  // final. From the server, because every surface that derived it from
+  // tokens.length got the final wrong.
+  chipsPerTable: number;
   teams: WireTeam[];
   board: WireCell[];
   round: WireRound | null;

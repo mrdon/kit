@@ -349,6 +349,24 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         control on any phone — the board still waits for you at the end either way.
       </p>
 
+      {s.final_wager ? (
+        <>
+          <label className="field">
+            <span>
+              <input type="checkbox" checked={s.break_before_final} disabled={locked}
+                onChange={(e) => edit({ ...s, break_before_final: e.target.checked })} />
+              {' '}Break before the final
+            </span>
+          </label>
+          <p className="page-sub">
+            Off by default. On a long night the final is worth a run-up, so the room gets the
+            standings and a last drink before it. On a short one it stops everybody dead at the
+            point they have finally stopped talking, one question from the end. You can always
+            call a break yourself instead.
+          </p>
+        </>
+      ) : null}
+
       {/* Locked with the rest once the game starts: the board is already
           built by then, so flipping this halfway through a night would
           change nothing except what the final draws from. */}

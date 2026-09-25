@@ -127,7 +127,9 @@ export function waitingTeams(frame: HostFrame): HostTeam[] {
   const live = frame.teams.filter((t) => t.eligible);
   if (frame.phase === PHASE.WAGER) return live.filter((t) => !t.stakeLocked);
   if (frame.phase === PHASE.QUESTION) return live.filter((t) => !t.answered);
-  if (frame.phase === PHASE.BETTING) return live.filter((t) => t.chipsPlaced < frame.tokens.length);
+  // chipsPerTable, not tokens.length: a final deals one chip while tokens
+  // still lists two, so this waited forever on a room that had all bet.
+  if (frame.phase === PHASE.BETTING) return live.filter((t) => t.chipsPlaced < frame.chipsPerTable);
   return [];
 }
 
@@ -156,7 +158,7 @@ export function teamState(frame: HostFrame, t: HostTeam): string {
   if (!t.eligible && frame.round) return ` in from Q${frame.round.ordinal + 1}`;
   if (frame.phase === PHASE.WAGER) return t.stakeLocked ? ' 🔒 locked' : ' waiting';
   if (frame.phase === PHASE.QUESTION) return t.answered ? ' in' : ' waiting';
-  if (frame.phase === PHASE.BETTING) return ` ${t.chipsPlaced}/${frame.tokens.length}`;
+  if (frame.phase === PHASE.BETTING) return ` ${t.chipsPlaced}/${frame.chipsPerTable}`;
   const d = frame.scoring?.deltas?.[t.id] ?? frame.lastRound?.deltas?.[t.id];
   return d === undefined || d === 0 ? '' : ` ${signed(d)}`;
 }
