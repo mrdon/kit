@@ -1,6 +1,7 @@
 // The end-of-night rating: five stars, then a box for anything the table
-// wants to say. Shown under the podium, the one moment nobody has anything
-// left to do.
+// wants to say. Shown on BOTH ending screens -- under the honorable mentions,
+// where the host is reading a list out and the table has nothing to do but
+// listen, and again on the podium for whoever had not got round to it.
 //
 // Tapping a star only picks it. The rating goes to Slack once, with the
 // comment, when the table presses Send, because nothing is stored to edit

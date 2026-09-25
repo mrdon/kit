@@ -127,6 +127,12 @@ export function Mentions({ frame }: { frame: PlayerFrame }) {
         <p className="sub" style={{ textAlign: 'center' }}>The winner is next.</p>
       )}
       <Awards frame={frame} />
+      {/* Asked HERE rather than only on the podium. The host is reading the
+          mentions out and every table has nothing to do but listen, which is
+          the best moment of the night to be handed five stars -- and on the
+          podium the room is already standing up. RateNight remembers per game,
+          so a table that rates here sees "thanks" there. */}
+      <RateNight game={frame.game} />
     </div>
   );
 }

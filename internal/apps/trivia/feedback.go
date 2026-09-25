@@ -46,7 +46,15 @@ func validateFeedback(stars int, comment string) (string, error) {
 // it can do nothing about either, and the end of the night is not the moment
 // to hand it an error.
 func (a *App) SendFeedback(ctx context.Context, game *Game, team *Team, stars int, comment string) error {
-	if game.Phase != PhasePodium {
+	// BOTH ending phases. The mentions are where the asking should happen --
+	// the host is reading a list out and every table has nothing to do but
+	// listen, which is the best moment of the night to be handed five stars.
+	// The podium keeps it for whoever had not got round to it.
+	//
+	// Podium-only cost a real night its ratings: the game stopped on the
+	// mentions, the rating lived one screen further on, and six tables were
+	// never asked.
+	if game.Phase != PhaseAwards && game.Phase != PhasePodium {
 		return fmt.Errorf("%w: the game is not over yet", ErrClosed)
 	}
 	comment, err := validateFeedback(stars, comment)

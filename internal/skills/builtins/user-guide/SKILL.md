@@ -541,7 +541,7 @@ The list is on your own panel in the order the screen shows it, so you are readi
 
 **Screens pick up an update on their own.** If Kit is redeployed while a game is running, the TV reloads itself within about fifteen seconds and every phone reloads too, so a fix can reach the room mid-quiz without anybody touching a screen. Phones wait for the question to end before they reload, so nobody loses an answer they were typing. Nothing is lost either way: the whole game lives on the server and the screens repaint from it.
 
-**Tables rate the night.** Once the podium is up, every table's phone asks for one to five stars and an optional comment, and posts them to Slack when they press **Send**. Pick the channel under **Admin → Trivia → Where ratings go**, and invite Kit to it first. Ratings aren't stored anywhere else, so until you pick a channel they go nowhere.
+**Tables rate the night.** From the moment the honorable mentions go up, every table's phone asks for one to five stars and an optional comment. That is the best moment to ask: you are reading the mentions out and the room has nothing to do but listen, whereas by the podium they are already standing up. The prompt stays on the podium for anyone who has not got round to it, and a table that has already rated sees "thanks" rather than being asked twice, and posts them to Slack when they press **Send**. Pick the channel under **Admin → Trivia → Where ratings go**, and invite Kit to it first. Ratings aren't stored anywhere else, so until you pick a channel they go nowhere.
 
 **Ask about it afterwards.** In Slack:
 

@@ -160,3 +160,27 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(raw)
 }
+
+// The mentions are where the asking should happen: the host is reading a
+// list out and every table has nothing to do but listen. Podium-only cost a
+// real night its ratings -- the game stopped on the mentions, the rating
+// lived one screen further on, and six tables were never asked.
+func TestFeedbackIsAcceptedOnTheMentions(t *testing.T) {
+	f := newFixture(t)
+	game := f.newGame(defaultSettings(), nil)
+	cookie := f.joinOverHTTP(game, "Bar Flies")
+	poster := &fakePoster{}
+
+	if _, err := SetPhaseUnconditional(f.ctx, f.pool, f.tenant.ID, game.ID, PhaseAwards, nil, nil); err != nil {
+		t.Fatalf("moving to the mentions: %v", err)
+	}
+	game = f.reload(game.ID)
+
+	rec := f.feedbackRequest(game, poster, feedbackRequest{Stars: 4, Comment: "good night"}, cookie)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("rating from the mentions returned %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(poster.posts) != 1 {
+		t.Fatalf("%d messages posted, want 1", len(poster.posts))
+	}
+}
