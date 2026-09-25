@@ -741,3 +741,36 @@ func TestAFinalAsksForOneChipNotTwo(t *testing.T) {
 		t.Errorf("a game with no token values asks for %d, want 1", got)
 	}
 }
+
+// "End the night" is the escape hatch, so it must never be a no-op.
+//
+// From the mentions it used to call endOfNight, which recomputed the awards,
+// found the same ones and moved to the phase it was already in. A real game
+// died there: the host's console had no "Show the winner" button, they
+// pressed the only control left, nothing happened, and the night never
+// reached the podium -- so no phone ever showed the rating that only exists
+// on it.
+func TestFinishFromTheMentionsReachesThePodium(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(tenTopics(), 2)
+	s := twoRoundSettings()
+	s.BoardColumns, s.BoardRows = 1, 1
+	s.CellValues = []int{100}
+	s.BoardRounds = 1
+	s.FinalWager = false
+	game := f.newGame(s, nil)
+	f.buildRounds(game, tenTopics()[:1])
+	team := f.join(game.ID, "Bar Flies")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	f.playNextCell(f.reload(game.ID), team)
+
+	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
+	if got := f.reload(game.ID).Phase; got != PhaseAwards {
+		t.Fatalf("phase after ending the night = %q, want the mentions", got)
+	}
+	// Pressing the same control again must MOVE, not sit still.
+	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseAwards})
+	if got := f.reload(game.ID).Phase; got != PhasePodium {
+		t.Fatalf("phase after ending the night from the mentions = %q, want the podium", got)
+	}
+}

@@ -142,6 +142,18 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		// require playing out the board -- but it should still get its
 		// ceremony, so this lands on the mentions when there are any and the
 		// host presses once more for the winner.
+		//
+		// FROM THE MENTIONS IT GOES STRAIGHT TO THE CROWN. endOfNight would
+		// recompute the awards, find the same ones, and move to the phase it
+		// is already in -- a no-op that looks from the console exactly like a
+		// button that does not work. That stranded a real game: the host had
+		// no "Show the winner" button (an older console bundle, since fixed),
+		// pressed the one control they had left, and the night sat on the
+		// mentions screen for good. The room never saw the podium and no
+		// phone ever offered the rating that only appears there.
+		if game.Phase == PhaseAwards {
+			return s.moveTo(ctx, game, PhasePodium, nil, game.CurrentRoundID)
+		}
 		return s.endOfNight(ctx, game, game.CurrentRoundID)
 	case ActionShowWinner:
 		return s.moveTo(ctx, game, PhasePodium, nil, game.CurrentRoundID)
