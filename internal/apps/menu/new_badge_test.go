@@ -272,3 +272,28 @@ func stylesheetOrDie(t *testing.T) string {
 	}
 	return css
 }
+
+// TestStoredHashInvalidatesOnAParserChange is the test this feature needed and
+// did not have. The badge was correct in every test here and invisible in
+// production: the sync compares the upstream bytes against the stored hash and
+// skips the parse when they match, so a deploy that changed the parse left
+// every tenant's payload untouched and the wall rendering the old shape.
+//
+// Folding the parse version into what gets stored is what makes the first sync
+// after such a deploy do real work, exactly once.
+func TestStoredHashInvalidatesOnAParserChange(t *testing.T) {
+	const body = "e3b0c44298fc1c149afbf4c8996fb924"
+	got := storedHash(body)
+	if got == body {
+		t.Fatal("storedHash returned the body hash unchanged; a stored hash " +
+			"written by an older parser would still match and skip the re-parse")
+	}
+	if !strings.HasPrefix(got, body+".") {
+		t.Errorf("storedHash = %q, want the body hash plus a parse-version suffix", got)
+	}
+	// Same bytes, same parser: the cheap exit must still work, or every screen
+	// re-parses and rewrites the payload once a minute forever.
+	if again := storedHash(body); again != got {
+		t.Errorf("storedHash is not stable: %q then %q", got, again)
+	}
+}

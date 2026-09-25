@@ -15,6 +15,32 @@ import (
 // SourceUntappd is the only upstream this app knows how to read.
 const SourceUntappd = "untappd"
 
+// tapParseVersion is bumped whenever the parse produces a DIFFERENT tap list
+// from the same bytes -- a new field, a changed selector, a fixed mapping.
+//
+// It exists because the cheap exit below compares the upstream bytes against
+// what we stored and skips the parse when they match, which silently assumes
+// the parse is the same parse that wrote the stored payload. It is not, after
+// a deploy that changes it: the bytes are identical, the sync exits early, and
+// the new field never reaches the payload. The board goes on rendering the old
+// shape until Untappd happens to edit the page -- which it does often, so this
+// looks fine in testing and then does not happen for a quiet board.
+//
+// The "New" badge shipped exactly that way: correct everywhere it was tested,
+// and invisible in production, because every tenant's stored hash still
+// matched. Folding the version into the stored hash makes a parser change
+// invalidate every tenant's hash once, on the first sync after the deploy.
+//
+//	1 -> the original scrape
+//	2 -> added_at, for the "New" badge
+const tapParseVersion = 2
+
+// storedHash is what goes in source_hash: the upstream bytes plus the parse
+// that read them, so "nothing changed" means both.
+func storedHash(bodyHash string) string {
+	return fmt.Sprintf("%s.v%d", bodyHash, tapParseVersion)
+}
+
 // SyncResult is what one pull did, for the tool output and the logs.
 type SyncResult struct {
 	Taps    int
@@ -101,12 +127,13 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 		return res
 	}
 
-	body, hash, err := FetchUntappdBody(ctx, untappdClient(), row.SourceID)
+	body, bodyHash, err := FetchUntappdBody(ctx, untappdClient(), row.SourceID)
 	if err != nil {
 		res.Err = err
 		a.stampError(ctx, tenantID, err)
 		return res
 	}
+	hash := storedHash(bodyHash)
 
 	// The cheap exit, and the reason a one-minute schedule is reasonable.
 	if hash == row.SourceHash {
