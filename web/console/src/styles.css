@@ -1153,6 +1153,16 @@ h2.view-title:hover {
   align-items: end;
 }
 
+/* Buttons that act on a whole field-row -- move it, drop it. They carry no
+   label of their own, so they line up with the inputs rather than stretching
+   up past them, and the matching margin keeps them off the row below. */
+.row-actions {
+  display: flex;
+  align-self: end;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+}
+
 .stack-form {
   display: flex;
   flex-direction: column;

@@ -111,6 +111,19 @@ export default function MenuPrintSettings() {
     set('extras', extras);
   }
 
+  // Order here is order on the sheet. mergeExtras keeps these rows in the
+  // order they are stored -- beside their own heading when the section is
+  // already on tap, at the end when it is not -- so moving a row up is the
+  // only way to say a lemonade should print above a root beer.
+  function moveExtra(i: number, delta: number) {
+    if (!cfg) return;
+    const j = i + delta;
+    const extras = [...(cfg.extras ?? [])];
+    if (j < 0 || j >= extras.length) return;
+    [extras[i], extras[j]] = [extras[j], extras[i]];
+    set('extras', extras);
+  }
+
   // Price lives inside the row's first pour, because that is the shape the
   // renderer reads. The form flattens it so nobody has to think about pours to
   // put a lemonade on the menu.
@@ -479,7 +492,8 @@ export default function MenuPrintSettings() {
             <p className="card-desc">
               Cans, sodas and juice boxes — anything Untappd has no opinion
               about. A section whose rows are all packaged prints one price
-              column instead of three.
+              column instead of three. They print in the order below, gathered
+              under their section heading.
             </p>
             {extras.map((row, i) => (
               <div className="field-row" key={i}>
@@ -524,18 +538,38 @@ export default function MenuPrintSettings() {
                     onChange={(e) => setExtraPrice(i, e.target.value)}
                   />
                 </label>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() =>
-                    set(
-                      'extras',
-                      extras.filter((_, j) => j !== i),
-                    )
-                  }
-                >
-                  Remove
-                </button>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    aria-label={`Move ${row.name || 'this drink'} up`}
+                    disabled={i === 0}
+                    onClick={() => moveExtra(i, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    aria-label={`Move ${row.name || 'this drink'} down`}
+                    disabled={i === extras.length - 1}
+                    onClick={() => moveExtra(i, 1)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() =>
+                      set(
+                        'extras',
+                        extras.filter((_, j) => j !== i),
+                      )
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
             ))}
             <datalist id="menu-print-sections">
