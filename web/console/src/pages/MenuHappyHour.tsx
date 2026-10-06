@@ -60,7 +60,10 @@ export default function MenuHappyHour() {
     return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
   }
 
-  async function save() {
+  // The switch saves on its own. A switch that only flips a form field, with
+  // the Save button a section further down, reads as broken: someone turned
+  // happy hour "on", walked away, and it was still off.
+  async function save(override?: Partial<HappyHourConfig>) {
     if (!cfg) return;
     const cents = Math.round(parseFloat(price.replace('$', '')) * 100);
     if (!(cents > 0)) {
@@ -70,7 +73,7 @@ export default function MenuHappyHour() {
     setSaving(true);
     setErr(null);
     try {
-      load(await api.saveHappyHour({ ...cfg, price_cents: cents }));
+      load(await api.saveHappyHour({ ...cfg, ...override, price_cents: cents }));
       setSaved(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -141,11 +144,13 @@ export default function MenuHappyHour() {
               <input
                 type="checkbox"
                 checked={cfg.enabled}
-                onChange={(e) => set('enabled', e.target.checked)}
+                disabled={saving}
+                onChange={(e) => save({ enabled: e.target.checked })}
               />
               <span className="switch-track" aria-hidden="true" />
               <span>{cfg.enabled ? 'Happy hour is on' : 'Happy hour is off'}</span>
             </label>
+            {err && <p className="banner banner-error">{err}</p>}
 
             <div className="field-row">
               {DAYS.map(([code, label]) => (
@@ -228,10 +233,11 @@ export default function MenuHappyHour() {
               </label>
             ))}
             <div className="drawer-actions">
-              <button className="btn" onClick={save} disabled={saving}>
+              <button className="btn" onClick={() => save()} disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
               {saved && <span className="muted">Saved. The board follows it now.</span>}
+              {err && <span className="banner banner-error">{err}</span>}
             </div>
           </section>
 
