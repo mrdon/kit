@@ -144,6 +144,14 @@ type topperOccurrence struct {
 // happens THIS week -- and a fortnightly event correctly produces no band at
 // all on its off week.
 func topperRows(events []Event, start, end time.Time, loc *time.Location) []TopperRow {
+	return topperRowsSince(events, start, end, loc, time.Time{})
+}
+
+// topperRowsSince is topperRows leaving out anything already over by since.
+// A printed card keeps Monday's quiz on it all week; the wall screen, which is
+// read at the moment it is looked at, should not headline a morning class
+// with its doors already shut.
+func topperRowsSince(events []Event, start, end time.Time, loc *time.Location, since time.Time) []TopperRow {
 	byDay := map[int][]topperOccurrence{}
 	for i := range events {
 		e := &events[i]
@@ -154,6 +162,9 @@ func topperRows(events []Event, start, end time.Time, loc *time.Location) []Topp
 			continue
 		}
 		for _, occ := range e.Occurrences(start, end) {
+			if occ.End.Before(since) {
+				continue
+			}
 			at := occ.Start.In(loc)
 			o := topperOccurrence{
 				at:         at,

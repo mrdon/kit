@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ .Venue }} &middot; What's on</title>
+<style>{{ .CSS }}</style>
+</head>
+<body>
+{{- define "chrome" }}
+<header class="chrome">
+  {{- with .Logo }}<img class="chrome-logo" src="{{ . }}" alt="">{{ end }}
+  <span class="chrome-venue">{{ .Venue }}</span>
+  <span class="chrome-clock" data-clock></span>
+</header>
+{{- end }}
+<div class="ambient" aria-hidden="true"><i></i><i></i></div>
+<!-- data-in marks what the choreography moves: each element rises in on a
+     stagger when its slide arrives, keyed by --i, and sinks out in the same
+     order before the slide leaves. Everything else rides reveal's own
+     transition. -->
+<div class="reveal" data-version="{{ .Version }}">
+<div class="slides">
+
+{{- if .Overview }}
+<section class="s s-overview" data-dwell="16000">
+  {{ template "chrome" $ }}
+  <div class="s-head">
+    <p class="kicker" data-in style="--i: 0">Coming up</p>
+    <h1 class="title" data-in style="--i: 1">What's on</h1>
+  </div>
+  <div class="grid grid-{{ len .Overview }}">
+    {{- range $i, $c := .Overview }}
+    <article class="card{{ if $c.Featured }} is-featured{{ end }}" data-in style="--i: {{ plus $i 2 }}">
+      {{- with index $.Posters $c.PosterID }}
+      <div class="card-art"><img src="{{ . }}" alt=""></div>
+      {{- else }}
+      <div class="card-art card-date"><span>{{ $c.Month }}</span><b>{{ $c.DayNum }}</b></div>
+      {{- end }}
+      <p class="card-when"><em>{{ $c.Relative }}</em>{{ $c.Date }}{{ with $c.Time }} &middot; {{ . }}{{ end }}</p>
+      <h2 class="card-title">{{ $c.Title }}</h2>
+    </article>
+    {{- end }}
+  </div>
+</section>
+{{- end }}
+
+{{- if .Week }}
+<section class="s s-week" data-dwell="18000" data-transition="slide-in fade-out">
+  {{ template "chrome" $ }}
+  <div class="s-head">
+    <p class="kicker" data-in style="--i: 0">The next seven days</p>
+    <h1 class="title" data-in style="--i: 1">This week</h1>
+  </div>
+  <ol class="week">
+    {{- range $i, $d := .Week }}
+    <li class="day{{ if eq $d.Label "Today" }} is-today{{ end }}" data-in style="--i: {{ plus $i 2 }}">
+      <div class="day-when"><b>{{ if $d.Label }}{{ $d.Label }}{{ else }}{{ $d.Day }}{{ end }}</b><span>{{ $d.Date }}</span></div>
+      {{- with index $.Posters $d.PosterID }}
+      <img class="day-thumb" src="{{ . }}" alt="">
+      {{- else }}
+      <span class="day-thumb day-thumb-none"></span>
+      {{- end }}
+      <div class="day-what">
+        <p class="day-title">{{ $d.Title }}</p>
+        {{- with $d.Bullets }}
+        <p class="day-notes">{{ range $j, $b := . }}{{ if $j }}<i>/</i>{{ end }}{{ $b }}{{ end }}</p>
+        {{- end }}
+      </div>
+      <p class="day-time">{{ $d.Time }}</p>
+    </li>
+    {{- end }}
+  </ol>
+</section>
+{{- end }}
+
+{{- $n := len .Featured }}
+{{- range $i, $c := .Featured }}
+<!-- Consecutive featured slides auto-animate into each other: the kicker and
+     the pager are matched by data-id and hold still while the event changes
+     around them, so a run of big nights reads as one segment. -->
+<section class="s s-feature kb-{{ if odd $i }}b{{ else }}a{{ end }}" data-dwell="13000" data-auto-animate>
+  {{ template "chrome" $ }}
+  <div class="feat">
+    <div class="feat-copy">
+      <p class="kicker" data-id="feat-kicker">Big nights ahead</p>
+      <p class="feat-rel" data-in style="--i: 0">{{ $c.Relative }}</p>
+      <h1 class="feat-title{{ if gt (len $c.Title) 26 }} is-long{{ end }}" data-in style="--i: 1">{{ $c.Title }}</h1>
+      <p class="feat-when" data-in style="--i: 2">{{ $c.Long }}{{ with $c.Time }} &middot; {{ . }}{{ end }}</p>
+      {{- if and $c.Offsite $c.Location }}
+      <p class="feat-where" data-in style="--i: 3">At {{ $c.Location }}</p>
+      {{- end }}
+      {{- with $c.Summary }}
+      <p class="feat-summary" data-in style="--i: 4">{{ . }}</p>
+      {{- end }}
+      {{- if gt $n 1 }}
+      <div class="pager" data-id="feat-pager">{{ range $j := seq $n }}<i class="{{ if eq $j $i }}on{{ end }}"></i>{{ end }}</div>
+      {{- end }}
+    </div>
+    <div class="feat-art" data-in style="--i: 1">
+      {{- with index $.Posters $c.PosterID }}
+      <div class="frame kb"><img src="{{ . }}" alt=""></div>
+      {{- else }}
+      <div class="frame frame-date"><span>{{ $c.Month }}</span><b>{{ $c.DayNum }}</b><em>{{ $c.Day }}</em></div>
+      {{- end }}
+    </div>
+  </div>
+</section>
+{{- end }}
+
+{{- if .Soon }}
+<section class="s s-soon" data-dwell="16000" data-transition="slide-in fade-out">
+  {{ template "chrome" $ }}
+  <div class="s-head">
+    <p class="kicker" data-in style="--i: 0">Save the date</p>
+    <h1 class="title" data-in style="--i: 1">Coming soon</h1>
+  </div>
+  <ul class="soon">
+    {{- range $i, $c := .Soon }}
+    <li class="soon-row{{ if $c.Featured }} is-featured{{ end }}" data-in style="--i: {{ plus $i 2 }}">
+      <div class="soon-date"><span>{{ $c.Month }}</span><b>{{ $c.DayNum }}</b></div>
+      <div class="soon-what">
+        <p class="soon-title">{{ $c.Title }}</p>
+        <p class="soon-meta">{{ $c.Day }}{{ with $c.Time }} &middot; {{ . }}{{ end }}{{ if and $c.Offsite $c.Location }} &middot; at {{ $c.Location }}{{ end }}</p>
+      </div>
+      <p class="soon-rel">{{ $c.Relative }}</p>
+    </li>
+    {{- end }}
+  </ul>
+</section>
+{{- end }}
+
+{{- if .Empty }}
+<section class="s s-empty" data-dwell="60000">
+  {{ template "chrome" $ }}
+  <div class="empty">
+    <h1 class="title" data-in style="--i: 0">Something's always brewing</h1>
+    {{- with .Site }}<p class="empty-site" data-in style="--i: 1">See what's next at {{ . }}</p>{{ end }}
+  </div>
+</section>
+{{- end }}
+
+</div>
+</div>
+<div class="bar" id="bar" aria-hidden="true"></div>
+<script>{{ .Reveal }}</script>
+<script>{{ .Script }}</script>
+</body>
+</html>

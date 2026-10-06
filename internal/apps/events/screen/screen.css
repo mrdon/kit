@@ -1,0 +1,261 @@
+/* The events screen. Laid out on reveal's fixed 1920x1080 stage for a 65"
+   1080p panel, about 34px to the inch: body copy sits at 34px or more, which
+   is legible from across the room, and titles are set in Anton at poster size.
+
+   The palette is the menu board's -- navy ground, the site's gold -- so the
+   two screens in one taproom read as one system. One committed dark look, as
+   there: a wall display in a dim room is not following anyone's OS theme.
+
+   Motion rules, which every animation below keeps to:
+     - only opacity and transform, which a TV stick's GPU composites for free;
+     - nothing loops fast enough to be noticed as looping -- the ambient glow
+       takes a minute and a half to drift, the Ken Burns most of a slide;
+     - content arrives in reading order and leaves in the same order, so the
+       eye is led rather than startled. */
+:root {
+  --navy: #1b2b38;
+  --navy-2: #14222d;
+  --ink: #0d1720;
+  --gold: #d9a03c;
+  --gold-hot: #ffc247;
+  --gold-pale: #ffd89a;
+  --muted: #b9c4cf;
+  --dim: #8ea2b3;
+  --cream: #f4efe7;
+  --line: rgba(255, 255, 255, .14);
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --ease-in: cubic-bezier(.5, 0, .75, 0);
+  --display: anton, "Arial Narrow", sans-serif;
+  --body: barlow, "Arial Narrow", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+
+html, body { height: 100%; margin: 0; background: var(--ink); overflow: hidden; cursor: none; }
+body { -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+p, h1, h2, ol, ul { margin: 0; padding: 0; }
+ol, ul { list-style: none; }
+
+/* reveal paints its own white viewport; ours shows through instead. */
+.reveal-viewport, .reveal { background: transparent; color: var(--cream); font-family: var(--body); }
+.reveal .slides { text-align: left; }
+.reveal .slides > section.s {
+  height: 1080px; padding: 44px 88px 64px;
+  flex-direction: column;
+}
+
+/* ---------- ambient ----------
+   Two soft glows drifting behind everything. They are the screen's idle
+   motion -- enough that it never looks frozen, and enough that no pixel holds
+   one value all night -- and slow enough that nobody could say what moved. */
+.ambient {
+  position: fixed; inset: 0; overflow: hidden;
+  background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
+}
+.ambient i {
+  position: absolute; width: 90vw; height: 90vw; border-radius: 50%;
+  will-change: transform;
+}
+.ambient i:first-child {
+  top: -55vw; right: -30vw;
+  background: radial-gradient(closest-side, rgba(217, 160, 60, .16), rgba(217, 160, 60, 0));
+  animation: drift-a 90s ease-in-out infinite alternate;
+}
+.ambient i:last-child {
+  bottom: -60vw; left: -35vw;
+  background: radial-gradient(closest-side, rgba(122, 165, 194, .14), rgba(122, 165, 194, 0));
+  animation: drift-b 110s ease-in-out infinite alternate;
+}
+@keyframes drift-a { to { transform: translate(-18vw, 12vw) scale(1.15); } }
+@keyframes drift-b { to { transform: translate(14vw, -10vw) scale(1.1); } }
+
+/* ---------- chrome ----------
+   Repeated on every slide rather than floated above the deck, so it sits on
+   reveal's scaled stage. It lands in the same place each time, so across a
+   crossfade it reads as holding still. */
+.chrome { display: flex; align-items: center; gap: 18px; height: 56px; flex: 0 0 auto; }
+.chrome-logo { width: 48px; height: 48px; border-radius: 10px; }
+.chrome-venue {
+  font-family: var(--body); font-size: 28px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.chrome-clock {
+  margin-left: auto; font-family: var(--mono); font-size: 24px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--dim); font-variant-numeric: tabular-nums;
+}
+
+.s-head { margin: 24px 0 28px; flex: 0 0 auto; }
+.kicker {
+  font-family: var(--body); font-size: 30px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--gold);
+}
+.title {
+  font-family: var(--display); font-weight: 400; font-size: 118px; line-height: 1;
+  text-transform: uppercase; letter-spacing: .01em; color: #fff; margin-top: 6px;
+}
+
+/* ---------- choreography ----------
+   Hidden until the slide is present, then risen in on a stagger. The delay
+   leaves reveal's own transition room to land first, so the page settles
+   before its contents start to arrive. Leaving runs faster and tighter than
+   arriving: the eye has already moved on, and a slow exit reads as lag. */
+.reveal .slides section [data-in] { opacity: 0; }
+.reveal .slides section.present [data-in] {
+  animation: rise .9s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 120ms + 500ms);
+}
+.reveal .slides section.present.is-leaving [data-in] {
+  animation: sink .5s var(--ease-in) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(36px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sink {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-18px); }
+}
+
+/* ---------- overview ---------- */
+.grid { flex: 1 1 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px 40px; min-height: 0; }
+.grid-1, .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.card { display: flex; flex-direction: column; min-height: 0; }
+/* The art gives way, never the words: it takes whatever height the two text
+   lines leave, and the text lines never shrink. */
+.card-when, .card-title { flex: 0 0 auto; }
+.card-art {
+  flex: 1 1 auto; min-height: 0; border-radius: 16px; overflow: hidden;
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--line);
+}
+.card-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-date { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.card-date span { font-size: 34px; letter-spacing: .2em; color: var(--gold); }
+.card-date b { font-family: var(--display); font-weight: 400; font-size: 120px; line-height: 1; color: #fff; }
+.card.is-featured .card-art { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+.card-when {
+  margin-top: 16px; font-size: 30px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-when em { font-style: normal; color: var(--gold-hot); margin-right: 14px; }
+.card-title {
+  font-family: var(--display); font-weight: 400; font-size: 46px; line-height: 1.05;
+  text-transform: uppercase; color: #fff; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- this week ---------- */
+.week { flex: 1 1 auto; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.day {
+  flex: 1 1 0; max-height: 128px; min-height: 0;
+  display: grid; grid-template-columns: 220px 96px 1fr auto; align-items: center; gap: 32px;
+  padding: 0 32px; border-radius: 14px; background: rgba(255, 255, 255, .045);
+  border-left: 6px solid transparent;
+}
+.day.is-today { background: rgba(217, 160, 60, .12); border-left-color: var(--gold); }
+.day-when b {
+  display: block; font-family: var(--display); font-weight: 400; font-size: 50px; line-height: 1;
+  text-transform: uppercase; color: #fff;
+}
+.day.is-today .day-when b { color: var(--gold-hot); }
+.day-when span { font-size: 28px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.day-thumb { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; display: block; }
+.day-thumb-none { background: rgba(255, 255, 255, .06); }
+.day-what { min-width: 0; }
+.day-title {
+  font-family: var(--display); font-weight: 400; font-size: 48px; line-height: 1.05;
+  text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.day-notes { font-size: 30px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-notes i { font-style: normal; color: var(--gold); margin: 0 14px; }
+.day-time { font-size: 44px; color: var(--gold-pale); font-variant-numeric: tabular-nums; }
+
+/* ---------- featured ---------- */
+.feat { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 640px; gap: 80px; align-items: center; min-height: 0; }
+.feat-copy { display: flex; flex-direction: column; min-width: 0; }
+.feat-rel {
+  margin-top: 30px; font-family: var(--display); font-weight: 400; font-size: 72px; line-height: 1;
+  text-transform: uppercase; color: var(--gold-hot);
+}
+.feat-title {
+  margin-top: 18px; font-family: var(--display); font-weight: 400; font-size: 150px; line-height: .98;
+  text-transform: uppercase; color: #fff;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.feat-title.is-long { font-size: 108px; }
+.feat-when { margin-top: 28px; font-size: 44px; letter-spacing: .04em; text-transform: uppercase; color: var(--cream); }
+.feat-where { margin-top: 6px; font-size: 38px; color: var(--gold-pale); }
+.feat-summary {
+  margin-top: 26px; font-size: 38px; line-height: 1.3; color: var(--muted); max-width: 1000px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pager { display: flex; gap: 14px; margin-top: 44px; }
+.pager i { width: 44px; height: 6px; border-radius: 3px; background: var(--line); }
+.pager i.on { background: var(--gold); }
+.feat-art { height: 820px; display: flex; align-items: center; justify-content: center; }
+.frame {
+  width: 100%; height: 100%; border-radius: 20px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .45); background: var(--navy-2);
+}
+.frame img { width: 100%; height: 100%; object-fit: cover; display: block; will-change: transform; }
+.frame-date {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 2px solid var(--gold);
+}
+.frame-date span { font-size: 56px; letter-spacing: .24em; color: var(--gold); }
+.frame-date b { font-family: var(--display); font-weight: 400; font-size: 300px; line-height: 1; color: #fff; }
+.frame-date em { font-style: normal; font-size: 48px; letter-spacing: .24em; color: var(--muted); }
+
+/* Ken Burns: a slow push across the whole dwell, alternating direction
+   between neighbouring slides so a run of posters does not all lean the
+   same way. */
+.reveal .slides section.present .kb img { animation: kb-a 15s linear both; }
+.reveal .slides section.present.kb-b .kb img { animation-name: kb-b; }
+@keyframes kb-a {
+  from { transform: scale(1.02) translate(0, 0); }
+  to { transform: scale(1.1) translate(-1.5%, -1%); }
+}
+@keyframes kb-b {
+  from { transform: scale(1.1) translate(1.5%, 1%); }
+  to { transform: scale(1.02) translate(0, 0); }
+}
+
+/* ---------- coming soon ---------- */
+.soon { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.soon-row {
+  flex: 1 1 0; max-height: 120px; min-height: 0;
+  display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 36px;
+  padding: 0 32px; border-bottom: 1px solid var(--line);
+}
+.soon-date { text-align: center; }
+.soon-date span { display: block; font-size: 26px; letter-spacing: .2em; color: var(--gold); }
+.soon-date b { display: block; font-family: var(--display); font-weight: 400; font-size: 64px; line-height: 1; color: #fff; }
+.soon-what { min-width: 0; }
+.soon-title {
+  font-family: var(--display); font-weight: 400; font-size: 52px; line-height: 1.05;
+  text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.soon-row.is-featured .soon-title { color: var(--gold-hot); }
+.soon-meta { font-size: 30px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.soon-rel { font-size: 36px; color: var(--gold-pale); white-space: nowrap; }
+
+/* ---------- empty ---------- */
+.empty { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; }
+.empty-site { margin-top: 24px; font-size: 44px; color: var(--muted); }
+
+/* ---------- progress ----------
+   How long until the next slide, drawn edge to edge along the bottom. It is
+   the one thing that is always moving at a steady pace, which is what makes
+   the rest of the motion read as intended rather than as a glitch. */
+.bar {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 6px; z-index: 5;
+  background: var(--gold); opacity: .8; transform: scaleX(0); transform-origin: left center;
+}
+
+/* Honoured for the laptop an admin previews on; a wall panel never sets it. */
+@media (prefers-reduced-motion: reduce) {
+  .ambient i, .reveal .slides section.present .kb img { animation: none; }
+  .reveal .slides section.present [data-in],
+  .reveal .slides section.present.is-leaving [data-in] { animation-duration: 1ms; animation-delay: 0ms; }
+}

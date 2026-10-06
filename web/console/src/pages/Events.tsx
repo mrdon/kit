@@ -72,6 +72,12 @@ function openTopper(week: 'this' | 'next') {
   window.open(`/${SLUG}/events/topper.pdf?week=${week}`, '_blank', 'noopener');
 }
 
+// openScreen opens the wall slideshow. It is a public page, so the tab's own
+// address is the one to paste into a kiosk board.
+function openScreen() {
+  window.open(`/${SLUG}/events/screen`, '_blank', 'noopener');
+}
+
 // Mirrors PendingChange.Verb() on the server so both surfaces use the same
 // words for the same action.
 const VERBS: Record<string, string> = {
@@ -231,6 +237,10 @@ export default function Events() {
                 {
                   label: 'Table topper — next week',
                   onClick: () => openTopper('next'),
+                },
+                {
+                  label: 'Wall screen',
+                  onClick: openScreen,
                 },
               ]}
             />

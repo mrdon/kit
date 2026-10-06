@@ -274,6 +274,12 @@ Once a calendar agrees to subscribe to a feed, switch that channel to **They sub
 and it stops generating work entirely. That is the goal — every channel you move across
 is a chore retired rather than a chore made faster.
 
+### The wall screen
+
+**Wall screen** in the same cog menu opens a slideshow for a TV in the taproom, built from the same published, public events. It loops through what's on at a glance, the next seven days (the table topper's week, starting today), a slide for each **featured** event with its poster, and what's coming in the next six weeks. Standing offers such as happy hour appear only on the week slide, so they never crowd out the nights people plan around.
+
+The address is public, like the menu screen, so paste it into a kiosk board once. The screen picks up an edit within a few minutes and turns over to the next events on its own every night. Add `?hold` to the address to stop the rotation while you check a slide with the arrow keys.
+
 ### The table topper
 
 The cog menu on the Events page prints the week's card for the taproom tables — **Table topper — this week** or **next week** — a coloured band per event with the day, the door time, a couple of lines about it, and the event's own poster. It's a PDF: two identical 4x6in cards on one landscape sheet, with dashed lines to cut along. One sheet covers two tables, and a cut card drops straight into a standard 4x6 table frame.
