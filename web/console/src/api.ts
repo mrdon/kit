@@ -262,6 +262,11 @@ export interface HappyHourSyncResult {
   applied: boolean;
 }
 
+export interface GlutenReduced {
+  beers: string[];
+  taps: string[];
+}
+
 export interface MenuPrint {
   config: MenuPrintConfig;
   /** Headings on the tap list right now, offered to the colour editor. */
@@ -1024,6 +1029,9 @@ export const api = {
   saveMenuPrint: (body: MenuPrintConfig) =>
     apiPut<MenuPrint>('/menu/print', body),
   syncMenuPrint: () => apiPost<MenuSyncResult>('/menu/print/sync', {}),
+  glutenReduced: () => apiGet<GlutenReduced>('/menu/gluten-reduced'),
+  saveGlutenReduced: (beers: string[]) =>
+    apiPut<GlutenReduced>('/menu/gluten-reduced', { beers }),
   happyHour: () => apiGet<HappyHour>('/menu/happy-hour'),
   saveHappyHour: (body: HappyHourConfig) =>
     apiPut<HappyHour>('/menu/happy-hour', body),

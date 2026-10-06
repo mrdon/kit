@@ -7,6 +7,7 @@ import {
   type MenuPrintConfig,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
+import MenuGlutenReduced from './MenuGlutenReduced';
 
 // Settings for the printed menu.
 //
@@ -265,6 +266,8 @@ export default function MenuPrintSettings() {
               </button>
             </div>
           </section>
+
+          <MenuGlutenReduced />
 
           {data.beers.length > 0 && (
             <section className="panel">

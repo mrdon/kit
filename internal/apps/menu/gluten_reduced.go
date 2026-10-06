@@ -47,6 +47,11 @@ func LoadGlutenReduced(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UU
 	if err := json.Unmarshal(raw, &beers); err != nil {
 		return nil, fmt.Errorf("decoding gluten reduced beers: %w", err)
 	}
+	// A JSON null decodes to a nil slice, which the console would receive as
+	// null and fail to map over.
+	if beers == nil {
+		beers = []string{}
+	}
 	return beers, nil
 }
 
