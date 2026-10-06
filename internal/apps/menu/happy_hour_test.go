@@ -77,6 +77,12 @@ func TestStartAndEndNowHoldUntilTheNextMoment(t *testing.T) {
 	if u := h.Until(at("2026-10-12 19:00"), denver); u != "Tue 5pm" {
 		t.Errorf("Until = %q, want Tue 5pm", u)
 	}
+	if u := h.bannerUntil(at("2026-10-12 19:00"), denver); u != "" {
+		t.Errorf("the wall banner should not name another day, got %q", u)
+	}
+	if u := h.bannerUntil(at("2026-10-13 15:30"), denver); u != "5pm" {
+		t.Errorf("bannerUntil on the day = %q, want 5pm", u)
+	}
 
 	// End now in the middle of happy hour: off until Tuesday's start.
 	end := &HappyLive{On: false, At: at("2026-10-12 15:30")}

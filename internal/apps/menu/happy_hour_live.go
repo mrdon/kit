@@ -107,6 +107,19 @@ func (h HappyHour) Until(now time.Time, loc *time.Location) string {
 	return label
 }
 
+// bannerUntil is the end time the wall's banner states: today's only. A
+// happy hour started by hand after today's window runs to the next scheduled
+// end, but nobody needs "till Mon 5pm" on the wall at 8pm on a Friday, so the
+// banner just says "Happy hour" until the day it ends.
+func (h HappyHour) bannerUntil(now time.Time, loc *time.Location) string {
+	now = now.In(loc)
+	end, ok := h.nextEnd(now)
+	if !ok || end.Format(time.DateOnly) != now.Format(time.DateOnly) {
+		return ""
+	}
+	return clockLabel(end.Format("15:04"))
+}
+
 // happyStamp is the happy hour's share of the board's version stamp: whether
 // it is on right now, and which setting. Without it the wall would only flip
 // when a beer changed, which is to say not at 3pm.

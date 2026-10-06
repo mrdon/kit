@@ -85,7 +85,7 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 	hh := a.happyHourFor(r.Context(), tenant.ID)
 	loc := locationOf(tenant.Timezone)
 	if now := timeNow(); hh != nil && hh.OnAt(now, loc) {
-		board.HappyBanner = applyHappyHour(board, &hh.Config, hh.Config.Until(now, loc))
+		board.HappyBanner = applyHappyHour(board, &hh.Config, hh.Config.bannerUntil(now, loc))
 	}
 	gr := a.glutenReducedFor(r.Context(), tenant.ID)
 	applyGlutenReduced(board, gr)
