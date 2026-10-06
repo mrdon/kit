@@ -241,8 +241,10 @@ export interface HappyHour {
   config: HappyHourConfig;
   /** False until the first save: the form shows the defaults. */
   configured: boolean;
-  /** Whether the wall is showing happy hour this minute. */
-  active_now: boolean;
+  /** Whether happy hour is on this minute, on the wall and in Square. */
+  on_now: boolean;
+  /** When it ends ("5pm", "Tue 5pm"); empty when only End now will end it. */
+  until: string;
   timezone: string;
   /** What is on the board, offered as checkboxes. */
   taps: HappyHourTap[];
@@ -1027,6 +1029,8 @@ export const api = {
     apiPut<HappyHour>('/menu/happy-hour', body),
   syncHappyHour: (apply: boolean) =>
     apiPost<HappyHourSyncResult>('/menu/happy-hour/sync', { apply }),
+  happyHourNow: (on: boolean) =>
+    apiPost<HappyHourSyncResult>('/menu/happy-hour/now', { on }),
   // --- Trivia ---
   triviaGames: () => apiGet<{ games: TriviaGameT[] }>('/trivia/games'),
   triviaGame: (id: string) =>

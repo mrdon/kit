@@ -84,7 +84,9 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 
 	hh := a.happyHourFor(r.Context(), tenant.ID)
 	loc := locationOf(tenant.Timezone)
-	board.HappyBanner = applyHappyHour(board, hh, timeNow(), loc)
+	if now := timeNow(); hh != nil && hh.OnAt(now, loc) {
+		board.HappyBanner = applyHappyHour(board, &hh.Config, hh.Config.Until(now, loc))
+	}
 	gr := a.glutenReducedFor(r.Context(), tenant.ID)
 	applyGlutenReduced(board, gr)
 
@@ -159,7 +161,7 @@ func boardVersion(row *BoardRow) string {
 // starts and ends, and when its setting changes, and the gluten reduced list
 // so marking a beer reaches the wall. In front rather than behind, so the
 // render stamp stays the suffix.
-func liveVersion(row *BoardRow, hh *HappyHour, gr []string, loc *time.Location) string {
+func liveVersion(row *BoardRow, hh *HappyHourState, gr []string, loc *time.Location) string {
 	v := boardVersion(row)
 	if s := glutenStamp(gr); s != "" {
 		v = s + "." + v
@@ -184,7 +186,7 @@ func (a *App) glutenReducedFor(ctx context.Context, tenantID uuid.UUID) []string
 // happyHourFor loads the happy hour the wall should apply, or nil when there
 // is none. A failure to load costs the banner, never the tap list: the
 // regular prices are still true.
-func (a *App) happyHourFor(ctx context.Context, tenantID uuid.UUID) *HappyHour {
+func (a *App) happyHourFor(ctx context.Context, tenantID uuid.UUID) *HappyHourState {
 	state, err := LoadHappyHour(ctx, a.pool, tenantID)
 	if err != nil {
 		slog.Warn("loading happy hour for the board", "tenant_id", tenantID, "error", err)
@@ -193,7 +195,7 @@ func (a *App) happyHourFor(ctx context.Context, tenantID uuid.UUID) *HappyHour {
 	if !state.Configured {
 		return nil
 	}
-	return &state.Config
+	return state
 }
 
 // writePlaceholder serves the menu before anyone has set a tap list. A 200

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -19,17 +18,24 @@ import (
 //
 // Square has no "set the price to $5" discount, only amount-off and
 // percent-off, and the beers on a happy hour rarely share a regular price.
-// So the sync groups the beers by how much comes off each one -- $1.50 off a
-// $6.50 pint, $3 off an $8 one -- and writes, per group, a fixed-amount
+// So the beers are grouped by how much comes off each one -- $1.50 off a
+// $6.50 pint, $3 off an $8 one -- and each group gets a fixed-amount
 // discount, a product set naming those beers' pour variations, and a pricing
-// rule tying the two to one shared weekly time period. Rules created through
-// the API apply automatically: the bartender rings a pint as usual and the
-// register takes the discount off inside the window.
+// rule tying the two together. Rules created through the API apply
+// automatically: the bartender rings a pint as usual and the register takes
+// the discount off.
 //
-// The objects are rebuilt whole on every sync rather than patched. Replacements
-// are created first and the previous set deleted after, so a sync that fails
-// halfway leaves the last good happy hour ringing instead of none, and a price
-// change in Square flows through on the next sync without anyone editing this.
+// The rules carry no time period. Square's own schedule could only ever say
+// what the timetable says, and happy hour here can be started and ended by
+// hand, so Square mirrors the on/off state instead: while happy hour is on
+// the rules exist, and while it is off they do not. Kit checks every minute
+// (see happy_hour_schedule.go) and right after Start now / End now, and it
+// only calls Square when the state Square should be in has changed.
+//
+// The objects are rebuilt whole rather than patched. Replacements are created
+// first and the previous set deleted after, so a failure halfway leaves the
+// last good set in place, and a price change in Square flows through on the
+// next change without anyone editing this.
 
 // hhBeer is one beer resolved to the Square variation the price applies to.
 type hhBeer struct {
@@ -154,50 +160,10 @@ func nearest(name string, items []square.CatalogItem) string {
 	return " (closest: " + strings.Join(hits, ", ") + ")"
 }
 
-// hhEvent is the iCalendar event Square's time period takes. DTSTART is local,
-// unzoned time, which Square reads in the location's own timezone.
-func hhEvent(h HappyHour, first time.Time) string {
-	start, _ := parseClock(h.Start)
-	end, _ := parseClock(h.End)
-	days := make([]string, len(h.Days))
-	for i, d := range h.Days {
-		days[i] = strings.ToUpper(d[:2])
-	}
-	return fmt.Sprintf("DTSTART:%sT%02d%02d00\nDURATION:%s\nRRULE:FREQ=WEEKLY;BYDAY=%s",
-		first.Format("20060102"), start/60, start%60, isoDuration(end-start), strings.Join(days, ","))
-}
-
-// firstDay is the first scheduled day on or after from, so DTSTART is itself
-// an occurrence -- RFC 5545 counts DTSTART even when the rule would not.
-func firstDay(h HappyHour, from time.Time) time.Time {
-	for i := range 7 {
-		d := from.AddDate(0, 0, i)
-		if slices.Contains(h.Days, dayCodes[(int(d.Weekday())+6)%7]) {
-			return d
-		}
-	}
-	return from
-}
-
-func isoDuration(minutes int) string {
-	h, m := minutes/60, minutes%60
-	switch {
-	case m == 0:
-		return fmt.Sprintf("PT%dH", h)
-	case h == 0:
-		return fmt.Sprintf("PT%dM", m)
-	}
-	return fmt.Sprintf("PT%dH%dM", h, m)
-}
-
 // hhObjects is the catalog batch for a plan, with "#temp" ids that refer to
 // each other inside the one request.
-func hhObjects(h HappyHour, plan hhPlan, first time.Time) []map[string]any {
-	objs := []map[string]any{{
-		"type":             "TIME_PERIOD",
-		"id":               "#hh-time",
-		"time_period_data": map[string]any{"event": hhEvent(h, first)},
-	}}
+func hhObjects(plan hhPlan) []map[string]any {
+	var objs []map[string]any
 	for i, g := range plan.Groups {
 		ids := make([]string, len(g.Beers))
 		names := make([]string, len(g.Beers))
@@ -209,15 +175,6 @@ func hhObjects(h HappyHour, plan hhPlan, first time.Time) []map[string]any {
 			currency = "USD"
 		}
 		disc, set, rule := fmt.Sprintf("#hh-discount-%d", i), fmt.Sprintf("#hh-set-%d", i), fmt.Sprintf("#hh-rule-%d", i)
-		ruleData := map[string]any{
-			"name":              "Happy Hour",
-			"time_period_ids":   []string{"#hh-time"},
-			"discount_id":       disc,
-			"match_products_id": set,
-		}
-		if h.StartsOn != "" {
-			ruleData["valid_from_date"] = h.StartsOn
-		}
 		objs = append(objs,
 			map[string]any{"type": "DISCOUNT", "id": disc, "discount_data": map[string]any{
 				"name":             "Happy Hour",
@@ -229,16 +186,18 @@ func hhObjects(h HappyHour, plan hhPlan, first time.Time) []map[string]any {
 				"name":            "Happy Hour: " + strings.Join(names, ", "),
 				"product_ids_any": ids,
 			}},
-			map[string]any{"type": "PRICING_RULE", "id": rule, "pricing_rule_data": ruleData},
+			map[string]any{"type": "PRICING_RULE", "id": rule, "pricing_rule_data": map[string]any{
+				"name":              "Happy Hour",
+				"discount_id":       disc,
+				"match_products_id": set,
+			}},
 		)
 	}
 	return objs
 }
 
-// describePlan writes what a sync will do, beer by beer.
-func describePlan(h HappyHour, plan hhPlan, first time.Time, b *strings.Builder) {
-	fmt.Fprintf(b, "Schedule: %s %s–%s, first on %s\n", describeDays(h.Days),
-		clockLabel(h.Start), clockLabel(h.End), first.Format("Mon 2 Jan 2006"))
+// describePlan writes what Square rings while happy hour is on, beer by beer.
+func describePlan(h HappyHour, plan hhPlan, b *strings.Builder) {
 	for _, g := range plan.Groups {
 		for _, beer := range g.Beers {
 			fmt.Fprintf(b, "  %s %s: $%s → $%s ($%s off)\n", beer.ItemName, h.Size,
@@ -253,23 +212,66 @@ func describePlan(h HappyHour, plan hhPlan, first time.Time, b *strings.Builder)
 	}
 }
 
-// hhOutcome is what a sync leaves to record. ids is what Square holds for
+// hhOutcome is what a push leaves to record. ids is what Square holds for
 // happy hour afterwards: the new objects on success, and on failure whatever
 // is still standing, so the next attempt cleans it up.
 type hhOutcome struct {
 	ok     bool
 	record bool
 	ids    []string
-	hash   string
 }
 
-// SyncHappyHour brings Square into line with the setting. With apply false it
-// only reports what it would do. The log is the whole story, Square's own
-// error text included, because it is shown verbatim on the settings page --
-// and it is recorded once, here, after the failure hint is on it.
+// SyncHappyHour makes Square match the happy hour as it is right now, or with
+// apply false only reports what Square would ring. The log is the whole
+// story, Square's own error text included, because the settings page shows it
+// verbatim.
 func (a *App) SyncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool) (string, bool) {
+	state, err := LoadHappyHour(ctx, a.pool, tenantID)
+	if err != nil {
+		return "FAILED: " + err.Error(), false
+	}
+	return a.pushHappyHour(ctx, tenantID, state, !apply)
+}
+
+// reconcileHappyHour is the every-minute check, and what Start now / End now
+// call: push only when the state Square should be in has changed. A push that
+// failed is retried after retryFailedPush rather than every minute, so a token
+// without permission produces one log entry every few minutes, not sixty an
+// hour.
+func (a *App) reconcileHappyHour(ctx context.Context, tenantID uuid.UUID) error {
+	state, err := LoadHappyHour(ctx, a.pool, tenantID)
+	if err != nil || !state.Configured {
+		return err
+	}
+	key := state.squareKey(timeNow(), a.tenantLocation(ctx, tenantID))
+	if state.SyncedHash == key {
+		if state.SyncOK {
+			return nil
+		}
+		if state.SyncedAt != nil && timeNow().Sub(*state.SyncedAt) < retryFailedPush {
+			return nil
+		}
+	}
+	if state.SyncedAt == nil && key == "off" && len(state.SquareIDs) == 0 {
+		return nil // never pushed and nothing to remove: Square is already right
+	}
+	log, ok := a.pushHappyHour(ctx, tenantID, state, false)
+	if !ok {
+		return errors.New(log)
+	}
+	return nil
+}
+
+// retryFailedPush is how long a failed push waits before the minute check
+// tries it again. Start now, End now and the Sync button do not wait.
+const retryFailedPush = 10 * time.Minute
+
+// pushHappyHour brings Square to the state wanted now, and records the result.
+func (a *App) pushHappyHour(ctx context.Context, tenantID uuid.UUID, state *HappyHourState, preview bool) (string, bool) {
 	var log strings.Builder
-	out, err := a.syncHappyHour(ctx, tenantID, apply, &log)
+	loc := a.tenantLocation(ctx, tenantID)
+	key := state.squareKey(timeNow(), loc)
+	out, err := a.push(ctx, tenantID, state, key == "off", preview, &log)
 	if err != nil {
 		fmt.Fprintf(&log, "\nFAILED: %v\n", err)
 		if errors.Is(err, square.ErrMissingScope) {
@@ -280,8 +282,8 @@ func (a *App) SyncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool)
 		out.ok = false
 	}
 	text := strings.TrimRight(log.String(), "\n")
-	if apply && out.record {
-		if rerr := RecordHappyHourSync(ctx, a.pool, tenantID, out.ids, out.hash, text, out.ok); rerr != nil {
+	if !preview && out.record {
+		if rerr := RecordHappyHourSync(ctx, a.pool, tenantID, out.ids, key, text, out.ok); rerr != nil {
 			text += "\n\nCould not record this sync: " + rerr.Error()
 			out.ok = false
 		}
@@ -289,25 +291,26 @@ func (a *App) SyncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool)
 	return text, out.ok
 }
 
-func (a *App) syncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool, log *strings.Builder) (hhOutcome, error) {
-	state, err := LoadHappyHour(ctx, a.pool, tenantID)
-	if err != nil {
-		return hhOutcome{}, err
-	}
+func (a *App) push(ctx context.Context, tenantID uuid.UUID, state *HappyHourState, off, preview bool, log *strings.Builder) (hhOutcome, error) {
 	if !state.Configured {
 		log.WriteString("No happy hour is set up yet, so there is nothing to send to Square.\n")
 		return hhOutcome{}, nil
 	}
 	h := state.Config
-	// From here on a failure is recorded, keeping the previous objects on file.
 	fail := hhOutcome{record: true, ids: state.SquareIDs}
+	if off {
+		log.WriteString("Happy hour is off right now, so Square should have no happy hour discount.\n")
+	} else {
+		log.WriteString("Happy hour is on right now.\n")
+	}
 
 	client, err := square.Instance().LoadClient(ctx, tenantID)
 	if err != nil {
 		return fail, fmt.Errorf("connecting to Square: %w", err)
 	}
-	if !h.Enabled {
-		return clearHappyHour(ctx, client, state, apply, log), nil
+	if off && !preview {
+		left := removeOld(ctx, client, state.SquareIDs, log)
+		return hhOutcome{ok: len(left) == 0, record: true, ids: left}, nil
 	}
 
 	log.WriteString("Reading the Square catalog… ")
@@ -316,11 +319,9 @@ func (a *App) syncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool,
 		log.WriteString("failed.\n")
 		return fail, fmt.Errorf("reading the catalog: %w", err)
 	}
-	fmt.Fprintf(log, "%d items.\n\n", len(items))
-
+	fmt.Fprintf(log, "%d items.\n\nWhile happy hour is on, Square rings:\n", len(items))
 	plan := planHappyHour(h, items)
-	first := firstDay(h, startFrom(h, time.Now().In(a.tenantLocation(ctx, tenantID))))
-	describePlan(h, plan, first, log)
+	describePlan(h, plan, log)
 
 	switch {
 	case len(plan.Problems) > 0:
@@ -330,14 +331,13 @@ func (a *App) syncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool,
 	case len(plan.Groups) == 0:
 		log.WriteString("\nEvery beer is already at or under the happy hour price; nothing to discount.\n")
 		return fail, nil
-	case !apply:
-		fmt.Fprintf(log, "\nPreview only. Syncing would create %d Square objects and remove the %d from the last sync.\n",
-			1+3*len(plan.Groups), len(state.SquareIDs))
+	case preview:
+		log.WriteString("\nPreview only; nothing was sent to Square.\n")
 		return hhOutcome{ok: true}, nil
 	}
 
 	log.WriteString("\nCreating the discount in Square… ")
-	mapping, err := client.BatchUpsertCatalog(ctx, uuid.NewString(), hhObjects(h, plan, first))
+	mapping, err := client.BatchUpsertCatalog(ctx, uuid.NewString(), hhObjects(plan))
 	if err != nil {
 		log.WriteString("failed. The previous happy hour, if any, is untouched.\n")
 		return fail, err
@@ -348,53 +348,20 @@ func (a *App) syncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool,
 	}
 	sort.Strings(created)
 	fmt.Fprintf(log, "done, %d objects.\n", len(created))
-
 	leftover := removeOld(ctx, client, state.SquareIDs, log)
-	log.WriteString("\nSquare is up to date. Ring a test pint during the window to check it.\n")
-	return hhOutcome{ok: true, record: true, ids: append(created, leftover...), hash: h.Hash()}, nil
+	return hhOutcome{ok: true, record: true, ids: append(created, leftover...)}, nil
 }
 
-// startFrom is the day Square's schedule should begin: the launch date when
-// that is still ahead, otherwise today.
-func startFrom(h HappyHour, now time.Time) time.Time {
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	if h.StartsOn != "" {
-		if d, err := time.ParseInLocation(time.DateOnly, h.StartsOn, now.Location()); err == nil && d.After(today) {
-			return d
-		}
-	}
-	return today
-}
-
-// clearHappyHour removes what the last sync created, for a happy hour that
-// has been switched off.
-func clearHappyHour(ctx context.Context, client *square.Client, state *HappyHourState,
-	apply bool, log *strings.Builder,
-) hhOutcome {
-	hash := state.Config.Hash()
-	if len(state.SquareIDs) == 0 {
-		log.WriteString("Happy hour is off and Square has nothing from Kit to remove.\n")
-		return hhOutcome{ok: true, record: true, hash: hash}
-	}
-	if !apply {
-		fmt.Fprintf(log, "Happy hour is off. Syncing would remove the %d Square objects the last sync created.\n",
-			len(state.SquareIDs))
-		return hhOutcome{ok: true}
-	}
-	log.WriteString("Happy hour is off.\n")
-	leftover := removeOld(ctx, client, state.SquareIDs, log)
-	return hhOutcome{ok: len(leftover) == 0, record: true, ids: leftover, hash: hash}
-}
-
-// removeOld deletes the previous sync's objects and returns any it could not,
+// removeOld deletes the previous push's objects and returns any it could not,
 // so they are kept on record and retried next time rather than forgotten.
 func removeOld(ctx context.Context, client *square.Client, ids []string, log *strings.Builder) []string {
 	if len(ids) == 0 {
+		log.WriteString("Square has no happy hour discount from Kit to remove.\n")
 		return nil
 	}
-	log.WriteString("Removing the previous happy hour from Square… ")
+	log.WriteString("Removing the previous happy hour discount from Square… ")
 	if _, err := client.BatchDeleteCatalog(ctx, ids); err != nil {
-		fmt.Fprintf(log, "failed: %v\nThey will be retried on the next sync.\n", err)
+		fmt.Fprintf(log, "failed: %v\nThey will be retried.\n", err)
 		return ids
 	}
 	fmt.Fprintf(log, "done, %d objects.\n", len(ids))

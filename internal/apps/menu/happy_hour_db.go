@@ -21,8 +21,14 @@ type HappyHourState struct {
 	// in which case Config is DefaultHappyHour and nothing is shown anywhere.
 	Configured bool
 
-	// SquareIDs are the catalog objects the last successful sync created.
-	SquareIDs  []string
+	// Live is the last Start now / End now, nil when none was ever pressed.
+	Live *HappyLive
+
+	// SquareIDs are the catalog objects Square holds for happy hour now.
+	SquareIDs []string
+	// SyncedHash is the Square state the last sync aimed for (squareKey),
+	// recorded whether or not it got there, so a failing sync is retried on a
+	// timer rather than every minute.
 	SyncedHash string
 	SyncedAt   *time.Time
 	SyncLog    string
@@ -30,21 +36,35 @@ type HappyHourState struct {
 	UpdatedAt  time.Time
 }
 
-// InSync reports whether Square was last built from the setting as it is now.
-func (s *HappyHourState) InSync() bool {
-	return s.SyncOK && s.SyncedHash == s.Config.Hash()
+// OnAt reports whether happy hour is on at now.
+func (s *HappyHourState) OnAt(now time.Time, loc *time.Location) bool {
+	return s.Configured && s.Config.OnAt(s.Live, now, loc)
+}
+
+// squareKey is the Square state wanted at now: "off", or "on:" plus the
+// setting's hash, so changing the beers while it is on is a change too.
+func (s *HappyHourState) squareKey(now time.Time, loc *time.Location) string {
+	if !s.OnAt(now, loc) {
+		return "off"
+	}
+	return "on:" + s.Config.Hash()
+}
+
+// InSync reports whether Square holds what it should at now.
+func (s *HappyHourState) InSync(now time.Time, loc *time.Location) bool {
+	return s.SyncOK && s.SyncedHash == s.squareKey(now, loc)
 }
 
 // LoadHappyHour reads the workspace's happy hour. A workspace with none gets
 // the default setting, switched off, rather than an error.
 func LoadHappyHour(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (*HappyHourState, error) {
-	const q = `SELECT config, square_ids, synced_hash, synced_at, sync_log, sync_ok, updated_at
+	const q = `SELECT config, live, square_ids, synced_hash, synced_at, sync_log, sync_ok, updated_at
 	           FROM app_menu_happy_hour WHERE tenant_id = $1`
 	var (
-		s           HappyHourState
-		cfgRaw, ids []byte
+		s                    HappyHourState
+		cfgRaw, liveRaw, ids []byte
 	)
-	err := pool.QueryRow(ctx, q, tenantID).Scan(&cfgRaw, &ids, &s.SyncedHash,
+	err := pool.QueryRow(ctx, q, tenantID).Scan(&cfgRaw, &liveRaw, &ids, &s.SyncedHash,
 		&s.SyncedAt, &s.SyncLog, &s.SyncOK, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &HappyHourState{Config: DefaultHappyHour(), SquareIDs: []string{}}, nil
@@ -55,6 +75,12 @@ func LoadHappyHour(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 	s.Config = DefaultHappyHour()
 	if err := json.Unmarshal(cfgRaw, &s.Config); err != nil {
 		return nil, fmt.Errorf("decoding happy hour: %w", err)
+	}
+	if len(liveRaw) > 0 {
+		s.Live = &HappyLive{}
+		if err := json.Unmarshal(liveRaw, s.Live); err != nil {
+			return nil, fmt.Errorf("decoding happy hour live state: %w", err)
+		}
 	}
 	if err := json.Unmarshal(ids, &s.SquareIDs); err != nil {
 		return nil, fmt.Errorf("decoding happy hour square ids: %w", err)
@@ -80,6 +106,24 @@ func SaveHappyHour(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, 
 	return nil
 }
 
+// SaveHappyLive records a Start now or End now. The row must already exist:
+// there is nothing to start before a happy hour has been set up.
+func SaveHappyLive(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, live HappyLive) error {
+	raw, err := json.Marshal(live)
+	if err != nil {
+		return fmt.Errorf("encoding happy hour live state: %w", err)
+	}
+	const q = `UPDATE app_menu_happy_hour SET live = $2, updated_at = NOW() WHERE tenant_id = $1`
+	tag, err := pool.Exec(ctx, q, tenantID, raw)
+	if err != nil {
+		return fmt.Errorf("saving happy hour live state: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: set up a happy hour first", ErrPayloadInvalid)
+	}
+	return nil
+}
+
 // RecordHappyHourSync stores the outcome of a Square sync. ids is what Square
 // now holds for happy hour: the new objects on success, and on failure
 // whatever the sync left standing, so the next attempt cleans it up.
@@ -92,9 +136,6 @@ func RecordHappyHourSync(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.
 	rawIDs, err := json.Marshal(ids)
 	if err != nil {
 		return fmt.Errorf("encoding square ids: %w", err)
-	}
-	if !ok {
-		hash = ""
 	}
 	const q = `UPDATE app_menu_happy_hour
 	           SET square_ids = $2, synced_hash = $3, synced_at = NOW(),

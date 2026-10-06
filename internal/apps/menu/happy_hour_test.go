@@ -28,7 +28,7 @@ func at(s string) time.Time {
 	return t
 }
 
-func TestActiveAt(t *testing.T) {
+func TestScheduleSwitchesOnAndOff(t *testing.T) {
 	h := weekdayHH()
 	h.StartsOn = "2026-10-12" // a Monday
 	cases := []struct {
@@ -39,23 +39,65 @@ func TestActiveAt(t *testing.T) {
 		{"2026-10-12 14:59", false},
 		{"2026-10-12 15:00", true},
 		{"2026-10-12 16:59", true},
-		{"2026-10-12 17:00", false}, // end is exclusive
+		{"2026-10-12 17:00", false}, // the end is the moment it goes off
 		{"2026-10-17 15:30", false}, // Saturday
 		{"2026-10-16 15:30", true},  // Friday
 	}
 	for _, c := range cases {
-		if got := h.ActiveAt(at(c.when), denver); got != c.want {
-			t.Errorf("ActiveAt(%s) = %v, want %v", c.when, got, c.want)
+		if got := h.OnAt(nil, at(c.when), denver); got != c.want {
+			t.Errorf("OnAt(%s) = %v, want %v", c.when, got, c.want)
 		}
 	}
-	// The window is read in the workspace's zone, not the server's: 21:30 UTC
-	// is 15:30 in Denver.
-	if !h.ActiveAt(time.Date(2026, 10, 12, 21, 30, 0, 0, time.UTC), denver) {
-		t.Error("window should be read in the workspace timezone")
+	// Read in the workspace's zone, not the server's: 21:30 UTC is 15:30 in Denver.
+	if !h.OnAt(nil, time.Date(2026, 10, 12, 21, 30, 0, 0, time.UTC), denver) {
+		t.Error("the schedule should be read in the workspace timezone")
 	}
 	h.Enabled = false
-	if h.ActiveAt(at("2026-10-12 15:30"), denver) {
-		t.Error("a disabled happy hour is never on")
+	if h.OnAt(nil, at("2026-10-12 15:30"), denver) {
+		t.Error("with the schedule off, only Start now turns it on")
+	}
+}
+
+func TestStartAndEndNowHoldUntilTheNextMoment(t *testing.T) {
+	h := weekdayHH()
+
+	// Start now on Monday evening: on through the night, off at Tuesday's end.
+	start := &HappyLive{On: true, At: at("2026-10-12 19:00")}
+	for when, want := range map[string]bool{
+		"2026-10-12 18:59": false, // before the press
+		"2026-10-12 19:00": true,
+		"2026-10-13 10:00": true, // Tuesday's start at 3pm does not change it
+		"2026-10-13 16:00": true,
+		"2026-10-13 17:00": false, // Tuesday's end does
+	} {
+		if got := h.OnAt(start, at(when), denver); got != want {
+			t.Errorf("after Start now, OnAt(%s) = %v, want %v", when, got, want)
+		}
+	}
+	if u := h.Until(at("2026-10-12 19:00"), denver); u != "Tue 5pm" {
+		t.Errorf("Until = %q, want Tue 5pm", u)
+	}
+
+	// End now in the middle of happy hour: off until Tuesday's start.
+	end := &HappyLive{On: false, At: at("2026-10-12 15:30")}
+	for when, want := range map[string]bool{
+		"2026-10-12 15:29": true,
+		"2026-10-12 15:30": false,
+		"2026-10-13 14:59": false,
+		"2026-10-13 15:00": true,
+	} {
+		if got := h.OnAt(end, at(when), denver); got != want {
+			t.Errorf("after End now, OnAt(%s) = %v, want %v", when, got, want)
+		}
+	}
+
+	// With no schedule, Start now holds until End now.
+	h.Enabled = false
+	if !h.OnAt(start, at("2026-10-20 12:00"), denver) {
+		t.Error("with the schedule off, Start now should hold")
+	}
+	if h.Until(at("2026-10-20 12:00"), denver) != "" {
+		t.Error("with the schedule off, nothing ends it but End now")
 	}
 }
 
@@ -122,11 +164,14 @@ func TestPlanGroupsByDiscount(t *testing.T) {
 		t.Errorf("second group = %+v, want $3 off Wicked Nebula's pint", g)
 	}
 
-	objs := hhObjects(weekdayHH(), plan, at("2026-10-12 00:00"))
-	if len(objs) != 1+3*2 {
-		t.Fatalf("objects = %d, want a time period plus three per group", len(objs))
+	objs := hhObjects(plan)
+	if len(objs) != 3*2 {
+		t.Fatalf("objects = %d, want three per group", len(objs))
 	}
-	rule := objs[3]["pricing_rule_data"].(map[string]any)
+	rule := objs[2]["pricing_rule_data"].(map[string]any)
+	if _, scheduled := rule["time_period_ids"]; scheduled {
+		t.Error("rules mirror the live state, so they must not carry Square's own schedule")
+	}
 	if rule["discount_id"] != "#hh-discount-0" || rule["match_products_id"] != "#hh-set-0" {
 		t.Errorf("rule does not tie its own discount and set: %v", rule)
 	}
@@ -151,21 +196,6 @@ func TestPlanRefusesWhatItCannotMatch(t *testing.T) {
 	}
 }
 
-func TestEvent(t *testing.T) {
-	h := weekdayHH()
-	h.Start, h.End = "15:30", "17:00"
-	got := hhEvent(h, at("2026-10-12 00:00"))
-	want := "DTSTART:20261012T153000\nDURATION:PT1H30M\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-	if got != want {
-		t.Errorf("event =\n%s\nwant\n%s", got, want)
-	}
-	// Starting on a Saturday rolls DTSTART to the Monday, so it is itself an
-	// occurrence.
-	if d := firstDay(h, at("2026-10-10 00:00")); d.Format(time.DateOnly) != "2026-10-12" {
-		t.Errorf("firstDay = %s, want the following Monday", d.Format(time.DateOnly))
-	}
-}
-
 func TestApplyHappyHourMarksOnlyThePour(t *testing.T) {
 	b := &Board{Taps: []Tap{
 		{Section: "Lagers", Name: "Light Lift Lager", Price: "6.50"},
@@ -173,7 +203,7 @@ func TestApplyHappyHourMarksOnlyThePour(t *testing.T) {
 		{Section: "IPAs", Name: "Galactic Orbit", Price: "8"},
 	}}
 	h := weekdayHH()
-	banner := applyHappyHour(b, &h, at("2026-10-12 15:30"), denver)
+	banner := applyHappyHour(b, &h, h.Until(at("2026-10-12 15:30"), denver))
 	if banner != "Happy hour · till 5pm" {
 		t.Errorf("banner = %q", banner)
 	}
@@ -205,9 +235,9 @@ func TestApplyHappyHourMarksOnlyThePour(t *testing.T) {
 }
 
 func TestHappyStampFlipsWithTheClock(t *testing.T) {
-	h := weekdayHH()
-	before := happyStamp(&h, at("2026-10-12 14:59"), denver)
-	during := happyStamp(&h, at("2026-10-12 15:00"), denver)
+	state := &HappyHourState{Config: weekdayHH(), Configured: true}
+	before := happyStamp(state, at("2026-10-12 14:59"), denver)
+	during := happyStamp(state, at("2026-10-12 15:00"), denver)
 	if before == during {
 		t.Error("the version stamp must change when happy hour starts, or the wall never flips")
 	}
@@ -217,13 +247,16 @@ func TestHappyStampFlipsWithTheClock(t *testing.T) {
 }
 
 func TestParseHappyHourArgs(t *testing.T) {
-	args, err := parseHappyHourArgs([]byte(`{"price": 5, "beers": "Mars Water, Wicked Nebula", "days": ["MON","Tue"]}`))
+	args, err := parseHappyHourArgs([]byte(`{"now": "Start", "price": 5, "beers": "Mars Water, Wicked Nebula", "days": ["MON","Tue"]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	h, err := args.merge(weekdayHH())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if args.Now != "start" {
+		t.Errorf("now = %q", args.Now)
 	}
 	if h.PriceCents != 500 || len(h.Beers) != 2 || h.Days[0] != "mon" || h.Start != "15:00" {
 		t.Errorf("merged = %+v", h)

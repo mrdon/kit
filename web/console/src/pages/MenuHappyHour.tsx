@@ -5,13 +5,15 @@ import { useSetChatContext } from '../chatContext';
 
 // Happy hour settings.
 //
-// One setting, two followers. The menu board reads it on every render, so a
-// save shows on the wall at the next start time with nothing else to do.
-// Square is written only when someone presses Sync, and Preview shows what a
-// sync would change first. The log of the last sync is always on the page,
-// Square's own error text included: the most likely first failure is a token
-// without catalog permission, and that is only fixable if someone can read
-// what Square said.
+// Happy hour is on or off right now, and that is what the top of the page
+// shows and controls. The schedule switches it at each start and end time;
+// Start now / End now switch it by hand and hold until the next scheduled
+// start or end. The board and Square both follow the state by themselves --
+// Square within a minute, or at once after Start now / End now.
+//
+// The log of the last Square push is always on the page, Square's own error
+// text included: the most likely failure is a token without catalog
+// permission, and that is only fixable if someone can read what Square said.
 
 const DAYS: [string, string][] = [
   ['mon', 'Mon'],
@@ -35,7 +37,7 @@ export default function MenuHappyHour() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [syncing, setSyncing] = useState<'preview' | 'apply' | null>(null);
+  const [syncing, setSyncing] = useState<'preview' | 'apply' | 'now' | null>(null);
   const [log, setLog] = useState<{ text: string; ok: boolean; applied: boolean } | null>(null);
 
   function load(d: HappyHour) {
@@ -82,6 +84,20 @@ export default function MenuHappyHour() {
     }
   }
 
+  async function startStop(on: boolean) {
+    setSyncing('now');
+    setErr(null);
+    try {
+      const res = await api.happyHourNow(on);
+      load(res.state);
+      setLog({ text: res.log, ok: res.ok, applied: true });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(null);
+    }
+  }
+
   async function sync(apply: boolean) {
     setSyncing(apply ? 'apply' : 'preview');
     setErr(null);
@@ -104,12 +120,12 @@ export default function MenuHappyHour() {
   );
   const dirty = data && cfg && JSON.stringify(cfg) !== JSON.stringify(data.config);
 
-  let squareStatus = 'Never synced to Square.';
+  let squareStatus = 'Nothing has been sent to Square yet.';
   if (data?.synced_at) {
     const when = new Date(data.synced_at).toLocaleString();
-    if (data.in_sync) squareStatus = `In step with Square · synced ${when}`;
-    else if (!data.sync_ok) squareStatus = `The last sync failed (${when}). The log is below.`;
-    else squareStatus = `Square is out of date: the setting changed after the last sync (${when}).`;
+    if (data.in_sync) squareStatus = `Square matches · last updated ${when}`;
+    else if (!data.sync_ok) squareStatus = `The last Square update failed (${when}). The log is below; Kit retries every 10 minutes.`;
+    else squareStatus = `Square is catching up; Kit updates it within a minute.`;
   }
   const shownLog = log?.text ?? data?.sync_log ?? '';
 
@@ -136,10 +152,38 @@ export default function MenuHappyHour() {
       {cfg && data && (
         <>
           <section className="panel">
-            <h2 className="panel-title">Schedule and price</h2>
-            {data.active_now && (
-              <p className="banner">Happy hour is on the menu board right now.</p>
+            <h2 className="panel-title">
+              {data.on_now
+                ? `Happy hour is on${data.until ? ` until ${data.until}` : ''}`
+                : 'Happy hour is off'}
+            </h2>
+            <p className="card-desc">
+              On the menu board and in Square. Start now and End now hold until
+              the next scheduled start or end
+              {data.on_now && !data.until ? ', or until you end it' : ''}.
+            </p>
+            <div className="drawer-actions">
+              {data.on_now ? (
+                <button className="btn" onClick={() => startStop(false)} disabled={syncing !== null}>
+                  {syncing === 'now' ? 'Ending…' : 'End now'}
+                </button>
+              ) : (
+                <button
+                  className="btn"
+                  onClick={() => startStop(true)}
+                  disabled={syncing !== null || !data.configured || cfg.beers.length === 0}
+                >
+                  {syncing === 'now' ? 'Starting…' : 'Start now'}
+                </button>
+              )}
+            </div>
+            {!data.configured && (
+              <p className="field-note">Pick the beers and save before starting it.</p>
             )}
+          </section>
+
+          <section className="panel">
+            <h2 className="panel-title">Schedule</h2>
             <label className="switch">
               <input
                 type="checkbox"
@@ -148,7 +192,11 @@ export default function MenuHappyHour() {
                 onChange={(e) => save({ enabled: e.target.checked })}
               />
               <span className="switch-track" aria-hidden="true" />
-              <span>{cfg.enabled ? 'Happy hour is on' : 'Happy hour is off'}</span>
+              <span>
+                {cfg.enabled
+                  ? 'Runs on a schedule: on at the start time, off at the end'
+                  : 'No schedule: only Start now turns it on'}
+              </span>
             </label>
             {err && <p className="banner banner-error">{err}</p>}
 
@@ -175,7 +223,7 @@ export default function MenuHappyHour() {
                 <input type="time" value={cfg.end} onChange={(e) => set('end', e.target.value)} />
               </label>
               <label className="field">
-                <span>First day</span>
+                <span>First scheduled day</span>
                 <input
                   type="date"
                   value={cfg.starts_on ?? ''}
@@ -244,13 +292,14 @@ export default function MenuHappyHour() {
           <section className="panel">
             <h2 className="panel-title">Square</h2>
             <p className="card-desc">
-              Sync makes Square apply an automatic discount to each beer&rsquo;s
-              pour during the window, sized to land on the happy hour price.
-              Preview shows what would change without touching Square.
+              While happy hour is on, Square applies an automatic discount to
+              each beer&rsquo;s pour, sized to land on the happy hour price.
+              Kit keeps it in step by itself. Preview shows what Square rings;
+              Push now updates Square straight away and shows what it said.
             </p>
             <p className="card-desc">{squareStatus}</p>
             {dirty && (
-              <p className="banner">Save first: sync uses the saved setting.</p>
+              <p className="banner">Save first: Square follows the saved setting.</p>
             )}
             <div className="drawer-actions">
               <button
@@ -265,15 +314,15 @@ export default function MenuHappyHour() {
                 onClick={() => sync(true)}
                 disabled={syncing !== null || !data.configured || !!dirty}
               >
-                {syncing === 'apply' ? 'Syncing…' : 'Sync to Square'}
+                {syncing === 'apply' ? 'Pushing…' : 'Push to Square now'}
               </button>
             </div>
             {shownLog && (
               <>
                 <p className="card-desc">
                   {log
-                    ? `${log.applied ? 'Sync' : 'Preview'} ${log.ok ? 'finished' : 'did not finish'}:`
-                    : 'Last sync:'}
+                    ? `${log.applied ? 'Square update' : 'Preview'} ${log.ok ? 'finished' : 'did not finish'}:`
+                    : 'Last Square update:'}
                 </p>
                 <pre
                   className={log && !log.ok ? 'banner banner-error' : 'banner'}

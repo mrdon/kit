@@ -452,7 +452,7 @@ func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uui
 	}
 
 	b.WriteString(describePrint(ctx, pool, tenantID))
-	b.WriteString(describeHappyHour(ctx, pool, tenantID))
+	b.WriteString(describeHappyHour(ctx, a, tenantID))
 	b.WriteString(describeGlutenReduced(ctx, pool, tenantID))
 
 	assets, err := ListAssetKeys(ctx, a.pool, tenantID)

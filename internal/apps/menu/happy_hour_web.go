@@ -31,15 +31,19 @@ func registerHappyHourRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/menu/happy-hour", adminRoute(a.handleGetHappyHour))
 	mux.Handle("PUT /{slug}/api/menu/happy-hour", adminRoute(a.handleSaveHappyHour))
 	mux.Handle("POST /{slug}/api/menu/happy-hour/sync", adminRoute(a.handleSyncHappyHour))
+	mux.Handle("POST /{slug}/api/menu/happy-hour/now", adminRoute(a.handleHappyHourNow))
 }
 
 // happyHourPayload is the wire shape.
 type happyHourPayload struct {
 	Config     HappyHour `json:"config"`
 	Configured bool      `json:"configured"`
-	// ActiveNow is whether the wall is showing happy hour this minute.
-	ActiveNow bool   `json:"active_now"`
-	Timezone  string `json:"timezone"`
+	// OnNow is whether happy hour is on this minute, on the wall and in Square.
+	OnNow bool `json:"on_now"`
+	// Until is when it ends, e.g. "5pm" or "Tue 5pm"; empty when on and only
+	// End now will end it, or when off.
+	Until    string `json:"until"`
+	Timezone string `json:"timezone"`
 	// Taps are the beers on the board, offered as checkboxes so a name is
 	// picked rather than typed.
 	Taps []happyTap `json:"taps"`
@@ -61,16 +65,20 @@ func (a *App) happyHourPayload(ctx context.Context, tenantID uuid.UUID, tz strin
 	if err != nil {
 		return nil, err
 	}
+	loc, now := locationOf(tz), timeNow()
 	out := &happyHourPayload{
 		Config:     state.Config,
 		Configured: state.Configured,
-		ActiveNow:  state.Configured && state.Config.ActiveAt(timeNow(), locationOf(tz)),
+		OnNow:      state.OnAt(now, loc),
 		Timezone:   tz,
 		Taps:       []happyTap{},
-		InSync:     state.InSync(),
+		InSync:     state.InSync(now, loc),
 		SyncedAt:   state.SyncedAt,
 		SyncOK:     state.SyncOK,
 		SyncLog:    state.SyncLog,
+	}
+	if out.OnNow {
+		out.Until = state.Config.Until(now, loc)
 	}
 	if out.Config.Beers == nil {
 		out.Config.Beers = []string{}
@@ -139,4 +147,35 @@ func (a *App) handleSyncHappyHour(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"state": state, "log": log, "ok": ok, "applied": body.Apply})
+}
+
+// handleHappyHourNow is Start now / End now. Square is pushed in the same
+// request, and its log comes back, so whoever pressed it sees at once whether
+// the register will ring it.
+func (a *App) handleHappyHourNow(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	var body struct {
+		On bool `json:"on"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not read the request"})
+		return
+	}
+	log, ok, err := a.setHappyLive(r.Context(), tenant.ID, body.On)
+	if err != nil {
+		if errors.Is(err, ErrPayloadInvalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		slog.Error("setting happy hour now", "tenant_id", tenant.ID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	state, err := a.happyHourPayload(r.Context(), tenant.ID, tenant.Timezone)
+	if err != nil {
+		slog.Error("loading happy hour", "tenant_id", tenant.ID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"state": state, "log": log, "ok": ok, "applied": true})
 }

@@ -155,27 +155,6 @@ func (h HappyHour) Hash() string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// ActiveAt reports whether happy hour is on at now, read in loc.
-func (h HappyHour) ActiveAt(now time.Time, loc *time.Location) bool {
-	if !h.Enabled || len(h.Beers) == 0 {
-		return false
-	}
-	local := now.In(loc)
-	if h.StartsOn != "" && local.Format(time.DateOnly) < h.StartsOn {
-		return false
-	}
-	if !slices.Contains(h.Days, dayCodes[(int(local.Weekday())+6)%7]) {
-		return false
-	}
-	start, err1 := parseClock(h.Start)
-	end, err2 := parseClock(h.End)
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	minute := local.Hour()*60 + local.Minute()
-	return minute >= start && minute < end
-}
-
 // Includes reports whether a beer is one of the happy hour beers.
 func (h HappyHour) Includes(name string) bool {
 	key := nameKey(name)
@@ -192,12 +171,12 @@ func (h HappyHour) Price() string { return formatCents(h.PriceCents) }
 
 // Summary is the one-line description used by the tools and the console.
 func (h HappyHour) Summary() string {
-	state := "off"
+	sched := "schedule off"
 	if h.Enabled {
-		state = "on"
+		sched = "on schedule"
 	}
-	s := fmt.Sprintf("Happy hour is %s: $%s %s pours of %s, %s %s–%s",
-		state, h.Price(), h.Size, joinWords(h.Beers), describeDays(h.Days),
+	s := fmt.Sprintf("Happy hour (%s): $%s %s pours of %s, %s %s–%s",
+		sched, h.Price(), h.Size, joinWords(h.Beers), describeDays(h.Days),
 		clockLabel(h.Start), clockLabel(h.End))
 	if h.StartsOn != "" {
 		s += ", starting " + h.StartsOn
@@ -205,15 +184,13 @@ func (h HappyHour) Summary() string {
 	return s
 }
 
-// applyHappyHour marks the taps that are on happy hour right now, and returns
-// the banner text for the header, empty when it is not on.
+// applyHappyHour marks the taps on happy hour and returns the banner text,
+// for a happy hour that is on. until is when it ends, "" when nothing will
+// end it but somebody pressing End now.
 //
 // Only a tap poured at the happy hour size is marked. A beer on the list that
 // the board offers in a 10oz pour is not $5, and the wall must not say so.
-func applyHappyHour(b *Board, h *HappyHour, now time.Time, loc *time.Location) string {
-	if h == nil || !h.ActiveAt(now, loc) {
-		return ""
-	}
+func applyHappyHour(b *Board, h *HappyHour, until string) string {
 	marked := 0
 	for i := range b.Taps {
 		t := &b.Taps[i]
@@ -227,24 +204,13 @@ func applyHappyHour(b *Board, h *HappyHour, now time.Time, loc *time.Location) s
 		t.HappyPrice = h.Price()
 		marked++
 	}
-	if marked == 0 {
+	switch {
+	case marked == 0:
 		return ""
+	case until == "":
+		return "Happy hour"
 	}
-	return "Happy hour · till " + clockLabel(h.End)
-}
-
-// happyStamp is the happy hour's share of the board's version stamp: whether
-// it is on right now, and which setting. Without it the wall would only flip
-// when a beer changed, which is to say not at 3pm.
-func happyStamp(h *HappyHour, now time.Time, loc *time.Location) string {
-	if h == nil {
-		return ""
-	}
-	on := "0"
-	if h.ActiveAt(now, loc) {
-		on = "1"
-	}
-	return "hh" + on + h.Hash()[:6]
+	return "Happy hour · till " + until
 }
 
 // parseClock reads "15:00" into minutes after midnight.
