@@ -215,6 +215,51 @@ export interface MenuSyncResult {
   summary: string;
 }
 
+/** The happy hour setting. Both the wall and Square are derived from it. */
+export interface HappyHourConfig {
+  enabled: boolean;
+  /** mon..sun */
+  days: string[];
+  /** "15:00" */
+  start: string;
+  end: string;
+  /** "2026-10-12", or empty for already running. */
+  starts_on?: string;
+  price_cents: number;
+  /** The Square variation name the price applies to, e.g. "16oz". */
+  size: string;
+  beers: string[];
+}
+
+export interface HappyHourTap {
+  name: string;
+  price: string;
+  size: string;
+}
+
+export interface HappyHour {
+  config: HappyHourConfig;
+  /** False until the first save: the form shows the defaults. */
+  configured: boolean;
+  /** Whether the wall is showing happy hour this minute. */
+  active_now: boolean;
+  timezone: string;
+  /** What is on the board, offered as checkboxes. */
+  taps: HappyHourTap[];
+  /** Square was last built from the setting as it is now. */
+  in_sync: boolean;
+  synced_at: string | null;
+  sync_ok: boolean;
+  sync_log: string;
+}
+
+export interface HappyHourSyncResult {
+  state: HappyHour;
+  log: string;
+  ok: boolean;
+  applied: boolean;
+}
+
 export interface MenuPrint {
   config: MenuPrintConfig;
   /** Headings on the tap list right now, offered to the colour editor. */
@@ -977,6 +1022,11 @@ export const api = {
   saveMenuPrint: (body: MenuPrintConfig) =>
     apiPut<MenuPrint>('/menu/print', body),
   syncMenuPrint: () => apiPost<MenuSyncResult>('/menu/print/sync', {}),
+  happyHour: () => apiGet<HappyHour>('/menu/happy-hour'),
+  saveHappyHour: (body: HappyHourConfig) =>
+    apiPut<HappyHour>('/menu/happy-hour', body),
+  syncHappyHour: (apply: boolean) =>
+    apiPost<HappyHourSyncResult>('/menu/happy-hour/sync', { apply }),
   // --- Trivia ---
   triviaGames: () => apiGet<{ games: TriviaGameT[] }>('/trivia/games'),
   triviaGame: (id: string) =>

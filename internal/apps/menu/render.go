@@ -91,6 +91,8 @@ type renderData struct {
 	// Version is what the page compares against when it polls, so a screen
 	// picks up a new tap list without anyone power-cycling the TV.
 	Version string
+	// HappyBanner replaces the "On Tap" tag while happy hour is on.
+	HappyBanner string
 }
 
 // panelView wraps Panel so the poster's data URI can cross into the template
@@ -148,13 +150,14 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 
 	var buf bytes.Buffer
 	err = boardTmpl.ExecuteTemplate(&buf, "board.html.tmpl", renderData{
-		Venue:   b.Venue,
-		Columns: Columns(b.Taps),
-		Panels:  panels,
-		CSS:     template.CSS(css + photoCSS.String()),
-		Version: version,
-		Logo:    template.URL(logo),    //nolint:gosec // locally embedded asset, not user input
-		Untappd: template.URL(untappd), //nolint:gosec // locally embedded asset, not user input
+		Venue:       b.Venue,
+		Columns:     Columns(b.Taps),
+		Panels:      panels,
+		CSS:         template.CSS(css + photoCSS.String()),
+		Version:     version,
+		HappyBanner: b.HappyBanner,
+		Logo:        template.URL(logo),    //nolint:gosec // locally embedded asset, not user input
+		Untappd:     template.URL(untappd), //nolint:gosec // locally embedded asset, not user input
 	})
 	if err != nil {
 		return "", fmt.Errorf("rendering menu board: %w", err)

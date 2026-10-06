@@ -23,7 +23,7 @@ import (
 //
 // None of them take a board id, because a workspace has one menu.
 func toolMetas() []services.ToolMeta {
-	return []services.ToolMeta{
+	metas := []services.ToolMeta{
 		{
 			Name: "set_menu_source",
 			Description: "Point the menu at an Untappd digital board so Kit pulls the tap list " +
@@ -140,6 +140,7 @@ func toolMetas() []services.ToolMeta {
 			Schema:    services.Props(map[string]any{}),
 		},
 	}
+	return append(metas, happyHourToolMetas()...)
 }
 
 // setSourceArgs is the shared input shape for set_menu_source.
@@ -451,6 +452,7 @@ func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uui
 	}
 
 	b.WriteString(describePrint(ctx, pool, tenantID))
+	b.WriteString(describeHappyHour(ctx, pool, tenantID))
 
 	assets, err := ListAssetKeys(ctx, a.pool, tenantID)
 	if err != nil {

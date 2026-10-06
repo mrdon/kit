@@ -42,6 +42,10 @@ type Board struct {
 	Venue  Venue   `json:"venue"`
 	Taps   []Tap   `json:"taps"`
 	Panels []Panel `json:"panels"`
+
+	// HappyBanner is the header line while happy hour is on, set at render
+	// time by applyHappyHour. Never stored.
+	HappyBanner string `json:"-"`
 }
 
 // Venue carries the chrome around the tap list.
@@ -66,6 +70,11 @@ type Tap struct {
 	// anything scraped before the field existed; both simply go unbadged. See
 	// new_badge.go.
 	AddedAt time.Time `json:"added_at,omitzero"`
+
+	// HappyPrice is set at render time while happy hour is on and this beer
+	// is on it; the row shows it with Price struck through beside it. Never
+	// stored: it is a function of the clock, like the New badge.
+	HappyPrice string `json:"-"`
 }
 
 // Panel kinds. Anything else is rejected at validation rather than silently

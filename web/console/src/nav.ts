@@ -105,6 +105,13 @@ export const SECTIONS: Section[] = [
     app: 'menu',
   },
   {
+    to: '/admin/happy-hour',
+    label: 'Happy hour',
+    blurb: 'Days, hours, price and beers. The menu board and Square both follow it.',
+    admin: true,
+    app: 'menu',
+  },
+  {
     to: '/admin/events',
     label: 'Events calendar & feed',
     blurb: 'Pick the calendar events sync to, and the feed your website builds from.',

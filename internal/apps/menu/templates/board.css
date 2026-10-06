@@ -152,6 +152,15 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .tap-price { font-family: var(--beer); font-weight: 600; font-size: var(--price-size, 34px); line-height: 1.06; color: var(--cream); font-variant-numeric: tabular-nums; }
 .tap-size { font-family: var(--beer); font-size: var(--pour-size, 17px); letter-spacing: 0; color: var(--accent-l); margin-top: 1px; }
 
+/* Happy hour. The price turns gold and the regular price sits under it, struck,
+   in the slot the pour label uses -- a happy hour pour is the house pint, so
+   that slot is empty on exactly these rows. The header tag swaps "On Tap" for
+   the banner, in the same place and the same size, so nothing in the fitted
+   tap list moves when it flips on at 3pm. */
+.tap-price.tap-hh { color: var(--accent-hot); }
+.tap-was { font-family: var(--beer); font-size: var(--pour-size, 17px); color: var(--dim); text-decoration: line-through; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.head-tag.head-hh { color: var(--navy-2); background: var(--accent-hot); padding: 7px 14px 6px; border-radius: 4px; }
+
 /* ---------- rotating rail ---------- */
 .rail {
   position: relative; border-radius: 6px; overflow: hidden;

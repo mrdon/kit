@@ -1,11 +1,15 @@
 package menu
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
@@ -78,7 +82,11 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := Render(board, assets, boardVersion(row))
+	hh := a.happyHourFor(r.Context(), tenant.ID)
+	loc := locationOf(tenant.Timezone)
+	board.HappyBanner = applyHappyHour(board, hh, timeNow(), loc)
+
+	html, err := Render(board, assets, liveVersion(row, hh, loc))
 	if err != nil {
 		slog.Error("rendering menu board", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -110,7 +118,8 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 	row, err := a.svc.Get(r.Context(), tenant.ID)
 	switch {
 	case err == nil:
-		version = boardVersion(a.EnsureFresh(r.Context(), tenant.ID, row))
+		hh := a.happyHourFor(r.Context(), tenant.ID)
+		version = liveVersion(a.EnsureFresh(r.Context(), tenant.ID, row), hh, locationOf(tenant.Timezone))
 	case !errors.Is(err, ErrNotFound):
 		slog.Error("reading menu version", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -140,6 +149,33 @@ func boardVersion(row *BoardRow) string {
 	return strconv.FormatInt(row.UpdatedAt.UnixNano(), 36) +
 		"." + strconv.Itoa(newTapCount(row.Payload)) +
 		"." + RenderStamp()
+}
+
+// liveVersion is the stamp the wall compares against: the board's own, with
+// the happy hour's state in front so the screen reloads when happy hour
+// starts and ends, and when its setting changes. In front rather than behind,
+// so the render stamp stays the suffix.
+func liveVersion(row *BoardRow, hh *HappyHour, loc *time.Location) string {
+	v := boardVersion(row)
+	if s := happyStamp(hh, timeNow(), loc); s != "" {
+		return s + "." + v
+	}
+	return v
+}
+
+// happyHourFor loads the happy hour the wall should apply, or nil when there
+// is none. A failure to load costs the banner, never the tap list: the
+// regular prices are still true.
+func (a *App) happyHourFor(ctx context.Context, tenantID uuid.UUID) *HappyHour {
+	state, err := LoadHappyHour(ctx, a.pool, tenantID)
+	if err != nil {
+		slog.Warn("loading happy hour for the board", "tenant_id", tenantID, "error", err)
+		return nil
+	}
+	if !state.Configured {
+		return nil
+	}
+	return &state.Config
 }
 
 // writePlaceholder serves the menu before anyone has set a tap list. A 200

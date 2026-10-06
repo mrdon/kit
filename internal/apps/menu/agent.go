@@ -43,6 +43,14 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return handleSetNotes()
 	case "get_menu_board":
 		return handleGetBoard(a)
+	case "set_menu_happy_hour":
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return setHappyHour(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
+		}
+	case "sync_menu_happy_hour":
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return syncHappyHourTool(ec.Ctx, a, ec.Tenant.ID, raw)
+		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown menu tool: %s", name)

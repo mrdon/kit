@@ -20,7 +20,11 @@
       <p class="brand-name">{{ .Venue.Wordmark }}</p>
     </div>
     <div class="head-r">
+      {{- if .HappyBanner }}
+      <p class="head-tag head-hh">{{ .HappyBanner }}</p>
+      {{- else }}
       <p class="head-tag">On Tap</p>
+      {{- end }}
       <p class="head-clock" id="clock"></p>
     </div>
   </header>
@@ -43,7 +47,12 @@
               <p class="tap-name" data-fit>{{ .Name }}{{ if .IsNew }}<span class="tap-new">New</span>{{ end }}</p>
             </div>
             <div class="tap-r">
+              {{- if .HappyPrice }}
+              <p class="tap-price tap-hh">{{ .HappyPrice }}</p>
+              <p class="tap-was">{{ .Price }}</p>
+              {{- else }}
               <p class="tap-price">{{ .Price }}</p>
+              {{- end }}
               {{- with .SizeLabel }}
               <p class="tap-size">{{ . }}</p>
               {{- end }}

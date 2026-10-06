@@ -421,6 +421,14 @@ The **side panels** are the rotating rail beside the tap list — a weekly agend
 
 Panels hold **text, not a calendar**. Nothing in a panel expires on its own, so a one-off date written into one is still on the wall weeks after the event — write recurring wording like "Every Wed" instead, and let a scheduled job refresh anything dated.
 
+### Happy hour
+
+**Admin → Happy hour** (`/<your-slug>/web/admin/happy-hour`) sets a fixed price on a few beers on a weekly schedule: the days, a start and end time, an optional first day, the price, the pour it applies to (the Square variation name, e.g. `16oz`), and the beers. An agent can do the same with `set_menu_happy_hour`, which changes only the fields you pass.
+
+The **screen follows it on its own**. During the window the "On Tap" tag becomes a happy hour banner, and each happy hour beer shows its happy hour price with the regular price struck under it. Only that pour is marked: a beer the board lists in a 10oz pour is not a $5 pint, so it is left alone.
+
+**Square changes only when you sync.** Press **Preview** to see, beer by beer, what Square would ring, then **Sync to Square**. Square has no "set the price to $5" discount, so Kit works out each beer's discount from its own price ($1.50 off a $6.50 pint, $3 off an $8 one) and creates an automatic discount on those pours for the window; the bartender rings a pint as usual and the register takes it off. Each sync replaces what the last one created, and switching happy hour off and syncing removes it. A beer must match a Square item's name or kitchen name exactly, or nothing is sent. The page always shows the last sync's full log, Square's error text included: if it says a permission is missing, the Square token under Integrations needs `ITEMS_READ` and `ITEMS_WRITE`. Agents use `sync_menu_happy_hour`, which previews unless given `apply`.
+
 Only beers that are **actually pouring** reach the printed menu — Kit takes that from whether Untappd prices a 4oz taster, which every tap has and nothing else does. A beer whose prices you clear in Untappd drops off the paper (and its heading with it, if it was the last one under it), and a can listed beside the taps never appears as though you could order a glass of it. Put cans and bottles in `extras` instead.
 
 **Printable menu** on the same page opens a letter-sized PDF for the tables: a coloured band per section, and a row per beer with its style, ABV, half-pour and full-pour prices, and a sentence about it. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size beside the price, so nobody is quoted a 16oz they cannot order.
