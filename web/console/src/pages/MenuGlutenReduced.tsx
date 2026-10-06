@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, type GlutenReduced } from '../api';
 
-// The gluten reduced checklist, shown as a panel on the printed menu page.
+// The gluten reduced checklist, shown as a panel on the Menu page because it
+// marks both the screen and the printed menu.
 //
-// It saves each tick as it is made, unlike the rest of that page, which is one
-// form saved whole. This is its own list in its own endpoint, and a dietary
-// mark that looks set but was never saved -- ticked, then the tab closed before
-// Save -- is the one mistake on this page a customer pays for.
+// It saves each tick as it is made. A dietary mark that looks set but was
+// never saved -- ticked, then the tab closed before a Save button -- is the
+// one mistake here a customer pays for.
 //
 // Beers that are marked but not on the board are listed too, because the mark
 // is kept by beer name and outlives the tap: that is how a seasonal comes back
@@ -53,11 +53,11 @@ export default function MenuGlutenReduced() {
     <section className="panel">
       <h2 className="panel-title">Gluten reduced</h2>
       <p className="card-desc">
-        Tick the beers brewed to reduce gluten. The menu board shows a GR badge
+        Tick the beers brewed to reduce gluten. The screen shows a GR badge
         beside each one with &ldquo;Gluten reduced. May contain gluten.&rdquo;
-        in the footer, and this menu puts the same line in the beer&rsquo;s
-        description. A beer keeps its mark when it goes off tap, so a seasonal
-        comes back marked. Each tick saves straight away.
+        in the footer, and the printed menu puts the same line in the
+        beer&rsquo;s description. A beer keeps its mark when it goes off
+        tap, so a seasonal comes back marked. Each tick saves straight away.
       </p>
       {!data && !err && <p className="muted">Loading…</p>}
       {data && data.taps.length === 0 && offBoard.length === 0 && (

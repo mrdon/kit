@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type MenuBoard } from '../api';
 import { useSetChatContext } from '../chatContext';
+import { useMe } from '../me';
+import MenuGlutenReduced from './MenuGlutenReduced';
 import { SLUG } from '../workspace';
 
 // The Menu page exists to answer one question: what URL do I paste into the
@@ -27,6 +29,7 @@ function openPrintMenu() {
 
 export default function Menu() {
   useSetChatContext('the Menu board page');
+  const me = useMe();
   const [board, setBoard] = useState<MenuBoard | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -139,6 +142,11 @@ export default function Menu() {
           </div>
         </section>
       )}
+
+      {/* Here rather than under the printed menu's settings because it marks
+          both: the screen and the paper read the same list. Admin-only, like
+          the endpoint behind it. */}
+      {board && !board.empty && me?.is_admin && <MenuGlutenReduced />}
 
       {board && !board.empty && (
         <section className="panel">

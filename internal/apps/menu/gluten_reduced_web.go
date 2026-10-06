@@ -13,14 +13,13 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 )
 
-// The gluten reduced checklist on the printed menu settings page.
+// The gluten reduced checklist on the Menu page.
 //
 // It is its own endpoint rather than a field of the print config because it is
 // not print configuration: the wall reads it too, and it is stored as its own
-// list. That also lets each checkbox save as it is ticked. The print form is
-// one document saved whole, but a dietary mark that looks set and is not --
-// ticked, and then the page closed before Save -- is the mistake worth
-// designing out.
+// list. That also lets each checkbox save as it is ticked: a dietary mark that
+// looks set and is not -- ticked, and then the page closed before Save -- is
+// the mistake worth designing out.
 
 func registerGlutenReducedRoutes(mux apps.Mux, a *App) {
 	adminRoute := func(h http.HandlerFunc) http.Handler {
