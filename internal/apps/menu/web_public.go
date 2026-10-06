@@ -85,8 +85,10 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 	hh := a.happyHourFor(r.Context(), tenant.ID)
 	loc := locationOf(tenant.Timezone)
 	board.HappyBanner = applyHappyHour(board, hh, timeNow(), loc)
+	gr := a.glutenReducedFor(r.Context(), tenant.ID)
+	applyGlutenReduced(board, gr)
 
-	html, err := Render(board, assets, liveVersion(row, hh, loc))
+	html, err := Render(board, assets, liveVersion(row, hh, gr, loc))
 	if err != nil {
 		slog.Error("rendering menu board", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -119,7 +121,8 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 		hh := a.happyHourFor(r.Context(), tenant.ID)
-		version = liveVersion(a.EnsureFresh(r.Context(), tenant.ID, row), hh, locationOf(tenant.Timezone))
+		gr := a.glutenReducedFor(r.Context(), tenant.ID)
+		version = liveVersion(a.EnsureFresh(r.Context(), tenant.ID, row), hh, gr, locationOf(tenant.Timezone))
 	case !errors.Is(err, ErrNotFound):
 		slog.Error("reading menu version", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -153,14 +156,29 @@ func boardVersion(row *BoardRow) string {
 
 // liveVersion is the stamp the wall compares against: the board's own, with
 // the happy hour's state in front so the screen reloads when happy hour
-// starts and ends, and when its setting changes. In front rather than behind,
-// so the render stamp stays the suffix.
-func liveVersion(row *BoardRow, hh *HappyHour, loc *time.Location) string {
+// starts and ends, and when its setting changes, and the gluten reduced list
+// so marking a beer reaches the wall. In front rather than behind, so the
+// render stamp stays the suffix.
+func liveVersion(row *BoardRow, hh *HappyHour, gr []string, loc *time.Location) string {
 	v := boardVersion(row)
+	if s := glutenStamp(gr); s != "" {
+		v = s + "." + v
+	}
 	if s := happyStamp(hh, timeNow(), loc); s != "" {
-		return s + "." + v
+		v = s + "." + v
 	}
 	return v
+}
+
+// glutenReducedFor loads the gluten reduced list for the wall. A failure to
+// load costs the badges, never the tap list.
+func (a *App) glutenReducedFor(ctx context.Context, tenantID uuid.UUID) []string {
+	beers, err := LoadGlutenReduced(ctx, a.pool, tenantID)
+	if err != nil {
+		slog.Warn("loading gluten reduced beers for the board", "tenant_id", tenantID, "error", err)
+		return nil
+	}
+	return beers
 }
 
 // happyHourFor loads the happy hour the wall should apply, or nil when there

@@ -93,6 +93,9 @@ type renderData struct {
 	Version string
 	// HappyBanner replaces the "On Tap" tag while happy hour is on.
 	HappyBanner string
+	// GlutenNote is the key to the GR badge, shown in the footer only while
+	// a tap on the board wears one.
+	GlutenNote string
 }
 
 // panelView wraps Panel so the poster's data URI can cross into the template
@@ -156,6 +159,7 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 		CSS:         template.CSS(css + photoCSS.String()),
 		Version:     version,
 		HappyBanner: b.HappyBanner,
+		GlutenNote:  glutenNoteFor(b.Taps),
 		Logo:        template.URL(logo),    //nolint:gosec // locally embedded asset, not user input
 		Untappd:     template.URL(untappd), //nolint:gosec // locally embedded asset, not user input
 	})
@@ -301,4 +305,16 @@ func hasEmptySection(secs []Section) bool {
 		}
 	}
 	return false
+}
+
+// glutenNoteFor is the footer's key to the GR badge: the caveat, when any tap
+// is marked, and nothing otherwise, so the footer does not explain a badge the
+// room cannot see.
+func glutenNoteFor(taps []Tap) string {
+	for _, t := range taps {
+		if t.GlutenReduced {
+			return GlutenReducedNote
+		}
+	}
+	return ""
 }

@@ -101,6 +101,15 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 			}
 			return syncHappyHourTool(ctx, a, c.TenantID, raw)
 		})
+	case "set_menu_gluten_reduced":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			// Re-encoded so both surfaces parse the exact same bytes.
+			raw, err := json.Marshal(req.GetArguments())
+			if err != nil {
+				return "", fmt.Errorf("reading %s arguments: %w", name, err)
+			}
+			return setGlutenReduced(ctx, pool, a, c.TenantID, raw)
+		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
 			return describeBoard(ctx, pool, a, c.TenantID)

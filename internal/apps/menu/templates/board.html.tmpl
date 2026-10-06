@@ -44,7 +44,7 @@
                    measures the pill along with the letters and shrinks the row
                    to make room for it. Hung outside, a long name would fit its
                    column and push the badge off the edge. -->
-              <p class="tap-name" data-fit>{{ .Name }}{{ if .IsNew }}<span class="tap-new">New</span>{{ end }}</p>
+              <p class="tap-name" data-fit>{{ .Name }}{{ if .GlutenReduced }}<span class="tap-gr">GR</span>{{ end }}{{ if .IsNew }}<span class="tap-new">New</span>{{ end }}</p>
             </div>
             <div class="tap-r">
               {{- if .HappyPrice }}
@@ -102,7 +102,7 @@
        is using. The tap list is still curated in Untappd and mirrored here, so
        it states a fact as much as it asks for a check-in. -->
   <footer class="foot">
-    <div class="foot-notes">{{ range .Venue.Footer }}<span>{{ . }}</span>{{ end }}</div>
+    <div class="foot-notes">{{ range .Venue.Footer }}<span>{{ . }}</span>{{ end }}{{ with .GlutenNote }}<span><b class="tap-gr">GR</b> {{ . }}</span>{{ end }}</div>
     <div class="foot-untappd">
       <img src="{{ .Untappd }}" alt="">
       <p>Check in on <span>Untappd</span></p>

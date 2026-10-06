@@ -77,6 +77,11 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		}
 	}
 
+	rows = mergeExtras(rows, cfg.Extras)
+	if err := a.markGlutenReduced(ctx, tenant.ID, rows); err != nil {
+		return PrintMenu{}, err
+	}
+
 	m := PrintMenu{
 		Title:     firstNonEmpty(cfg.Title, "Beers"),
 		Subtitle:  firstNonEmpty(cfg.Subtitle, "& Beverages"),
@@ -84,10 +89,34 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		Sizes:     firstNonEmpty(cfg.Sizes, defaultSizes),
 		FootLeft:  cfg.FootLeft,
 		FootRight: cfg.FootRight,
-		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors, cfg.Blurbs),
+		Sections:  buildSections(rows, cfg.Colors, cfg.Blurbs),
 	}
 	a.attachPrintArt(ctx, tenant.ID, cfg, &m)
 	return m, nil
+}
+
+// markGlutenReduced puts the caveat at the head of each gluten reduced beer's
+// description. Paper has no footer key a reader can be trusted to find, so
+// the mark and its caveat travel together in the beer's own line, and going
+// through the description means the row is measured for it like any other
+// prose. A load failure fails the print: a dietary mark silently missing from
+// paper that then sits on tables for a month is worse than a retry.
+func (a *App) markGlutenReduced(ctx context.Context, tenantID uuid.UUID, rows []Beer) error {
+	beers, err := LoadGlutenReduced(ctx, a.pool, tenantID)
+	if err != nil {
+		return err
+	}
+	markGlutenReducedRows(rows, beers)
+	return nil
+}
+
+func markGlutenReducedRows(rows []Beer, beers []string) {
+	keys := glutenReducedKeys(beers)
+	for i := range rows {
+		if keys[nameKey(rows[i].Name)] {
+			rows[i].Notes = strings.TrimSpace(GlutenReducedNote + " " + rows[i].Notes)
+		}
+	}
 }
 
 // attachPrintArt loads the masthead images. Both are optional and neither is

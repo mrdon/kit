@@ -28,6 +28,8 @@ import (
 // that the list is pulled rather than authored. MENU_PREVIEW_ASSETS is a
 // comma-separated key=path list standing in for the images Kit would have
 // stored, so the preview shows the real graphics rather than nothing.
+// MENU_PREVIEW_GLUTEN is a comma-separated list of beers to mark gluten
+// reduced, standing in for the stored list.
 func TestPreview(t *testing.T) {
 	out := os.Getenv("MENU_PREVIEW_OUT")
 	if out == "" {
@@ -84,6 +86,10 @@ func TestPreview(t *testing.T) {
 				t.Logf("warning: panel names %q but no asset was supplied for it", key)
 			}
 		}
+	}
+
+	if gr := os.Getenv("MENU_PREVIEW_GLUTEN"); gr != "" {
+		applyGlutenReduced(board, strings.Split(gr, ","))
 	}
 
 	html, err := Render(board, assets, "preview")

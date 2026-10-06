@@ -136,6 +136,20 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
   border-radius: 3px; padding: .18em .42em; margin-left: .5em;
   vertical-align: .5em;
 }
+/* Gluten reduced. The New pill's geometry exactly, drawn as an outline: it is
+   a standing fact about the beer rather than news, so it should not compete
+   with New for the eye. The ring is an inset shadow rather than a border so
+   the box, and with it the measured centring above, is the same as New's. */
+.tap-gr {
+  display: inline-block; font-family: var(--display); font-weight: 700;
+  font-size: var(--meta-size, 19px); line-height: 1;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent-hot); box-shadow: inset 0 0 0 2px var(--accent-hot);
+  border-radius: 3px; padding: .18em .42em; margin-left: .5em;
+  vertical-align: .5em;
+}
+/* In the footer it is the key, set on the line with its explanation. */
+.foot-notes .tap-gr { font-size: 15px; vertical-align: 1px; margin: 0 .45em 0 0; }
 .tap-abv { color: var(--accent-l); }
 /* Every size on a tap row is set by the fit pass, which shrinks the list until
    the longest column fits. Only the name used to scale, which put a floor

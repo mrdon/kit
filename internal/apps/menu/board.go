@@ -75,6 +75,11 @@ type Tap struct {
 	// is on it; the row shows it with Price struck through beside it. Never
 	// stored: it is a function of the clock, like the New badge.
 	HappyPrice string `json:"-"`
+
+	// GlutenReduced is set at render time from the workspace's list, which
+	// is kept by beer name in Kit rather than on the tap. Never stored. See
+	// gluten_reduced.go.
+	GlutenReduced bool `json:"-"`
 }
 
 // Panel kinds. Anything else is rejected at validation rather than silently

@@ -51,6 +51,10 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
 			return syncHappyHourTool(ec.Ctx, a, ec.Tenant.ID, raw)
 		}
+	case "set_menu_gluten_reduced":
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return setGlutenReduced(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
+		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown menu tool: %s", name)
