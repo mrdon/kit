@@ -2,6 +2,8 @@ package services
 
 import (
 	"slices"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/mrdon/kit/internal/models"
 )
@@ -83,4 +85,39 @@ func NewDeviceCaller(tenant *models.Tenant, actor *models.Actor) *Caller {
 		Capabilities: slices.Clone(actor.Capabilities),
 		Timezone:     ResolveTimezone("", tenant.Timezone),
 	}
+}
+
+// NewAgentCaller builds the caller for a scheduled job running on behalf of
+// its owner. It is the owner's caller (same tenant, roles, admin flag and
+// UserID, so "never exceed the owner" holds by construction and every
+// ownership check keeps working) marked as an agent and labelled with the
+// job, so attribution can say which job did it. models.Policy narrows what
+// it may do from there.
+func NewAgentCaller(owner *Caller, label string) *Caller {
+	c := *owner
+	c.Kind = CallerAgent
+	c.Label = label
+	c.Roles = slices.Clone(owner.Roles)
+	c.RoleIDs = slices.Clone(owner.RoleIDs)
+	return &c
+}
+
+// agentLabelMax bounds a job label: a description is a prompt and can run
+// to paragraphs, a label is a column.
+const agentLabelMax = 60
+
+// AgentLabel names a job for attribution from its description: the first
+// line, trimmed, with "job" appended so a session list reads "Morning
+// briefing job" rather than a bare prompt fragment.
+func AgentLabel(description string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(description), "\n")
+	line = strings.TrimSpace(line)
+	if utf8.RuneCountInString(line) > agentLabelMax {
+		runes := []rune(line)
+		line = strings.TrimSpace(string(runes[:agentLabelMax])) + "…"
+	}
+	if line == "" {
+		return "Scheduled job"
+	}
+	return line + " job"
 }

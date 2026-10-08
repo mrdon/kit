@@ -49,10 +49,16 @@ func (s *SessionService) GetEvents(ctx context.Context, c *Caller, sessionID uui
 	return models.GetSessionEvents(ctx, s.pool, c.TenantID, sessionID)
 }
 
-// FormatSession renders a session as a human-readable line.
+// FormatSession renders a session as a human-readable line. A session a
+// job ran names the job after the owner, so "who did this" reads as
+// "Don's morning briefing job", not "Don".
 func FormatSession(s *models.Session) string {
-	return fmt.Sprintf("[%s] channel:%s thread:%s user:%s updated:%s",
-		s.ID, s.SlackChannelID, s.SlackThreadTS, s.UserID, s.UpdatedAt.Format("2006-01-02 15:04"))
+	line := fmt.Sprintf("[%s] channel:%s thread:%s user:%s",
+		s.ID, s.SlackChannelID, s.SlackThreadTS, s.UserID)
+	if s.ActorLabel != "" {
+		line += fmt.Sprintf(" actor:%s (%s)", s.ActorLabel, s.ActorKind)
+	}
+	return line + " updated:" + s.UpdatedAt.Format("2006-01-02 15:04")
 }
 
 // FormatSessionEvent renders a session event as a human-readable line.

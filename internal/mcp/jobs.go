@@ -185,7 +185,7 @@ func buildRunTaskTool(pool *pgxpool.Pool, svc *services.Services, a *agent.Agent
 		}
 
 		threadTS := fmt.Sprintf("job-%s-%d", job.ID, time.Now().UnixMilli())
-		session, err := models.CreateSession(ctx, pool, tenant.ID, job.ChannelID, threadTS, user.ID, true)
+		session, err := models.CreateAgentSession(ctx, pool, tenant.ID, job.ChannelID, threadTS, user.ID, services.AgentLabel(job.Description))
 		if err != nil {
 			return nil, fmt.Errorf("creating session: %w", err)
 		}

@@ -82,6 +82,10 @@ type ExecContext struct {
 	// user-initiated Slack or chat runs.
 	TaskID *uuid.UUID
 
+	// JobLabel names the job for attribution when TaskID is set; Caller()
+	// then returns an agent caller carrying it. Empty otherwise.
+	JobLabel string
+
 	// JobPolicy, when non-nil, is the capability manifest the scheduler
 	// injected for this job run. The registry consults it inside
 	// ExecuteWithResult to enforce allow-list, argument pinning, and
@@ -123,7 +127,13 @@ func (ec *ExecContext) Caller() *services.Caller {
 		return services.NewWidgetCaller(ec.Tenant)
 	}
 	cr, _ := services.NewRoleService(ec.Pool).ResolveCallerRoles(ec.Ctx, ec.Tenant, ec.User.ID)
-	return services.NewUserCaller(ec.Tenant, ec.User, cr)
+	caller := services.NewUserCaller(ec.Tenant, ec.User, cr)
+	if ec.TaskID != nil {
+		// A scheduled job acts as its owner, but says so: the agent
+		// caller keeps the owner's authority and adds the job's name.
+		return services.NewAgentCaller(caller, ec.JobLabel)
+	}
+	return caller
 }
 
 // HandlerFunc executes a tool and returns a string result.

@@ -280,6 +280,7 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 	if in.Job != nil && in.Job.ID != (uuid.UUID{}) {
 		jobID := in.Job.ID
 		ec.TaskID = &jobID
+		ec.JobLabel = services.AgentLabel(in.Job.Description)
 	}
 	if in.Job != nil && in.Job.Policy != nil {
 		ec.JobPolicy = in.Job.Policy

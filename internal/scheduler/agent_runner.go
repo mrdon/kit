@@ -14,6 +14,7 @@ import (
 
 	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
@@ -77,7 +78,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 	}
 	if session == nil {
 		threadTS := fmt.Sprintf("job-%s-%d", job.ID, time.Now().UnixMilli())
-		created, err := models.CreateSession(ctx, s.pool, tenant.ID, job.ChannelID, threadTS, user.ID, true)
+		created, err := models.CreateAgentSession(ctx, s.pool, tenant.ID, job.ChannelID, threadTS, user.ID, services.AgentLabel(job.Description))
 		if err != nil {
 			slog.Error("creating session for job", "job_id", job.ID, "error", err)
 			s.recordAgentTaskError(ctx, job, "creating session", slack, user)
