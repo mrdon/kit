@@ -363,3 +363,30 @@ func TestChoicesAreStableAndIncludeTheAnswer(t *testing.T) {
 		t.Fatalf("choices = %v", a)
 	}
 }
+
+// A kiosk that boots to /pair must not pair itself again every morning:
+// with a device session already in the jar, the page sends it home.
+func TestPairPageSendsPairedDeviceHome(t *testing.T) {
+	f := newFixture(t)
+	cookie, pairing := f.openPairPage("10.0.0.10")
+	f.adminJSON(http.MethodPost, "/api/devices/pairings/approve", map[string]any{
+		"pairing_id": pairing.ID.String(), "picture": pairing.Picture,
+		"label": "Trivia laptop", "capabilities": []string{auth.CapTriviaHost},
+	})
+	_, session := f.poll(cookie)
+	if session == nil {
+		t.Fatal("no session issued")
+	}
+	before, _ := countPending(f.ctx, f.pool, f.tenant.ID)
+
+	req := httptest.NewRequest(http.MethodGet, "/"+f.tenant.Slug+"/pair", nil)
+	req.AddCookie(session)
+	rec := httptest.NewRecorder()
+	f.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || !strings.HasSuffix(rec.Header().Get("Location"), "/web/") {
+		t.Fatalf("status = %d, location = %q; want a redirect home", rec.Code, rec.Header().Get("Location"))
+	}
+	if after, _ := countPending(f.ctx, f.pool, f.tenant.ID); after != before {
+		t.Fatalf("a paired device opening /pair created a pairing (%d -> %d)", before, after)
+	}
+}

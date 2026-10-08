@@ -12,6 +12,7 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 )
 
 // The device's side of pairing. Both routes are unauthenticated by
@@ -30,10 +31,19 @@ func registerPairRoutes(mux apps.Mux, a *App) {
 // handlePairPage shows the picture and code. A reload while the pairing is
 // still pending shows the SAME ones, so an admin halfway through tapping
 // isn't chasing a moving target.
+//
+// A browser that is already paired is sent to the device home instead.
+// A kiosk boots to one fixed URL, and if that URL is this page it must
+// not pair the machine again every morning; it should only pair when
+// there is nothing to resume.
 func (a *App) handlePairPage(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 	if tenant == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if caller, err := a.signer.CallerFromRequest(r.Context(), a.pool, r); err == nil && caller != nil && caller.Kind == services.CallerDevice && caller.TenantID == tenant.ID {
+		http.Redirect(w, r, "/"+tenant.Slug+"/"+console.Segment+"/", http.StatusSeeOther)
 		return
 	}
 	if err := sweepPairings(r.Context(), a.pool, tenant.ID); err != nil {

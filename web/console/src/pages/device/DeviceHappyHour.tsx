@@ -17,6 +17,7 @@ export default function DeviceHappyHour() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Polled: happy hour is ended from Slack, the schedule, or the other
   // iPad as often as from here, and a Start button over an already-on
@@ -46,7 +47,31 @@ export default function DeviceHappyHour() {
     }
   }
 
+  // Which beers are on happy hour. Each tick saves the whole setting back
+  // with the beers changed, the same call the admin page makes, so the
+  // schedule and price it was given stay as they were. While happy hour is
+  // on, Square follows within a minute.
+  async function toggleBeer(name: string) {
+    if (!data || saving) return;
+    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    const on = data.config.beers.some((b) => same(b, name));
+    const beers = on ? data.config.beers.filter((b) => !same(b, name)) : [...data.config.beers, name];
+    setSaving(true);
+    setErr(null);
+    try {
+      setData(await api.saveHappyHour({ ...data.config, beers }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const canStart = !!data && data.configured && data.config.beers.length > 0;
+  const tapNames = data?.taps.map((t) => t.name) ?? [];
+  const offBoard = (data?.config.beers ?? []).filter(
+    (b) => !tapNames.some((n) => n.trim().toLowerCase() === b.trim().toLowerCase()),
+  );
 
   return (
     <div className="page">
@@ -74,14 +99,42 @@ export default function DeviceHappyHour() {
               {busy ? 'Starting…' : 'Start happy hour'}
             </button>
           )}
-          {!canStart && !data.on_now && (
-            <p className="page-sub">Nothing to start yet: an admin needs to pick the beers and the price first.</p>
+          {!data.configured && (
+            <p className="page-sub">Nothing to start yet: an admin needs to set the price and the hours first.</p>
           )}
-          {data.config.beers.length > 0 && (
-            <p className="page-sub">
-              {data.config.beers.join(', ')} · {data.config.size || 'pint'}
-            </p>
+          {data.configured && data.config.beers.length === 0 && (
+            <p className="page-sub">Tick the beers below before starting it.</p>
           )}
+        </section>
+      )}
+      {data && (
+        <section className="panel device-checklist">
+          <h2 className="panel-title">
+            Beers on happy hour{data.config.size ? ` · ${data.config.size}` : ''}
+          </h2>
+          <p className="card-desc">
+            Tick a beer to put it on happy hour at the set price; untick to take it off. Each tick saves straight away.
+          </p>
+          {data.taps.length === 0 && offBoard.length === 0 && <p className="muted">Nothing on the board yet.</p>}
+          {data.taps.map((t) => (
+            <label className="check" key={t.name} style={{ display: 'flex' }}>
+              <input
+                type="checkbox"
+                checked={data.config.beers.some((b) => b.trim().toLowerCase() === t.name.trim().toLowerCase())}
+                disabled={saving || !data.configured}
+                onChange={() => void toggleBeer(t.name)}
+              />
+              {t.name}
+              {t.price ? <span className="muted"> · {t.price} {t.size}</span> : null}
+            </label>
+          ))}
+          {offBoard.map((b) => (
+            <label className="check" key={b} style={{ display: 'flex' }}>
+              <input type="checkbox" checked disabled={saving || !data.configured} onChange={() => void toggleBeer(b)} />
+              {b} <span className="muted"> · not on tap right now</span>
+            </label>
+          ))}
+          {saving && <p className="muted">Saving…</p>}
         </section>
       )}
     </div>

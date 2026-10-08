@@ -16,6 +16,7 @@ import (
 	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/auth/signedlink"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 )
 
 // Session cookies are signed with HMAC-SHA256 using a key derived from
@@ -228,6 +229,20 @@ func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.H
 		ctx := context.WithValue(r.Context(), callerKey, caller)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// CallerFromRequest resolves the session cookie on r to a caller without
+// enforcing anything: nil when there is no valid session. For pages that
+// behave differently for a signed-in browser but refuse nobody, such as the
+// pairing page sending an already-paired device home instead of pairing it
+// again.
+func (s *SessionSigner) CallerFromRequest(ctx context.Context, pool *pgxpool.Pool, r *http.Request) (*services.Caller, error) {
+	token, ok := s.extractToken(r)
+	if !ok {
+		return nil, nil //nolint:nilnil // no cookie is not an error
+	}
+	caller, _, err := resolveToken(ctx, pool, token)
+	return caller, err
 }
 
 // maybeRenewDevice slides a device session's expiry forward and re-sets
