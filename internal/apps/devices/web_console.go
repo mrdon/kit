@@ -15,6 +15,7 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/web/qrcode"
 )
 
 // The approver's side, and the Devices page. Admin only (decided): pairing
@@ -25,6 +26,7 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 		return console.AdminJSON(a.pool, a.signer, h)
 	}
 	mux.Handle("GET /{slug}/api/devices", route(a.handleList))
+	mux.Handle("GET /{slug}/api/devices/pair.svg", route(a.handlePairQR))
 	mux.Handle("POST /{slug}/api/devices/pairings/approve", route(a.handleApprove))
 	mux.Handle("POST /{slug}/api/devices/pairings/{id}/cancel", route(a.handleCancel))
 	mux.Handle("PATCH /{slug}/api/devices/{id}", route(a.handleUpdate))
@@ -83,8 +85,32 @@ func (a *App) handleList(w http.ResponseWriter, r *http.Request) {
 		"pending":      waiting,
 		"presets":      presets,
 		"capabilities": capabilityInfos(),
-		"pair_url":     "/" + tenant.Slug + "/pair",
+		"pair_url":     a.pairURL(tenant.Slug),
 	})
+}
+
+// pairURL is the address a device opens, absolute so it can be read out,
+// copied into a message, or encoded in the QR.
+func (a *App) pairURL(slug string) string {
+	return a.baseURL + "/" + slug + "/pair"
+}
+
+// handlePairQR serves the pairing address as a QR, so a phone or an iPad
+// pairs by pointing its camera at the admin's screen instead of typing.
+// The admin's screen, not the device's: the code is the address, not the
+// credential, so showing it is harmless.
+func (a *App) handlePairQR(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	svg, err := qrcode.RenderSVG(a.pairURL(tenant.Slug), 320, "Pairing address")
+	if err != nil {
+		serverError(w, "rendering pairing qr", err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if _, err := w.Write([]byte(svg)); err != nil {
+		slog.Warn("devices: writing pairing qr", "error", err)
+	}
 }
 
 // approveRequest identifies the pairing by a tapped picture or a typed

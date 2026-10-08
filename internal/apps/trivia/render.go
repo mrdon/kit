@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"html/template"
 	"strings"
+
+	"github.com/mrdon/kit/internal/web/qrcode"
 )
 
 //go:embed templates/display.html.tmpl templates/display*.css templates/tv/*.js
@@ -181,7 +183,7 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 	if game.JoinCode != "" {
 		join = ShortJoinURL(baseURL, game.JoinCode)
 	}
-	qr, err := RenderQR(join, 640)
+	qr, err := qrcode.RenderSVG(join, 640, "Join code")
 	if err != nil {
 		return "", err
 	}

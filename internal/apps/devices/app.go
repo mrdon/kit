@@ -14,6 +14,7 @@ import (
 	"context"
 	"embed"
 	"html/template"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -45,17 +46,21 @@ type App struct {
 	pool    *pgxpool.Pool
 	signer  *auth.SessionSigner
 	limiter *ipLimiter
+	// baseURL is the public origin, for the pairing address a phone scans.
+	baseURL string
 }
 
 // Init records the pool. Called by apps.Init.
 func (a *App) Init(pool *pgxpool.Pool) { a.pool = pool }
 
-// Configure wires the console session signer, which mints device sessions.
-func Configure(signer *auth.SessionSigner) {
+// Configure wires the console session signer, which mints device sessions,
+// and the public base URL the pairing QR encodes.
+func Configure(signer *auth.SessionSigner, baseURL string) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
+	instance.baseURL = strings.TrimRight(baseURL, "/")
 }
 
 func (a *App) Name() string { return AppName }

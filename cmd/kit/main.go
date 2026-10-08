@@ -226,7 +226,7 @@ func main() {
 	// render each board's copyable public link.
 	kiosk.Configure(sessionSigner, cfg.BaseURL)
 	// Device pairing mints device sessions with the same signer.
-	devices.Configure(sessionSigner)
+	devices.Configure(sessionSigner, cfg.BaseURL)
 
 	// Menu boards need the signer for the console's read-only board list, the
 	// fetcher to pull poster images server-side (so images never travel

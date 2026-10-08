@@ -9,6 +9,7 @@ import {
   type PendingPairing,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
+import { API_BASE } from '../api';
 
 // Pair a device, and manage the ones already paired.
 //
@@ -222,7 +223,17 @@ export default function Devices() {
     }
   };
 
-  const pairURL = view ? `${window.location.origin}${view.pair_url}` : '';
+  const pairURL = view?.pair_url ?? '';
+  const [copied, setCopied] = useState(false);
+  const copyPairURL = () => {
+    navigator.clipboard?.writeText(pairURL).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => setErr('Could not copy to the clipboard'),
+    );
+  };
   const capLabel = (name: string) => view?.capabilities.find((c) => c.name === name)?.label ?? name;
   const live = view?.devices.filter((d) => !d.revoked_at) ?? [];
 
@@ -238,12 +249,25 @@ export default function Devices() {
         </nav>
         <h1>Devices</h1>
         <p className="page-sub">
-          Shared machines that nobody signs in on: the trivia laptop, the bar iPad. On the
-          device, open <code>{pairURL}</code>. It shows a picture; tap the same picture below.
+          Shared machines that nobody signs in on: the trivia laptop, the bar iPad, a phone
+          for the night. On the device, scan this code or open the address. It shows a
+          picture; tap the same picture below.
         </p>
       </div>
 
       {err && <p className="banner banner-error">{err}</p>}
+
+      {view && (
+        <section className="panel pair-address">
+          <img className="pair-qr" src={`${API_BASE}/devices/pair.svg`} alt="QR code for the pairing address" width={200} height={200} />
+          <div className="pair-address-text">
+            <code>{pairURL}</code>
+            <button className="btn" type="button" onClick={copyPairURL}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="panel">
         <h2 className="panel-title">Waiting to pair</h2>
