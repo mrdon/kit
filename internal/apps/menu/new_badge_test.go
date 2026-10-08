@@ -163,10 +163,10 @@ func TestBadgeRendersOnlyOnNewTaps(t *testing.T) {
 	}
 }
 
-// TestBadgeSizeRidesTheFitPass pins the badge to --meta-size, which is the one
+// TestBadgeSizeRidesTheFitPass pins the badge to --badge-size, which is the one
 // thing that makes it behave in both directions. It is a child of a 46px name,
 // so an em would draw a 38px pill shouting over the beer it labels; and
-// --meta-size is a fit-pass variable, so a fixed px would stay put while a long
+// --badge-size is a fit-pass variable, so a fixed px would stay put while a long
 // tap list shrank everything around it.
 func TestBadgeSizeRidesTheFitPass(t *testing.T) {
 	css := stylesheetOrDie(t)
@@ -175,8 +175,8 @@ func TestBadgeSizeRidesTheFitPass(t *testing.T) {
 		t.Fatal("no .tap-new rule")
 	}
 	body := css[i : i+strings.Index(css[i:], "}")]
-	if !strings.Contains(body, "font-size: var(--meta-size") {
-		t.Errorf(".tap-new font-size must come off --meta-size: %q", body)
+	if !strings.Contains(body, "font-size: var(--badge-size") {
+		t.Errorf(".tap-new font-size must come off --badge-size: %q", body)
 	}
 	// calc() is deliberately absent — see the rule's comment; the wall panel's
 	// browser predates it, and a badge that fails to size is a badge at the

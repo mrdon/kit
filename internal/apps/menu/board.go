@@ -185,6 +185,19 @@ func (p *Panel) validate(i int) error {
 	return nil
 }
 
+// shortPrice drops trailing zeros from a price for the wall: "6.50" shows as
+// "6.5" and "8.00" as "8". The number is there for anyone who looks, but it
+// should not read as the loudest thing on the row. The printed menu pads the
+// other way (see money) because a page is read up close, in columns.
+func shortPrice(s string) string {
+	s = strings.TrimSpace(s)
+	if !strings.Contains(s, ".") {
+		return s
+	}
+	s = strings.TrimRight(s, "0")
+	return strings.TrimSuffix(s, ".")
+}
+
 // SizeLabel is the pour label for a row, empty for the house default.
 func (t Tap) SizeLabel() string {
 	if t.Size == "" || t.Size == DefaultPour {

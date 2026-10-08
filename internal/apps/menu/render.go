@@ -23,7 +23,9 @@ var assetFS embed.FS
 // boardTmpl is parsed once at package scope; a template that fails to parse is
 // a build-time mistake, not a runtime one.
 var boardTmpl = template.Must(
-	template.ParseFS(templateFS, "templates/board.html.tmpl"),
+	template.New("board.html.tmpl").
+		Funcs(template.FuncMap{"shortPrice": shortPrice}).
+		ParseFS(templateFS, "templates/board.html.tmpl"),
 )
 
 // RenderStamp fingerprints everything the page's appearance is built from --
@@ -91,7 +93,7 @@ type renderData struct {
 	// Version is what the page compares against when it polls, so a screen
 	// picks up a new tap list without anyone power-cycling the TV.
 	Version string
-	// HappyBanner replaces the "On Tap" tag while happy hour is on.
+	// HappyBanner fills the header's right corner while happy hour is on.
 	HappyBanner string
 	// GlutenNote is the key to the GR badge, shown in the footer only while
 	// a tap on the board wears one.

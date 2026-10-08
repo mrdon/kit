@@ -19,14 +19,15 @@
       <img src="{{ .Logo }}" alt="">
       <p class="brand-name">{{ .Venue.Wordmark }}</p>
     </div>
+    <!-- Empty outside happy hour. "On Tap" over a tap list told nobody
+         anything, and a corner that is normally bare makes the banner land
+         when it does appear. The clock went too: the rail's progress ticks
+         already show a frozen board, and nobody reads the time off a menu. -->
+    {{- if .HappyBanner }}
     <div class="head-r">
-      {{- if .HappyBanner }}
       <p class="head-tag head-hh">{{ .HappyBanner }}</p>
-      {{- else }}
-      <p class="head-tag">On Tap</p>
-      {{- end }}
-      <p class="head-clock" id="clock"></p>
     </div>
+    {{- end }}
   </header>
 
   <div class="body">
@@ -39,19 +40,24 @@
           {{- range .Taps }}
           <div class="tap">
             <div class="tap-l">
-              <p class="tap-meta"><span class="tap-style">{{ .Style }}</span>{{ if .ABV }}<span class="tap-sep">&middot;</span><span class="tap-abv">{{ .ABV }}</span>{{ end }}</p>
               <!-- The badge sits INSIDE the fitted name, so the width pass
                    measures the pill along with the letters and shrinks the row
                    to make room for it. Hung outside, a long name would fit its
                    column and push the badge off the edge. -->
               <p class="tap-name" data-fit>{{ .Name }}{{ if .GlutenReduced }}<span class="tap-gr">GR</span>{{ end }}{{ if .IsNew }}<span class="tap-new">New</span>{{ end }}</p>
+              <!-- Style under the name: the name is what a customer reads first,
+                   and the style line reads as its caption. A row with neither
+                   (a soda) drops the line rather than leaving a blank under it. -->
+              {{- if or .Style .ABV }}
+              <p class="tap-meta"><span class="tap-style">{{ .Style }}</span>{{ if and .Style .ABV }}<span class="tap-sep">&middot;</span>{{ end }}{{ if .ABV }}<span class="tap-abv">{{ .ABV }}</span>{{ end }}</p>
+              {{- end }}
             </div>
             <div class="tap-r">
               {{- if .HappyPrice }}
-              <p class="tap-price tap-hh">{{ .HappyPrice }}</p>
-              <p class="tap-was">{{ .Price }}</p>
+              <p class="tap-price tap-hh">{{ shortPrice .HappyPrice }}</p>
+              <p class="tap-was">{{ shortPrice .Price }}</p>
               {{- else }}
-              <p class="tap-price">{{ .Price }}</p>
+              <p class="tap-price">{{ shortPrice .Price }}</p>
               {{- end }}
               {{- with .SizeLabel }}
               <p class="tap-size">{{ . }}</p>
@@ -150,9 +156,10 @@
      computed here rather than in calc() because the wall panel's browser is
      older than the arithmetic is. */
   var ROW = [
-    { prop: '--meta-size',  of: 19 / 46, min: 15 },
+    { prop: '--meta-size',  of: 21 / 46, min: 18 },
+    { prop: '--badge-size', of: 19 / 46, min: 15 },
     { prop: '--price-size', of: 34 / 46, min: 24 },
-    { prop: '--pour-size',  of: 17 / 46, min: 13 },
+    { prop: '--pour-size',  of: 19 / 46, min: 17 },
     { prop: '--row-pad',    of:  9 / 46, min:  5 }
   ];
 
@@ -209,20 +216,6 @@
   }
   window.addEventListener('load', refit);
   refit();
-
-  /* Clock. A frozen clock is how anyone walking past can tell the board
-     died -- it is the only liveness signal a wall display has. */
-  var clock = document.getElementById('clock');
-  function tick() {
-    var d = new Date();
-    var h = d.getHours(), m = d.getMinutes();
-    var ampm = h >= 12 ? 'pm' : 'am';
-    h = h % 12; if (h === 0) h = 12;
-    clock.textContent = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] +
-      ' ' + h + ':' + (m < 10 ? '0' + m : m) + ' ' + ampm;
-  }
-  tick();
-  setInterval(tick, 20000);
 
   /* Notice a new board.
      The server syncs from Untappd every minute, but a screen that loaded once

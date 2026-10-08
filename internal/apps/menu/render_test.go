@@ -149,7 +149,7 @@ func TestRenderIsSelfContained(t *testing.T) {
 	for _, want := range []string{
 		// Title case in the markup; the caps are a CSS text-transform, so
 		// the payload stays reusable for a website menu.
-		"Cerveza Espacial", "Viener Vino", "9 oz", "6.50",
+		"Cerveza Espacial", "Viener Vino", "9 oz", "6.5",
 		"@font-face", "data:font/woff2;base64,", "data:image/png;base64,",
 	} {
 		if !strings.Contains(html, want) {

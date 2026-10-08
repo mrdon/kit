@@ -62,3 +62,13 @@ func manyTaps(n int) []Tap {
 	}
 	return out
 }
+
+func TestShortPrice(t *testing.T) {
+	for in, want := range map[string]string{
+		"6.50": "6.5", "8.00": "8", "8": "8", "7.25": "7.25", "": "", " 9.0 ": "9",
+	} {
+		if got := shortPrice(in); got != want {
+			t.Errorf("shortPrice(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

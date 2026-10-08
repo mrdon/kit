@@ -235,7 +235,7 @@ func TestApplyHappyHourMarksOnlyThePour(t *testing.T) {
 	if strings.Contains(html, `class="head-tag head-hh"`) || !strings.Contains(html2, "Happy hour · till 5pm") {
 		t.Error("banner should render only when set")
 	}
-	if !strings.Contains(html2, `<p class="tap-was">6.50</p>`) {
+	if !strings.Contains(html2, `<p class="tap-was">6.5</p>`) {
 		t.Error("the regular price should render struck beside the happy price")
 	}
 }
