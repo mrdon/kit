@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Exact patch, matching the Makefile's GOTOOLCHAIN pin. '1.25'
           # floats to the newest 1.25.x, which can drift away from what
@@ -45,7 +45,7 @@ jobs:
           go-version: '1.25.1'
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
