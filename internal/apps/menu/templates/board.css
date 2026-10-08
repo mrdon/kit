@@ -20,7 +20,7 @@
   --accent-l: #ffd89a;  /* pale gold, for data set beside white type */
   --accent-hot: #ffc247; /* the titles, back up toward the logo's #fccc0c */
   --muted: #b9c4cf;
-  --dim: #8ea2b3;
+  --dim: #9fb2c2;
   --cream: #f4efe7;
   --line: rgba(255, 255, 255, .14);
   /* Archivo is variable 400-700. The site sets its headings at 400 -- light
@@ -103,7 +103,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
    caption under the name and the pour label under the price. */
 /* Marks the second half of a section carried into the next column, so the
    repeated heading reads as a continuation rather than a duplicate. */
-.sect-cont { opacity: .65; font-size: 82%; letter-spacing: .04em; }
+.sect-cont { color: var(--dim); font-size: 82%; letter-spacing: .04em; }
 
 .tap { display: grid; grid-template-columns: 1fr 112px; align-items: baseline; gap: 20px; padding-bottom: var(--row-pad, 9px); border-bottom: 1px solid rgba(255, 255, 255, .09); min-width: 0; }
 .tap-l { min-width: 0; }
@@ -149,15 +149,15 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
   border-radius: 3px; padding: .18em .42em; margin-left: .5em;
   vertical-align: .5em;
 }
-/* Gluten reduced. The New pill's geometry exactly, drawn as an outline: it is
-   a standing fact about the beer rather than news, so it should not compete
-   with New for the eye. The ring is an inset shadow rather than a border so
+/* Gluten reduced. The New pill's geometry exactly, drawn as an outline in the
+   muted grey: it is a standing fact about the beer rather than news, so it
+   should not share New's gold or compete with it for the eye. The ring is an inset shadow rather than a border so
    the box, and with it the measured centring above, is the same as New's. */
 .tap-gr {
   display: inline-block; font-family: var(--display); font-weight: 700;
   font-size: var(--badge-size, 19px); line-height: 1;
   letter-spacing: .1em; text-transform: uppercase;
-  color: var(--accent-hot); box-shadow: inset 0 0 0 2px var(--accent-hot);
+  color: var(--muted); box-shadow: inset 0 0 0 2px var(--muted);
   border-radius: 3px; padding: .18em .42em; margin-left: .5em;
   vertical-align: .5em;
 }
@@ -174,10 +174,12 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .tap-name { font-family: var(--beer); font-size: var(--name-size, 46px); font-weight: 600; line-height: 1.06; text-transform: uppercase; color: #fff; white-space: nowrap; overflow: hidden; }
 .tap-r { text-align: right; }
 
-/* Price sits in cream, not the accent: the accent belongs to ABV and to the
-   pour size, which are the two numbers that explain what the price buys. */
-.tap-price { font-family: var(--beer); font-weight: 500; font-size: var(--price-size, 34px); line-height: 1.06; color: var(--cream); font-variant-numeric: tabular-nums; }
-.tap-size { font-family: var(--beer); font-size: var(--pour-size, 19px); letter-spacing: 0; color: var(--accent-l); margin-top: 1px; }
+/* Price sits in white, not the accent: gold is reserved for ABV and for what
+   is special right now (NEW, happy hour), and a white regular price is as far
+   from the gold happy hour price as the palette allows. The pour size is a
+   footnote to the price, so it takes the muted caption grey. */
+.tap-price { font-family: var(--beer); font-weight: 500; font-size: var(--price-size, 34px); line-height: 1.06; color: #fff; font-variant-numeric: tabular-nums; }
+.tap-size { font-family: var(--beer); font-size: var(--pour-size, 19px); letter-spacing: 0; color: var(--muted); margin-top: 1px; }
 
 /* Happy hour. The price turns gold and the regular price sits under it, struck,
    in the slot the pour label uses -- a happy hour pour is the house pint, so
