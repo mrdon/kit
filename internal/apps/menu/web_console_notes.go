@@ -38,7 +38,7 @@ func (a *App) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 	a.writeNotes(w, r, tenant.ID)
 }
 
-// saveNoteRequest is one beer's description. Empty text removes a written
+// saveNoteRequest is one beer's description. Empty text removes the
 // written description, letting a stored one show through again.
 type saveNoteRequest struct {
 	Name string `json:"name"`

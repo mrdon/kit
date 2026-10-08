@@ -1,6 +1,9 @@
 package menu
 
-import "strings"
+import (
+	"maps"
+	"strings"
+)
 
 // Finding a beer's description by name, tolerantly.
 //
@@ -100,11 +103,7 @@ func foldNotes(m map[string]string) map[string]string {
 // Returns a new map; neither input is touched.
 func mergedNotes(cache, written map[string]string) map[string]string {
 	out := make(map[string]string, len(cache)+len(written))
-	for k, v := range cache {
-		out[k] = v
-	}
-	for k, v := range foldNotes(written) {
-		out[k] = v
-	}
+	maps.Copy(out, cache)
+	maps.Copy(out, foldNotes(written))
 	return out
 }
