@@ -23,6 +23,7 @@ import (
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
 	"github.com/mrdon/kit/internal/apps/console"
+	"github.com/mrdon/kit/internal/apps/devices"
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/events"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
@@ -224,6 +225,8 @@ func main() {
 	// Kiosk needs the signer for its admin console API and the base URL to
 	// render each board's copyable public link.
 	kiosk.Configure(sessionSigner, cfg.BaseURL)
+	// Device pairing mints device sessions with the same signer.
+	devices.Configure(sessionSigner)
 
 	// Menu boards need the signer for the console's read-only board list, the
 	// fetcher to pull poster images server-side (so images never travel

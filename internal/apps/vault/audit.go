@@ -12,14 +12,13 @@ package vault
 import (
 	"context"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/netip"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
 )
 
@@ -39,7 +38,7 @@ func newAuditCtx(pool *pgxpool.Pool, tenantID uuid.UUID, actorID *uuid.UUID, r *
 		pool:      pool,
 		tenantID:  tenantID,
 		actorID:   actorID,
-		ip:        clientIP(r),
+		ip:        auth.ClientAddr(r),
 		userAgent: clientUA(r),
 	}
 }
@@ -147,29 +146,6 @@ type EvtTokenRejected struct {
 }
 
 // ===== HTTP helpers =====
-
-// clientIP returns the request's remote IP as a netip.Addr, preferring the
-// first entry in X-Forwarded-For when running behind a proxy. Returns nil
-// when nothing parseable is available.
-func clientIP(r *http.Request) *netip.Addr {
-	if r == nil {
-		return nil
-	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
-		if addr, err := netip.ParseAddr(first); err == nil {
-			return &addr
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return &addr
-	}
-	return nil
-}
 
 func clientUA(r *http.Request) string {
 	if r == nil {

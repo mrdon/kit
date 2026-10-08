@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useMe } from './me';
 import { ADMIN_SECTIONS, PRIMARY_SECTIONS, visibleSections } from './nav';
 import { useSetChatContext } from './chatContext';
+import { DeviceHome } from './DeviceShell';
 
 // The launcher renders a tile per primary section, plus a single Admin tile
 // (for admins) that opens the grouped admin area. Same source (nav.ts) as
@@ -9,6 +10,7 @@ import { useSetChatContext } from './chatContext';
 export default function Launcher() {
   useSetChatContext('the console home page');
   const me = useMe();
+  if (me?.kind === 'device') return <DeviceHome me={me} />;
   const primary = visibleSections(PRIMARY_SECTIONS, me?.disabled_apps);
   const adminSections = visibleSections(ADMIN_SECTIONS, me?.disabled_apps);
   const showAdmin = me?.is_admin && adminSections.length > 0;

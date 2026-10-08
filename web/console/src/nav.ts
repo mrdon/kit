@@ -83,6 +83,12 @@ export const SECTIONS: Section[] = [
     app: 'trivia',
   },
   {
+    to: '/admin/devices',
+    label: 'Devices',
+    blurb: 'Pair the trivia laptop or the bar iPad, and choose what each may do.',
+    admin: true,
+  },
+  {
     to: '/admin/apps',
     label: 'Apps',
     blurb: 'Turn features like the vault, the menu, or events on or off.',

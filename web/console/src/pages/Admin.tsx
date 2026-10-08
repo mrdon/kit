@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ADMIN_SECTIONS, visibleSections } from '../nav';
 import { useMe } from '../me';
 import { useSetChatContext } from '../chatContext';
+import { DeviceHome } from '../DeviceShell';
 
 // The Admin area groups the infrequent, admin-only setup surfaces (roles,
 // integrations, website, chat widget) so they don't clutter the top nav.
@@ -10,6 +11,8 @@ import { useSetChatContext } from '../chatContext';
 export default function Admin() {
   useSetChatContext('the Admin area (workspace setup)');
   const me = useMe();
+  // A device has no admin area; a crumb that leads here lands on its home.
+  if (me?.kind === 'device') return <DeviceHome me={me} />;
   const sections = visibleSections(ADMIN_SECTIONS, me?.disabled_apps);
   return (
     <div className="page">

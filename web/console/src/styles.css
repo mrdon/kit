@@ -2309,3 +2309,112 @@ h2.view-title:hover {
 .label-preset input {
   margin: 0;
 }
+
+/* --- Device shell (paired shared machines: the trivia laptop, the bar iPad) --- */
+
+/* The bar keeps the console's indigo so a device obviously belongs to the
+   same workspace, but carries only the workspace and the device's label:
+   nothing to navigate to, nobody to sign out. */
+.devicebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(180deg, #1e1b4b 0%, #312e81 100%);
+  color: #e0e7ff;
+  font-size: 1rem;
+}
+
+.devicebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.devicebar-label {
+  color: #c7d2fe;
+}
+
+.content-device {
+  max-width: 960px;
+}
+
+/* Device tiles are tapped from arm's length on a tablet: bigger, fewer,
+   and spaced so a thumb can't hit two. */
+.device-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.device-tile {
+  min-height: 9rem;
+  padding: 1.5rem;
+  justify-content: center;
+  font-size: 1.15rem;
+}
+
+.device-tile .tile-title {
+  font-size: 1.3rem;
+}
+
+.device-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* --- Devices admin page --- */
+
+.pairing-pictures {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.pairing-picture {
+  flex: 1;
+  font-size: 2.75rem;
+  line-height: 1;
+  padding: 0.9rem 0;
+  background: var(--panel);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.pairing-picture:hover,
+.pairing-picture.selected {
+  border-color: var(--accent);
+}
+
+.cap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.cap-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  font-size: 0.8rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--off-bg);
+  color: var(--off-ink);
+}

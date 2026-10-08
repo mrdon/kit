@@ -51,7 +51,7 @@ func (a *App) handleDeepLinkSuccess(r *http.Request, claims *auth.Claims) {
 		pool:      a.svc.pool,
 		tenantID:  claims.TenantID,
 		actorID:   &actor,
-		ip:        clientIP(r),
+		ip:        auth.ClientAddr(r),
 		userAgent: clientUA(r),
 	}
 	actx.log(r.Context(), "vault.token_consumed", "vault_entry", &claims.EntryID, EvtTokenConsumed{
@@ -78,7 +78,7 @@ func (a *App) handleDeepLinkError(w http.ResponseWriter, r *http.Request, reason
 				pool:      a.svc.pool,
 				tenantID:  claims.TenantID,
 				actorID:   &actor,
-				ip:        clientIP(r),
+				ip:        auth.ClientAddr(r),
 				userAgent: clientUA(r),
 			}
 			actx.log(r.Context(), "vault.token_rejected", "vault_entry", &claims.EntryID, EvtTokenRejected{

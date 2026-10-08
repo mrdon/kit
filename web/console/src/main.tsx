@@ -24,6 +24,7 @@ import EventsChannelsPage from './pages/EventsChannels';
 import EventsPromoPage from './pages/EventsPromo';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
+import Devices from './pages/Devices';
 import Vault from './pages/Vault';
 import Skills from './pages/Skills';
 import Jobs from './pages/Jobs';
@@ -62,6 +63,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/connect" element={<Connect />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/apps" element={<AppsSettings />} />
+          <Route path="/admin/devices" element={<Devices />} />
           <Route path="/admin/trivia" element={<TriviaQuestions />} />
           <Route path="/admin/menu" element={<MenuPrintSettings />} />
           <Route path="/admin/happy-hour" element={<MenuHappyHour />} />
