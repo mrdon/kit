@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Me } from './api';
+import { SLUG } from './workspace';
 
 // The chrome and the home screen a paired device sees. One shell serves
 // every device kind: the trivia laptop is this shell showing a single tile,
@@ -9,14 +10,41 @@ import type { Me } from './api';
 
 interface DeviceTile {
   cap: string;
-  to: string;
+  // A client route, or an absolute href that opens in a new tab (the
+  // printed menu is a PDF: Safari's share sheet is how it reaches AirPrint).
+  to?: string;
+  href?: string;
   title: string;
   blurb: string;
 }
 
-// One tile per capability that has a screen. Capabilities without a tile
-// yet (the taproom ones land in the next phase) simply don't show.
+// One tile per capability. A device holding every taproom capability plus
+// trivia shows all five; the trivia laptop shows one.
 const DEVICE_TILES: DeviceTile[] = [
+  {
+    cap: 'menu.happy_hour',
+    to: '/device/happy-hour',
+    title: 'Happy hour',
+    blurb: 'Start it or end it. The board and Square follow.',
+  },
+  {
+    cap: 'menu.print',
+    href: `/${SLUG}/menu/print.pdf`,
+    title: 'Print the menu',
+    blurb: 'Opens the paper menu; print it from the share button.',
+  },
+  {
+    cap: 'menu.gluten_reduced',
+    to: '/device/gluten-reduced',
+    title: 'Gluten reduced',
+    blurb: 'Tick the beers that are. The screen and the menu mark them.',
+  },
+  {
+    cap: 'kiosk.repoint',
+    to: '/device/screens',
+    title: 'Wall screens',
+    blurb: 'Change what a screen is showing.',
+  },
   {
     cap: 'trivia.host',
     to: '/trivia',
@@ -57,12 +85,19 @@ export function DeviceHome({ me }: { me: Me }) {
         </p>
       ) : (
         <section className="device-tile-grid">
-          {tiles.map((t) => (
-            <Link key={t.cap} to={t.to} className="tile device-tile">
-              <span className="tile-title">{t.title}</span>
-              <span className="tile-blurb">{t.blurb}</span>
-            </Link>
-          ))}
+          {tiles.map((t) =>
+            t.href ? (
+              <a key={t.cap} href={t.href} target="_blank" rel="noopener" className="tile device-tile">
+                <span className="tile-title">{t.title}</span>
+                <span className="tile-blurb">{t.blurb}</span>
+              </a>
+            ) : (
+              <Link key={t.cap} to={t.to ?? '/'} className="tile device-tile">
+                <span className="tile-title">{t.title}</span>
+                <span className="tile-blurb">{t.blurb}</span>
+              </Link>
+            ),
+          )}
         </section>
       )}
     </div>

@@ -2418,3 +2418,55 @@ h2.view-title:hover {
   background: var(--off-bg);
   color: var(--off-ink);
 }
+
+/* --- Taproom device screens --- */
+
+.device-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.device-btn {
+  font-size: 1.4rem;
+  padding: 1.1rem 2.2rem;
+  border-radius: 1rem;
+}
+
+.device-btn-stop {
+  background: var(--error-ink);
+}
+
+.device-btn-sm {
+  font-size: 1.05rem;
+  padding: 0.75rem 1.4rem;
+  white-space: nowrap;
+}
+
+.device-checklist .check {
+  font-size: 1.15rem;
+  padding: 0.5rem 0;
+}
+
+.device-checklist .check input {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.device-repoint {
+  display: flex;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+}
+
+.device-repoint input {
+  flex: 1;
+  font-size: 1.05rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.chip-btn {
+  border: 1px solid var(--line);
+  cursor: pointer;
+}

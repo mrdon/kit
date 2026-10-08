@@ -103,6 +103,7 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
 - **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
+- **Devices** — admin-only page to pair a shared machine (the trivia laptop, the bar iPad) with a picture match instead of a sign-in, and choose what it may do.
 - **Apps** — admin-only page to turn features (vault, calendar, events, kiosk, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
 - **Integrations** — connect external services from one page: click **Connect** and enter the secret on a secure one-time form (it never passes through the assistant). Personal email is self-service for any user; workspace-wide services (Square, Google Calendar) are admin-only.
 - **Chat widget** — admin-only setup page for the website chat widget.
@@ -493,6 +494,16 @@ A screen only picks up changes on its own if something on the machine is watchin
 Each board shows **Live** once a machine is polling it, so a screen that has gone dark is visible from the page rather than from someone walking past it. A board with no URL yet shows a plain "no content assigned" card on the screen instead of an error.
 
 Board addresses are **public and unauthenticated** — that's what lets a machine with no login use them. Anyone who knows the address can see where the screen points, so don't send a screen to a URL that is itself a private link.
+
+## Devices: the trivia laptop and the bar iPad
+
+Some machines in a venue are shared and nobody should ever sign in on them: the laptop that only runs trivia, the iPad by the till. Kit **pairs** them instead, under **Admin → Devices** (`/<your-slug>/web/admin/devices`).
+
+On the device, open `https://<your-kit>/<your-slug>/pair`. It shows a picture and a four-letter code and waits. An admin, signed in on their own phone, opens **Devices**, sees three pictures for the waiting device, and taps the one on its screen (or types the code). They pick a preset, **Trivia driver** or **Taproom admin**, give the device a name, adjust the checklist of what it may do, and press **Pair**. The device picks that up within a couple of seconds and lands on its home screen. Reading the picture off the screen lets someone approve a pairing, never take it: only the browser that opened the page receives the session. Tapping the wrong picture cancels that pairing, and a pairing that nobody approves expires after ten minutes.
+
+A paired device sees only tiles for what it may do: **Host trivia** (the whole trivia console, question sets included), **Happy hour** (Start now / End now), **Print the menu**, **Gluten reduced**, and **Wall screens** (repoint a kiosk board). There is no chat, no navigation to anything else, and no sign out; its session lasts a year and renews itself while it is in use. Everything a device does is recorded as the device, under its name. **Unpair** on the Devices page ends its session at once, and **Edit** changes its name or what it may do without re-pairing.
+
+On an iPad, add the page to the home screen *before* pairing if that is how staff will open it: a home-screen web app keeps its own cookies, separate from Safari's.
 
 ## Trivia
 

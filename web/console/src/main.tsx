@@ -25,6 +25,9 @@ import EventsPromoPage from './pages/EventsPromo';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
 import Devices from './pages/Devices';
+import DeviceHappyHour from './pages/device/DeviceHappyHour';
+import DeviceGlutenReduced from './pages/device/DeviceGlutenReduced';
+import DeviceScreens from './pages/device/DeviceScreens';
 import Vault from './pages/Vault';
 import Skills from './pages/Skills';
 import Jobs from './pages/Jobs';
@@ -64,6 +67,11 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/apps" element={<AppsSettings />} />
           <Route path="/admin/devices" element={<Devices />} />
+          {/* Taproom device screens: big targets, one job each. The same
+              APIs as the admin pages, gated by the device's capabilities. */}
+          <Route path="/device/happy-hour" element={<DeviceHappyHour />} />
+          <Route path="/device/gluten-reduced" element={<DeviceGlutenReduced />} />
+          <Route path="/device/screens" element={<DeviceScreens />} />
           <Route path="/admin/trivia" element={<TriviaQuestions />} />
           <Route path="/admin/menu" element={<MenuPrintSettings />} />
           <Route path="/admin/happy-hour" element={<MenuHappyHour />} />
