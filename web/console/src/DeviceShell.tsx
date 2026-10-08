@@ -32,7 +32,7 @@ const DEVICE_TILES: DeviceTile[] = [
     cap: 'menu.print',
     to: '/device/print',
     title: 'Print the menu',
-    blurb: 'Refresh the tap list, then open the paper menu to print.',
+    blurb: 'Refresh the tap list, then print the paper menu.',
   },
   {
     cap: 'events.topper',

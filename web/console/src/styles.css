@@ -2538,3 +2538,44 @@ h2.view-title:hover {
   resize: vertical;
   margin: 0.4rem 0;
 }
+
+.device-actions-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.device-btn.selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The inline PDF: tall enough to read a letter page on a tablet without
+   scrolling the page itself, with its own Print control above. */
+.pdf-pane {
+  margin-top: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.pdf-pane-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.pdf-pane-title {
+  font-weight: 600;
+}
+
+.pdf-pane-frame {
+  display: block;
+  width: 100%;
+  height: min(80vh, 1100px);
+  border: 0;
+  background: #525659;
+}

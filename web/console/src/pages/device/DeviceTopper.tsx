@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSetChatContext } from '../../chatContext';
 import { SLUG } from '../../workspace';
+import { PdfPane } from './PdfPane';
 
 // The table topper, from the bar iPad: this week's card or next week's.
 // Next week is the Friday case, which is why it gets a button of its own
@@ -8,7 +10,8 @@ import { SLUG } from '../../workspace';
 
 export default function DeviceTopper() {
   useSetChatContext('the table topper page on a taproom device');
-  const href = (week: string) => `/${SLUG}/events/topper.pdf?week=${week}`;
+  const [week, setWeek] = useState<'this' | 'next' | null>(null);
+  const href = (w: string) => `/${SLUG}/events/topper.pdf?week=${w}`;
   return (
     <div className="page">
       <div className="page-head">
@@ -18,16 +21,17 @@ export default function DeviceTopper() {
           <span>Table topper</span>
         </nav>
         <h1>Table topper</h1>
-        <p className="page-sub">The week’s events on one sheet for the tables. Opens as a PDF; print it from the share button.</p>
+        <p className="page-sub">The week’s events on one sheet for the tables. Pick a week, then press Print.</p>
       </div>
-      <section className="device-actions">
-        <a className="btn device-btn" href={href('this')} target="_blank" rel="noopener">
+      <section className="device-actions device-actions-row">
+        <button className={`btn device-btn${week === 'this' ? ' selected' : ''}`} type="button" onClick={() => setWeek('this')}>
           This week
-        </a>
-        <a className="btn device-btn" href={href('next')} target="_blank" rel="noopener">
+        </button>
+        <button className={`btn device-btn${week === 'next' ? ' selected' : ''}`} type="button" onClick={() => setWeek('next')}>
           Next week
-        </a>
+        </button>
       </section>
+      {week && <PdfPane src={href(week)} title={week === 'this' ? 'This week’s topper' : 'Next week’s topper'} />}
     </div>
   );
 }
