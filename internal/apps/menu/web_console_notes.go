@@ -19,9 +19,9 @@ import (
 // carries none, and its consumer pages refuse Kit's server. The admin print
 // page edits them inside the whole print config, which is setup. This is
 // the narrow version for the bar iPad: the synced beers, each with its
-// description and where it came from, and a save per beer. Same storage as
-// the agent's set_menu_notes (config.notes, which wins over anything
-// scraped), so a description written at the bar prints and survives a sync.
+// description and where it came from, and a save per beer. Saves land in
+// config.notes, the hand-written layer that wins over anything scraped or
+// pushed in and survives every sync.
 //
 // Admin for people, the same as the print config it is a slice of.
 
@@ -39,7 +39,7 @@ func (a *App) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 }
 
 // saveNoteRequest is one beer's description. Empty text removes a written
-// description, letting a scraped one show through again.
+// written description, letting a stored one show through again.
 type saveNoteRequest struct {
 	Name string `json:"name"`
 	Text string `json:"text"`
@@ -57,14 +57,7 @@ func (a *App) handleSaveNote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "which beer?"})
 		return
 	}
-	text := strings.TrimSpace(req.Text)
-	var err error
-	if text == "" {
-		err = DeletePrintNotes(r.Context(), a.pool, tenant.ID, []string{name})
-	} else {
-		err = MergePrintNotes(r.Context(), a.pool, tenant.ID, map[string]string{name: text})
-	}
-	if err != nil {
+	if err := SetPrintNote(r.Context(), a.pool, tenant.ID, name, req.Text); err != nil {
 		slog.Error("saving beer description", "tenant_id", tenant.ID, "beer", name, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return

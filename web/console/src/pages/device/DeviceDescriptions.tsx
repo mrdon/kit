@@ -62,7 +62,7 @@ export default function DeviceDescriptions() {
   const sections = beers ? Array.from(new Set(beers.map((b) => b.section))) : [];
 
   return (
-    <div className="page">
+    <div className="page device-wide">
       <div className="page-head">
         <nav className="crumbs">
           <Link to="/">Home</Link>
@@ -108,7 +108,7 @@ export default function DeviceDescriptions() {
                         {busy === b.name ? 'Saving…' : savedName === b.name && !dirty ? 'Saved' : 'Save'}
                       </button>
                       <span className="muted">
-                        {b.note === '' ? 'Nothing printed yet' : b.written ? 'Written here' : 'From Untappd'}
+                        {b.note === '' ? 'Nothing printed yet' : b.written ? 'Written here' : 'Stored description'}
                       </span>
                     </div>
                   </div>

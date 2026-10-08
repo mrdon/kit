@@ -64,15 +64,9 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 	// a customer reads. Applied at build time rather than baked into the rows,
 	// so correcting a description takes effect on the next print rather than
 	// needing a re-sync.
-	cache := state.Notes
-	for name, note := range cfg.Notes {
-		if strings.TrimSpace(note) == "" {
-			continue
-		}
-		cache[normalizeBeerName(name)] = note
-	}
+	notes := mergedNotes(state.Notes, cfg.Notes)
 	for i := range rows {
-		if note, ok := cache[normalizeBeerName(rows[i].Name)]; ok && note != "" {
+		if note, ok := findNote(notes, rows[i].Name); ok {
 			rows[i].Notes = note
 		}
 	}

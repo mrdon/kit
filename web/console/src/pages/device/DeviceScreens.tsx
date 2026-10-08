@@ -60,7 +60,7 @@ export default function DeviceScreens() {
   }
 
   return (
-    <div className="page">
+    <div className="page device-wide">
       <div className="page-head">
         <nav className="crumbs">
           <Link to="/">Home</Link>

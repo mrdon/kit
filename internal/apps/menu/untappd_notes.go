@@ -177,8 +177,7 @@ func AttachNotes(ctx context.Context, client *http.Client, brand string,
 	rows []Beer, cache map[string]string) (map[string]string, []string, error) {
 	todo := make([]int, 0, len(rows))
 	for i := range rows {
-		key := normalizeBeerName(rows[i].Name)
-		if note, ok := cache[key]; ok && note != "" {
+		if note, ok := findNote(cache, rows[i].Name); ok {
 			rows[i].Notes = note
 			continue
 		}

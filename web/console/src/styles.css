@@ -2579,3 +2579,10 @@ h2.view-title:hover {
   border: 0;
   background: #525659;
 }
+
+/* Device pages whose cards hold an input: the card's main column takes the
+   whole width, so a description box is as wide as the screen allows rather
+   than as wide as its placeholder. */
+.device-wide .card-main {
+  flex: 1 1 auto;
+}

@@ -391,7 +391,7 @@ func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 			len(state.Rows), state.SyncedAt.Format("2 Jan 2006 15:04 MST"))
 		var missing []string
 		for _, r := range state.Rows {
-			if strings.TrimSpace(cfg.Notes[r.Name]) == "" && strings.TrimSpace(state.Notes[normalizeBeerName(r.Name)]) == "" {
+			if _, ok := findNote(mergedNotes(state.Notes, cfg.Notes), r.Name); !ok {
 				missing = append(missing, r.Name)
 			}
 		}

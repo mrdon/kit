@@ -199,6 +199,7 @@ func (a *App) printPayload(ctx context.Context, slug string, tenantID uuid.UUID,
 
 // printBeers resolves each synced row to what the paper will actually say.
 func printBeers(state *PrintState) []printBeer {
+	written := foldNotes(state.Config.Notes)
 	out := make([]printBeer, 0, len(state.Rows))
 	for _, r := range state.Rows {
 		b := printBeer{
@@ -206,16 +207,16 @@ func printBeers(state *PrintState) []printBeer {
 			Name:    r.Name,
 			Style:   tidyStyle(r.Style),
 			ABV:     tidyABV(r.ABV),
-			Note:    state.Notes[normalizeBeerName(r.Name)],
 		}
+		b.Note, _ = findNote(state.Notes, r.Name)
 		if pour, ok := r.Headline(); ok {
 			b.Price = money(pour.Price)
 		}
 		// Hand-written wins, and says so -- the page marks it, because "this
 		// is your copy, Untappd will not overwrite it" is the whole reason the
 		// layer exists.
-		if written := lookupFold(state.Config.Notes, r.Name); written != "" {
-			b.Note, b.Written = written, true
+		if note, ok := findNote(written, r.Name); ok {
+			b.Note, b.Written = note, true
 		}
 		out = append(out, b)
 	}

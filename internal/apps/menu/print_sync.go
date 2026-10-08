@@ -103,12 +103,10 @@ func SyncPrintMenu(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 
 	// Descriptions. Hand-written ones are folded in as though already cached,
 	// so they both win and stop Untappd being asked about that beer at all.
-	cache := state.Notes
-	for name, note := range state.Config.Notes {
-		if strings.TrimSpace(note) != "" {
-			cache[normalizeBeerName(name)] = note
-		}
-	}
+	// Nothing here removes a stored description: a sync adds what it can
+	// fetch and leaves the rest alone, so a 403 from untappd.com costs new
+	// prose, never old.
+	cache := mergedNotes(state.Notes, state.Config.Notes)
 	if brand := strings.TrimSpace(state.Config.Brand); brand == "" {
 		rep.NotesError = "no Untappd brewery slug set, so no descriptions were fetched"
 		applyNotes(rows, cache)
@@ -148,7 +146,7 @@ func applyNotes(rows []Beer, cache map[string]string) {
 		if strings.TrimSpace(rows[i].Notes) != "" {
 			continue
 		}
-		if note, ok := cache[normalizeBeerName(rows[i].Name)]; ok {
+		if note, ok := findNote(cache, rows[i].Name); ok {
 			rows[i].Notes = note
 		}
 	}

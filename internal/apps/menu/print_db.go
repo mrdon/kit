@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -231,6 +232,47 @@ func DeletePrintNotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUI
 		  WHERE tenant_id = $1`, tenantID, keys)
 	if err != nil {
 		return fmt.Errorf("clearing print notes: %w", err)
+	}
+	return nil
+}
+
+// SetPrintNote writes one hand-typed description into config.notes, the
+// layer that wins over anything scraped and survives every sync. It is
+// keyed by the name exactly as the board shows it, and any older entry
+// that folds to the same beer ("Mr Radar Nitro" beside "Mr. Radar (Nitro)")
+// is replaced rather than left to fight it. Empty text removes the entry,
+// letting a stored description show through again.
+//
+// Only the notes object is rewritten, so a concurrent save of the rest of
+// the print config from the settings page is not clobbered.
+func SetPrintNote(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name, text string) error {
+	state, err := LoadPrintState(ctx, pool, tenantID)
+	if err != nil {
+		return err
+	}
+	notes := make(map[string]string, len(state.Config.Notes)+1)
+	key := normalizeBeerNameFull(name)
+	for k, v := range state.Config.Notes {
+		if normalizeBeerNameFull(k) != key {
+			notes[k] = v
+		}
+	}
+	if text = strings.TrimSpace(text); text != "" {
+		notes[strings.TrimSpace(name)] = text
+	}
+	raw, err := json.Marshal(notes)
+	if err != nil {
+		return fmt.Errorf("encoding print notes: %w", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO app_menu_print (tenant_id, config)
+		VALUES ($1, jsonb_build_object('notes', $2::jsonb))
+		ON CONFLICT (tenant_id) DO UPDATE
+		SET config = jsonb_set(coalesce(app_menu_print.config, '{}'::jsonb), '{notes}', $2::jsonb),
+		    updated_at = NOW()`,
+		tenantID, raw)
+	if err != nil {
+		return fmt.Errorf("saving print note: %w", err)
 	}
 	return nil
 }
