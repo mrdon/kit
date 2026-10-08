@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
 )
 
@@ -74,7 +75,7 @@ func (s *WidgetTokenService) Create(ctx context.Context, c *Caller, allowedOrigi
 	if err != nil {
 		return nil, fmt.Errorf("generating token: %w", err)
 	}
-	hash := models.HashWidgetToken(plaintext)
+	hash := opaquetoken.Sum(plaintext)
 	row, err := models.CreateWidgetToken(ctx, s.pool, c.TenantID, c.UserID, hash, allowedOrigins)
 	if err != nil {
 		return nil, err

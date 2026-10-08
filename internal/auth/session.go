@@ -2,9 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,25 +13,40 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
+	"github.com/mrdon/kit/internal/auth/signedlink"
 	"github.com/mrdon/kit/internal/models"
 )
 
-// Session cookies are signed with HMAC-SHA256 using a process-local key
-// loaded from KIT_SESSION_SECRET. We do not yet support rotation; a fresh
-// key invalidates every outstanding session (per the plan's open question).
+// Session cookies are signed with HMAC-SHA256 using a key derived from
+// KIT_SESSION_SECRET (or ENCRYPTION_KEY). There is no rotation: a fresh key
+// invalidates every outstanding session.
 //
-// The cookie value is `<api_token_id>.<hmac(api_token_id)>`. The `api_tokens`
-// row it points at is the same kind issued to MCP clients — this lets the
-// middleware reuse the same resolveToken path as BearerMiddleware.
+// The cookie carries the RAW api token (the same "kit_..." bearer secret an
+// MCP client would hold), wrapped in a signedlink envelope. The signature
+// lets a tampered or forged cookie fail before it costs a database lookup;
+// the `api_tokens` row found by hashing the raw token is what actually
+// authenticates, so logout (which deletes the row) ends the session even if
+// the cookie is replayed. Session cookies and MCP bearer tokens therefore
+// share one resolver, resolveToken.
 //
-// CSRF: the cookie is set with SameSite=Lax, Secure=true, HttpOnly=true.
-// All /api/v1 endpoints speak JSON and reject any Content-Type other than
-// application/json, which closes the simple-request CSRF hole (browsers
-// send a CORS preflight for non-simple content types).
+// Rows past expires_at are swept by the "system.token_reaper" scheduled
+// task; until then an expired row is simply ignored by LookupAPIToken.
+//
+// CSRF: the cookie is set with SameSite=Lax, Secure=true, HttpOnly=true,
+// and every state-changing route runs behind RequireCSRF (csrf.go).
 
 const (
 	SessionCookieName = "kit_session"
-	sessionMaxAge     = 30 * 24 * time.Hour // 30 days; reaper runs on api_tokens.expires_at
+	sessionMaxAge     = 30 * 24 * time.Hour
+
+	// sessionPurpose domain-separates the cookie key from every other
+	// signedlink user sharing the secret. v2 was the per-workspace Path
+	// migration; v3 is the move onto the signedlink wire format.
+	sessionPurpose = "kit-session-cookie-v3"
+
+	// apiTokenPrefix marks a Kit bearer secret in logs and pastes.
+	apiTokenPrefix = "kit_"
 )
 
 // ErrSessionMisconfigured is returned when no signing key is available.
@@ -42,24 +54,19 @@ var ErrSessionMisconfigured = errors.New("KIT_SESSION_SECRET is not set")
 
 // SessionSigner issues and verifies session cookies.
 type SessionSigner struct {
-	key []byte
+	link *signedlink.Signer
 }
 
 // NewSessionSigner creates a signer from a raw secret string. Returns
-// ErrSessionMisconfigured if the secret is empty. The input is SHA256'd
-// with a fixed purpose prefix ("kit-session-cookie-v2") so it is safe to
-// reuse existing high-entropy key material (e.g. ENCRYPTION_KEY) as the
-// source — a compromise of the derived HMAC key doesn't leak the source.
-//
-// The v2 prefix was bumped during the per-workspace PWA URL migration to
-// invalidate outstanding v1 cookies (they were issued at Path=/ and would
-// otherwise still be accepted under the new Path=/{slug}/ regime).
+// ErrSessionMisconfigured if the secret is empty. The secret is never used
+// directly: signedlink derives a purpose-specific key from it, so reusing
+// ENCRYPTION_KEY as the source is safe.
 func NewSessionSigner(secret string) (*SessionSigner, error) {
-	if strings.TrimSpace(secret) == "" {
+	link, err := signedlink.New(secret, sessionPurpose)
+	if err != nil {
 		return nil, ErrSessionMisconfigured
 	}
-	h := sha256.Sum256([]byte("kit-session-cookie-v2:" + secret))
-	return &SessionSigner{key: h[:]}, nil
+	return &SessionSigner{link: link}, nil
 }
 
 // Issue mints a new `api_tokens` row bound to (tenant, user) and writes a
@@ -82,7 +89,7 @@ func (s *SessionSigner) IssueWithTTL(ctx context.Context, w http.ResponseWriter,
 	if path == "" {
 		path = "/"
 	}
-	raw, hash, err := models.GenerateToken()
+	raw, hash, err := opaquetoken.New(apiTokenPrefix)
 	if err != nil {
 		return fmt.Errorf("generating token: %w", err)
 	}
@@ -122,7 +129,7 @@ func (s *SessionSigner) IssueWithTTL(ctx context.Context, w http.ResponseWriter,
 // no-ops on missing cookie.
 func (s *SessionSigner) Revoke(ctx context.Context, w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, path string) {
 	if raw, ok := s.extractToken(r); ok {
-		hash := models.HashToken(raw)
+		hash := opaquetoken.Hash(raw)
 		if err := models.DeleteAPIToken(ctx, pool, hash); err != nil {
 			slog.Warn("deleting api token during revoke", "error", err)
 		}
@@ -254,13 +261,12 @@ func wantsHTML(r *http.Request) bool {
 	return false
 }
 
-// signValue appends an HMAC tag so a tampered cookie fails the MAC check
-// without even hitting the DB.
+// signValue wraps the raw token so a tampered cookie fails the MAC check
+// without even hitting the DB. No TTL in the envelope: the api_tokens row's
+// expires_at is the one lifetime, which keeps a later sliding renewal to a
+// single UPDATE.
 func (s *SessionSigner) signValue(raw string) string {
-	mac := hmac.New(sha256.New, s.key)
-	mac.Write([]byte(raw))
-	tag := hex.EncodeToString(mac.Sum(nil))
-	return raw + "." + tag
+	return s.link.Sign([]byte(raw), 0)
 }
 
 // extractToken verifies the HMAC and returns the raw api-token on success.
@@ -269,16 +275,9 @@ func (s *SessionSigner) extractToken(r *http.Request) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	parts := strings.SplitN(c.Value, ".", 2)
-	if len(parts) != 2 {
+	tok, err := s.link.Verify(c.Value)
+	if err != nil {
 		return "", false
 	}
-	raw, gotTag := parts[0], parts[1]
-	mac := hmac.New(sha256.New, s.key)
-	mac.Write([]byte(raw))
-	wantTag := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(gotTag), []byte(wantTag)) {
-		return "", false
-	}
-	return raw, true
+	return string(tok.Payload), true
 }

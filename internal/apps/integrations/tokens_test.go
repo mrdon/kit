@@ -9,89 +9,61 @@ import (
 )
 
 func TestSignVerifyRoundTrip(t *testing.T) {
-	key := deriveTokenKey("a-test-secret-definitely-long-enough")
-	if len(key) == 0 {
-		t.Fatal("derived key is empty")
+	signer := newTokenSigner("a-test-secret-definitely-long-enough")
+	if signer == nil {
+		t.Fatal("signer is nil")
 	}
-	payload := tokenPayload{
-		PendingID: uuid.New(),
-		TenantID:  uuid.New(),
-		ExpiresAt: time.Now().Add(5 * time.Minute).Unix(),
-	}
-	encoded := signToken(key, payload)
-	got, err := verifyToken(key, encoded)
+	payload := tokenPayload{PendingID: uuid.New(), TenantID: uuid.New()}
+	encoded := signToken(signer, payload, time.Now().Add(5*time.Minute))
+	got, err := verifyToken(signer, encoded)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if got.PendingID != payload.PendingID {
-		t.Errorf("pending id mismatch")
-	}
-	if got.TenantID != payload.TenantID {
-		t.Errorf("tenant id mismatch")
-	}
-	if got.ExpiresAt != payload.ExpiresAt {
-		t.Errorf("expires mismatch")
+	if got != payload {
+		t.Errorf("payload mismatch: got %+v want %+v", got, payload)
 	}
 }
 
 func TestVerifyRejectsTamperedMac(t *testing.T) {
-	key := deriveTokenKey("secret")
-	encoded := signToken(key, tokenPayload{
-		PendingID: uuid.New(),
-		TenantID:  uuid.New(),
-		ExpiresAt: time.Now().Add(time.Minute).Unix(),
-	})
-	// Flip one char in the MAC portion.
+	signer := newTokenSigner("secret")
+	encoded := signToken(signer, tokenPayload{PendingID: uuid.New(), TenantID: uuid.New()}, time.Now().Add(time.Minute))
 	parts := strings.SplitN(encoded, ".", 2)
 	tampered := parts[0] + "." + "XX" + parts[1][2:]
-	if _, err := verifyToken(key, tampered); err == nil {
+	if _, err := verifyToken(signer, tampered); err == nil {
 		t.Fatal("expected mac mismatch, got nil")
 	}
 }
 
 func TestVerifyRejectsTamperedPayload(t *testing.T) {
-	key := deriveTokenKey("secret")
-	encoded := signToken(key, tokenPayload{
-		PendingID: uuid.New(),
-		TenantID:  uuid.New(),
-		ExpiresAt: time.Now().Add(time.Minute).Unix(),
-	})
+	signer := newTokenSigner("secret")
+	encoded := signToken(signer, tokenPayload{PendingID: uuid.New(), TenantID: uuid.New()}, time.Now().Add(time.Minute))
 	parts := strings.SplitN(encoded, ".", 2)
-	// Re-encode with a different payload prefix to force a MAC mismatch.
-	tampered := "AAAAAAAA" + parts[0][8:] + "." + parts[1]
-	if _, err := verifyToken(key, tampered); err == nil {
+	tampered := "AAAAAAAAAAAAAAAA" + parts[0][16:] + "." + parts[1]
+	if _, err := verifyToken(signer, tampered); err == nil {
 		t.Fatal("expected mac mismatch on tampered payload, got nil")
 	}
 }
 
 func TestVerifyRejectsExpired(t *testing.T) {
-	key := deriveTokenKey("secret")
-	encoded := signToken(key, tokenPayload{
-		PendingID: uuid.New(),
-		TenantID:  uuid.New(),
-		ExpiresAt: time.Now().Add(-1 * time.Second).Unix(),
-	})
-	if _, err := verifyToken(key, encoded); err == nil {
+	signer := newTokenSigner("secret")
+	encoded := signToken(signer, tokenPayload{PendingID: uuid.New(), TenantID: uuid.New()}, time.Now().Add(-1*time.Second))
+	if _, err := verifyToken(signer, encoded); err == nil {
 		t.Fatal("expected expired error, got nil")
 	}
 }
 
 func TestVerifyRejectsDifferentKey(t *testing.T) {
-	encoded := signToken(deriveTokenKey("secret-a"), tokenPayload{
-		PendingID: uuid.New(),
-		TenantID:  uuid.New(),
-		ExpiresAt: time.Now().Add(time.Minute).Unix(),
-	})
-	if _, err := verifyToken(deriveTokenKey("secret-b"), encoded); err == nil {
+	encoded := signToken(newTokenSigner("secret-a"), tokenPayload{PendingID: uuid.New(), TenantID: uuid.New()}, time.Now().Add(time.Minute))
+	if _, err := verifyToken(newTokenSigner("secret-b"), encoded); err == nil {
 		t.Fatal("different-key verify should fail")
 	}
 }
 
-func TestDeriveKeyEmptySecret(t *testing.T) {
-	if key := deriveTokenKey(""); key != nil {
-		t.Errorf("empty secret should return nil key")
+func TestNewTokenSignerEmptySecret(t *testing.T) {
+	if newTokenSigner("") != nil {
+		t.Errorf("empty secret should return nil signer")
 	}
-	if key := deriveTokenKey("   "); key != nil {
-		t.Errorf("whitespace-only secret should return nil key")
+	if newTokenSigner("   ") != nil {
+		t.Errorf("whitespace-only secret should return nil signer")
 	}
 }

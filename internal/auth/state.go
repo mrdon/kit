@@ -1,19 +1,23 @@
 package auth
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
+	"time"
+
+	"github.com/mrdon/kit/internal/auth/signedlink"
 )
 
 // State encoding: we pack the MCP client's OAuth params into Slack's state parameter
 // so we can recover them after Slack redirects back to us. The payload is signed
-// with HMAC-SHA256 so an attacker can't swap the tenant slug or redirect URI
-// between authorize and callback.
+// (signedlink, purpose "kit-oauth-state-v2") so an attacker can't swap the
+// tenant slug or redirect URI between authorize and callback, and expires so
+// a captured state can't start a flow a day later.
+
+const (
+	oauthStatePurpose = "kit-oauth-state-v2"
+	oauthStateTTL     = 10 * time.Minute
+)
 
 type oauthState struct {
 	ClientID      string `json:"c"`
@@ -23,48 +27,32 @@ type oauthState struct {
 	TenantSlug    string `json:"t,omitempty"`
 }
 
-// deriveStateKey derives a dedicated HMAC key from a shared secret with a
-// purpose prefix so compromise of the derived key does not leak the source.
-func deriveStateKey(secret string) []byte {
-	if strings.TrimSpace(secret) == "" {
+// newStateSigner derives the state signer from the shared secret. Returns
+// nil on an empty secret so the caller can refuse to start.
+func newStateSigner(secret string) *signedlink.Signer {
+	s, err := signedlink.New(secret, oauthStatePurpose)
+	if err != nil {
 		return nil
 	}
-	h := sha256.Sum256([]byte("kit-oauth-state-v1:" + secret))
-	return h[:]
+	return s
 }
 
-// encodeState marshals and HMAC-signs an oauthState. Output is
-// `<base64url(json)>.<base64url(mac)>`.
-func encodeState(key []byte, s oauthState) string {
+// encodeState marshals and signs an oauthState.
+func encodeState(signer *signedlink.Signer, s oauthState) string {
 	b, _ := json.Marshal(s)
-	payload := base64.RawURLEncoding.EncodeToString(b)
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(payload))
-	tag := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return payload + "." + tag
+	return signer.Sign(b, oauthStateTTL)
 }
 
-// decodeState verifies the HMAC tag and unmarshals the payload. Missing
-// `TenantSlug` is tolerated (empty string returned) so callers can surface
-// a clear error instead of panicking on stale in-flight flows.
-func decodeState(key []byte, encoded string) (oauthState, error) {
-	parts := strings.SplitN(encoded, ".", 2)
-	if len(parts) != 2 {
-		return oauthState{}, errors.New("state missing mac")
-	}
-	payload, gotTag := parts[0], parts[1]
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(payload))
-	wantTag := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(gotTag), []byte(wantTag)) {
-		return oauthState{}, errors.New("state mac mismatch")
-	}
-	b, err := base64.RawURLEncoding.DecodeString(payload)
+// decodeState verifies the signature and expiry and unmarshals the payload.
+// Missing `TenantSlug` is tolerated (empty string returned) so callers can
+// surface a clear error instead of panicking on stale in-flight flows.
+func decodeState(signer *signedlink.Signer, encoded string) (oauthState, error) {
+	tok, err := signer.Verify(encoded)
 	if err != nil {
-		return oauthState{}, fmt.Errorf("decoding base64: %w", err)
+		return oauthState{}, fmt.Errorf("verifying state: %w", err)
 	}
 	var s oauthState
-	if err := json.Unmarshal(b, &s); err != nil {
+	if err := json.Unmarshal(tok.Payload, &s); err != nil {
 		return oauthState{}, fmt.Errorf("unmarshaling state: %w", err)
 	}
 	return s, nil

@@ -1,8 +1,8 @@
 import { SLUG } from '../../workspace';
 
 // The vault JSON API lives under the shared /{slug}/api/... namespace
-// (like every other feature app) and gates on the X-Kit-Vault CSRF header
-// (NOT X-Kit-Web — vault keeps its own header). Only the reveal bridge
+// (like every other feature app) and gates on the shared X-Kit-Web CSRF
+// header like every other console API. Only the reveal bridge
 // still lives under /apps/vault.
 const API_BASE = `/${SLUG}/api/vault`;
 
@@ -16,7 +16,7 @@ export async function vaultApi<T = any>(
     method,
     credentials: 'same-origin',
     headers: {
-      'X-Kit-Vault': '1',
+      'X-Kit-Web': '1',
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : null,

@@ -4,26 +4,18 @@ package vault
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 )
 
-// csrfHeader is the custom request header every state-changing vault
-// route requires. The session cookie is SameSite=Lax (top-level GET
-// navigations carry it), so the custom header is the actual CSRF
-// defense — cross-origin requests can't set a custom header without a
-// preflight, and we don't allow other origins.
-const csrfHeader = "X-Kit-Vault"
-
 // registerVaultRoutes wires all /{slug}/apps/vault/... routes onto the
 // mux. Each route runs through the same middleware chain as the cards
 // stack:
 //
 //	tenantMW (resolves slug → tenant)
-//	→ requireJSON or requireCSRFHeader (CSRF defense)
+//	→ auth.RequireCSRF (CSRF defense on state-changing methods)
 //	→ signer.Middleware (resolves session cookie → Caller)
 //	→ AssertTenantMatch (rejects if cookie tenant ≠ path tenant)
 //	→ requireCaller (refuses if no Caller landed in ctx)
@@ -33,8 +25,8 @@ const csrfHeader = "X-Kit-Vault"
 // tenantMW and signer.Middleware so a Slack-issued one-shot token can
 // mint a session without requiring an OAuth round-trip.
 //
-// HTML page routes (GET /vault/register etc.) skip the JSON / CSRF gate
-// since they're plain navigations.
+// HTML page routes (GET /vault/register etc.) skip the CSRF gate since
+// they're plain navigations.
 func registerVaultRoutes(mux apps.Mux, a *App) {
 	if a.signer == nil {
 		// Without a signer we can't authenticate anything; refuse to
@@ -78,12 +70,12 @@ func registerVaultRoutes(mux apps.Mux, a *App) {
 		}
 	}
 
-	// JSON state-changing API: tenant + JSON content-type + session.
+	// JSON state-changing API: tenant + CSRF + session.
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(requireJSON(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
+		return tenantMW(auth.RequireCSRF(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
 	}
 
-	// JSON GET API: tenant + session, no JSON gate (GETs have no body).
+	// JSON GET API: tenant + session, no CSRF gate (GETs have no body).
 	get := func(h http.HandlerFunc) http.Handler {
 		return tenantMW(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h))))
 	}
@@ -144,38 +136,6 @@ func registerVaultRoutes(mux apps.Mux, a *App) {
 	mux.Handle("PUT /{slug}/api/vault/entries/{entry_id}", wrap(a.handleUpdateEntry))
 	mux.Handle("PUT /{slug}/api/vault/entries/{entry_id}/role", wrap(a.handleSetEntryRole))
 	mux.Handle("DELETE /{slug}/api/vault/entries/{entry_id}", wrap(a.handleDeleteEntry))
-}
-
-// requireJSON rejects state-changing requests that lack BOTH the
-// X-Kit-Vault header (custom-header CSRF defense) AND, for requests with
-// a body, application/json Content-Type. The combination guards against:
-//   - Cross-origin form POSTs (browsers force form-encoded, which fails
-//     the JSON check)
-//   - Cross-origin <img>/<script> GET-with-side-effects (none of our
-//     routes use GET to mutate)
-//   - Anything that can't set custom headers without a CORS preflight
-//     (custom headers are forbidden by simple-request rules; preflight
-//     fails because we don't allow other origins)
-func requireJSON(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost, http.MethodPut, http.MethodDelete:
-			if r.Header.Get(csrfHeader) != "1" {
-				http.Error(w, "missing "+csrfHeader+" header", http.StatusUnsupportedMediaType)
-				return
-			}
-			// Bodyless DELETE doesn't need a content type; everything
-			// else must be JSON.
-			if r.Method != http.MethodDelete || r.ContentLength != 0 {
-				ct := r.Header.Get("Content-Type")
-				if !strings.HasPrefix(ct, "application/json") {
-					http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-					return
-				}
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // requireCallerHandler refuses requests where the upstream session

@@ -16,6 +16,7 @@ import (
 
 	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/anthropic"
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -59,7 +60,7 @@ func (s *Service) Authenticate(ctx context.Context, plaintext, origin string) (*
 	if plaintext == "" {
 		return nil, ErrTokenInvalid
 	}
-	hash := models.HashWidgetToken(plaintext)
+	hash := opaquetoken.Sum(plaintext)
 	tok, err := models.FindWidgetTokenByHash(ctx, s.pool, hash)
 	if err != nil {
 		return nil, fmt.Errorf("looking up widget token: %w", err)

@@ -336,11 +336,11 @@ func firstWord(s string) string {
 // verifyAndLoad checks the HMAC, TTL, tenant binding, and pending-row
 // existence in one place. Returns the pending row + TypeSpec on success.
 func (a *App) verifyAndLoad(ctx context.Context, tenantID uuid.UUID, token string) (*models.PendingIntegration, TypeSpec, error) {
-	key := deriveTokenKey(a.tokenSecret())
-	if len(key) == 0 {
+	signer := newTokenSigner(a.tokenSecret())
+	if signer == nil {
 		return nil, TypeSpec{}, errors.New("server not configured to verify setup links")
 	}
-	payload, err := verifyToken(key, token)
+	payload, err := verifyToken(signer, token)
 	if err != nil {
 		return nil, TypeSpec{}, fmt.Errorf("invalid token: %w", err)
 	}

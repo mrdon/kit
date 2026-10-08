@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"slices"
@@ -26,12 +25,6 @@ type WidgetToken struct {
 	CreatedAt      time.Time
 	LastUsedAt     *time.Time
 	RevokedAt      *time.Time
-}
-
-// HashWidgetToken hashes a plaintext token for storage and lookup.
-func HashWidgetToken(plaintext string) []byte {
-	h := sha256.Sum256([]byte(plaintext))
-	return h[:]
 }
 
 // CreateWidgetToken stores the hash and returns the row. The caller is

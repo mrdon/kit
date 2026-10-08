@@ -37,7 +37,25 @@ func (s *Scheduler) registerSystemTasks() {
 			return nil
 		},
 	})
+	RegisterScheduledTask(ScheduledTask{
+		Key:         "system.token_reaper",
+		Description: "Sweep expired sessions and API tokens",
+		DefaultCron: "30 4 * * *",
+		Run: func(ctx context.Context, job models.Job) error {
+			n, err := models.DeleteExpiredAPITokens(ctx, s.pool, job.TenantID, expiredTokenGrace)
+			if err != nil {
+				return err
+			}
+			slog.Info("swept expired api tokens", "tenant_id", job.TenantID, "deleted", n)
+			return nil
+		},
+	})
 }
+
+// expiredTokenGrace is how long an expired api_tokens row lingers before
+// the reaper deletes it. Lookups already ignore expired rows, so this only
+// decides how long "when did that session end" stays answerable.
+const expiredTokenGrace = 7 * 24 * time.Hour
 
 // ExecuteBuiltinTask runs a registered task's handler and records the
 // outcome. Exported so the MCP run_job tool can trigger one directly.

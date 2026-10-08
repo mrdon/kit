@@ -67,7 +67,7 @@ func TestDeepLinkSignerRejectsExpired(t *testing.T) {
 	s := newTestSigner(t)
 	// Pin signing time so we control expiry deterministically.
 	now := time.Unix(1_700_000_000, 0)
-	s.now = func() time.Time { return now }
+	s.link.Now = func() time.Time { return now }
 
 	tok, err := s.Sign(uuid.New(), uuid.New(), uuid.New(), 1*time.Second)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestDeepLinkSignerRejectsExpired(t *testing.T) {
 	}
 
 	// Verify at +2s — past the 1s TTL.
-	s.now = func() time.Time { return now.Add(2 * time.Second) }
+	s.link.Now = func() time.Time { return now.Add(2 * time.Second) }
 
 	_, err = s.Verify(tok)
 	var ve *VerifyError

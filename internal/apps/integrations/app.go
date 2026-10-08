@@ -104,19 +104,15 @@ func (a *App) buildSetupURL(ctx context.Context, p *models.PendingIntegration) (
 	if a.baseURL == "" {
 		return "", errors.New("integrations base URL not configured")
 	}
-	key := deriveTokenKey(a.tokenSecret())
-	if len(key) == 0 {
+	signer := newTokenSigner(a.tokenSecret())
+	if signer == nil {
 		return "", errors.New("integrations signing secret not configured")
 	}
 	slug, err := tenantSlug(ctx, a.pool, p.TenantID)
 	if err != nil {
 		return "", err
 	}
-	tok := signToken(key, tokenPayload{
-		PendingID: p.ID,
-		TenantID:  p.TenantID,
-		ExpiresAt: p.ExpiresAt.Unix(),
-	})
+	tok := signToken(signer, tokenPayload{PendingID: p.ID, TenantID: p.TenantID}, p.ExpiresAt)
 	return fmt.Sprintf("%s/%s/integrations/setup?token=%s", a.baseURL, slug, tok), nil
 }
 

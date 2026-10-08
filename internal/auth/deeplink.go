@@ -1,19 +1,17 @@
 package auth
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/mrdon/kit/internal/auth/signedlink"
 )
 
 // DeepLinkSigner mints and verifies short-lived, single-use tokens that
@@ -22,17 +20,16 @@ import (
 // that accepts it mints a normal session cookie on consumption. See plan
 // wild-enchanting-dove.md for the full design.
 //
-// Wire form: base64url(payload).base64url(sig). Payload is compact JSON:
-// {u, t, e, x, j}. Signature is HMAC-SHA256 over the raw payload bytes.
-//
-// The signing key is derived from the same secret as the session cookie
-// (KIT_SESSION_SECRET) but with a different SHA256 purpose prefix so the
-// auth-domain (cookies) and deep-link-domain (URL tokens) stay separable.
+// The token is a signedlink envelope (purpose "vault-deeplink-v2") around
+// compact JSON {u, t, e, j}; the expiry lives in the envelope. The signing
+// key is derived from the same secret as the session cookie but with its
+// own purpose, so the cookie domain and the URL-token domain stay separable.
 type DeepLinkSigner struct {
-	key []byte
-	jti *jtiStore
-	now func() time.Time
+	link *signedlink.Signer
+	jti  *jtiStore
 }
+
+const deepLinkPurpose = "vault-deeplink-v2"
 
 // DeepLinkReason describes a verify-failure reason. Exposed so callers
 // can route specific reasons to specific user-facing errors and audit
@@ -71,7 +68,6 @@ type rawPayload struct {
 	U string `json:"u"` // user uuid hex (no dashes)
 	T string `json:"t"` // tenant uuid hex
 	E string `json:"e"` // entry uuid hex
-	X int64  `json:"x"` // exp unix seconds
 	J string `json:"j"` // jti hex (16 bytes)
 }
 
@@ -80,16 +76,18 @@ type rawPayload struct {
 // if the secret is empty so a mis-wired startup fails loudly instead of
 // minting tokens that anyone could forge.
 func NewDeepLinkSigner(secret string) (*DeepLinkSigner, error) {
-	if strings.TrimSpace(secret) == "" {
+	link, err := signedlink.New(secret, deepLinkPurpose)
+	if err != nil {
 		return nil, ErrSessionMisconfigured
 	}
-	h := sha256.Sum256([]byte("vault-deeplink-v1:" + secret))
 	return &DeepLinkSigner{
-		key: h[:],
-		jti: newJTIStore(10000, 5*time.Minute),
-		now: time.Now,
+		link: link,
+		jti:  newJTIStore(10000, 5*time.Minute),
 	}, nil
 }
+
+// now is the signer's clock; tests pin it through the signedlink signer.
+func (s *DeepLinkSigner) now() time.Time { return s.link.Now() }
 
 // Sign returns a wire-format token bound to (user, tenant, entry) with
 // the given TTL. A fresh random jti is generated. Callers must publish
@@ -104,15 +102,13 @@ func (s *DeepLinkSigner) Sign(userID, tenantID, entryID uuid.UUID, ttl time.Dura
 		U: hex.EncodeToString(userID[:]),
 		T: hex.EncodeToString(tenantID[:]),
 		E: hex.EncodeToString(entryID[:]),
-		X: s.now().Add(ttl).Unix(),
 		J: hex.EncodeToString(jti[:]),
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("deeplink marshal: %w", err)
 	}
-	sig := s.macOf(body)
-	return base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(sig), nil
+	return s.link.Sign(body, ttl), nil
 }
 
 // Verify parses a wire-format token, checks the HMAC, and checks the
@@ -145,27 +141,15 @@ func (s *DeepLinkSigner) VerifySignature(token string) (*Claims, error) {
 }
 
 func (s *DeepLinkSigner) verifySignature(token string) (*Claims, error) {
-	if token == "" {
-		return nil, &VerifyError{Reason: DeepLinkMalformed}
-	}
-	parts := strings.SplitN(token, ".", 2)
-	if len(parts) != 2 {
-		return nil, &VerifyError{Reason: DeepLinkMalformed}
-	}
-	body, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil, &VerifyError{Reason: DeepLinkMalformed}
-	}
-	gotSig, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, &VerifyError{Reason: DeepLinkMalformed}
-	}
-	wantSig := s.macOf(body)
-	if !hmac.Equal(gotSig, wantSig) {
+	tok, err := s.link.Decode(token)
+	switch {
+	case errors.Is(err, signedlink.ErrBadSignature):
 		return nil, &VerifyError{Reason: DeepLinkBadSig}
+	case err != nil:
+		return nil, &VerifyError{Reason: DeepLinkMalformed}
 	}
 	var p rawPayload
-	if err := json.Unmarshal(body, &p); err != nil {
+	if err := json.Unmarshal(tok.Payload, &p); err != nil {
 		return nil, &VerifyError{Reason: DeepLinkMalformed}
 	}
 	userID, err := parseHexUUID(p.U)
@@ -184,7 +168,7 @@ func (s *DeepLinkSigner) verifySignature(token string) (*Claims, error) {
 		UserID:   userID,
 		TenantID: tenantID,
 		EntryID:  entryID,
-		Expires:  time.Unix(p.X, 0),
+		Expires:  tok.ExpiresAt,
 		JTI:      p.J,
 	}, nil
 }
@@ -199,12 +183,6 @@ func (s *DeepLinkSigner) ConsumeJTI(jti string) error {
 		return &VerifyError{Reason: DeepLinkConsumed}
 	}
 	return nil
-}
-
-func (s *DeepLinkSigner) macOf(body []byte) []byte {
-	mac := hmac.New(sha256.New, s.key)
-	mac.Write(body)
-	return mac.Sum(nil)
 }
 
 // parseHexUUID accepts the raw 32-char hex form (no dashes) that Sign

@@ -6,7 +6,7 @@ import (
 )
 
 func TestStateRoundtrip(t *testing.T) {
-	key := deriveStateKey("test-secret-test-secret-test-secret")
+	key := newStateSigner("test-secret-test-secret-test-secret")
 	in := oauthState{
 		ClientID:      "cid-abc",
 		RedirectURI:   "https://example.com/cb",
@@ -25,7 +25,7 @@ func TestStateRoundtrip(t *testing.T) {
 }
 
 func TestStateTamperedMACRejected(t *testing.T) {
-	key := deriveStateKey("test-secret-test-secret-test-secret")
+	key := newStateSigner("test-secret-test-secret-test-secret")
 	encoded := encodeState(key, oauthState{ClientID: "c", RedirectURI: "r", TenantSlug: "acme"})
 	// Flip the last char of the MAC tag.
 	parts := strings.SplitN(encoded, ".", 2)
@@ -45,15 +45,15 @@ func TestStateTamperedMACRejected(t *testing.T) {
 }
 
 func TestStateDifferentKeyRejected(t *testing.T) {
-	encoded := encodeState(deriveStateKey("secret-a"), oauthState{ClientID: "c", TenantSlug: "acme"})
-	if _, err := decodeState(deriveStateKey("secret-b"), encoded); err == nil {
+	encoded := encodeState(newStateSigner("secret-a"), oauthState{ClientID: "c", TenantSlug: "acme"})
+	if _, err := decodeState(newStateSigner("secret-b"), encoded); err == nil {
 		t.Fatalf("expected decode with different key to fail")
 	}
 }
 
 func TestStateMissingTenantSlugTolerated(t *testing.T) {
 	// An older state shape without `t` should decode to an empty slug, not panic.
-	key := deriveStateKey("test-secret")
+	key := newStateSigner("test-secret")
 	encoded := encodeState(key, oauthState{ClientID: "c", RedirectURI: "r"})
 	out, err := decodeState(key, encoded)
 	if err != nil {

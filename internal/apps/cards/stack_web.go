@@ -43,18 +43,10 @@ func registerStackRoutes(mux apps.Mux, a *CardsApp) {
 		return
 	}
 	tenantMW := auth.TenantFromPath(a.pool)
+	// One CSRF rule for every shape these routes take: a JSON body, or
+	// multipart (audio, attachments) carrying the X-Kit-Web header.
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(requireJSON(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
-	}
-	// Chat transcribe takes multipart audio, so it uses the custom
-	// header CSRF wrapper instead of requireJSON.
-	wrapCSRF := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(requireCSRFHeader(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
-	}
-	// Chat execute is JSON for text-only turns and multipart (with the
-	// X-Kit-Chat header) when files are attached, so it accepts either.
-	wrapChat := func(h http.HandlerFunc) http.Handler {
-		return tenantMW(requireJSONOrCSRF(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
+		return tenantMW(auth.RequireCSRF(a.signer.Middleware(a.pool, auth.AssertTenantMatch(a.signer, requireCallerHandler(h)))))
 	}
 	mux.Handle("GET /{slug}/api/v1/stack", wrap(handleStackList))
 	mux.Handle("GET /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}", wrap(handleStackItemDetail))
@@ -62,12 +54,12 @@ func registerStackRoutes(mux apps.Mux, a *CardsApp) {
 	// Chat execute has two mounts pointing at the same handler: the
 	// card-scoped path fills source_app/kind/id and the quick-chat path
 	// leaves them empty (handler checks PathValue).
-	mux.Handle("POST /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}/chat/execute", wrapChat(a.handleChatExecute))
-	mux.Handle("POST /{slug}/api/v1/chat/quick/execute", wrapChat(a.handleChatExecute))
+	mux.Handle("POST /{slug}/api/v1/stack/items/{source_app}/{kind}/{id}/chat/execute", wrap(a.handleChatExecute))
+	mux.Handle("POST /{slug}/api/v1/chat/quick/execute", wrap(a.handleChatExecute))
 	// Transcribe is card-agnostic — one mount serves both card chat
 	// and quick chat. The callers just hit /chat/transcribe regardless
 	// of which sheet they're in.
-	mux.Handle("POST /{slug}/api/v1/chat/transcribe", wrapCSRF(a.handleChatTranscribe))
+	mux.Handle("POST /{slug}/api/v1/chat/transcribe", wrap(a.handleChatTranscribe))
 }
 
 // stackResponse is the wire type for GET /api/v1/stack.

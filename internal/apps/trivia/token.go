@@ -2,12 +2,11 @@ package trivia
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
 )
 
 // A team's identity is a random token held in an HttpOnly cookie, of which
@@ -27,22 +26,23 @@ const TeamCookieName = "kit_trivia"
 // after, short enough that a borrowed phone does not stay joined forever.
 const CookieMaxAge = 6 * 60 * 60
 
-// NewTeamToken mints a team's secret.
+// NewTeamToken mints a team's secret. A team is a participant, not an
+// actor with a Kit identity, so this stays its own cookie mechanism; the
+// random bytes and the hash come from the shared helper.
 func NewTeamToken() string {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	token, _, err := opaquetoken.New("")
+	if err != nil {
 		// crypto/rand failing is a broken machine. Returning an empty token
 		// makes the join fail loudly rather than issuing a guessable one.
 		return ""
 	}
-	return base64.RawURLEncoding.EncodeToString(b[:])
+	return token
 }
 
 // HashToken is what the database stores. The token itself never touches a row,
 // so a database dump is not a set of usable identities.
 func HashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	return opaquetoken.Hash(token)
 }
 
 // CookieValue packs the team id and its token into one cookie. The id is

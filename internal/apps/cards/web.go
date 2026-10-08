@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
 	webapp "github.com/mrdon/kit/web/app"
 )
@@ -229,7 +229,7 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	nonce, _, err := models.GenerateToken()
+	nonce, _, err := opaquetoken.New("")
 	if err != nil {
 		http.Error(w, "nonce error", http.StatusInternalServerError)
 		return
@@ -255,57 +255,6 @@ func (a *CardsApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	slackURL := auth.SlackAuthorizeURL(a.slack, a.baseURL+"/oauth/callback", "pwa:"+nonce, tenant.SlackTeamID, domain)
 	http.Redirect(w, r, slackURL, http.StatusFound)
-}
-
-// requireJSON rejects cross-origin simple-requests by insisting on
-// application/json for POSTs. GETs pass through.
-func requireJSON(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			ct := r.Header.Get("Content-Type")
-			if !strings.HasPrefix(ct, "application/json") {
-				http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-const csrfHeader = "X-Kit-Chat"
-
-// requireJSONOrCSRF accepts a POST that is EITHER application/json OR
-// carries the X-Kit-Chat: 1 header. Used by chat/execute, which sends
-// JSON for text-only turns and multipart/form-data (with the header)
-// when files are attached. Both shapes are CSRF-safe: a cross-origin
-// simple request can set neither an application/json Content-Type nor a
-// custom header without triggering a preflight. GETs pass through.
-func requireJSONOrCSRF(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			ct := r.Header.Get("Content-Type")
-			if !strings.HasPrefix(ct, "application/json") && r.Header.Get(csrfHeader) != "1" {
-				http.Error(w, "Content-Type must be application/json or "+csrfHeader+" header required", http.StatusUnsupportedMediaType)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// requireCSRFHeader enforces the X-Kit-Chat: 1 header on POSTs that
-// aren't JSON. Used for the voice transcribe endpoint which ships audio
-// as multipart/form-data. GETs pass through.
-func requireCSRFHeader(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			if r.Header.Get(csrfHeader) != "1" {
-				http.Error(w, "missing "+csrfHeader+" header", http.StatusUnsupportedMediaType)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // requireCallerHandler wraps a handler so it runs only if the session

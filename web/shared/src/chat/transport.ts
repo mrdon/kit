@@ -6,7 +6,7 @@
 
 // chatTranscribe uploads audio to the given URL and returns the fetch
 // Response whose body is an SSE stream of partial/final/error events.
-// The X-Kit-Chat header lifts the request out of the CORS "simple
+// The X-Kit-Web header lifts the request out of the CORS "simple
 // request" category so the server's CSRF check passes for multipart
 // bodies.
 export function chatTranscribe(
@@ -19,7 +19,7 @@ export function chatTranscribe(
   return fetch(url, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'X-Kit-Chat': '1' },
+    headers: { 'X-Kit-Web': '1' },
     body: form,
     signal,
   });
@@ -31,7 +31,7 @@ export function chatTranscribe(
 // card chat (the server keys on the card triple instead).
 //
 // When files are present the request is sent as multipart/form-data with
-// the X-Kit-Chat header (which lifts it out of the CORS "simple request"
+// the X-Kit-Web header (which lifts it out of the CORS "simple request"
 // category so the server's CSRF check passes) — the same shape audio
 // upload already uses. Otherwise it stays a plain JSON POST.
 export function chatExecute(
@@ -50,7 +50,7 @@ export function chatExecute(
     return fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'X-Kit-Chat': '1' },
+      headers: { 'X-Kit-Web': '1' },
       body: form,
       signal,
     });

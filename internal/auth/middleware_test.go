@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/testdb"
 )
@@ -111,7 +112,7 @@ func TestAssertBearerMatchesPathTenantNoTokenFallsThrough(t *testing.T) {
 
 func issueAPIToken(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) string {
 	t.Helper()
-	raw, hash, err := models.GenerateToken()
+	raw, hash, err := opaquetoken.New("kit_")
 	if err != nil {
 		t.Fatalf("generating token: %v", err)
 	}

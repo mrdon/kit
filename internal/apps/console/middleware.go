@@ -9,12 +9,9 @@ import (
 )
 
 // CSRFHeader is the custom header state-changing console requests must
-// carry. Requiring a custom header lifts the request out of the CORS
-// "simple request" category, which is the CSRF guard — the same pattern
-// as the cards app's X-Kit-Chat and vault's X-Kit-Vault. Exported so
-// feature apps registering their own /{slug}/web/api/... routes enforce
-// the same contract.
-const CSRFHeader = "X-Kit-Web"
+// carry. One header for every browser surface; the rule itself lives in
+// auth.RequireCSRF.
+const CSRFHeader = auth.CSRFHeader
 
 // PageRoute wraps a full-page console HTML route. auth.PageRoute marks it
 // as an HTML navigation so a missing/stale session 303-redirects to
@@ -33,7 +30,7 @@ func PageRoute(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFun
 func JSON(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFunc) http.Handler {
 	tenantMW := auth.TenantFromPath(pool)
 	return tenantMW(signer.Middleware(pool,
-		auth.AssertTenantMatch(signer, requireCSRF(requireCallerHandler(h)))))
+		auth.AssertTenantMatch(signer, auth.RequireCSRF(requireCallerHandler(h)))))
 }
 
 // AdminJSON is JSON plus an IsAdmin gate. Security lives here on the API;
@@ -41,22 +38,7 @@ func JSON(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFunc) ht
 func AdminJSON(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFunc) http.Handler {
 	tenantMW := auth.TenantFromPath(pool)
 	return tenantMW(signer.Middleware(pool,
-		auth.AssertTenantMatch(signer, requireCSRF(requireAdminHandler(h)))))
-}
-
-// requireCSRF enforces the X-Kit-Web: 1 header on state-changing methods.
-// GET/HEAD pass through.
-func requireCSRF(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
-			if r.Header.Get(CSRFHeader) != "1" {
-				http.Error(w, "missing "+CSRFHeader+" header", http.StatusForbidden)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
+		auth.AssertTenantMatch(signer, auth.RequireCSRF(requireAdminHandler(h)))))
 }
 
 // requireCallerHandler runs h only if the session middleware left a caller

@@ -2,9 +2,6 @@ package models
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -14,29 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// APIToken represents an issued API token.
+// APIToken represents an issued API token. The plaintext is minted and
+// hashed by internal/auth/opaquetoken; rows hold only the hash.
 type APIToken struct {
 	ID       uuid.UUID
 	TenantID uuid.UUID
 	UserID   uuid.UUID
-}
-
-// GenerateToken creates a random opaque token and returns it along with its SHA-256 hash.
-func GenerateToken() (token, hash string, err error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", "", fmt.Errorf("generating random bytes: %w", err)
-	}
-	token = "kit_" + hex.EncodeToString(b)
-	h := sha256.Sum256([]byte(token))
-	hash = hex.EncodeToString(h[:])
-	return token, hash, nil
-}
-
-// HashToken returns the SHA-256 hash of a token string.
-func HashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
 }
 
 // CreateAPIToken stores a hashed API token.
@@ -75,4 +55,19 @@ func DeleteAPIToken(ctx context.Context, pool *pgxpool.Pool, tokenHash string) e
 		return fmt.Errorf("deleting api token: %w", err)
 	}
 	return nil
+}
+
+// DeleteExpiredAPITokens sweeps one tenant's rows that have been expired for
+// longer than grace. LookupAPIToken already ignores expired rows, so the
+// sweep is housekeeping, not enforcement; the grace keeps a row around long
+// enough that "why did my session end" is still answerable from the table.
+func DeleteExpiredAPITokens(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, grace time.Duration) (int64, error) {
+	tag, err := pool.Exec(ctx, `
+		DELETE FROM api_tokens
+		WHERE tenant_id = $1 AND expires_at < now() - $2::interval
+	`, tenantID, grace)
+	if err != nil {
+		return 0, fmt.Errorf("deleting expired api tokens: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }

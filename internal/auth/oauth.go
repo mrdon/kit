@@ -16,6 +16,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
+	"github.com/mrdon/kit/internal/auth/signedlink"
 	"github.com/mrdon/kit/internal/models"
 )
 
@@ -40,10 +42,10 @@ const (
 // Slack.
 type OAuthServer struct {
 	pool         *pgxpool.Pool
-	baseURL      string // e.g. "https://kit.example.com"
-	clientID     string // Slack app client ID
-	clientSecret string // Slack app client secret
-	stateKey     []byte // HMAC key for signing OAuth state
+	baseURL      string             // e.g. "https://kit.example.com"
+	clientID     string             // Slack app client ID
+	clientSecret string             // Slack app client secret
+	state        *signedlink.Signer // signs the OAuth state parameter
 	signer       *SessionSigner
 }
 
@@ -58,8 +60,8 @@ const pwaStatePrefix = "pwa:"
 // same secret used for NewSessionSigner (e.g. ENCRYPTION_KEY). Panics if
 // stateSecret is empty — an empty key would let attackers forge state.
 func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecret, stateSecret string, signer *SessionSigner) *OAuthServer {
-	key := deriveStateKey(stateSecret)
-	if key == nil {
+	state := newStateSigner(stateSecret)
+	if state == nil {
 		panic("oauth: stateSecret is empty — cannot sign OAuth state")
 	}
 	return &OAuthServer{
@@ -67,7 +69,7 @@ func NewOAuthServer(pool *pgxpool.Pool, baseURL, slackClientID, slackClientSecre
 		baseURL:      baseURL,
 		clientID:     slackClientID,
 		clientSecret: slackClientSecret,
-		stateKey:     key,
+		state:        state,
 		signer:       signer,
 	}
 }
@@ -158,7 +160,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Sign the MCP client's request into Slack's state param so we can
 	// recover it after Slack redirects back to us, and so the tenant slug
 	// can't be swapped in-flight.
-	slackState := encodeState(s.stateKey, oauthState{
+	slackState := encodeState(s.state, oauthState{
 		ClientID:      clientID,
 		RedirectURI:   redirectURI,
 		State:         state,
@@ -197,7 +199,7 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Decode and verify the original MCP client request from state.
-	st, err := decodeState(s.stateKey, stateParam)
+	st, err := decodeState(s.state, stateParam)
 	if err != nil {
 		slog.Error("decoding state", "error", err)
 		http.Error(w, "invalid state", http.StatusBadRequest)
@@ -393,7 +395,7 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate and store API token
-	token, tokenHash, err := models.GenerateToken()
+	token, tokenHash, err := opaquetoken.New(apiTokenPrefix)
 	if err != nil {
 		slog.Error("generating token", "error", err)
 		jsonError(w, "server_error", http.StatusInternalServerError)

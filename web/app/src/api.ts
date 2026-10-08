@@ -29,7 +29,7 @@ async function j<T>(r: Response): Promise<T> {
 const post = (path: string, body?: unknown) =>
   fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Kit-Web': '1' },
     credentials: 'same-origin',
     body: body ? JSON.stringify(body) : '{}',
   });

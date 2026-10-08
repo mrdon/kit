@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 )
@@ -191,7 +192,7 @@ func extractBearerToken(r *http.Request) string {
 }
 
 func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*services.Caller, error) {
-	hash := models.HashToken(token)
+	hash := opaquetoken.Hash(token)
 	apiToken, err := models.LookupAPIToken(ctx, pool, hash)
 	if err != nil {
 		return nil, err
