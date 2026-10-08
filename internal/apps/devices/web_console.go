@@ -40,6 +40,9 @@ type deviceJSON struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	LastSeenAt   *time.Time `json:"last_seen_at"`
 	RevokedAt    *time.Time `json:"revoked_at"`
+	// HasStartLink: a kiosk start link exists (the link itself is shown
+	// once, when made).
+	HasStartLink bool `json:"has_start_link"`
 }
 
 func deviceToJSON(a models.Actor) deviceJSON {
@@ -50,6 +53,7 @@ func deviceToJSON(a models.Actor) deviceJSON {
 	return deviceJSON{
 		ID: a.ID.String(), Label: a.Label, Capabilities: caps,
 		CreatedAt: a.CreatedAt, LastSeenAt: a.LastSeenAt, RevokedAt: a.RevokedAt,
+		HasStartLink: a.HasStartToken,
 	}
 }
 

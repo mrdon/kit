@@ -7,6 +7,7 @@ import {
   type DevicePreset,
   type DevicesView,
   type PendingPairing,
+  type StartLink,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
 import { API_BASE } from '../api';
@@ -125,6 +126,38 @@ function GrantForm({
   );
 }
 
+// StartLinkCard shows a freshly made start link: the URL, Copy, and a QR
+// for a tablet. Shown once; the server keeps only a hash.
+function StartLinkCard({ link, label }: { link: StartLink; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    navigator.clipboard?.writeText(link.start_url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  return (
+    <div className="card start-link">
+      <div className="card-main">
+        <div className="card-title">Start link for {label}</div>
+        <p className="card-desc">
+          Set this as the kiosk’s start URL. Opening it signs that browser in as this device, every boot, with
+          nothing to pair. Anyone with the link can act as the device, so keep it to the machine’s configuration.
+          It is shown only now; make a new one if it is lost, and the old one stops working.
+        </p>
+        <div className="pair-address">
+          <div className="pair-qr start-link-qr" dangerouslySetInnerHTML={{ __html: link.qr_svg }} />
+          <div className="pair-address-text">
+            <code>{link.start_url}</code>
+            <button className="btn" type="button" onClick={copy}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Devices() {
   useSetChatContext('the Devices page (pairing shared machines)');
   const [view, setView] = useState<DevicesView | null>(null);
@@ -137,6 +170,9 @@ export default function Devices() {
   const [editing, setEditing] = useState<Device | null>(null);
   const [editDraft, setEditDraft] = useState<Draft | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Kiosk creation and start links, shown once each.
+  const [kioskDraft, setKioskDraft] = useState<Draft | null>(null);
+  const [startLinks, setStartLinks] = useState<Record<string, StartLink>>({});
 
   const load = useCallback(() => {
     api
@@ -201,6 +237,36 @@ export default function Devices() {
         capabilities: editDraft.capabilities,
       });
       setEditing(null);
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createKiosk = async () => {
+    if (!kioskDraft) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await api.createKiosk({ label: kioskDraft.label.trim(), capabilities: kioskDraft.capabilities });
+      setStartLinks((m) => ({ ...m, [res.device.id]: res }));
+      setKioskDraft(null);
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const makeStartLink = async (d: Device) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const link = await api.makeStartLink(d.id);
+      setStartLinks((m) => ({ ...m, [d.id]: link }));
       load();
     } catch (e) {
       setErr((e as Error).message);
@@ -339,6 +405,38 @@ export default function Devices() {
       </section>
 
       <section className="panel">
+        <h2 className="panel-title">Kiosk with a fixed start URL</h2>
+        <p className="card-desc">
+          A kiosk-mode browser boots to one URL and forgets its cookies on every restart, so pairing it would not
+          stick. Add it here instead and set the start link it gives you as the kiosk’s URL, once.
+        </p>
+        {kioskDraft && view ? (
+          <>
+            <GrantForm
+              view={view}
+              draft={kioskDraft}
+              setDraft={setKioskDraft}
+              busy={busy}
+              onSubmit={() => void createKiosk()}
+              submitLabel="Add kiosk and make its start link"
+            />
+            <button className="btn" type="button" disabled={busy} onClick={() => setKioskDraft(null)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || !view}
+            onClick={() => view && setKioskDraft(view.presets[0] ? draftFor(view.presets[0]) : { preset: '', label: '', capabilities: [] })}
+          >
+            Add a kiosk
+          </button>
+        )}
+      </section>
+
+      <section className="panel">
         <h2 className="panel-title">Paired devices</h2>
         {view && live.length === 0 ? <p className="page-sub">No devices yet.</p> : null}
         <ul className="card-list">
@@ -369,8 +467,15 @@ export default function Devices() {
                         </span>
                       ))}
                     </div>
-                    <p className="page-sub">Last seen {relative(d.last_seen_at)}</p>
+                    <p className="page-sub">
+                      Last seen {relative(d.last_seen_at)}
+                      {d.has_start_link ? ' · has a start link' : ''}
+                    </p>
+                    {startLinks[d.id] && <StartLinkCard link={startLinks[d.id]} label={d.label} />}
                     <div className="page-head-actions">
+                      <button className="btn" type="button" disabled={busy} onClick={() => void makeStartLink(d)}>
+                        {d.has_start_link ? 'New start link' : 'Make a start link'}
+                      </button>
                       <button
                         className="btn"
                         type="button"

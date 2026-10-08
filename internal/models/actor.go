@@ -32,13 +32,16 @@ type Actor struct {
 	CreatedAt     time.Time
 	LastSeenAt    *time.Time
 	RevokedAt     *time.Time
+	// HasStartToken reports whether a start link exists; the hash itself
+	// never leaves the database.
+	HasStartToken bool
 }
 
-const actorColumns = `id, tenant_id, kind, label, capabilities, sponsor_user_id, created_at, last_seen_at, revoked_at`
+const actorColumns = `id, tenant_id, kind, label, capabilities, sponsor_user_id, created_at, last_seen_at, revoked_at, start_token_hash IS NOT NULL`
 
 func scanActor(row pgx.Row) (*Actor, error) {
 	a := &Actor{}
-	err := row.Scan(&a.ID, &a.TenantID, &a.Kind, &a.Label, &a.Capabilities, &a.SponsorUserID, &a.CreatedAt, &a.LastSeenAt, &a.RevokedAt)
+	err := row.Scan(&a.ID, &a.TenantID, &a.Kind, &a.Label, &a.Capabilities, &a.SponsorUserID, &a.CreatedAt, &a.LastSeenAt, &a.RevokedAt, &a.HasStartToken)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // not found is not an error
 	}
@@ -158,3 +161,30 @@ func TouchActor(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID)
 // touchInterval throttles last_seen_at / last_used_at writes. "Seen in the
 // last quarter hour" is as precise as anyone reading the column needs.
 const touchInterval = 15 * time.Minute
+
+// SetActorStartToken records the hash of a device's start link, replacing
+// any previous one so the old link stops working the moment a new one is
+// made. Fails with ErrNotFound for a revoked or missing actor.
+func SetActorStartToken(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, hash string) error {
+	tag, err := pool.Exec(ctx, `
+		UPDATE actors SET start_token_hash = $3
+		WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL
+	`, tenantID, id, hash)
+	if err != nil {
+		return fmt.Errorf("setting actor start token: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetActorByStartToken finds the live actor behind a start link, within
+// the tenant the link was opened under; nil when the hash matches nothing
+// live there.
+func GetActorByStartToken(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, hash string) (*Actor, error) {
+	return scanActor(pool.QueryRow(ctx, `
+		SELECT `+actorColumns+` FROM actors
+		WHERE tenant_id = $1 AND start_token_hash = $2 AND revoked_at IS NULL
+	`, tenantID, hash))
+}

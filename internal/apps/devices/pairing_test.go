@@ -390,3 +390,104 @@ func TestPairPageSendsPairedDeviceHome(t *testing.T) {
 		t.Fatalf("a paired device opening /pair created a pairing (%d -> %d)", before, after)
 	}
 }
+
+// The start link is the kiosk's answer to a browser that wipes its cookies:
+// opening it signs that browser in as the device, every boot. Making a new
+// one ends the old; unpairing ends both.
+func TestStartLink(t *testing.T) {
+	f := newFixture(t)
+	cookie, pairing := f.openPairPage("10.0.0.11")
+	_, out := f.adminJSON(http.MethodPost, "/api/devices/pairings/approve", map[string]any{
+		"pairing_id": pairing.ID.String(), "picture": pairing.Picture,
+		"label": "Trivia laptop", "capabilities": []string{auth.CapTriviaHost},
+	})
+	f.poll(cookie)
+	id := out["device"].(map[string]any)["id"].(string)
+
+	code, made := f.adminJSON(http.MethodPost, "/api/devices/"+id+"/start-link", nil)
+	if code != http.StatusOK {
+		t.Fatalf("make start link: %d %v", code, made)
+	}
+	startURL, _ := made["start_url"].(string)
+	if !strings.Contains(startURL, "/"+f.tenant.Slug+"/device/"+startTokenPrefix) || made["qr_svg"] == nil {
+		t.Fatalf("start link = %q, qr present = %v", startURL, made["qr_svg"] != nil)
+	}
+	_, list := f.adminJSON(http.MethodGet, "/api/devices", nil)
+	if dev := list["devices"].([]any)[0].(map[string]any); dev["has_start_link"] != true {
+		t.Fatalf("list does not show the start link: %v", dev)
+	}
+
+	open := func(url string) (*httptest.ResponseRecorder, *http.Cookie) {
+		path := url[strings.Index(url, "/"+f.tenant.Slug+"/device/"):]
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "10.0.0.12:1"
+		rec := httptest.NewRecorder()
+		f.mux.ServeHTTP(rec, req)
+		return rec, cookieNamed(rec, auth.SessionCookieName)
+	}
+	rec, session := open(startURL)
+	if rec.Code != http.StatusSeeOther || session == nil || !strings.HasSuffix(rec.Header().Get("Location"), "/web/") {
+		t.Fatalf("start link: %d %q session=%v", rec.Code, rec.Header().Get("Location"), session != nil)
+	}
+	if c := f.deviceCaller(session); c == nil || c.Label != "Trivia laptop" || !c.HasCapability(auth.CapTriviaHost) {
+		t.Fatalf("caller from start link = %+v", c)
+	}
+
+	// A second boot works too: the link is reusable, the cookie is per session.
+	if rec, s2 := open(startURL); rec.Code != http.StatusSeeOther || s2 == nil {
+		t.Fatalf("second boot: %d", rec.Code)
+	}
+
+	// Rotating invalidates the old link.
+	_, remade := f.adminJSON(http.MethodPost, "/api/devices/"+id+"/start-link", nil)
+	if rec, _ := open(startURL); rec.Code != http.StatusNotFound {
+		t.Fatalf("old link after rotate: %d, want 404", rec.Code)
+	}
+	newURL := remade["start_url"].(string)
+	if rec, _ := open(newURL); rec.Code != http.StatusSeeOther {
+		t.Fatalf("new link: %d", rec.Code)
+	}
+
+	// Unpairing ends the link and every session it issued.
+	f.adminJSON(http.MethodDelete, "/api/devices/"+id, nil)
+	if rec, _ := open(newURL); rec.Code != http.StatusNotFound {
+		t.Fatalf("link after unpair: %d, want 404", rec.Code)
+	}
+	if f.deviceCaller(session) != nil {
+		t.Fatal("session from the link survived unpairing")
+	}
+}
+
+// A kiosk is created by name and gets its link at once; no pairing ever.
+func TestCreateKioskWithoutPairing(t *testing.T) {
+	f := newFixture(t)
+	code, out := f.adminJSON(http.MethodPost, "/api/devices", map[string]any{
+		"label": "Quiz laptop", "capabilities": []string{auth.CapTriviaHost},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("create kiosk: %d %v", code, out)
+	}
+	startURL, _ := out["start_url"].(string)
+	dev := out["device"].(map[string]any)
+	if startURL == "" || dev["has_start_link"] != true || dev["label"] != "Quiz laptop" {
+		t.Fatalf("create kiosk = %v", out)
+	}
+	path := startURL[strings.Index(startURL, "/"+f.tenant.Slug+"/device/"):]
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.RemoteAddr = "10.0.0.13:1"
+	rec := httptest.NewRecorder()
+	f.mux.ServeHTTP(rec, req)
+	session := cookieNamed(rec, auth.SessionCookieName)
+	if rec.Code != http.StatusSeeOther || session == nil {
+		t.Fatalf("boot from link: %d", rec.Code)
+	}
+	if c := f.deviceCaller(session); c == nil || c.Label != "Quiz laptop" {
+		t.Fatalf("caller = %+v", c)
+	}
+	if n, _ := countPending(f.ctx, f.pool, f.tenant.ID); n != 0 {
+		t.Fatalf("a pairing row appeared: %d", n)
+	}
+	if code, _ := f.adminJSON(http.MethodPost, "/api/devices", map[string]any{"label": "x"}); code != http.StatusBadRequest {
+		t.Fatalf("no capabilities: %d, want 400", code)
+	}
+}

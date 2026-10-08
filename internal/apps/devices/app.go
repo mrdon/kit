@@ -82,5 +82,6 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 		return
 	}
 	registerPairRoutes(mux, a)
+	registerStartRoutes(mux, a)
 	registerConsoleRoutes(mux, a)
 }
