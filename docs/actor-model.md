@@ -1,8 +1,26 @@
 # Actor model — from "every caller is a Slack user" to actors with scoped permissions
 
-Status: plan, not started. Written 2026-10-08 as a hand-off to a fresh session; revised
-the same day after a review against the code (findings folded in below; the auth
-inventory is in the appendix).
+Status: **implemented**, phases 1–6, on 2026-10-08 (commits "Auth: one signed-link
+helper…" through "Scheduler: a job's session is attributed to the job…"). Written the
+same day as a hand-off; revised after a review against the code (findings folded in
+below; the auth inventory is in the appendix). Where the build departed from the plan:
+
+- **Pending pairings live in a table** (`app_device_pairings`), not Redis: one code
+  path, nothing to run locally. Rows are swept on each pairing-page load.
+- **"Pair a device" is console-only** (`/{slug}/web/admin/devices`); the PWA has no
+  approver UI.
+- **CSRF:** `X-Kit-Web` is the one header, but an `application/json` body also counts
+  (it forces a preflight just the same) so the cards PWA's existing JSON posts, cached
+  by its service worker, kept working. `X-Kit-Chat` and `X-Kit-Vault` are accepted for
+  one release; delete `legacyCSRFHeaders` after that.
+- **Signed-link purposes were bumped** (cookie v3, state/deeplink/integrations v2), so
+  every browser session signed out once. MCP bearer tokens were untouched.
+- **The trivia driver keeps the "Manage sets" link** to `/admin/trivia`: decision 2
+  gives it dataset management, and that page is where it lives. For a device, `/admin`
+  itself renders the device home.
+- **Phase 6 attribution** is `sessions.actor_kind` / `sessions.actor_label`, shown by
+  `list_sessions`. Tasks and messages carry nothing new.
+- Not built: the optional "your sessions and MCP tokens" revoke page.
 
 ## Why
 
