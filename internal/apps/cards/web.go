@@ -47,8 +47,10 @@ func registerCardsRoutes(mux apps.Mux, a *CardsApp) {
 	mux.Handle("GET /{slug}/icon-512.png", tenantMW(http.HandlerFunc(handleIconPNG512)))
 	mux.Handle("GET /{slug}/sw.js", tenantMW(http.HandlerFunc(handleServiceWorker)))
 
-	// SPA fallback for client-side routes like /{slug}/stack/{...}.
+	// SPA fallback for client-side routes like /{slug}/stack/{...} and the
+	// All tasks view at /{slug}/tasks.
 	mux.Handle("GET /{slug}/stack/", tenantMW(http.HandlerFunc(handleSPA)))
+	mux.Handle("GET /{slug}/tasks", tenantMW(http.HandlerFunc(handleSPA)))
 
 	if a.devMode {
 		mux.Handle("GET /{slug}/dev-login", tenantMW(http.HandlerFunc(a.handleDevLogin)))

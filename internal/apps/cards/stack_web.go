@@ -86,26 +86,13 @@ func handleStackList(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultGlobalLimit)
 	cursors := decodeStackCursor(r.URL.Query().Get("cursor"))
+	view := shared.StackView(r.URL.Query().Get("view"))
+	if !view.Valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown view"})
+		return
+	}
 
-	providers := enabledCardProviders(r.Context(), caller)
-	type result struct {
-		sourceApp string
-		page      shared.StackPage
-		err       error
-	}
-	results := make([]result, len(providers))
-	var wg sync.WaitGroup
-	for i, p := range providers {
-		wg.Add(1)
-		go func(i int, p apps.CardProvider) {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(r.Context(), providerTimeout)
-			defer cancel()
-			page, err := p.StackItems(ctx, caller, cursors[p.SourceApp()], limit)
-			results[i] = result{sourceApp: p.SourceApp(), page: page, err: err}
-		}(i, p)
-	}
-	wg.Wait()
+	results := fetchStackPages(r.Context(), caller, view, cursors, limit)
 
 	var all []shared.StackItem
 	nextCursors := map[string]string{}
@@ -118,6 +105,9 @@ func handleStackList(w http.ResponseWriter, r *http.Request) {
 			}
 			slog.Error("stack provider failed", "source_app", rs.sourceApp, "error", rs.err)
 			degraded = append(degraded, degradedProvider{SourceApp: rs.sourceApp, ErrorCode: code})
+			continue
+		}
+		if !rs.ok {
 			continue
 		}
 		all = append(all, rs.page.Items...)
@@ -146,6 +136,43 @@ func handleStackList(w http.ResponseWriter, r *http.Request) {
 		resp.NextCursors = nextCursors
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// stackPageResult is one provider's answer to a stack request. ok=false
+// means the provider does not serve the requested view.
+type stackPageResult struct {
+	sourceApp string
+	page      shared.StackPage
+	ok        bool
+	err       error
+}
+
+// fetchStackPages fans the request out to every enabled provider in
+// parallel, each under providerTimeout. The default feed asks every
+// provider; a named view asks only the providers that implement
+// apps.ViewCardProvider, so the rest of the stack stays out of it.
+func fetchStackPages(ctx context.Context, caller *services.Caller, view shared.StackView, cursors map[string]string, limit int) []stackPageResult {
+	providers := enabledCardProviders(ctx, caller)
+	results := make([]stackPageResult, len(providers))
+	var wg sync.WaitGroup
+	for i, p := range providers {
+		wg.Add(1)
+		go func(i int, p apps.CardProvider) {
+			defer wg.Done()
+			pctx, cancel := context.WithTimeout(ctx, providerTimeout)
+			defer cancel()
+			res := stackPageResult{sourceApp: p.SourceApp()}
+			if view == shared.ViewFeed {
+				res.page, res.err = p.StackItems(pctx, caller, cursors[p.SourceApp()], limit)
+				res.ok = true
+			} else if vp, isView := p.(apps.ViewCardProvider); isView {
+				res.page, res.ok, res.err = vp.ViewItems(pctx, caller, view, limit)
+			}
+			results[i] = res
+		}(i, p)
+	}
+	wg.Wait()
+	return results
 }
 
 // applyStackFocus hoists the item matching focusKey to the front of

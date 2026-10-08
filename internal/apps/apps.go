@@ -151,6 +151,16 @@ type CardProvider interface {
 	DoAction(ctx context.Context, caller *services.Caller, kind, id, actionID string, params json.RawMessage) (*shared.ActionResult, error)
 }
 
+// ViewCardProvider is a CardProvider that also answers a named stack view
+// (see shared.StackView). The stack endpoint asks only these providers when
+// the PWA requests a view, so a provider with nothing to say about tasks
+// does not need to know the view exists. ok=false means the provider does
+// not serve that view and is left out of the response.
+type ViewCardProvider interface {
+	CardProvider
+	ViewItems(ctx context.Context, caller *services.Caller, view shared.StackView, limit int) (page shared.StackPage, ok bool, err error)
+}
+
 // cardProviders is registered separately from apps so a provider can be
 // implemented in a sibling type when wiring is awkward.
 var cardProviders []CardProvider

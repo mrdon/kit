@@ -872,6 +872,66 @@ a { color: var(--link); }
   100% { transform: scale(1);    box-shadow: 0 6px 18px var(--shadow-card), 0 0 0 12px rgba(22, 163, 74, 0); }
 }
 
+/* View switcher (☰). Sits in the card's top-right corner, which the
+   kind tag and badges leave empty, so it needs no room carved out of the
+   card. Outside the feed the button also names the view. */
+.view-menu {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 22px);
+  right: 26px;
+  z-index: 20;
+}
+.view-menu-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--card-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.view-menu-button:focus-visible {
+  outline: 2px solid var(--link-strong);
+  outline-offset: 2px;
+}
+.view-menu-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  box-shadow: 0 10px 28px var(--shadow-card);
+}
+.view-menu-item {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--card-fg);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+.view-menu-item.is-current { color: var(--card-heading); font-weight: 600; }
+.view-menu-item:hover,
+.view-menu-item:focus-visible { background: var(--card-code-bg); outline: none; }
+
 /* Toast viewport. Single-slot, bottom-center, slides up from below.
    Used for pending swipe actions (with Undo), success confirmations,
    and error recovery prompts. */

@@ -5,6 +5,8 @@ import Stack from './Stack';
 import StackItemDetail from './StackItemDetail';
 import ToastViewport from './toast/ToastViewport';
 import { BASENAME } from './workspace';
+import { StackViews } from './types';
+import { VIEW_PATHS } from './stack/views';
 import './styles.css';
 import '@chat/chat.css';
 
@@ -21,7 +23,16 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter basename={BASENAME}>
       <Routes>
-        <Route path="/" element={<Stack />} />
+        {/* Keyed per view so switching views remounts the stack: each
+            view starts from its own list and its own scroll position. */}
+        <Route
+          path={VIEW_PATHS[StackViews.feed]}
+          element={<Stack key="feed" view={StackViews.feed} />}
+        />
+        <Route
+          path={VIEW_PATHS[StackViews.tasks]}
+          element={<Stack key="tasks" view={StackViews.tasks} />}
+        />
         <Route
           path="/stack/:source_app/:kind/:id"
           element={<StackItemDetail />}

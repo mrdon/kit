@@ -378,9 +378,11 @@ Both thumbs up and thumbs down are recorded on the card (terminal state + timest
 
 **What reaches the feed.** The stack is a triage queue, not a full list — it only carries what wants a decision now, so an empty feed means you're done, not that something is missing.
 
-- **Tasks** appear when they're overdue, due in the next couple of days, or marked `blocker`. Everything else is still open and still yours; it just lives in the web console and `list_tasks` until its due date comes into range, and reappears on its own when it does. Nothing is archived or changed by dropping out of the feed. If a task matters and never shows up, give it a due date or bump it to `blocker`.
+- **Tasks** appear when they're overdue, due in the next couple of days, or marked `blocker`. Everything else is still open and still yours; it just lives in the web console, `list_tasks` and the swipe app's **All tasks** view (☰ in the top-right corner) until its due date comes into range, and reappears on its own when it does. Nothing is archived or changed by dropping out of the feed. If a task matters and never shows up, give it a due date or bump it to `blocker`.
 - **Briefings** at the default `info` severity clear themselves after three days, so routine "created 3 tasks" / "sync finished" notes stop costing a swipe. Mark a briefing `notable` or `important` and it waits until acked; any briefing can name its own `ttl_days` instead.
 - **Decisions** never expire on their own. Someone has to answer them.
+
+**All tasks.** Tap ☰ in the top-right corner and pick **All tasks** to swipe through every open task on your plate (assigned to you, or unassigned in one of your roles), due or not. Swiping, tapping for detail and snoozing work exactly as in the feed; a snoozed task leaves the view until it wakes. Pick **For you** to go back to the triage feed.
 
 **Chat with a card.** Long-press any card (about 600ms) to open a chat panel bound to that card. Type a message or hold the mic button to talk — both land in the same conversation. Use it to modify, reschedule, or ask about the card without switching back to Slack. Follow-up messages attach to the same session, so you can say "make it high priority" and then "no, actually low" and Kit understands the correction. The panel stays open until you close it.
 

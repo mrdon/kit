@@ -8,6 +8,15 @@ export type PriorityTier =
   | 'low'
   | 'minimal';
 
+// Feeds the stack endpoint serves. Mirror of shared.StackView. The default
+// feed is what wants a decision now; tasks is every open task on the
+// caller's plate, due or not.
+export const StackViews = {
+  feed: '',
+  tasks: 'tasks',
+} as const;
+export type StackView = (typeof StackViews)[keyof typeof StackViews];
+
 export type SwipeDirection = 'right' | 'left' | 'tap';
 
 export type StackAction = {

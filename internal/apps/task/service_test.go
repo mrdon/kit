@@ -335,7 +335,7 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	feed, err := listStackTasks(ctx, f.pool, caller, 50, false)
+	feed, err := listStackTasks(ctx, f.pool, caller, 50, stackActive)
 	if err != nil {
 		t.Fatalf("listStackTasks: %v", err)
 	}
@@ -348,11 +348,11 @@ func TestSnoozeHidesFromFeed(t *testing.T) {
 		t.Fatalf("snooze: %v", err)
 	}
 
-	feed, _ = listStackTasks(ctx, f.pool, caller, 50, false)
+	feed, _ = listStackTasks(ctx, f.pool, caller, 50, stackActive)
 	if containsStackTask(feed, tk.ID) {
 		t.Fatalf("snoozed task should NOT be in active feed")
 	}
-	pile, _ := listStackTasks(ctx, f.pool, caller, 50, true)
+	pile, _ := listStackTasks(ctx, f.pool, caller, 50, stackSnoozed)
 	if !containsStackTask(pile, tk.ID) {
 		t.Fatalf("snoozed task should appear in snoozed pile")
 	}
@@ -379,14 +379,14 @@ func TestUnassignedFeed(t *testing.T) {
 	}
 
 	// Bob (in founders, unassigned) sees it.
-	feed, _ := listStackTasks(ctx, f.pool, bobCaller, 50, false)
+	feed, _ := listStackTasks(ctx, f.pool, bobCaller, 50, stackActive)
 	if !containsStackTask(feed, tk.ID) {
 		t.Fatalf("unassigned founders task should be in bob's feed")
 	}
 
 	// Alice (not in founders) does not.
 	aliceCaller := f.caller(t, f.alice)
-	feed, _ = listStackTasks(ctx, f.pool, aliceCaller, 50, false)
+	feed, _ = listStackTasks(ctx, f.pool, aliceCaller, 50, stackActive)
 	if containsStackTask(feed, tk.ID) {
 		t.Fatalf("alice not in founders should not see the task")
 	}
@@ -395,7 +395,7 @@ func TestUnassignedFeed(t *testing.T) {
 	if _, err := f.svc.Update(ctx, bobCaller, tk.ID, UpdateInput{NewAssigneeUserID: &f.bob.ID}); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
-	feed, _ = listStackTasks(ctx, f.pool, bobCaller, 50, false)
+	feed, _ = listStackTasks(ctx, f.pool, bobCaller, 50, stackActive)
 	if !containsStackTask(feed, tk.ID) {
 		t.Fatalf("assigned-to-me should still be in bob's feed")
 	}
@@ -632,7 +632,7 @@ func TestFeedShowsOnlyUrgent(t *testing.T) {
 	someday := mk("undated normal", PriorityNormal, nil)
 	highLater := mk("high but not due", PriorityHigh, day(30))
 
-	feed, err := listStackTasks(ctx, f.pool, caller, 50, false)
+	feed, err := listStackTasks(ctx, f.pool, caller, 50, stackActive)
 	if err != nil {
 		t.Fatalf("listStackTasks: %v", err)
 	}
@@ -685,7 +685,7 @@ func TestSnoozedPileIgnoresUrgency(t *testing.T) {
 		t.Fatalf("snooze: %v", err)
 	}
 
-	pile, err := listStackTasks(ctx, f.pool, caller, 50, true)
+	pile, err := listStackTasks(ctx, f.pool, caller, 50, stackSnoozed)
 	if err != nil {
 		t.Fatalf("listStackTasks(snoozed): %v", err)
 	}

@@ -2,6 +2,7 @@ import type {
   ActionResult,
   DetailResponse,
   StackResponse,
+  StackView,
 } from './types';
 import { BASENAME } from './workspace';
 
@@ -55,12 +56,13 @@ export const stackActionUrl = (sourceApp: string, kind: string, id: string) =>
 
 export const api = {
   stack: async (
-    opts?: { cursor?: string; limit?: number; focus?: string },
+    opts?: { cursor?: string; limit?: number; focus?: string; view?: StackView },
   ): Promise<StackResponse> => {
     const params = new URLSearchParams();
     if (opts?.cursor) params.set('cursor', opts.cursor);
     if (opts?.limit) params.set('limit', String(opts.limit));
     if (opts?.focus) params.set('focus', opts.focus);
+    if (opts?.view) params.set('view', opts.view);
     const qs = params.toString();
     const r = await get(`${BASENAME}/api/v1/stack${qs ? `?${qs}` : ''}`);
     return j<StackResponse>(r);

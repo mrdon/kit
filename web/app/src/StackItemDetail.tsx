@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 import { api } from './api';
 import type { DetailResponse, StackItem, JobStatus } from './types';
 import { itemKey } from './types';
+import { lastViewPath } from './stack/views';
 import { rendererFor } from './kinds';
 import ErrorBoundary from './ErrorBoundary';
 import CardChatSheet from './chat/CardChatSheet';
@@ -59,7 +60,7 @@ export default function StackItemDetail() {
   // feeling trapped.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') navigate('/');
+      if (e.key === 'Escape') navigate(lastViewPath());
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -78,12 +79,12 @@ export default function StackItemDetail() {
       );
       // Wake puts the todo BACK into the active feed — hoist it to
       // the top via the focus hash so the user sees the thing they
-      // just woke, not the feed root. Other actions remove the item,
-      // so a plain "/" is right for them.
+      // just woke, not the top of the view. Other actions remove the
+      // item, so returning to the view the user came from is right.
       if (actionID === 'wake') {
-        navigate(`/#${itemKey(item)}`);
+        navigate(`${lastViewPath()}#${itemKey(item)}`);
       } else {
-        navigate('/');
+        navigate(lastViewPath());
       }
     } catch (e) {
       alert((e as Error).message);
@@ -99,7 +100,7 @@ export default function StackItemDetail() {
 
   return (
     <SwipeBackShell item={item}>
-      <Link to="/" className="back" aria-label="Back to stack">
+      <Link to={lastViewPath()} className="back" aria-label="Back to stack">
         ← Back
       </Link>
       <div className="kind-tag">
@@ -197,14 +198,14 @@ function SwipeBackShell({
     if (info.offset.x < -threshold) {
       animate(x, -vw, {
         duration: 0.2,
-        onComplete: () => navigate('/'),
+        onComplete: () => navigate(lastViewPath()),
       });
       return;
     }
     if (info.offset.x > threshold) {
       animate(x, vw, {
         duration: 0.2,
-        onComplete: () => navigate('/'),
+        onComplete: () => navigate(lastViewPath()),
       });
       return;
     }

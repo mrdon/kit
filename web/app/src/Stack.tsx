@@ -2,16 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api, stackActionUrl } from './api';
-import type { StackAction, StackItem, StackResponse } from './types';
+import type { StackAction, StackItem, StackResponse, StackView } from './types';
+import { StackViews } from './types';
 import { itemKey } from './types';
 import CardChatSheet from './chat/CardChatSheet';
 import QuickChatSheet from './chat/QuickChatSheet';
-import {
-  isAudioCaptureSupported,
-  startAudioCapture,
-  type AudioCaptureSession,
-} from '@chat';
 import SwipeCard, { type SwipeCardHandle } from './stack/SwipeCard';
+import QuickChatFab from './stack/QuickChatFab';
+import ViewMenu from './stack/ViewMenu';
+import { rememberView, topKeyStorage } from './stack/views';
 import { showToast } from './toast/bus';
 
 // UNDO_FUSE_MS — how long a committed swipe stays pending (and
@@ -24,13 +23,12 @@ const UNDO_FUSE_MS = 5000;
 // we filter the card out of the list. Matches the old removal delay.
 const COMMIT_ANIMATION_MS = 260;
 
-// TOP_KEY_STORAGE — sessionStorage key for the itemKey of the card
-// currently at the top of the viewport. Restored after list mutations
+// The sessionStorage key (see topKeyStorage, one per view) holds the
+// itemKey of the card currently at the top of the viewport. Restored after list mutations
 // (mount after navigation, resolve) so the user doesn't lose their
 // place: (1) back from the detail route lands on the same card, and
 // (2) resolving the last scrolled-to card advances to the next card
 // instead of letting scrollTop clamp back to one already seen.
-const TOP_KEY_STORAGE = 'kit:stack:topKey';
 
 type PendingAction = {
   id: number;
@@ -39,7 +37,13 @@ type PendingAction = {
   originalIndex: number;
 };
 
-export default function Stack() {
+// Stack is one swipe feed. main.tsx mounts a separate instance per view
+// (keyed on it), so view is fixed for the life of the component.
+export default function Stack({ view }: { view: StackView }) {
+  const topKey = topKeyStorage(view);
+  useEffect(() => {
+    rememberView(view);
+  }, [view]);
   const [items, setItems] = useState<StackItem[] | null>(null);
   const [degraded, setDegraded] = useState<StackResponse['degraded']>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -71,13 +75,13 @@ export default function Stack() {
     if (vh > 0 && list && list.length > 0) {
       const idx = Math.min(list.length - 1, Math.max(0, Math.round(el.scrollTop / vh)));
       try {
-        sessionStorage.setItem(TOP_KEY_STORAGE, itemKey(list[idx]));
+        sessionStorage.setItem(topKey, itemKey(list[idx]));
       } catch {
         // sessionStorage can throw in private-mode Safari; the scroll
         // restore is a nice-to-have so we just skip it.
       }
     }
-  }, []);
+  }, [topKey]);
 
   // Keep progress in sync when the item list changes (completions shrink
   // the scroll height; without a recompute the thumb drifts stale).
@@ -96,7 +100,7 @@ export default function Stack() {
     if (!el) return;
     let saved: string | null = null;
     try {
-      saved = sessionStorage.getItem(TOP_KEY_STORAGE);
+      saved = sessionStorage.getItem(topKey);
     } catch {
       return;
     }
@@ -107,7 +111,7 @@ export default function Stack() {
     if (Math.abs(el.scrollTop - target) > 1) {
       el.scrollTo({ top: target, behavior: 'auto' });
     }
-  }, [items]);
+  }, [items, topKey]);
 
   const load = useCallback(async () => {
     try {
@@ -126,7 +130,7 @@ export default function Stack() {
           window.location.pathname + window.location.search,
         );
       }
-      const resp = await api.stack({ focus });
+      const resp = await api.stack({ focus, view });
       // Filter out items that are pending an undo-fuse commit — the
       // server still has them in the stack (the POST hasn't fired yet),
       // but the user has visually swiped them off. Let them stay off.
@@ -142,7 +146,7 @@ export default function Stack() {
     } catch (e) {
       setErr((e as Error).message);
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     load();
@@ -193,7 +197,7 @@ export default function Stack() {
     } catch (e) {
       const key = itemKey(pa.item);
       try {
-        sessionStorage.setItem(TOP_KEY_STORAGE, key);
+        sessionStorage.setItem(topKey, key);
       } catch {
         // ignore
       }
@@ -209,7 +213,7 @@ export default function Stack() {
         duration: 6000,
       });
     }
-  }, []);
+  }, [topKey]);
 
   // onCommit is called by SwipeCard the moment the user completes a
   // swipe. We wait COMMIT_ANIMATION_MS so the card finishes animating
@@ -231,7 +235,7 @@ export default function Stack() {
         null;
       if (neighbor) {
         try {
-          sessionStorage.setItem(TOP_KEY_STORAGE, itemKey(neighbor));
+          sessionStorage.setItem(topKey, itemKey(neighbor));
         } catch {
           // ignore — see onScroll for rationale
         }
@@ -254,7 +258,7 @@ export default function Stack() {
               // restore effect doesn't bounce us past it to the neighbor
               // we set during commit.
               try {
-                sessionStorage.setItem(TOP_KEY_STORAGE, key);
+                sessionStorage.setItem(topKey, key);
               } catch {
                 // ignore
               }
@@ -276,7 +280,7 @@ export default function Stack() {
         });
       }, COMMIT_ANIMATION_MS);
     },
-    [items, commitPending],
+    [items, commitPending, topKey],
   );
 
   // Flush any pending actions via sendBeacon when the page is about to
@@ -374,7 +378,9 @@ export default function Stack() {
     <main className="feed" ref={empty ? null : feedRef} onScroll={empty ? undefined : onScroll}>
       {empty ? (
         <div className="empty">
-          <div>Nothing needs you right now.</div>
+          <div>
+            {view === StackViews.tasks ? 'No open tasks.' : 'Nothing needs you right now.'}
+          </div>
         </div>
       ) : (
         <>
@@ -402,6 +408,7 @@ export default function Stack() {
           <QueueIndicator count={items.length} progress={progress} />
         </>
       )}
+      <ViewMenu current={view} />
       <DegradedFooter degraded={degraded} />
       <QuickChatFab
         onTap={() => {
@@ -490,218 +497,5 @@ function Burst({ emoji }: { emoji: string }) {
         {emoji}
       </motion.span>
     </motion.div>
-  );
-}
-
-// LONG_PRESS_MS — how long the FAB must be held before it switches
-// from "open chat on release" to "arm voice recording". Long enough
-// that an accidental finger-rest doesn't start recording, short enough
-// that an intentional press feels responsive.
-const LONG_PRESS_MS = 600;
-
-// Floating action button anchored bottom-right of the feed.
-//   - Quick tap: opens QuickChatSheet for typed/mic capture.
-//   - Long press (held past LONG_PRESS_MS): arms and starts recording
-//     in place, FAB turns red. Releasing the finger keeps recording.
-//   - Tap while recording: stops, opens QuickChatSheet seeded with the
-//     captured audio blob so the composer transcribes it into the
-//     textarea.
-//
-// Audio capture is shared with the chat composer's mic via
-// audioCapture.ts so MIME selection and stream cleanup don't drift.
-// DISARM_ANIM_MS — how long the post-tap "stopping" pulse plays before
-// the chat sheet opens. Without this beat, the FAB switches color and
-// the sheet appears in the same frame, which reads as glitchy / "did
-// I miss the tap?". A short check-mark flash makes the stop feel
-// deliberate.
-const DISARM_ANIM_MS = 320;
-
-function QuickChatFab({
-  onTap,
-  onRecordingStop,
-}: {
-  onTap: () => void;
-  onRecordingStop: (blob: Blob) => void;
-}) {
-  const [recording, setRecording] = useState(false);
-  const [disarming, setDisarming] = useState(false);
-  const sessionRef = useRef<AudioCaptureSession | null>(null);
-  const armTimerRef = useRef<number | null>(null);
-  // True once the long-press timer fires within a single press; lets
-  // pointerup distinguish "quick tap → open chat" from "long press →
-  // started recording, leave it running".
-  const armedThisPressRef = useRef(false);
-  const supported = isAudioCaptureSupported();
-
-  const cancelArming = () => {
-    if (armTimerRef.current !== null) {
-      window.clearTimeout(armTimerRef.current);
-      armTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      cancelArming();
-      sessionRef.current?.cancel();
-      sessionRef.current = null;
-    };
-  }, []);
-
-  const startRecording = async () => {
-    try {
-      sessionRef.current = await startAudioCapture();
-      setRecording(true);
-    } catch {
-      // Permission denied or device unavailable. Fall back to opening
-      // the chat sheet so the user can type instead.
-      sessionRef.current = null;
-      onTap();
-    }
-  };
-
-  const stopRecordingAndOpen = async () => {
-    const session = sessionRef.current;
-    sessionRef.current = null;
-    setRecording(false);
-    setDisarming(true);
-    // Confirm haptic — best-effort, no-op on iOS.
-    try {
-      navigator.vibrate?.(20);
-    } catch {
-      // ignore
-    }
-    if (!session) {
-      window.setTimeout(() => {
-        setDisarming(false);
-        onTap();
-      }, DISARM_ANIM_MS);
-      return;
-    }
-    // Run the stop and the pulse animation in parallel; whichever takes
-    // longer drives the open. The animation gives the user a beat of
-    // feedback even when stop() resolves nearly instantly.
-    const [blob] = await Promise.all([
-      session.stop(),
-      new Promise((r) => window.setTimeout(r, DISARM_ANIM_MS)),
-    ]);
-    setDisarming(false);
-    if (blob.size === 0) {
-      onTap();
-      return;
-    }
-    onRecordingStop(blob);
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (recording) {
-      // Tap-to-stop: a fresh press while recording stops and opens.
-      e.preventDefault();
-      void stopRecordingAndOpen();
-      return;
-    }
-    if (!supported) {
-      // No MediaRecorder support — fall through to the click handler
-      // for plain tap-to-open behavior.
-      return;
-    }
-    // Capture the pointer so subsequent events (incl. pointerup) come
-    // to us regardless of where the user's finger has drifted, and so
-    // the browser doesn't later fire pointercancel to take over for
-    // its own long-press gestures (text selection, context menu).
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // older browsers — pointer events still flow, just without capture
-    }
-    e.preventDefault();
-    armedThisPressRef.current = false;
-    cancelArming();
-    // Queue a delayed buzz so it fires the moment the arm timer
-    // expires. vibrate() needs to be called from inside a real user
-    // gesture (pointerdown counts; setTimeout callbacks don't) — so we
-    // schedule the haptic here using a [silent-wait, vibrate] pattern
-    // and cancel it below if the user releases before the threshold.
-    try {
-      navigator.vibrate?.([0, LONG_PRESS_MS, 80]);
-    } catch {
-      // ignore — vibrate is best-effort, unsupported on iOS
-    }
-    armTimerRef.current = window.setTimeout(() => {
-      armTimerRef.current = null;
-      armedThisPressRef.current = true;
-      void startRecording();
-    }, LONG_PRESS_MS);
-  };
-
-  const onPointerUp = (e: React.PointerEvent) => {
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // fine — capture may not have been set
-    }
-    if (recording) {
-      // The long-press fired and we're now recording; finger release
-      // does NOT stop. The user must tap again to stop.
-      return;
-    }
-    if (armTimerRef.current !== null) {
-      // Released before arming threshold → quick tap, open chat.
-      cancelArming();
-      // Cancel the queued long-press buzz so it doesn't fire after a
-      // short tap.
-      try {
-        navigator.vibrate?.(0);
-      } catch {
-        // ignore
-      }
-      if (!armedThisPressRef.current) onTap();
-    }
-  };
-
-  const onPointerCancel = (e: React.PointerEvent) => {
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // fine
-    }
-    // pointercancel can fire even with pointer capture (e.g. an OS-level
-    // interruption like a system alert). Cancel arming so a stale timer
-    // doesn't surprise-record later, but don't kill an active recording.
-    if (!recording) {
-      cancelArming();
-      try {
-        navigator.vibrate?.(0);
-      } catch {
-        // ignore
-      }
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      className={`quick-chat-fab${recording ? ' recording' : ''}${disarming ? ' disarming' : ''}`}
-      aria-label={
-        recording
-          ? 'Tap to stop recording'
-          : supported
-            ? 'Quick chat (hold to record)'
-            : 'Quick chat'
-      }
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={() => {
-        // Click fires only when the browser doesn't synthesize pointer
-        // events (very rare) or when recording isn't supported and
-        // pointerdown is a no-op. In the supported path, onTap is
-        // already triggered via pointerup.
-        if (!supported && !recording) onTap();
-      }}
-    >
-      {disarming ? '✓' : recording ? '●' : '+'}
-    </button>
   );
 }

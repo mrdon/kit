@@ -38,10 +38,19 @@ type stackTask struct {
 
 func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, cursor string, limit int) (shared.StackPage, error) {
 	_ = cursor
+	return p.taskPage(ctx, caller, stackActive, limit)
+}
+
+// taskPage turns one task set into a stack page, with the snoozed digest
+// as its footer: one card listing everything in the snoozed pile so users
+// have a way to see what they've deferred. Only emitted when there's at
+// least one snoozed row; otherwise the page ends cleanly on active cards
+// (or the empty state).
+func (p *cardProvider) taskPage(ctx context.Context, caller *services.Caller, set stackTaskSet, limit int) (shared.StackPage, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	tasks, err := listStackTasks(ctx, p.app.svc.pool, caller, limit, false)
+	tasks, err := listStackTasks(ctx, p.app.svc.pool, caller, limit, set)
 	if err != nil {
 		return shared.StackPage{}, err
 	}
@@ -54,11 +63,7 @@ func (p *cardProvider) StackItems(ctx context.Context, caller *services.Caller, 
 		items = append(items, it)
 	}
 
-	// Digest card: one footer item listing everything in the snoozed
-	// pile so users have a way to see what they've deferred. Only
-	// emitted when there's at least one snoozed row; otherwise the
-	// feed ends cleanly on active cards (or the empty state).
-	snoozed, err := listStackTasks(ctx, p.app.svc.pool, caller, limit, true)
+	snoozed, err := listStackTasks(ctx, p.app.svc.pool, caller, limit, stackSnoozed)
 	if err != nil {
 		return shared.StackPage{}, err
 	}
@@ -78,7 +83,7 @@ func (p *cardProvider) GetItem(ctx context.Context, caller *services.Caller, kin
 		// changed (user woke the last task, etc.) — re-run the
 		// query and return a fresh item. A 0-row digest is
 		// friendlier than 404ing the user mid-navigation.
-		snoozed, err := listStackTasks(ctx, p.app.svc.pool, caller, 100, true)
+		snoozed, err := listStackTasks(ctx, p.app.svc.pool, caller, 100, stackSnoozed)
 		if err != nil {
 			return nil, err
 		}
@@ -362,18 +367,28 @@ var stackUrgencyClause = fmt.Sprintf(`
 		  AND (t.priority = 'blocker'
 		       OR t.due_date <= CURRENT_DATE + INTERVAL '%d days')`, StackUrgencyWindowDays)
 
+// stackTaskSet picks which of the caller's open tasks listStackTasks returns.
+type stackTaskSet int
+
+const (
+	// stackActive is the swipe feed: awake and urgent, see stackUrgencyClause.
+	stackActive stackTaskSet = iota
+	// stackSnoozed is the snoozed pile behind the digest card. It is NOT
+	// urgency-filtered: the digest's whole job is to show what you
+	// deferred, including the parts that aren't due yet.
+	stackSnoozed
+	// stackAllOpen is the All tasks view: every awake open task, urgent or
+	// not. Snoozed rows stay out, so a snooze still takes a card away.
+	stackAllOpen
+)
+
 // listStackTasks restricts to the caller's personal feed: tasks assigned
 // to them, plus unassigned tasks in roles they hold. Without this filter
 // every team member's stack would balloon with every team task. Admins
 // still hit this filter — the swipe feed is personal even for admins; for
 // auditing across users, list_tasks via MCP is the path.
-//
-// snoozedOnly=false returns the active feed — which is additionally
-// narrowed to urgent rows, see stackUrgencyClause. snoozedOnly=true returns
-// the snoozed pile (hidden from the feed, surfaced via the digest card),
-// and is NOT urgency-filtered: the digest's whole job is to show what you
-// deferred, including the parts that aren't due yet.
-func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int, snoozedOnly bool) ([]stackTask, error) {
+func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller, limit int, set stackTaskSet) ([]stackTask, error) {
+	snoozedOnly := set == stackSnoozed
 	var b strings.Builder
 	args := []any{c.TenantID}
 
@@ -392,7 +407,9 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 	} else {
 		b.WriteString(`
 		  AND (t.snoozed_until IS NULL OR t.snoozed_until <= now())`)
-		b.WriteString(stackUrgencyClause)
+		if set == stackActive {
+			b.WriteString(stackUrgencyClause)
+		}
 	}
 
 	// Personal feed: assigned to me OR unassigned in a role I hold.
@@ -420,9 +437,10 @@ func listStackTasks(ctx context.Context, pool *pgxpool.Pool, c *services.Caller,
 			t.snoozed_until ASC
 		LIMIT `)
 	} else {
-		// Two buckets, not three: the urgency filter already threw out
-		// everything that isn't overdue, due inside the window, or a
-		// blocker. Late still leads. Everything else — near-due rows and
+		// Two buckets, not three: in the feed the urgency filter already
+		// threw out everything that isn't overdue, due inside the window,
+		// or a blocker (the All tasks view keeps them, and they sort in
+		// behind on due date). Late still leads. Everything else — near-due rows and
 		// undated blockers alike — is "now", so they share a bucket and
 		// the priority CASE below decides between them. The old third
 		// bucket would have stranded an undated blocker beneath every

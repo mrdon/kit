@@ -90,6 +90,24 @@ type StackBadge struct {
 	Tone  string `json:"tone"` // "urgent" | "warn" | "info"
 }
 
+// StackView names a feed the PWA can switch to. The default feed is the
+// urgency-filtered stack every provider fills; a named view is narrower in
+// who answers it (only providers that implement apps.ViewCardProvider) and
+// wider in what it shows, e.g. every open task rather than the ones due now.
+type StackView string
+
+const (
+	// ViewFeed is the default stack: what wants a decision right now.
+	ViewFeed StackView = ""
+	// ViewTasks is every open task on the caller's plate, due or not.
+	ViewTasks StackView = "tasks"
+)
+
+// Valid reports whether v is a view the stack endpoint serves.
+func (v StackView) Valid() bool {
+	return v == ViewFeed || v == ViewTasks
+}
+
 // StackPage is a single provider's paginated response.
 type StackPage struct {
 	Items      []StackItem `json:"items"`
