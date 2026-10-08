@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, type GlutenReduced } from '../api';
+import { usePolled } from '../usePolled';
 
 // The gluten reduced checklist, shown as a panel on the Menu page because it
 // marks both the screen and the printed menu.
@@ -23,12 +24,16 @@ export default function MenuGlutenReduced() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
+  // Polled so a tick made on the other iPad, or by an agent, shows here;
+  // a save in flight wins over a poll that raced it.
+  usePolled(() =>
     api
       .glutenReduced()
-      .then(setData)
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, []);
+      .then((d) => {
+        if (!saving) setData(d);
+      })
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e))),
+  );
 
   async function toggle(name: string) {
     if (!data || saving) return;

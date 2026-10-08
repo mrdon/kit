@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type KioskBoard } from '../../api';
 import { useSetChatContext } from '../../chatContext';
+import { usePolled } from '../../usePolled';
 
 // Repoint a wall screen from the bar iPad. One row per board: the name, the
 // address it shows now, and a box to type a new one. No creating or
@@ -15,17 +16,28 @@ export default function DeviceScreens() {
   const [busy, setBusy] = useState<string | null>(null);
   const [savedID, setSavedID] = useState<string | null>(null);
 
+  // Polled, merging: a board repointed from the console shows its new
+  // address here within the interval, but a box somebody is typing into
+  // keeps what they typed.
   const load = () =>
     api
       .kioskBoards()
       .then((r) => {
-        setBoards(r.boards);
-        setDrafts(Object.fromEntries(r.boards.map((b) => [b.id, b.url])));
+        setBoards((prev) => {
+          setDrafts((d) => {
+            const out: Record<string, string> = {};
+            for (const b of r.boards) {
+              const was = prev?.find((p) => p.id === b.id);
+              const touched = d[b.id] !== undefined && d[b.id] !== (was?.url ?? '');
+              out[b.id] = touched ? d[b.id] : b.url;
+            }
+            return out;
+          });
+          return r.boards;
+        });
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  useEffect(() => {
-    void load();
-  }, []);
+  usePolled(load);
 
   async function repoint(b: KioskBoard) {
     setBusy(b.id);

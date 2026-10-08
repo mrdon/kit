@@ -2525,3 +2525,16 @@ h2.view-title:hover {
   font-size: 1.05rem;
   word-break: break-all;
 }
+
+.device-note {
+  width: 100%;
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  resize: vertical;
+  margin: 0.4rem 0;
+}

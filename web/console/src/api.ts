@@ -1080,6 +1080,9 @@ export const api = {
   saveMenuPrint: (body: MenuPrintConfig) =>
     apiPut<MenuPrint>('/menu/print', body),
   syncMenuPrint: () => apiPost<MenuSyncResult>('/menu/print/sync', {}),
+  menuPrintNotes: () => apiGet<{ beers: MenuPrintBeer[] }>('/menu/print/notes'),
+  saveMenuPrintNote: (name: string, text: string) =>
+    apiPut<{ beers: MenuPrintBeer[] }>('/menu/print/notes', { name, text }),
   glutenReduced: () => apiGet<GlutenReduced>('/menu/gluten-reduced'),
   saveGlutenReduced: (beers: string[]) =>
     apiPut<GlutenReduced>('/menu/gluten-reduced', { beers }),

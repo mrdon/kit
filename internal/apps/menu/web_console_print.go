@@ -39,6 +39,7 @@ func registerPrintConsoleRoutes(mux apps.Mux, a *App) {
 	// Still admin for people, as before.
 	mux.Handle("POST /{slug}/api/menu/print/sync",
 		console.RequireCapAdmin(a.pool, a.signer, auth.CapMenuPrint, a.handleSyncPrint))
+	registerNotesRoutes(mux, a)
 }
 
 // printConfigPayload is the wire shape.

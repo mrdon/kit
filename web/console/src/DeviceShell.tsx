@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import type { Me } from './api';
+import { useRefreshMe } from './me';
+import { usePolled } from './usePolled';
 
 // The chrome and the home screen a paired device sees. One shell serves
 // every device kind: the trivia laptop is this shell showing a single tile,
@@ -90,6 +92,11 @@ export function DeviceBar({ me }: { me: Me }) {
 }
 
 export function DeviceHome({ me }: { me: Me }) {
+  // An admin editing this device's capabilities, or unpairing it, should
+  // show here without anyone touching the device: re-read /me on the
+  // usual cadence. Unpairing makes /me 401, which bounces to login.
+  const refreshMe = useRefreshMe();
+  usePolled(refreshMe, 30000);
   const tiles = deviceTiles(me);
   return (
     <div className="page">

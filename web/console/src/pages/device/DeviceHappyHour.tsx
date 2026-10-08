@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type HappyHour } from '../../api';
 import { useSetChatContext } from '../../chatContext';
+import { usePolled } from '../../usePolled';
 
 // Happy hour, from the bar iPad: is it on, and one big button to flip it.
 // Same Start now / End now the admin page has, without the schedule and
@@ -17,14 +18,15 @@ export default function DeviceHappyHour() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const load = () =>
+  // Polled: happy hour is ended from Slack, the schedule, or the other
+  // iPad as often as from here, and a Start button over an already-on
+  // happy hour is the lie this page exists to avoid.
+  usePolled(() =>
     api
       .happyHour()
       .then(setData)
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  useEffect(() => {
-    void load();
-  }, []);
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e))),
+  );
 
   async function flip(on: boolean) {
     setBusy(true);

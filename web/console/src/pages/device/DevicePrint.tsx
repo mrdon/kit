@@ -37,7 +37,7 @@ export default function DevicePrint() {
         </nav>
         <h1>Print the menu</h1>
         <p className="page-sub">
-          Refresh the tap list first if a keg changed, then open the menu and print it from the share button.
+          Refresh the tap list first if a keg changed, write a description for anything new, then open the menu and print it from the share button.
         </p>
       </div>
       {note && <p className={note.ok ? 'banner banner-ok' : 'banner banner-error'}>{note.text}</p>}
@@ -48,6 +48,9 @@ export default function DevicePrint() {
         <a className="btn device-btn" href={`/${SLUG}/menu/print.pdf`} target="_blank" rel="noopener">
           Open the menu to print
         </a>
+        <Link className="btn device-btn-sm" to="/device/descriptions">
+          Beer descriptions
+        </Link>
       </section>
     </div>
   );

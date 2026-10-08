@@ -30,6 +30,7 @@ import DeviceGlutenReduced from './pages/device/DeviceGlutenReduced';
 import DeviceScreens from './pages/device/DeviceScreens';
 import DevicePrint from './pages/device/DevicePrint';
 import DeviceTopper from './pages/device/DeviceTopper';
+import DeviceDescriptions from './pages/device/DeviceDescriptions';
 import Vault from './pages/Vault';
 import Skills from './pages/Skills';
 import Jobs from './pages/Jobs';
@@ -76,6 +77,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/device/screens" element={<DeviceScreens />} />
           <Route path="/device/print" element={<DevicePrint />} />
           <Route path="/device/topper" element={<DeviceTopper />} />
+          <Route path="/device/descriptions" element={<DeviceDescriptions />} />
           <Route path="/admin/trivia" element={<TriviaQuestions />} />
           <Route path="/admin/menu" element={<MenuPrintSettings />} />
           <Route path="/admin/happy-hour" element={<MenuHappyHour />} />
