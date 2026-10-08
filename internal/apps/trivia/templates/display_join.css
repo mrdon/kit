@@ -100,3 +100,10 @@
    right-hand 540px is already the standings rail. */
 .cards-screen.cornered .cards-footer { padding-right: 490px; }
 .cards-screen.cornered-left .cards-footer { padding-left: 490px; }
+/* The question screen gives up the right of its BOTTOM ROW only -- the
+   answered bars and the count. The strip is told not to wrap here: at
+   eighteen tables the bars no longer fit at full width, and a wrapped second
+   row lands on the count. Squeezed, they still read as a row of tables. The
+   question text and the ring above keep the full width. */
+#s-question.cornered .q-wrap > div:last-child { padding-right: 460px; }
+#s-question.cornered .answered-strip { flex-wrap: nowrap; }

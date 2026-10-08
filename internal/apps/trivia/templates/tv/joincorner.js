@@ -7,12 +7,16 @@
    said nothing at all about how to join. So the corner rides along in the
    phases where a latecomer can actually act on it.
 
-   Where it does NOT appear is as deliberate as where it does. The question and
-   the betting belong to the clock: those two screens are a countdown with one
-   thing to look at, and a QR competing with the ring is a QR nobody scans and
-   a clock somebody misses. The lobby already has the code at 700px. The podium
-   is over. And once the final is up the server refuses the join anyway, so
-   showing the code there would be an invitation to a closed door. */
+   That includes the question and the betting. They were left out at first on
+   the theory that a countdown screen should have one thing to look at, but
+   those are most of the night's wall time -- a latecomer who walks in
+   mid-question saw no way in at all. The compact form sits clear of the ring
+   and shares the bottom row instead.
+
+   Where it does NOT appear is as deliberate as where it does. The lobby
+   already has the code at 700px. The podium is over. And once the final is up
+   the server refuses the join anyway, so showing the code there would be an
+   invitation to a closed door. */
 
 /* An ALLOW-list, not a deny-list, because a phase this file has never heard of
    must default to hiding the corner rather than painting it over whatever that
@@ -27,7 +31,9 @@
 var JOIN_PHASES = {};
 JOIN_PHASES[PHASE.BOARD] = true;
 JOIN_PHASES[PHASE.INTERMISSION] = true;
+JOIN_PHASES[PHASE.QUESTION] = true;
 JOIN_PHASES[PHASE.REVEAL] = true;
+JOIN_PHASES[PHASE.BETTING] = true;
 JOIN_PHASES[PHASE.SCORING] = true;
 JOIN_PHASES[PHASE.WAGER] = true;
 
@@ -75,6 +81,7 @@ function renderJoinCorner() {
   var cards = document.getElementById('cards-screen');
   cards.classList.toggle('cornered', small && !left);
   cards.classList.toggle('cornered-left', left);
+  document.getElementById('s-question').classList.toggle('cornered', small && state.phase === PHASE.QUESTION);
 }
 
 /* ---------- the arrivals toast ---------- */
