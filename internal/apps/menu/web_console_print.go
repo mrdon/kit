@@ -33,7 +33,12 @@ func registerPrintConsoleRoutes(mux apps.Mux, a *App) {
 	}
 	mux.Handle("GET /{slug}/api/menu/print", adminRoute(a.handleGetPrintConfig))
 	mux.Handle("PUT /{slug}/api/menu/print", adminRoute(a.handleSavePrintConfig))
-	mux.Handle("POST /{slug}/api/menu/print/sync", adminRoute(a.handleSyncPrint))
+	// Sync is not configuration: it refreshes the tap list the paper menu
+	// prints from, and nothing else does (there is no cron). A device that
+	// can print must be able to sync first, or it prints last week's kegs.
+	// Still admin for people, as before.
+	mux.Handle("POST /{slug}/api/menu/print/sync",
+		console.RequireCapAdmin(a.pool, a.signer, auth.CapMenuPrint, a.handleSyncPrint))
 }
 
 // printConfigPayload is the wire shape.

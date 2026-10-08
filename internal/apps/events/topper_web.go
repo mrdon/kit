@@ -25,10 +25,12 @@ import (
 // is showing it as plain text.
 var errWeekParam = errors.New("week must be a date (YYYY-MM-DD), \"this\" or \"next\"")
 
-// registerTopperRoutes mounts the printable table topper.
+// registerTopperRoutes mounts the printable table topper. Any member, and
+// a paired device holding events.topper (the bar iPad prints the week's
+// card on a Friday).
 func registerTopperRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/events/topper.pdf",
-		console.PageRoute(a.pool, a.signer, a.handleTopper))
+		console.RequireCapPage(a.pool, a.signer, auth.CapEventsTopper, a.handleTopper))
 }
 
 // handleTopper renders the sheet for the requested week.

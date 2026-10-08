@@ -107,11 +107,14 @@ func (s *Signer) Decode(wire string) (*Token, error) {
 	if !ok || bodyB64 == "" {
 		return nil, ErrMalformed
 	}
-	body, err := base64.RawURLEncoding.DecodeString(bodyB64)
+	// Strict decoding refuses non-canonical trailing bits, so a token that
+	// differs from the one we minted in even its last character is
+	// malformed rather than quietly decoding to the same bytes.
+	body, err := base64.RawURLEncoding.Strict().DecodeString(bodyB64)
 	if err != nil || len(body) < 8 {
 		return nil, ErrMalformed
 	}
-	got, err := base64.RawURLEncoding.DecodeString(macB64)
+	got, err := base64.RawURLEncoding.Strict().DecodeString(macB64)
 	if err != nil {
 		return nil, ErrMalformed
 	}

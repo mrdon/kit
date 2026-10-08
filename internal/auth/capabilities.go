@@ -19,6 +19,7 @@ const (
 	CapMenuPrint         = "menu.print"
 	CapKioskRepoint      = "kiosk.repoint"
 	CapTriviaHost        = "trivia.host"
+	CapEventsTopper      = "events.topper"
 )
 
 // HumanCheck is the role test a person must pass for a capability.
@@ -46,6 +47,7 @@ var Capabilities = []Capability{
 	{Name: CapMenuHappyHour, Label: "Start and end happy hour", Human: HumanAdmin},
 	{Name: CapMenuPrint, Label: "Print the menu", Human: HumanMember},
 	{Name: CapMenuGlutenReduced, Label: "Tick gluten reduced beers", Human: HumanAdmin},
+	{Name: CapEventsTopper, Label: "Print the table topper", Human: HumanMember},
 	{Name: CapKioskRepoint, Label: "Repoint wall screens", Human: HumanMember},
 	{Name: CapTriviaHost, Label: "Host trivia", Human: HumanMember},
 }

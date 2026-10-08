@@ -1,6 +1,5 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { Me } from './api';
-import { SLUG } from './workspace';
 
 // The chrome and the home screen a paired device sees. One shell serves
 // every device kind: the trivia laptop is this shell showing a single tile,
@@ -29,9 +28,15 @@ const DEVICE_TILES: DeviceTile[] = [
   },
   {
     cap: 'menu.print',
-    href: `/${SLUG}/menu/print.pdf`,
+    to: '/device/print',
     title: 'Print the menu',
-    blurb: 'Opens the paper menu; print it from the share button.',
+    blurb: 'Refresh the tap list, then open the paper menu to print.',
+  },
+  {
+    cap: 'events.topper',
+    to: '/device/topper',
+    title: 'Table topper',
+    blurb: 'Print this week’s or next week’s events card.',
   },
   {
     cap: 'menu.gluten_reduced',
@@ -58,15 +63,27 @@ export function deviceTiles(me: Me): DeviceTile[] {
   return DEVICE_TILES.filter((t) => caps.has(t.cap));
 }
 
+// The bar's one control is a Home button, shown everywhere but home. A
+// brand link alone reads as decoration on a tablet; a labelled button with
+// a chevron reads as "back to the tiles", which is the only navigation a
+// device has.
 export function DeviceBar({ me }: { me: Me }) {
+  const atHome = useLocation().pathname === '/';
   return (
     <header className="devicebar">
-      <Link to="/" className="devicebar-brand">
-        {me.workspace_icon_url && (
-          <img src={me.workspace_icon_url} alt="" width={28} height={28} className="topbar-icon" />
+      <div className="devicebar-left">
+        {!atHome && (
+          <Link to="/" className="devicebar-home">
+            <span aria-hidden="true">‹</span> Home
+          </Link>
         )}
-        <span>{me.workspace_name}</span>
-      </Link>
+        <span className="devicebar-brand">
+          {me.workspace_icon_url && (
+            <img src={me.workspace_icon_url} alt="" width={28} height={28} className="topbar-icon" />
+          )}
+          <span>{me.workspace_name}</span>
+        </span>
+      </div>
       <span className="devicebar-label">{me.label}</span>
     </header>
   );

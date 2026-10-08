@@ -17,7 +17,7 @@ type Preset struct {
 var presets = []Preset{
 	{Key: "trivia", Label: "Trivia driver", Capabilities: []string{auth.CapTriviaHost}},
 	{Key: "taproom", Label: "Taproom admin", Capabilities: []string{
-		auth.CapMenuHappyHour, auth.CapMenuPrint, auth.CapMenuGlutenReduced, auth.CapKioskRepoint,
+		auth.CapMenuHappyHour, auth.CapMenuPrint, auth.CapMenuGlutenReduced, auth.CapEventsTopper, auth.CapKioskRepoint,
 	}},
 }
 
