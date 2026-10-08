@@ -19,7 +19,7 @@
 // source works for every workspace.
 const SCOPE_URL = new URL(self.registration.scope);
 const SCOPE = SCOPE_URL.pathname; // trailing slash included
-const CACHE = 'kit' + SCOPE + 'v7';
+const CACHE = 'kit' + SCOPE + 'v8';
 // Shell is intentionally minimal — manifest and icons are fetched
 // straight from the network so install-time icon changes aren't
 // masked by a stale cached shell.
@@ -75,6 +75,13 @@ self.addEventListener('fetch', (e) => {
   // out explicitly or its network-first-with-fallback would cache console
   // HTML and serve a stale shell offline.
   if (url.pathname === SCOPE + 'web' || url.pathname.startsWith(SCOPE + 'web/')) return;
+  // Never touch the wall screens (the menu board, the events screen) or the
+  // version stamps they poll. A screen reloads when its stamp moves, so a
+  // stamp served cache-first answers every poll with the first value it ever
+  // saw: after the next change the fresh page never matches it, and the
+  // screen reloads every thirty seconds until a hard refresh bypasses us.
+  if (url.pathname.endsWith('.version')) return;
+  if (url.pathname === SCOPE + 'menu' || url.pathname === SCOPE + 'events/screen') return;
 
   if (e.request.method !== 'GET') return;
 
