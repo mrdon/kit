@@ -54,7 +54,7 @@ func (a *App) SendFeedback(ctx context.Context, game *Game, team *Team, stars in
 	// Podium-only cost a real night its ratings: the game stopped on the
 	// mentions, the rating lived one screen further on, and six tables were
 	// never asked.
-	if game.Phase != PhaseAwards && game.Phase != PhasePodium {
+	if game.Phase != PhasePodium {
 		return fmt.Errorf("%w: the game is not over yet", ErrClosed)
 	}
 	comment, err := validateFeedback(stars, comment)

@@ -204,8 +204,8 @@ func (a *App) settingsForNewGame(r *http.Request, tenantID uuid.UUID, asked *Set
 	return normaliseSettings(s), nil
 }
 
-// defaultGameTitle names a night when the host has not. Dated, so a list of
-// them is scannable rather than a column of identical labels.
+// defaultGameTitle names a night when the host has not. The game is
+// Guesstronauts; a night is called that unless the host says otherwise.
 func defaultGameTitle() string {
-	return "Quiz night, " + time.Now().Format("2 Jan")
+	return "Guesstronauts"
 }

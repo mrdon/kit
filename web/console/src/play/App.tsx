@@ -4,7 +4,7 @@ import { useStream, useWakeLock } from './useStream';
 import { useBuildReload } from './useBuildReload';
 import { Answer, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';
-import { Mentions, Podium, Result, Standings } from './results';
+import { Podium, Result, Standings } from './results';
 import { sittingOutScreen, WatchingCards } from './waiting';
 
 // LOCAL_KEY mirrors {gameId, teamId, teamName} — never the token — purely so
@@ -189,8 +189,6 @@ function Playing({
       return <Betting frame={frame} msLeft={msLeft} onDone={apply} />;
     case PHASE.SCORING:
       return <Result frame={frame} />;
-    case PHASE.AWARDS:
-      return <Mentions frame={frame} />;
     case PHASE.PODIUM:
       return <Podium frame={frame} />;
     default:
@@ -362,7 +360,7 @@ function Lobby({ frame, onJoined }: { frame: PlayerFrame; onJoined: (v: { teamId
   }
 
   const full = frame.teams.length >= 20;
-  const finished = frame.phase === PHASE.AWARDS || frame.phase === PHASE.PODIUM;
+  const finished = frame.phase === PHASE.PODIUM;
   return (
     <div className="body">
       {/* The night's name, big, so somebody who just scanned a QR can confirm

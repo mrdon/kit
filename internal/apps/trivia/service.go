@@ -162,7 +162,7 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 	if err := s.fillLastRound(ctx, snap, game); err != nil {
 		return nil, err
 	}
-	if game.Phase == PhaseAwards || game.Phase == PhasePodium {
+	if game.Phase == PhasePodium {
 		if err := s.fillAwards(ctx, snap, game); err != nil {
 			return nil, err
 		}

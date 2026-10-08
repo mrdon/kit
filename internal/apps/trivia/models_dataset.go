@@ -57,7 +57,7 @@ func DatasetInUse(ctx context.Context, q Querier, tenantID, datasetID uuid.UUID)
 		  JOIN app_trivia_questions qs ON qs.id = c.question_id AND qs.tenant_id = c.tenant_id
 		  JOIN app_trivia_games g ON g.id = c.game_id AND g.tenant_id = c.tenant_id
 		 WHERE c.tenant_id = $1 AND qs.dataset_id = $2
-		   AND g.phase NOT IN ('awards', 'podium')
+		   AND g.phase <> 'podium'
 		 LIMIT 1`, tenantID, datasetID).Scan(&name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

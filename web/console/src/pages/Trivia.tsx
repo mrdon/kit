@@ -123,17 +123,29 @@ export default function Trivia() {
             <div className="card-main">
               <span className="card-title">{g.title}</span>
               <span className="card-desc">
-                {g.teams} team{g.teams === 1 ? '' : 's'}
+                {new Date(g.created_at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+                {` · ${g.teams} team${g.teams === 1 ? '' : 's'}`}
                 {g.cells ? ` · ${g.played}/${g.cells} played` : ' · no board yet'}
-                {g.leader ? ` · leading: ${g.leader}` : ''}
+                {g.leader ? (g.phase === PHASE.PODIUM ? ` · winner: ${g.leader}` : ` · leading: ${g.leader}`) : ''}
               </span>
             </div>
             <div className="card-side">
               <span className={g.phase === PHASE.PODIUM ? 'pill pill-off' : 'pill pill-ok'}>
                 {PHASE_LABEL[g.phase]}
               </span>
-              <Link className="card-manage" to={`/trivia/${g.id}`}>Set up</Link>
-              <Link className="card-manage" to={`/trivia/${g.id}/live`}>Run it</Link>
+              {/* The actions follow the phase. Settings freeze once the board
+                  is in play, so Set up is only offered before then; a finished
+                  night offers its results rather than a button to run it. */}
+              {(g.phase === PHASE.SETUP || g.phase === PHASE.LOBBY) && (
+                <Link className="card-manage" to={`/trivia/${g.id}`}>Set up</Link>
+              )}
+              {g.phase === PHASE.PODIUM ? (
+                <Link className="card-manage" to={`/trivia/${g.id}/live`}>Results</Link>
+              ) : (
+                <Link className="card-manage" to={`/trivia/${g.id}/live`}>
+                  {g.phase === PHASE.SETUP || g.phase === PHASE.LOBBY ? 'Run it' : 'Resume'}
+                </Link>
+              )}
               {/* Two taps, because deleting a game takes its scores with it
                   and there is no undo. */}
               {confirming === g.id ? (

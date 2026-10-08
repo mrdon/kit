@@ -176,17 +176,8 @@ export function cueFor(frame: HostFrame): string {
     case PHASE.REVEAL: return 'Cards are up. Betting opens next.';
     case PHASE.BETTING: return cueBetting(frame);
     case PHASE.SCORING: return cueScoring(frame);
-    case PHASE.AWARDS: return cueAwards(frame);
     case PHASE.PODIUM: return cuePodium(frame);
   }
-}
-
-// The mentions are up and nothing is on a clock. The cue tells the host what
-// to say and reminds them the list is right below it.
-function cueAwards(frame: HostFrame): string {
-  const n = frame.awards.length;
-  if (!n) return 'Honorable mentions are up. Show the winner when ready.';
-  return `Honorable mentions are up. Read the ${n} below out, then show the winner.`;
 }
 
 function cueLobby(frame: HostFrame): string {
@@ -279,14 +270,20 @@ function movers(frame: HostFrame, deltas: Record<string, number>): string {
   return ` ${top.map((r) => `${r.name} ${signed(r.d)}`).join(', ')}.`;
 }
 
+// The ending. The mentions deal onto the wall first and the plinths rise
+// after them, so the cue tells the host to read the list below while that
+// happens; the winner is already decided and already on the screen.
 function cuePodium(frame: HostFrame): string {
   const top = [...frame.teams].sort((a, b) => b.score - a.score)[0];
   if (!top) return "That's the game";
   // A tie is a tie: two tables on the same money both won, and the phone
   // already tells each of them so.
   const winners = frame.teams.filter((t) => t.score === top.score).map((t) => t.name);
-  if (winners.length > 1) return `Winners: ${winners.join(' and ')} with ${money(top.score)}`;
-  return `Winner: ${top.name} with ${money(top.score)}`;
+  const crown = winners.length > 1
+    ? `Winners: ${winners.join(' and ')} with ${money(top.score)}`
+    : `Winner: ${top.name} with ${money(top.score)}`;
+  const n = frame.awards.length;
+  return n ? `${crown}. Read the ${n} ${plural(n, 'mention')} below out while the plinths rise.` : crown;
 }
 
 function plural(n: number, word: string): string {

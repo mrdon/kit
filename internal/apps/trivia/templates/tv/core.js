@@ -237,7 +237,6 @@ var PHASE = {
   REVEAL: 'reveal',
   BETTING: 'betting',
   SCORING: 'scoring',
-  AWARDS: 'awards',
   PODIUM: 'podium'
 };
 
@@ -270,7 +269,6 @@ function render(prev) {
     case PHASE.REVEAL:  renderCards(PHASE.REVEAL); break;
     case PHASE.BETTING: renderCards(PHASE.BETTING); break;
     case PHASE.SCORING: renderScoring(phaseChanged); break;
-    case PHASE.AWARDS:  renderAwards(phaseChanged); break;
     case PHASE.PODIUM:  renderPodium(phaseChanged); break;
     default:        show('s-hold');
   }

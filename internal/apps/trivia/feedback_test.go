@@ -171,8 +171,8 @@ func TestFeedbackIsAcceptedOnTheMentions(t *testing.T) {
 	cookie := f.joinOverHTTP(game, "Bar Flies")
 	poster := &fakePoster{}
 
-	if _, err := SetPhaseUnconditional(f.ctx, f.pool, f.tenant.ID, game.ID, PhaseAwards, nil, nil); err != nil {
-		t.Fatalf("moving to the mentions: %v", err)
+	if _, err := SetPhaseUnconditional(f.ctx, f.pool, f.tenant.ID, game.ID, PhasePodium, nil, nil); err != nil {
+		t.Fatalf("moving to the podium: %v", err)
 	}
 	game = f.reload(game.ID)
 

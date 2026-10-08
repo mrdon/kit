@@ -40,9 +40,6 @@ const (
 	ActionFinal       Action = "final"
 	ActionExtend      Action = "extend"
 	ActionFinish      Action = "finish"
-	// ActionShowWinner is the second press of the ending: the mentions have
-	// been read out and the room is ready for the crown.
-	ActionShowWinner Action = "show_winner"
 )
 
 // ActionRequest is the one host endpoint's body.
@@ -139,24 +136,9 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 	case ActionFinish:
 		// Legal from any phase, and it ends the night wherever the night is.
 		// A quiz that has to stop because the kitchen is closing should not
-		// require playing out the board -- but it should still get its
-		// ceremony, so this lands on the mentions when there are any and the
-		// host presses once more for the winner.
-		//
-		// FROM THE MENTIONS IT GOES STRAIGHT TO THE CROWN. endOfNight would
-		// recompute the awards, find the same ones, and move to the phase it
-		// is already in -- a no-op that looks from the console exactly like a
-		// button that does not work. That stranded a real game: the host had
-		// no "Show the winner" button (an older console bundle, since fixed),
-		// pressed the one control they had left, and the night sat on the
-		// mentions screen for good. The room never saw the podium and no
-		// phone ever offered the rating that only appears there.
-		if game.Phase == PhaseAwards {
-			return s.moveTo(ctx, game, PhasePodium, nil, game.CurrentRoundID)
-		}
+		// require playing out the board -- but it still gets its ceremony:
+		// the podium, mentions and all, on one screen.
 		return s.endOfNight(ctx, game, game.CurrentRoundID)
-	case ActionShowWinner:
-		return s.moveTo(ctx, game, PhasePodium, nil, game.CurrentRoundID)
 	default:
 		return fmt.Errorf("%w: unknown action %q", ErrBadRequest, req.Action)
 	}
@@ -471,22 +453,11 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 	return s.moveTo(ctx, game, PhaseBoard, nil, nil)
 }
 
-// endOfNight moves to the ending, which is the mentions when the night
-// produced any and the podium when it did not.
-//
-// The pool is resolved HERE rather than on the way out of the awards phase
-// so the host is never shown an empty screen to press through: a room of two
-// that qualified for nothing goes straight to the plinths, exactly as it did
-// before the mentions existed.
+// endOfNight is the one ending: the podium. The mentions are computed by
+// the projection from the night's rows, so a room that earned none simply
+// sees the plinths.
 func (s *Service) endOfNight(ctx context.Context, game *Game, roundID *uuid.UUID) error {
-	in, err := AwardRows(ctx, s.pool, game.TenantID, game.ID)
-	if err != nil {
-		return err
-	}
-	if len(Awards(in)) == 0 {
-		return s.moveTo(ctx, game, PhasePodium, nil, roundID)
-	}
-	return s.moveTo(ctx, game, PhaseAwards, nil, roundID)
+	return s.moveTo(ctx, game, PhasePodium, nil, roundID)
 }
 
 // anyPlayedInRound reports whether a round has been started at all.

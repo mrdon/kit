@@ -242,15 +242,10 @@ func TestAFinishedRoundStopsAtTheIntermission(t *testing.T) {
 	if got := f.reload(game.ID).Phase; got != PhaseBoard {
 		t.Fatalf("phase after the last round = %q, want it waiting on the board", got)
 	}
-	// The ending is two presses: the mentions go up, the host reads them
-	// out, and the second press brings the crown.
+	// The ending is one press: the podium, mentions and all.
 	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
-	if got := f.reload(game.ID).Phase; got != PhaseAwards {
-		t.Fatalf("phase after the host called it = %q, want the honorable mentions", got)
-	}
-	f.do(game.ID, ActionRequest{Action: ActionShowWinner, FromPhase: PhaseAwards})
 	if got := f.reload(game.ID).Phase; got != PhasePodium {
-		t.Fatalf("phase after showing the winner = %q, want the podium", got)
+		t.Fatalf("phase after the host called it = %q, want the podium", got)
 	}
 }
 
@@ -765,12 +760,7 @@ func TestFinishFromTheMentionsReachesThePodium(t *testing.T) {
 	f.playNextCell(f.reload(game.ID), team)
 
 	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseBoard})
-	if got := f.reload(game.ID).Phase; got != PhaseAwards {
-		t.Fatalf("phase after ending the night = %q, want the mentions", got)
-	}
-	// Pressing the same control again must MOVE, not sit still.
-	f.do(game.ID, ActionRequest{Action: ActionFinish, FromPhase: PhaseAwards})
 	if got := f.reload(game.ID).Phase; got != PhasePodium {
-		t.Fatalf("phase after ending the night from the mentions = %q, want the podium", got)
+		t.Fatalf("phase after ending the night = %q, want the podium", got)
 	}
 }

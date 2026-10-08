@@ -215,7 +215,7 @@ export interface HostFrame {
   progress: { cellsPlayed: number; cellsTotal: number; finalPlayed: boolean };
   picker: Picker | null;
   pickerReason: PickerReason;
-  // The honorable mentions the TV is about to show. Empty until the podium.
+  // The honorable mentions, dealt onto the podium screen. Empty until then.
   awards: HostAward[];
 }
 
@@ -275,7 +275,6 @@ export const PHASE_LABEL: Record<Phase, string> = {
   [PHASE.REVEAL]: 'Cards up, betting next',
   [PHASE.BETTING]: 'Placing bets',
   [PHASE.SCORING]: 'Scored',
-  [PHASE.AWARDS]: 'Honorable mentions',
   [PHASE.PODIUM]: 'Finished',
 };
 
@@ -318,10 +317,6 @@ export function primaryAction(phase: Phase, boardEmpty: boolean, finalWager: boo
     case PHASE.REVEAL: return { action: ACTION.OPEN_BETTING, label: 'Open betting' };
     case PHASE.BETTING: return { action: ACTION.SCORE, label: 'Score the round' };
     case PHASE.SCORING: return { action: ACTION.NEXT, label: 'Next' };
-    // The ending is two presses. This is the second, and it is the only
-    // thing the host can do from here -- nothing is on a clock, so the
-    // mentions stay up for as long as it takes to read them out.
-    case PHASE.AWARDS: return { action: ACTION.SHOW_WINNER, label: 'Show the winner' };
     case PHASE.PODIUM: return null;
   }
 }

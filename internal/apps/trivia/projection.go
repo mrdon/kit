@@ -233,7 +233,7 @@ func publicAwards(s *Snapshot) []wireAward {
 // would know exactly what to bet on.
 func revealed(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseReveal, PhaseBetting, PhaseScoring, PhaseAwards, PhasePodium:
+	case PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
 		return true
 	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager, PhaseQuestion:
 		return false
@@ -253,7 +253,7 @@ func roundVisible(s *Snapshot) bool {
 // onward carries it.
 func questionVisible(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring, PhaseAwards, PhasePodium:
+	case PhaseQuestion, PhaseReveal, PhaseBetting, PhaseScoring, PhasePodium:
 		return true
 	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager:
 		// WAGER IS THE LOAD-BEARING ONE. The final's prompt must not reach a
@@ -343,7 +343,7 @@ func publicRound(s *Snapshot) *wireRound {
 // previous life.
 func betsVisible(s *Snapshot) bool {
 	switch s.Phase {
-	case PhaseBetting, PhaseScoring, PhaseAwards, PhasePodium:
+	case PhaseBetting, PhaseScoring, PhasePodium:
 		return true
 	case PhaseSetup, PhaseLobby, PhaseBoard, PhaseIntermission, PhaseWager, PhaseQuestion, PhaseReveal:
 		return false

@@ -22,9 +22,7 @@ export const PHASE = {
   REVEAL: 'reveal',
   BETTING: 'betting',
   SCORING: 'scoring',
-  // The honorable mentions. Its own phase because the host drives it: press
-  // once to put them up, read them out, press again for the winner.
-  AWARDS: 'awards',
+  // The ending: the honorable mentions and the plinths on one screen.
   PODIUM: 'podium',
 } as const;
 
@@ -43,8 +41,6 @@ export const ACTION = {
   FINAL: 'final',
   EXTEND: 'extend',
   FINISH: 'finish',
-  // The second press of the ending: mentions read out, now the crown.
-  SHOW_WINNER: 'show_winner',
   // Ends the break and opens the next board.
   RESUME: 'resume',
   // Appends one more board to a night that is going well.

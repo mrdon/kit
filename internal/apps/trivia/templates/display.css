@@ -579,8 +579,8 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
    and shrinks rather than picking a size that suits neither. Same loop as
    fitRail and fitJoinRules. */
 .awards-head {
-  margin: 0; padding: 32px 0 14px; text-align: center;
-  font: 400 62px/1 var(--display); color: var(--dim);
+  margin: 0; padding: 18px 0 10px; text-align: center;
+  font: 400 54px/1 var(--display); color: var(--dim);
 }
 .awards {
   display: grid; gap: var(--award-gap, 14px);
@@ -603,26 +603,33 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 }
 .award-detail { font: 400 var(--award-detail, 30px)/1.25 var(--body); color: var(--dim); }
 
-/* ---------- 8. podium ---------- */
-.podium { height: 100%; display: flex; gap: 40px; align-items: flex-end; justify-content: center; padding-bottom: 60px; }
+/* ---------- 8. the ending ----------
+   A compact podium across the top third, the mentions below it. The plinths
+   are a third of the height they had when they were the whole screen: the
+   room already knows who won, and the lower half of the wall is where the
+   cards deal. */
+.podium {
+  height: 360px; display: flex; gap: 32px; align-items: flex-end; justify-content: center;
+  padding: 0 90px; border-bottom: 2px solid var(--line);
+}
 .plinth {
-  flex: 0 1 420px; border-radius: 24px 24px 0 0; padding: 34px 24px;
+  flex: 0 1 420px; border-radius: 24px 24px 0 0; padding: 22px 24px 18px;
   background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
   border: 3px solid var(--line); border-bottom: none; text-align: center;
   animation: rise .6s cubic-bezier(.2,.9,.3,1.1) both;
 }
-.plinth.p1 { height: 620px; border-color: var(--gold); background: linear-gradient(180deg, rgba(245,196,81,.34), rgba(245,196,81,.08)); }
+.plinth.p1 { height: 300px; border-color: var(--gold); background: linear-gradient(180deg, rgba(245,196,81,.34), rgba(245,196,81,.08)); }
 /* A tied winner on the second plinth is still a winner: gold like the first. */
 .plinth.tied-top { border-color: var(--gold); background: linear-gradient(180deg, rgba(245,196,81,.34), rgba(245,196,81,.08)); }
 .plinth.tied-top .rank { color: var(--gold); }
-.plinth.p2 { height: 480px; }
-.plinth.p3 { height: 400px; }
+.plinth.p2 { height: 250px; }
+.plinth.p3 { height: 220px; }
 @keyframes rise { from { transform: translateY(120px); opacity: 0; } to { transform: none; opacity: 1; } }
-.plinth .rank { font: 400 72px/1 var(--display); color: var(--dim); }
-.plinth.p1 .rank { color: var(--gold); font-size: 96px; }
-.plinth .name { font: 700 46px/1.15 var(--body); margin: 18px 0; overflow-wrap: anywhere; }
-.plinth .score { font: 400 76px/1 var(--display); color: var(--gold); font-variant-numeric: tabular-nums; }
-.crown { font-size: 90px; }
+.plinth .rank { font: 400 40px/1 var(--display); color: var(--dim); }
+.plinth.p1 .rank { color: var(--gold); font-size: 52px; }
+.plinth .name { font: 700 34px/1.1 var(--body); margin: 8px 0; overflow-wrap: anywhere; }
+.plinth .score { font: 400 48px/1 var(--display); color: var(--gold); font-variant-numeric: tabular-nums; }
+.crown { font-size: 48px; }
 .spark { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); pointer-events: none; }
 
 /* ---------- placeholder ---------- */
