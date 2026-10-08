@@ -33,7 +33,8 @@ func TestDeleteExpiredAPITokens(t *testing.T) {
 	hashes := map[string]string{}
 	for name, r := range rows {
 		hashes[name] = "hash-" + uuid.NewString()
-		if err := CreateAPIToken(ctx, pool, r.tenant, r.user, hashes[name], r.expires); err != nil {
+		user := r.user
+		if err := CreateAPIToken(ctx, pool, NewAPIToken{TenantID: r.tenant, UserID: &user, Kind: TokenKindSession, TokenHash: hashes[name], ExpiresAt: r.expires}); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}

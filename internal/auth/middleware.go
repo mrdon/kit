@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/auth/opaquetoken"
@@ -43,7 +43,7 @@ func BearerMiddleware(pool *pgxpool.Pool, next http.Handler) http.Handler {
 			return
 		}
 
-		caller, err := resolveToken(r.Context(), pool, token)
+		caller, err := resolveUserToken(r.Context(), pool, token)
 		if err != nil {
 			slog.Error("resolving token", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -67,7 +67,7 @@ func InjectCallerFromRequest(ctx context.Context, pool *pgxpool.Pool, r *http.Re
 	if token == "" {
 		return ctx
 	}
-	caller, err := resolveToken(ctx, pool, token)
+	caller, err := resolveUserToken(ctx, pool, token)
 	if err != nil {
 		slog.Error("resolving token for mcp", "error", err)
 		return ctx
@@ -134,7 +134,7 @@ func MCPAuthGate(pool *pgxpool.Pool, baseURL string, next http.Handler) http.Han
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		caller, err := resolveToken(r.Context(), pool, token)
+		caller, err := resolveUserToken(r.Context(), pool, token)
 		if err != nil {
 			slog.Error("resolving token for mcp", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -167,7 +167,7 @@ func AssertBearerMatchesPathTenant(pool *pgxpool.Pool, next http.Handler) http.H
 			next.ServeHTTP(w, r)
 			return
 		}
-		caller, err := resolveToken(r.Context(), pool, token)
+		caller, err := resolveUserToken(r.Context(), pool, token)
 		if err != nil {
 			slog.Error("resolving token for mcp tenant check", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -191,41 +191,72 @@ func extractBearerToken(r *http.Request) string {
 	return strings.TrimPrefix(auth, "Bearer ")
 }
 
-func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*services.Caller, error) {
+// resolveToken turns a raw bearer secret or cookie payload into a Caller.
+// Returns (nil, nil) for anything that should read as "no session": an
+// unknown, expired or revoked token, a deleted user or tenant, a revoked
+// actor. The api_tokens row is returned alongside so the session
+// middleware can renew a device's expiry; bearer callers ignore it.
+func resolveToken(ctx context.Context, pool *pgxpool.Pool, token string) (*services.Caller, *models.APIToken, error) {
 	hash := opaquetoken.Hash(token)
 	apiToken, err := models.LookupAPIToken(ctx, pool, hash)
-	if err != nil {
-		return nil, err
+	if err != nil || apiToken == nil {
+		return nil, nil, err
 	}
-	if apiToken == nil {
-		return nil, nil //nolint:nilnil // not found
-	}
-
-	user, err := models.GetUserByID(ctx, pool, apiToken.TenantID, apiToken.UserID)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		return nil, nil //nolint:nilnil // user deleted
-	}
-
 	tenant, err := models.GetTenantByID(ctx, pool, apiToken.TenantID)
-	if err != nil {
+	if err != nil || tenant == nil {
+		return nil, nil, err
+	}
+	if err := models.TouchAPIToken(ctx, pool, apiToken.TenantID, hash); err != nil {
+		slog.Warn("touching api token", "error", err)
+	}
+	if apiToken.ActorID != nil {
+		caller, err := resolveActorCaller(ctx, pool, tenant, *apiToken.ActorID)
+		return caller, apiToken, err
+	}
+	if apiToken.UserID == nil {
+		return nil, nil, nil
+	}
+	user, err := models.GetUserByID(ctx, pool, apiToken.TenantID, *apiToken.UserID)
+	if err != nil || user == nil {
+		return nil, nil, err
+	}
+	cr, _ := services.NewRoleService(pool).ResolveCallerRoles(ctx, tenant, user.ID)
+	return services.NewUserCaller(tenant, user, cr), apiToken, nil
+}
+
+// resolveActorCaller builds the caller for a token held by an actor. A
+// revoked actor reads as no session even if its token row somehow
+// survived, so revocation never depends on the token sweep.
+func resolveActorCaller(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, actorID uuid.UUID) (*services.Caller, error) {
+	actor, err := models.GetActor(ctx, pool, tenant.ID, actorID)
+	if err != nil || actor == nil || actor.RevokedAt != nil {
 		return nil, err
 	}
-	if tenant == nil {
-		return nil, nil //nolint:nilnil // tenant deleted
+	if err := models.TouchActor(ctx, pool, tenant.ID, actor.ID); err != nil {
+		slog.Warn("touching actor", "error", err)
 	}
+	switch actor.Kind {
+	case models.ActorKindDevice:
+		return services.NewDeviceCaller(tenant, actor), nil
+	default:
+		slog.Warn("api token held by actor of unsupported kind", "actor_id", actor.ID, "kind", actor.Kind)
+		return nil, nil //nolint:nilnil // reads as "no session", the same as a revoked actor
+	}
+}
 
-	cr, _ := services.NewRoleService(pool).ResolveCallerRoles(ctx, tenant, apiToken.UserID)
-
-	return &services.Caller{
-		TenantID: apiToken.TenantID,
-		UserID:   apiToken.UserID,
-		Identity: user.SlackUserID,
-		Roles:    cr.Names,
-		RoleIDs:  cr.IDs,
-		IsAdmin:  slices.Contains(cr.Names, models.RoleAdmin),
-		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
-	}, nil
+// resolveUserToken is resolveToken for the bearer surfaces (MCP and the
+// legacy /api/v1 bearer path), which are for people only: a device never
+// holds a bearer secret, and an MCP harness acting as a device would get
+// a tool catalog no capability list can describe. A non-user token reads
+// as invalid rather than as a caller with no rights.
+func resolveUserToken(ctx context.Context, pool *pgxpool.Pool, token string) (*services.Caller, error) {
+	caller, _, err := resolveToken(ctx, pool, token)
+	if err != nil || caller == nil {
+		return nil, err
+	}
+	if !caller.IsUser() {
+		slog.Warn("non-user token presented as bearer", "kind", caller.Kind, "actor_id", caller.ActorID)
+		return nil, nil //nolint:nilnil // reads as an invalid token, the same as an unknown one
+	}
+	return caller, nil
 }

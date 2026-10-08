@@ -120,25 +120,10 @@ type ExecContext struct {
 // public Q&A surface.
 func (ec *ExecContext) Caller() *services.Caller {
 	if ec.WidgetMode {
-		return &services.Caller{
-			TenantID:                ec.Tenant.ID,
-			Roles:                   []string{models.RoleMember},
-			IsAdmin:                 false,
-			HideBuiltinSkills:       true,
-			HideJobReferencedSkills: true,
-			Timezone:                services.ResolveTimezone("", ec.Tenant.Timezone),
-		}
+		return services.NewWidgetCaller(ec.Tenant)
 	}
 	cr, _ := services.NewRoleService(ec.Pool).ResolveCallerRoles(ec.Ctx, ec.Tenant, ec.User.ID)
-	return &services.Caller{
-		TenantID: ec.Tenant.ID,
-		UserID:   ec.User.ID,
-		Identity: ec.User.SlackUserID,
-		Roles:    cr.Names,
-		RoleIDs:  cr.IDs,
-		IsAdmin:  slices.Contains(cr.Names, models.RoleAdmin),
-		Timezone: services.ResolveTimezone(ec.User.Timezone, ec.Tenant.Timezone),
-	}
+	return services.NewUserCaller(ec.Tenant, ec.User, cr)
 }
 
 // HandlerFunc executes a tool and returns a string result.

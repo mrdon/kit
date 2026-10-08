@@ -156,7 +156,7 @@ func (s *DeepLinkSigner) Middleware(cfg DeepLinkMiddlewareConfig) func(http.Hand
 
 			skipMint := false
 			if existingRaw, ok := cfg.Sessions.extractToken(r); ok {
-				if existing, lookupErr := resolveToken(r.Context(), cfg.Pool, existingRaw); lookupErr == nil && existing != nil {
+				if existing, _, lookupErr := resolveToken(r.Context(), cfg.Pool, existingRaw); lookupErr == nil && existing != nil {
 					if existing.UserID == claims.UserID && existing.TenantID == claims.TenantID {
 						// Same user — leave the cookie alone. 302 to
 						// the clean URL so the token doesn't sit in

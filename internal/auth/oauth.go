@@ -402,7 +402,14 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := models.CreateAPIToken(r.Context(), s.pool, oauthCode.TenantID, oauthCode.UserID, tokenHash, time.Now().Add(tokenLifetime)); err != nil {
+	if err := models.CreateAPIToken(r.Context(), s.pool, models.NewAPIToken{
+		TenantID:  oauthCode.TenantID,
+		UserID:    &oauthCode.UserID,
+		Kind:      models.TokenKindMCP,
+		Label:     "MCP client",
+		TokenHash: tokenHash,
+		ExpiresAt: time.Now().Add(tokenLifetime),
+	}); err != nil {
 		slog.Error("storing token", "error", err)
 		jsonError(w, "server_error", http.StatusInternalServerError)
 		return

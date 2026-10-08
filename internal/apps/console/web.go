@@ -9,6 +9,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/services"
 	consoleweb "github.com/mrdon/kit/web/console"
 )
 
@@ -40,6 +41,12 @@ func (a *App) handleShell(w http.ResponseWriter, r *http.Request) {
 // the logout URL feed the top bar (mirrors the chrome.Header the vanilla
 // pages render).
 type meResponse struct {
+	// Kind is "user" or "device". The shell switches on it: a device gets
+	// only the screens its capabilities name, with no chat, nav or logout.
+	Kind         string   `json:"kind"`
+	Label        string   `json:"label"`
+	Capabilities []string `json:"capabilities"`
+
 	UserID        string   `json:"user_id"`
 	DisplayName   string   `json:"display_name"`
 	IsAdmin       bool     `json:"is_admin"`
@@ -57,10 +64,22 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := caller.Identity
-	if u, err := models.GetUserByID(r.Context(), a.pool, caller.TenantID, caller.UserID); err == nil && u != nil {
-		if u.DisplayName != nil && *u.DisplayName != "" {
-			name = *u.DisplayName
+	if caller.IsUser() {
+		if u, err := models.GetUserByID(r.Context(), a.pool, caller.TenantID, caller.UserID); err == nil && u != nil {
+			if u.DisplayName != nil && *u.DisplayName != "" {
+				name = *u.DisplayName
+			}
 		}
+	} else {
+		name = caller.Label
+	}
+	kind := caller.Kind
+	if kind == "" {
+		kind = services.CallerUser
+	}
+	caps := caller.Capabilities
+	if caps == nil {
+		caps = []string{}
 	}
 	wsName := tenant.Name
 	if wsName == "" {
@@ -75,8 +94,15 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 			disabled = append(disabled, name)
 		}
 	}
+	userID := ""
+	if caller.IsUser() {
+		userID = caller.UserID.String()
+	}
 	writeJSON(w, http.StatusOK, meResponse{
-		UserID:        caller.UserID.String(),
+		Kind:          string(kind),
+		Label:         caller.Label,
+		Capabilities:  caps,
+		UserID:        userID,
 		DisplayName:   name,
 		IsAdmin:       caller.IsAdmin,
 		WorkspaceName: wsName,

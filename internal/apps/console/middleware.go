@@ -22,6 +22,23 @@ func PageRoute(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFun
 		auth.AssertTenantMatch(signer, requireCallerHandler(h)))))
 }
 
+// ShellRoute is PageRoute for the React shell itself: a paired device
+// must be able to load the HTML (and, via MeRoute, learn what it is) so
+// the shell can render the device's screens. Nothing else is granted
+// here; every API the shell then calls is refused unless it opted in.
+func ShellRoute(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFunc) http.Handler {
+	tenantMW := auth.TenantFromPath(pool)
+	return auth.PageRoute(tenantMW(auth.AllowDeviceCallers(signer.Middleware(pool,
+		auth.AssertTenantMatch(signer, requireCallerHandler(h))))))
+}
+
+// MeRoute is JSON for /api/me, which any caller kind may read.
+func MeRoute(pool *pgxpool.Pool, signer *auth.SessionSigner, h http.HandlerFunc) http.Handler {
+	tenantMW := auth.TenantFromPath(pool)
+	return tenantMW(auth.AllowDeviceCallers(signer.Middleware(pool,
+		auth.AssertTenantMatch(signer, auth.RequireCSRF(requireCallerHandler(h))))))
+}
+
 // JSON wraps a console JSON API route. It is NOT a PageRoute, so a missing
 // session yields 401 (not a 303-to-login that would dump login HTML into
 // fetch().json()). State-changing methods must carry the X-Kit-Web header.

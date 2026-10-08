@@ -68,15 +68,7 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 	}
 
 	// Shared knowledge context (rules, skills, memories)
-	caller := &services.Caller{
-		TenantID: tenant.ID,
-		UserID:   user.ID,
-		Identity: user.SlackUserID,
-		Roles:    cr.Names,
-		RoleIDs:  cr.IDs,
-		IsAdmin:  isAdmin,
-		Timezone: services.ResolveTimezone(user.Timezone, tenant.Timezone),
-	}
+	caller := services.NewUserCaller(tenant, user, cr)
 	parts = append(parts, services.BuildKnowledgeContext(ctx, pool, caller, tenant))
 
 	// Job scheduling guidance (Slack-specific)
@@ -109,14 +101,7 @@ func BuildSystemPrompt(ctx context.Context, pool *pgxpool.Pool, baseURL string, 
 // prompts are deliberately omitted — none of them apply on the widget
 // surface and they would only confuse the model about what to do.
 func BuildWidgetSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant) string {
-	caller := &services.Caller{
-		TenantID:                tenant.ID,
-		Roles:                   []string{models.RoleMember},
-		IsAdmin:                 false,
-		HideBuiltinSkills:       true,
-		HideJobReferencedSkills: true,
-		Timezone:                services.ResolveTimezone("", tenant.Timezone),
-	}
+	caller := services.NewWidgetCaller(tenant)
 	parts := []string{
 		mustRender("system_widget.tmpl", map[string]any{"TenantName": tenant.Name}),
 		services.BuildKnowledgeContext(ctx, pool, caller, tenant),

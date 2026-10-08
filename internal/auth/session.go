@@ -40,6 +40,12 @@ const (
 	SessionCookieName = "kit_session"
 	sessionMaxAge     = 30 * 24 * time.Hour
 
+	// A device session lasts a year and slides: seen with under six months
+	// left, it is pushed out to a full year again. Nobody re-pairs an iPad
+	// because a calendar rolled over.
+	deviceSessionTTL  = 365 * 24 * time.Hour
+	deviceRenewWithin = 180 * 24 * time.Hour
+
 	// sessionPurpose domain-separates the cookie key from every other
 	// signedlink user sharing the secret. v2 was the per-workspace Path
 	// migration; v3 is the move onto the signedlink wire format.
@@ -86,6 +92,25 @@ func (s *SessionSigner) Issue(ctx context.Context, w http.ResponseWriter, pool *
 // proved access for one resource at one moment; we don't want to leave
 // behind a 30-day cookie from a single-tap auth).
 func (s *SessionSigner) IssueWithTTL(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, tenantID, userID uuid.UUID, path string, ttl time.Duration) error {
+	return s.issue(ctx, w, pool, models.NewAPIToken{
+		TenantID: tenantID, UserID: &userID, Kind: models.TokenKindSession, Label: "Browser session",
+		ExpiresAt: time.Now().Add(ttl),
+	}, path)
+}
+
+// IssueDevice mints a device session: the same cookie and the same row as
+// a person's session, but bound to an actor instead of a user. It is long
+// lived (deviceSessionTTL) and renewed by the middleware whenever it is
+// seen with less than deviceRenewWithin left, so a device that is used at
+// all never has to be paired again. Revoking the actor ends it.
+func (s *SessionSigner) IssueDevice(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, tenantID, actorID uuid.UUID, label, path string) error {
+	return s.issue(ctx, w, pool, models.NewAPIToken{
+		TenantID: tenantID, ActorID: &actorID, Kind: models.TokenKindDevice, Label: label,
+		ExpiresAt: time.Now().Add(deviceSessionTTL),
+	}, path)
+}
+
+func (s *SessionSigner) issue(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, t models.NewAPIToken, path string) error {
 	if path == "" {
 		path = "/"
 	}
@@ -93,10 +118,17 @@ func (s *SessionSigner) IssueWithTTL(ctx context.Context, w http.ResponseWriter,
 	if err != nil {
 		return fmt.Errorf("generating token: %w", err)
 	}
-	expiresAt := time.Now().Add(ttl)
-	if err := models.CreateAPIToken(ctx, pool, tenantID, userID, hash, expiresAt); err != nil {
+	t.TokenHash = hash
+	if err := models.CreateAPIToken(ctx, pool, t); err != nil {
 		return fmt.Errorf("creating api token: %w", err)
 	}
+	s.setCookie(w, raw, path, t.ExpiresAt)
+	return nil
+}
+
+// setCookie writes the signed session cookie at path, clearing any
+// root-scoped leftover from before the Path=/{slug}/ migration.
+func (s *SessionSigner) setCookie(w http.ResponseWriter, raw, path string, expiresAt time.Time) {
 	if path != "/" {
 		// Defensive clear of any lingering root-scope cookie from before
 		// the Path=/{slug}/ migration.
@@ -115,12 +147,11 @@ func (s *SessionSigner) IssueWithTTL(ctx context.Context, w http.ResponseWriter,
 		Value:    s.signValue(raw),
 		Path:     path,
 		Expires:  expiresAt,
-		MaxAge:   int(ttl.Seconds()),
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	return nil
 }
 
 // Revoke deletes the api_tokens row backing the request's session
@@ -169,7 +200,7 @@ func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.H
 			s.denyOrRedirect(w, r)
 			return
 		}
-		caller, err := resolveToken(r.Context(), pool, token)
+		caller, apiToken, err := resolveToken(r.Context(), pool, token)
 		if err != nil {
 			slog.Error("resolving session token", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -181,9 +212,59 @@ func (s *SessionSigner) Middleware(pool *pgxpool.Pool, next http.Handler) http.H
 			s.denyOrRedirect(w, r)
 			return
 		}
+		if !caller.IsUser() {
+			// Default deny for devices: only a route wrapped in
+			// AllowDeviceCallers (the console shell, /api/me, and the
+			// RequireCap routes) ever sees a device caller. Everything
+			// else -- tasks, jobs, chat, the vault -- refuses it here, so
+			// no handler has to remember to.
+			if !deviceCallersAllowed(r.Context()) {
+				slog.Info("auth: device session refused", "path", r.URL.Path, "actor_id", caller.ActorID)
+				http.Error(w, "this device can't use this page", http.StatusForbidden)
+				return
+			}
+			s.maybeRenewDevice(r.Context(), w, r, pool, token, apiToken)
+		}
 		ctx := context.WithValue(r.Context(), callerKey, caller)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// maybeRenewDevice slides a device session's expiry forward and re-sets
+// the cookie once it is inside the renewal window. Best effort: a failed
+// renewal is logged and the request proceeds on the current expiry.
+func (s *SessionSigner) maybeRenewDevice(ctx context.Context, w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, raw string, t *models.APIToken) {
+	if time.Until(t.ExpiresAt) > deviceRenewWithin {
+		return
+	}
+	expiresAt := time.Now().Add(deviceSessionTTL)
+	if err := models.ExtendAPIToken(ctx, pool, t.TenantID, opaquetoken.Hash(raw), expiresAt); err != nil {
+		slog.Warn("renewing device session", "error", err)
+		return
+	}
+	s.setCookie(w, raw, "/"+r.PathValue("slug")+"/", expiresAt)
+}
+
+// deviceAllowedKey marks a request whose route has opted in to device
+// callers. Set by AllowDeviceCallers, read by Middleware.
+type deviceAllowedKeyType struct{}
+
+var deviceAllowedKey = deviceAllowedKeyType{}
+
+// AllowDeviceCallers marks the request so the session middleware will
+// admit a device caller instead of refusing it. Wrap it OUTSIDE
+// SessionSigner.Middleware; the route behind it is then responsible for
+// checking the device's capabilities (RequireCap does).
+func AllowDeviceCallers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), deviceAllowedKey, true)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func deviceCallersAllowed(ctx context.Context) bool {
+	v, _ := ctx.Value(deviceAllowedKey).(bool)
+	return v
 }
 
 // denyOrRedirect picks between a 401 (for API/JSON clients) and a 303

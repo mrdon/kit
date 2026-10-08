@@ -94,6 +94,11 @@ export const apiDelete = <T>(path: string, body?: unknown) =>
 // --- Shared types ---
 
 export interface Me {
+  // "user" for a signed-in person, "device" for a paired shared device.
+  // A device has a label and a capability list instead of a user id.
+  kind: 'user' | 'device';
+  label: string;
+  capabilities: string[];
   user_id: string;
   display_name: string;
   is_admin: boolean;

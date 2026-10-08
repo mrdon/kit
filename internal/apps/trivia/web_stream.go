@@ -1,6 +1,7 @@
 package trivia
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -123,13 +124,23 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, gameID, tenantI
 	}
 }
 
+// hostStreamMaxAge caps one host connection. The session is checked when
+// the stream opens and never again while it is up, so a revoked device
+// would otherwise keep receiving answers for as long as the socket lived.
+// Closing it makes EventSource reconnect, and the reconnect runs the
+// session middleware again. Fifteen minutes is short enough to matter and
+// long enough that a reconnect is never visible during a round.
+const hostStreamMaxAge = 15 * time.Minute
+
 // handleHostStream serves the console's stream, which carries the answer.
 func (a *App) handleHostStream(w http.ResponseWriter, r *http.Request) {
 	game, ok := a.gameFromPath(w, r)
 	if !ok {
 		return
 	}
-	a.streamGame(w, r, game.ID, game.TenantID, func(s *Snapshot) any { return ProjectHost(s) })
+	ctx, cancel := context.WithTimeout(r.Context(), hostStreamMaxAge)
+	defer cancel()
+	a.streamGame(w, r.WithContext(ctx), game.ID, game.TenantID, func(s *Snapshot) any { return ProjectHost(s) })
 }
 
 // handleHostState is the poll fallback. Every stream has one, because a

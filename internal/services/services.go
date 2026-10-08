@@ -11,12 +11,27 @@ import (
 	"github.com/mrdon/kit/internal/crypto"
 )
 
-// Caller represents the authenticated user making a request.
-// Both agent tools (Slack) and MCP tools construct a Caller from their auth context.
+// Caller is the actor behind a request or an agent turn: a person, a
+// paired device, a scheduled job, or the website widget. Build one with
+// the constructors in caller.go; every surface (session cookie, MCP
+// bearer, Slack event, scheduler) goes through them.
 type Caller struct {
+	// Kind says what is acting. The zero value means user.
+	Kind CallerKind
+	// ActorID is the actors row for a non-user; uuid.Nil for a person.
+	ActorID uuid.UUID
+	// Label names a non-user actor for audit ("Bar iPad"). Empty for users,
+	// whose display name lives on the users row.
+	Label string
+	// Capabilities is what a non-user actor may do. Users carry none: their
+	// roles are mapped onto the same checks by the route wrapper.
+	Capabilities []string
+
 	TenantID uuid.UUID
+	// UserID is the accountable human, if any: the user themself, a job's
+	// owner. uuid.Nil for a device or the widget.
 	UserID   uuid.UUID
-	Identity string      // slack_user_id (or MCP identity); used for Slack DM ops + audit attribution
+	Identity string      // slack_user_id (or MCP identity); used for Slack DM ops + audit attribution. Empty for non-users.
 	Roles    []string    // role names the user holds (display + permission checks by name)
 	RoleIDs  []uuid.UUID // role IDs the user holds (used by scope-table joins)
 	IsAdmin  bool

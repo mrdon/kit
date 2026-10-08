@@ -116,7 +116,9 @@ func issueAPIToken(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenant
 	if err != nil {
 		t.Fatalf("generating token: %v", err)
 	}
-	if err := models.CreateAPIToken(ctx, pool, tenantID, userID, hash, time.Now().Add(time.Hour)); err != nil {
+	if err := models.CreateAPIToken(ctx, pool, models.NewAPIToken{
+		TenantID: tenantID, UserID: &userID, Kind: models.TokenKindMCP, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
 		t.Fatalf("creating api token: %v", err)
 	}
 	return raw
