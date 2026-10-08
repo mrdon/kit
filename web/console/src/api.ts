@@ -124,10 +124,9 @@ export interface Device {
 }
 
 // A start link: the URL that signs a browser in as a device for the
-// session, for kiosks that wipe their cookies. qr_svg is server-rendered.
+// session, for kiosks that wipe their cookies. Short enough to type.
 export interface StartLink {
   start_url: string;
-  qr_svg: string;
 }
 
 // A browser waiting on /{slug}/pair. The approver sees three pictures, one

@@ -2590,9 +2590,3 @@ h2.view-title:hover {
 .start-link {
   margin: 0.5rem 0;
 }
-
-.start-link-qr svg {
-  width: 200px;
-  height: 200px;
-  display: block;
-}

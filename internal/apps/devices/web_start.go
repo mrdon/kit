@@ -16,7 +16,6 @@ import (
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/auth/opaquetoken"
 	"github.com/mrdon/kit/internal/models"
-	"github.com/mrdon/kit/internal/web/qrcode"
 )
 
 // Start links, for browsers that cannot keep a cookie.
@@ -31,8 +30,13 @@ import (
 // invalidated by making another, and ended by unpairing the device; what
 // it grants is only the device's capabilities.
 
-// startTokenPrefix marks a start-link secret in logs and pastes.
-const startTokenPrefix = "kitd_"
+// startCodeLen is how long the secret in a start link is. Six characters
+// of the unambiguous alphabet is 4.8e8 codes, which the admin types into a
+// kiosk's configuration by hand once; a longer one would be safer against
+// nothing the rate limits don't already stop. A wrong guess costs one of
+// ten tries per IP per ten minutes AND one of ten per workspace, so a
+// brute force runs at 1440 guesses a day against half a billion.
+const startCodeLen = 6
 
 func registerStartRoutes(mux apps.Mux, a *App) {
 	tenantMW := auth.TenantFromPath(a.pool)
@@ -52,7 +56,7 @@ type createKioskRequest struct {
 }
 
 // handleCreateKiosk creates a device without pairing and answers with its
-// start link, the one time the plaintext is shown.
+// start link, the one time the code is shown.
 func (a *App) handleCreateKiosk(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 	caller := auth.CallerFromContext(r.Context())
@@ -84,30 +88,24 @@ func (a *App) handleCreateKiosk(w http.ResponseWriter, r *http.Request) {
 	actor.HasStartToken = true
 	slog.Info("devices: kiosk created", "tenant_id", tenant.ID, "actor_id", actor.ID, "label", label, "by", caller.UserID)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"device": deviceToJSON(*actor), "start_url": link.url, "qr_svg": link.qr})
+	writeJSON(w, map[string]any{"device": deviceToJSON(*actor), "start_url": link.url})
 }
 
 type startLink struct {
 	url string
-	qr  string
 }
 
-// mintStartLink stores a fresh start token for the actor and returns the
-// link with a QR of it, for a tablet that would rather scan than type.
+// mintStartLink stores a fresh start code for the actor and returns the
+// link, short enough to type into a kiosk's configuration.
 func (a *App) mintStartLink(ctx context.Context, tenant *models.Tenant, actorID uuid.UUID) (startLink, error) {
-	token, hash, err := opaquetoken.New(startTokenPrefix)
+	code, err := randomCode(startCodeLen)
 	if err != nil {
 		return startLink{}, err
 	}
-	if err := models.SetActorStartToken(ctx, a.pool, tenant.ID, actorID, hash); err != nil {
+	if err := models.SetActorStartToken(ctx, a.pool, tenant.ID, actorID, opaquetoken.Hash(code)); err != nil {
 		return startLink{}, err
 	}
-	url := a.baseURL + "/" + tenant.Slug + "/device/" + token
-	svg, err := qrcode.RenderSVG(url, 320, "Device start link")
-	if err != nil {
-		return startLink{}, err
-	}
-	return startLink{url: url, qr: string(svg)}, nil
+	return startLink{url: a.baseURL + "/" + tenant.Slug + "/device/" + code}, nil
 }
 
 // handleStart signs the browser in as the device the link names.
@@ -117,24 +115,29 @@ func (a *App) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// The same per-IP budget as pairing: a kiosk boots once a day, and a
-	// stranger guessing links gets ten tries an hour, which against 256
-	// random bits is none.
-	if !a.limiter.allow(auth.ClientIP(r), time.Now()) {
+	// Two budgets, both spent only by failures: per IP, and per workspace
+	// so a guesser rotating addresses gets no further.
+	ip, tenantKey := auth.ClientIP(r), "tenant:"+tenant.ID.String()
+	if !a.limiter.allow(ip, time.Now()) || !a.startFailures.allow(tenantKey, time.Now()) {
 		http.Error(w, "too many attempts; try again later", http.StatusTooManyRequests)
 		return
 	}
-	actor, err := models.GetActorByStartToken(r.Context(), a.pool, tenant.ID, opaquetoken.Hash(r.PathValue("token")))
+	code := strings.ToUpper(strings.TrimSpace(r.PathValue("token")))
+	actor, err := models.GetActorByStartToken(r.Context(), a.pool, tenant.ID, opaquetoken.Hash(code))
 	if err != nil {
 		slog.Error("devices: looking up start link", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if actor == nil {
-		slog.Warn("devices: unknown start link", "tenant_id", tenant.ID, "ip", auth.ClientIP(r))
+		slog.Warn("devices: unknown start link", "tenant_id", tenant.ID, "ip", ip)
 		http.Error(w, "this start link is not valid any more; make a new one on the Devices page", http.StatusNotFound)
 		return
 	}
+	// A good link refunds its tries: a kiosk that boots five times in a row
+	// is not an attacker.
+	a.limiter.refund(ip)
+	a.startFailures.refund(tenantKey)
 	if err := a.signer.IssueDevice(r.Context(), w, a.pool, tenant.ID, actor.ID, actor.Label, "/"+tenant.Slug+"/"); err != nil {
 		slog.Error("devices: issuing session from start link", "actor_id", actor.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -145,7 +148,7 @@ func (a *App) handleStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMakeStartLink mints a device's start link, replacing any previous
-// one. The plaintext goes back exactly once.
+// one. The code goes back exactly once.
 func (a *App) handleMakeStartLink(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -165,5 +168,5 @@ func (a *App) handleMakeStartLink(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	slog.Info("devices: start link made", "tenant_id", tenant.ID, "actor_id", id, "by", caller.UserID)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"start_url": link.url, "qr_svg": link.qr})
+	writeJSON(w, map[string]any{"start_url": link.url})
 }

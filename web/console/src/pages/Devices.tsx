@@ -141,17 +141,15 @@ function StartLinkCard({ link, label }: { link: StartLink; label: string }) {
         <div className="card-title">Start link for {label}</div>
         <p className="card-desc">
           Set this as the kiosk’s start URL. Opening it signs that browser in as this device, every boot, with
-          nothing to pair. Anyone with the link can act as the device, so keep it to the machine’s configuration.
-          It is shown only now; make a new one if it is lost, and the old one stops working.
+          nothing to pair. The code isn’t case-sensitive. Anyone with the link can act as the device, so keep it
+          to the machine’s configuration. It is shown only now; make a new one if it is lost, and the old one stops
+          working.
         </p>
-        <div className="pair-address">
-          <div className="pair-qr start-link-qr" dangerouslySetInnerHTML={{ __html: link.qr_svg }} />
-          <div className="pair-address-text">
-            <code>{link.start_url}</code>
-            <button className="btn" type="button" onClick={copy}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
+        <div className="pair-address-text">
+          <code>{link.start_url}</code>
+          <button className="btn" type="button" onClick={copy}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
         </div>
       </div>
     </div>

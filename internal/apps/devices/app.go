@@ -35,7 +35,7 @@ var pageTmpl = template.Must(template.ParseFS(templatesFS, "templates/*.html"))
 var instance *App
 
 func init() {
-	instance = &App{limiter: newIPLimiter()}
+	instance = &App{limiter: newIPLimiter(), startFailures: newIPLimiter()}
 	apps.Register(instance)
 }
 
@@ -46,6 +46,8 @@ type App struct {
 	pool    *pgxpool.Pool
 	signer  *auth.SessionSigner
 	limiter *ipLimiter
+	// startFailures budgets wrong start-link guesses per workspace.
+	startFailures *ipLimiter
 	// baseURL is the public origin, for the pairing address a phone scans.
 	baseURL string
 }

@@ -46,7 +46,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{pool: pool, signer: signer, limiter: newIPLimiter()}
+	app := &App{pool: pool, signer: signer, limiter: newIPLimiter(), startFailures: newIPLimiter()}
 	mux := http.NewServeMux()
 	app.RegisterRoutes(mux)
 
@@ -409,8 +409,9 @@ func TestStartLink(t *testing.T) {
 		t.Fatalf("make start link: %d %v", code, made)
 	}
 	startURL, _ := made["start_url"].(string)
-	if !strings.Contains(startURL, "/"+f.tenant.Slug+"/device/"+startTokenPrefix) || made["qr_svg"] == nil {
-		t.Fatalf("start link = %q, qr present = %v", startURL, made["qr_svg"] != nil)
+	marker := "/" + f.tenant.Slug + "/device/"
+	if !strings.Contains(startURL, marker) || len(startURL[strings.Index(startURL, marker)+len(marker):]) != startCodeLen {
+		t.Fatalf("start link = %q, want a %d-character code", startURL, startCodeLen)
 	}
 	_, list := f.adminJSON(http.MethodGet, "/api/devices", nil)
 	if dev := list["devices"].([]any)[0].(map[string]any); dev["has_start_link"] != true {
@@ -433,9 +434,10 @@ func TestStartLink(t *testing.T) {
 		t.Fatalf("caller from start link = %+v", c)
 	}
 
-	// A second boot works too: the link is reusable, the cookie is per session.
-	if rec, s2 := open(startURL); rec.Code != http.StatusSeeOther || s2 == nil {
-		t.Fatalf("second boot: %d", rec.Code)
+	// A second boot works too: the link is reusable, the cookie is per
+	// session. Typed in lower case as well: a kiosk URL is typed by hand.
+	if rec, s2 := open(strings.ToLower(startURL)); rec.Code != http.StatusSeeOther || s2 == nil {
+		t.Fatalf("second boot, lower case: %d", rec.Code)
 	}
 
 	// Rotating invalidates the old link.
@@ -489,5 +491,38 @@ func TestCreateKioskWithoutPairing(t *testing.T) {
 	}
 	if code, _ := f.adminJSON(http.MethodPost, "/api/devices", map[string]any{"label": "x"}); code != http.StatusBadRequest {
 		t.Fatalf("no capabilities: %d, want 400", code)
+	}
+}
+
+// Guesses are budgeted per workspace as well as per address, and a correct
+// link never spends the budget.
+func TestStartLinkGuessingIsLimited(t *testing.T) {
+	f := newFixture(t)
+	_, out := f.adminJSON(http.MethodPost, "/api/devices", map[string]any{
+		"label": "Quiz laptop", "capabilities": []string{auth.CapTriviaHost},
+	})
+	startURL := out["start_url"].(string)
+	good := startURL[strings.Index(startURL, "/"+f.tenant.Slug+"/device/"):]
+	try := func(path, ip string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = ip + ":1"
+		rec := httptest.NewRecorder()
+		f.mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	// Twenty boots from one address: never limited.
+	for i := range 20 {
+		if code := try(good, "10.0.1.1"); code != http.StatusSeeOther {
+			t.Fatalf("boot %d: %d", i, code)
+		}
+	}
+	// Wrong guesses from rotating addresses exhaust the workspace budget.
+	for i := range pairingsPerIP {
+		if code := try("/"+f.tenant.Slug+"/device/WRONG"+string(rune('A'+i)), "10.0.2."+string(rune('1'+i))); code != http.StatusNotFound {
+			t.Fatalf("guess %d: %d, want 404", i, code)
+		}
+	}
+	if code := try("/"+f.tenant.Slug+"/device/WRONGZ", "10.0.3.1"); code != http.StatusTooManyRequests {
+		t.Fatalf("after %d guesses: %d, want 429", pairingsPerIP, code)
 	}
 }

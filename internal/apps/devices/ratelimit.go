@@ -51,3 +51,14 @@ func (l *ipLimiter) allow(ip string, now time.Time) bool {
 	}
 	return true
 }
+
+// refund forgets the most recent attempt from ip. Called when an attempt
+// succeeded, so a legitimate client that retries is never counted against
+// the budget meant for guessing.
+func (l *ipLimiter) refund(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if ts := l.seen[ip]; len(ts) > 0 {
+		l.seen[ip] = ts[:len(ts)-1]
+	}
+}

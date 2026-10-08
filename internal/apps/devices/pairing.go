@@ -83,8 +83,11 @@ func randomPicture() (string, error) {
 	return pictures[n.Int64()], nil
 }
 
-func randomUserCode() (string, error) {
-	out := make([]byte, 4)
+func randomUserCode() (string, error) { return randomCode(4) }
+
+// randomCode draws n characters from the unambiguous alphabet.
+func randomCode(n int) (string, error) {
+	out := make([]byte, n)
 	for i := range out {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(userCodeAlphabet))))
 		if err != nil {
