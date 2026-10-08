@@ -24,14 +24,17 @@ import (
 // own error text included -- so a token without catalog permission is
 // diagnosed on the page rather than in the server logs.
 
+// Admin for people, and a paired device holding menu.happy_hour (the bar
+// iPad) -- that is the capability's human default, so nothing changes for
+// anyone signed in.
 func registerHappyHourRoutes(mux apps.Mux, a *App) {
-	adminRoute := func(h http.HandlerFunc) http.Handler {
-		return console.AdminJSON(a.pool, a.signer, h)
+	route := func(h http.HandlerFunc) http.Handler {
+		return console.RequireCap(a.pool, a.signer, auth.CapMenuHappyHour, h)
 	}
-	mux.Handle("GET /{slug}/api/menu/happy-hour", adminRoute(a.handleGetHappyHour))
-	mux.Handle("PUT /{slug}/api/menu/happy-hour", adminRoute(a.handleSaveHappyHour))
-	mux.Handle("POST /{slug}/api/menu/happy-hour/sync", adminRoute(a.handleSyncHappyHour))
-	mux.Handle("POST /{slug}/api/menu/happy-hour/now", adminRoute(a.handleHappyHourNow))
+	mux.Handle("GET /{slug}/api/menu/happy-hour", route(a.handleGetHappyHour))
+	mux.Handle("PUT /{slug}/api/menu/happy-hour", route(a.handleSaveHappyHour))
+	mux.Handle("POST /{slug}/api/menu/happy-hour/sync", route(a.handleSyncHappyHour))
+	mux.Handle("POST /{slug}/api/menu/happy-hour/now", route(a.handleHappyHourNow))
 }
 
 // happyHourPayload is the wire shape.

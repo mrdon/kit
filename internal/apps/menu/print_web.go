@@ -25,10 +25,11 @@ import (
 // prices and wording on it are a staff-facing thing until somebody puts it on
 // a table.
 
-// registerPrintRoutes mounts the printable menu.
+// registerPrintRoutes mounts the printable menu. Any member, and a paired
+// device holding menu.print (the bar iPad sends it to AirPrint).
 func registerPrintRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/menu/print.pdf",
-		console.PageRoute(a.pool, a.signer, a.handlePrint))
+		console.RequireCapPage(a.pool, a.signer, auth.CapMenuPrint, a.handlePrint))
 }
 
 // handlePrint renders the paper menu.

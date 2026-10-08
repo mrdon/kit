@@ -21,12 +21,13 @@ import (
 // looks set and is not -- ticked, and then the page closed before Save -- is
 // the mistake worth designing out.
 
+// Admin for people, and a paired device holding menu.gluten_reduced.
 func registerGlutenReducedRoutes(mux apps.Mux, a *App) {
-	adminRoute := func(h http.HandlerFunc) http.Handler {
-		return console.AdminJSON(a.pool, a.signer, h)
+	route := func(h http.HandlerFunc) http.Handler {
+		return console.RequireCap(a.pool, a.signer, auth.CapMenuGlutenReduced, h)
 	}
-	mux.Handle("GET /{slug}/api/menu/gluten-reduced", adminRoute(a.handleGetGlutenReduced))
-	mux.Handle("PUT /{slug}/api/menu/gluten-reduced", adminRoute(a.handleSaveGlutenReduced))
+	mux.Handle("GET /{slug}/api/menu/gluten-reduced", route(a.handleGetGlutenReduced))
+	mux.Handle("PUT /{slug}/api/menu/gluten-reduced", route(a.handleSaveGlutenReduced))
 }
 
 // glutenReducedPayload is the wire shape. Taps are the names on the board,

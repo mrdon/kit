@@ -20,9 +20,12 @@ import (
 // Any member, not admin-only -- the same call the events and kiosk apps make.
 // Running the quiz is operational work for whoever is behind the bar tonight,
 // and making it wait on an admin is how a quiz night doesn't happen.
+//
+// A paired device holding trivia.host (the trivia laptop) gets every route
+// here, dataset management and deletes included: it IS the quiz machine.
 func registerConsoleRoutes(mux apps.Mux, a *App) {
 	jsonRoute := func(h http.HandlerFunc) http.Handler {
-		return console.JSON(a.pool, a.signer, h)
+		return console.RequireCap(a.pool, a.signer, auth.CapTriviaHost, h)
 	}
 	mux.Handle("GET /{slug}/api/trivia/games", jsonRoute(a.handleListGames))
 	mux.Handle("POST /{slug}/api/trivia/games", jsonRoute(a.handleCreateGame))
@@ -48,10 +51,11 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/trivia/questions/packs/{key}", jsonRoute(a.handleLoadStarter))
 	mux.Handle("DELETE /{slug}/api/trivia/questions/{id}", jsonRoute(a.handleDeleteQuestion))
 
-	// Where ratings go is a workspace setting, so it is admin-only where the
-	// rest of this API is not.
+	// Where ratings go is a workspace setting, so for people it is
+	// admin-only where the rest of this API is not. The device still
+	// passes: the capability is the whole of what it may do.
 	adminRoute := func(h http.HandlerFunc) http.Handler {
-		return console.AdminJSON(a.pool, a.signer, h)
+		return console.RequireCapAdmin(a.pool, a.signer, auth.CapTriviaHost, h)
 	}
 	mux.Handle("GET /{slug}/api/trivia/feedback-channel", adminRoute(a.handleGetFeedbackChannel))
 	mux.Handle("PUT /{slug}/api/trivia/feedback-channel", adminRoute(a.handleSaveFeedbackChannel))

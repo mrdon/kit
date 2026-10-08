@@ -21,14 +21,17 @@ import (
 // making it wait on an admin is how a menu board ends up a week stale. The
 // blast radius is bounded by the app itself: a board can only ever hold a URL
 // somebody in the workspace chose.
+//
+// A paired device holding kiosk.repoint gets the same routes; the human
+// default for that capability is member, so nothing changes for people.
 func registerConsoleRoutes(mux apps.Mux, a *App) {
-	jsonRoute := func(h http.HandlerFunc) http.Handler {
-		return console.JSON(a.pool, a.signer, h)
+	route := func(h http.HandlerFunc) http.Handler {
+		return console.RequireCap(a.pool, a.signer, auth.CapKioskRepoint, h)
 	}
-	mux.Handle("GET /{slug}/api/kiosk/boards", jsonRoute(a.handleList))
-	mux.Handle("POST /{slug}/api/kiosk/boards", jsonRoute(a.handleCreate))
-	mux.Handle("PATCH /{slug}/api/kiosk/boards/{id}", jsonRoute(a.handleUpdate))
-	mux.Handle("DELETE /{slug}/api/kiosk/boards/{id}", jsonRoute(a.handleDelete))
+	mux.Handle("GET /{slug}/api/kiosk/boards", route(a.handleList))
+	mux.Handle("POST /{slug}/api/kiosk/boards", route(a.handleCreate))
+	mux.Handle("PATCH /{slug}/api/kiosk/boards/{id}", route(a.handleUpdate))
+	mux.Handle("DELETE /{slug}/api/kiosk/boards/{id}", route(a.handleDelete))
 }
 
 // boardJSON is the wire shape. public_url is served rather than assembled
