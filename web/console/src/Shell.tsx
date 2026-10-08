@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { api, type Me } from './api';
 import { MeContext, MeRefreshContext } from './me';
@@ -6,6 +6,8 @@ import TopBar from './TopBar';
 import ConsoleChat from './ConsoleChat';
 import { ChatContextProvider } from './chatContext';
 import { DeviceBar } from './DeviceShell';
+import { usePolled } from './usePolled';
+import { useBuildReload } from './useBuildReload';
 
 // Shell is the persistent console layout: the top bar plus a centered
 // content column the routed pages render into via <Outlet/>. It fetches
@@ -25,9 +27,11 @@ export default function Shell() {
     api.me().then(setMe).catch(() => setMe(null));
   }, []);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  // Re-read /me on the same cadence the device pages poll on, and the moment
+  // the tab is looked at again. That keeps a device's capabilities current and
+  // is what notices a deploy: a new build token reloads the tab.
+  usePolled(refresh, 60000);
+  useBuildReload(me?.build);
 
   if (me === undefined) return null;
   const device = me?.kind === 'device';

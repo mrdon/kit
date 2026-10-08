@@ -99,6 +99,8 @@ export interface Me {
   kind: 'user' | 'device';
   label: string;
   capabilities: string[];
+  // The server's build token; the shell reloads when it changes.
+  build: string;
   user_id: string;
   display_name: string;
   is_admin: boolean;

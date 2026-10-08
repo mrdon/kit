@@ -8,6 +8,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/buildinfo"
 	"github.com/mrdon/kit/internal/models"
 	"github.com/mrdon/kit/internal/services"
 	consoleweb "github.com/mrdon/kit/web/console"
@@ -46,6 +47,10 @@ type meResponse struct {
 	Kind         string   `json:"kind"`
 	Label        string   `json:"label"`
 	Capabilities []string `json:"capabilities"`
+	// Build is the server's build token. The shell re-reads /me on a timer
+	// and reloads itself when this changes, so a tab left open through a
+	// deploy does not keep running the old bundle (see useBuildReload).
+	Build string `json:"build"`
 
 	UserID        string   `json:"user_id"`
 	DisplayName   string   `json:"display_name"`
@@ -100,6 +105,7 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, meResponse{
 		Kind:          string(kind),
+		Build:         buildinfo.Token(),
 		Label:         caller.Label,
 		Capabilities:  caps,
 		UserID:        userID,
