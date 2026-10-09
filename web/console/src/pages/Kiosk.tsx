@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type KioskBoard } from '../api';
+import { api, type KioskBoard, type KioskDestination } from '../api';
 import { useSetChatContext } from '../chatContext';
+import ScreenPicker from '../ScreenPicker';
+import KioskButtons from './KioskButtons';
 
 // A board's public URL never changes, so the useful thing to show next to it
 // is whether a screen is actually asking for it. Anything under ~5 minutes is
@@ -35,6 +37,7 @@ const emptyDraft: DraftState = { name: '', key: '', url: '', notes: '' };
 export default function Kiosk() {
   useSetChatContext('the Kiosk screens page');
   const [boards, setBoards] = useState<KioskBoard[] | null>(null);
+  const [destinations, setDestinations] = useState<KioskDestination[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [creating, setCreating] = useState(false);
@@ -46,7 +49,10 @@ export default function Kiosk() {
   const load = () => {
     api
       .kioskBoards()
-      .then((r) => setBoards(r.boards))
+      .then((r) => {
+        setBoards(r.boards);
+        setDestinations(r.destinations);
+      })
       .catch((e) => setErr(e.message));
   };
   useEffect(load, []);
@@ -96,6 +102,18 @@ export default function Kiosk() {
     }
   };
 
+  const repoint = async (b: KioskBoard, url: string): Promise<boolean> => {
+    setErr(null);
+    try {
+      await api.updateKioskBoard(b.id, { name: b.name, key: b.key, url, notes: b.notes });
+      load();
+      return true;
+    } catch (e) {
+      setErr((e as Error).message);
+      return false;
+    }
+  };
+
   const remove = async (b: KioskBoard) => {
     setErr(null);
     setBusy(true);
@@ -130,8 +148,8 @@ export default function Kiosk() {
         <h1>Kiosk screens</h1>
         <p className="page-sub">
           Each screen gets a permanent Kit address. Point the machine's browser
-          at it once; after that, changing the URL here changes what the screen
-          shows.
+          at it once; after that, picking what it shows here changes the
+          screen.
         </p>
       </div>
 
@@ -163,18 +181,17 @@ export default function Kiosk() {
               </span>
             </label>
           </div>
-          <label className="field">
+          <div className="field">
             Shows
-            <input
-              type="url"
-              placeholder="https://example.com/dashboard"
-              value={draft.url}
-              onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+            <ScreenPicker
+              destinations={destinations}
+              current={draft.url}
+              onPick={(url) => setDraft({ ...draft, url })}
             />
             <span className="field-note">
-              Leave blank to provision the screen now and decide later.
+              Leave unpicked to provision the screen now and decide later.
             </span>
-          </label>
+          </div>
           <div>
             <button className="btn" type="submit" disabled={creating}>
               {creating ? 'Adding…' : 'Add screen'}
@@ -219,44 +236,6 @@ export default function Kiosk() {
                     </label>
                   </div>
                   <label className="field">
-                    Shows
-                    <input
-                      type="url"
-                      placeholder="https://example.com/dashboard"
-                      value={editDraft.url}
-                      onChange={(e) =>
-                        setEditDraft({ ...editDraft, url: e.target.value })
-                      }
-                    />
-                  </label>
-                  {b.recent_urls && b.recent_urls.length > 0 && (
-                    <div className="field">
-                      Previously
-                      <ul className="kiosk-history">
-                        {b.recent_urls.map((h) => (
-                          <li key={h.replaced_at + h.url}>
-                            <code title={h.url}>{h.url}</code>
-                            <span className="kiosk-history-when">
-                              replaced {relative(Date.now() - new Date(h.replaced_at).getTime())} ago
-                            </span>
-                            <button
-                              className="btn btn-sm btn-ghost"
-                              type="button"
-                              disabled={busy || editDraft.url === h.url}
-                              onClick={() => setEditDraft({ ...editDraft, url: h.url })}
-                            >
-                              Use this
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                      <span className="field-note">
-                        The last {b.recent_urls.length === 1 ? 'address' : `${b.recent_urls.length} addresses`} this
-                        screen showed. Picking one fills the field above — you still have to Save.
-                      </span>
-                    </div>
-                  )}
-                  <label className="field">
                     Notes
                     <input
                       placeholder="Where this screen is, who to call"
@@ -299,15 +278,17 @@ export default function Kiosk() {
                 <span className="card-title">
                   {b.name} <span className={seen.cls}>{seen.text}</span>
                 </span>
-                <span className="card-desc">
-                  {b.url ? (
-                    <>
-                      Shows <code>{b.url}</code>
-                    </>
-                  ) : (
+                {!b.url && (
+                  <span className="card-desc">
                     <em>Nothing assigned yet</em>
-                  )}
-                </span>
+                  </span>
+                )}
+                <ScreenPicker
+                  destinations={destinations}
+                  current={b.url}
+                  recent={b.recent_urls?.map((u) => u.url)}
+                  onPick={(url) => repoint(b, url)}
+                />
                 <span className="card-desc">
                   Screen address: <code>{b.public_url}</code>
                 </span>
@@ -325,6 +306,8 @@ export default function Kiosk() {
           );
         })}
       </section>
+
+      <KioskButtons destinations={destinations} onChange={load} onError={setErr} />
 
       <section className="panel">
         <h2 className="panel-title">Setting up a machine</h2>

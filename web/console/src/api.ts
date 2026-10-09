@@ -381,6 +381,15 @@ export interface KioskBoard {
   recent_urls: KioskUrlChange[] | null;
 }
 
+/** A one-tap button for what a screen shows: one of Kit's own screen pages,
+ * or (custom) one the workspace added. */
+export interface KioskDestination {
+  key: string;
+  label: string;
+  url: string;
+  custom: boolean;
+}
+
 // --- Trivia ---
 //
 // The live host surface. Note there is exactly ONE mutating endpoint for the
@@ -1160,13 +1169,18 @@ export const api = {
     apiPut<{ selected: string[]; topics: TopicCountT[] }>(
       `/trivia/games/${gameId}/datasets`, { dataset_ids: datasetIds }),
 
-  kioskBoards: () => apiGet<{ boards: KioskBoard[] }>('/kiosk/boards'),
+  kioskBoards: () =>
+    apiGet<{ boards: KioskBoard[]; destinations: KioskDestination[] }>('/kiosk/boards'),
   createKioskBoard: (body: KioskBoardInput) =>
     apiPost<KioskBoard>('/kiosk/boards', body),
   updateKioskBoard: (id: string, body: KioskBoardInput) =>
     apiPatch<KioskBoard>(`/kiosk/boards/${encodeURIComponent(id)}`, body),
   deleteKioskBoard: (id: string) =>
     apiDelete<void>(`/kiosk/boards/${encodeURIComponent(id)}`),
+  createKioskButton: (body: { label: string; url: string }) =>
+    apiPost<KioskDestination>('/kiosk/buttons', body),
+  deleteKioskButton: (id: string) =>
+    apiDelete<void>(`/kiosk/buttons/${encodeURIComponent(id)}`),
 
   widgetTokens: () => apiGet<{ tokens: WidgetToken[] }>('/widget/tokens'),
   mintWidgetToken: (origin: string) =>

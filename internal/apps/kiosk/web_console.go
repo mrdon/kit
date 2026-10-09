@@ -32,6 +32,8 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/kiosk/boards", route(a.handleCreate))
 	mux.Handle("PATCH /{slug}/api/kiosk/boards/{id}", route(a.handleUpdate))
 	mux.Handle("DELETE /{slug}/api/kiosk/boards/{id}", route(a.handleDelete))
+	mux.Handle("POST /{slug}/api/kiosk/buttons", route(a.handleCreateButton))
+	mux.Handle("DELETE /{slug}/api/kiosk/buttons/{id}", route(a.handleDeleteButton))
 }
 
 // boardJSON is the wire shape. public_url is served rather than assembled
@@ -97,11 +99,16 @@ func (a *App) handleList(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, err)
 		return
 	}
+	dests, err := a.Destinations(r.Context(), tenant.ID, tenant.Slug)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
 	out := make([]boardJSON, 0, len(boards))
 	for _, b := range boards {
 		out = append(out, a.toJSON(b, tenant.Slug, history[b.ID]))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"boards": out})
+	writeJSON(w, http.StatusOK, map[string]any{"boards": out, "destinations": dests})
 }
 
 func (a *App) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +163,35 @@ func (a *App) handleDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (a *App) handleCreateButton(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	var in ButtonInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	b, err := a.svc.CreateButton(r.Context(), tenant.ID, in)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, Destination{Key: b.ID.String(), Label: b.Label, URL: b.URL, Custom: true})
+}
+
+func (a *App) handleDeleteButton(w http.ResponseWriter, r *http.Request) {
+	tenant := auth.TenantFromContext(r.Context())
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid button id"})
+		return
+	}
+	if err := a.svc.DeleteButton(r.Context(), tenant.ID, id); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func decodeInput(w http.ResponseWriter, r *http.Request) (BoardInput, bool) {
 	var body boardInputJSON
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -169,11 +205,12 @@ func decodeInput(w http.ResponseWriter, r *http.Request) (BoardInput, bool) {
 // 500 with the detail logged rather than returned.
 func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrButtonNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 	case errors.Is(err, ErrKeyTaken):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-	case errors.Is(err, ErrKeyInvalid), errors.Is(err, ErrNameRequired), errors.Is(err, ErrURLInvalid):
+	case errors.Is(err, ErrKeyInvalid), errors.Is(err, ErrNameRequired), errors.Is(err, ErrURLInvalid),
+		errors.Is(err, ErrLabelInvalid):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		slog.Error("kiosk console request failed", "path", r.URL.Path, "error", err)
