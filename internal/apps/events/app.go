@@ -68,6 +68,11 @@ type App struct {
 // registry path (cron wiring, cross-app reads).
 func Instance() *App { return instance }
 
+// Service exposes the business rules to sibling apps. The posters app reads
+// events through it and sets a generated poster with the same Update the
+// console form uses, so the hero attachment never has a second write path.
+func (a *App) Service() *Service { return a.svc }
+
 // Init caches the pool and builds the service. Called by apps.Init().
 func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool

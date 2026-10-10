@@ -281,6 +281,7 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 	// An edit to a live event should reach the calendar now, not in fifteen
 	// minutes -- a time change that staff read late is worse than none.
 	s.pushCalendar(ctx, saved)
+	notifyChange(ctx, &before, saved)
 	return saved, nil
 }
 

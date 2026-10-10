@@ -409,3 +409,8 @@ func FormatNoticePreview(n *DayNotice) string {
 	}
 	return out
 }
+
+// CadenceWords is how often the event happens, as a clause for another
+// app's prose ("every Tuesday", "the last Friday of the month, 6 times").
+// Empty for a one-off.
+func (e *Event) CadenceWords() string { return describeCadence(e) }
