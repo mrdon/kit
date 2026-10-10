@@ -183,7 +183,7 @@ func (s *Service) Chat(ctx context.Context, in ChatInput) error {
 		ThreadTS:           in.ConversationID,
 		UserText:           in.Message,
 		Responder:          responder,
-		Model:              anthropic.ModelSonnet,
+		Model:              anthropic.ModelSonnet(),
 		WidgetMode:         true,
 		WidgetAllowedTools: AllowedTools,
 		DropGatedTools:     true,

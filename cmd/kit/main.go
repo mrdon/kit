@@ -135,6 +135,10 @@ func main() {
 	// agent; sharing isn't worthwhile since the client is a stateless
 	// HTTP wrapper.
 	llm := anthropic.NewClient(cfg.AnthropicAPIKey)
+	// Kit starts on the compiled-in model IDs and moves to the newest
+	// release per family in the background once the Models API answers,
+	// so a Claude outage never touches startup.
+	llm.ResolveLatestInBackground(ctx)
 
 	// PWA session signer. Prefer an explicit KIT_SESSION_SECRET; fall back
 	// to deriving from ENCRYPTION_KEY (domain-separated in NewSessionSigner)

@@ -96,8 +96,8 @@ func TestDescribeImage(t *testing.T) {
 	}
 
 	// Request shape: Sonnet, one user message of [image, text].
-	if fs.got.Model != ModelSonnet {
-		t.Errorf("model = %q; want %q", fs.got.Model, ModelSonnet)
+	if fs.got.Model != ModelSonnet() {
+		t.Errorf("model = %q; want %q", fs.got.Model, ModelSonnet())
 	}
 	if len(fs.got.Messages) != 1 || len(fs.got.Messages[0].Content) != 2 {
 		t.Fatalf("unexpected message shape: %+v", fs.got.Messages)

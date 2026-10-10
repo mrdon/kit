@@ -27,7 +27,7 @@ CONTENT:
 <The full content, cleaned up and formatted as markdown. Preserve all important information. Organize with headers where appropriate.>`, filename, rawText)
 
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     anthropic.ModelSonnet,
+		Model:     anthropic.ModelSonnet(),
 		MaxTokens: 8192,
 		Messages: []anthropic.Message{
 			{Role: "user", Content: []anthropic.Content{{Type: "text", Text: prompt}}},

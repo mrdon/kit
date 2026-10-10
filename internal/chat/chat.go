@@ -368,7 +368,7 @@ func applySurface(runInput *agent.RunInput, in ExecuteInput) {
 		runInput.WidgetAllowedTools = in.Scope.AllowedTools
 		runInput.Model = in.Scope.Model
 		if runInput.Model == "" {
-			runInput.Model = anthropic.ModelSonnet
+			runInput.Model = anthropic.ModelSonnet()
 		}
 	case in.Card != nil:
 		// Inject the card as a system suffix so it doesn't accumulate
@@ -396,7 +396,7 @@ func applySurface(runInput *agent.RunInput, in ExecuteInput) {
 			// tool. The pick-vs-edit distinction (resolve_decision vs
 			// revise_decision_option) is exactly the kind of tool-use
 			// nuance Sonnet handles reliably and Haiku doesn't.
-			runInput.Model = anthropic.ModelSonnet
+			runInput.Model = anthropic.ModelSonnet()
 		}
 	default:
 		runInput.SystemSuffix = buildQuickSystemSuffix()
@@ -411,6 +411,6 @@ func applySurface(runInput *agent.RunInput, in ExecuteInput) {
 		// more reliably at the cost of a few extra cents per turn, a
 		// fair trade for a surface where "it said it did but didn't"
 		// is the worst failure mode.
-		runInput.Model = anthropic.ModelSonnet
+		runInput.Model = anthropic.ModelSonnet()
 	}
 }

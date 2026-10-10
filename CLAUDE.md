@@ -35,7 +35,7 @@ make db-reset    # Wipe and restart Postgres
 
 - Go 1.25, Postgres 16 (pgvector image)
 - Slack Events API + OAuth
-- Claude API (Haiku for Q&A, Sonnet for file ingestion)
+- Claude API (Haiku for Q&A, Sonnet for file ingestion). Read model IDs through `anthropic.ModelSonnet()` and friends, never a literal: Kit boots on the compiled-in defaults in `internal/anthropic/models.go` and a background goroutine (`ResolveLatestInBackground`) moves each tier to the newest release the Models API lists, retrying while Anthropic is down and re-checking daily. Keep the defaults current anyway
 - Deployed on Dokku (apps.twdata.org)
 
 ## Code Rules

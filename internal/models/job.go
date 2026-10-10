@@ -64,9 +64,9 @@ const (
 func JobModelID(tier string) string {
 	switch tier {
 	case JobModelSonnet:
-		return anthropic.ModelSonnet
+		return anthropic.ModelSonnet()
 	default:
-		return anthropic.ModelHaiku
+		return anthropic.ModelHaiku()
 	}
 }
 

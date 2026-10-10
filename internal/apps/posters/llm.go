@@ -27,7 +27,7 @@ func askJSON(ctx context.Context, llm anthropic.Sender, system, user string, ima
 	content := append([]anthropic.Content{}, images...)
 	content = append(content, anthropic.Content{Type: "text", Text: user})
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     anthropic.ModelSonnet,
+		Model:     anthropic.ModelSonnet(),
 		MaxTokens: llmMaxTokens,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: system}},
 		Messages:  []anthropic.Message{{Role: "user", Content: content}},

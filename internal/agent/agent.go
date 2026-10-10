@@ -103,7 +103,7 @@ type RunInput struct {
 	DropGatedTools bool
 
 	// Model is the Anthropic Messages API model ID to run this turn
-	// under (e.g. anthropic.ModelSonnet). Empty → Haiku. Job callers
+	// under (e.g. anthropic.ModelSonnet()). Empty → Haiku. Job callers
 	// resolve job.Model (a tier name) through models.JobModelID before
 	// passing the result here.
 	Model string
@@ -181,7 +181,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	toolDefs := buildToolDefs(registry, caller)
 	modelID := in.Model
 	if modelID == "" {
-		modelID = anthropic.ModelHaiku
+		modelID = anthropic.ModelHaiku()
 	}
 
 	sentMessage := false

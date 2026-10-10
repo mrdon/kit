@@ -84,7 +84,7 @@ Respond with a JSON array of objects like {"kind": "task"|"advice", "label": "..
 		task.Title, task.Description, toolList.String())
 
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     anthropic.ModelHaiku,
+		Model:     anthropic.ModelHaiku(),
 		MaxTokens: 1024,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: system}},
 		Messages: []anthropic.Message{

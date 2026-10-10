@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const apiURL = "https://api.anthropic.com/v1/messages"
+const (
+	defaultBaseURL = "https://api.anthropic.com"
+	apiURL         = defaultBaseURL + "/v1/messages"
+)
 
 // APIError is returned by CreateMessage when the API responds with a
 // non-2xx status. Callers use errors.As to branch on StatusCode —
@@ -38,6 +41,7 @@ func IsRateLimit(err error) bool {
 // Client calls the Claude Messages API.
 type Client struct {
 	apiKey     string
+	baseURL    string
 	httpClient *http.Client
 }
 
@@ -45,6 +49,7 @@ type Client struct {
 func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:     apiKey,
+		baseURL:    defaultBaseURL,
 		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }

@@ -53,7 +53,7 @@ func DescribeImage(ctx context.Context, sender Sender, imageBytes []byte, mimeTy
 	}
 
 	resp, err := sender.CreateMessage(ctx, &Request{
-		Model:     ModelSonnet,
+		Model:     ModelSonnet(),
 		MaxTokens: visionMaxTokens,
 		Messages: []Message{{
 			Role: "user",

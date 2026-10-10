@@ -48,7 +48,7 @@ Rules:
 		existingList, task.Title, task.Description)
 
 	resp, err := llm.CreateMessage(ctx, &anthropic.Request{
-		Model:     anthropic.ModelHaiku,
+		Model:     anthropic.ModelHaiku(),
 		MaxTokens: 32,
 		System:    []anthropic.SystemBlock{{Type: "text", Text: system}},
 		Messages: []anthropic.Message{
