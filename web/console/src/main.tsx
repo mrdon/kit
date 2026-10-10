@@ -22,6 +22,12 @@ import EventsSettingsPage from './pages/EventsSettings';
 import EventsStaffPage from './pages/EventsStaff';
 import EventsChannelsPage from './pages/EventsChannels';
 import EventsPromoPage from './pages/EventsPromo';
+import Posters from './pages/posters/Posters';
+import PosterDetail from './pages/posters/PosterDetail';
+import PosterTemplates from './pages/posters/PosterTemplates';
+import PosterTemplateDetail from './pages/posters/PosterTemplateDetail';
+import PosterPhotos from './pages/posters/PosterPhotos';
+import PostersSettings from './pages/posters/PostersSettings';
 import Roles from './pages/Roles';
 import Admin from './pages/Admin';
 import Devices from './pages/Devices';
@@ -59,6 +65,12 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/skills/:id" element={<Skills />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/promo" element={<EventsPromoPage />} />
+          {/* Static segments (templates, photos) rank above /posters/:id. */}
+          <Route path="/posters" element={<Posters />} />
+          <Route path="/posters/templates" element={<PosterTemplates />} />
+          <Route path="/posters/templates/:id" element={<PosterTemplateDetail />} />
+          <Route path="/posters/photos" element={<PosterPhotos />} />
+          <Route path="/posters/:id" element={<PosterDetail />} />
           <Route path="/menu" element={<Menu />} />
           <Route path="/kiosk" element={<Kiosk />} />
           <Route path="/trivia" element={<Trivia />} />
@@ -84,6 +96,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/events" element={<EventsSettingsPage />} />
           <Route path="/admin/events-staff" element={<EventsStaffPage />} />
           <Route path="/admin/events-channels" element={<EventsChannelsPage />} />
+          <Route path="/admin/posters" element={<PostersSettings />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/integrations" element={<Integrations />} />
           <Route path="/admin/square-shifts" element={<SquareShifts />} />

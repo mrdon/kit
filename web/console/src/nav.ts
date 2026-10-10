@@ -31,6 +31,12 @@ export const SECTIONS: Section[] = [
     app: 'events',
   },
   {
+    to: '/posters',
+    label: 'Posters',
+    blurb: 'On-brand event posters from your own photos.',
+    app: 'posters',
+  },
+  {
     to: '/menu',
     label: 'Menu',
     blurb: 'Published tap lists, and the address to put one on a screen.',
@@ -137,6 +143,13 @@ export const SECTIONS: Section[] = [
     blurb: 'Pick the Slack channel that gets the morning post, and who it mentions.',
     admin: true,
     app: 'events',
+  },
+  {
+    to: '/admin/posters',
+    label: 'Posters settings',
+    blurb: 'Photo and logo folders, the derived brand, stock photos.',
+    admin: true,
+    app: 'posters',
   },
   {
     to: '/admin/square-shifts',

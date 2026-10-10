@@ -13,6 +13,7 @@ import { SLUG } from '../workspace';
 import ActionMenu from '../ActionMenu';
 import RepeatEditor from './EventRepeat';
 import EventWhen, { defaultStart, addMinutes, spansDays } from './EventWhen';
+import EventPosterPicker from './posters/EventPosterPicker';
 
 // The everyday events page: a list, with create/edit in a drawer.
 //
@@ -731,6 +732,10 @@ function EventDrawer({
                 time and serves it from its own domain — nothing links back
                 here.
               </span>
+              {/* Generated options first; the manual upload below stays for a
+                  poster made elsewhere. Only once the event exists: a new
+                  event saves as a draft first. */}
+              <EventPosterPicker eventId={event.id} onChanged={onChanged} />
               {event.hero_attachment_id ? (
                 <div className="poster-preview">
                   <img
