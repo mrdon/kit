@@ -52,7 +52,7 @@ type Photo struct {
 
 // Ref is the photo as the renderer fetches it.
 func (p Photo) Ref() posterrender.ImageRef {
-	return posterrender.ImageRef{ID: p.ID.String(), Source: posterrender.SourceDrive, Modified: p.DriveModifiedAt, Folder: p.Folder}
+	return posterrender.ImageRef{ID: p.ID.String(), Source: posterrender.SourceDrive, FileID: p.DriveFileID, Modified: p.DriveModifiedAt, Folder: p.Folder}
 }
 
 // Use is the photo cropped around its focus point.

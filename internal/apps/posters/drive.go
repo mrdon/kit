@@ -18,7 +18,7 @@ import (
 // shared as "anyone with the link: viewer"; listing goes through the Drive
 // API when a Kit-wide key is set and falls back to the public folder page
 // otherwise. Downloads happen in the renderer, which is the only process
-// that needs bytes.
+// that needs bytes and the only one that builds a Drive download URL.
 
 const driveFolderMime = "application/vnd.google-apps.folder"
 
@@ -52,13 +52,6 @@ func driveFolderID(link string) (string, error) {
 		}
 	}
 	return "", errors.New("that does not look like a Google Drive folder link")
-}
-
-func driveDownloadURL(fileID, apiKey string) string {
-	if apiKey != "" {
-		return fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&key=%s", url.PathEscape(fileID), url.QueryEscape(apiKey))
-	}
-	return fmt.Sprintf("https://drive.usercontent.google.com/download?id=%s&export=download&confirm=t", url.QueryEscape(fileID))
 }
 
 // driveThumbnailURL is a public thumbnail for a shared file, which the

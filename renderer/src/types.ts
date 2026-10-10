@@ -57,6 +57,9 @@ export type ImageSource = "drive" | "pixabay" | "url" | "inline";
 export type ImageRef = {
   id: string;
   source: ImageSource;
+  // Drive file id. Kit's own id is `id`; the renderer is the only place
+  // that turns a file id into a download URL (with its own key).
+  fileId?: string;
   url?: string;
   // Cache key discriminator (Drive modifiedTime, Pixabay id...).
   modified?: string;

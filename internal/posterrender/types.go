@@ -95,10 +95,13 @@ const (
 )
 
 // ImageRef is an image the renderer may fetch. Poster code refers to it by
-// id only.
+// id only. A Drive image carries the Drive file id separately from Kit's
+// id, and never a URL: only the renderer builds Drive URLs, so the server's
+// Drive key never leaves it.
 type ImageRef struct {
 	ID       string      `json:"id"`
 	Source   ImageSource `json:"source"`
+	FileID   string      `json:"fileId,omitempty"`
 	URL      string      `json:"url,omitempty"`
 	Modified string      `json:"modified,omitempty"`
 	Data     string      `json:"data,omitempty"`

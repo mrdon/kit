@@ -35,7 +35,7 @@ export class ImageStore {
   }
 
   private key(ref: ImageRef) {
-    return crypto.createHash("sha1").update(`${ref.source}|${ref.id}|${ref.modified ?? ""}|${ref.url ?? ""}`).digest("hex");
+    return crypto.createHash("sha1").update(`${ref.source}|${ref.id}|${ref.fileId ?? ""}|${ref.modified ?? ""}|${ref.url ?? ""}`).digest("hex");
   }
 
   // An upright JPEG no larger than the working size, plus what the sync
@@ -94,8 +94,9 @@ export class ImageStore {
 
   private driveURL(ref: ImageRef) {
     if (ref.source !== "drive") throw new ImageError(`image ${ref.id} has no url`);
-    if (this.driveKey) return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(ref.id)}?alt=media&key=${this.driveKey}`;
-    return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(ref.id)}&export=download&confirm=t`;
+    const fileId = ref.fileId ?? ref.id;
+    if (this.driveKey) return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${this.driveKey}`;
+    return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
   }
 
   // Oldest-touched files go first once the cache passes its size limit.

@@ -1,7 +1,11 @@
 package posters
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/posterrender"
 )
@@ -163,5 +167,26 @@ func TestAutoSyncIsOptIn(t *testing.T) {
 	}
 	if f.app.autoSyncOn(f.ctx, f.tenant.ID) {
 		t.Fatal("auto sync on with the switch on but no folder")
+	}
+}
+
+// The renderer fetches Drive files by their Drive id, and no reference that
+// can reach a browser carries a download URL (which would hold the server's
+// Drive key).
+func TestImageRefsCarryDriveFileIDNotURL(t *testing.T) {
+	p := Photo{ID: uuid.New(), DriveFileID: "1abcDEF", DriveModifiedAt: "2026-01-01T00:00:00Z", Folder: "taproom"}
+	ref := p.Ref()
+	if ref.FileID != "1abcDEF" || ref.ID != p.ID.String() || ref.URL != "" {
+		t.Fatalf("photo ref = %+v", ref)
+	}
+	a := &App{driveKey: "SECRET-KEY"}
+	var brand posterrender.Brand
+	a.attachLogos(&brand, Settings{LogoMap: map[string]LogoFile{"white": {FileID: "logoFile1"}}})
+	logo := brand.Logos["white"]
+	if logo.FileID != "logoFile1" || logo.URL != "" {
+		t.Fatalf("logo ref = %+v", logo)
+	}
+	if raw, _ := json.Marshal(brand); strings.Contains(string(raw), "SECRET-KEY") {
+		t.Fatal("the Drive key is in the brand JSON")
 	}
 }

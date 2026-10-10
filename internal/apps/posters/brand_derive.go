@@ -140,7 +140,7 @@ func (a *App) attachLogos(brand *posterrender.Brand, s Settings) {
 		if f.FileID == "" {
 			continue
 		}
-		brand.Logos[variant] = posterrender.ImageRef{ID: "logo:" + f.FileID, Source: posterrender.SourceDrive, URL: driveDownloadURL(f.FileID, a.driveKey), Modified: f.Modified}
+		brand.Logos[variant] = posterrender.ImageRef{ID: "logo:" + f.FileID, Source: posterrender.SourceDrive, FileID: f.FileID, Modified: f.Modified}
 	}
 }
 
