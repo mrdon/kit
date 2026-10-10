@@ -1,0 +1,7 @@
+Event:
+{{ .Event }}
+
+Candidates:
+{{ range .Candidates }}- id {{ .ID }} ({{ .Orientation }}, folder "{{ .Folder }}", focus {{ .FocusX }},{{ .FocusY }}): {{ .Description }}{{ if .Tags }} [tags: {{ .Tags }}]{{ end }}{{ if .Notes }} (notes: {{ .Notes }}){{ end }}
+{{ end }}
+Return the JSON object only.

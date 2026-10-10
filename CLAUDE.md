@@ -18,6 +18,7 @@ make test        # Run tests with race detection
 make lint        # Run golangci-lint
 make format      # Format code + tidy modules
 make prepush     # format + lint + test + build
+make renderer-test  # poster renderer's own tests (offline, Node)
 make db          # Connect to local Postgres
 make db-reset    # Wipe and restart Postgres
 ```
@@ -73,7 +74,8 @@ make db-reset    # Wipe and restart Postgres
 - `internal/slack/` — Slack integration: event handler, OAuth flow, API client
 - `internal/sse/` — Server-Sent Events writer (used by card chat today; reusable for future ambient-feed pushes)
 - `internal/transcribe/` — Voice transcription via local whisper.cpp (optional; gated on `WHISPER_BIN`/`WHISPER_MODEL`)
-- `internal/chat/` — Card-scoped chat orchestration for the web UI: long-press a card, type or hold-to-talk; session keyed by `(card, user)` so follow-ups attach
+- `internal/chat/` — Chat orchestration for the web UI: card-scoped (long-press a card) or scoped to any app object via `chat.Scope` (poster chat, template chat); session keyed by `(app, kind, id, user)` so follow-ups attach
+- `internal/posterrender/` — Client and child-process supervisor for the poster renderer: the Node service under `renderer/` (TSX in a V8 isolate → validated element tree → Satori → PNG). Kit starts it from `POSTER_RENDERER_DIR` and talks HTTP on localhost; `POSTER_RENDERER_URL` points at one running elsewhere. `make renderer-test` runs its offline tests; the Go end-to-end test in `internal/apps/posters` exercises the wire contract
 
 ## Data Model
 

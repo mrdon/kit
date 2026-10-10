@@ -57,7 +57,11 @@ make dev              # start with hot reload
 | `ENCRYPTION_KEY` | Yes | 32-byte hex key for encrypting bot tokens |
 | `BASE_URL` | Yes | Public URL (e.g. `https://your-domain.com`) |
 | `PORT` | No | HTTP port (default: 8080) |
-| `REDIS_URL` | No | Redis for web fetch caching |
+| `REDIS_URL` | No | Redis for web fetch caching and poster render caching |
+| `POSTER_RENDERER_DIR` | No | Built poster renderer (`renderer/`); Kit runs it as a child process. Defaults to `./renderer` when `renderer/dist/server.js` exists; the Docker image sets it |
+| `POSTER_RENDERER_URL` / `POSTER_RENDERER_TOKEN` | No | Use a renderer running elsewhere instead of a child process |
+| `GDRIVE_API_KEY` | No | Google API key (Drive API only) for listing and downloading the poster photo folders; without it the public folder page is scraped |
+| `PIXABAY_API_KEY` | No | Enables the stock-photo tool for workspaces that turn it on |
 
 ## Slack App Setup
 

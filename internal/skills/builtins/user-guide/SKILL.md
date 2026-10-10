@@ -317,6 +317,22 @@ Nothing on today means nothing is posted — a daily "nothing today" is how a ch
 
 New hire? They appear in the dropdown once they're on the published Square schedule. You don't need them to have used Kit before — picking them creates their Kit account.
 
+## Posters
+
+Press **Generate poster** on an event and Kit makes about seven on-brand options from your own photos in under half a minute. Pick one and it becomes the event's poster. Open it in the **Posters** tab to change anything in chat ("bigger title", "photo on the left", "fix the typo"), download it at other sizes (story, screen, website hero), or save a good one as a template for next time.
+
+Two rules never bend. **No generated imagery**: every picture in a poster is a real photo from your shared Drive folder (or a stock photo, only if an admin turns that on) or your logo. Kit will not draw, invent or generate an image; if the library has nothing that fits, it says so and asks for a photo rather than using one of something else. **No invented facts**: the words come from the event's public fields. Staff notes never reach a poster, and Kit will not make up a price or a booking link the event does not have.
+
+**The brand comes from your `branding-guide` skill.** There is no brand form: colours, approved pairings, typefaces (fetched from Google Fonts), logo variants and canvas sizes are read from the guide, from its machine-readable `json` block when it has one, and used as the rules every poster is checked against. Edit the skill and every poster rendered after it follows. The admin page shows what was derived and anything that is missing. Copy follows your `writing-copy` skill.
+
+**Photos live in Drive; Kit keeps an index.** An admin pastes a Drive folder link (shared as "anyone with the link") on the admin page and Kit lists it every hour. New photos wait for a description before they are offered. Describing them is done from Claude Code over MCP, on your own model: ask it to "index the new poster photos" and it loads the `indexing-poster-photos` skill, looks at contact sheets, and writes descriptions, tags and focus points back. Subfolders are sets: a poster borrows other photos from the same folder as its hero, never from the root.
+
+**Out of date.** When an event's date, time, price or place changes after a poster is set, the poster is flagged and **Update poster** rewrites only the changed facts into a new version for you to compare and set.
+
+**Templates** are the layouts the options come from. Kit ships seven; the **Templates** tab shows each rendered with a real event, how often it is picked and what people usually change afterwards. Save a poster as a template, duplicate a built-in and edit it in chat, or upload a reference image and ask for a template with that structure in your own brand. New templates start as drafts; activate the ones you want offered. Bigger template work is best done from Claude Code over MCP with a stronger model.
+
+**Over MCP** every poster and template tool is available (`get_poster`, `edit_poster_source`, `search_photos`, `list_templates`, `create_template`, and so on), plus the indexing tools and `set_template_status`, which are MCP-only on purpose.
+
 ## Email
 
 Connect any IMAP + SMTP mailbox so Kit can read your inbox and draft replies on your behalf. Gmail works via an app password (enable 2FA, then generate one at https://myaccount.google.com/apppasswords). iCloud, Yahoo, Fastmail, and self-hosted IMAP work with their normal passwords. Microsoft 365 / Outlook.com aren't supported yet — they require OAuth.

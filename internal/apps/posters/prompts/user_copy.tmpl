@@ -1,0 +1,9 @@
+Write the poster copy for this event. Return the JSON object only.
+
+<event>
+{{ .Event }}
+</event>
+{{ if .Problems }}
+Your previous attempt failed these checks. Fix every one:
+{{ range .Problems }}- {{ . }}
+{{ end }}{{ end }}

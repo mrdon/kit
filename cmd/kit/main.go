@@ -30,6 +30,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/apps/kiosk"
 	"github.com/mrdon/kit/internal/apps/menu"
+	"github.com/mrdon/kit/internal/apps/posters"
 	_ "github.com/mrdon/kit/internal/apps/slack"
 	"github.com/mrdon/kit/internal/apps/square"
 	"github.com/mrdon/kit/internal/apps/squaresales"
@@ -46,6 +47,7 @@ import (
 	"github.com/mrdon/kit/internal/logger"
 	kitmcp "github.com/mrdon/kit/internal/mcp"
 	"github.com/mrdon/kit/internal/models"
+	"github.com/mrdon/kit/internal/posterrender"
 	"github.com/mrdon/kit/internal/scheduler"
 	"github.com/mrdon/kit/internal/services"
 	kitslack "github.com/mrdon/kit/internal/slack"
@@ -216,6 +218,17 @@ func main() {
 	// holding a tool rather than a browser gets an image onto an event; both
 	// are optional and their absence only disables that link.
 	events.Configure(enc, sessionSigner, rdb, cfg.BaseURL)
+
+	// Posters: the renderer is a Node child Kit supervises (or a service at
+	// POSTER_RENDERER_URL). Stopped with the server below.
+	posters.Configure(ctx, svc, enc, sessionSigner, llm, app.Agent, rdb, posters.Config{
+		Renderer: posterrender.Config{
+			URL: cfg.PosterRendererURL, Token: cfg.PosterRendererToken, Dir: cfg.PosterRendererDir,
+			Node: cfg.PosterRendererNode, CacheDir: cfg.PosterRendererCacheDir,
+		},
+		DriveKey: cfg.GDriveAPIKey, PixabayKey: cfg.PixabayAPIKey, BaseURL: cfg.BaseURL,
+	})
+	defer posters.Instance().Shutdown()
 
 	// Widget app needs the agent (for chat dispatch), the session signer
 	// (for the Slack-OAuth-gated admin pages), and the base URL (for

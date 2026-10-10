@@ -32,6 +32,19 @@ type Config struct {
 	SquareApplicationSecret string // Square OAuth application_secret (client_secret)
 	SquareEnvironment       string // "production" (default) or "sandbox"
 
+	// Poster renderer (internal/posterrender). Kit supervises a Node child
+	// from PosterRendererDir unless PosterRendererURL names one running
+	// elsewhere. Empty Dir and URL disable poster generation; the posters
+	// app then reports that rather than failing to start.
+	PosterRendererURL      string
+	PosterRendererToken    string
+	PosterRendererDir      string
+	PosterRendererCacheDir string
+	PosterRendererNode     string
+	// Kit-wide keys for the photo sources. Drive listing falls back to the
+	// public folder page without a key; Pixabay needs one.
+	GDriveAPIKey  string
+	PixabayAPIKey string
 }
 
 func Load() (*Config, error) {
@@ -56,6 +69,19 @@ func Load() (*Config, error) {
 		SquareApplicationID:     os.Getenv("SQUARE_APPLICATION_ID"),
 		SquareApplicationSecret: os.Getenv("SQUARE_APPLICATION_SECRET"),
 		SquareEnvironment:       os.Getenv("SQUARE_ENVIRONMENT"),
+
+		PosterRendererURL:      os.Getenv("POSTER_RENDERER_URL"),
+		PosterRendererToken:    os.Getenv("POSTER_RENDERER_TOKEN"),
+		PosterRendererDir:      os.Getenv("POSTER_RENDERER_DIR"),
+		PosterRendererCacheDir: os.Getenv("POSTER_RENDERER_CACHE_DIR"),
+		PosterRendererNode:     os.Getenv("POSTER_RENDERER_NODE"),
+		GDriveAPIKey:           os.Getenv("GDRIVE_API_KEY"),
+		PixabayAPIKey:          os.Getenv("PIXABAY_API_KEY"),
+	}
+	if cfg.PosterRendererURL == "" && cfg.PosterRendererDir == "" {
+		if _, err := os.Stat("renderer/dist/server.js"); err == nil {
+			cfg.PosterRendererDir = "renderer"
+		}
 	}
 
 	if cfg.SquareEnvironment == "" {

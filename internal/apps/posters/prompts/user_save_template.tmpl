@@ -1,0 +1,9 @@
+Poster source:
+<source>
+{{ .Source }}
+</source>
+{{ if .Problems }}
+The previous attempt failed the template check. Fix every one of these:
+{{ range .Problems }}- {{ . }}
+{{ end }}{{ end }}
+Return the JSON object only.
