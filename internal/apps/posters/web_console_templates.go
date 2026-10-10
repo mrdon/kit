@@ -52,7 +52,7 @@ func (a *App) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 	if !readBody(w, r, &body) {
 		return
 	}
-	in := TemplateInput{Origin: "chat", Author: "user", Summary: "Created", CreatedBy: callerUser(caller)}
+	in := TemplateInput{Origin: OriginChat, Author: AuthorUser, Summary: "Created", CreatedBy: callerUser(caller)}
 	if body.ParentTemplateID != "" {
 		pid, err := uuid.Parse(body.ParentTemplateID)
 		if err != nil {
@@ -193,7 +193,7 @@ func (a *App) handleRollbackTemplate(w http.ResponseWriter, r *http.Request) {
 		a.httpErr(w, err)
 		return
 	}
-	nv, err := addTemplateVersion(r.Context(), a.pool, caller.TenantID, id, v.Source, "Rolled back to "+v.CreatedAt.Format("2 Jan 15:04"), "user", t.Meta, callerUser(caller))
+	nv, err := addTemplateVersion(r.Context(), a.pool, caller.TenantID, id, v.Source, "Rolled back to "+v.CreatedAt.Format("2 Jan 15:04"), AuthorUser, t.Meta, callerUser(caller))
 	if err != nil {
 		a.httpErr(w, err)
 		return

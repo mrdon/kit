@@ -28,26 +28,26 @@ const (
 
 // Photo is one row of the index. No bytes: Drive holds the file.
 type Photo struct {
-	ID              uuid.UUID   `json:"id"`
-	TenantID        uuid.UUID   `json:"tenant_id"`
-	DriveFileID     string      `json:"drive_file_id"`
-	DriveModifiedAt string      `json:"drive_modified_at"`
-	Folder          string      `json:"folder"`
-	Filename        string      `json:"filename"`
-	Width           int         `json:"width"`
-	Height          int         `json:"height"`
-	Orientation     string      `json:"orientation"`
-	Status          PhotoStatus `json:"status"`
-	Description     string      `json:"description"`
-	Tags            []string    `json:"tags"`
-	FocusX          float64     `json:"focus_x"`
-	FocusY          float64     `json:"focus_y"`
-	Notes           string      `json:"notes"`
-	C2PA            string      `json:"c2pa"`
-	IndexedBy       string      `json:"indexed_by"`
-	IndexedAt       *time.Time  `json:"indexed_at,omitempty"`
-	CreatedAt       time.Time   `json:"created_at"`
-	UpdatedAt       time.Time   `json:"updated_at"`
+	ID              uuid.UUID         `json:"id"`
+	TenantID        uuid.UUID         `json:"tenant_id"`
+	DriveFileID     string            `json:"drive_file_id"`
+	DriveModifiedAt string            `json:"drive_modified_at"`
+	Folder          string            `json:"folder"`
+	Filename        string            `json:"filename"`
+	Width           int               `json:"width"`
+	Height          int               `json:"height"`
+	Orientation     string            `json:"orientation"`
+	Status          PhotoStatus       `json:"status"`
+	Description     string            `json:"description"`
+	Tags            []string          `json:"tags"`
+	FocusX          float64           `json:"focus_x"`
+	FocusY          float64           `json:"focus_y"`
+	Notes           string            `json:"notes"`
+	C2PA            posterrender.C2PA `json:"c2pa"`
+	IndexedBy       string            `json:"indexed_by"`
+	IndexedAt       *time.Time        `json:"indexed_at,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
 }
 
 // Ref is the photo as the renderer fetches it.
@@ -61,7 +61,7 @@ func (p Photo) Use() posterrender.PhotoUse {
 }
 
 // Offerable reports whether the generator and search may use the photo.
-func (p Photo) Offerable() bool { return p.Status == PhotoIndexed && p.C2PA != "ai" }
+func (p Photo) Offerable() bool { return p.Status == PhotoIndexed && p.C2PA != posterrender.C2PAAI }
 
 const photoColumns = `id, tenant_id, drive_file_id, drive_modified_at, folder, filename, width, height, orientation,
 	status, description, tags, focus_x, focus_y, notes, c2pa, indexed_by, indexed_at, created_at, updated_at`
@@ -117,7 +117,7 @@ func upsertListedPhoto(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UU
 	return p, changed, nil
 }
 
-func setPhotoFacts(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, width, height int, orientation, c2pa string) error {
+func setPhotoFacts(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, width, height int, orientation string, c2pa posterrender.C2PA) error {
 	_, err := pool.Exec(ctx, `
 		UPDATE app_poster_photos SET width = $3, height = $4, orientation = $5, c2pa = $6, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`, tenantID, id, width, height, orientation, c2pa)
@@ -272,10 +272,10 @@ func searchPhotos(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, q
 func searchPhotosWith(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, tsquery, query string, limit int) ([]Photo, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT `+photoColumns+` FROM app_poster_photos
-		WHERE tenant_id = $1 AND status = 'indexed' AND c2pa <> 'ai'
+		WHERE tenant_id = $1 AND status = $4 AND c2pa <> $5
 		  AND to_tsvector('english', search_text) @@ `+tsquery+`
 		ORDER BY ts_rank(to_tsvector('english', search_text), `+tsquery+`) DESC, filename
-		LIMIT $3`, tenantID, query, limit)
+		LIMIT $3`, tenantID, query, limit, PhotoIndexed, posterrender.C2PAAI)
 	if err != nil {
 		return nil, fmt.Errorf("searching photos: %w", err)
 	}

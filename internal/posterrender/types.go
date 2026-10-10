@@ -216,12 +216,23 @@ type OptionsResponse struct {
 	Skipped []Skipped `json:"skipped"`
 }
 
+// C2PA is the renderer's provenance verdict for an image, read from its
+// Content Credentials manifest when it has one.
+type C2PA string
+
+const (
+	C2PANone    C2PA = "none"    // no manifest
+	C2PACamera  C2PA = "camera"  // signed by a camera or editor, no AI claim
+	C2PAAI      C2PA = "ai"      // a generative-AI assertion; never offered
+	C2PAUnknown C2PA = "unknown" // a manifest we could not read
+)
+
 // InspectResponse describes an image without a render.
 type InspectResponse struct {
 	Width       int    `json:"width"`
 	Height      int    `json:"height"`
 	Orientation string `json:"orientation"`
-	C2PA        string `json:"c2pa"`
+	C2PA        C2PA   `json:"c2pa"`
 	Thumbnail   []byte `json:"thumbnail"`
 }
 

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import type { PosterGenerateStage, PosterOption, PosterStatus } from '../../api';
+import { PosterGenerateStage, PosterOption, PosterStatus } from '../../api';
 
 // Pieces the Posters pages share: the sub-tab row, the option grid that both
 // the event drawer and the poster page show, and the small formatters.
@@ -32,11 +32,11 @@ export function PostersTabs() {
 // stageText is what the Generate button says while the server works.
 export function stageText(stage: PosterGenerateStage | null): string {
   switch (stage) {
-    case 'copy':
+    case PosterGenerateStage.Copy:
       return 'Writing the copy…';
-    case 'photo':
+    case PosterGenerateStage.Photo:
       return 'Choosing a photo…';
-    case 'rendering':
+    case PosterGenerateStage.Rendering:
       return 'Rendering options…';
     default:
       return 'Starting…';

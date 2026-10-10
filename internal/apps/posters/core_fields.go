@@ -77,7 +77,7 @@ func (a *App) coreSetFields(ctx context.Context, caller *services.Caller, raw js
 	if len(changes) == 0 {
 		return nil, invalid("nothing to change: pass layout, ground, photo, zoom or focus")
 	}
-	res, err := a.saveEdit(ctx, caller.TenantID, poster, source, "Set "+strings.Join(changes, ", "), "agent")
+	res, err := a.saveEdit(ctx, caller.TenantID, poster, source, "Set "+strings.Join(changes, ", "), AuthorAgent)
 	if err != nil {
 		return nil, err
 	}

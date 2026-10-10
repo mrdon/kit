@@ -25,6 +25,26 @@ const (
 	TemplateArchived TemplateStatus = "archived"
 )
 
+// TemplateOrigin says where a template came from. Mirrored by the
+// console's PosterTemplateOrigin.
+type TemplateOrigin string
+
+const (
+	OriginBuiltin TemplateOrigin = "builtin"
+	OriginPoster  TemplateOrigin = "poster" // saved from a finished poster
+	OriginImage   TemplateOrigin = "image"  // rebuilt from a reference image
+	OriginChat    TemplateOrigin = "chat"   // written in template chat
+)
+
+// BuiltinVisibility is the status word a built-in takes instead of the
+// tenant lifecycle: hidden from this workspace's generator, or offered.
+type BuiltinVisibility string
+
+const (
+	BuiltinHidden  BuiltinVisibility = "hidden"
+	BuiltinVisible BuiltinVisibility = "visible"
+)
+
 // Template is a layout that takes content and draws a poster. Built-ins
 // have no tenant and cannot be edited in place.
 type Template struct {
@@ -34,7 +54,7 @@ type Template struct {
 	Name                  string                    `json:"name"`
 	Description           string                    `json:"description"`
 	Status                TemplateStatus            `json:"status"`
-	Origin                string                    `json:"origin"`
+	Origin                TemplateOrigin            `json:"origin"`
 	Meta                  posterrender.TemplateMeta `json:"meta"`
 	CurrentVersionID      *uuid.UUID                `json:"current_version_id,omitempty"`
 	ParentTemplateID      *uuid.UUID                `json:"parent_template_id,omitempty"`
@@ -60,7 +80,7 @@ type TemplateVersion struct {
 	ParentID   *uuid.UUID `json:"parent_id,omitempty"`
 	Source     string     `json:"source"`
 	Summary    string     `json:"summary"`
-	Author     string     `json:"author"`
+	Author     Author     `json:"author"`
 	CreatedBy  *uuid.UUID `json:"created_by,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
@@ -136,11 +156,11 @@ func getTemplate(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID
 type TemplateInput struct {
 	Name                  string
 	Description           string
-	Origin                string
+	Origin                TemplateOrigin
 	Meta                  posterrender.TemplateMeta
 	Source                string
 	Summary               string
-	Author                string
+	Author                Author
 	ParentTemplateID      *uuid.UUID
 	SourcePosterID        *uuid.UUID
 	ReferenceAttachmentID *uuid.UUID
@@ -180,7 +200,7 @@ func createTemplate(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 
 // addTemplateVersion saves a new version of a tenant template and makes it
 // current. Built-ins are refused: they have no tenant to own the edit.
-func addTemplateVersion(ctx context.Context, pool *pgxpool.Pool, tenantID, templateID uuid.UUID, source, summary, author string, meta posterrender.TemplateMeta, by *uuid.UUID) (*TemplateVersion, error) {
+func addTemplateVersion(ctx context.Context, pool *pgxpool.Pool, tenantID, templateID uuid.UUID, source, summary string, author Author, meta posterrender.TemplateMeta, by *uuid.UUID) (*TemplateVersion, error) {
 	metaJSON, _ := json.Marshal(meta)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -319,9 +339,9 @@ func upsertBuiltin(ctx context.Context, pool *pgxpool.Pool, key string, meta pos
 	var current *uuid.UUID
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO app_poster_templates (tenant_id, builtin_key, name, description, status, origin, meta)
-		VALUES (NULL, $1, $2, $3, 'active', 'builtin', $4)
+		VALUES (NULL, $1, $2, $3, $5, $6, $4)
 		ON CONFLICT (builtin_key) WHERE tenant_id IS NULL DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, meta = EXCLUDED.meta, updated_at = now()
-		RETURNING id, current_version_id`, key, meta.Name, meta.Description, metaJSON).Scan(&id, &current); err != nil {
+		RETURNING id, current_version_id`, key, meta.Name, meta.Description, metaJSON, TemplateActive, OriginBuiltin).Scan(&id, &current); err != nil {
 		return fmt.Errorf("installing built-in template %s: %w", key, err)
 	}
 	if current != nil {

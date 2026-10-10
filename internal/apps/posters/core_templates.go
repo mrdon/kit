@@ -161,7 +161,7 @@ func (a *App) coreEditTemplate(ctx context.Context, caller *services.Caller, raw
 	if len(chk.Problems) > 0 {
 		return checkOutcome(chk, "")
 	}
-	v, err := addTemplateVersion(ctx, a.pool, caller.TenantID, t.ID, in.Source, strOr(in.Summary, "Edited"), "agent", *chk.Meta, callerUser(caller))
+	v, err := addTemplateVersion(ctx, a.pool, caller.TenantID, t.ID, in.Source, strOr(in.Summary, "Edited"), AuthorAgent, *chk.Meta, callerUser(caller))
 	if err != nil {
 		return nil, err
 	}
@@ -185,8 +185,8 @@ func (a *App) coreCreateTemplate(ctx context.Context, caller *services.Caller, r
 	if strings.TrimSpace(in.Source) == "" {
 		return nil, invalid("source is required")
 	}
-	origin := strOr(strings.ToLower(in.Origin), "chat")
-	if origin != "poster" && origin != "image" && origin != "chat" {
+	origin := TemplateOrigin(strOr(strings.ToLower(in.Origin), string(OriginChat)))
+	if origin != OriginPoster && origin != OriginImage && origin != OriginChat {
 		return nil, invalid("origin must be poster, image or chat")
 	}
 	chk, err := a.templateCheck(ctx, caller.TenantID, in.Source)
@@ -198,7 +198,7 @@ func (a *App) coreCreateTemplate(ctx context.Context, caller *services.Caller, r
 	}
 	ti := TemplateInput{
 		Name: strOr(in.Name, chk.Meta.Name), Description: chk.Meta.Description, Origin: origin, Meta: *chk.Meta,
-		Source: in.Source, Summary: "Created", Author: "agent", CreatedBy: callerUser(caller),
+		Source: in.Source, Summary: "Created", Author: AuthorAgent, CreatedBy: callerUser(caller),
 	}
 	if ti.SourcePosterID, err = optionalID(in.SourcePosterID, "source_poster_id"); err != nil {
 		return nil, err
@@ -257,9 +257,9 @@ func (a *App) SetTemplateStatus(ctx context.Context, tenantID, id uuid.UUID, sta
 	}
 	if t.Builtin() {
 		switch status {
-		case "hidden", "archived":
+		case string(BuiltinHidden), string(TemplateArchived):
 			return setTemplateHidden(ctx, a.pool, tenantID, id, true)
-		case "visible", "active":
+		case string(BuiltinVisible), string(TemplateActive):
 			return setTemplateHidden(ctx, a.pool, tenantID, id, false)
 		}
 		return invalid("a built-in template can be hidden or visible, not %q", status)

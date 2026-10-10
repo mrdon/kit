@@ -279,7 +279,7 @@ func (a *App) handleUpdateFacts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, changes, err := a.UpdateFacts(r.Context(), caller.TenantID, id, "agent")
+	res, changes, err := a.UpdateFacts(r.Context(), caller.TenantID, id, AuthorUser)
 	if err != nil {
 		a.httpErr(w, err)
 		return

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, type PosterTemplateDetail as Payload } from '../../api';
+import { PosterBuiltinVisibility, PosterTemplateStatus, api, type PosterTemplateDetail as Payload } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { SLUG } from '../../workspace';
 import PosterChat from './PosterChat';
@@ -52,7 +52,7 @@ export default function PosterTemplateDetail() {
     }
   };
 
-  const setStatus = (status: string, said: string) =>
+  const setStatus = (status: PosterTemplateStatus | PosterBuiltinVisibility, said: string) =>
     guard(async () => {
       await api.setPosterTemplateStatus(id, status);
       setNote(said);
@@ -134,28 +134,28 @@ export default function PosterTemplateDetail() {
             <div className="poster-actions">
               {builtin ? (
                 t.hidden ? (
-                  <button type="button" className="btn" disabled={busy} onClick={() => setStatus('visible', 'Offered again.')}>
+                  <button type="button" className="btn" disabled={busy} onClick={() => setStatus(PosterBuiltinVisibility.Visible, 'Offered again.')}>
                     Show
                   </button>
                 ) : (
-                  <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setStatus('hidden', 'Hidden from the generator.')}>
+                  <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setStatus(PosterBuiltinVisibility.Hidden, 'Hidden from the generator.')}>
                     Hide
                   </button>
                 )
               ) : (
                 <>
-                  {t.status !== 'active' && (
-                    <button type="button" className="btn" disabled={busy} onClick={() => setStatus('active', 'Active: the generator will offer it.')}>
+                  {t.status !== PosterTemplateStatus.Active && (
+                    <button type="button" className="btn" disabled={busy} onClick={() => setStatus(PosterTemplateStatus.Active, 'Active: the generator will offer it.')}>
                       Activate
                     </button>
                   )}
-                  {t.status !== 'draft' && (
-                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setStatus('draft', 'Back to draft.')}>
+                  {t.status !== PosterTemplateStatus.Draft && (
+                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setStatus(PosterTemplateStatus.Draft, 'Back to draft.')}>
                       Make draft
                     </button>
                   )}
-                  {t.status !== 'archived' && (
-                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setStatus('archived', 'Archived.')}>
+                  {t.status !== PosterTemplateStatus.Archived && (
+                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setStatus(PosterTemplateStatus.Archived, 'Archived.')}>
                       Archive
                     </button>
                   )}

@@ -53,7 +53,7 @@ func (a *App) imageRefsFor(ctx context.Context, tenantID uuid.UUID, source strin
 			return nil, err
 		}
 		for _, p := range photos {
-			if p.Status != PhotoRemoved && p.C2PA != "ai" {
+			if p.Status != PhotoRemoved && p.C2PA != posterrender.C2PAAI {
 				refs = append(refs, p.Ref())
 			}
 		}
@@ -161,7 +161,7 @@ type EditResult struct {
 
 // saveEdit renders new source for a poster and, if it passes, stores it as
 // a new version descending from the current one.
-func (a *App) saveEdit(ctx context.Context, tenantID uuid.UUID, poster *Poster, source, instruction, author string) (*EditResult, error) {
+func (a *App) saveEdit(ctx context.Context, tenantID uuid.UUID, poster *Poster, source, instruction string, author Author) (*EditResult, error) {
 	brand, err := a.brandFor(ctx, tenantID)
 	if err != nil {
 		return nil, err

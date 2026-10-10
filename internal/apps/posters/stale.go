@@ -40,7 +40,7 @@ func (a *App) installEventListener() {
 // UpdateFacts refreshes a stale poster's copy from the event. The new
 // version sits next to the current one; nothing reaches the event until
 // someone sets it.
-func (a *App) UpdateFacts(ctx context.Context, tenantID uuid.UUID, posterID uuid.UUID, author string) (*EditResult, []string, error) {
+func (a *App) UpdateFacts(ctx context.Context, tenantID uuid.UUID, posterID uuid.UUID, author Author) (*EditResult, []string, error) {
 	poster, cur, err := a.loadPoster(ctx, tenantID, posterID)
 	if err != nil {
 		return nil, nil, err

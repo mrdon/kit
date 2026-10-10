@@ -23,8 +23,18 @@ func base64Encode(b []byte) string { return base64.StdEncoding.EncodeToString(b)
 // optionCount is how many options a batch aims for.
 const optionCount = 7
 
+// GenerateStage names a step of a batch for whoever is watching. The
+// console's PosterGenerateStage mirrors these.
+type GenerateStage string
+
+const (
+	StageCopy      GenerateStage = "copy"
+	StagePhoto     GenerateStage = "photo"
+	StageRendering GenerateStage = "rendering"
+)
+
 // Progress reports a stage to whoever is watching (the drawer's SSE).
-type Progress func(stage string, data map[string]any)
+type Progress func(stage GenerateStage, data map[string]any)
 
 // GenerateResult is a finished batch.
 type GenerateResult struct {
@@ -42,7 +52,7 @@ type GenerateResult struct {
 // avoided, so "more options" costs no model calls.
 func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID uuid.UUID, more bool, progress Progress) (*GenerateResult, error) {
 	if progress == nil {
-		progress = func(string, map[string]any) {}
+		progress = func(GenerateStage, map[string]any) {}
 	}
 	if a.renderer == nil {
 		return nil, invalid("the poster renderer is not configured")
@@ -70,7 +80,7 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 	if err != nil {
 		return nil, err
 	}
-	progress("rendering", nil)
+	progress(StageRendering, nil)
 	templates, byID, err := a.activeTemplates(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -119,12 +129,12 @@ func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Post
 			return c, hero, photo, nil
 		}
 	}
-	progress("copy", nil)
+	progress(StageCopy, nil)
 	content, err := a.writeCopy(ctx, tenantID, ev, brand)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	progress("photo", nil)
+	progress(StagePhoto, nil)
 	photo, hero, err := a.pickPhoto(ctx, tenantID, ev)
 	if err != nil {
 		return nil, nil, nil, err
@@ -196,7 +206,7 @@ func (a *App) storeBatch(ctx context.Context, tenantID uuid.UUID, poster *Poster
 	batch := uuid.New()
 	out := &GenerateResult{Poster: poster, BatchID: batch, Skipped: len(res.Skipped), NoPhoto: noPhoto, Options: []Version{}}
 	for _, o := range res.Options {
-		in := VersionInput{PosterID: poster.ID, BatchID: &batch, Source: o.Source, Content: *content, Photos: o.Photos, Ground: o.Ground, Format: brand.PortraitFormat, Author: "system"}
+		in := VersionInput{PosterID: poster.ID, BatchID: &batch, Source: o.Source, Content: *content, Photos: o.Photos, Ground: o.Ground, Format: brand.PortraitFormat, Author: AuthorSystem}
 		if t, ok := byID[o.TemplateID]; ok {
 			in.TemplateID, in.TemplateVersionID = uuidPtr(t.ID), t.CurrentVersionID
 		}

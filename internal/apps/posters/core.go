@@ -197,7 +197,7 @@ func (a *App) coreEditPoster(ctx context.Context, caller *services.Caller, raw j
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.saveEdit(ctx, caller.TenantID, poster, in.Source, strOr(in.Summary, "Edited"), "agent")
+	res, err := a.saveEdit(ctx, caller.TenantID, poster, in.Source, strOr(in.Summary, "Edited"), AuthorAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +320,7 @@ func (a *App) coreUpdateFacts(ctx context.Context, caller *services.Caller, raw 
 	if err != nil {
 		return nil, err
 	}
-	res, changes, err := a.UpdateFacts(ctx, caller.TenantID, id, "agent")
+	res, changes, err := a.UpdateFacts(ctx, caller.TenantID, id, AuthorAgent)
 	if err != nil {
 		return nil, err
 	}

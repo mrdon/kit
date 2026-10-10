@@ -1,4 +1,5 @@
 import { SLUG } from './workspace';
+import { ChatEvent } from '@chat/events';
 import { readSSE } from '@chat/sse';
 
 // The console talks to JSON endpoints under /{slug}/web/api/*. Those
@@ -1086,7 +1087,7 @@ export interface PosterVersion {
   format: string;
   problems: string[];
   instruction: string;
-  author: string;
+  author: PosterAuthor;
   picked: boolean;
   created_at: string;
 }
@@ -1146,7 +1147,34 @@ export interface PosterGenerateResult {
   no_photo: boolean;
 }
 
-export type PosterGenerateStage = 'copy' | 'photo' | 'rendering';
+/** Mirror of posters.GenerateStage (Go). */
+export const PosterGenerateStage = {
+  Copy: 'copy',
+  Photo: 'photo',
+  Rendering: 'rendering',
+} as const;
+export type PosterGenerateStage = (typeof PosterGenerateStage)[keyof typeof PosterGenerateStage];
+
+/** The one SSE event the generate stream adds to ChatEvent (Go: eventProgress). */
+export const PosterGenerateEvent = { Progress: 'progress' } as const;
+
+/** Mirror of posters.Author (Go): who made a version. */
+export const PosterAuthor = {
+  User: 'user',
+  Agent: 'agent',
+  System: 'system',
+  Builtin: 'builtin',
+} as const;
+export type PosterAuthor = (typeof PosterAuthor)[keyof typeof PosterAuthor];
+
+/** Mirror of posterrender.C2PA (Go): an image's provenance verdict. */
+export const PhotoC2PA = {
+  None: 'none',
+  Camera: 'camera',
+  AI: 'ai',
+  Unknown: 'unknown',
+} as const;
+export type PhotoC2PA = (typeof PhotoC2PA)[keyof typeof PhotoC2PA];
 
 export interface PosterUpdateResult {
   version?: PosterVersion;
@@ -1162,7 +1190,22 @@ export interface PosterTemplateMeta {
   needs: string[] | null;
 }
 
-export type PosterTemplateStatus = 'draft' | 'active' | 'archived';
+/** Mirror of posters.TemplateStatus (Go): a tenant template's lifecycle. */
+export const PosterTemplateStatus = { Draft: 'draft', Active: 'active', Archived: 'archived' } as const;
+export type PosterTemplateStatus = (typeof PosterTemplateStatus)[keyof typeof PosterTemplateStatus];
+
+/** Mirror of posters.TemplateOrigin (Go). */
+export const PosterTemplateOrigin = {
+  Builtin: 'builtin',
+  Poster: 'poster',
+  Image: 'image',
+  Chat: 'chat',
+} as const;
+export type PosterTemplateOrigin = (typeof PosterTemplateOrigin)[keyof typeof PosterTemplateOrigin];
+
+/** Mirror of posters.BuiltinVisibility (Go): the status words a built-in takes. */
+export const PosterBuiltinVisibility = { Hidden: 'hidden', Visible: 'visible' } as const;
+export type PosterBuiltinVisibility = (typeof PosterBuiltinVisibility)[keyof typeof PosterBuiltinVisibility];
 
 export interface PosterTemplate {
   id: string;
@@ -1172,7 +1215,7 @@ export interface PosterTemplate {
   name: string;
   description: string;
   status: PosterTemplateStatus;
-  origin: string;
+  origin: PosterTemplateOrigin;
   meta: PosterTemplateMeta;
   current_version_id?: string;
   parent_template_id?: string;
@@ -1195,7 +1238,7 @@ export interface PosterTemplateVersion {
   parent_id?: string;
   source: string;
   summary: string;
-  author: string;
+  author: PosterAuthor;
   created_by?: string;
   created_at: string;
 }
@@ -1224,7 +1267,7 @@ export interface PosterPhoto {
   focus_x: number;
   focus_y: number;
   notes: string;
-  c2pa: string;
+  c2pa: PhotoC2PA;
   indexed_by: string;
   indexed_at?: string;
   created_at: string;
@@ -1396,11 +1439,11 @@ export async function generatePosterOptions(
     } catch {
       continue;
     }
-    if (frame.event === 'progress') {
+    if (frame.event === PosterGenerateEvent.Progress) {
       onProgress?.((data as { stage: PosterGenerateStage }).stage);
-    } else if (frame.event === 'error') {
+    } else if (frame.event === ChatEvent.Error) {
       throw new Error((data as { message?: string }).message ?? 'could not generate options');
-    } else if (frame.event === 'done') {
+    } else if (frame.event === ChatEvent.Done) {
       return data as PosterGenerateResult;
     }
   }
@@ -1733,7 +1776,7 @@ export const api = {
   getPosterTemplate: (id: string) =>
     apiGet<PosterTemplateDetail>(`/posters/templates/${encodeURIComponent(id)}`),
   // Tenant templates take draft/active/archived; built-ins take hidden/visible.
-  setPosterTemplateStatus: (id: string, status: string) =>
+  setPosterTemplateStatus: (id: string, status: PosterTemplateStatus | PosterBuiltinVisibility) =>
     apiPost<{ template: PosterTemplate }>(
       `/posters/templates/${encodeURIComponent(id)}/status`,
       { status },

@@ -10,11 +10,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/chat"
 	"github.com/mrdon/kit/internal/sse"
 )
 
 // Generate streams progress over SSE (copy, photo, rendering, done) so the
 // drawer can show where the twenty seconds are going.
+
+// eventProgress is the one SSE event this stream adds to the chat set:
+// a stage name while a batch is being made.
+const eventProgress sse.EventType = "progress"
 
 type generateBody struct {
 	EventID string `json:"event_id"`
@@ -42,10 +47,10 @@ func (a *App) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer sw.Close()
-	progress := func(stage string, data map[string]any) {
+	progress := func(stage GenerateStage, data map[string]any) {
 		payload := map[string]any{"stage": stage}
 		maps.Copy(payload, data)
-		_ = sw.Emit("progress", payload)
+		_ = sw.Emit(eventProgress, payload)
 	}
 	res, err := a.Generate(r.Context(), caller.TenantID, caller.UserID, eventID, body.More, progress)
 	if err != nil {
@@ -58,10 +63,10 @@ func (a *App) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		default:
 			slog.Error("posters: generate failed", "error", err, "event_id", eventID)
 		}
-		_ = sw.Emit("error", map[string]any{"message": msg})
+		_ = sw.Emit(chat.EventError, map[string]any{"message": msg})
 		return
 	}
-	_ = sw.Emit("done", map[string]any{
+	_ = sw.Emit(chat.EventDone, map[string]any{
 		"poster":   a.posterView(r, res.Poster),
 		"options":  a.optionViews(r, res.Poster, res.BatchID),
 		"skipped":  res.Skipped,

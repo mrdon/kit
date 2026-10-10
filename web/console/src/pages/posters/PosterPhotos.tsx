@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type PosterPhoto, type PosterPhotoStatus, type PosterPhotosPayload } from '../../api';
+import { PhotoC2PA, api, type PosterPhoto, type PosterPhotoStatus, type PosterPhotosPayload } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { PostersTabs, errText } from './common';
 
@@ -111,7 +111,7 @@ export default function PosterPhotos() {
                 <span className={`pill ${p.status === 'indexed' ? 'pill-ok' : p.status === 'removed' ? 'pill-error' : 'pill-off'}`}>
                   {p.status}
                 </span>
-                {p.c2pa === 'ai' && <span className="badge badge-error">AI-made</span>}
+                {p.c2pa === PhotoC2PA.AI && <span className="badge badge-error">AI-made</span>}
                 <span className="poster-photo-name" title={`${p.folder}/${p.filename}`}>
                   {p.filename}
                 </span>

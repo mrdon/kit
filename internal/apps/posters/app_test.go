@@ -3,6 +3,7 @@ package posters
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,12 +142,12 @@ func TestGeneratePickAndStale(t *testing.T) {
 		return strings.ReplaceAll(cannedReply(system, user), "__FIRST__", hero.ID.String())
 	}
 
-	var stages []string
-	res, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, false, func(stage string, _ map[string]any) { stages = append(stages, stage) })
+	var stages []GenerateStage
+	res, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, false, func(stage GenerateStage, _ map[string]any) { stages = append(stages, stage) })
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	if strings.Join(stages, ",") != "copy,photo,rendering" {
+	if want := []GenerateStage{StageCopy, StagePhoto, StageRendering}; !slices.Equal(stages, want) {
 		t.Errorf("stages = %v", stages)
 	}
 	if len(res.Options) != 7 {

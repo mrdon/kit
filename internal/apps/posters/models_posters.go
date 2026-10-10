@@ -34,6 +34,16 @@ type Poster struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
+// Author says who made a version. The console's PosterAuthor mirrors these.
+type Author string
+
+const (
+	AuthorUser    Author = "user"    // a person, in the console
+	AuthorAgent   Author = "agent"   // Kit's model, in chat or through a tool
+	AuthorSystem  Author = "system"  // the option generator
+	AuthorBuiltin Author = "builtin" // shipped with Kit
+)
+
 // Version is one state of a poster's source. Options share a batch.
 type Version struct {
 	ID                uuid.UUID               `json:"id"`
@@ -49,7 +59,7 @@ type Version struct {
 	Format            string                  `json:"format"`
 	Problems          []string                `json:"problems"`
 	Instruction       string                  `json:"instruction"`
-	Author            string                  `json:"author"`
+	Author            Author                  `json:"author"`
 	Picked            bool                    `json:"picked"`
 	CreatedAt         time.Time               `json:"created_at"`
 }
@@ -195,7 +205,7 @@ type VersionInput struct {
 	Format            string
 	Problems          []string
 	Instruction       string
-	Author            string
+	Author            Author
 	Picked            bool
 }
 

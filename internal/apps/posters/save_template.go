@@ -50,8 +50,8 @@ func (a *App) SaveAsTemplate(ctx context.Context, tenantID uuid.UUID, posterID u
 		name = "From " + strOr(poster.Title, "poster")
 	}
 	return createTemplate(ctx, a.pool, tenantID, TemplateInput{
-		Name: name, Description: strOr(out.Description, chk.Meta.Description), Origin: "poster", Meta: *chk.Meta,
-		Source: out.Source, Summary: "Saved from poster " + strOr(poster.Title, posterID.String()), Author: "agent",
+		Name: name, Description: strOr(out.Description, chk.Meta.Description), Origin: OriginPoster, Meta: *chk.Meta,
+		Source: out.Source, Summary: "Saved from poster " + strOr(poster.Title, posterID.String()), Author: AuthorAgent,
 		SourcePosterID: &posterID, CreatedBy: by,
 	})
 }
