@@ -1123,6 +1123,8 @@ export interface PosterForEvent {
   poster: Poster | null;
   options: PosterOption[];
   renderer_ready: boolean;
+  /** False when this server has no renderer at all; ready=false alone means it is starting. */
+  renderer_configured: boolean;
   brand_ready: boolean;
   brand_problem?: string;
 }
@@ -1145,6 +1147,8 @@ export interface PosterGenerateResult {
   skipped: number;
   /** The index had nothing honest for this event; only type layouts were offered. */
   no_photo: boolean;
+  /** A "more options" run rewrote the copy because the event changed. */
+  fresh_copy: boolean;
 }
 
 /** Mirror of posters.GenerateStage (Go). */

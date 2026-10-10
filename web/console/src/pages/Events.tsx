@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
   STANDARD_LABELS,
@@ -9,6 +9,7 @@ import {
   type EventsSiteStatus,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
+import { useMe } from '../me';
 import { SLUG } from '../workspace';
 import ActionMenu from '../ActionMenu';
 import RepeatEditor from './EventRepeat';
@@ -142,6 +143,12 @@ export default function Events() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [settings, setSettings] = useState<EventsSettingsSummary | null>(null);
   const [open, setOpen] = useState<EventRecord | null>(null);
+  // /events/:id opens that event's drawer, so a poster page can link back
+  // and the browser's Back returns to the drawer, not a closed list.
+  const { id: routeId } = useParams();
+  const navigate = useNavigate();
+  const me = useMe();
+  const postersOn = !(me?.disabled_apps ?? []).includes('posters');
   const [creating, setCreating] = useState(false);
   const [includePast, setIncludePast] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -166,6 +173,19 @@ export default function Events() {
   }, [includePast]);
 
   useEffect(load, [load]);
+  useEffect(() => {
+    if (!routeId || open?.id === routeId) return;
+    const found = events.find((e) => e.id === routeId);
+    if (found) {
+      setOpen(found);
+      return;
+    }
+    // Not in the list (a past event, or the list is still loading): fetch it.
+    api
+      .getEvent(routeId)
+      .then((r) => setOpen(r.event))
+      .catch((e) => setErr((e as Error).message));
+  }, [routeId, events, open?.id]);
 
   const pendingCount = (site?.pending ?? []).length;
 
@@ -283,7 +303,13 @@ export default function Events() {
         <ul className="card-list">
           {events.map((e) => (
             <li key={e.id}>
-              <button className="row-card" onClick={() => setOpen(e)}>
+              <button
+                className="row-card"
+                onClick={() => {
+                  setOpen(e);
+                  navigate(`/events/${e.id}`);
+                }}
+              >
                 <span className="row-card-main">
                   <span className="row-card-title">{e.title}</span>
                   <span className="row-card-meta">{formatWhen(e)}</span>
@@ -392,10 +418,12 @@ export default function Events() {
       {(creating || open) && (
         <EventDrawer
           event={open}
+          postersOn={postersOn}
           defaultTimezone={settings?.timezone}
           onClose={() => {
             setCreating(false);
             setOpen(null);
+            if (routeId) navigate('/events');
           }}
           onChanged={(msg, next) => {
             setNote(msg);
@@ -411,11 +439,13 @@ export default function Events() {
 
 function EventDrawer({
   event,
+  postersOn,
   defaultTimezone,
   onClose,
   onChanged,
 }: {
   event: EventRecord | null;
+  postersOn: boolean;
   defaultTimezone?: string;
   onClose: () => void;
   onChanged: (msg: string, next?: EventRecord) => void;
@@ -735,7 +765,7 @@ function EventDrawer({
               {/* Generated options first; the manual upload below stays for a
                   poster made elsewhere. Only once the event exists: a new
                   event saves as a draft first. */}
-              <EventPosterPicker eventId={event.id} onChanged={onChanged} />
+              {postersOn && <EventPosterPicker eventId={event.id} onChanged={onChanged} />}
               {event.hero_attachment_id ? (
                 <div className="poster-preview">
                   <img

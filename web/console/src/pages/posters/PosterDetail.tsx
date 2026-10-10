@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
+  PosterAuthor,
   api,
   generatePosterOptions,
   type PosterDetail as PosterDetailPayload,
@@ -16,6 +17,13 @@ import { OptionGrid, errText, fmtWhen, stageText, statusPill } from './common';
 // The poster page: the current version large, its history as a strip, the
 // batch of options when there is one, every brand format to download, and a
 // chat panel for any change. Chat is the editor; there is no copy form.
+
+// versionLabel is the one line under a strip thumbnail: what the edit was,
+// or who made it when there was no instruction (an option, a pick).
+function versionLabel(instruction: string, author: PosterAuthor): string {
+  const text = instruction.trim() || (author === PosterAuthor.System ? 'Generated option' : `${author} edit`);
+  return text.length > 48 ? `${text.slice(0, 46)}…` : text;
+}
 
 export default function PosterDetail() {
   const { id = '' } = useParams();
@@ -104,7 +112,8 @@ export default function PosterDetail() {
     try {
       const r = await generatePosterOptions(poster.event_id, true, setStage);
       setOptions(r.options);
-      if (r.options.length === 0) setNote('No new options came out of this run.');
+      if (r.fresh_copy) setNote('The event changed since the last batch, so the copy was rewritten.');
+      else if (r.options.length === 0) setNote('No new options came out of this run.');
       load();
     } catch (e) {
       setErr(errText(e));
@@ -132,6 +141,11 @@ export default function PosterDetail() {
         <div className="page-head-row">
           <h1>{title}</h1>
           {poster && <span className={statusPill(poster.status)}>{poster.status}</span>}
+          {poster?.set_version_id && currentId && !currentIsSet && (
+            <span className="pill pill-off" title="The version shown is an edit; the event still has the one marked on event">
+              current version not on the event
+            </span>
+          )}
         </div>
         {poster?.event_id && (
           <p className="page-sub">
@@ -234,11 +248,12 @@ export default function PosterDetail() {
                         onClick={() => setCurrent(v.id)}
                         title={v.instruction || v.author}
                       >
-                        <img src={v.thumb} alt="" loading="lazy" />
+                        <img src={v.thumb} alt={v.instruction || `${v.author} version`} loading="lazy" />
                         <span className="poster-strip-meta">
                           {fmtWhen(v.created_at)}
                           {isSet && <span className="badge">on event</span>}
                         </span>
+                        <span className="poster-strip-label">{versionLabel(v.instruction, v.author)}</span>
                       </button>
                     );
                   })}
@@ -249,12 +264,17 @@ export default function PosterDetail() {
             {shownOptions.length > 0 && (
               <section className="poster-section">
                 <h2 className="panel-title">Options</h2>
-                <p className="field-note">Click one to put it on the event.</p>
+                <p className="field-note">
+                  Click one to make it current and edit from there. Nothing reaches the event until you
+                  press Set on event.
+                </p>
                 <OptionGrid
                   options={shownOptions}
                   setId={poster.set_version_id}
+                  currentId={currentId}
                   busy={busy || generating}
-                  onPick={(o) => pick(o.id)}
+                  pickLabel="Make current"
+                  onPick={(o) => setCurrent(o.id)}
                 />
               </section>
             )}

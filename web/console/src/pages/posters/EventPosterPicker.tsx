@@ -43,6 +43,13 @@ export default function EventPosterPicker({
       .catch((e) => setErr(errText(e)));
   }, [eventId]);
   useEffect(load, [load]);
+  // While the renderer is starting, look again rather than leaving a dead
+  // "try again in a moment" on screen.
+  useEffect(() => {
+    if (!state || !state.renderer_configured || state.renderer_ready) return;
+    const t = setTimeout(load, 5000);
+    return () => clearTimeout(t);
+  }, [state, load]);
 
   const poster = state?.poster ?? null;
   const options = state?.options ?? [];
@@ -65,14 +72,18 @@ export default function EventPosterPicker({
         poster: r.poster,
         options: r.options,
         renderer_ready: s?.renderer_ready ?? true,
+        renderer_configured: s?.renderer_configured ?? true,
         brand_ready: s?.brand_ready ?? true,
         brand_problem: s?.brand_problem,
       }));
+      const notes: string[] = [];
+      if (r.fresh_copy) notes.push('The event changed since the last batch, so the copy was rewritten.');
       if (r.options.length === 0) {
-        setNote('No options came out of this run. Check the templates and photo index.');
+        notes.push('No options came out of this run. Check the templates and photo index.');
       } else if (r.no_photo) {
-        setNote('No photo in the library honestly fits this event, so these are type-only layouts.');
+        notes.push('No photo in the library honestly fits this event, so these are type-only layouts.');
       }
+      if (notes.length) setNote(notes.join(' '));
     } catch (e) {
       setErr(errText(e));
     } finally {
@@ -128,8 +139,13 @@ export default function EventPosterPicker({
           {state.brand_problem || 'Add a branding-guide skill to this workspace.'}
         </p>
       )}
-      {state && state.brand_ready && !state.renderer_ready && (
-        <p className="field-note">The poster renderer is starting; try again in a moment.</p>
+      {state && state.brand_ready && !state.renderer_configured && (
+        <p className="field-note">
+          The poster renderer is not set up on this server, so posters cannot be made here yet.
+        </p>
+      )}
+      {state && state.brand_ready && state.renderer_configured && !state.renderer_ready && (
+        <p className="field-note">The poster renderer is starting; this will retry on its own.</p>
       )}
 
       {poster?.stale && (

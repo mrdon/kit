@@ -2666,6 +2666,7 @@ h2.view-title:hover {
 .poster-option:hover:not(:disabled) { border-color: var(--accent); }
 .poster-option:disabled { cursor: default; }
 .poster-option-on { border-color: var(--ok-ink); }
+.poster-option-current { border-color: var(--accent); }
 .poster-option-badge {
   position: absolute; left: 0.35rem; bottom: 0.35rem;
   background: var(--ok-bg); color: var(--ok-ink);
@@ -2732,6 +2733,15 @@ h2.view-title:hover {
 .poster-strip-item img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
 .poster-strip-item:hover:not(:disabled) { border-color: var(--accent); }
 .poster-strip-current { border-color: var(--accent); cursor: default; }
+.poster-strip-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 .poster-strip-meta {
   display: flex; flex-direction: column; gap: 0.15rem; padding: 0.3rem 0.4rem;
   font-size: 0.7rem; color: var(--muted);

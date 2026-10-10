@@ -44,16 +44,20 @@ export function stageText(stage: PosterGenerateStage | null): string {
 }
 
 // OptionGrid shows a batch of portrait renders. The one on the event is
-// marked; clicking any other hands it back to the caller to pick.
+// marked, and so is the current one when the caller tracks it; clicking any
+// other hands it back to the caller, who decides whether that means
+// "publish" (the drawer) or "select" (the poster page).
 export function OptionGrid({
   options,
   setId,
+  currentId,
   busy,
   onPick,
   pickLabel = 'Set on event',
 }: {
   options: PosterOption[];
   setId?: string;
+  currentId?: string;
   busy: boolean;
   onPick: (o: PosterOption) => void;
   pickLabel?: string;
@@ -63,17 +67,19 @@ export function OptionGrid({
     <div className="poster-options">
       {options.map((o) => {
         const on = o.id === setId;
+        const current = !on && o.id === currentId;
         return (
           <button
             key={o.id}
             type="button"
-            className={`poster-option${on ? ' poster-option-on' : ''}`}
-            disabled={busy || on}
+            className={`poster-option${on ? ' poster-option-on' : ''}${current ? ' poster-option-current' : ''}`}
+            disabled={busy || on || current}
             onClick={() => onPick(o)}
-            title={on ? 'On the event' : pickLabel}
+            title={on ? 'On the event' : current ? 'Current' : pickLabel}
           >
             <img src={o.thumb} alt={o.content?.title || 'Poster option'} loading="lazy" />
             {on && <span className="badge poster-option-badge">On the event</span>}
+            {current && <span className="badge poster-option-badge">Current</span>}
           </button>
         );
       })}

@@ -64,6 +64,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/skills" element={<Skills />} />
           <Route path="/skills/:id" element={<Skills />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/events/:id" element={<Events />} />
           <Route path="/events/promo" element={<EventsPromoPage />} />
           {/* Static segments (templates, photos) rank above /posters/:id. */}
           <Route path="/posters" element={<Posters />} />
