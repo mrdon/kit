@@ -54,55 +54,21 @@ func (a *App) handleListPhotos(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type photoBody struct {
-	Description *string  `json:"description"`
-	Tags        []string `json:"tags"`
-	FocusX      *float64 `json:"focus_x"`
-	FocusY      *float64 `json:"focus_y"`
-	Notes       *string  `json:"notes"`
-}
-
-// handleUpdatePhoto edits the index by hand. A pending photo given a
-// description becomes indexed, same as through the MCP tools.
+// handleUpdatePhoto edits the index by hand, through the same path the
+// update_photo_index tool uses, so the console and MCP agree on what a
+// description-less edit means (hints saved, photo stays pending).
 func (a *App) handleUpdatePhoto(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var body photoBody
+	var body indexEntryArg
 	if !readBody(w, r, &body) {
 		return
 	}
-	cur, err := getPhoto(r.Context(), a.pool, caller.TenantID, id)
-	if err != nil {
-		a.httpErr(w, err)
-		return
-	}
-	entry := IndexEntry{ID: id, Description: cur.Description, Tags: cur.Tags, FocusX: cur.FocusX, FocusY: cur.FocusY, Notes: cur.Notes}
-	if body.Description != nil {
-		entry.Description = *body.Description
-	}
-	if body.Tags != nil {
-		entry.Tags = body.Tags
-	}
-	if body.FocusX != nil {
-		entry.FocusX = *body.FocusX
-	}
-	if body.FocusY != nil {
-		entry.FocusY = *body.FocusY
-	}
-	if body.Notes != nil {
-		entry.Notes = *body.Notes
-	}
-	// Without a description the photo stays pending: focus, tags and notes
-	// are hints, and only a description makes a photo searchable.
-	var p *Photo
-	if strings.TrimSpace(entry.Description) == "" {
-		p, err = setPhotoHints(r.Context(), a.pool, caller.TenantID, entry)
-	} else {
-		p, err = indexPhoto(r.Context(), a.pool, caller.TenantID, entry, "console:"+caller.Identity)
-	}
+	body.ID = id.String()
+	p, err := a.applyIndexEntry(r.Context(), caller.TenantID, body, "console:"+caller.Identity, false)
 	if err != nil {
 		a.httpErr(w, err)
 		return

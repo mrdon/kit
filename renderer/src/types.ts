@@ -115,7 +115,12 @@ export type RenderResponse = {
   problems: string[];
   warnings: string[];
   meta?: TemplateMeta;
+  // A short structural summary of the tree, for a reply.
+  tree?: string;
 };
+
+// A template the option generator may use, with the meta Kit stored.
+export type PlannedTemplate = { id: string; source: string; weight: number; meta: TemplateMeta };
 
 export type OptionsRequest = {
   content: Content;
@@ -123,7 +128,7 @@ export type OptionsRequest = {
   format: string;
   photos: ImageRef[];
   hero?: PhotoUse;
-  templates: Array<{ id: string; source: string; weight: number }>;
+  templates: PlannedTemplate[];
   count: number;
   exclude?: string[];
 };
@@ -143,6 +148,17 @@ export type OptionsResponse = {
   options: OptionResult[];
   skipped: Array<{ templateId: string; ground: string; reason: string }>;
 };
+
+export type TemplateCheckResponse = {
+  meta: TemplateMeta | null;
+  // Keyed "format:sample".
+  problems: Record<string, string[]>;
+  renders: Record<string, string>;
+};
+
+export type CopyCheck = { problems: string[]; warnings: string[] };
+
+export type SheetItem = { image: ImageRef; label: string };
 
 export type InspectResponse = {
   width: number;

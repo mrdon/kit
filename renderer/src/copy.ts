@@ -1,6 +1,8 @@
 // Copy rules a machine can check: the mechanical tells from the writing-copy
 // skill and the brand guide. The read-aloud test is still a person's job.
-import type { Content } from "./types.ts";
+import type { Content, CopyCheck } from "./types.ts";
+
+export type { CopyCheck };
 
 // Filler and sales words no venue's voice wants. Tenant-specific terms (a
 // brewery's "hoppy hour") come from the brand's bannedWords.
@@ -22,8 +24,6 @@ const BANNED_PATTERNS: Array<[RegExp, string]> = [
   [/\b[A-Z]{3,}\b/, "ALL CAPS word"],
   [/\p{Extended_Pictographic}/u, "emoji in a graphic"],
 ];
-
-export type CopyCheck = { problems: string[]; warnings: string[] };
 
 // Checks one labelled piece of text.
 export function checkText(field: string, text: string, extraBanned: string[] = []): CopyCheck {

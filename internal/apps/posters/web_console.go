@@ -1,9 +1,7 @@
 package posters
 
 import (
-	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,42 +50,24 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/posters/settings/rederive", admin(a.handleRederive))
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		slog.Warn("posters console: writing response", "error", err)
-	}
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]any{"error": msg})
-}
-
-func pathID(w http.ResponseWriter, r *http.Request, key string) (uuid.UUID, bool) {
-	id, err := uuid.Parse(r.PathValue(key))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid id")
-		return uuid.Nil, false
-	}
-	return id, true
-}
+// The response and request helpers are the console package's; these
+// names keep the handlers short.
+var (
+	writeJSON = console.WriteJSON
+	writeErr  = console.WriteErr
+	pathID    = console.PathUUID
+)
 
 func readBody(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid JSON body")
-		return false
-	}
-	return true
+	return console.ReadJSON(w, r, v, 2<<20)
 }
 
 // posterView is a poster as the list and detail pages show it.
 type posterView struct {
 	Poster
-	EventTitle string `json:"event_title,omitempty"`
-	EventSlug  string `json:"event_slug,omitempty"`
-	Status     string `json:"status"`
+	EventTitle string       `json:"event_title,omitempty"`
+	EventSlug  string       `json:"event_slug,omitempty"`
+	Status     PosterStatus `json:"status"`
 	// Thumb is the current version's portrait render URL, for lists.
 	Thumb string `json:"thumb,omitempty"`
 }

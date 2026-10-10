@@ -10,18 +10,14 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/tools"
 )
 
 // coreResult is a tool's outcome: text for the transcript and any renders
 // the model should look at.
 type coreResult struct {
 	Text   string
-	Images []toolImage
-}
-
-type toolImage struct {
-	Mime string
-	Data []byte
+	Images []tools.ToolImage
 }
 
 func textResult(format string, args ...any) (*coreResult, error) {
@@ -30,7 +26,7 @@ func textResult(format string, args ...any) (*coreResult, error) {
 
 func (r *coreResult) png(data []byte) {
 	if len(data) > 0 {
-		r.Images = append(r.Images, toolImage{Mime: "image/png", Data: data})
+		r.Images = append(r.Images, tools.ToolImage{Mime: "image/png", Data: data})
 	}
 }
 
@@ -138,14 +134,25 @@ func (a *App) coreListPosters(ctx context.Context, caller *services.Caller) (*co
 	return textResult("%s", b.String())
 }
 
-func posterStatus(p *Poster) string {
+// PosterStatus is where a poster stands with its event. The console's TS
+// union mirrors these three strings.
+type PosterStatus string
+
+// Poster statuses.
+const (
+	PosterDraft   PosterStatus = "draft"
+	PosterSet     PosterStatus = "on the event"
+	PosterOutdate PosterStatus = "out of date"
+)
+
+func posterStatus(p *Poster) PosterStatus {
 	switch {
 	case p.Stale:
-		return "out of date"
+		return PosterOutdate
 	case p.SetVersionID != nil:
-		return "on the event"
+		return PosterSet
 	default:
-		return "draft"
+		return PosterDraft
 	}
 }
 

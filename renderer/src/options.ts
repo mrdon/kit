@@ -2,9 +2,9 @@
 // differ in template, ground and photo, so there is a real choice to make.
 // No model and no randomness: the same inputs always give the same options.
 // The copy is never touched.
-import type { Content, ImageRef, PhotoUse, TemplateMeta } from "./types.ts";
+import type { Content, ImageRef, PhotoUse, PlannedTemplate } from "./types.ts";
 
-export type PlannedTemplate = { id: string; source: string; weight: number; meta: TemplateMeta };
+export type { PlannedTemplate };
 
 export type Candidate = {
   template: PlannedTemplate;

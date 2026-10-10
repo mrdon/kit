@@ -66,6 +66,17 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request, kind string, su
 		http.Error(w, "chat is not configured on this server", http.StatusServiceUnavailable)
 		return
 	}
+	if a.chatLimiter != nil {
+		if !a.chatLimiter.Allow(caller.UserID) {
+			http.Error(w, "too many chat requests; please wait a moment and retry", http.StatusTooManyRequests)
+			return
+		}
+		if !a.chatLimiter.Acquire(caller.UserID) {
+			http.Error(w, "too many requests in flight; please wait", http.StatusTooManyRequests)
+			return
+		}
+		defer a.chatLimiter.Release(caller.UserID)
+	}
 	systemSuffix, err := suffix(r.Context(), caller, id)
 	if err != nil {
 		a.httpErr(w, err)
@@ -75,6 +86,11 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request, kind string, su
 	if err != nil {
 		slog.Warn("posters: resolving chat context", "error", err)
 		http.Error(w, "could not load your workspace", http.StatusInternalServerError)
+		return
+	}
+	// The Slack path's setup-complete gate applies here too.
+	if !tenant.SetupComplete && !caller.IsAdmin {
+		http.Error(w, "Kit is still being set up; ask your admin to finish", http.StatusForbidden)
 		return
 	}
 	sw, err := sse.New(w, r)

@@ -2,23 +2,11 @@
 // derived brand JSON) and `__logos` (variant -> aspect) on the global before
 // the kit loads; this module turns them into the typed values templates use.
 
-export type Format = {
-  width: number;
-  height: number;
-  safe: { top: number; right: number; bottom: number; left: number };
-};
+import type { Brand, Format } from "../types.ts";
+export type { Format };
 
-type GroundSpec = { bg: string; text: string; label: string; rule: string; logo: string };
-type AccentSpec = { fill: string; text: string };
-type FontRole = { family: string; weights: number[]; advance?: number };
-
-type BrandJSON = {
-  tokens: Record<string, string>;
-  grounds: Record<string, GroundSpec>;
-  accents: Record<string, AccentSpec>;
-  fonts: { display: FontRole; text: FontRole; mono: FontRole };
-  formats: Record<string, Format>;
-};
+// The slice of the brand the host hands the isolate.
+type BrandJSON = Pick<Brand, "tokens" | "grounds" | "accents" | "fonts" | "formats">;
 
 declare const __brand: BrandJSON;
 declare const __logos: Record<string, number>;

@@ -185,62 +185,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 			_ = emit(EventStatus, map[string]any{"status": string(StatusThinking)})
 		},
 	}
-	switch {
-	case in.Scope != nil:
-		// A scoped subject works like a card: the suffix carries the
-		// object, the window stays small, gated tools are dropped and the
-		// registry is clamped to the app's own tools.
-		runInput.SystemSuffix = in.Scope.SystemSuffix
-		runInput.HistoryWindow = ChatHistoryWindow
-		runInput.DropGatedTools = true
-		runInput.WidgetAllowedTools = in.Scope.AllowedTools
-		runInput.Model = in.Scope.Model
-		if runInput.Model == "" {
-			runInput.Model = anthropic.ModelSonnet
-		}
-	case in.Card != nil:
-		// Inject the card as a system suffix so it doesn't accumulate
-		// in the replayed message history when the user sends
-		// follow-ups on the same card.
-		runInput.SystemSuffix = buildCardSystemSuffix(in.Card)
-		// Card-chat sessions grow one pair per revise round. Keep the
-		// window small so repeated revision turns don't balloon
-		// context size. Tool_results also get dropped from replay
-		// (they can carry KBs of echoed revise args).
-		runInput.HistoryWindow = ChatHistoryWindow
-		// Drop gated tools only when chatting on a decision card. The
-		// intended path there is revise_decision_option (mutates this
-		// card); leaving send_email/etc. available invites the LLM to
-		// mint a second gate card instead of revising the first. On
-		// todos/briefings there's no parallel-card concern and the
-		// registry-level gate still enforces approval, so gated tools
-		// stay available — the user needs to be able to say "email X"
-		// from a task without switching surfaces.
-		if in.Card.Kind == "decision" {
-			runInput.DropGatedTools = true
-			// Use Sonnet for decision-card chat. Same reasoning as
-			// quick-chat below: Haiku was hallucinating "I put in your
-			// vote" / "I revised the option" without calling the right
-			// tool. The pick-vs-edit distinction (resolve_decision vs
-			// revise_decision_option) is exactly the kind of tool-use
-			// nuance Sonnet handles reliably and Haiku doesn't.
-			runInput.Model = anthropic.ModelSonnet
-		}
-	default:
-		runInput.SystemSuffix = buildQuickSystemSuffix()
-		if in.PageContext != "" {
-			runInput.SystemSuffix += "\n\n" + buildPageContextSuffix(in.PageContext)
-		}
-		runInput.HistoryWindow = QuickHistoryWindow
-		// Use Sonnet for the quick-capture surface. Haiku was
-		// frequently hallucinating — replying "Created task X" without
-		// actually calling create_task — which defeats the whole point
-		// of a capture tool. Sonnet follows tool-use instructions much
-		// more reliably at the cost of a few extra cents per turn, a
-		// fair trade for a surface where "it said it did but didn't"
-		// is the worst failure mode.
-		runInput.Model = anthropic.ModelSonnet
-	}
+	applySurface(&runInput, in)
 
 	if err := in.Agent.Run(ctx, runInput); err != nil {
 		// Client abort is expected on Stop — report it as a cancel
@@ -407,4 +352,65 @@ func truncateSuffix(s string, maxBytes int) string {
 		return suffix
 	}
 	return s[:maxBytes-len(suffix)] + suffix
+}
+
+// applySurface sets the per-surface fields of the run: a scoped subject, a
+// card, or the card-less quick chat.
+func applySurface(runInput *agent.RunInput, in ExecuteInput) {
+	switch {
+	case in.Scope != nil:
+		// A scoped subject works like a card: the suffix carries the
+		// object, the window stays small, gated tools are dropped and the
+		// registry is clamped to the app's own tools.
+		runInput.SystemSuffix = in.Scope.SystemSuffix
+		runInput.HistoryWindow = ChatHistoryWindow
+		runInput.DropGatedTools = true
+		runInput.WidgetAllowedTools = in.Scope.AllowedTools
+		runInput.Model = in.Scope.Model
+		if runInput.Model == "" {
+			runInput.Model = anthropic.ModelSonnet
+		}
+	case in.Card != nil:
+		// Inject the card as a system suffix so it doesn't accumulate
+		// in the replayed message history when the user sends
+		// follow-ups on the same card.
+		runInput.SystemSuffix = buildCardSystemSuffix(in.Card)
+		// Card-chat sessions grow one pair per revise round. Keep the
+		// window small so repeated revision turns don't balloon
+		// context size. Tool_results also get dropped from replay
+		// (they can carry KBs of echoed revise args).
+		runInput.HistoryWindow = ChatHistoryWindow
+		// Drop gated tools only when chatting on a decision card. The
+		// intended path there is revise_decision_option (mutates this
+		// card); leaving send_email/etc. available invites the LLM to
+		// mint a second gate card instead of revising the first. On
+		// todos/briefings there's no parallel-card concern and the
+		// registry-level gate still enforces approval, so gated tools
+		// stay available — the user needs to be able to say "email X"
+		// from a task without switching surfaces.
+		if in.Card.Kind == "decision" {
+			runInput.DropGatedTools = true
+			// Use Sonnet for decision-card chat. Same reasoning as
+			// quick-chat below: Haiku was hallucinating "I put in your
+			// vote" / "I revised the option" without calling the right
+			// tool. The pick-vs-edit distinction (resolve_decision vs
+			// revise_decision_option) is exactly the kind of tool-use
+			// nuance Sonnet handles reliably and Haiku doesn't.
+			runInput.Model = anthropic.ModelSonnet
+		}
+	default:
+		runInput.SystemSuffix = buildQuickSystemSuffix()
+		if in.PageContext != "" {
+			runInput.SystemSuffix += "\n\n" + buildPageContextSuffix(in.PageContext)
+		}
+		runInput.HistoryWindow = QuickHistoryWindow
+		// Use Sonnet for the quick-capture surface. Haiku was
+		// frequently hallucinating — replying "Created task X" without
+		// actually calling create_task — which defeats the whole point
+		// of a capture tool. Sonnet follows tool-use instructions much
+		// more reliably at the cost of a few extra cents per turn, a
+		// fair trade for a surface where "it said it did but didn't"
+		// is the worst failure mode.
+		runInput.Model = anthropic.ModelSonnet
+	}
 }

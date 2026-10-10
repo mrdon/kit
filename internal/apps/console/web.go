@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/admin"
 	"github.com/mrdon/kit/internal/auth"
@@ -159,6 +161,36 @@ func (a *App) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row)
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+// WriteJSON, WriteErr, PathUUID and ReadJSON are the console API's response
+// and request helpers, exported so feature apps stop carrying their own
+// copies (every app had one; the differences were accidental).
+func WriteJSON(w http.ResponseWriter, status int, body any) { writeJSON(w, status, body) }
+
+// WriteErr answers with the JSON {error} shape the console client reads.
+func WriteErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]any{"error": msg})
+}
+
+// PathUUID parses a {key} path value as an id, answering 400 when it is not.
+func PathUUID(w http.ResponseWriter, r *http.Request, key string) (uuid.UUID, bool) {
+	id, err := uuid.Parse(r.PathValue(key))
+	if err != nil {
+		WriteErr(w, http.StatusBadRequest, "invalid id")
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// ReadJSON decodes a bounded JSON body, answering 400 when it does not parse.
+func ReadJSON(w http.ResponseWriter, r *http.Request, v any, maxBytes int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		WriteErr(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

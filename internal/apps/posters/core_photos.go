@@ -10,6 +10,7 @@ import (
 
 	"github.com/mrdon/kit/internal/posterrender"
 	"github.com/mrdon/kit/internal/services"
+	"github.com/mrdon/kit/internal/tools"
 )
 
 type searchArg struct {
@@ -196,7 +197,7 @@ func (a *App) coreGetPhoto(ctx context.Context, caller *services.Caller, raw jso
 		return nil, err
 	}
 	out := &coreResult{Text: FormatPhoto(p)}
-	out.Images = append(out.Images, toolImage{Mime: "image/jpeg", Data: jpeg})
+	out.Images = append(out.Images, tools.ToolImage{Mime: "image/jpeg", Data: jpeg})
 	return out, nil
 }
 
@@ -266,7 +267,12 @@ func (a *App) applyIndexEntry(ctx context.Context, tenantID uuid.UUID, e indexEn
 		entry.Notes = e.Notes
 	}
 	if strings.TrimSpace(entry.Description) == "" {
-		return nil, invalid("description is required")
+		if fresh {
+			return nil, invalid("description is required")
+		}
+		// Focus, tags and notes are hints; without a description the
+		// photo stays pending rather than becoming searchable.
+		return setPhotoHints(ctx, a.pool, tenantID, entry)
 	}
 	return indexPhoto(ctx, a.pool, tenantID, entry, by)
 }

@@ -5,7 +5,7 @@ import satori from "satori";
 import sharp from "sharp";
 import type { SatoriFont } from "./fonts.ts";
 import type { ImageStore } from "./images.ts";
-import type { ImageRef } from "./types.ts";
+import type { SheetItem } from "./types.ts";
 
 export const SHEET_MAX = 12;
 const COLS = 4;
@@ -17,7 +17,7 @@ const CELL_W = Math.floor((WIDTH - PAD * 2 - GAP * (COLS - 1)) / COLS);
 const CELL_H = 440;
 const THUMB_H = CELL_H - LABEL - 12;
 
-export type SheetItem = { image: ImageRef; label: string };
+export type { SheetItem };
 
 export async function renderSheet(items: SheetItem[], store: ImageStore, font: SatoriFont, bg: string, fg: string): Promise<Buffer> {
   const rows = Math.max(1, Math.ceil(items.length / COLS));

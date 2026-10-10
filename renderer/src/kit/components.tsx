@@ -8,22 +8,10 @@ import { accents, displayAdvance, font, grounds, logoAspects, weights, type Form
 
 type Style = Record<string, string | number | undefined>;
 
-export type Detail = { label: string; value: string };
-export type Content = {
-  eyebrow: string;
-  title: string;
-  summary?: string;
-  details: Detail[];
-  action?: string;
-};
-export type PhotoUse = { id: string; focusX?: number; focusY?: number; zoom?: number };
-export type TemplateProps = {
-  content: Content;
-  format: Format;
-  photos: PhotoUse[];
-  ground: string;
-  accent: string;
-};
+// The wire types, re-exported so a template can import them from the kit.
+// Type-only, so nothing from the host reaches the isolate bundle.
+import type { Content, Detail, PhotoUse, TemplateProps } from "../types.ts";
+export type { Content, Detail, PhotoUse, TemplateProps };
 
 const NUMERIC = /(\$?\d[\d:.,]*%?)/g;
 
@@ -89,7 +77,7 @@ export const fitTitle = (title: string, width: number, maxSize: number, maxLines
 // A library photo filling its box, cropped around its focus point. The host
 // resolves the id; an unknown id fails validation.
 export const Photo = ({ photo, id, focusX, focusY, zoom, style }: {
-  photo?: PhotoUse;
+  photo?: Partial<PhotoUse> & { id: string };
   id?: string;
   focusX?: number;
   focusY?: number;

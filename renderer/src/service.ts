@@ -20,6 +20,7 @@ import type {
   PhotoUse,
   RenderRequest,
   RenderResponse,
+  TemplateCheckResponse,
   TemplateMeta,
   TemplateProps,
 } from "./types.ts";
@@ -89,7 +90,7 @@ export class Service {
         warnings: [...new Set(warnings)],
         meta,
         tree: summarizeTree(out.tree),
-      } as RenderResponse & { tree: string };
+      };
     });
   }
 
@@ -107,7 +108,7 @@ export class Service {
       const pool = photoPool(req.photos, focus, req.hero);
       const grounds = Object.keys(req.brand.grounds);
       const accent = Object.keys(req.brand.accents)[0] ?? "";
-      const candidates = plan({ content: req.content, templates: req.templates as PlannedTemplate[], grounds, accent, pool, exclude: req.exclude });
+      const candidates = plan({ content: req.content, templates: req.templates, grounds, accent, pool, exclude: req.exclude });
       const images: ImageSet = { photos: new Map(req.photos.map((p) => [p.id, p])), logos };
       const out: OptionsResponse = { options: [], skipped: [] };
       for (const c of candidates) {
@@ -147,11 +148,7 @@ export class Service {
   // Validates a template on three canvases with sample content, the way
   // activation requires. Photos default to a flat placeholder so a template
   // can be checked before the library has anything in it.
-  templateCheck(source: string, brand: Brand, photos: ImageRef[]): Promise<{
-    meta: TemplateMeta | null;
-    problems: Record<string, string[]>;
-    renders: Record<string, string>;
-  }> {
+  templateCheck(source: string, brand: Brand, photos: ImageRef[]): Promise<TemplateCheckResponse> {
     return this.serial(async () => {
       const fonts = await this.fonts(brand);
       const { logos } = await resolveLogos(brand, this.store);

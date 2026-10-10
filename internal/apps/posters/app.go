@@ -28,6 +28,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/events"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/chat"
 	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/posterrender"
 	"github.com/mrdon/kit/internal/services"
@@ -40,7 +41,7 @@ const AppName = "posters"
 var instance *App
 
 func init() {
-	instance = &App{}
+	instance = &App{chatLimiter: chat.NewExecuteLimiter()}
 	apps.Register(instance)
 }
 
@@ -60,6 +61,9 @@ type App struct {
 	baseURL  string
 	// eventsSvc overrides how the events service is found; tests set it.
 	eventsSvc func() *events.Service
+	// chatLimiter is the same per-user window and in-flight cap card chat
+	// applies; poster chat is not a way around it.
+	chatLimiter *chat.ExecuteLimiter
 }
 
 // Instance exposes the registered app.

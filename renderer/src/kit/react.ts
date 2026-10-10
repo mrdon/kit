@@ -3,11 +3,8 @@
 // validate and hand to Satori. No hooks, no context, no state, which is also
 // why Satori-targeted layouts cannot use them anyway.
 
-export type Node =
-  | string
-  | number
-  | null
-  | { type: string; key?: string; props: Record<string, unknown>; children: Node[] };
+import type { TreeNode as Node } from "../types.ts";
+export type { Node };
 
 type Props = Record<string, unknown> & { key?: string; children?: unknown };
 type Component = (props: Props) => unknown;
