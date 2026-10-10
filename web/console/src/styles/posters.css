@@ -1,0 +1,279 @@
+/* Posters: options, picker, list, poster/template pages, chat panel, templates, photo library, settings. Import order matters -- see main.tsx. */
+
+/* Posters */
+
+/* The sub-tab row sits under the page head on the three list pages. Chips
+   are links here, not buttons, so the tabs have addresses. */
+.posters-tabs a { text-decoration: none; }
+
+/* --- Option batch (event drawer and poster page) --- */
+.poster-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.poster-option {
+  position: relative;
+  padding: 0;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+}
+.poster-option img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.poster-option:hover:not(:disabled) { border-color: var(--accent); }
+.poster-option:disabled { cursor: default; }
+.poster-option-on { border-color: var(--ok-ink); }
+.poster-option-current { border-color: var(--accent); }
+.poster-option-badge {
+  position: absolute; left: 0.35rem; bottom: 0.35rem;
+  background: var(--ok-bg); color: var(--ok-ink);
+}
+
+/* --- Picker in the event drawer --- */
+.poster-picker { margin-top: 0.5rem; }
+.poster-picker-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.poster-stale {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.poster-compare { display: flex; gap: 0.75rem; margin-bottom: 0.75rem; }
+.poster-compare figure { margin: 0; flex: 1; min-width: 0; }
+.poster-compare img {
+  display: block; width: 100%; border-radius: 6px; border: 1px solid var(--line);
+}
+.poster-compare figcaption {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  margin-top: 0.3rem; font-size: 0.8rem; color: var(--muted);
+}
+
+/* --- Poster list --- */
+.poster-row { padding: 0.6rem 0.9rem; }
+.poster-row-main {
+  display: flex; align-items: center; gap: 0.9rem; flex: 1; min-width: 0;
+  padding: 0; border: 0; background: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.poster-row-thumb {
+  flex: 0 0 56px; width: 56px; height: 70px; border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--off-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.poster-row-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.poster-row-blank { font-size: 0.65rem; color: var(--muted); text-align: center; }
+
+/* --- Poster and template pages: subject left, chat right --- */
+.content:has(.poster-page) { max-width: 1120px; }
+.poster-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .poster-page { grid-template-columns: 1fr; }
+}
+.poster-main { min-width: 0; }
+.poster-section { margin-top: 1.5rem; }
+.poster-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; }
+.poster-hero img {
+  display: block; max-width: 100%; max-height: 70vh; margin: 0 auto;
+  border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+}
+
+.poster-strip {
+  display: flex; gap: 0.6rem; overflow-x: auto; padding: 0.25rem 0 0.5rem;
+}
+.poster-strip-item {
+  flex: 0 0 96px; padding: 0; border: 2px solid var(--line); border-radius: 6px;
+  background: var(--panel); cursor: pointer; overflow: hidden; text-align: left;
+}
+.poster-strip-item img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.poster-strip-item:hover:not(:disabled) { border-color: var(--accent); }
+.poster-strip-current { border-color: var(--accent); cursor: default; }
+.poster-strip-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.poster-strip-meta {
+  display: flex; flex-direction: column; gap: 0.15rem; padding: 0.3rem 0.4rem;
+  font-size: 0.7rem; color: var(--muted);
+}
+
+.poster-formats { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.poster-format { display: inline-flex; align-items: center; gap: 0.35rem; }
+.poster-format-dl { font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+.poster-format-dl:hover { text-decoration: underline; }
+.poster-format-preview { margin-top: 0.75rem; }
+.poster-format-preview img {
+  display: block; max-width: 100%; max-height: 50vh; border-radius: 6px; border: 1px solid var(--line);
+}
+
+/* The chat panel borrows the shared widget's transcript and composer. Their
+   rules read the --card-* tokens, which chat.css scopes to the bottom sheet,
+   so the same tokens are declared here for the panel -- light first, since
+   the console is light by default, then the sheet's dark values. */
+.poster-chat {
+  --card-bg: var(--panel);
+  --card-fg: var(--ink);
+  --card-heading: var(--ink);
+  --card-muted: var(--muted);
+  --card-subtle: var(--muted);
+  --card-border: var(--line);
+  --card-code-bg: var(--bg);
+  --tier-critical-accent: #dc2626;
+  --tier-critical-bg: #fef2f2;
+  --tier-elevated-accent: var(--accent);
+  --tier-elevated-bg: #eff6ff;
+  --shadow-card: rgba(15, 23, 42, 0.08);
+  --armed-left-shadow: rgba(220, 38, 38, 0.2);
+  position: sticky; top: 1rem;
+  display: flex; flex-direction: column;
+  height: min(78vh, 720px);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden;
+}
+@media (prefers-color-scheme: dark) {
+  .poster-chat {
+    --card-code-bg: #0f172a;
+    --tier-critical-bg: #2a1717;
+    --tier-elevated-bg: #17233a;
+  }
+}
+@media (max-width: 860px) {
+  .poster-chat { position: static; height: 60vh; }
+}
+.poster-chat-head { padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+.poster-chat-title { font-weight: 600; }
+.poster-chat-hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+.poster-chat-empty { justify-content: flex-end; }
+.poster-chat-empty p { margin: 0; font-size: 0.85rem; }
+
+/* --- Templates --- */
+.poster-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.9rem;
+}
+.poster-tpl-card {
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; color: inherit; text-decoration: none;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.poster-tpl-card:hover { border-color: var(--line-strong); }
+.poster-tpl-card img, .poster-tpl-card .poster-tpl-blank {
+  display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; background: var(--off-bg);
+}
+.poster-tpl-blank {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 0.85rem; text-align: center; padding: 1rem;
+}
+.poster-tpl-body { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.75rem 0.9rem; }
+
+.poster-tpl-previews { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: flex-start; }
+.poster-tpl-previews figure { margin: 0; flex: 1 1 200px; max-width: 360px; }
+.poster-tpl-previews img, .poster-tpl-previews .poster-tpl-blank {
+  display: block; width: 100%; border-radius: 6px; border: 1px solid var(--line);
+}
+.poster-tpl-previews .poster-tpl-blank { aspect-ratio: 4 / 5; }
+.poster-tpl-previews figcaption { font-size: 0.8rem; color: var(--muted); margin-top: 0.3rem; }
+.poster-tpl-reference img { display: block; max-width: 360px; width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+.poster-tpl-history { list-style: none; margin: 0; padding: 0; }
+.poster-tpl-history .timeline-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.poster-tpl-history .timeline-meta { color: var(--muted); font-size: 0.8rem; }
+.poster-source {
+  margin: 0.4rem 0 0; padding: 0.6rem 0.75rem; max-height: 320px; overflow: auto;
+  font-size: 0.75rem; line-height: 1.4; background: var(--off-bg); border-radius: 6px;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* --- Photo library --- */
+.poster-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.poster-photo {
+  display: flex; flex-direction: column; gap: 0.35rem; padding: 0; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.poster-photo:hover { border-color: var(--line-strong); }
+.poster-photo-img { position: relative; display: block; background: var(--off-bg); }
+.poster-photo-img img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.poster-photo-meta {
+  display: flex; align-items: center; gap: 0.4rem; padding: 0 0.6rem; min-width: 0; flex-wrap: wrap;
+}
+.poster-photo-name {
+  font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.poster-photo-desc {
+  padding: 0 0.6rem 0.6rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.poster-photo-open { grid-column: 1 / -1; cursor: default; flex-direction: row; align-items: flex-start; }
+.poster-photo-open .poster-photo-img { flex: 0 1 50%; }
+.poster-photo-open .poster-photo-img img { aspect-ratio: auto; max-height: 70vh; object-fit: contain; }
+.poster-photo-form { flex: 1; padding: 0.9rem 1rem; min-width: 0; }
+.poster-photo-form .drawer-actions { margin-bottom: 0; }
+@media (max-width: 640px) {
+  .poster-photo-open { flex-direction: column; }
+  .poster-photo-open .poster-photo-img { flex: none; width: 100%; }
+}
+.poster-focus-dot {
+  position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+  border: 3px solid #fff; background: var(--accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* --- Settings --- */
+.poster-subhead { font-size: 0.9rem; margin: 1.1rem 0 0.4rem; color: var(--ink-soft); }
+.poster-logo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem;
+}
+.poster-logo {
+  display: flex; flex-direction: column; gap: 0.35rem; padding: 0.6rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+}
+.poster-logo img {
+  display: block; width: 100%; height: 80px; object-fit: contain;
+  /* A checkerboard, so a white logo on a transparent file is visible. */
+  background:
+    linear-gradient(45deg, var(--off-bg) 25%, transparent 25%, transparent 75%, var(--off-bg) 75%) 0 0 / 16px 16px,
+    linear-gradient(45deg, var(--off-bg) 25%, transparent 25%, transparent 75%, var(--off-bg) 75%) 8px 8px / 16px 16px,
+    var(--panel);
+  border-radius: 4px;
+}
+.poster-logo-name { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.poster-logo select {
+  padding: 0.3rem 0.4rem; border: 1px solid var(--line-strong); border-radius: 0.4rem;
+  background: var(--panel); color: var(--ink); font: inherit; font-size: 0.85rem;
+}
+.poster-prompt { display: flex; align-items: flex-start; gap: 0.6rem; }
+.poster-prompt .snippet { flex: 1; margin: 0; white-space: pre-wrap; user-select: all; }
+.poster-problems { margin: 0 0 0.75rem; padding-left: 1.2rem; font-size: 0.9rem; }
+.poster-swatches { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.poster-swatch { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
+.poster-swatch-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; border-radius: 0.35rem; border: 1px solid var(--line-strong);
+  font-size: 0.7rem; font-weight: 600;
+}
+.poster-swatch-name { color: var(--ink-soft); }
+.poster-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.poster-table th, .poster-table td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.poster-table th { font-weight: 500; color: var(--muted); font-size: 0.8rem; }
+.poster-pairs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.poster-pair {
+  padding: 0.4rem 0.7rem; border-radius: 0.4rem; border: 1px solid var(--line); font-size: 0.85rem; font-weight: 600;
+}
+.poster-pair small { font-weight: 400; opacity: 0.8; margin-left: 0.3rem; }

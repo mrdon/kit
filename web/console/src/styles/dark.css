@@ -1,0 +1,30 @@
+/* Dark mode (follows the OS preference). Import order matters -- see main.tsx. */
+
+/* --- Dark mode (follows the OS preference) --- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e5e7eb;
+    --ink-soft: #cbd5e1;
+    --muted: #94a3b8;
+    --line: #2a2f3a;
+    --line-strong: #3a414f;
+    --bg: #0f1420;
+    --panel: #1a2030;
+    --accent: #7aa2f7;
+    --accent-hover: #97b6ff;
+    --ok-bg: rgba(46, 204, 113, 0.16);
+    --ok-ink: #4ade80;
+    --off-bg: rgba(148, 163, 184, 0.16);
+    --off-ink: #cbd5e1;
+    --error-bg: rgba(239, 68, 68, 0.16);
+    --error-ink: #f87171;
+  }
+  .tile,
+  .card {
+    box-shadow: none;
+  }
+  .tile:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+}

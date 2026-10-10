@@ -42,7 +42,25 @@ import Skills from './pages/Skills';
 import Jobs from './pages/Jobs';
 import Connect from './pages/Connect';
 import { BASENAME } from './workspace';
-import './styles.css';
+// Console styles, split by area. The order below is the order the blocks sat
+// in the old single styles.css and it matters: dark.css redefines the :root
+// palette mid-way, and later app files override earlier generic rules.
+import './styles/base.css';
+import './styles/roles.css';
+import './styles/tasks.css';
+import './styles/drawer.css';
+import './styles/vault.css';
+import './styles/responsive.css';
+import './styles/dark.css';
+import './styles/expenses.css';
+import './styles/chat.css';
+import './styles/skills-jobs.css';
+import './styles/events.css';
+import './styles/screens.css';
+import './styles/trivia.css';
+import './styles/event-labels.css';
+import './styles/devices.css';
+import './styles/posters.css';
 import '@chat/chat.css';
 
 // The console is a desktop tool, not an installable PWA — it deliberately

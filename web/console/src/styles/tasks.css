@@ -1,0 +1,254 @@
+/* Tasks: grouped bands, task rows, tags, priority pills, list table; the undo toast sits here in source order. Import order matters -- see main.tsx. */
+
+/* --- Tasks: grouped (priority bands + category sub-groups) --- */
+
+.bands {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.band {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem 0.75rem;
+  background: var(--panel);
+}
+
+.band-over {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.band-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.band-head h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.band-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+}
+
+.band-count {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.band-empty {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.cat-group + .cat-group {
+  margin-top: 0.45rem;
+}
+
+.cat-head {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.25rem 0.2rem;
+}
+
+.trow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.2rem;
+  border-top: 1px solid var(--line);
+}
+
+.trow-mine {
+  font-weight: 600;
+}
+
+.trow-other {
+  opacity: 0.72;
+}
+
+.trow-grip {
+  flex: none;
+  cursor: grab;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  user-select: none;
+  letter-spacing: -0.1em;
+}
+
+.trow-grip:hover {
+  color: var(--ink);
+}
+
+.trow:active .trow-grip {
+  cursor: grabbing;
+}
+
+/* --- Toast (undo) --- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 0.6rem 0.75rem 0.6rem 1rem;
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(8, 11, 18, 0.3);
+  font-size: 0.88rem;
+}
+
+.toast-undo {
+  border: 0;
+  background: none;
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.trow-resolve {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+}
+
+.trow-resolve:hover {
+  color: var(--accent);
+}
+
+.trow-title {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+}
+
+.trow-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  flex: none;
+}
+
+.trow-claim {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+}
+
+.trow-claim:hover {
+  color: var(--accent);
+}
+
+.trow-claim-on {
+  color: var(--accent);
+}
+
+.tag-onit {
+  background: var(--off-bg);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+.tag {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.tag-soft {
+  background: var(--off-bg);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+.pr-normal { background: rgba(100, 116, 139, 0.18); color: var(--off-ink); }
+.pr-high { background: rgba(249, 115, 22, 0.18); color: #c2410c; }
+.pr-blocker { background: var(--error-bg); color: var(--error-ink); }
+
+/* Band dots reuse the priority palette as solid swatches. */
+.band-dot.pr-normal { background: var(--off-ink); }
+.band-dot.pr-high { background: #f97316; }
+.band-dot.pr-blocker { background: var(--error-ink); }
+
+/* --- Tasks: list --- */
+
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.task-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.task-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.muted-cell {
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.mini-select {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+}

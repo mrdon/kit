@@ -1,0 +1,60 @@
+/* Roles matrix (users x roles). Import order matters -- see main.tsx. */
+
+/* --- Roles matrix (users × roles) --- */
+
+.roles-matrix-wrap {
+  overflow-x: auto;
+}
+
+.roles-matrix {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.roles-matrix th,
+.roles-matrix td {
+  border: 1px solid var(--line);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+}
+
+.roles-corner {
+  background: var(--panel);
+}
+
+.roles-col {
+  text-align: center;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.roles-col-name {
+  display: block;
+  font-weight: 600;
+}
+
+.roles-col-count {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.roles-user {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.roles-cell {
+  text-align: center;
+}
+
+.roles-cell input {
+  width: 1.05rem;
+  height: 1.05rem;
+  cursor: pointer;
+}
+
+.roles-cell input:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}

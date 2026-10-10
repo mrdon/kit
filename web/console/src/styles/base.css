@@ -1,0 +1,639 @@
+/* Shared chrome: reset, top bar, content column, panels, forms, buttons, action menu, tiles, cards, pills, toolbar, toggle, segmented control. Import order matters -- see main.tsx. */
+/* Kit console — a light portal that wears the same indigo chrome top bar
+ * as Kit's other non-card pages (see internal/web/chrome). Structured
+ * after the vault UI: a persistent top bar over a centered content
+ * column with a page head, then content. */
+
+:root {
+  --ink: #1f2937;
+  --ink-soft: #4b5563;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
+  --bg: #f9fafb;
+  --panel: #ffffff;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --ok-bg: #d1fae5;
+  --ok-ink: #047857;
+  --off-bg: #f3f4f6;
+  --off-ink: #6b7280;
+  --error-bg: #fee2e2;
+  --error-ink: #b91c1c;
+  --radius: 0.625rem;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+}
+
+/* --- Top bar (mirrors .chrome-header) --- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(180deg, #1e1b4b 0%, #312e81 100%);
+  color: #e0e7ff;
+  font-size: 0.875rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.topbar-link {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  color: #c7d2fe;
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.topbar-link:hover {
+  color: #ffffff;
+  background: rgba(199, 210, 254, 0.12);
+}
+
+.topbar-link.active {
+  color: #ffffff;
+  background: rgba(199, 210, 254, 0.22);
+}
+
+.topbar-brand:hover {
+  color: #c7d2fe;
+}
+
+.topbar-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.topbar-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #c7d2fe;
+  min-width: 0;
+}
+
+.topbar-username {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+
+.topbar-logout {
+  color: #ffffff;
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.topbar-logout:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* --- Content column --- */
+
+.content {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.page-head {
+  margin-bottom: 1.5rem;
+}
+
+.page-head h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--muted);
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+}
+
+.crumbs {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+}
+
+.crumbs a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.crumbs a:hover {
+  text-decoration: underline;
+}
+
+.crumb-sep {
+  margin: 0 0.4rem;
+  color: var(--line-strong);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.banner {
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.banner-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+.banner-ok {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+  cursor: pointer;
+}
+
+/* --- Panels (settings sections) --- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.panel-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.status-line {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+code {
+  background: var(--off-bg);
+  color: var(--ink);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+}
+
+/* --- Forms + buttons --- */
+
+.inline-form {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 0.5rem;
+}
+
+.inline-form input,
+.inline-form select {
+  flex: 1 1 14rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 0.95rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--error-ink);
+  border-color: var(--error-ink);
+}
+
+.btn-danger:hover {
+  background: var(--error-bg);
+  border-color: var(--error-ink);
+}
+
+.btn-spaced {
+  margin-top: 0.75rem;
+}
+
+/* --- Action menu (cog dropdown for secondary / destructive page actions) --- */
+
+.action-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--off-bg);
+  color: var(--ink);
+}
+
+.action-menu-pop {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 30;
+  min-width: 11rem;
+  padding: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.action-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action-menu-item:hover {
+  background: var(--off-bg);
+}
+
+.action-menu-item-danger {
+  color: var(--error-ink);
+}
+
+.action-menu-item-danger:hover {
+  background: var(--error-bg);
+}
+
+.snippet-box {
+  margin-top: 0.85rem;
+}
+
+.snippet {
+  background: var(--off-bg);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0.4rem 0 0;
+}
+
+/* --- Launcher tiles --- */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.1rem 1.2rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+
+.tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+.tile:active {
+  transform: translateY(1px);
+}
+
+.tile-title {
+  font-weight: 600;
+}
+
+.tile-blurb {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* --- Card list (integrations, future surfaces) --- */
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  /* These are cards, not prose. Without this the <li> markers render beside
+     each card — the other list classes here (.entry-list, .activity-list,
+     .timeline) all reset it; this one was missed. */
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.card-title {
+  font-weight: 600;
+}
+
+.card-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.card-side {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex: 0 0 auto;
+}
+
+.card-detail {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.card-manage {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.card-manage:hover {
+  text-decoration: underline;
+}
+
+/* The base pill carries the NEUTRAL colours rather than leaving them to be
+   inherited. A bare `.pill` used to set neither, so it took its colour from
+   whatever contained it -- and inside .row-card, a <button>, that meant the
+   UA's near-black `buttontext`, which is invisible on the dark panel. The
+   variants below override both properties, so giving the base a real pair
+   costs them nothing and makes an unmodified pill safe anywhere. */
+.pill {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--off-bg);
+  color: var(--off-ink);
+}
+
+.pill-ok {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+}
+
+.pill-off {
+  background: var(--off-bg);
+  color: var(--off-ink);
+}
+
+.pill-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+/* --- Tasks: toolbar --- */
+
+.page-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.toolbar select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* Toggle switch — a larger, clearer on/off than a bare checkbox. The hidden
+   checkbox stays the accessible control; .switch-track is the visual slider. */
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: var(--ink);
+  padding: 0.6rem 0;
+  margin-bottom: 1rem;
+}
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.switch-track {
+  position: relative;
+  flex: none;
+  width: 2.6rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.15s ease;
+}
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.5rem - 4px);
+  height: calc(1.5rem - 4px);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+.switch input:checked + .switch-track::after {
+  transform: translateX(1.1rem);
+}
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.switch:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.toolbar-end {
+  margin-left: auto;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.seg-btn {
+  padding: 0.4rem 0.85rem;
+  background: var(--panel);
+  color: var(--ink-soft);
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.seg-active {
+  background: var(--accent);
+  color: #fff;
+}

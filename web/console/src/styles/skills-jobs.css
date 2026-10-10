@@ -1,0 +1,115 @@
+/* Skills + Jobs list rows, grouped-list filter chips and headers, field hints / notes / inline errors. Import order matters -- see main.tsx. */
+
+/* Skills + Jobs sections: secondary line and badge chips on list rows,
+ * a file row in the skill drawer, and the collapsible policy editor. */
+.entry-sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.badge {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--off-bg);
+  color: var(--off-ink);
+}
+
+.badge-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.policy-editor {
+  margin: 0.5rem 0;
+}
+.policy-editor > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Grouped-list filter chips + section headers (Skills, Jobs). */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--line-strong);
+}
+.chip-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip-count {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.group + .group {
+  margin-top: 1.5rem;
+}
+
+.group-head {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.field-hint {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--error-ink);
+}
+
+/* Inline error text, for a problem that belongs beside its row rather than in
+   a page-level .banner-error — e.g. one board in a list that won't render. */
+.error-text {
+  color: var(--error-ink);
+}
+
+/* Neutral sibling of .field-hint, for explanatory text under a field.
+   .field-hint is deliberately error-coloured and reads as a caution, so it
+   should stay reserved for warnings ("visible to anyone on your website")
+   rather than becoming the default for ordinary guidance. */
+.field-note {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}

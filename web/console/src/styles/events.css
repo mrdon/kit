@@ -1,0 +1,77 @@
+/* Events: poster preview, repeat-date list, button count badge, shift-notice preview. Import order matters -- see main.tsx. */
+
+/* Event poster preview in the drawer — capped so a tall print-shaped poster
+   doesn't push the action buttons off screen. */
+.poster-preview { margin-top: 0.5rem; }
+.poster-preview img {
+  display: block; max-width: 100%; max-height: 260px;
+  border-radius: 6px; border: 1px solid var(--line); margin-bottom: 0.6rem;
+}
+
+/* The explicit repeat-date list in the event drawer. A row is one date plus
+   its remove button; the list grows downward as dates are added, so it is
+   capped and scrolls rather than pushing the drawer's action buttons out of
+   reach on a long series. */
+.date-list {
+  list-style: none;
+  margin: 0.5rem 0 0.4rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.date-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* The picker takes the slack so the Remove buttons line up in a column. */
+.date-list li input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.date-list li .btn {
+  flex: 0 0 auto;
+  padding-block: 0.3rem;
+  font-size: 0.8rem;
+}
+
+/* Count badge inside a button — e.g. "Review & publish (3)". Sized to sit on
+   the button's baseline without changing its height. */
+.btn-badge {
+  display: inline-block;
+  min-width: 1.35rem;
+  margin-left: 0.45rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  /* Inverted against a filled button; on a ghost button the accent fill is
+     what stands out. Set per-variant rather than assuming one button style. */
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35rem;
+  text-align: center;
+}
+
+/* On a filled button the badge inverts instead. */
+.btn:not(.btn-ghost):not(.btn-danger) .btn-badge {
+  background: #fff;
+  color: var(--accent);
+}
+
+/* The rendered shift-notice message, shown before it is delivered. Wraps
+   rather than scrolls: this is prose a human is proofreading, not code, and a
+   horizontal scrollbar would hide the end of every line. */
+.preview-body {
+  background: var(--off-bg);
+  color: var(--ink);
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.4rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

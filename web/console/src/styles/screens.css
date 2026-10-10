@@ -1,0 +1,100 @@
+/* Kiosk / wall screens: screen picker, kiosk buttons, kiosk address. Import order matters -- see main.tsx. */
+
+/* What a wall screen shows: one button per Kit screen page, the current one
+   filled in. The typed address sits behind "Other…" for the rare case. */
+.screen-picker {
+  margin: 0.5rem 0 0.25rem;
+}
+.screen-pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.screen-pick {
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.screen-pick:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.screen-pick:disabled {
+  cursor: default;
+}
+.screen-pick-active,
+.screen-pick-active:disabled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  opacity: 1;
+}
+.screen-pick-other {
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+.screen-pick-lg {
+  font-size: 1.2rem;
+  padding: 0.9rem 1.6rem;
+  min-width: 7.5rem;
+}
+.screen-pick-note {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.screen-pick-advanced {
+  margin-top: 0.5rem;
+}
+
+/* The workspace's own screen buttons, one row each. The URL truncates; the
+   full value is on its title. */
+.kiosk-buttons {
+  list-style: none;
+  margin: 0.6rem 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.kiosk-buttons li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.kiosk-buttons code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+/* The kiosk address, shown as a real field so it can always be selected and
+   copied by hand — the Copy button is a convenience, not the only route. */
+.menu-address {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.menu-address input {
+  font-family: var(--mono, ui-monospace, Menlo, monospace);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-alt, #f4f4f2);
+  color: inherit;
+  width: 100%;
+  max-width: 34rem;
+}
