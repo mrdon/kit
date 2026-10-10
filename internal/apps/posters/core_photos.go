@@ -80,10 +80,7 @@ func (a *App) coreAskForPhoto(ctx context.Context, caller *services.Caller, raw 
 	if s.PhotoFolderID != "" {
 		folder = "https://drive.google.com/drive/folders/" + s.PhotoFolderID
 	}
-	return textResult("Tell the user: the library has no photo of %s. Two ways to add one: put it in %s in a subfolder named for the event or place "+
-		"(it is picked up within the hour, then someone describes it from Claude Code with the indexing tools), or upload it in this chat "+
-		"to use on this poster only (then reference it as <Photo id=\"attachment:<id>\" /> using the attachment id shown in the conversation). "+
-		"Do not substitute a photo of something else.", strOr(in.What, "that"), folder)
+	return textResult("%s", mustRender("user_ask_for_photo.tmpl", map[string]any{"What": strOr(in.What, "that"), "Folder": folder}))
 }
 
 type pendingArg struct {

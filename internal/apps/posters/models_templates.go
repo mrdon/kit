@@ -326,7 +326,7 @@ func upsertBuiltin(ctx context.Context, pool *pgxpool.Pool, key string, meta pos
 	}
 	if current != nil {
 		var existing string
-		if err := tx.QueryRow(ctx, `SELECT source FROM app_poster_template_versions WHERE id = $1`, *current).Scan(&existing); err == nil && existing == source {
+		if err := tx.QueryRow(ctx, `SELECT source FROM app_poster_template_versions WHERE tenant_id IS NULL AND id = $1`, *current).Scan(&existing); err == nil && existing == source {
 			return tx.Commit(ctx)
 		}
 	}

@@ -145,7 +145,9 @@ func (a *App) Usage(ctx context.Context, tenantID uuid.UUID) (string, error) {
 
 func (a *App) SystemPrompt() string { return mustRender("system_prompt.tmpl", nil) }
 
-func (a *App) ToolMetas() []services.ToolMeta { return posterTools }
+// ToolMetas is every tool either surface exposes, so the MCP visibility
+// layer sees the admin-only index tools too.
+func (a *App) ToolMetas() []services.ToolMeta { return allTools() }
 
 func (a *App) RegisterAgentTools(ctx context.Context, registerer any, caller *services.Caller, isAdmin bool) {
 	r, ok := registerer.(*tools.Registry)

@@ -18,7 +18,7 @@ import (
 // as image content so the harness's model can look at them.
 func (a *App) buildMCPTools() []mcpserver.ServerTool {
 	var out []mcpserver.ServerTool
-	all := append(append([]services.ToolMeta{}, posterTools...), indexTools...)
+	all := allTools()
 	for _, meta := range all {
 		name := meta.Name
 		handler := mcpauth.WithCaller(func(ctx context.Context, req mcp.CallToolRequest, caller *services.Caller) (*mcp.CallToolResult, error) {

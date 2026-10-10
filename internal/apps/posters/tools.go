@@ -175,6 +175,12 @@ var mcpOnlyTools = map[string]bool{
 	"generate_poster_options": true,
 }
 
+// allTools is both lists: what the MCP surface registers and what the app
+// reports as its tool metadata.
+func allTools() []services.ToolMeta {
+	return append(append([]services.ToolMeta{}, posterTools...), indexTools...)
+}
+
 // indexTools describe photos. See the indexing-poster-photos skill for the
 // description rules every indexer follows.
 var indexTools = []services.ToolMeta{

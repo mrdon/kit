@@ -171,11 +171,14 @@ func (a *App) switchLayout(ctx context.Context, tenantID uuid.UUID, brand *poste
 	if len(photos) > 0 {
 		hero := photos[0]
 		req.Hero = &hero
-		if req.Photos, err = a.imageRefsFor(ctx, tenantID, hero.ID, true); err != nil {
-			return "", nil, err
+		// One resolver for every kind of id (library, pixabay:, attachment:),
+		// so a stock or uploaded photo keeps its source and URL.
+		ids := make([]string, len(photos))
+		for i, p := range photos {
+			ids[i] = p.ID
 		}
-		for _, p := range photos {
-			req.Photos = append(req.Photos, posterrender.ImageRef{ID: p.ID, Source: posterrender.SourceDrive})
+		if req.Photos, err = a.imageRefsFor(ctx, tenantID, strings.Join(ids, " "), true); err != nil {
+			return "", nil, err
 		}
 	}
 	res, err := a.renderer.Options(ctx, req)
