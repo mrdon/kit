@@ -23,28 +23,29 @@ export type PlanInput = {
 };
 
 // Templates in weight order (most picked first, ties by the given order),
-// dropping ones already shown unless that would leave nothing, and ones
-// whose photo minimum the pool cannot meet or whose needs the content lacks.
+// dropping ones whose photo minimum the pool cannot meet or whose needs the
+// content lacks.
 export function eligibleTemplates(input: PlanInput): PlannedTemplate[] {
   const has = (field: string) => {
     const v = (input.content as unknown as Record<string, unknown>)[field];
     return Array.isArray(v) ? v.length > 0 : Boolean(v);
   };
-  let ts = input.templates.filter((t) => t.meta.photos.min <= input.pool.length && t.meta.needs.every(has));
-  const exclude = new Set(input.exclude ?? []);
-  if (exclude.size) {
-    const fresh = ts.filter((t) => !exclude.has(t.id));
-    if (fresh.length) ts = fresh;
-  }
+  const ts = input.templates.filter((t) => t.meta.photos.min <= input.pool.length && t.meta.needs.every(has));
   return [...ts].sort((a, b) => b.weight - a.weight);
 }
 
+// The key "more options" excludes by: a template on a ground. Excluding
+// whole templates would leave nothing after one batch of seven.
+export const comboKey = (templateId: string, ground: string) => `${templateId}|${ground}`;
+
 // Every combination in spread order: templates cycle, the ground shifts each
 // pass so a repeated template never comes back on the same ground, and photo
-// templates take the next hero in turn.
+// templates take the next hero in turn. Pairings already shown are left out;
+// when every pairing has been shown the plan is empty, and Kit says so.
 export function plan(input: PlanInput): Candidate[] {
   const templates = eligibleTemplates(input);
   const grounds = input.grounds.length ? input.grounds : ["paper"];
+  const exclude = new Set(input.exclude ?? []);
   const out: Candidate[] = [];
   let photoTurn = 0;
   const total = templates.length * grounds.length;
@@ -52,6 +53,7 @@ export function plan(input: PlanInput): Candidate[] {
     const template = templates[i % templates.length];
     const pass = Math.floor(i / templates.length);
     const ground = grounds[(i + pass) % grounds.length];
+    if (exclude.has(comboKey(template.id, ground))) continue;
     let photos: PhotoUse[] = [];
     if (template.meta.photos.max > 0 && input.pool.length) {
       const hero = input.pool[photoTurn % input.pool.length];

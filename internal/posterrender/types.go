@@ -188,7 +188,7 @@ type OptionsRequest struct {
 	Hero      *PhotoUse         `json:"hero,omitempty"`
 	Templates []PlannedTemplate `json:"templates"`
 	Count     int               `json:"count"`
-	Exclude   []string          `json:"exclude,omitempty"`
+	Exclude   []string          `json:"exclude,omitempty"` // "templateID|ground" pairs already shown
 }
 
 // Option is one generated poster.

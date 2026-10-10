@@ -133,6 +133,7 @@ export type OptionsRequest = {
   hero?: PhotoUse;
   templates: PlannedTemplate[];
   count: number;
+  // "templateId|ground" pairings already shown (see options.ts comboKey).
   exclude?: string[];
 };
 

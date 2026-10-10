@@ -122,7 +122,7 @@ func (a *App) handlePosterForEvent(w http.ResponseWriter, r *http.Request) {
 		a.httpErr(w, err)
 		return
 	}
-	resp := map[string]any{"poster": nil, "options": []any{}, "renderer_ready": a.RendererReady(r.Context()), "brand_ready": true}
+	resp := map[string]any{"poster": nil, "options": []any{}, "renderer_ready": a.RendererReady(r.Context()), "renderer_configured": a.renderer != nil, "brand_ready": true}
 	if _, err := a.brandFor(r.Context(), caller.TenantID); err != nil {
 		resp["brand_ready"] = false
 		resp["brand_problem"] = strings.TrimPrefix(err.Error(), "no brand: ")

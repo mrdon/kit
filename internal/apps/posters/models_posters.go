@@ -26,6 +26,7 @@ type Poster struct {
 	Title            string          `json:"title"`
 	CurrentVersionID *uuid.UUID      `json:"current_version_id,omitempty"`
 	SetVersionID     *uuid.UUID      `json:"set_version_id,omitempty"`
+	SetAttachmentID  *uuid.UUID      `json:"-"`
 	Facts            json.RawMessage `json:"facts,omitempty"`
 	FactsHash        string          `json:"-"`
 	Stale            bool            `json:"stale"`
@@ -61,15 +62,17 @@ type Version struct {
 	Instruction       string                  `json:"instruction"`
 	Author            Author                  `json:"author"`
 	Picked            bool                    `json:"picked"`
+	Facts             json.RawMessage         `json:"-"`
+	FactsHash         string                  `json:"-"`
 	CreatedAt         time.Time               `json:"created_at"`
 }
 
-const posterColumns = `id, tenant_id, event_id, title, current_version_id, set_version_id, facts, facts_hash, stale, created_by, created_at, updated_at`
+const posterColumns = `id, tenant_id, event_id, title, current_version_id, set_version_id, set_attachment_id, facts, facts_hash, stale, created_by, created_at, updated_at`
 
 func scanPoster(row pgx.Row) (*Poster, error) {
 	var p Poster
 	var facts []byte
-	if err := row.Scan(&p.ID, &p.TenantID, &p.EventID, &p.Title, &p.CurrentVersionID, &p.SetVersionID, &facts, &p.FactsHash, &p.Stale, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.TenantID, &p.EventID, &p.Title, &p.CurrentVersionID, &p.SetVersionID, &p.SetAttachmentID, &facts, &p.FactsHash, &p.Stale, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if len(facts) > 0 {
@@ -138,15 +141,47 @@ func setCurrentVersion(ctx context.Context, pool *pgxpool.Pool, tenantID, poster
 	return nil
 }
 
-// setOnEvent records which version is on the event and the facts it used.
-func setOnEvent(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID, versionID uuid.UUID, facts json.RawMessage, hash string) error {
+// setOnEvent records which version is on the event, the attachment that
+// carries it, and the facts the version's copy used. stale says whether
+// those facts already differ from the event.
+func setOnEvent(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID, versionID, attachmentID uuid.UUID, facts json.RawMessage, hash string, stale bool) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE app_posters SET set_version_id = $3, current_version_id = $3, facts = $4, facts_hash = $5, stale = false, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2`, tenantID, posterID, versionID, []byte(facts), hash)
+		UPDATE app_posters SET set_version_id = $3, current_version_id = $3, set_attachment_id = $4, facts = $5, facts_hash = $6, stale = $7, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`, tenantID, posterID, versionID, attachmentID, jsonOrNull(facts), hash, stale)
 	if err != nil {
 		return fmt.Errorf("recording poster on event: %w", err)
 	}
 	return nil
+}
+
+// clearSetVersion forgets that a version is on the event: the event's
+// poster image is now something Posters did not put there.
+func clearSetVersion(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE app_posters SET set_version_id = NULL, set_attachment_id = NULL, stale = false, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`, tenantID, posterID)
+	if err != nil {
+		return fmt.Errorf("clearing poster from event: %w", err)
+	}
+	return nil
+}
+
+// setVersionFacts stamps a version with the facts its copy now states.
+func setVersionFacts(ctx context.Context, pool *pgxpool.Pool, tenantID, versionID uuid.UUID, facts json.RawMessage, hash string) error {
+	_, err := pool.Exec(ctx, `UPDATE app_poster_versions SET facts = $3, facts_hash = $4 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, versionID, jsonOrNull(facts), hash)
+	if err != nil {
+		return fmt.Errorf("recording version facts: %w", err)
+	}
+	return nil
+}
+
+// jsonOrNull is a JSONB parameter: NULL when there is nothing to store.
+func jsonOrNull(raw json.RawMessage) []byte {
+	if len(raw) == 0 {
+		return nil
+	}
+	return []byte(raw)
 }
 
 func setStale(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID uuid.UUID, stale bool) error {
@@ -168,12 +203,13 @@ func deletePoster(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID uu
 	return nil
 }
 
-const versionColumns = `id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, created_at`
+const versionColumns = `id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, created_at, facts, facts_hash`
 
 func scanVersion(row pgx.Row) (*Version, error) {
 	var v Version
+	var facts []byte
 	var content, photos, problems []byte
-	if err := row.Scan(&v.ID, &v.PosterID, &v.ParentID, &v.BatchID, &v.TemplateID, &v.TemplateVersionID, &v.Source, &content, &photos, &v.Ground, &v.Format, &problems, &v.Instruction, &v.Author, &v.Picked, &v.CreatedAt); err != nil {
+	if err := row.Scan(&v.ID, &v.PosterID, &v.ParentID, &v.BatchID, &v.TemplateID, &v.TemplateVersionID, &v.Source, &content, &photos, &v.Ground, &v.Format, &problems, &v.Instruction, &v.Author, &v.Picked, &v.CreatedAt, &facts, &v.FactsHash); err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal(content, &v.Content)
@@ -187,6 +223,9 @@ func scanVersion(row pgx.Row) (*Version, error) {
 	}
 	if v.Content.Details == nil {
 		v.Content.Details = []posterrender.Detail{}
+	}
+	if len(facts) > 0 {
+		v.Facts = json.RawMessage(facts)
 	}
 	return &v, nil
 }
@@ -207,6 +246,10 @@ type VersionInput struct {
 	Instruction       string
 	Author            Author
 	Picked            bool
+	// Facts the copy was written from, carried so a later pick compares
+	// against what this version says, not what the event says now.
+	Facts     json.RawMessage
+	FactsHash string
 }
 
 func insertVersion(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, in VersionInput) (*Version, error) {
@@ -220,10 +263,10 @@ func insertVersion(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, 
 	photos, _ := json.Marshal(in.Photos)
 	problems, _ := json.Marshal(in.Problems)
 	v, err := scanVersion(pool.QueryRow(ctx, `
-		INSERT INTO app_poster_versions (tenant_id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO app_poster_versions (tenant_id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, facts, facts_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING `+versionColumns,
-		tenantID, in.PosterID, in.ParentID, in.BatchID, in.TemplateID, in.TemplateVersionID, in.Source, content, photos, in.Ground, in.Format, problems, in.Instruction, in.Author, in.Picked))
+		tenantID, in.PosterID, in.ParentID, in.BatchID, in.TemplateID, in.TemplateVersionID, in.Source, content, photos, in.Ground, in.Format, problems, in.Instruction, in.Author, in.Picked, jsonOrNull(in.Facts), in.FactsHash))
 	if err != nil {
 		return nil, fmt.Errorf("saving poster version: %w", err)
 	}
@@ -285,9 +328,11 @@ func markPicked(ctx context.Context, pool *pgxpool.Pool, tenantID, versionID uui
 
 // shownTemplateIDs lists the templates a poster's options have already
 // used, so "more options" can avoid them.
-func shownTemplateIDs(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID uuid.UUID) ([]string, error) {
+// shownCombos lists every "templateID|ground" pairing already offered for
+// a poster, so another batch tries new pairings before repeating one.
+func shownCombos(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID uuid.UUID) ([]string, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT DISTINCT template_id::text FROM app_poster_versions
+		SELECT DISTINCT template_id::text || '|' || ground FROM app_poster_versions
 		WHERE tenant_id = $1 AND poster_id = $2 AND batch_id IS NOT NULL AND template_id IS NOT NULL`, tenantID, posterID)
 	if err != nil {
 		return nil, fmt.Errorf("listing shown templates: %w", err)

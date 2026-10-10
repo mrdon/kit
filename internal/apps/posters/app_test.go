@@ -2,6 +2,7 @@ package posters
 
 import (
 	"context"
+	"errors"
 	"os"
 	"slices"
 	"strings"
@@ -286,5 +287,68 @@ func TestSaveEditRefusesProblems(t *testing.T) {
 	poster, _ = getPoster(f.ctx, f.pool, f.tenant.ID, poster.ID)
 	if *poster.CurrentVersionID != before {
 		t.Error("a failed render changed the current version")
+	}
+}
+
+// Facts travel with the version. Picking an old option after the event
+// changed flags the poster at once; "more options" after a change rewrites
+// the copy instead of carrying the old facts forward; and a poster image
+// removed through events clears the link.
+func TestVersionFactsAndOutsideChanges(t *testing.T) {
+	f := newFixture(t)
+	ev := f.event(t)
+	f.indexedPhoto(t, "a.jpg", "vinyl", "a record on a turntable")
+	noProgress := func(GenerateStage, map[string]any) {}
+	res, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, false, noProgress)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if res.Options[0].FactsHash == "" {
+		t.Fatal("option carries no facts hash")
+	}
+
+	// The event moves before anyone picks.
+	start := time.Now().AddDate(0, 0, 9).Format("2006-01-02") + " 20:00"
+	if _, err := f.events.Update(f.ctx, f.tenant.ID, ev.ID, events.UpdateParams{StartsAt: &start}); err != nil {
+		t.Fatal(err)
+	}
+	poster, err := f.app.Pick(f.ctx, f.tenant.ID, f.user.ID, res.Poster.ID, res.Options[0].ID)
+	if err != nil {
+		t.Fatalf("pick: %v", err)
+	}
+	if !poster.Stale {
+		t.Fatal("an old option set on a changed event was not flagged")
+	}
+
+	// More options: the facts changed, so the copy is rewritten.
+	calls := f.llm.calls
+	more, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, true, noProgress)
+	if err != nil {
+		t.Fatalf("more: %v", err)
+	}
+	if !more.FreshCopy || f.llm.calls == calls {
+		t.Fatalf("more after a change reused the copy (fresh=%v, llm calls %d -> %d)", more.FreshCopy, calls, f.llm.calls)
+	}
+	// Picking from the fresh batch is current again.
+	poster, err = f.app.Pick(f.ctx, f.tenant.ID, f.user.ID, res.Poster.ID, more.Options[0].ID)
+	if err != nil || poster.Stale {
+		t.Fatalf("fresh pick: %v stale=%v", err, poster != nil && poster.Stale)
+	}
+	// A second "more" with nothing changed costs no model calls.
+	calls = f.llm.calls
+	if _, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, true, noProgress); err != nil && !errors.Is(err, ErrInvalid) {
+		t.Fatalf("more again: %v", err)
+	}
+	if f.llm.calls != calls {
+		t.Errorf("more with unchanged facts called the model")
+	}
+
+	// Removing the poster through events clears the link.
+	if _, err := f.events.Update(f.ctx, f.tenant.ID, ev.ID, events.UpdateParams{ClearHero: true}); err != nil {
+		t.Fatal(err)
+	}
+	poster, _ = getPoster(f.ctx, f.pool, f.tenant.ID, poster.ID)
+	if poster.SetVersionID != nil || poster.Stale {
+		t.Fatalf("poster still claims the event after removal: %+v", poster)
 	}
 }

@@ -27,6 +27,14 @@ func (a *App) installEventListener() {
 		if err != nil || poster == nil || poster.SetVersionID == nil {
 			return
 		}
+		if !sameAttachment(after.HeroAttachmentID, poster.SetAttachmentID) {
+			// The poster image was removed or replaced through events;
+			// our version is no longer the one on the event.
+			if err := clearSetVersion(ctx, a.pool, after.TenantID, poster.ID); err != nil {
+				slog.Warn("posters: clearing replaced poster", "error", err, "poster_id", poster.ID)
+			}
+			return
+		}
 		stale := factsHash(factsFor(after)) != poster.FactsHash
 		if stale == poster.Stale {
 			return
@@ -35,6 +43,10 @@ func (a *App) installEventListener() {
 			slog.Warn("posters: flagging stale poster", "error", err, "poster_id", poster.ID)
 		}
 	})
+}
+
+func sameAttachment(a, b *uuid.UUID) bool {
+	return a != nil && b != nil && *a == *b
 }
 
 // UpdateFacts refreshes a stale poster's copy from the event. The new
@@ -81,6 +93,14 @@ func (a *App) UpdateFacts(ctx context.Context, tenantID uuid.UUID, posterID uuid
 	res, err := a.saveEdit(ctx, tenantID, poster, out.Source, instruction, author)
 	if err != nil {
 		return nil, nil, err
+	}
+	if res.Version != nil {
+		// The new version states the event as it is now.
+		live := factsFor(ev)
+		raw, _ := jsonMarshal(live)
+		if err := setVersionFacts(ctx, a.pool, tenantID, res.Version.ID, raw, factsHash(live)); err != nil {
+			return nil, nil, err
+		}
 	}
 	return res, out.Changes, nil
 }

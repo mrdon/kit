@@ -59,7 +59,7 @@ test("templates already shown are left out when others remain", async () => {
     photos: [],
     templates: templates(),
     count: 2,
-    exclude: ["type"],
+    exclude: Object.keys(brand.grounds).map((g) => `type|${g}`),
   });
   assert.deepEqual([...new Set(r.options.map((o) => o.templateId))], ["when"]);
 });

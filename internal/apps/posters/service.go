@@ -179,6 +179,7 @@ func (a *App) saveEdit(ctx context.Context, tenantID uuid.UUID, poster *Poster, 
 		if cur, err := getVersion(ctx, a.pool, tenantID, *poster.CurrentVersionID); err == nil {
 			in.TemplateID, in.TemplateVersionID = cur.TemplateID, cur.TemplateVersionID
 			in.Content, in.Photos, in.Ground = cur.Content, cur.Photos, cur.Ground
+			in.Facts, in.FactsHash = cur.Facts, cur.FactsHash
 		}
 	}
 	v, err := insertVersion(ctx, a.pool, tenantID, in)
@@ -223,13 +224,25 @@ func (a *App) setOnEvent(ctx context.Context, tenantID, userID uuid.UUID, poster
 	if err != nil {
 		return fmt.Errorf("storing poster: %w", err)
 	}
-	if _, err := evs.Update(ctx, tenantID, ev.ID, events.UpdateParams{HeroAttachmentID: &att.ID}); err != nil {
-		return fmt.Errorf("setting poster on event: %w", err)
+	// The facts compared are the ones this version's copy states. An old
+	// option set on a changed event is flagged out of date right away
+	// rather than recorded as current. A version from before facts were
+	// stored falls back to the live event.
+	live := factsFor(ev)
+	liveHash := factsHash(live)
+	facts, hash := v.Facts, v.FactsHash
+	if hash == "" {
+		facts, _ = jsonMarshal(live)
+		hash = liveHash
 	}
-	facts := factsFor(ev)
-	raw, _ := jsonMarshal(facts)
-	if err := setOnEvent(ctx, a.pool, tenantID, poster.ID, v.ID, raw, factsHash(facts)); err != nil {
+	// Record before telling events, so the change listener sees the
+	// attachment as ours and does not clear the link we are making.
+	if err := setOnEvent(ctx, a.pool, tenantID, poster.ID, v.ID, att.ID, facts, hash, hash != liveHash); err != nil {
 		return err
+	}
+	if _, err := evs.Update(ctx, tenantID, ev.ID, events.UpdateParams{HeroAttachmentID: &att.ID}); err != nil {
+		_ = clearSetVersion(ctx, a.pool, tenantID, poster.ID)
+		return fmt.Errorf("setting poster on event: %w", err)
 	}
 	return markPicked(ctx, a.pool, tenantID, v.ID)
 }

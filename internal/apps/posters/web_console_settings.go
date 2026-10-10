@@ -34,8 +34,11 @@ type settingsPayload struct {
 	FontProblems  []string        `json:"font_problems"`
 	Counts        map[string]int  `json:"counts"`
 	RendererReady bool            `json:"renderer_ready"`
-	StockEnabled  bool            `json:"stock_configured"`
-	IndexPrompt   string          `json:"index_prompt"`
+	// RendererConfigured separates "not set up on this server" from
+	// "starting"; the UI only promises a retry for the second.
+	RendererConfigured bool   `json:"renderer_configured"`
+	StockEnabled       bool   `json:"stock_configured"`
+	IndexPrompt        string `json:"index_prompt"`
 }
 
 func folderURL(id string) string {
@@ -72,7 +75,7 @@ func (a *App) settingsPayload(ctx context.Context, tenantID uuid.UUID) (*setting
 		Settings: s, PhotoFolder: folderURL(s.PhotoFolderID), LogoFolder: folderURL(s.LogoFolderID),
 		Brand: brand, FontProblems: []string{}, LogoFiles: []logoCandidate{}, LogoVariants: []string{},
 		Counts:        map[string]int{"pending": counts[PhotoPending], "indexed": counts[PhotoIndexed], "removed": counts[PhotoRemoved]},
-		RendererReady: a.RendererReady(ctx), StockEnabled: a.pixabay.enabled(),
+		RendererReady: a.RendererReady(ctx), RendererConfigured: a.renderer != nil, StockEnabled: a.pixabay.enabled(),
 		IndexPrompt: "Load the indexing-poster-photos skill, then list_pending_photos and describe them in batches with get_photo_sheet and index_photos until none are pending.",
 	}
 	if brand.Brand != nil {

@@ -3,6 +3,7 @@ package posters
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,6 +46,9 @@ type GenerateResult struct {
 	// NoPhoto says the index had nothing honest for this event, so only
 	// type-only layouts were offered.
 	NoPhoto bool `json:"no_photo"`
+	// FreshCopy says a "more options" run rewrote the copy because the
+	// event's facts had changed since the last batch.
+	FreshCopy bool `json:"fresh_copy"`
 }
 
 // Generate makes a batch of options for an event. With more set, the copy
@@ -76,7 +80,8 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 	if err != nil {
 		return nil, err
 	}
-	content, hero, heroPhoto, err := a.copyAndPhoto(ctx, tenantID, poster, ev, brand, more, progress)
+	facts := factsFor(ev)
+	in, err := a.copyAndPhoto(ctx, tenantID, poster, ev, brand, more, factsHash(facts), progress)
 	if err != nil {
 		return nil, err
 	}
@@ -88,14 +93,14 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 	if len(templates) == 0 {
 		return nil, invalid("no active templates; activate at least one on the templates page")
 	}
-	req := posterrender.OptionsRequest{Content: *content, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Count: optionCount, Hero: hero}
-	if heroPhoto != nil {
-		if req.Photos, err = a.photoSet(ctx, tenantID, heroPhoto); err != nil {
+	req := posterrender.OptionsRequest{Content: *in.content, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Count: optionCount, Hero: in.hero}
+	if in.photo != nil {
+		if req.Photos, err = a.photoSet(ctx, tenantID, in.photo); err != nil {
 			return nil, err
 		}
 	}
 	if more {
-		if req.Exclude, err = shownTemplateIDs(ctx, a.pool, tenantID, poster.ID); err != nil {
+		if req.Exclude, err = shownCombos(ctx, a.pool, tenantID, poster.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -107,7 +112,25 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 		}
 		return nil, fmt.Errorf("generating options: %w", err)
 	}
-	return a.storeBatch(ctx, tenantID, poster, brand, content, res, byID, hero == nil)
+	if len(res.Options) == 0 && len(res.Skipped) == 0 && len(req.Exclude) > 0 {
+		return nil, invalid("every layout has been shown on every ground; edit one in chat, or activate more templates")
+	}
+	raw, _ := jsonMarshal(facts)
+	out, err := a.storeBatch(ctx, tenantID, poster, brand, in.content, res, byID, in.hero == nil, raw, factsHash(facts))
+	if err != nil {
+		return nil, err
+	}
+	out.FreshCopy = more && in.fresh
+	return out, nil
+}
+
+// batchInputs is what a batch is made from: the copy, the hero photo's
+// crop and row (nil for a type-only batch), and whether the copy is new.
+type batchInputs struct {
+	content *posterrender.Content
+	hero    *posterrender.PhotoUse
+	photo   *Photo
+	fresh   bool
 }
 
 func (a *App) posterForEventOrCreate(ctx context.Context, tenantID, userID uuid.UUID, ev *events.Event) (*Poster, error) {
@@ -121,41 +144,49 @@ func (a *App) posterForEventOrCreate(ctx context.Context, tenantID, userID uuid.
 	return createPoster(ctx, a.pool, tenantID, &ev.ID, ev.Title, &userID)
 }
 
-// copyAndPhoto gets the content and hero for a batch, from the latest batch
-// when more is set, else from the model.
-func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Poster, ev *events.Event, brand *posterrender.Brand, more bool, progress Progress) (*posterrender.Content, *posterrender.PhotoUse, *Photo, error) {
+// copyAndPhoto gets the content and hero for a batch: from the latest batch
+// when more is set and the event's facts are the ones that batch was
+// written from, else from the model. A changed event always gets fresh
+// copy, so "more options" cannot carry last week's date forward.
+func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Poster, ev *events.Event, brand *posterrender.Brand, more bool, hash string, progress Progress) (*batchInputs, error) {
 	if more {
-		if c, hero, photo, ok := a.lastBatchInputs(ctx, tenantID, poster); ok {
-			return c, hero, photo, nil
+		if last, ok := a.lastBatchInputs(ctx, tenantID, poster); ok && last.hash == hash {
+			return &batchInputs{content: last.content, hero: last.hero, photo: last.photo}, nil
 		}
 	}
 	progress(StageCopy, nil)
 	content, err := a.writeCopy(ctx, tenantID, ev, brand)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	progress(StagePhoto, nil)
 	photo, hero, err := a.pickPhoto(ctx, tenantID, ev)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-	return content, hero, photo, nil
+	return &batchInputs{content: content, hero: hero, photo: photo, fresh: true}, nil
 }
 
-// lastBatchInputs reads the content and hero back from the poster's most
-// recent option, so another batch needs no model.
-func (a *App) lastBatchInputs(ctx context.Context, tenantID uuid.UUID, poster *Poster) (*posterrender.Content, *posterrender.PhotoUse, *Photo, bool) {
+type lastBatch struct {
+	content *posterrender.Content
+	hero    *posterrender.PhotoUse
+	photo   *Photo
+	hash    string
+}
+
+// lastBatchInputs reads the content, hero and facts hash back from the
+// poster's most recent option, so another batch needs no model.
+func (a *App) lastBatchInputs(ctx context.Context, tenantID uuid.UUID, poster *Poster) (*lastBatch, bool) {
 	versions, err := listVersions(ctx, a.pool, tenantID, poster.ID, true)
 	if err != nil {
-		return nil, nil, nil, false
+		return nil, false
 	}
 	for _, v := range versions {
 		if v.BatchID == nil || v.Content.Title == "" {
 			continue
 		}
 		c := v.Content
-		var hero *posterrender.PhotoUse
-		var photo *Photo
+		out := &lastBatch{content: &c, hash: v.FactsHash}
 		// The hero is the first photo of any photo-bearing option in the batch.
 		batch, _ := listBatch(ctx, a.pool, tenantID, *v.BatchID)
 		for _, b := range batch {
@@ -163,15 +194,15 @@ func (a *App) lastBatchInputs(ctx context.Context, tenantID uuid.UUID, poster *P
 				if id, err := uuid.Parse(b.Photos[0].ID); err == nil {
 					if p, err := getPhoto(ctx, a.pool, tenantID, id); err == nil {
 						use := b.Photos[0]
-						hero, photo = &use, p
+						out.hero, out.photo = &use, p
 					}
 				}
 				break
 			}
 		}
-		return &c, hero, photo, true
+		return out, true
 	}
-	return nil, nil, nil, false
+	return nil, false
 }
 
 // photoSet is the hero's folder: the generator borrows siblings from the
@@ -195,7 +226,7 @@ func (a *App) photoSet(ctx context.Context, tenantID uuid.UUID, hero *Photo) ([]
 
 // storeBatch saves the options as versions sharing a batch id and warms
 // the render cache with their PNGs.
-func (a *App) storeBatch(ctx context.Context, tenantID uuid.UUID, poster *Poster, brand *posterrender.Brand, content *posterrender.Content, res *posterrender.OptionsResponse, byID map[string]Template, noPhoto bool) (*GenerateResult, error) {
+func (a *App) storeBatch(ctx context.Context, tenantID uuid.UUID, poster *Poster, brand *posterrender.Brand, content *posterrender.Content, res *posterrender.OptionsResponse, byID map[string]Template, noPhoto bool, facts json.RawMessage, hash string) (*GenerateResult, error) {
 	if len(res.Options) == 0 {
 		reason := "no template could render this content inside the safe margins"
 		if len(res.Skipped) > 0 {
@@ -206,7 +237,7 @@ func (a *App) storeBatch(ctx context.Context, tenantID uuid.UUID, poster *Poster
 	batch := uuid.New()
 	out := &GenerateResult{Poster: poster, BatchID: batch, Skipped: len(res.Skipped), NoPhoto: noPhoto, Options: []Version{}}
 	for _, o := range res.Options {
-		in := VersionInput{PosterID: poster.ID, BatchID: &batch, Source: o.Source, Content: *content, Photos: o.Photos, Ground: o.Ground, Format: brand.PortraitFormat, Author: AuthorSystem}
+		in := VersionInput{PosterID: poster.ID, BatchID: &batch, Source: o.Source, Content: *content, Photos: o.Photos, Ground: o.Ground, Format: brand.PortraitFormat, Author: AuthorSystem, Facts: facts, FactsHash: hash}
 		if t, ok := byID[o.TemplateID]; ok {
 			in.TemplateID, in.TemplateVersionID = uuidPtr(t.ID), t.CurrentVersionID
 		}
