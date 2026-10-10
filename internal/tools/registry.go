@@ -68,6 +68,10 @@ type ExecContext struct {
 	ThreadTS string
 	Svc      *services.Services
 
+	// images collects pictures attached by the running handler; see
+	// AttachImage.
+	images []ToolImage
+
 	// LLM is the shared Anthropic client. Populated by agent.buildExecContext
 	// and the gated-tool resolve executor; tool tests leave it nil. Handlers
 	// that need a one-off Claude call (e.g. create_task's Haiku triage over
@@ -486,6 +490,40 @@ type ExecResult struct {
 	// path and a decision card was created instead of running the
 	// handler. The agent must not treat the action as performed.
 	Halted bool
+	// Images are pictures the handler attached for the model to look at
+	// (a poster render it must check before replying). The agent loop
+	// sends them as image blocks inside the tool_result; they are not
+	// persisted in session history.
+	Images []ToolImage
+}
+
+// ToolImage is one picture a tool hands back alongside its text.
+type ToolImage struct {
+	Mime string
+	Data []byte
+}
+
+// AttachImage adds a picture to the current tool call's result. Handlers
+// call it before returning; ExecuteWithResult moves the images onto the
+// ExecResult. At most four per call, and only common raster types, so a
+// single tool cannot flood the context.
+func (ec *ExecContext) AttachImage(mime string, data []byte) {
+	if len(ec.images) >= 4 || len(data) == 0 {
+		return
+	}
+	switch mime {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+	default:
+		return
+	}
+	ec.images = append(ec.images, ToolImage{Mime: mime, Data: data})
+}
+
+// takeImages returns and clears the attached images.
+func (ec *ExecContext) takeImages() []ToolImage {
+	out := ec.images
+	ec.images = nil
+	return out
 }
 
 // Execute runs a tool by name, or intercepts via the PolicyGate path.
@@ -578,8 +616,9 @@ func (r *Registry) ExecuteWithResult(ec *ExecContext, name string, input json.Ra
 		return ExecResult{Output: msg}, nil
 	}
 
+	ec.images = nil
 	out, err := def.Handler(ec, input)
-	return ExecResult{Output: out}, err
+	return ExecResult{Output: out, Images: ec.takeImages()}, err
 }
 
 // validateToolInput checks the raw JSON input against the tool's declared

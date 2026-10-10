@@ -224,7 +224,7 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 				sentMessage = true
 			}
 			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeToolResults, map[string]any{
-				"content": toolResults,
+				"content": withoutImages(toolResults),
 			})
 			messages = append(messages, anthropic.Message{Role: "user", Content: toolResults})
 			if sentMessage {
@@ -445,11 +445,7 @@ func (a *Agent) executeTools(ec *tools.ExecContext, registry *tools.Registry, re
 			slog.Info("tool result", "tool", toolUse.Name, "result", result, "halted", res.Halted, "session_id", sessionID)
 		}
 
-		toolResults = append(toolResults, anthropic.Content{
-			Type:      "tool_result",
-			ToolUseID: toolUse.ID,
-			Content:   result,
-		})
+		toolResults = append(toolResults, toolResultBlock(toolUse.ID, result, res.Images))
 
 		if res.Halted {
 			// The gate fired. Remaining tools in this same tool_use
@@ -766,4 +762,47 @@ func (s *statusTracker) cleanup(ctx context.Context) {
 	if s.msgTS != "" {
 		_ = s.slack.DeleteMessage(ctx, s.channel, s.msgTS)
 	}
+}
+
+// toolResultBlock builds a tool_result. With images, the content is an
+// array of a text block and image blocks (the shape the Messages API
+// accepts for vision inside tool results); without, it stays a string.
+func toolResultBlock(toolUseID, text string, images []tools.ToolImage) anthropic.Content {
+	if len(images) == 0 {
+		return anthropic.Content{Type: "tool_result", ToolUseID: toolUseID, Content: text}
+	}
+	parts := []anthropic.Content{{Type: "text", Text: text}}
+	for _, img := range images {
+		parts = append(parts, anthropic.ImageContent(img.Mime, img.Data))
+	}
+	return anthropic.Content{Type: "tool_result", ToolUseID: toolUseID, Content: parts}
+}
+
+// withoutImages is the persisted form of a tool_results turn: image bytes
+// are replaced by a note, so session history stays small and a replayed
+// conversation does not resend every render.
+func withoutImages(results []anthropic.Content) []anthropic.Content {
+	out := make([]anthropic.Content, len(results))
+	for i, r := range results {
+		parts, ok := r.Content.([]anthropic.Content)
+		if !ok {
+			out[i] = r
+			continue
+		}
+		var text strings.Builder
+		n := 0
+		for _, p := range parts {
+			switch p.Type {
+			case "text":
+				text.WriteString(p.Text)
+			case "image":
+				n++
+			}
+		}
+		if n > 0 {
+			fmt.Fprintf(&text, "\n[%d image(s) were attached to this result]", n)
+		}
+		out[i] = anthropic.Content{Type: "tool_result", ToolUseID: r.ToolUseID, Content: text.String()}
+	}
+	return out
 }
