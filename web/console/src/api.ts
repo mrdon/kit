@@ -1330,6 +1330,7 @@ export interface PostersSettingsRow {
   logo_folder_id: string;
   logo_map: Record<string, PosterLogoFile>;
   allow_stock_photos: boolean;
+  auto_sync: boolean;
   brand_hash: string;
   brand_problems: string[];
   brand_derived_at?: string;
@@ -1360,6 +1361,7 @@ export interface PostersSettingsBody {
   logo_folder_url: string;
   logo_map: Record<string, PosterLogoFile>;
   allow_stock_photos: boolean;
+  auto_sync: boolean;
 }
 
 export interface PosterSyncResult {

@@ -128,6 +128,7 @@ type settingsBody struct {
 	LogoFolder       string              `json:"logo_folder_url"`
 	LogoMap          map[string]LogoFile `json:"logo_map"`
 	AllowStockPhotos bool                `json:"allow_stock_photos"`
+	AutoSync         bool                `json:"auto_sync"`
 }
 
 var variantInName = regexp.MustCompile(`(?i)[-_ ](color|colour|white|black|forest|reversed|mono)\b`)
@@ -170,7 +171,7 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		autoMapLogos(files, logoMap)
 	}
-	s := Settings{TenantID: caller.TenantID, PhotoFolderID: photoID, LogoFolderID: logoID, LogoMap: logoMap, AllowStockPhotos: body.AllowStockPhotos}
+	s := Settings{TenantID: caller.TenantID, PhotoFolderID: photoID, LogoFolderID: logoID, LogoMap: logoMap, AllowStockPhotos: body.AllowStockPhotos, AutoSync: body.AutoSync}
 	if _, err := upsertSettings(r.Context(), a.pool, s); err != nil {
 		a.httpErr(w, err)
 		return

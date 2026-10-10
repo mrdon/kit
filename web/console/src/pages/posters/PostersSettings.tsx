@@ -23,6 +23,7 @@ export default function PostersSettings() {
   const [logoFolder, setLogoFolder] = useState('');
   const [logoFiles, setLogoFiles] = useState<PosterLogoCandidate[]>([]);
   const [allowStock, setAllowStock] = useState(false);
+  const [autoSync, setAutoSync] = useState(false);
   const [sync, setSync] = useState<PosterSyncResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export default function PostersSettings() {
     setLogoFolder(next.logo_folder_url);
     setLogoFiles(next.logo_files ?? []);
     setAllowStock(next.settings.allow_stock_photos);
+    setAutoSync(next.settings.auto_sync);
   };
 
   useEffect(() => {
@@ -81,6 +83,7 @@ export default function PostersSettings() {
         logo_folder_url: logoFolder.trim(),
         logo_map: logoMap(),
         allow_stock_photos: allowStock,
+        auto_sync: autoSync,
       });
       apply(r);
       setNote('Saved.');
@@ -231,6 +234,18 @@ export default function PostersSettings() {
               )}
             </section>
 
+            <section className="panel">
+              <h2 className="panel-title">Drive sync</h2>
+              <label className="check">
+                <input type="checkbox" checked={autoSync} onChange={(e) => setAutoSync(e.target.checked)} />
+                List the photo folder every hour
+              </label>
+              <p className="field-note">
+                Off by default. A harness indexing over MCP syncs for itself, and Sync photos now
+                is always available below. Listing never calls a model; it only costs Drive requests.
+              </p>
+            </section>
+
             <div className="drawer-actions">
               <button type="submit" className="btn" disabled={busy}>
                 {busy ? 'Saving…' : 'Save'}
@@ -256,7 +271,7 @@ export default function PostersSettings() {
             <p className="status-line">
               {st.settings.last_sync_at
                 ? `Last synced ${fmtDay(st.settings.last_sync_at)}.`
-                : 'Not synced yet; the hourly sync runs once a photo folder is saved.'}
+                : 'Not synced yet. Press Sync photos now, or turn on the hourly sync above.'}
               {st.settings.last_sync_error && (
                 <>
                   {' '}

@@ -9,10 +9,11 @@ Kit keeps an index of the photo library, not the photos. The description you wri
 
 ## The loop
 
-1. `list_pending_photos` for a batch (up to 48).
-2. `get_photo_sheet` with up to 12 ids at a time: one numbered contact sheet. Use `get_photo` on a single id when you need to place a focus point precisely or check a detail.
-3. `index_photos` with one entry per photo. Repeat until nothing is pending.
-4. `update_photo_index` later to correct one.
+1. `sync_poster_photos` once, so new Drive files are in the index. Kit does not poll Drive on its own unless an admin turned on auto-sync.
+2. `list_pending_photos` for a batch (up to 48).
+3. `get_photo_sheet` with up to 12 ids at a time: one numbered contact sheet. Use `get_photo` on a single id when you need to place a focus point precisely or check a detail.
+4. `index_photos` with one entry per photo. Repeat until nothing is pending.
+5. `update_photo_index` later to correct one.
 
 Do not skip a photo because it is poor. Index it and say why in `notes`; the chooser needs to know what to avoid.
 

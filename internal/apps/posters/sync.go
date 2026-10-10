@@ -18,7 +18,11 @@ import (
 // The sync lists the photo folder and keeps the index in step with it: new
 // or changed files get a pending row with size and provenance from the
 // renderer; files gone from Drive become removed. No model is involved;
-// describing photos is done from a harness over MCP (index_tools.go).
+// describing photos is done from a harness over MCP (core_photos.go).
+//
+// The hourly run is opt-in per workspace (Settings.AutoSync). The harness
+// loop starts with sync_poster_photos anyway, so by default Kit only lists
+// Drive when a person or a tool asks.
 
 // SyncResult is what one pass did.
 type SyncResult struct {
@@ -33,9 +37,9 @@ type SyncResult struct {
 func (a *App) registerScheduledTasks() {
 	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
 		Key:         "posters.sync_photos",
-		Description: "Sync the poster photo index with Google Drive",
+		Description: "Sync the poster photo index with Google Drive (when auto-sync is on)",
 		DefaultCron: "41 * * * *",
-		AppliesTo:   a.photoFolderConfigured,
+		AppliesTo:   a.autoSyncOn,
 		Run: func(ctx context.Context, job models.Job) error {
 			_, err := a.SyncPhotos(ctx, job.TenantID)
 			return err
@@ -63,12 +67,15 @@ func (a *App) enabledFor(ctx context.Context, tenantID uuid.UUID) bool {
 	return apps.IsEnabled(ctx, tenantID, AppName)
 }
 
-func (a *App) photoFolderConfigured(ctx context.Context, tenantID uuid.UUID) bool {
+// autoSyncOn is the hourly task's AppliesTo: the app is enabled, a photo
+// folder is set, and the admin switched the schedule on. Anything else
+// retires the row, so a workspace that never opted in has no job at all.
+func (a *App) autoSyncOn(ctx context.Context, tenantID uuid.UUID) bool {
 	if !a.enabledFor(ctx, tenantID) {
 		return false
 	}
 	s, err := getSettings(ctx, a.pool, tenantID)
-	return err == nil && s.PhotoFolderID != ""
+	return err == nil && s.PhotoFolderID != "" && s.AutoSync
 }
 
 // SyncPhotos runs one pass for a tenant. The result is also recorded on

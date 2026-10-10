@@ -131,3 +131,37 @@ func TestTemplatesBuiltinsAndTenantCopies(t *testing.T) {
 		t.Error("bogus status accepted")
 	}
 }
+
+// The hourly Drive sync is opt-in: a photo folder alone must not create
+// the scheduled row, only the folder plus the auto-sync switch.
+func TestAutoSyncIsOptIn(t *testing.T) {
+	f := newFixture(t)
+	if f.app.autoSyncOn(f.ctx, f.tenant.ID) {
+		t.Fatal("auto sync on with no settings row")
+	}
+	s := Settings{TenantID: f.tenant.ID, PhotoFolderID: "folder123456", LogoMap: map[string]LogoFile{}}
+	if _, err := upsertSettings(f.ctx, f.pool, s); err != nil {
+		t.Fatal(err)
+	}
+	if f.app.autoSyncOn(f.ctx, f.tenant.ID) {
+		t.Fatal("auto sync on with a folder but the switch off")
+	}
+	s.AutoSync = true
+	saved, err := upsertSettings(f.ctx, f.pool, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.AutoSync {
+		t.Fatal("auto_sync did not round-trip")
+	}
+	if !f.app.autoSyncOn(f.ctx, f.tenant.ID) {
+		t.Fatal("auto sync off with a folder and the switch on")
+	}
+	s.PhotoFolderID = ""
+	if _, err := upsertSettings(f.ctx, f.pool, s); err != nil {
+		t.Fatal(err)
+	}
+	if f.app.autoSyncOn(f.ctx, f.tenant.ID) {
+		t.Fatal("auto sync on with the switch on but no folder")
+	}
+}

@@ -30,22 +30,26 @@ type Settings struct {
 	LogoFolderID     string              `json:"logo_folder_id"`
 	LogoMap          map[string]LogoFile `json:"logo_map"`
 	AllowStockPhotos bool                `json:"allow_stock_photos"`
-	Brand            *posterrender.Brand `json:"brand,omitempty"`
-	BrandHash        string              `json:"brand_hash"`
-	BrandProblems    []string            `json:"brand_problems"`
-	BrandDerivedAt   *time.Time          `json:"brand_derived_at,omitempty"`
-	LastSyncAt       *time.Time          `json:"last_sync_at,omitempty"`
-	LastSyncError    string              `json:"last_sync_error"`
-	UpdatedAt        time.Time           `json:"updated_at"`
+	// AutoSync turns on the hourly Drive listing. Off by default: a harness
+	// indexing over MCP syncs for itself, and Kit should not poll Drive for
+	// a workspace nobody asked it to.
+	AutoSync       bool                `json:"auto_sync"`
+	Brand          *posterrender.Brand `json:"brand,omitempty"`
+	BrandHash      string              `json:"brand_hash"`
+	BrandProblems  []string            `json:"brand_problems"`
+	BrandDerivedAt *time.Time          `json:"brand_derived_at,omitempty"`
+	LastSyncAt     *time.Time          `json:"last_sync_at,omitempty"`
+	LastSyncError  string              `json:"last_sync_error"`
+	UpdatedAt      time.Time           `json:"updated_at"`
 }
 
-const settingsColumns = `tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos,
+const settingsColumns = `tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, auto_sync,
 	brand_json, brand_hash, brand_problems, brand_derived_at, last_sync_at, last_sync_error, updated_at`
 
 func scanSettings(row pgx.Row) (Settings, error) {
 	var s Settings
 	var logoMap, brand []byte
-	err := row.Scan(&s.TenantID, &s.PhotoFolderID, &s.LogoFolderID, &logoMap, &s.AllowStockPhotos,
+	err := row.Scan(&s.TenantID, &s.PhotoFolderID, &s.LogoFolderID, &logoMap, &s.AllowStockPhotos, &s.AutoSync,
 		&brand, &s.BrandHash, &s.BrandProblems, &s.BrandDerivedAt, &s.LastSyncAt, &s.LastSyncError, &s.UpdatedAt)
 	if err != nil {
 		return Settings{}, err
@@ -88,16 +92,17 @@ func upsertSettings(ctx context.Context, pool *pgxpool.Pool, s Settings) (Settin
 		return Settings{}, fmt.Errorf("encoding logo map: %w", err)
 	}
 	out, err := scanSettings(pool.QueryRow(ctx, `
-		INSERT INTO app_poster_settings (tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, updated_at)
-		VALUES ($1, $2, $3, $4, $5, now())
+		INSERT INTO app_poster_settings (tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, auto_sync, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
 			photo_folder_id = EXCLUDED.photo_folder_id,
 			logo_folder_id = EXCLUDED.logo_folder_id,
 			logo_map = EXCLUDED.logo_map,
 			allow_stock_photos = EXCLUDED.allow_stock_photos,
+			auto_sync = EXCLUDED.auto_sync,
 			updated_at = now()
 		RETURNING `+settingsColumns,
-		s.TenantID, s.PhotoFolderID, s.LogoFolderID, logoMap, s.AllowStockPhotos))
+		s.TenantID, s.PhotoFolderID, s.LogoFolderID, logoMap, s.AllowStockPhotos, s.AutoSync))
 	if err != nil {
 		return Settings{}, fmt.Errorf("saving poster settings: %w", err)
 	}

@@ -328,8 +328,9 @@ with a GIN full-text index over description, tags, folder and notes (the same
 
 Indexing is split so that **Kit never spends its own model on it**:
 
-- **Sync (Kit, no LLM).** A scheduled task (function lane, hourly, plus a "sync now"
-  button) lists the folder tree. New or changed files get a `pending` row with size,
+- **Sync (Kit, no LLM).** Listing the folder tree happens on "sync now", on the
+  `sync_poster_photos` tool, or hourly from a scheduled task (function lane) that is
+  off by default and switched on per workspace with the auto-sync setting. New or changed files get a `pending` row with size,
   orientation and C2PA verdict from `/inspect`. Files gone from Drive become `removed`
   (kept, so old poster versions can say why they can't re-render).
 - **Describe (Claude Code, over MCP).** Someone runs Claude Code against Kit's MCP
