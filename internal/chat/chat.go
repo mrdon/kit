@@ -104,6 +104,30 @@ type ExecuteInput struct {
 	// handler). They surface to the agent as a manifest it reads on demand
 	// via the read_attachment tool.
 	Attachments []agent.AttachmentRef
+
+	// Scope is an object the conversation is about that is not a card: a
+	// poster, a template. It keys the session like a card does (follow-ups
+	// attach), supplies the system suffix, and clamps the tools. When set,
+	// Card and ClientSessionID are ignored.
+	Scope *Scope
+}
+
+// Scope is an app-defined chat subject. The session key is
+// (App, Kind, ID, user), the same shape as card chat, so an app can read
+// the history back with CardThreadKey.
+type Scope struct {
+	App  string
+	Kind string
+	ID   string
+	// SystemSuffix is the app's instructions for this subject, rendered by
+	// the app from its own prompt template.
+	SystemSuffix string
+	// AllowedTools clamps the registry to exactly these names. Include
+	// reply_in_thread, or the agent has no way to answer.
+	AllowedTools []string
+	// Model overrides the model; empty means Sonnet, since scoped chat is
+	// tool-heavy editing work.
+	Model string
 }
 
 // Execute runs one chat turn for a (tenant, user, card) triple. It
@@ -120,11 +144,14 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 	if in.Text == "" && len(in.Attachments) == 0 {
 		return errors.New("text or attachment required")
 	}
-	if in.Card == nil && in.ClientSessionID == "" {
+	if in.Scope == nil && in.Card == nil && in.ClientSessionID == "" {
 		return errors.New("client_session_id required for quick chat")
 	}
 
 	thread := threadKey(in.Card, in.User.ID, in.ClientSessionID)
+	if in.Scope != nil {
+		thread = CardThreadKey(in.Scope.App, in.Scope.Kind, in.Scope.ID, in.User.ID)
+	}
 	session, err := resolveSession(ctx, in.Pool, in.Tenant.ID, in.User.ID, thread)
 	if err != nil {
 		slog.Warn("resolving chat session", "error", err, "tenant_id", in.Tenant.ID, "user_id", in.User.ID)
@@ -158,7 +185,20 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 			_ = emit(EventStatus, map[string]any{"status": string(StatusThinking)})
 		},
 	}
-	if in.Card != nil {
+	switch {
+	case in.Scope != nil:
+		// A scoped subject works like a card: the suffix carries the
+		// object, the window stays small, gated tools are dropped and the
+		// registry is clamped to the app's own tools.
+		runInput.SystemSuffix = in.Scope.SystemSuffix
+		runInput.HistoryWindow = ChatHistoryWindow
+		runInput.DropGatedTools = true
+		runInput.WidgetAllowedTools = in.Scope.AllowedTools
+		runInput.Model = in.Scope.Model
+		if runInput.Model == "" {
+			runInput.Model = anthropic.ModelSonnet
+		}
+	case in.Card != nil:
 		// Inject the card as a system suffix so it doesn't accumulate
 		// in the replayed message history when the user sends
 		// follow-ups on the same card.
@@ -186,7 +226,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 			// nuance Sonnet handles reliably and Haiku doesn't.
 			runInput.Model = anthropic.ModelSonnet
 		}
-	} else {
+	default:
 		runInput.SystemSuffix = buildQuickSystemSuffix()
 		if in.PageContext != "" {
 			runInput.SystemSuffix += "\n\n" + buildPageContextSuffix(in.PageContext)

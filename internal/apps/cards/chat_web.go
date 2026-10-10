@@ -2,17 +2,11 @@ package cards
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
-	"mime/multipart"
 	"net/http"
-	"strings"
 
-	"github.com/mrdon/kit/internal/agent"
 	"github.com/mrdon/kit/internal/apps/cards/shared"
-	store "github.com/mrdon/kit/internal/attachment"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/chat"
 	"github.com/mrdon/kit/internal/models"
@@ -93,115 +87,6 @@ func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-type chatExecuteRequest struct {
-	Text string `json:"text"`
-	// ClientSessionID is required for the quick-chat (card-less) path
-	// and ignored for card chat. The client mints a UUID on sheet-open
-	// so fresh per open / multi-turn within open works without server
-	// state.
-	ClientSessionID string `json:"client_session_id,omitempty"`
-	// PageContext is an optional human-readable description of where the
-	// user is in the web console (e.g. "the Tasks page"). Quick chat only;
-	// ignored for card chat. Drives the agent's "this"/"here" resolution.
-	PageContext string `json:"page_context,omitempty"`
-}
-
-// maxAttachments caps files per chat turn (the manifest + per-image cost
-// would otherwise be unbounded).
-const maxAttachments = 10
-
-// maxMultipartBytes bounds the whole multipart form in memory.
-const maxMultipartBytes = 60 << 20 // 60 MiB
-
-// readChatInput parses the chat-execute request. JSON bodies carry text
-// only; multipart bodies additionally carry files, which are stored
-// immediately and returned as agent attachment refs. On any failure it
-// writes the HTTP error and returns ok=false. Must run before the SSE
-// stream opens.
-func (a *CardsApp) readChatInput(w http.ResponseWriter, r *http.Request, caller *services.Caller) (req chatExecuteRequest, attachments []agent.AttachmentRef, ok bool) {
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		return a.readMultipartChatInput(w, r, caller)
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Warn("reading chat execute body", "error", err, "content_length", r.ContentLength)
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-		return req, nil, false
-	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Text == "" {
-		http.Error(w, "text required", http.StatusBadRequest)
-		return req, nil, false
-	}
-	return req, nil, true
-}
-
-func (a *CardsApp) readMultipartChatInput(w http.ResponseWriter, r *http.Request, caller *services.Caller) (req chatExecuteRequest, attachments []agent.AttachmentRef, ok bool) {
-	if a.enc == nil {
-		http.Error(w, "attachments not configured", http.StatusInternalServerError)
-		return req, nil, false
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxMultipartBytes)
-	if err := r.ParseMultipartForm(maxMultipartBytes); err != nil {
-		http.Error(w, "upload too large or malformed", http.StatusRequestEntityTooLarge)
-		return req, nil, false
-	}
-	req.Text = r.FormValue("text")
-	req.ClientSessionID = r.FormValue("client_session_id")
-	req.PageContext = r.FormValue("page_context")
-
-	files := r.MultipartForm.File["files"]
-	if len(files) > maxAttachments {
-		http.Error(w, "too many attachments", http.StatusRequestEntityTooLarge)
-		return req, nil, false
-	}
-	svc := store.NewService(a.pool, a.enc)
-	for _, fh := range files {
-		raw, err := readUpload(fh)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
-			return req, nil, false
-		}
-		mime := fh.Header.Get("Content-Type")
-		if mime == "" {
-			mime = "application/octet-stream"
-		}
-		att, err := svc.Store(r.Context(), caller.TenantID, caller.UserID, fh.Filename, mime, raw)
-		if err != nil {
-			slog.Warn("storing chat attachment", "error", err, "filename", fh.Filename)
-			http.Error(w, "could not store attachment", http.StatusInternalServerError)
-			return req, nil, false
-		}
-		attachments = append(attachments, agent.AttachmentRef{
-			ID: att.ID.String(), Filename: att.Filename, Mime: att.Mime, Size: att.Size,
-		})
-	}
-
-	if req.Text == "" && len(attachments) == 0 {
-		http.Error(w, "text or attachment required", http.StatusBadRequest)
-		return req, nil, false
-	}
-	return req, attachments, true
-}
-
-// readUpload reads one multipart file, enforcing the per-file size cap.
-func readUpload(fh *multipart.FileHeader) ([]byte, error) {
-	f, err := fh.Open()
-	if err != nil {
-		return nil, errors.New("bad upload")
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, store.MaxBytes+1))
-	if err != nil {
-		return nil, errors.New("bad upload")
-	}
-	if len(raw) > store.MaxBytes {
-		return nil, errors.New("attachment too large")
-	}
-	return raw, nil
-}
-
 // handleChatExecute runs one chat turn against a card and streams the
 // agent's progress as SSE events: status, tool, response, done.
 //
@@ -220,7 +105,7 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 	// Parse the request (JSON or multipart with attachments) BEFORE the SSE
 	// stream opens, so a 413/400 is a proper HTTP error rather than a
 	// mid-stream SSE event.
-	req, attachments, ok := a.readChatInput(w, r, caller)
+	req, attachments, ok := chat.ReadInput(w, r, a.pool, a.enc, caller)
 	if !ok {
 		return
 	}
@@ -350,23 +235,5 @@ func (a *CardsApp) handleChatExecute(w http.ResponseWriter, r *http.Request) {
 // per-tenant Slack client so agent tools that post to Slack
 // (post_to_channel, dm_user) still work for chat-initiated sessions.
 func (a *CardsApp) resolveChatContext(ctx context.Context, caller *services.Caller) (*models.Tenant, *models.User, *kitslack.Client, error) {
-	tenant, err := models.GetTenantByID(ctx, a.pool, caller.TenantID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if tenant == nil {
-		return nil, nil, nil, errors.New("tenant not found")
-	}
-	user, err := models.GetUserByID(ctx, a.pool, tenant.ID, caller.UserID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if user == nil {
-		return nil, nil, nil, errors.New("user not found")
-	}
-	botToken, err := a.enc.Decrypt(tenant.BotToken)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return tenant, user, kitslack.NewClient(botToken), nil
+	return chat.ResolveContext(ctx, a.pool, a.enc, caller)
 }
