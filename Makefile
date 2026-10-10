@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-build renderer-test renderer-typecheck renderer-clean
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -38,7 +38,7 @@ COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE?=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-ldflags "-X github.com/mrdon/kit/internal/buildinfo.Version=$(VERSION) -X github.com/mrdon/kit/internal/buildinfo.Commit=$(COMMIT) -X github.com/mrdon/kit/internal/buildinfo.Date=$(DATE)"
 
-build: app-build console-build ## Build the binary (includes frontend)
+build: app-build console-build renderer-build ## Build the binary (includes frontend + poster renderer)
 	@echo "Building $(BINARY_NAME)..."
 	@go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
@@ -66,6 +66,31 @@ app-build: $(WEB_DIR)/node_modules ## Build the cards PWA to web/app/dist
 
 app-clean: ## Remove frontend build output + shared node_modules
 	@rm -rf $(APP_DIR)/dist $(WEB_DIR)/node_modules
+
+# Poster renderer — a Node service under renderer/ that kit starts as a child
+# process (POSTER_RENDERER_DIR defaults to ./renderer when dist/server.js
+# exists). Its own package: the native modules (sharp, resvg, isolated-vm)
+# have nothing to do with the browser bundles.
+RENDERER_DIR=renderer
+
+$(RENDERER_DIR)/node_modules:
+	@cd $(RENDERER_DIR) && npm install
+
+renderer-init: ## Install poster renderer deps
+	@cd $(RENDERER_DIR) && npm install
+
+renderer-build: $(RENDERER_DIR)/node_modules ## Build the poster renderer to renderer/dist
+	@echo "Building poster renderer..."
+	@cd $(RENDERER_DIR) && npm run build
+
+renderer-typecheck: $(RENDERER_DIR)/node_modules ## Typecheck the poster renderer
+	@cd $(RENDERER_DIR) && npm run typecheck
+
+renderer-test: $(RENDERER_DIR)/node_modules ## Run the poster renderer's tests (offline; builds first)
+	@cd $(RENDERER_DIR) && npm test
+
+renderer-clean: ## Remove renderer build output + node_modules
+	@rm -rf $(RENDERER_DIR)/dist $(RENDERER_DIR)/node_modules
 
 # Console SPA — the desktop web UI at /{slug}/web; same workspace as the
 # PWA, so deps are already installed by app-init. dist/ is embedded via
@@ -229,6 +254,6 @@ init: ## Initialize development environment (install tools, download deps)
 	@echo ""
 	@echo "✓ Development environment initialized"
 
-prepush: format lint build ## Run before pushing (format, lint, build) — run `make test` separately
+prepush: format lint renderer-typecheck build ## Run before pushing (format, lint, build) — run `make test` and `make renderer-test` separately
 
 postpull: init ## Run after pulling (install tools and download dependencies)

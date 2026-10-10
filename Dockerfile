@@ -16,6 +16,17 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web/ ./
 RUN npm run build --workspaces --if-present
 
+# Poster renderer stage — installs the Node deps (isolated-vm compiles
+# against this image's node, which is why the runtime below is the same
+# node:22-alpine base) and bundles renderer/dist.
+FROM node:22-alpine AS renderer
+RUN apk add --no-cache python3 make g++
+WORKDIR /renderer
+COPY renderer/package.json renderer/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY renderer/ ./
+RUN npm run build && npm prune --omit=dev
+
 # Whisper build stage — compiles whisper-cli and downloads the model.
 # Pinned to a release tag so the layer cache is stable; bumping the tag
 # is the only thing that invalidates this stage.
@@ -58,8 +69,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -ldflags "-s -w -X github.com/mrdon/kit/internal/buildinfo.Version=$VERSION -X github.com/mrdon/kit/internal/buildinfo.Commit=$COMMIT -X github.com/mrdon/kit/internal/buildinfo.Date=$DATE" \
     -o /kit ./cmd/kit
 
-# Runtime stage
-FROM alpine:3.19
+# Runtime stage. node:22-alpine rather than bare alpine because kit runs the
+# poster renderer as a Node child process; same Node ABI as the renderer
+# stage, so its compiled modules load.
+FROM node:22-alpine
 
 # ffmpeg normalizes browser uploads to 16kHz mono wav; libstdc++ is the
 # whisper-cli runtime dep (whisper.cpp is C++).
@@ -68,9 +81,14 @@ RUN apk add --no-cache ca-certificates tzdata poppler-utils ffmpeg libstdc++
 COPY --from=builder /kit /usr/local/bin/kit
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper /ggml-base.en.bin /models/ggml-base.en.bin
+COPY --from=renderer /renderer/dist /renderer/dist
+COPY --from=renderer /renderer/node_modules /renderer/node_modules
+COPY --from=renderer /renderer/package.json /renderer/package.json
 
 ENV WHISPER_BIN=/usr/local/bin/whisper-cli \
-    WHISPER_MODEL=/models/ggml-base.en.bin
+    WHISPER_MODEL=/models/ggml-base.en.bin \
+    POSTER_RENDERER_DIR=/renderer \
+    POSTER_RENDERER_CACHE_DIR=/tmp/kit-poster-renderer
 
 EXPOSE 8488
 

@@ -1,0 +1,50 @@
+{
+  "hash": "test",
+  "tokens": {
+    "ink": "#171A14",
+    "forest": "#1C3D1B",
+    "sage": "#6B8F4E",
+    "amber": "#F5A81C",
+    "ember": "#E4571C",
+    "stone": "#D9D3C4",
+    "paper": "#F6F2E7"
+  },
+  "grounds": {
+    "paper": { "bg": "paper", "text": "ink", "label": "forest", "rule": "stone", "logo": "color" },
+    "ink": { "bg": "ink", "text": "paper", "label": "paper", "rule": "forest", "logo": "white" }
+  },
+  "accents": {
+    "amber": { "fill": "amber", "text": "ink" },
+    "ember": { "fill": "ember", "text": "paper" }
+  },
+  "accentRules": { "maxElements": 1, "together": false },
+  "pairs": [
+    { "fg": "ink", "bg": "paper" },
+    { "fg": "paper", "bg": "ink" },
+    { "fg": "paper", "bg": "forest" },
+    { "fg": "forest", "bg": "paper" },
+    { "fg": "amber", "bg": "ink" },
+    { "fg": "ink", "bg": "amber" },
+    { "fg": "ink", "bg": "stone" },
+    { "fg": "ink", "bg": "sage" },
+    { "fg": "paper", "bg": "sage", "minSizePx": 24 },
+    { "fg": "ember", "bg": "paper", "minSizePx": 24 },
+    { "fg": "paper", "bg": "ember", "minSizePx": 18 }
+  ],
+  "fonts": {
+    "display": { "family": "Archivo Narrow", "weights": [700], "advance": 0.47 },
+    "text": { "family": "Archivo", "weights": [400, 600] },
+    "mono": { "family": "IBM Plex Mono", "weights": [500] }
+  },
+  "formats": {
+    "feed": { "width": 1080, "height": 1080, "safe": { "top": 60, "right": 60, "bottom": 60, "left": 60 } },
+    "portrait": { "width": 1080, "height": 1350, "safe": { "top": 60, "right": 60, "bottom": 60, "left": 60 } },
+    "story": { "width": 1080, "height": 1920, "safe": { "top": 100, "right": 60, "bottom": 250, "left": 60 } },
+    "fbcover": { "width": 1640, "height": 856, "safe": { "top": 120, "right": 120, "bottom": 120, "left": 120 } },
+    "screen": { "width": 1920, "height": 1080, "safe": { "top": 64, "right": 64, "bottom": 64, "left": 64 } },
+    "hero": { "width": 2400, "height": 1200, "safe": { "top": 80, "right": 80, "bottom": 80, "left": 80 } }
+  },
+  "portraitFormat": "portrait",
+  "logos": {},
+  "bannedWords": ["hoppy hour", "craft beer"]
+}
