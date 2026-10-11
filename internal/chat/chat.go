@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -258,6 +259,22 @@ func threadKey(card *shared.StackItem, userID uuid.UUID, clientSessionID string)
 // user) pair.
 func CardThreadKey(sourceApp, kind, cardID string, userID uuid.UUID) string {
 	return fmt.Sprintf("chat-%s-%s-%s-%s", sourceApp, kind, cardID, userID)
+}
+
+// ResetScoped starts the next message on a scoped subject in a fresh
+// session. The old session keeps its events for audit; only its thread key
+// is retired, so resolveSession no longer finds it.
+func ResetScoped(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, app, kind, id string) error {
+	thread := CardThreadKey(app, kind, id, userID)
+	existing, err := models.FindSessionByThread(ctx, pool, tenantID, SentinelChannel, thread)
+	if err != nil {
+		return fmt.Errorf("finding chat session: %w", err)
+	}
+	if existing == nil {
+		return nil
+	}
+	retired := fmt.Sprintf("%s#reset-%d", thread, time.Now().Unix())
+	return models.UpdateSessionThreadTS(ctx, pool, tenantID, existing.ID, retired)
 }
 
 // resolveSession looks up an existing chat session for this (card, user)

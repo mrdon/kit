@@ -322,6 +322,7 @@ export default function PosterDetail() {
 
           <PosterChat
             executeUrl={`/${SLUG}/api/posters/${id}/chat/execute`}
+            resetUrl={`/${SLUG}/api/posters/${id}/chat/reset`}
             title="Edit with Kit"
             hint='Any change, copy included: "fix the typo in the title", "move the photo left", "make it feel like autumn".'
             placeholder="What should change?"

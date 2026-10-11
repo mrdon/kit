@@ -36,6 +36,26 @@ func registerChatRoutes(mux apps.Mux, a *App) {
 	route := func(h http.HandlerFunc) http.Handler { return console.JSON(a.pool, a.signer, h) }
 	mux.Handle("POST /{slug}/api/posters/{id}/chat/execute", route(a.handlePosterChat))
 	mux.Handle("POST /{slug}/api/posters/templates/{id}/chat/execute", route(a.handleTemplateChat))
+	mux.Handle("POST /{slug}/api/posters/{id}/chat/reset", route(a.handleChatReset("poster")))
+	mux.Handle("POST /{slug}/api/posters/templates/{id}/chat/reset", route(a.handleChatReset("template")))
+}
+
+// handleChatReset forgets the conversation on a poster or template, so the
+// next message starts clean: the way out when the model has talked itself
+// into a corner or the history is full of a direction the user dropped.
+func (a *App) handleChatReset(kind string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		caller := auth.CallerFromContext(r.Context())
+		id, ok := pathID(w, r, "id")
+		if !ok {
+			return
+		}
+		if err := chat.ResetScoped(r.Context(), a.pool, caller.TenantID, caller.UserID, AppName, kind, id.String()); err != nil {
+			a.httpErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	}
 }
 
 const maxChatTextBytes = 8 * 1024

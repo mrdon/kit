@@ -44,6 +44,8 @@ export type UseChatStreamResult = {
   // where the user bubble was rendered before send). Exported for
   // flexibility but not used by the default composer today.
   retry: (turnKey: string) => void;
+  // Drops the local transcript (after the server forgot the session).
+  clear: () => void;
 };
 
 export type ChatStreamOptions = {
@@ -215,5 +217,8 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
     [turns, updateTurn, runExecute],
   );
 
-  return { turns, busy, send, stop, retry };
+  // Forget the transcript on this side; the caller tells the server.
+  const clear = useCallback(() => setTurns([]), []);
+
+  return { turns, busy, send, stop, retry, clear };
 }

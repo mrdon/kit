@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import ChatTranscript from '@chat/ChatTranscript';
 import ChatComposer from '@chat/ChatComposer';
 import { useChatStream } from '@chat/useChatStream';
+import { apiPost } from '../../api';
 import { SLUG } from '../../workspace';
 
 // The chat panel on a poster or template page. The shared widget's
@@ -15,8 +16,11 @@ export default function PosterChat({
   placeholder,
   hint,
   onDone,
+  resetUrl,
 }: {
   executeUrl: string;
+  // POST here forgets the server-side conversation; the panel then clears.
+  resetUrl?: string;
   title: string;
   placeholder: string;
   // One line under the title saying what kind of ask works here.
@@ -31,16 +35,40 @@ export default function PosterChat({
     }),
     [],
   );
-  const { turns, busy, send, stop, retry } = useChatStream({
+  const { turns, busy, send, stop, retry, clear } = useChatStream({
     executeUrl,
     loginUrl: urls.loginUrl,
     onDone,
   });
+  const [resetting, setResetting] = useState(false);
+  const startOver = async () => {
+    if (!resetUrl) return;
+    setResetting(true);
+    try {
+      await apiPost(resetUrl.replace(`/${SLUG}/api`, ''), {});
+      clear();
+    } finally {
+      setResetting(false);
+    }
+  };
 
   return (
     <aside className="poster-chat" aria-label={title}>
       <header className="poster-chat-head">
-        <div className="poster-chat-title">{title}</div>
+        <div className="poster-chat-title">
+          {title}
+          {resetUrl && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm poster-chat-reset"
+              disabled={busy || resetting}
+              onClick={startOver}
+              title="Forget this conversation and start clean. The poster and its versions stay."
+            >
+              New conversation
+            </button>
+          )}
+        </div>
         {hint && <div className="poster-chat-hint">{hint}</div>}
       </header>
       {turns.length === 0 ? (

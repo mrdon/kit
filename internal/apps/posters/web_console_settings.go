@@ -2,6 +2,7 @@ package posters
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -92,8 +93,46 @@ func (a *App) settingsPayload(ctx context.Context, tenantID uuid.UUID) (*setting
 	}
 	if s.LogoFolderID != "" {
 		p.LogoFiles, p.LogoError = a.logoFiles(ctx, s)
+		// Map by filename whenever a wanted variant is still missing, not
+		// only on Save: the mapping rule can improve after a folder was
+		// saved, and the page should show the result without a second click.
+		if p.LogoError == "" && a.mapMissingLogos(ctx, &s, p.LogoFiles, p.LogoVariants) {
+			p.Settings = s
+			p.LogoFiles, p.LogoError = a.logoFiles(ctx, s)
+		}
 	}
 	return p, nil
+}
+
+// mapMissingLogos runs the filename mapping against the folder's files for
+// any wanted variant without a file, persists a change, and says whether
+// it made one.
+func (a *App) mapMissingLogos(ctx context.Context, s *Settings, files []logoCandidate, wanted []string) bool {
+	missing := false
+	for _, v := range wanted {
+		if cur, ok := s.LogoMap[v]; !ok || cur.FileID == "" {
+			missing = true
+		}
+	}
+	if !missing || len(files) == 0 {
+		return false
+	}
+	drive := make([]DriveFile, 0, len(files))
+	for _, f := range files {
+		drive = append(drive, DriveFile{ID: f.FileID, Name: f.Name, Modified: f.Modified, Mime: "image/"})
+	}
+	before := len(s.LogoMap)
+	autoMapLogos(drive, s.LogoMap, wanted)
+	if len(s.LogoMap) == before {
+		return false
+	}
+	saved, err := upsertSettings(ctx, a.pool, *s)
+	if err != nil {
+		slog.Warn("posters: saving logo mapping", "error", err)
+		return false
+	}
+	*s = saved
+	return true
 }
 
 // logoVariants are the variant names the grounds call for, so the mapping

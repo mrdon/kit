@@ -240,6 +240,7 @@ export default function PosterTemplateDetail() {
 
           <PosterChat
             executeUrl={`/${SLUG}/api/posters/templates/${id}/chat/execute`}
+            resetUrl={`/${SLUG}/api/posters/templates/${id}/chat/reset`}
             title="Edit with Kit"
             hint={
               builtin
