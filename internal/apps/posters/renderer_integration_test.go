@@ -69,7 +69,7 @@ func TestRendererEndToEnd(t *testing.T) {
 	if len(res.PNG) < 1000 || string(res.PNG[1:4]) != "PNG" {
 		t.Fatalf("png = %d bytes", len(res.PNG))
 	}
-	if res.Meta == nil || res.Meta.Name != "Type" {
+	if res.Meta == nil || res.Meta.Name != "Masthead" {
 		t.Errorf("meta = %+v", res.Meta)
 	}
 
@@ -93,8 +93,9 @@ func TestRendererEndToEnd(t *testing.T) {
 	// Options over the real generator: seven type-only candidates exist
 	// (type and when, two grounds each) so we ask for four.
 	var templates []posterrender.PlannedTemplate
+	// Every layout that stands without a photo: a type-only event's batch.
 	for _, b := range bs {
-		if b.Meta.Photos.Max == 0 {
+		if b.Meta.Photos.Min == 0 {
 			templates = append(templates, posterrender.PlannedTemplate{ID: b.Key, Source: b.Source, Weight: 1, Meta: b.Meta})
 		}
 	}

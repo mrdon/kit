@@ -66,9 +66,9 @@ func TestBuiltins(t *testing.T) {
 		}
 		t.Fatalf("builtins = %v", keys)
 	}
-	strip := ts[5]
-	if strip.Meta.Photos.Min != 3 || strip.Meta.Name != "Strip" || len(strip.Meta.Needs) != 2 {
-		t.Errorf("strip meta = %+v", strip.Meta)
+	masthead := ts[5]
+	if masthead.Meta.Photos.Max != 0 || masthead.Meta.Name != "Masthead" || len(masthead.Meta.Needs) != 2 {
+		t.Errorf("masthead meta = %+v", masthead.Meta)
 	}
 }
 

@@ -254,6 +254,6 @@ init: ## Initialize development environment (install tools, download deps)
 	@echo ""
 	@echo "✓ Development environment initialized"
 
-prepush: format lint renderer-typecheck build ## Run before pushing (format, lint, build) — run `make test` and `make renderer-test` separately
+prepush: format lint test renderer-test build ## Run before pushing: format, lint, Go tests, renderer tests, build (CLAUDE.md promises tests here; skipping them let a failing test ship on 2026-10-11)
 
 postpull: init ## Run after pulling (install tools and download dependencies)

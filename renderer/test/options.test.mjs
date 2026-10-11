@@ -34,10 +34,11 @@ test("seven options spread template, ground and photo, and every one is a self-c
   assert.ok(r.options.some((o) => o.ground === "ink") && r.options.some((o) => o.ground === "paper"));
   // The pool is the hero's folder: the photo from "other" never appears.
   for (const o of r.options) assert.ok(!o.photos.some((p) => p.id === "x"));
-  // A photo template got the hero.
+  // Photo templates take the hero and its set in turn; the hero leads one of them.
+  assert.ok(r.options.some((o) => o.photos[0]?.id === "p1"));
   const marquee = r.options.find((o) => o.templateId === "marquee");
   assert.ok(marquee);
-  assert.equal(marquee.photos[0].id, "p1");
+  assert.equal(marquee.photos.length, 1);
   // Each option re-renders from its own source alone.
   for (const o of r.options) {
     const again = await service.render({ kind: "poster", source: o.source, format: "portrait", brand, photos });
