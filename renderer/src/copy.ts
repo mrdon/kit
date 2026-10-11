@@ -21,7 +21,9 @@ const BANNED_PATTERNS: Array<[RegExp, string]> = [
   [/\$\d+\.00\b/, "empty decimals in a price; write $5"],
   [/\bwhether you'?re\b/i, "'Whether you're X or Y'"],
   [/\bit'?s not just\b|\bthis isn'?t\b/i, "'It's not just X, it's Y'"],
-  [/\b[A-Z]{3,}\b/, "ALL CAPS word"],
+  // Five or more capitals is shouting; shorter runs are the acronyms event
+  // copy is full of (NFL, IPA, BBQ, NCAA) and pass.
+  [/\b[A-Z]{5,}\b/, "ALL CAPS word"],
   [/\p{Extended_Pictographic}/u, "emoji in a graphic"],
 ];
 

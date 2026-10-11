@@ -12,6 +12,8 @@ test("copy check catches the mechanical tells and the tenant's own banned words"
   assert.match(text, /ALL CAPS/);
   assert.match(text, /amazing/);
   assert.deepEqual(service.copyCheck(content, brand).problems, []);
+  // Acronyms are not shouting.
+  assert.deepEqual(service.copyCheck({ ...content, eyebrow: "NFL Sundays", title: "Broncos at the LA Chargers" }, brand).problems, []);
 });
 
 test("inspect reports size, orientation and a provenance verdict", async () => {
