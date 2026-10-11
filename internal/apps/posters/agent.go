@@ -48,13 +48,3 @@ func (a *App) registerAgentTools(ctx context.Context, r *tools.Registry, caller 
 		})
 	}
 }
-
-// stockAllowed reads the tenant switch that decides whether the agent
-// gets the Pixabay tool at all.
-func (a *App) stockAllowed(ctx context.Context, caller *services.Caller) bool {
-	if caller == nil || a.pool == nil || !a.pixabay.enabled() {
-		return false
-	}
-	s, err := getSettings(ctx, a.pool, caller.TenantID)
-	return err == nil && s.AllowStockPhotos
-}

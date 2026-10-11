@@ -96,7 +96,7 @@ func newFixture(t *testing.T) *fixture {
 	llm := &fakeLLM{reply: cannedReply}
 	app := &App{
 		pool: pool, svc: services.New(pool, enc, "http://kit.test", nil), enc: enc, llm: llm,
-		renderer: fake, cache: newRenderCache(nil), pixabay: newPixabay("", nil),
+		renderer: fake, cache: newRenderCache(nil), pixabay: newPixabay(nil),
 		eventsSvc: func() *events.Service { return evs },
 	}
 	app.installBuiltins(ctx)

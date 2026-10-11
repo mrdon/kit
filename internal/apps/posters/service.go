@@ -63,7 +63,11 @@ func (a *App) imageRefsFor(ctx context.Context, tenantID uuid.UUID, source strin
 			continue
 		}
 		seen[m[0]] = true
-		s, err := a.pixabay.Lookup(ctx, m[1])
+		key, kerr := a.pixabayKey(ctx, tenantID)
+		if kerr != nil {
+			return nil, kerr
+		}
+		s, err := a.pixabay.Lookup(ctx, key, m[1])
 		if err != nil {
 			continue
 		}

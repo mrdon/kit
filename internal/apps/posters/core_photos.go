@@ -48,7 +48,11 @@ func (a *App) coreStockPhotos(ctx context.Context, caller *services.Caller, raw 
 	if !a.stockAllowed(ctx, caller) {
 		return nil, invalid("stock photos are not allowed in this workspace; an admin can turn them on in Posters settings")
 	}
-	hits, err := a.pixabay.Search(ctx, in.Query)
+	key, err := a.pixabayKey(ctx, caller.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	hits, err := a.pixabay.Search(ctx, key, in.Query)
 	if err != nil {
 		return nil, err
 	}

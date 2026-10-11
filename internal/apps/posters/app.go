@@ -27,6 +27,7 @@ import (
 	"github.com/mrdon/kit/internal/anthropic"
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/events"
+	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/chat"
 	"github.com/mrdon/kit/internal/crypto"
@@ -43,6 +44,7 @@ var instance *App
 func init() {
 	instance = &App{chatLimiter: chat.NewExecuteLimiter()}
 	apps.Register(instance)
+	integrations.RegisterTypeSpec(stockTypeSpec())
 }
 
 // App is the posters feature.
@@ -57,8 +59,11 @@ type App struct {
 	stop     func()
 	cache    *renderCache
 	pixabay  *pixabayClient
-	driveKey string
-	baseURL  string
+	// serverPixabayKey is the operator-wide fallback (PIXABAY_API_KEY); a
+	// workspace key on its settings row wins.
+	serverPixabayKey string
+	driveKey         string
+	baseURL          string
 	// eventsSvc overrides how the events service is found; tests set it.
 	eventsSvc func() *events.Service
 	// chatLimiter is the same per-user window and in-flight cap card chat
@@ -98,7 +103,8 @@ func Configure(ctx context.Context, svc *services.Services, enc *crypto.Encrypto
 	a := instance
 	a.svc, a.enc, a.signer, a.llm, a.agent = svc, enc, signer, llm, ag
 	a.cache = newRenderCache(rdb)
-	a.pixabay = newPixabay(cfg.PixabayKey, rdb)
+	a.pixabay = newPixabay(rdb)
+	a.serverPixabayKey = cfg.PixabayKey
 	a.driveKey = cfg.DriveKey
 	a.baseURL = cfg.BaseURL
 	cfg.Renderer.DriveAPIKey = cfg.DriveKey

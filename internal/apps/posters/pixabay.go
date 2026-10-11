@@ -17,10 +17,11 @@ import (
 	"github.com/mrdon/kit/internal/posterrender"
 )
 
-// Pixabay is the one stock source, and only when a tenant turns it on.
-// Terms that shape this code: responses are cached 24 hours, images are
-// downloaded rather than hotlinked (the renderer does that), the agent
-// names Pixabay when it uses one, and 100 requests a minute per key.
+// Pixabay is the one stock source, and only when a tenant turns it on and
+// supplies a key (stock.go). Terms that shape this code: responses are
+// cached 24 hours, images are downloaded rather than hotlinked (the
+// renderer does that), the agent names Pixabay when it uses one, and 100
+// requests a minute per key.
 // Without approved full API access the largest size is largeImageURL at
 // 1280px: fine for 1080 canvases, soft on a 2400px hero.
 
@@ -46,16 +47,13 @@ func (s StockPhoto) Ref() posterrender.ImageRef {
 }
 
 type pixabayClient struct {
-	key  string
 	rdb  *redis.Client
 	http *http.Client
 }
 
-func newPixabay(key string, rdb *redis.Client) *pixabayClient {
-	return &pixabayClient{key: key, rdb: rdb, http: &http.Client{Timeout: 20 * time.Second}}
+func newPixabay(rdb *redis.Client) *pixabayClient {
+	return &pixabayClient{rdb: rdb, http: &http.Client{Timeout: 20 * time.Second}}
 }
-
-func (p *pixabayClient) enabled() bool { return p != nil && p.key != "" }
 
 type pixabayHit struct {
 	ID            int    `json:"id"`
@@ -84,10 +82,11 @@ func toStock(h pixabayHit) StockPhoto {
 	return StockPhoto{ID: strconv.Itoa(h.ID), Tags: h.Tags, Width: h.ImageWidth, Height: h.ImageHeight, Preview: h.PreviewURL, Large: large, PageURL: h.PageURL, User: h.User, Likes: h.Likes, Comments: h.Comments}
 }
 
-// query runs one API call through the 24h cache.
-func (p *pixabayClient) query(ctx context.Context, cacheKey string, params url.Values) ([]StockPhoto, error) {
-	if !p.enabled() {
-		return nil, errors.New("stock photos are not configured (PIXABAY_API_KEY)")
+// query runs one API call through the 24h cache. Results do not depend on
+// whose key made the call, so the cache is shared.
+func (p *pixabayClient) query(ctx context.Context, key, cacheKey string, params url.Values) ([]StockPhoto, error) {
+	if key == "" {
+		return nil, errors.New("stock photos need a Pixabay API key; an admin adds one in Posters settings")
 	}
 	if p.rdb != nil {
 		if b, err := p.rdb.Get(ctx, cacheKey).Bytes(); err == nil {
@@ -97,7 +96,7 @@ func (p *pixabayClient) query(ctx context.Context, cacheKey string, params url.V
 			}
 		}
 	}
-	params.Set("key", p.key)
+	params.Set("key", key)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://pixabay.com/api/?"+params.Encode(), nil)
 	res, err := p.http.Do(req)
 	if err != nil {
@@ -109,7 +108,7 @@ func (p *pixabayClient) query(ctx context.Context, cacheKey string, params url.V
 		return nil, fmt.Errorf("the Pixabay rate limit was reached; try again in %s seconds", res.Header.Get("X-RateLimit-Reset"))
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the Pixabay API returned %d", res.StatusCode)
+		return nil, fmt.Errorf("the Pixabay API returned %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var pr pixabayResponse
 	if err := json.Unmarshal(body, &pr); err != nil {
@@ -128,22 +127,22 @@ func (p *pixabayClient) query(ctx context.Context, cacheKey string, params url.V
 }
 
 // Search runs a photo search.
-func (p *pixabayClient) Search(ctx context.Context, query string) ([]StockPhoto, error) {
+func (p *pixabayClient) Search(ctx context.Context, key, query string) ([]StockPhoto, error) {
 	query = strings.TrimSpace(query)
 	q := url.Values{}
 	q.Set("q", query)
 	q.Set("image_type", "photo")
 	q.Set("safesearch", "true")
 	q.Set("per_page", "20")
-	return p.query(ctx, "posters:pixabay:"+strings.ToLower(query), q)
+	return p.query(ctx, key, "posters:pixabay:"+strings.ToLower(query), q)
 }
 
 // Lookup resolves a pixabay:<id> reference to a current download URL.
-func (p *pixabayClient) Lookup(ctx context.Context, id string) (*StockPhoto, error) {
+func (p *pixabayClient) Lookup(ctx context.Context, key, id string) (*StockPhoto, error) {
 	id = strings.TrimPrefix(id, pixabayPrefix)
 	q := url.Values{}
 	q.Set("id", id)
-	hits, err := p.query(ctx, "posters:pixabay:id:"+id, q)
+	hits, err := p.query(ctx, key, "posters:pixabay:id:"+id, q)
 	if err != nil {
 		return nil, err
 	}

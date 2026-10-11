@@ -474,7 +474,7 @@ monkey fails validation regardless of how the code is written.
 ### Pixabay
 
 - `GET https://pixabay.com/api/?key=…&q=…&image_type=photo&safesearch=true&per_page=20`.
-  Kit-wide key in env (`PIXABAY_API_KEY`).
+  Per-workspace key, connected on the Integrations page like other services; `PIXABAY_API_KEY` in env is a server-wide fallback.
 - **No approval step and no import.** Whether stock is allowed is the tenant setting;
   the agent decides which result to use. A poster's source refers to the Pixabay id;
   Kit looks up a current download URL (from the 24h cache, else the API) when rendering.

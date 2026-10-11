@@ -75,7 +75,7 @@ func (a *App) settingsPayload(ctx context.Context, tenantID uuid.UUID) (*setting
 		Settings: s, PhotoFolder: folderURL(s.PhotoFolderID), LogoFolder: folderURL(s.LogoFolderID),
 		Brand: brand, FontProblems: []string{}, LogoFiles: []logoCandidate{}, LogoVariants: []string{},
 		Counts:        map[string]int{"pending": counts[PhotoPending], "indexed": counts[PhotoIndexed], "removed": counts[PhotoRemoved]},
-		RendererReady: a.RendererReady(ctx), RendererConfigured: a.renderer != nil, StockEnabled: a.pixabay.enabled(),
+		RendererReady: a.RendererReady(ctx), RendererConfigured: a.renderer != nil, StockEnabled: a.stockConfigured(ctx, tenantID),
 		IndexPrompt: "Load the indexing-poster-photos skill, then list_pending_photos and describe them in batches with get_photo_sheet and index_photos until none are pending.",
 	}
 	if brand.Brand != nil {

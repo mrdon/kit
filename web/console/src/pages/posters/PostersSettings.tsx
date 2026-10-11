@@ -230,7 +230,10 @@ export default function PostersSettings() {
                 layouts rather than a photo of something else.
               </p>
               {!st.stock_configured && (
-                <p className="field-note">Not available: this server has no Pixabay key configured.</p>
+                <p className="field-note">
+                  Not available yet: connect Pixabay on the{' '}
+                  <Link to="/admin/integrations">Integrations</Link> page first. Keys are free from a Pixabay account.
+                </p>
               )}
             </section>
 

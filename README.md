@@ -61,7 +61,7 @@ make dev              # start with hot reload
 | `POSTER_RENDERER_DIR` | No | Built poster renderer (`renderer/`); Kit runs it as a child process. Defaults to `./renderer` when `renderer/dist/server.js` exists; the Docker image sets it |
 | `POSTER_RENDERER_URL` / `POSTER_RENDERER_TOKEN` | No | Use a renderer running elsewhere instead of a child process |
 | `GDRIVE_API_KEY` | No | Google API key (Drive API only) for listing and downloading the poster photo folders; without it the public folder page is scraped |
-| `PIXABAY_API_KEY` | No | Enables the stock-photo tool for workspaces that turn it on |
+| `PIXABAY_API_KEY` | No | Server-wide fallback Pixabay key; workspaces normally connect Pixabay on the Integrations page |
 
 ## Slack App Setup
 
