@@ -142,6 +142,8 @@ export interface PosterUpdateResult {
 export interface PosterTemplateMeta {
   name: string;
   description: string;
+  /** How to use the layout, written by whoever made it. */
+  prompt?: string;
   photos: { min: number; max: number };
   needs: string[] | null;
 }

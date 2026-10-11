@@ -4,6 +4,7 @@ import { Eyebrow, FactsLine, Logo, Photo, Text, fitTitle, font, grounds, logoWid
 export const meta = {
   name: "Marquee",
   description: "Photo on top, a centred panel of copy below, logo bottom-centre: the taproom poster, the facts as one line",
+  prompt: "The everyday taproom poster: photo on top, centred copy below, facts as one line. Works for almost any event with one decent photo. Prefer a landscape photo with the subject in the middle. Put the time and the one important fact in details.",
   photos: { min: 1, max: 1 },
   needs: ["eyebrow", "title"],
 };
@@ -27,7 +28,10 @@ export default function Template({ content, format, photos, ground, accent }: Te
     fontFamily: font.text,
   } as const;
   const panelW = tall ? inner : Math.round(width * 0.5 - safe.right - pad);
-  const titleSize = fitTitle(content.title, panelW * 0.92, Math.round((tall ? 150 : 120) * s), tall ? 2 : 3);
+  const titleSize = fitTitle(content.title, panelW * 0.92, Math.round((tall ? 124 : 110) * s), 2);
+  // The panel has room for a long summary or for two details, not both;
+  // the facts line wins, since that is what a poster is for.
+  const summary = content.summary && !(tall && content.details.length >= 2 && content.summary.length > 90) ? content.summary : "";
   const panel = (
     <div
       style={{
@@ -58,9 +62,9 @@ export default function Template({ content, format, photos, ground, accent }: Te
       >
         <Text>{content.title}</Text>
       </h1>
-      {content.summary ? (
-        <p style={{ margin: `${Math.round(24 * s)}px 0 0`, fontSize: Math.round(32 * s), lineHeight: 1.4, maxWidth: panelW * 0.8, textWrap: "balance" }}>
-          <Text>{content.summary}</Text>
+      {summary ? (
+        <p style={{ margin: `${Math.round(20 * s)}px 0 0`, fontSize: Math.round(30 * s), lineHeight: 1.35, maxWidth: panelW * 0.8, textWrap: "balance" }}>
+          <Text>{summary}</Text>
         </p>
       ) : null}
       <FactsLine content={content} size={Math.round(32 * s)} style={{ marginTop: Math.round(28 * s), maxWidth: panelW * 0.9 }} />
@@ -70,15 +74,15 @@ export default function Template({ content, format, photos, ground, accent }: Te
         </p>
       ) : null}
       </div>
-      <div style={{ display: "flex", marginTop: "auto", paddingTop: Math.round(36 * s) }}>
-        <Logo variant={g.logo} width={logoWidth(s)} />
+      <div style={{ display: "flex", marginTop: "auto", paddingTop: Math.round(28 * s), flexShrink: 0 }}>
+        <Logo variant={g.logo} width={Math.round(logoWidth(s) * 0.8)} />
       </div>
     </div>
   );
   if (tall) {
     return (
       <div style={canvas}>
-        <Photo photo={photos[0]} style={{ height: Math.round(height * (height > width * 1.5 ? 0.5 : 0.52)), flexShrink: 0 }} />
+        <Photo photo={photos[0]} style={{ height: Math.round(height * (height > width * 1.5 ? 0.46 : 0.44)), flexShrink: 0 }} />
         {panel}
       </div>
     );

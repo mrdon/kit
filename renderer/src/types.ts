@@ -92,6 +92,9 @@ export type Content = {
 export type TemplateMeta = {
   name: string;
   description: string;
+  // Guidance for a model using the layout: purpose, photos that suit it,
+  // what to adjust, what to leave alone. Optional.
+  prompt?: string;
   photos: { min: number; max: number };
   needs: string[];
 };

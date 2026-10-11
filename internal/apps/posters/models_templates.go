@@ -278,6 +278,18 @@ func deleteBuiltinsExcept(ctx context.Context, pool *pgxpool.Pool, keys []string
 	return int(tag.RowsAffected()), nil
 }
 
+// deleteTemplate removes a workspace template and its versions.
+func deleteTemplate(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) error {
+	tag, err := pool.Exec(ctx, `DELETE FROM app_poster_templates WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("deleting template: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func setTemplateStatus(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, status TemplateStatus) error {
 	tag, err := pool.Exec(ctx, `UPDATE app_poster_templates SET status = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id, string(status))
 	if err != nil {

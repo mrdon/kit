@@ -119,6 +119,7 @@ export default function PosterTemplateDetail() {
           {t && <TemplateStatusBadges t={t} />}
         </div>
         {t?.description && <p className="page-sub">{t.description}</p>}
+        {t?.meta?.prompt && <p className="field-note">How to use it: {t.meta.prompt}</p>}
       </div>
 
       {note && (

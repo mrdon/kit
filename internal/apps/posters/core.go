@@ -70,6 +70,8 @@ func (a *App) dispatchCore(ctx context.Context, caller *services.Caller, name st
 		return a.coreEditTemplate(ctx, caller, raw)
 	case "create_template":
 		return a.coreCreateTemplate(ctx, caller, raw)
+	case "delete_template":
+		return a.coreDeleteTemplate(ctx, caller, raw)
 	case "set_template_status":
 		return a.coreSetTemplateStatus(ctx, caller, raw)
 	case "list_pending_photos":

@@ -132,7 +132,7 @@ var posterTools = []services.ToolMeta{
 	},
 	{
 		Name:        "get_template",
-		Description: "Read a template's current TSX source and its version history.",
+		Description: "Read a template: its meta (name, description, the prompt that says how to use it, photos needed, content needed), its current TSX source and its version history. A template is just that file: a model with an event's content and photos in hand can write an instance of it.",
 		Schema: services.PropsReq(map[string]any{
 			"template_id": services.Field("string", "Template id."),
 		}, "template_id"),
@@ -150,7 +150,7 @@ var posterTools = []services.ToolMeta{
 	},
 	{
 		Name: "create_template",
-		Description: "Create a new DRAFT template from TSX source. Checked like edit_template_source. A person activates it on the " +
+		Description: "Create a new DRAFT template from TSX source. Put the guidance for using it in meta.prompt (what it is for, which photos suit it, what to adjust). Checked like edit_template_source. A person activates it on the " +
 			"templates page (or set_template_status over MCP). origin says where it came from.",
 		Schema: services.PropsReq(map[string]any{
 			"source":                  services.Field("string", "The complete template TSX."),
@@ -160,6 +160,13 @@ var posterTools = []services.ToolMeta{
 			"reference_attachment_id": services.Field("string", "For origin image: the uploaded reference image's attachment id."),
 			"parent_template_id":      services.Field("string", "When duplicating an existing template, its id."),
 		}, "source"),
+	},
+	{
+		Name:        "delete_template",
+		Description: "Delete a template this workspace made, with its versions. Posters made from it keep their own source. A built-in cannot be deleted; hide it with set_template_status instead.",
+		Schema: services.PropsReq(map[string]any{
+			"template_id": services.Field("string", "The template to delete."),
+		}, "template_id"),
 	},
 	{
 		Name: "set_template_status",

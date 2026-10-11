@@ -4,6 +4,7 @@ import { AccentBar, FactsLine, Logo, Photo, Text, fitTitle, font, grounds, logoW
 export const meta = {
   name: "Badge",
   description: "A disc at the top, either the photo cropped round or the other ground holding the time, centred copy below, logo bottom-centre",
+  prompt: "Lead with a round crop of one strong subject: a glass, a face, a record, a dish. Put the focus point on the subject; the disc zooms in. Suits recurring nights and anything with a single thing to show. Keep the title to a few words.",
   photos: { min: 1, max: 1 },
   needs: ["eyebrow", "title"],
 };
@@ -16,7 +17,7 @@ export default function Template({ content, format, photos, ground, accent }: Te
   const g = grounds[ground];
   const o = grounds[otherGround(ground)];
   const inner = width - safe.left - safe.right;
-  const D = Math.round(tall ? inner * (story ? 0.6 : 0.6) : height * 0.58);
+  const D = Math.round(tall ? inner * (story ? 0.56 : 0.52) : height * 0.58);
   const when = content.details.find((d) => /^when$/i.test(d.label));
   const photo = photos[0];
   const disc = (
@@ -58,8 +59,8 @@ export default function Template({ content, format, photos, ground, accent }: Te
         </p>
       ) : null}
       </div>
-      <div style={{ display: "flex", marginTop: "auto", paddingTop: Math.round(36 * s), alignSelf: tall ? "center" : "flex-end" }}>
-        <Logo variant={g.logo} width={logoWidth(s)} />
+      <div style={{ display: "flex", marginTop: "auto", paddingTop: Math.round(28 * s), flexShrink: 0, alignSelf: tall ? "center" : "flex-end" }}>
+        <Logo variant={g.logo} width={Math.round(logoWidth(s) * 0.8)} />
       </div>
     </div>
   );

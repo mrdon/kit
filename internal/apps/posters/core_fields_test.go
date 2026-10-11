@@ -70,6 +70,12 @@ func TestBuiltins(t *testing.T) {
 	if pair.Meta.Photos.Min != 2 || pair.Meta.Name != "Pair" || len(pair.Meta.Needs) != 2 {
 		t.Errorf("pair meta = %+v", pair.Meta)
 	}
+	// Every shipped layout says how to use it.
+	for _, b := range ts {
+		if b.Meta.Prompt == "" {
+			t.Errorf("%s has no prompt", b.Key)
+		}
+	}
 }
 
 func TestExtractJSON(t *testing.T) {

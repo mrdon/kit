@@ -4,6 +4,7 @@ import { CopyFoot, Photo, Text, accents, fitTitle, font, grounds, weights, type 
 export const meta = {
   name: "Calendar",
   description: "A big day-number tile in the accent colour with the title beside it; the photo, when there is one, runs underneath",
+  prompt: "Use when the date is the draw: a one-off night, a release, a watch party. The tile shows the day number from the eyebrow, or the time for a weekly cadence. The photo runs under the headline, so pick one that reads at a wide, short crop.",
   photos: { min: 1, max: 1 },
   needs: ["eyebrow", "title"],
 };

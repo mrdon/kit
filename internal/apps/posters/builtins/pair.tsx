@@ -4,6 +4,7 @@ import { AccentBar, FactsLine, Logo, Photo, Text, fitTitle, font, grounds, logoW
 export const meta = {
   name: "Pair",
   description: "Two photos side by side, a wide one and a narrow one, copy underneath with a short accent bar",
+  prompt: "Two photos side by side, a wide one and a narrow one: use when two subjects tell the story (the band and the room, the beer and the food). The first photo is the wide one. Copy sits under them with room for a summary.",
   photos: { min: 2, max: 2 },
   needs: ["eyebrow", "title"],
 };

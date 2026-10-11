@@ -248,6 +248,32 @@ func (a *App) coreSetTemplateStatus(ctx context.Context, caller *services.Caller
 	return textResult("Template %s is now %s.", id, strings.ToLower(in.Status))
 }
 
+type deleteArg struct {
+	TemplateID string `json:"template_id"`
+}
+
+func (a *App) coreDeleteTemplate(ctx context.Context, caller *services.Caller, raw json.RawMessage) (*coreResult, error) {
+	var in deleteArg
+	if err := decode(raw, &in); err != nil {
+		return nil, err
+	}
+	id, err := parseID(in.TemplateID, "template_id")
+	if err != nil {
+		return nil, err
+	}
+	t, err := getTemplate(ctx, a.pool, caller.TenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if t.Builtin() {
+		return nil, invalid("%q ships with Kit; hide it with set_template_status instead of deleting it", t.Name)
+	}
+	if err := deleteTemplate(ctx, a.pool, caller.TenantID, id); err != nil {
+		return nil, err
+	}
+	return textResult("Deleted template %q (%s).", t.Name, id)
+}
+
 // SetTemplateStatus applies a lifecycle change. Built-ins only hide or
 // show per tenant; tenant templates move between draft, active, archived.
 func (a *App) SetTemplateStatus(ctx context.Context, tenantID, id uuid.UUID, status string) error {

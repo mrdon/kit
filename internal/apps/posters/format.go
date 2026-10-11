@@ -56,6 +56,9 @@ func FormatTemplate(t *Template) string {
 	if t.Description != "" {
 		fmt.Fprintf(&b, "\n  %s", t.Description)
 	}
+	if t.Meta.Prompt != "" {
+		fmt.Fprintf(&b, "\n  How to use it: %s", t.Meta.Prompt)
+	}
 	b.WriteString("\n")
 	return b.String()
 }

@@ -167,7 +167,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request, kind string, su
 
 // posterChatSuffix renders the poster's situation for the agent.
 func (a *App) posterChatSuffix(ctx context.Context, caller *services.Caller, id uuid.UUID) (string, error) {
-	poster, _, err := a.loadPoster(ctx, caller.TenantID, id)
+	poster, cur, err := a.loadPoster(ctx, caller.TenantID, id)
 	if err != nil {
 		return "", err
 	}
@@ -190,6 +190,11 @@ func (a *App) posterChatSuffix(ctx context.Context, caller *services.Caller, id 
 	data["Format"] = brand.PortraitFormat
 	data["StockAllowed"] = a.stockAllowed(ctx, caller)
 	data["RenderBudget"] = chatRenderBudget
+	if cur != nil && cur.TemplateID != nil {
+		if t, err := getTemplate(ctx, a.pool, caller.TenantID, *cur.TemplateID); err == nil && t.Meta.Prompt != "" {
+			data["TemplatePrompt"] = t.Meta.Prompt
+		}
+	}
 	return mustRender("system_poster_chat.tmpl", data), nil
 }
 

@@ -174,7 +174,11 @@ type Content struct {
 type TemplateMeta struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Photos      struct {
+	// Prompt is the template's own guidance for a model instantiating or
+	// adapting it: what it is for, which photos suit it, what to adjust
+	// and what to leave alone. Written by whoever makes the template.
+	Prompt string `json:"prompt,omitempty"`
+	Photos struct {
 		Min int `json:"min"`
 		Max int `json:"max"`
 	} `json:"photos"`

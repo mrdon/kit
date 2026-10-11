@@ -4,6 +4,7 @@ import { FactsLine, Logo, Photo, Text, accents, fitTitle, font, grounds, logoWid
 export const meta = {
   name: "Caption",
   description: "The photo is the poster; one thin strip at the foot names it, with the facts as a line and the logo at the right",
+  prompt: "The photo carries the poster; the strip only names it. Only for a photo that is genuinely good on its own, with a clean area at the bottom edge. Keep the copy short; the summary is not shown.",
   photos: { min: 1, max: 1 },
   needs: ["eyebrow", "title"],
 };

@@ -72,12 +72,13 @@ func Builtins() ([]BuiltinTemplate, error) {
 }
 
 var (
-	metaName  = regexp.MustCompile(`name:\s*"([^"]*)"`)
-	metaDesc  = regexp.MustCompile(`description:\s*"([^"]*)"`)
-	metaMin   = regexp.MustCompile(`min:\s*(\d+)`)
-	metaMax   = regexp.MustCompile(`max:\s*(\d+)`)
-	metaNeeds = regexp.MustCompile(`needs:\s*\[([^\]]*)\]`)
-	metaBlock = regexp.MustCompile(`(?s)export const meta\s*=\s*\{(.*?)\n\};`)
+	metaName   = regexp.MustCompile(`name:\s*"([^"]*)"`)
+	metaDesc   = regexp.MustCompile(`description:\s*"([^"]*)"`)
+	metaPrompt = regexp.MustCompile(`prompt:\s*"([^"]*)"`)
+	metaMin    = regexp.MustCompile(`min:\s*(\d+)`)
+	metaMax    = regexp.MustCompile(`max:\s*(\d+)`)
+	metaNeeds  = regexp.MustCompile(`needs:\s*\[([^\]]*)\]`)
+	metaBlock  = regexp.MustCompile(`(?s)export const meta\s*=\s*\{(.*?)\n\};`)
 )
 
 // metaFromSource reads the meta export of a template whose meta is a plain
@@ -95,6 +96,9 @@ func metaFromSource(src string) (posterrender.TemplateMeta, error) {
 	}
 	if x := metaDesc.FindStringSubmatch(body); x != nil {
 		m.Description = x[1]
+	}
+	if x := metaPrompt.FindStringSubmatch(body); x != nil {
+		m.Prompt = x[1]
 	}
 	if x := metaMin.FindStringSubmatch(body); x != nil {
 		m.Photos.Min, _ = strconv.Atoi(x[1])

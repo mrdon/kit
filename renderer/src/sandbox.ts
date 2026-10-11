@@ -138,6 +138,7 @@ export function checkMeta(meta: TemplateMeta | null): string[] {
   if (!meta || typeof meta !== "object") return ["the template must `export const meta = { name, description, photos: { min, max }, needs }`"];
   if (typeof meta.name !== "string" || !meta.name.trim()) problems.push("meta.name must be a short name");
   if (typeof meta.description !== "string") problems.push("meta.description must describe the layout in a sentence");
+  if (meta.prompt !== undefined && typeof meta.prompt !== "string") problems.push("meta.prompt, when given, is a string of guidance for a model using the layout");
   const p = meta.photos;
   if (!p || typeof p.min !== "number" || typeof p.max !== "number" || p.min < 0 || p.max < p.min) {
     problems.push("meta.photos must be { min, max } with 0 <= min <= max");

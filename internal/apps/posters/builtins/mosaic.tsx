@@ -4,6 +4,7 @@ import { Eyebrow, FactsLine, Logo, Photo, Text, fitTitle, font, grounds, logoWid
 export const meta = {
   name: "Mosaic",
   description: "A two-by-two grid: three photos and one tile of copy on the ground, so the event reads as a set of moments",
+  prompt: "Three photos in a grid with one copy tile: for an event that is a set of moments (a festival, an anniversary, a market). Pick three photos that differ in subject and scale; the first gets the biggest cell on a tall canvas. Keep the title to a few words.",
   photos: { min: 3, max: 3 },
   needs: ["eyebrow", "title"],
 };
