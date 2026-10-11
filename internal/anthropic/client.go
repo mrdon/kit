@@ -87,8 +87,22 @@ type Content struct {
 	// input (see ImageContent / DescribeImage); never inside a tool_result.
 	Source *ImageSource `json:"source,omitempty"`
 
+	// For thinking and redacted_thinking blocks. The 5.x models think before
+	// answering without being asked, and the API requires those blocks to
+	// come back untouched (text plus signature) with the tool results of the
+	// same turn. Dropping the fields here is what turned a thinking block
+	// into `{"type":"thinking"}` and a 400 on the next call.
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"` // redacted_thinking payload
+
 	// For prompt caching
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// IsThinking reports whether the block is a thinking or redacted_thinking block.
+func (c Content) IsThinking() bool {
+	return c.Type == "thinking" || c.Type == "redacted_thinking"
 }
 
 // ImageSource is the source payload of an "image" content block. Only the

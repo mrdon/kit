@@ -647,6 +647,9 @@ func tailUserAssistantWindow(messages []anthropic.Message, n int) []anthropic.Me
 // expansions emitted by the API during the original turn, but on replay
 // the client doesn't need to (and shouldn't try to) reassert them — the
 // API has the deferred tool registrations directly in the request.
+// Thinking blocks go the same way: the API only needs them back within
+// the turn that produced them (the live loop keeps those), and a replayed
+// one that lost its text or signature on the way through storage is a 400.
 func sanitizeHistory(messages []anthropic.Message) []anthropic.Message {
 	for i := range messages {
 		if messages[i].Role == "assistant" {
@@ -687,6 +690,9 @@ func stripServerBlocks(blocks []anthropic.Content) []anthropic.Content {
 	for _, c := range blocks {
 		switch c.Type {
 		case "server_tool_use", "tool_search_tool_result":
+			continue
+		}
+		if c.IsThinking() {
 			continue
 		}
 		out = append(out, c)
