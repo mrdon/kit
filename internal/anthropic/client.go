@@ -105,6 +105,21 @@ func (c Content) IsThinking() bool {
 	return c.Type == "thinking" || c.Type == "redacted_thinking"
 }
 
+// MarshalJSON keeps the "thinking" key on a thinking block even when the
+// text is empty. The models sometimes return a signed block with no text,
+// and the API rejects it on the way back if the key is missing rather than
+// empty, which omitempty would do.
+func (c Content) MarshalJSON() ([]byte, error) {
+	type plain Content
+	if c.Type == "thinking" {
+		return json.Marshal(struct {
+			plain
+			Thinking string `json:"thinking"`
+		}{plain(c), c.Thinking})
+	}
+	return json.Marshal(plain(c))
+}
+
 // ImageSource is the source payload of an "image" content block. Only the
 // base64 form is used here.
 type ImageSource struct {

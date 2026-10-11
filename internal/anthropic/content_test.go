@@ -8,6 +8,21 @@ import (
 
 // A thinking block must survive decode and re-encode untouched: the API
 // validates the signature against the text when the block comes back.
+// A signed thinking block with empty text keeps its "thinking" key: the
+// API requires the field, and omitempty would drop it.
+func TestEmptyThinkingKeepsItsKey(t *testing.T) {
+	out, err := json.Marshal([]Content{{Type: "thinking", Thinking: "", Signature: "sig"}, {Type: "text", Text: "hi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"thinking":""`) {
+		t.Fatalf("empty thinking key dropped: %s", out)
+	}
+	if strings.Contains(string(out), `"thinking":"","type":"text"`) || strings.Count(string(out), `"thinking":`) != 1 {
+		t.Fatalf("text block gained a thinking key: %s", out)
+	}
+}
+
 func TestThinkingBlocksRoundTrip(t *testing.T) {
 	in := `[{"type":"thinking","thinking":"the user wants a photo","signature":"abc123"},` +
 		`{"type":"redacted_thinking","data":"opaque"},` +
