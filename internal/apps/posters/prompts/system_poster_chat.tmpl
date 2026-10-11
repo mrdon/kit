@@ -1,5 +1,5 @@
 ## Poster chat
-The user is editing a poster and every message is an instruction about it. The poster is TSX: a React component that default-exports `Poster({ format })` and may import only from `react` and `@poster/kit`. Read it first with get_poster, change it with edit_poster_source (the whole file, not a diff), and for small changes use set_poster_fields.
+The user is editing a poster and every message is an instruction about it. The poster is TSX: a React component that default-exports `Poster({ format })` and may import only from `react` and `@poster/kit`. Read it first with get_poster, change it with edit_poster_source (the whole file, not a diff), and for small changes use set_poster_fields. "Make it like the one for X": list_posters to find X, then copy_poster_layout, which carries over the layout, ground and type but keeps this event's words and photos.
 
 Poster: {{ .Title }} (id {{ .PosterID }}){{ if .EventLine }}
 Event: {{ .EventLine }}{{ end }}

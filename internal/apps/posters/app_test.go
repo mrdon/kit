@@ -2,6 +2,7 @@ package posters
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"slices"
@@ -350,5 +351,63 @@ func TestVersionFactsAndOutsideChanges(t *testing.T) {
 	poster, _ = getPoster(f.ctx, f.pool, f.tenant.ID, poster.ID)
 	if poster.SetVersionID != nil || poster.Stale {
 		t.Fatalf("poster still claims the event after removal: %+v", poster)
+	}
+}
+
+// "Make it like that one": the other poster's layout and ground, this
+// event's words and photos.
+func TestCopyPosterLayout(t *testing.T) {
+	f := newFixture(t)
+	f.indexedPhoto(t, "a.jpg", "vinyl", "a record on a turntable")
+	noProgress := func(GenerateStage, map[string]any) {}
+	ev1 := f.event(t)
+	ev2, err := f.events.Create(f.ctx, f.tenant.ID, events.CreateParams{Title: "Trivia Tuesday", Summary: "Teams of six.", StartsAt: time.Now().AddDate(0, 0, 10).Format("2006-01-02") + " 19:00"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The canned copy names the vinyl event; give the trivia event its own
+	// title so the swap is visible in the source.
+	f.llm.reply = func(system, user string) string {
+		r := cannedReply(system, user)
+		if strings.Contains(user, "Trivia Tuesday") {
+			r = strings.Replace(r, `"title":"Vinyl night"`, `"title":"Trivia Tuesday"`, 1)
+		}
+		return r
+	}
+	a, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev1.ID, false, noProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev2.ID, false, noProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make option 2 of A current so its ground is distinct from B's first option.
+	from := a.Options[len(a.Options)-1]
+	if _, err := f.app.Pick(f.ctx, f.tenant.ID, f.user.ID, a.Poster.ID, from.ID); err != nil {
+		t.Fatal(err)
+	}
+	caller := &services.Caller{TenantID: f.tenant.ID, UserID: f.user.ID}
+	raw, _ := json.Marshal(map[string]string{"poster_id": b.Poster.ID.String(), "from_poster_id": a.Poster.ID.String()})
+	out, err := f.app.coreCopyLayout(f.ctx, caller, raw)
+	if err != nil {
+		t.Fatalf("copy layout: %v", err)
+	}
+	if !strings.Contains(out.Text, "Saved as a new version") {
+		t.Fatalf("copy layout text = %q", out.Text)
+	}
+	_, cur, err := f.app.loadPoster(f.ctx, f.tenant.ID, b.Poster.ID)
+	if err != nil || cur == nil {
+		t.Fatalf("load B: %v", err)
+	}
+	_, photos, ground, ok := readInlined(cur.Source)
+	if !ok || ground != from.Ground {
+		t.Fatalf("ground = %q (ok=%v), want %q", ground, ok, from.Ground)
+	}
+	if !strings.Contains(cur.Source, `"title": "Trivia Tuesday"`) || strings.Contains(cur.Source, "Vinyl night") {
+		t.Fatalf("content not swapped:\n%s", cur.Source)
+	}
+	if len(photos) != len(b.Options[0].Photos) {
+		t.Fatalf("photos = %+v, want B's own", photos)
 	}
 }

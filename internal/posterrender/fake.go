@@ -2,6 +2,7 @@ package posterrender
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -65,7 +66,7 @@ func (f *Fake) Options(_ context.Context, req OptionsRequest) (*OptionsResponse,
 			Ground:     ground,
 			Accent:     "amber",
 			Photos:     photos,
-			Source:     fmt.Sprintf("// poster from %s\n%s", t.ID, t.Source),
+			Source:     fakeInlined(t, req.Content, photos, ground, "amber"),
 			PNG:        PNG1x1,
 			Problems:   []string{},
 			Warnings:   []string{},
@@ -112,3 +113,17 @@ func (f *Fake) BrandCheck(context.Context, Brand) ([]string, error) { return []s
 
 // Healthy reports the configured health.
 func (f *Fake) Healthy(context.Context) bool { return !f.Unhealthy }
+
+// fakeInlined writes the same inlined block the real renderer's
+// inlinePoster does, so Go code that parses it (set_poster_fields,
+// copy_poster_layout, the facts refresh) is exercised against the real
+// shape rather than a stub.
+func fakeInlined(t PlannedTemplate, content Content, photos []PhotoUse, ground, accent string) string {
+	if photos == nil {
+		photos = []PhotoUse{}
+	}
+	c, _ := json.MarshalIndent(content, "", "  ")
+	p, _ := json.Marshal(photos)
+	return fmt.Sprintf("// poster from %s\n%s\n// ---- Poster content. The template above draws it; edit either. ----\nconst content = %s;\nconst photos = %s;\nconst ground = %q;\nconst accent = %q;\n\nexport default function Poster({ format }) {\n  return <Template content={content} format={format} photos={photos} ground={ground} accent={accent} />;\n}\n",
+		t.ID, t.Source, c, p, ground, accent)
+}

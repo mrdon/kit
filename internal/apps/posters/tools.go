@@ -51,6 +51,17 @@ var posterTools = []services.ToolMeta{
 		}, "poster_id"),
 	},
 	{
+		Name: "copy_poster_layout",
+		Description: "Make this poster look like another one. Takes the other poster's current source whole (its layout, ground, " +
+			"accent, type sizes and any hand edits) and swaps in THIS event's content and photos, so nothing of the other event's " +
+			"words or pictures carries over. Find the other poster with list_posters. Saves a new version with its render attached. " +
+			"If the other poster was restructured past the inlined block, this refuses; then read it with get_poster and adapt by hand.",
+		Schema: services.PropsReq(map[string]any{
+			"poster_id":      services.Field("string", "The poster to change."),
+			"from_poster_id": services.Field("string", "The poster whose look to copy."),
+		}, "poster_id", "from_poster_id"),
+	},
+	{
 		Name: "render_poster_formats",
 		Description: "Render the poster's current version at other canvases the brand defines (story, screen, feed, website hero...). " +
 			"Returns each render as an image plus any safe-area problems. Downloads are on the poster page.",

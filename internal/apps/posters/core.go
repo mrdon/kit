@@ -48,6 +48,8 @@ func (a *App) dispatchCore(ctx context.Context, caller *services.Caller, name st
 		return a.coreEditPoster(ctx, caller, raw)
 	case "set_poster_fields":
 		return a.coreSetFields(ctx, caller, raw)
+	case "copy_poster_layout":
+		return a.coreCopyLayout(ctx, caller, raw)
 	case "render_poster_formats":
 		return a.coreRenderFormats(ctx, caller, raw)
 	case "search_photos":
