@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -43,9 +44,10 @@ type GenerateResult struct {
 	BatchID uuid.UUID `json:"batch_id"`
 	Options []Version `json:"options"`
 	Skipped int       `json:"skipped"`
-	// NoPhoto says the index had nothing honest for this event, so only
-	// type-only layouts were offered.
+	// NoPhoto says no photo, library or stock, fitted this event.
 	NoPhoto bool `json:"no_photo"`
+	// StockHero says the hero is a stock photo (Pixabay), not the library's.
+	StockHero bool `json:"stock_hero"`
 	// FreshCopy says a "more options" run rewrote the copy because the
 	// event's facts had changed since the last batch.
 	FreshCopy bool `json:"fresh_copy"`
@@ -93,24 +95,30 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 	if len(templates) == 0 {
 		return nil, invalid("no active templates; activate at least one on the templates page")
 	}
-	req := posterrender.OptionsRequest{Content: *in.content, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Count: optionCount, Hero: in.hero}
-	if in.photo != nil {
-		if req.Photos, err = a.photoSet(ctx, tenantID, in.photo); err != nil {
-			return nil, err
-		}
-	}
+	req := posterrender.OptionsRequest{Content: *in.content, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Count: optionCount, Hero: in.hero, Photos: in.refs}
 	if more {
 		if req.Exclude, err = shownCombos(ctx, a.pool, tenantID, poster.ID); err != nil {
 			return nil, err
 		}
 	}
-	res, err := a.renderer.Options(ctx, req)
+	res, err := a.options(ctx, req)
 	if err != nil {
-		var rerr *posterrender.RequestError
-		if errors.As(err, &rerr) {
-			return nil, invalid("%s", rerr.Message)
+		return nil, err
+	}
+	if len(res.Options) == 0 && allOverflow(res.Skipped) && a.llm != nil {
+		// Every layout overflowed, even shortened: have the copywriter cut
+		// the words once, keeping the facts, and try again.
+		progress(StageCopy, nil)
+		tight, terr := a.tightenCopy(ctx, tenantID, in.content, skippedReasons(res.Skipped), brand)
+		if terr != nil {
+			slog.Warn("posters: tightening copy", "error", terr)
+		} else {
+			req.Content = *tight
+			if res, err = a.options(ctx, req); err != nil {
+				return nil, err
+			}
+			in.content = tight
 		}
-		return nil, fmt.Errorf("generating options: %w", err)
 	}
 	if len(res.Options) == 0 && len(res.Skipped) == 0 && len(req.Exclude) > 0 {
 		return nil, invalid("every layout has been shown on every ground; edit one in chat, or activate more templates")
@@ -121,15 +129,58 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 		return nil, err
 	}
 	out.FreshCopy = more && in.fresh
+	out.StockHero = in.stock
 	return out, nil
 }
 
-// batchInputs is what a batch is made from: the copy, the hero photo's
-// crop and row (nil for a type-only batch), and whether the copy is new.
+// options asks the renderer for a batch, turning its refusals into
+// problems the caller can show.
+func (a *App) options(ctx context.Context, req posterrender.OptionsRequest) (*posterrender.OptionsResponse, error) {
+	res, err := a.renderer.Options(ctx, req)
+	if err != nil {
+		var rerr *posterrender.RequestError
+		if errors.As(err, &rerr) {
+			return nil, invalid("%s", rerr.Message)
+		}
+		return nil, fmt.Errorf("generating options: %w", err)
+	}
+	return res, nil
+}
+
+func allOverflow(skipped []posterrender.Skipped) bool {
+	if len(skipped) == 0 {
+		return false
+	}
+	for _, s := range skipped {
+		if !strings.Contains(s.Reason, "outside the safe area") {
+			return false
+		}
+	}
+	return true
+}
+
+// skippedReasons is the distinct reasons, at most three, for a message.
+func skippedReasons(skipped []posterrender.Skipped) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range skipped {
+		if seen[s.Reason] || len(out) == 3 {
+			continue
+		}
+		seen[s.Reason] = true
+		out = append(out, s.Reason)
+	}
+	return out
+}
+
+// batchInputs is what a batch is made from: the copy, the hero's crop,
+// the image references the renderer may use (the hero's set, or the one
+// stock photo), whether the hero is stock, and whether the copy is new.
 type batchInputs struct {
 	content *posterrender.Content
 	hero    *posterrender.PhotoUse
-	photo   *Photo
+	refs    []posterrender.ImageRef
+	stock   bool
 	fresh   bool
 }
 
@@ -151,7 +202,7 @@ func (a *App) posterForEventOrCreate(ctx context.Context, tenantID, userID uuid.
 func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Poster, ev *events.Event, brand *posterrender.Brand, more bool, hash string, progress Progress) (*batchInputs, error) {
 	if more {
 		if last, ok := a.lastBatchInputs(ctx, tenantID, poster); ok && last.hash == hash {
-			return &batchInputs{content: last.content, hero: last.hero, photo: last.photo}, nil
+			return &batchInputs{content: last.content, hero: last.hero, refs: last.refs, stock: last.stock}, nil
 		}
 	}
 	progress(StageCopy, nil)
@@ -160,17 +211,35 @@ func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Post
 		return nil, err
 	}
 	progress(StagePhoto, nil)
-	photo, hero, err := a.pickPhoto(ctx, tenantID, ev)
+	pick, err := a.pickPhoto(ctx, tenantID, ev)
 	if err != nil {
 		return nil, err
 	}
-	return &batchInputs{content: content, hero: hero, photo: photo, fresh: true}, nil
+	in := &batchInputs{content: content, fresh: true}
+	if pick != nil {
+		in.hero = pick.use
+		if in.refs, in.stock, err = a.heroRefs(ctx, tenantID, pick); err != nil {
+			return nil, err
+		}
+	}
+	return in, nil
+}
+
+// heroRefs is what the renderer may draw from for a hero: a library
+// photo's whole set, or the one stock photo.
+func (a *App) heroRefs(ctx context.Context, tenantID uuid.UUID, pick *pickResult) ([]posterrender.ImageRef, bool, error) {
+	if pick.stock != nil {
+		return []posterrender.ImageRef{pick.stock.Ref()}, true, nil
+	}
+	refs, err := a.photoSet(ctx, tenantID, pick.photo)
+	return refs, false, err
 }
 
 type lastBatch struct {
 	content *posterrender.Content
 	hero    *posterrender.PhotoUse
-	photo   *Photo
+	refs    []posterrender.ImageRef
+	stock   bool
 	hash    string
 }
 
@@ -187,14 +256,20 @@ func (a *App) lastBatchInputs(ctx context.Context, tenantID uuid.UUID, poster *P
 		}
 		c := v.Content
 		out := &lastBatch{content: &c, hash: v.FactsHash}
-		// The hero is the first photo of any photo-bearing option in the batch.
+		// The hero is the first photo of any photo-bearing option in the
+		// batch; its references are resolved the way a render would.
 		batch, _ := listBatch(ctx, a.pool, tenantID, *v.BatchID)
 		for _, b := range batch {
 			if len(b.Photos) > 0 {
-				if id, err := uuid.Parse(b.Photos[0].ID); err == nil {
-					if p, err := getPhoto(ctx, a.pool, tenantID, id); err == nil {
-						use := b.Photos[0]
-						out.hero, out.photo = &use, p
+				use := b.Photos[0]
+				if refs, err := a.imageRefsFor(ctx, tenantID, use.ID, true); err == nil && len(refs) > 0 {
+					out.hero, out.refs, out.stock = &use, refs, strings.HasPrefix(use.ID, pixabayPrefix)
+					if !out.stock {
+						if id, err := uuid.Parse(use.ID); err == nil {
+							if p, err := getPhoto(ctx, a.pool, tenantID, id); err == nil {
+								out.refs, _ = a.photoSet(ctx, tenantID, p)
+							}
+						}
 					}
 				}
 				break
@@ -229,8 +304,8 @@ func (a *App) photoSet(ctx context.Context, tenantID uuid.UUID, hero *Photo) ([]
 func (a *App) storeBatch(ctx context.Context, tenantID uuid.UUID, poster *Poster, brand *posterrender.Brand, content *posterrender.Content, res *posterrender.OptionsResponse, byID map[string]Template, noPhoto bool, facts json.RawMessage, hash string) (*GenerateResult, error) {
 	if len(res.Options) == 0 {
 		reason := "no active template could use this event's content and photos"
-		if len(res.Skipped) > 0 {
-			reason = res.Skipped[0].Reason
+		if rs := skippedReasons(res.Skipped); len(rs) > 0 {
+			reason = strings.Join(rs, "; ")
 		}
 		return nil, invalid("no options could be made: %s", reason)
 	}

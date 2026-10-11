@@ -26,12 +26,29 @@ export type PlanInput = {
 // dropping ones whose photo minimum the pool cannot meet or whose needs the
 // content lacks.
 export function eligibleTemplates(input: PlanInput): PlannedTemplate[] {
+  const ts = (input.templates ?? []).filter((t) => !whyNot(t, input));
+  return [...ts].sort((a, b) => b.weight - a.weight);
+}
+
+// whyNot says what stops a template being used for this batch, or "".
+function whyNot(t: PlannedTemplate, input: PlanInput): string {
   const has = (field: string) => {
     const v = (input.content as unknown as Record<string, unknown>)[field];
     return Array.isArray(v) ? v.length > 0 : Boolean(v);
   };
-  const ts = (input.templates ?? []).filter((t) => t.meta.photos.min <= input.pool.length && (t.meta.needs ?? []).every(has));
-  return [...ts].sort((a, b) => b.weight - a.weight);
+  const min = t.meta.photos?.min ?? 0;
+  if (min > input.pool.length) {
+    return `needs ${min} photo${min === 1 ? "" : "s"}, ${input.pool.length} available for this event`;
+  }
+  const missing = (t.meta.needs ?? []).filter((f) => !has(f));
+  if (missing.length) return `the content has no ${missing.join(", ")}`;
+  return "";
+}
+
+// ineligible lists the templates a batch cannot use, with reasons, so the
+// caller can say why a batch came up short instead of guessing.
+export function ineligible(input: PlanInput): Array<{ templateId: string; ground: string; reason: string }> {
+  return (input.templates ?? []).map((t) => ({ templateId: t.id, ground: "", reason: whyNot(t, input) })).filter((x) => x.reason);
 }
 
 // The key "more options" excludes by: a template on a ground. Excluding

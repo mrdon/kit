@@ -1,0 +1,9 @@
+The copy below did not fit any layout. The renderer said:
+{{ range .Problems }}- {{ . }}
+{{ end }}
+Shorten it so it fits: a title of at most {{ .TitleWords }} words, a summary of at most 80 characters or none, at most two details with values under 30 characters, and an action of at most 40 characters. Keep every fact exactly as it is; cut words, not information.
+
+Copy:
+{{ .Copy }}
+
+Return the JSON object only, same shape.

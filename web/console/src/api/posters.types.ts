@@ -101,6 +101,8 @@ export interface PosterGenerateResult {
   no_photo: boolean;
   /** A "more options" run rewrote the copy because the event changed. */
   fresh_copy: boolean;
+  /** The hero is a stock photo from Pixabay, not the library's. */
+  stock_hero: boolean;
 }
 
 /** Mirror of posters.GenerateStage (Go). */

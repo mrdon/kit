@@ -6,7 +6,7 @@ import { checkContent } from "./copy.ts";
 import { loadFonts, type SatoriFont } from "./fonts.ts";
 import { ImageStore } from "./images.ts";
 import { inlinePoster } from "./inline.ts";
-import { photoPool, plan, type PlannedTemplate } from "./options.ts";
+import { ineligible, photoPool, plan, type PlannedTemplate } from "./options.ts";
 import { logoAspects, renderTree, resolveLogos, type ImageSet } from "./render.ts";
 import { checkMeta, compile, run, SourceError } from "./sandbox.ts";
 import { renderSheet, SHEET_MAX, type SheetItem } from "./sheet.ts";
@@ -109,38 +109,50 @@ export class Service {
       const pool = photoPool(req.photos ?? [], focus, req.hero);
       const grounds = Object.keys(req.brand.grounds);
       const accent = Object.keys(req.brand.accents)[0] ?? "";
-      const candidates = plan({ content, templates: req.templates, grounds, accent, pool, exclude: req.exclude });
+      const planInput = { content, templates: req.templates, grounds, accent, pool, exclude: req.exclude };
+      const candidates = plan(planInput);
       const images: ImageSet = { photos: new Map((req.photos ?? []).map((p) => [p.id, p])), logos };
-      const out: OptionsResponse = { options: [], skipped: [] };
+      const out: OptionsResponse = { options: [], skipped: ineligible(planInput) };
+      const ctx = { brand: req.brand, photos: images.photos, logoVariants: new Set(logos.keys()) };
       for (const c of candidates) {
         if (out.options.length >= req.count) break;
-        try {
-          const source = inlinePoster(c.template.source, content, c.photos, c.ground, c.accent);
-          const tree = run(compile(source), { format }, req.brand, aspects).tree;
-          const v = validateTree(tree, { brand: req.brand, photos: images.photos, logoVariants: new Set(logos.keys()) });
-          if (v.problems.length) {
-            out.skipped.push({ templateId: c.template.id, ground: c.ground, reason: v.problems[0] });
-            continue;
+        // Copy that overflows a layout is shortened before the layout is
+        // given up on: the summary goes first, then the action, then the
+        // extra details. A dropped piece is reported as a warning.
+        let reason = "";
+        for (const variant of copyVariants(content)) {
+          try {
+            const source = inlinePoster(c.template.source, variant.content, c.photos, c.ground, c.accent);
+            const tree = run(compile(source), { format }, req.brand, aspects).tree;
+            const v = validateTree(tree, ctx);
+            if (v.problems.length) {
+              reason = v.problems[0];
+              break;
+            }
+            const r = await renderTree(tree, format, fonts, images, this.store);
+            if (r.problems.length) {
+              reason = r.problems[0];
+              if (!isOverflow(reason)) break;
+              continue;
+            }
+            out.options.push({
+              templateId: c.template.id,
+              ground: c.ground,
+              accent: c.accent,
+              photos: c.photos,
+              source,
+              png: r.png.toString("base64"),
+              problems: [],
+              warnings: [...v.warnings, ...(variant.dropped ? [`shortened to fit: ${variant.dropped}`] : [])],
+            });
+            reason = "";
+            break;
+          } catch (e) {
+            reason = e instanceof Error ? e.message : String(e);
+            break;
           }
-          const r = await renderTree(tree, format, fonts, images, this.store);
-          if (r.problems.length) {
-            out.skipped.push({ templateId: c.template.id, ground: c.ground, reason: r.problems[0] });
-            continue;
-          }
-          out.options.push({
-            templateId: c.template.id,
-            ground: c.ground,
-            accent: c.accent,
-            photos: c.photos,
-            source,
-            png: r.png.toString("base64"),
-            problems: [],
-            warnings: v.warnings,
-          });
-        } catch (e) {
-          const reason = e instanceof Error ? e.message : String(e);
-          out.skipped.push({ templateId: c.template.id, ground: c.ground, reason });
         }
+        if (reason) out.skipped.push({ templateId: c.template.id, ground: c.ground, reason });
       }
       return out;
     });
@@ -264,3 +276,17 @@ function normalizeContent(c: Content): Content {
 function normalizeProps(p: TemplateProps): TemplateProps {
   return { ...p, content: normalizeContent(p.content), photos: p.photos ?? [] };
 }
+
+// The ladder of shorter copies a layout is tried with when the full copy
+// does not fit. Facts stay; prose goes first.
+function copyVariants(c: Content): Array<{ content: Content; dropped?: string }> {
+  const out: Array<{ content: Content; dropped?: string }> = [{ content: c }];
+  if (c.summary) out.push({ content: { ...c, summary: undefined }, dropped: "the summary" });
+  if (c.action) out.push({ content: { ...c, summary: undefined, action: undefined }, dropped: "the summary and the action" });
+  if (c.details.length > 1) {
+    out.push({ content: { ...c, summary: undefined, action: undefined, details: c.details.slice(0, 1) }, dropped: "the summary, the action and all but the first detail" });
+  }
+  return out;
+}
+
+const isOverflow = (problem: string) => /outside the safe area/.test(problem);

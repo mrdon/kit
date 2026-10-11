@@ -78,10 +78,11 @@ export default function EventPosterPicker({
       }));
       const notes: string[] = [];
       if (r.fresh_copy) notes.push('The event changed since the last batch, so the copy was rewritten.');
+      if (r.stock_hero) notes.push('The library had nothing for this event, so the photo is a stock photo from Pixabay.');
       if (r.options.length === 0) {
         notes.push('No options came out of this run. Check the templates and photo index.');
       } else if (r.no_photo) {
-        notes.push('No photo in the library honestly fits this event, so these are type-only layouts.');
+        notes.push('No photo in the library or stock fits this event.');
       }
       if (notes.length) setNote(notes.join(' '));
     } catch (e) {

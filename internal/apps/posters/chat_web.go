@@ -190,6 +190,9 @@ func (a *App) posterChatSuffix(ctx context.Context, caller *services.Caller, id 
 	data["Format"] = brand.PortraitFormat
 	data["StockAllowed"] = a.stockAllowed(ctx, caller)
 	data["RenderBudget"] = chatRenderBudget
+	// text/template fails on a missing map key, so every key the prompt
+	// mentions is set, empty or not.
+	data["TemplatePrompt"] = ""
 	if cur != nil && cur.TemplateID != nil {
 		if t, err := getTemplate(ctx, a.pool, caller.TenantID, *cur.TemplateID); err == nil && t.Meta.Prompt != "" {
 			data["TemplatePrompt"] = t.Meta.Prompt

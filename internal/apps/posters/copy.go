@@ -35,15 +35,10 @@ func truncate(s string, n int) string {
 // call, validated by the renderer's copy rules, with one retry carrying
 // the errors. Problems that survive the retry come back as the error.
 func (a *App) writeCopy(ctx context.Context, tenantID uuid.UUID, e *events.Event, brand *posterrender.Brand) (*posterrender.Content, error) {
-	tenant, err := a.tenantName(ctx, tenantID)
+	system, err := a.copySystem(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	system := mustRender("system_copy.tmpl", map[string]any{
-		"Tenant": tenant,
-		"Voice":  a.skillText(ctx, tenantID, copySkill),
-		"Brand":  a.skillText(ctx, tenantID, brandingSkill),
-	})
 	facts := factsFor(e)
 	eventText := "today: " + today(e.Loc()) + "\n" + factsText(facts)
 	var problems []string
@@ -67,6 +62,43 @@ func (a *App) writeCopy(ctx context.Context, tenantID uuid.UUID, e *events.Event
 		}
 	}
 	return nil, errors.New("writing copy: no attempt succeeded")
+}
+
+// copySystem is the copywriter's system prompt: the voice and brand skills.
+func (a *App) copySystem(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	tenant, err := a.tenantName(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return mustRender("system_copy.tmpl", map[string]any{
+		"Tenant": tenant,
+		"Voice":  a.skillText(ctx, tenantID, copySkill),
+		"Brand":  a.skillText(ctx, tenantID, brandingSkill),
+	}), nil
+}
+
+// tightenCopy is the last resort when every layout overflowed: one model
+// call to shorten the words, facts untouched, then the layouts try again.
+func (a *App) tightenCopy(ctx context.Context, tenantID uuid.UUID, c *posterrender.Content, problems []string, brand *posterrender.Brand) (*posterrender.Content, error) {
+	system, err := a.copySystem(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	raw := jsonIndent(c)
+	user := mustRender("user_tighten_copy.tmpl", map[string]any{"Problems": problems, "Copy": raw, "TitleWords": 4})
+	var out posterrender.Content
+	if err := askJSON(ctx, a.llm, system, user, nil, &out); err != nil {
+		return nil, fmt.Errorf("tightening copy: %w", err)
+	}
+	normalizeContent(&out)
+	check, err := a.renderer.CopyCheck(ctx, out, brand)
+	if err != nil {
+		return nil, fmt.Errorf("checking copy: %w", err)
+	}
+	if len(check.Problems) > 0 {
+		return nil, fmt.Errorf("the shortened copy failed the checks: %s", strings.Join(check.Problems, "; "))
+	}
+	return &out, nil
 }
 
 // normalizeContent trims and bounds what the model returned so a stray
