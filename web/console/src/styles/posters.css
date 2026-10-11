@@ -289,3 +289,5 @@
 
 .poster-chat-title { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .poster-chat-reset { font-weight: 400; }
+
+.poster-tpl-blank small { display: block; margin-top: 0.35rem; font-size: 0.7rem; color: var(--muted); padding: 0 0.5rem; text-align: center; }

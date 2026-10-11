@@ -3,6 +3,7 @@ package posters
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -244,6 +245,7 @@ func (a *App) handleRenderTemplate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var rerr *posterrender.RequestError
 		if errors.As(err, &rerr) {
+			slog.Info("posters: template preview refused", "template", t.Name, "format", format, "reason", rerr.Message)
 			writeErr(w, http.StatusUnprocessableEntity, rerr.Message)
 			return
 		}
@@ -251,6 +253,7 @@ func (a *App) handleRenderTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(res.Problems) > 0 {
+		slog.Info("posters: template preview refused", "template", t.Name, "format", format, "problems", res.Problems)
 		writeErr(w, http.StatusUnprocessableEntity, strings.Join(res.Problems, "; "))
 		return
 	}

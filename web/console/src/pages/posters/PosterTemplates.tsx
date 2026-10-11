@@ -25,21 +25,49 @@ export function TemplateStatusBadges({ t }: { t: PosterTemplate }) {
   );
 }
 
-// TemplatePreview is one rendered image with a placeholder when the render
-// is refused (422: the template needs a photo the library lacks, or the
-// brand has a problem). The server's reason is JSON, not an image, so the
-// browser fires onError and we cannot read it; the detail page can.
+// TemplatePreview is one rendered image, fetched rather than set as an img
+// src so that a refusal (422: the template needs a photo the library lacks,
+// the brand has a problem, the content overflows) shows the server's reason
+// instead of a bare "can't render".
 export function TemplatePreview({ src, alt, className }: { src: string; alt: string; className?: string }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
-  if (failed) {
+  const [state, setState] = useState<{ url?: string; reason?: string }>({});
+  useEffect(() => {
+    let live = true;
+    let objectUrl: string | undefined;
+    setState({});
+    fetch(src, { credentials: 'same-origin' })
+      .then(async (r) => {
+        if (!live) return;
+        if (r.ok) {
+          objectUrl = URL.createObjectURL(await r.blob());
+          setState({ url: objectUrl });
+          return;
+        }
+        let reason = `${r.status} ${r.statusText}`;
+        try {
+          const body = (await r.json()) as { error?: string };
+          if (body.error) reason = body.error;
+        } catch {
+          /* keep the status line */
+        }
+        setState({ reason });
+      })
+      .catch((e: Error) => live && setState({ reason: e.message }));
+    return () => {
+      live = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [src]);
+  if (state.reason) {
     return (
-      <div className={`poster-tpl-blank ${className ?? ''}`} title={alt}>
+      <div className={`poster-tpl-blank ${className ?? ''}`} title={state.reason}>
         <span>Can't render yet</span>
+        <small>{state.reason.length > 140 ? `${state.reason.slice(0, 138)}…` : state.reason}</small>
       </div>
     );
   }
-  return <img className={className} src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
+  if (!state.url) return <div className={`poster-tpl-blank ${className ?? ''}`} aria-busy="true" />;
+  return <img className={className} src={state.url} alt={alt} />;
 }
 
 export default function PosterTemplates() {

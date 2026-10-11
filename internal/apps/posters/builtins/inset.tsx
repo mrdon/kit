@@ -18,7 +18,8 @@ export default function Template({ content, format, photos, ground, accent }: Te
   const g = grounds[ground];
   const pad = Math.round(56 * s);
   const inner = width - safe.left - safe.right;
-  const photo = { ...photos[0], zoom: Math.max(photos[0].zoom ?? 1, INSET_ZOOM) };
+  const first = photos[0] ?? { id: "", focusX: 0.5, focusY: 0.5, zoom: 1 };
+  const photo = { ...first, zoom: Math.max(first.zoom ?? 1, INSET_ZOOM) };
   const canvas = {
     position: "relative",
     boxSizing: "border-box",
