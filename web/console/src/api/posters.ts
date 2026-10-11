@@ -22,6 +22,7 @@ import {
   type PosterPhoto,
   type PosterPhotoPatch,
   type PosterPhotoStatus,
+  type ChatHistoryTurn,
   type PosterPhotosPayload,
   type PosterSyncResult,
   type PosterTemplate,
@@ -133,6 +134,9 @@ export const postersApi = {
     return `${API_BASE}/posters/templates/${id}/render${qs ? `?${qs}` : ''}`;
   },
   posterTemplateReferenceURL: (id: string) => `${API_BASE}/posters/templates/${id}/reference`,
+  posterChatHistory: (id: string) => apiGet<{ turns: ChatHistoryTurn[] }>(`/posters/${encodeURIComponent(id)}/chat/history`),
+  templateChatHistory: (id: string) =>
+    apiGet<{ turns: ChatHistoryTurn[] }>(`/posters/templates/${encodeURIComponent(id)}/chat/history`),
 
   listPosterPhotos: (opts: { status?: PosterPhotoStatus | ''; folder?: string; limit?: number; offset?: number } = {}) => {
     const q = new URLSearchParams();

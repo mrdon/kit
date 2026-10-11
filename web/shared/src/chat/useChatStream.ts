@@ -46,6 +46,8 @@ export type UseChatStreamResult = {
   retry: (turnKey: string) => void;
   // Drops the local transcript (after the server forgot the session).
   clear: () => void;
+  // Seeds the transcript with past turns when nothing has been sent yet.
+  seed: (past: ChatTurn[]) => void;
 };
 
 export type ChatStreamOptions = {
@@ -219,6 +221,8 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
 
   // Forget the transcript on this side; the caller tells the server.
   const clear = useCallback(() => setTurns([]), []);
+  // Show past turns the server still holds (a reload), ahead of new ones.
+  const seed = useCallback((past: ChatTurn[]) => setTurns((ts) => (ts.length ? ts : past)), []);
 
-  return { turns, busy, send, stop, retry, clear };
+  return { turns, busy, send, stop, retry, clear, seed };
 }

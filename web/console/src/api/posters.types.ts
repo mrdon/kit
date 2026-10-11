@@ -238,6 +238,15 @@ export interface PosterPhotoCounts {
   removed: number;
 }
 
+/** Mirror of chat.HistoryTurn (Go): one past exchange on a poster or template. */
+export interface ChatHistoryTurn {
+  key: string;
+  user_text: string;
+  response: string;
+  tool_count: number;
+  at: string;
+}
+
 export interface PosterPhotosPayload {
   photos: PosterPhoto[];
   folders: string[];

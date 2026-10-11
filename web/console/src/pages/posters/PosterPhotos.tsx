@@ -67,7 +67,7 @@ export default function PosterPhotos() {
 
       {err && <p className="banner banner-error">{err}</p>}
       {counts && counts.pending > 0 && (
-        <p className="banner banner-ok">
+        <p className="banner">
           {counts.pending} {counts.pending === 1 ? 'photo is' : 'photos are'} waiting for
           descriptions. Index them from Claude Code over MCP.
         </p>
@@ -140,7 +140,7 @@ export default function PosterPhotos() {
             <button key={p.id} type="button" className="poster-photo" onClick={() => setOpenId(p.id)}>
               <PhotoImage photo={p} size={400} />
               <span className="poster-photo-meta">
-                <span className={`pill ${p.status === 'indexed' ? 'pill-ok' : p.status === 'removed' ? 'pill-error' : 'pill-off'}`}>
+                <span className={`pill ${p.status === 'removed' ? 'pill-error' : 'pill-off'}`}>
                   {p.status}
                 </span>
                 {p.c2pa === PhotoC2PA.AI && <span className="badge badge-error">AI-made</span>}

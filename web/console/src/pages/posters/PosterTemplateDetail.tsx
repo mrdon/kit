@@ -13,6 +13,7 @@ import { errText, fmtWhen } from './common';
 
 export default function PosterTemplateDetail() {
   const { id = '' } = useParams();
+  const loadChatHistory = useCallback(() => api.templateChatHistory(id), [id]);
   const [d, setD] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -241,6 +242,7 @@ export default function PosterTemplateDetail() {
           <PosterChat
             executeUrl={`/${SLUG}/api/posters/templates/${id}/chat/execute`}
             resetUrl={`/${SLUG}/api/posters/templates/${id}/chat/reset`}
+            loadHistory={loadChatHistory}
             title="Edit with Kit"
             hint={
               builtin

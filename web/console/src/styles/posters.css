@@ -26,11 +26,12 @@
 .poster-option img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .poster-option:hover:not(:disabled) { border-color: var(--accent); }
 .poster-option:disabled { cursor: default; }
-.poster-option-on { border-color: var(--ok-ink); }
+/* Selection and "live" marks use the accent, as the strip and chips do;
+   green is kept for the status pill, the one true ok/off/error state. */
+.poster-option-on { border-color: var(--accent); border-width: 3px; }
 .poster-option-current { border-color: var(--accent); }
 .poster-option-badge {
   position: absolute; left: 0.35rem; bottom: 0.35rem;
-  background: var(--ok-bg); color: var(--ok-ink);
 }
 
 /* --- Picker in the event drawer --- */

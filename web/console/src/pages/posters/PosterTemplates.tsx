@@ -14,7 +14,7 @@ export function TemplateStatusBadges({ t }: { t: PosterTemplate }) {
   const builtin = !t.tenant_id;
   return (
     <span className="badge-row">
-      <span className={`pill ${t.status === PosterTemplateStatus.Active ? 'pill-ok' : t.status === PosterTemplateStatus.Archived ? 'pill-error' : 'pill-off'}`}>
+      <span className={`pill ${t.status === PosterTemplateStatus.Archived ? 'pill-error' : 'pill-off'}`}>
         {t.status}
       </span>
       {builtin && <span className="badge">built-in</span>}

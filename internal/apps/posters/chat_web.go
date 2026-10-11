@@ -38,6 +38,29 @@ func registerChatRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/posters/templates/{id}/chat/execute", route(a.handleTemplateChat))
 	mux.Handle("POST /{slug}/api/posters/{id}/chat/reset", route(a.handleChatReset("poster")))
 	mux.Handle("POST /{slug}/api/posters/templates/{id}/chat/reset", route(a.handleChatReset("template")))
+	mux.Handle("GET /{slug}/api/posters/{id}/chat/history", route(a.handleChatHistory("poster")))
+	mux.Handle("GET /{slug}/api/posters/templates/{id}/chat/history", route(a.handleChatHistory("template")))
+}
+
+// chatHistoryTurns is how many past exchanges a reload shows.
+const chatHistoryTurns = 30
+
+// handleChatHistory returns the conversation so far on a poster or
+// template, so a reload shows what the server still remembers.
+func (a *App) handleChatHistory(kind string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		caller := auth.CallerFromContext(r.Context())
+		id, ok := pathID(w, r, "id")
+		if !ok {
+			return
+		}
+		turns, err := chat.ScopedHistory(r.Context(), a.pool, caller.TenantID, caller.UserID, AppName, kind, id.String(), chatHistoryTurns)
+		if err != nil {
+			a.httpErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"turns": turns})
+	}
 }
 
 // handleChatReset forgets the conversation on a poster or template, so the

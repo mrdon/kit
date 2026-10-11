@@ -50,6 +50,7 @@ export default function PosterDetail() {
   useEffect(load, [load]);
 
   const poster = d?.poster;
+  const loadChatHistory = useCallback(() => api.posterChatHistory(id), [id]);
   useSetChatContext(
     poster ? `the Posters page, viewing the poster for "${poster.event_title || poster.title}"` : 'a poster page',
     load,
@@ -323,6 +324,7 @@ export default function PosterDetail() {
           <PosterChat
             executeUrl={`/${SLUG}/api/posters/${id}/chat/execute`}
             resetUrl={`/${SLUG}/api/posters/${id}/chat/reset`}
+            loadHistory={loadChatHistory}
             title="Edit with Kit"
             hint='Any change, copy included: "fix the typo in the title", "move the photo left", "make it feel like autumn".'
             placeholder="What should change?"
