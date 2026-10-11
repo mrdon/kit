@@ -246,31 +246,3 @@ func TestWithAttachmentLogos(t *testing.T) {
 		t.Fatal("the brand's own logo map was changed")
 	}
 }
-
-// A built-in dropped from the shipped set is archived, not deleted, on the
-// next install, so posters made from it keep their source and history.
-func TestRetiredBuiltinIsArchived(t *testing.T) {
-	f := newFixture(t)
-	meta := posterrender.TemplateMeta{Name: "Old", Description: "retired", Photos: struct {
-		Min int `json:"min"`
-		Max int `json:"max"`
-	}{0, 0}, Needs: []string{"title"}}
-	if err := upsertBuiltin(f.ctx, f.pool, "old-layout", meta, "export const meta = {};"); err != nil {
-		t.Fatal(err)
-	}
-	f.app.installBuiltins(f.ctx)
-	ts, err := listTemplates(f.ctx, f.pool, f.tenant.ID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var old *Template
-	for i := range ts {
-		if ts[i].BuiltinKey == "old-layout" {
-			old = &ts[i]
-		}
-	}
-	if old == nil || old.Status != TemplateArchived {
-		t.Fatalf("retired built-in = %+v", old)
-	}
-	_, _ = f.pool.Exec(f.ctx, "DELETE FROM app_poster_templates WHERE tenant_id IS NULL AND builtin_key = 'old-layout'")
-}

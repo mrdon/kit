@@ -1,6 +1,6 @@
 # Kit Posters App — spec
 
-**Status:** Implemented (2026-10-10), all six phases. The shipped built-in templates were replaced on 2026-10-11 with seven structurally different layouts (badge, calendar, caption, corners, marquee, masthead, twotone), designed from Gravity's own published posters and poster conventions; the prototype's seven named below are archived in each workspace, not deleted. One deviation from the design below: the renderer runs as a child process of the kit binary (same image, `POSTER_RENDERER_DIR`) rather than a separate Dokku app; `POSTER_RENDERER_URL` still allows a split later. Prototype lives in `~/dev/marketing` (commit `3ab2496`).
+**Status:** Implemented (2026-10-10), all six phases. The shipped built-in templates were replaced on 2026-10-11 with seven structurally different layouts (badge, calendar, caption, corners, marquee, masthead, twotone), designed from Gravity's own published posters and poster conventions. The prototype's seven named below are gone. One deviation from the design below: the renderer runs as a child process of the kit binary (same image, `POSTER_RENDERER_DIR`) rather than a separate Dokku app; `POSTER_RENDERER_URL` still allows a split later. Prototype lives in `~/dev/marketing` (commit `3ab2496`).
 **Audience:** Implementing agent / Don
 
 ## Problem

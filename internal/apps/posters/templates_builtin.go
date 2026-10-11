@@ -131,9 +131,9 @@ func (a *App) installBuiltins(ctx context.Context) {
 			slog.Error("posters: installing built-in template", "key", t.Key, "error", err)
 		}
 	}
-	if n, err := archiveBuiltinsExcept(ctx, a.pool, keys); err != nil {
-		slog.Error("posters: archiving retired built-ins", "error", err)
+	if n, err := deleteBuiltinsExcept(ctx, a.pool, keys); err != nil {
+		slog.Error("posters: removing old built-ins", "error", err)
 	} else if n > 0 {
-		slog.Info("posters: archived retired built-in templates", "count", n)
+		slog.Info("posters: removed old built-in templates", "count", n)
 	}
 }
