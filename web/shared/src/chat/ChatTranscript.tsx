@@ -20,7 +20,10 @@ type Props = {
 export default function ChatTranscript({ turns, onStop, onRetry }: Props) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // Scroll the transcript itself, not the page: scrollIntoView walks every
+    // scrollable ancestor, so each tool event nudged the whole page up.
+    const pane = bottomRef.current?.parentElement;
+    if (pane) pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
   }, [turns.length, turns[turns.length - 1]?.status, turns[turns.length - 1]?.response]);
 
   return (

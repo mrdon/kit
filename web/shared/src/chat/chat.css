@@ -194,6 +194,7 @@
 /* Composer: textarea + mic + send, pinned to bottom of the sheet */
 .chat-composer {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
   padding: 10px 12px;
@@ -203,6 +204,7 @@
 }
 .chat-input {
   flex: 1;
+  min-width: 0;
   resize: none;
   background: var(--card-code-bg);
   color: var(--card-fg);
@@ -298,11 +300,14 @@
 .chat-attach:hover { opacity: 1; }
 .chat-attach:disabled { opacity: 0.3; cursor: default; }
 
+/* Attachment chips take a row of their own above the text box; as a
+   sibling in the composer's row they pushed the box off the right edge. */
 .chat-attachments {
+  flex-basis: 100%;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
 .chat-attachment-chip {
   display: inline-flex;
