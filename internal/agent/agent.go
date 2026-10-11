@@ -80,6 +80,15 @@ type RunInput struct {
 	OnToolCall  func(name string)
 	OnIteration func()
 
+	// OnUsage, when set, receives each LLM response's token usage with the
+	// model it ran on, so a surface can tally and show what a turn cost.
+	OnUsage func(model string, u anthropic.Usage)
+
+	// MaxIterations caps LLM round trips for this run; 0 means the
+	// default. Scoped chats that render and look at images (poster chat)
+	// raise it, since every look is a round trip.
+	MaxIterations int
+
 	// SystemSuffix is appended to the system prompt for this run only.
 	// Chat uses it to inject the card the user is acting on, so the
 	// prompt-shaped context doesn't accumulate in replayed history when
@@ -187,7 +196,11 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 	sentMessage := false
 	var usage usageTotals
 
-	for i := range maxIterations {
+	limit := in.MaxIterations
+	if limit <= 0 {
+		limit = maxIterations
+	}
+	for i := range limit {
 		iterStart := time.Now()
 		if status != nil {
 			status.update(ctx, "Thinking...")
@@ -205,6 +218,9 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			return err
 		}
 		usage.add(&resp.Usage)
+		if in.OnUsage != nil {
+			in.OnUsage(modelID, resp.Usage)
+		}
 
 		if resp.StopReason == "end_turn" && len(resp.ToolUses()) == 0 {
 			if a.handleEndTurn(ctx, ec, in, resp) {

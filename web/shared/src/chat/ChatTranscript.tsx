@@ -1,3 +1,4 @@
+import type { ChatUsage } from './events';
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -59,6 +60,7 @@ export default function ChatTranscript({ turns, onStop, onRetry }: Props) {
           {!t.inFlight && t.toolCount > 0 && t.response && (
             <div className="chat-tool-count" aria-label={`${t.toolCount} tool ${t.toolCount === 1 ? 'call' : 'calls'}`}>
               {t.toolCount} tool {t.toolCount === 1 ? 'call' : 'calls'}
+              {t.usage && <span className="chat-usage"> · {usageText(t.usage)}</span>}
             </div>
           )}
           {t.errorMessage && (
@@ -74,4 +76,14 @@ export default function ChatTranscript({ turns, onStop, onRetry }: Props) {
       <div ref={bottomRef} />
     </div>
   );
+}
+
+// usageText is the one-line cost of a turn: tokens in and out, and a rough
+// dollar figure when the model is priced. Cached input is counted as in.
+function usageText(u: ChatUsage): string {
+  const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
+  const inTok = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens;
+  const parts = [`${u.calls} ${u.calls === 1 ? 'call' : 'calls'}`, `${k(inTok)} in`, `${k(u.output_tokens)} out`];
+  if (u.cost_usd !== undefined) parts.push(u.cost_usd < 0.01 ? '<$0.01' : `~$${u.cost_usd.toFixed(2)}`);
+  return parts.join(' · ');
 }

@@ -18,6 +18,15 @@ import (
 	"github.com/mrdon/kit/internal/sse"
 )
 
+// Renders are cheap; what a chat message costs is the model looking at
+// each one. chatRenderBudget is what the prompt promises the model, and
+// chatMaxIterations is the hard cap on round trips behind it, with room
+// for reads, searches, sheet looks and the reply.
+const (
+	chatRenderBudget  = 8
+	chatMaxIterations = 20
+)
+
 // Poster chat and template chat: the shared widget talks to these over
 // SSE exactly as card chat does, but the subject is a poster or a
 // template, so the session is keyed on it and the agent is clamped to the
@@ -109,7 +118,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request, kind string, su
 	_ = chat.Execute(r.Context(), chat.ExecuteInput{
 		Pool: a.pool, Agent: a.agent, Slack: slackClient, Tenant: tenant, User: user,
 		Text: req.Text, Attachments: attachments,
-		Scope: &chat.Scope{App: AppName, Kind: kind, ID: id.String(), SystemSuffix: systemSuffix, AllowedTools: chatToolNames},
+		Scope: &chat.Scope{App: AppName, Kind: kind, ID: id.String(), SystemSuffix: systemSuffix, AllowedTools: chatToolNames, MaxIterations: chatMaxIterations},
 	}, emit)
 }
 
@@ -137,6 +146,7 @@ func (a *App) posterChatSuffix(ctx context.Context, caller *services.Caller, id 
 	data["EventLine"] = eventLine
 	data["Format"] = brand.PortraitFormat
 	data["StockAllowed"] = a.stockAllowed(ctx, caller)
+	data["RenderBudget"] = chatRenderBudget
 	return mustRender("system_poster_chat.tmpl", data), nil
 }
 

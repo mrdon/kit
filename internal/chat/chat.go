@@ -128,6 +128,40 @@ type Scope struct {
 	// Model overrides the model; empty means Sonnet, since scoped chat is
 	// tool-heavy editing work.
 	Model string
+	// MaxIterations caps LLM round trips per message; 0 means the agent's
+	// default. Raise it for chats whose tools return images to look at.
+	MaxIterations int
+}
+
+// TurnUsage is what one chat message cost, sent on the done event. CostUSD
+// is an estimate from list prices and absent when the model is unknown.
+type TurnUsage struct {
+	Model   string  `json:"model"`
+	Calls   int     `json:"calls"`
+	Input   int     `json:"input_tokens"`
+	Output  int     `json:"output_tokens"`
+	CacheR  int     `json:"cache_read_input_tokens"`
+	CacheW  int     `json:"cache_creation_input_tokens"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+}
+
+func (t *TurnUsage) add(model string, u anthropic.Usage) {
+	t.Model = model
+	t.Calls++
+	t.Input += u.InputTokens
+	t.Output += u.OutputTokens
+	t.CacheR += u.CacheReadInputTokens
+	t.CacheW += u.CacheCreationInputTokens
+}
+
+func (t TurnUsage) priced() TurnUsage {
+	usd, ok := anthropic.EstimateCost(t.Model, anthropic.Usage{
+		InputTokens: t.Input, OutputTokens: t.Output, CacheReadInputTokens: t.CacheR, CacheCreationInputTokens: t.CacheW,
+	})
+	if ok {
+		t.CostUSD = usd
+	}
+	return t
 }
 
 // Execute runs one chat turn for a (tenant, user, card) triple. It
@@ -185,6 +219,8 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 			_ = emit(EventStatus, map[string]any{"status": string(StatusThinking)})
 		},
 	}
+	var usage TurnUsage
+	runInput.OnUsage = usage.add
 	applySurface(&runInput, in)
 
 	if err := in.Agent.Run(ctx, runInput); err != nil {
@@ -199,7 +235,7 @@ func Execute(ctx context.Context, in ExecuteInput, emit Emitter) error {
 		return err
 	}
 
-	return emit(EventDone, map[string]any{})
+	return emit(EventDone, map[string]any{"usage": usage.priced()})
 }
 
 // threadKey builds the deterministic slack_thread_ts for a chat
@@ -370,6 +406,7 @@ func applySurface(runInput *agent.RunInput, in ExecuteInput) {
 		if runInput.Model == "" {
 			runInput.Model = anthropic.ModelSonnet()
 		}
+		runInput.MaxIterations = in.Scope.MaxIterations
 	case in.Card != nil:
 		// Inject the card as a system suffix so it doesn't accumulate
 		// in the replayed message history when the user sends

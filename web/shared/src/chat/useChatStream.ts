@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { chatExecute } from './transport';
 import { readSSE } from './sse';
-import { ChatEvent, ChatStatus, type ChatStatusType } from './events';
+import { ChatEvent, ChatStatus, type ChatStatusType, type ChatUsage, type DonePayload } from './events';
 import { parseEventData } from './parse';
 
 export type ChatTurn = {
@@ -24,6 +24,8 @@ export type ChatTurn = {
   toolCount: number;
   // On transport/server error, the message text so the UI can show retry.
   errorMessage?: string;
+  // What the turn cost, from the done event.
+  usage?: ChatUsage;
   // Files the user attached to this turn, for rendering on the user
   // bubble. previewUrl is a local object URL for image thumbnails.
   attachments?: { name: string; previewUrl?: string }[];
@@ -135,7 +137,8 @@ export function useChatStream(opts: ChatStreamOptions): UseChatStreamResult {
               break;
             }
             case ChatEvent.Done: {
-              updateTurn(turnKey, { inFlight: false, status: 'done' });
+              const d = parseEventData(frame.data) as DonePayload;
+              updateTurn(turnKey, { inFlight: false, status: 'done', usage: d.usage });
               onDone?.();
               break;
             }

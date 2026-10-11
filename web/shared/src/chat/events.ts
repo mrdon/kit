@@ -26,7 +26,17 @@ export type FinalPayload = { text: string };
 export type StatusPayload = { status: ChatStatusType };
 export type ToolPayload = { name: string };
 export type ResponsePayload = { text: string };
-export type DonePayload = { removed_ids?: string[] };
+/** Mirror of chat.TurnUsage (Go): what one message cost. cost_usd is an estimate from list prices. */
+export type ChatUsage = {
+  model: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+  cost_usd?: number;
+};
+export type DonePayload = { removed_ids?: string[]; usage?: ChatUsage };
 export type ErrorPayload = { message: string };
 
 export type ChatEventFrame =
