@@ -23,6 +23,10 @@ export type Prepared = {
   width: number;
   height: number;
   c2pa: Verdict;
+  // The source had transparency, so the prepared copy is a PNG and crops
+  // of it stay transparent. A logo dropped in as a photo would otherwise
+  // get a black box where its background was.
+  alpha: boolean;
 };
 
 export class ImageStore {
@@ -51,31 +55,33 @@ export class ImageStore {
   }
 
   private async prepareUncached(ref: ImageRef, key: string): Promise<Prepared> {
-    const file = path.join(this.dir, `${key}.jpg`);
     const metaFile = path.join(this.dir, `${key}.json`);
-    if (fs.existsSync(file) && fs.existsSync(metaFile)) {
-      const now = new Date();
-      fs.utimesSync(file, now, now);
-      return { file, ...(JSON.parse(fs.readFileSync(metaFile, "utf8")) as Omit<Prepared, "file">) };
+    if (fs.existsSync(metaFile)) {
+      const meta = JSON.parse(fs.readFileSync(metaFile, "utf8")) as Omit<Prepared, "file"> & { ext?: string };
+      const file = path.join(this.dir, `${key}.${meta.ext ?? "jpg"}`);
+      if (fs.existsSync(file)) {
+        const now = new Date();
+        fs.utimesSync(file, now, now);
+        return { file, width: meta.width, height: meta.height, c2pa: meta.c2pa, alpha: meta.alpha ?? false };
+      }
     }
     const raw = await this.fetch(ref);
     const c2pa = c2paVerdict(raw);
     let info: sharp.OutputInfo;
+    let alpha = false;
+    let file = "";
     try {
-      info = (
-        await sharp(raw)
-          .rotate()
-          .resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true })
-          .jpeg({ quality: 92 })
-          .toFile(file)
-      );
+      alpha = Boolean((await sharp(raw).metadata()).hasAlpha);
+      file = path.join(this.dir, `${key}.${alpha ? "png" : "jpg"}`);
+      const resized = sharp(raw).rotate().resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true });
+      info = await (alpha ? resized.png() : resized.jpeg({ quality: 92 })).toFile(file);
     } catch (e) {
       throw new ImageError(`image ${ref.id} could not be decoded: ${e instanceof Error ? e.message : String(e)}`);
     }
-    const meta = { width: info.width, height: info.height, c2pa };
+    const meta = { width: info.width, height: info.height, c2pa, alpha, ext: alpha ? "png" : "jpg" };
     fs.writeFileSync(metaFile, JSON.stringify(meta));
     this.prune();
-    return { file, ...meta };
+    return { file, width: info.width, height: info.height, c2pa, alpha };
   }
 
   private async fetch(ref: ImageRef): Promise<Buffer> {
@@ -173,15 +179,14 @@ export async function fitPhoto(prepared: Prepared, use: PhotoUse, format: Format
   const ch = Math.round(h / zoom);
   const left = Math.min(w - cw, Math.max(0, Math.round(use.focusX * w - cw / 2)));
   const top = Math.min(h - ch, Math.max(0, Math.round(use.focusY * h - ch / 2)));
-  const buf = await sharp(prepared.file)
+  const cropped = sharp(prepared.file)
     .extract({ left, top, width: cw, height: ch })
-    .resize(format.width, format.height, { fit: "outside", withoutEnlargement: true, kernel: "lanczos3" })
-    .jpeg({ quality: 92 })
-    .toBuffer();
+    .resize(format.width, format.height, { fit: "outside", withoutEnlargement: true, kernel: "lanczos3" });
+  const buf = await (prepared.alpha ? cropped.png() : cropped.jpeg({ quality: 92 })).toBuffer();
   const pos = (f: number, size: number, start: number, cut: number) =>
     cut === size ? f : Math.min(1, Math.max(0, (f * size - start) / cut));
   return {
-    uri: `data:image/jpeg;base64,${buf.toString("base64")}`,
+    uri: `data:image/${prepared.alpha ? "png" : "jpeg"};base64,${buf.toString("base64")}`,
     focusX: zoom === 1 ? use.focusX : pos(use.focusX, w, left, cw),
     focusY: zoom === 1 ? use.focusY : pos(use.focusY, h, top, ch),
   };

@@ -99,7 +99,7 @@ var posterTools = []services.ToolMeta{
 		Name: "ask_for_photo",
 		Description: "The library has no photo for what the user wants. Returns the message to relay: how to add one to the " +
 			"shared Drive folder (then it is indexed and searchable for every poster) or to upload one here for this poster only " +
-			"(reference it as <Photo id=\"attachment:<attachment id>\" />). Changes nothing.",
+			"(reference it as <Photo id=\"attachment:<attachment id>\" />, or as a Logo variant for a mark). Changes nothing.",
 		Schema: services.PropsReq(map[string]any{
 			"what": services.Field("string", "What kind of photo is missing, e.g. 'a photo of the trivia host'."),
 		}, "what"),

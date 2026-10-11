@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { brand, builtin, content, photo, service } from "./helpers.mjs";
+import sharp from "sharp";
+import { brand, builtin, content, logo, photo, service } from "./helpers.mjs";
 
 test("copy check catches the mechanical tells and the tenant's own banned words", () => {
   const r = service.copyCheck({ ...content, summary: "Come for hoppy hour — it's AMAZING!" }, brand);
@@ -43,4 +44,41 @@ test("a template whose meta is missing or malformed cannot pass the check", asyn
   const r = await service.templateCheck(noMeta, brand, []);
   const all = Object.values(r.problems).flat().join("\n");
   assert.match(all, /export const meta/);
+});
+
+// A transparent PNG placed as a photo keeps its transparency: the ground
+// shows through its padding instead of a black box. This is what an
+// uploaded logo looks like when the model drops it in as a Photo.
+test("a transparent image placed as a photo shows the ground through it", async () => {
+  const png = await logo();
+  const ref = { id: "attachment:x", source: "inline", data: png.toString("base64"), modified: "1" };
+  const g = Object.keys(brand.grounds)[0];
+  const source = `import React from "react";
+import { grounds, Photo } from "@poster/kit";
+export default function Poster({ format }) {
+  return <div style={{ display: "flex", width: format.width, height: format.height, backgroundColor: grounds["${g}"].bg }}><Photo id="attachment:x" focusX={0.5} focusY={0.5} zoom={1} /></div>;
+}`;
+  const r = await service.render({ kind: "poster", source, format: "portrait", brand, photos: [ref] });
+  assert.deepEqual(r.problems, []);
+  const { data } = await sharp(Buffer.from(r.png, "base64")).raw().toBuffer({ resolveWithObject: true });
+  const hex = brand.tokens[brand.grounds[g].bg];
+  const want = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const got = [data[0], data[1], data[2]];
+  assert.ok(got.every((v, i) => Math.abs(v - want[i]) < 10), `top-left pixel ${got} should be the ground ${hex}`);
+});
+
+// The same file as a logo variant renders with no "not mapped" warning.
+test("an uploaded file can be a logo variant", async () => {
+  const png = await logo();
+  const ref = { id: "attachment:x", source: "inline", data: png.toString("base64"), modified: "1" };
+  const withLogo = { ...brand, logos: { ...brand.logos, "attachment:x": ref } };
+  const g = Object.keys(brand.grounds)[0];
+  const source = `import React from "react";
+import { grounds, Logo } from "@poster/kit";
+export default function Poster({ format }) {
+  return <div style={{ display: "flex", width: format.width, height: format.height, backgroundColor: grounds["${g}"].bg, padding: 100 }}><Logo variant="attachment:x" width={400} /></div>;
+}`;
+  const r = await service.render({ kind: "poster", source, format: "portrait", brand: withLogo, photos: [ref] });
+  assert.deepEqual(r.problems, []);
+  assert.ok(!r.warnings.some((w) => w.includes("not mapped")), r.warnings.join("; "));
 });

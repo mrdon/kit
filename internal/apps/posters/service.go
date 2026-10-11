@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -141,7 +142,7 @@ func (a *App) renderSource(ctx context.Context, tenantID uuid.UUID, brand *poste
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.renderer.Render(ctx, posterrender.RenderRequest{Kind: "poster", Source: source, Format: format, Brand: *brand, Photos: refs})
+	res, err := a.renderer.Render(ctx, posterrender.RenderRequest{Kind: "poster", Source: source, Format: format, Brand: withAttachmentLogos(*brand, refs), Photos: refs})
 	var rerr *posterrender.RequestError
 	if errors.As(err, &rerr) {
 		// A refusal (bad source, missing image) is a problem the caller
@@ -301,4 +302,21 @@ func (a *App) activeTemplates(ctx context.Context, tenantID uuid.UUID) ([]poster
 		byID[t.ID.String()] = t
 	}
 	return out, byID, nil
+}
+
+// withAttachmentLogos lets a file uploaded in chat be placed as a logo
+// (<Logo variant="attachment:<id>" />) as well as a photo. The logo path
+// trims padding and keeps transparency, which is what a partner's mark
+// needs; the brand's own logos are untouched. The copy keeps the cached
+// brand clean.
+func withAttachmentLogos(brand posterrender.Brand, refs []posterrender.ImageRef) posterrender.Brand {
+	logos := make(map[string]posterrender.ImageRef, len(brand.Logos)+1)
+	maps.Copy(logos, brand.Logos)
+	for _, r := range refs {
+		if strings.HasPrefix(r.ID, "attachment:") {
+			logos[r.ID] = r
+		}
+	}
+	brand.Logos = logos
+	return brand
 }

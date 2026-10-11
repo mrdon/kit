@@ -232,3 +232,17 @@ func TestRecordListedPhotosBatch(t *testing.T) {
 		t.Fatalf("paging: total=%d page=%+v folders=%v", total, page, folders)
 	}
 }
+
+// An uploaded file is offered to the renderer as a logo variant too, under
+// its attachment id, without touching the brand's own logos.
+func TestWithAttachmentLogos(t *testing.T) {
+	brand := posterrender.Brand{Logos: map[string]posterrender.ImageRef{"white": {ID: "logo:w"}}}
+	refs := []posterrender.ImageRef{{ID: "attachment:abc", Source: posterrender.SourceInline}, {ID: "11111111-1111-1111-1111-111111111111", Source: posterrender.SourceDrive}}
+	out := withAttachmentLogos(brand, refs)
+	if len(out.Logos) != 2 || out.Logos["attachment:abc"].ID != "attachment:abc" || out.Logos["white"].ID != "logo:w" {
+		t.Fatalf("logos = %+v", out.Logos)
+	}
+	if len(brand.Logos) != 1 {
+		t.Fatal("the brand's own logo map was changed")
+	}
+}
