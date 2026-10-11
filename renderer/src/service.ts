@@ -62,10 +62,10 @@ export class Service {
       const fonts = await this.fonts(req.brand);
       const { logos, warnings: logoWarnings } = await resolveLogos(req.brand, this.store);
       const props: TemplateProps | { format: Format } =
-        req.kind === "template" ? { ...(req.props as TemplateProps), format } : { format };
+        req.kind === "template" ? { ...normalizeProps(req.props as TemplateProps), format } : { format };
       const compiled = compile(req.source);
       const out = run(compiled, props, req.brand, logoAspects(logos));
-      const images: ImageSet = { photos: new Map(req.photos.map((p) => [p.id, p])), logos };
+      const images: ImageSet = { photos: new Map((req.photos ?? []).map((p) => [p.id, p])), logos };
       const problems: string[] = [];
       const warnings = [...logoWarnings];
       let meta: TemplateMeta | undefined;
@@ -101,20 +101,21 @@ export class Service {
       const fonts = await this.fonts(req.brand);
       const { logos } = await resolveLogos(req.brand, this.store);
       const aspects = logoAspects(logos);
-      const copy = checkContent(req.content, req.brand.bannedWords);
+      const content = normalizeContent(req.content);
+      const copy = checkContent(content, req.brand.bannedWords);
       if (copy.problems.length) throw new RequestError(`the copy fails the checks: ${copy.problems.join("; ")}`);
       const focus = new Map<string, PhotoUse>();
       if (req.hero) focus.set(req.hero.id, req.hero);
-      const pool = photoPool(req.photos, focus, req.hero);
+      const pool = photoPool(req.photos ?? [], focus, req.hero);
       const grounds = Object.keys(req.brand.grounds);
       const accent = Object.keys(req.brand.accents)[0] ?? "";
-      const candidates = plan({ content: req.content, templates: req.templates, grounds, accent, pool, exclude: req.exclude });
-      const images: ImageSet = { photos: new Map(req.photos.map((p) => [p.id, p])), logos };
+      const candidates = plan({ content, templates: req.templates, grounds, accent, pool, exclude: req.exclude });
+      const images: ImageSet = { photos: new Map((req.photos ?? []).map((p) => [p.id, p])), logos };
       const out: OptionsResponse = { options: [], skipped: [] };
       for (const c of candidates) {
         if (out.options.length >= req.count) break;
         try {
-          const source = inlinePoster(c.template.source, req.content, c.photos, c.ground, c.accent);
+          const source = inlinePoster(c.template.source, content, c.photos, c.ground, c.accent);
           const tree = run(compile(source), { format }, req.brand, aspects).tree;
           const v = validateTree(tree, { brand: req.brand, photos: images.photos, logoVariants: new Set(logos.keys()) });
           if (v.problems.length) {
@@ -248,3 +249,15 @@ const SAMPLES: Record<string, Content> = {
 };
 
 export { SourceError };
+
+// Content as a template may read it: the lists exist even when the sender
+// left them out. Kit's Go client sends empty lists, but a nil slice from an
+// older build or another client arrives as null, and the templates call
+// .filter on details. One normalisation here, not a guard in every template.
+function normalizeContent(c: Content): Content {
+  return { ...c, details: c.details ?? [] };
+}
+
+function normalizeProps(p: TemplateProps): TemplateProps {
+  return { ...p, content: normalizeContent(p.content), photos: p.photos ?? [] };
+}

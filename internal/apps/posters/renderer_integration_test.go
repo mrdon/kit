@@ -98,6 +98,13 @@ func TestRendererEndToEnd(t *testing.T) {
 			templates = append(templates, posterrender.PlannedTemplate{ID: b.Key, Source: b.Source, Weight: 1, Meta: b.Meta})
 		}
 	}
+	// Nil lists are what Kit sends for a type-only event (no hero, no
+	// details); the client must not hand the renderer JSON null for them.
+	bare := content
+	bare.Details = nil
+	if _, err := r.Options(ctx, posterrender.OptionsRequest{Content: bare, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Count: 1}); err != nil {
+		t.Fatalf("options with nil lists: %v", err)
+	}
 	opts, err := r.Options(ctx, posterrender.OptionsRequest{Content: content, Brand: *brand, Format: brand.PortraitFormat, Photos: []posterrender.ImageRef{}, Templates: templates, Count: 4})
 	if err != nil {
 		t.Fatalf("options: %v", err)

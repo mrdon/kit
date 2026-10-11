@@ -30,7 +30,7 @@ export function eligibleTemplates(input: PlanInput): PlannedTemplate[] {
     const v = (input.content as unknown as Record<string, unknown>)[field];
     return Array.isArray(v) ? v.length > 0 : Boolean(v);
   };
-  const ts = input.templates.filter((t) => t.meta.photos.min <= input.pool.length && t.meta.needs.every(has));
+  const ts = (input.templates ?? []).filter((t) => t.meta.photos.min <= input.pool.length && (t.meta.needs ?? []).every(has));
   return [...ts].sort((a, b) => b.weight - a.weight);
 }
 

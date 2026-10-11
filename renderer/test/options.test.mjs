@@ -64,6 +64,15 @@ test("templates already shown are left out when others remain", async () => {
   assert.deepEqual([...new Set(r.options.map((o) => o.templateId))], ["when"]);
 });
 
+test("a request with no photo list at all still produces type-only options", async () => {
+  // A Go nil slice arrives as JSON null; the service must not fall over on it.
+  const req = { content: { ...content, details: null }, brand, format: "portrait", photos: null, templates: templates(), count: 2 };
+  const r = await service.options(req);
+  assert.ok(r.options.length > 0, "no options");
+  const again = await service.render({ kind: "poster", source: r.options[0].source, format: "portrait", brand, photos: null });
+  assert.deepEqual(again.problems, []);
+});
+
 test("copy that fails the rules never reaches the generator", async () => {
   await assert.rejects(
     service.options({ content: { ...content, title: "Don't miss this!" }, brand, format: "portrait", photos: [], templates: templates(), count: 1 }),

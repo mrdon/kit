@@ -108,6 +108,41 @@ type ImageRef struct {
 	Folder   string      `json:"folder,omitempty"`
 }
 
+// normalized returns the request with nil lists as empty ones. A nil Go
+// slice marshals as JSON null, and the renderer iterates these fields.
+func (r RenderRequest) normalized() RenderRequest {
+	if r.Photos == nil {
+		r.Photos = []ImageRef{}
+	}
+	if r.Props != nil {
+		p := *r.Props
+		p.Content = p.Content.normalized()
+		if p.Photos == nil {
+			p.Photos = []PhotoUse{}
+		}
+		r.Props = &p
+	}
+	return r
+}
+
+func (r OptionsRequest) normalized() OptionsRequest {
+	if r.Photos == nil {
+		r.Photos = []ImageRef{}
+	}
+	if r.Templates == nil {
+		r.Templates = []PlannedTemplate{}
+	}
+	r.Content = r.Content.normalized()
+	return r
+}
+
+func (c Content) normalized() Content {
+	if c.Details == nil {
+		c.Details = []Detail{}
+	}
+	return c
+}
+
 // PhotoUse is how a layout crops a photo.
 type PhotoUse struct {
 	ID     string  `json:"id"`

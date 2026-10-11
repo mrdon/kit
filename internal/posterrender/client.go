@@ -103,7 +103,7 @@ func (c *Client) post(ctx context.Context, path string, in, out any) error {
 // Render renders one poster or template.
 func (c *Client) Render(ctx context.Context, req RenderRequest) (*RenderResponse, error) {
 	var out RenderResponse
-	if err := c.post(ctx, "/render", req, &out); err != nil {
+	if err := c.post(ctx, "/render", req.normalized(), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -112,7 +112,7 @@ func (c *Client) Render(ctx context.Context, req RenderRequest) (*RenderResponse
 // Options generates varied posters for one piece of content.
 func (c *Client) Options(ctx context.Context, req OptionsRequest) (*OptionsResponse, error) {
 	var out OptionsResponse
-	if err := c.post(ctx, "/options", req, &out); err != nil {
+	if err := c.post(ctx, "/options", req.normalized(), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
