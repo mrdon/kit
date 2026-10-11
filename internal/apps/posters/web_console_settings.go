@@ -138,7 +138,10 @@ type settingsBody struct {
 	AutoSync         bool                `json:"auto_sync"`
 }
 
-var variantInName = regexp.MustCompile(`(?i)[-_ ](color|colour|white|black|forest|reversed|mono)\b`)
+// variantInName finds a variant word in a logo filename. Underscores count
+// as word characters to \b, so "logo_white_transparent.png" needs the
+// explicit separator class on both sides.
+var variantInName = regexp.MustCompile(`(?i)(?:^|[-_ ])(color|colour|white|black|forest|reversed|mono)(?:[-_ .]|$)`)
 
 // handleSaveSettings stores the folders and mapping. A folder is checked by
 // listing it, and logo files named after a variant map themselves when no
@@ -176,7 +179,11 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "logo folder: "+err.Error())
 			return
 		}
-		autoMapLogos(files, logoMap)
+		var wanted []string
+		if st, err := a.brandStatus(r.Context(), caller.TenantID); err == nil && st.Brand != nil {
+			wanted = logoVariants(st)
+		}
+		autoMapLogos(files, logoMap, wanted)
 	}
 	s := Settings{TenantID: caller.TenantID, PhotoFolderID: photoID, LogoFolderID: logoID, LogoMap: logoMap, AllowStockPhotos: body.AllowStockPhotos, AutoSync: body.AutoSync}
 	if _, err := upsertSettings(r.Context(), a.pool, s); err != nil {
@@ -192,14 +199,23 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // autoMapLogos fills unmapped variants from filenames like
-// gravity-white.png; a mapping an admin made by hand is kept.
-func autoMapLogos(files []DriveFile, logoMap map[string]LogoFile) {
+// gravity-white.png; a mapping an admin made by hand is kept. When the
+// names do not say and exactly one wanted variant and one image file are
+// left over, they are paired: a folder with "logo.png" and
+// "logo_white.png" needs no further help.
+func autoMapLogos(files []DriveFile, logoMap map[string]LogoFile, wanted []string) {
+	used := map[string]bool{}
+	for _, f := range logoMap {
+		used[f.FileID] = true
+	}
+	var leftover []DriveFile
 	for _, f := range files {
-		if !isImageFile(f) {
+		if !isImageFile(f) || used[f.ID] {
 			continue
 		}
 		m := variantInName.FindStringSubmatch(f.Name)
 		if m == nil {
+			leftover = append(leftover, f)
 			continue
 		}
 		variant := strings.ToLower(m[1])
@@ -212,9 +228,20 @@ func autoMapLogos(files []DriveFile, logoMap map[string]LogoFile) {
 			variant = "black"
 		}
 		if cur, ok := logoMap[variant]; ok && cur.FileID != "" {
+			leftover = append(leftover, f)
 			continue
 		}
 		logoMap[variant] = LogoFile{FileID: f.ID, Name: f.Name, Modified: f.Modified}
+		used[f.ID] = true
+	}
+	var missing []string
+	for _, v := range wanted {
+		if cur, ok := logoMap[v]; !ok || cur.FileID == "" {
+			missing = append(missing, v)
+		}
+	}
+	if len(missing) == 1 && len(leftover) == 1 {
+		logoMap[missing[0]] = LogoFile{FileID: leftover[0].ID, Name: leftover[0].Name, Modified: leftover[0].Modified}
 	}
 }
 

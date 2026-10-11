@@ -95,3 +95,24 @@ func TestContrast(t *testing.T) {
 		t.Errorf("ink/paper contrast = %.2f, want ~15.7", r)
 	}
 }
+
+// Gravity's own files: one says "white" behind an underscore, the other
+// says nothing; the brand wants white and color.
+func TestAutoMapLogosPairsTheLeftover(t *testing.T) {
+	files := []DriveFile{
+		{ID: "f1", Name: "Gravity-Logo1-03.png", Mime: "image/png"},
+		{ID: "f2", Name: "gravity_logo_white_transparentbg.png", Mime: "image/png"},
+		{ID: "f3", Name: "notes.txt", Mime: "text/plain"},
+	}
+	m := map[string]LogoFile{}
+	autoMapLogos(files, m, []string{"white", "color"})
+	if m["white"].FileID != "f2" || m["color"].FileID != "f1" {
+		t.Fatalf("map = %+v", m)
+	}
+	// A hand mapping is kept, and two leftovers for two variants stay unmapped.
+	m2 := map[string]LogoFile{"white": {FileID: "f1"}}
+	autoMapLogos([]DriveFile{{ID: "f1", Name: "a.png", Mime: "image/png"}, {ID: "f4", Name: "b.png", Mime: "image/png"}, {ID: "f5", Name: "c.png", Mime: "image/png"}}, m2, []string{"white", "color", "black"})
+	if m2["white"].FileID != "f1" || m2["color"].FileID != "" || m2["black"].FileID != "" {
+		t.Fatalf("map2 = %+v", m2)
+	}
+}
