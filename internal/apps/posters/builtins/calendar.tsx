@@ -4,7 +4,7 @@ import { CopyFoot, Photo, Text, accents, fitTitle, font, grounds, weights, type 
 export const meta = {
   name: "Calendar",
   description: "A big day-number tile in the accent colour with the title beside it; the photo, when there is one, runs underneath",
-  photos: { min: 0, max: 1 },
+  photos: { min: 1, max: 1 },
   needs: ["eyebrow", "title"],
 };
 

@@ -59,16 +59,16 @@ func TestBuiltins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ts) != 7 || ts[0].Key != "badge" || ts[6].Key != "twotone" {
+	if len(ts) != 7 || ts[0].Key != "badge" || ts[6].Key != "ticket" {
 		keys := make([]string, 0, len(ts))
 		for _, b := range ts {
 			keys = append(keys, b.Key)
 		}
 		t.Fatalf("builtins = %v", keys)
 	}
-	masthead := ts[5]
-	if masthead.Meta.Photos.Max != 0 || masthead.Meta.Name != "Masthead" || len(masthead.Meta.Needs) != 2 {
-		t.Errorf("masthead meta = %+v", masthead.Meta)
+	pair := ts[5]
+	if pair.Meta.Photos.Min != 2 || pair.Meta.Name != "Pair" || len(pair.Meta.Needs) != 2 {
+		t.Errorf("pair meta = %+v", pair.Meta)
 	}
 }
 

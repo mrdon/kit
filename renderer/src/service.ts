@@ -165,7 +165,10 @@ export class Service {
         for (const [label, content] of Object.entries(SAMPLES)) {
           const key = `${name}:${label}`;
           try {
-            const uses = refs.slice(0, 3).map((r) => ({ id: r.id, focusX: 0.5, focusY: 0.5, zoom: 1 }));
+            // As many photos as the layout asks for, cycling what we have,
+            // so a three-photo template checks in a thin library too.
+            const need = Math.max(1, meta?.photos?.min ?? 3, 3);
+            const uses = Array.from({ length: Math.min(need, 3) }, (_, i) => refs[i % refs.length]).map((r) => ({ id: r.id, focusX: 0.5, focusY: 0.5, zoom: 1 }));
             const ground = Object.keys(brand.grounds)[0] ?? "paper";
             const accent = Object.keys(brand.accents)[0] ?? "";
             const out = run(compiled, { content, format, photos: uses, ground, accent }, brand, aspects);

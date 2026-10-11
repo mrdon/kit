@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { brand, builtin, content, logo, photo, save, service } from "./helpers.mjs";
+import { brand, builtin, content, logo, photo, plain, save, service } from "./helpers.mjs";
 
-const NAMES = ["badge", "calendar", "caption", "corners", "marquee", "masthead", "twotone"];
+const NAMES = ["badge", "calendar", "caption", "marquee", "mosaic", "pair", "ticket"];
 
 test("every built-in template passes the activation check on portrait, story and screen", async () => {
   const photos = [await photo("p1"), await photo("p2", "#1C3D1B"), await photo("p3", "#D9D3C4")];
@@ -20,7 +20,7 @@ test("a template render honours the logo mapping and trims its padding", async (
   const withLogo = { ...brand, logos: { color: { id: "logo-color", source: "inline", data: (await logo()).toString("base64"), modified: "1" } } };
   const r = await service.render({
     kind: "template",
-    source: builtin("masthead"),
+    source: plain(),
     format: "portrait",
     brand: withLogo,
     photos: [],
@@ -30,7 +30,7 @@ test("a template render honours the logo mapping and trims its padding", async (
   // The white variant is unmapped on ink, and the warning says so.
   const ink = await service.render({
     kind: "template",
-    source: builtin("masthead"),
+    source: plain(),
     format: "portrait",
     brand: withLogo,
     photos: [],

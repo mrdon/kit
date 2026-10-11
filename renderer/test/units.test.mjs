@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sharp from "sharp";
-import { brand, builtin, content, logo, photo, service } from "./helpers.mjs";
+import { brand, builtin, content, logo, photo, plain, service } from "./helpers.mjs";
 
 test("copy check catches the mechanical tells and the tenant's own banned words", () => {
   const r = service.copyCheck({ ...content, summary: "Come for hoppy hour — it's AMAZING!" }, brand);
@@ -42,7 +42,7 @@ test("a contact sheet holds up to twelve numbered thumbnails", async () => {
 });
 
 test("a template whose meta is missing or malformed cannot pass the check", async () => {
-  const noMeta = builtin("masthead").replace(/export const meta[\s\S]*?};\n/, "");
+  const noMeta = plain().replace(/export const meta[\s\S]*?};\n/, "");
   const r = await service.templateCheck(noMeta, brand, []);
   const all = Object.values(r.problems).flat().join("\n");
   assert.match(all, /export const meta/);

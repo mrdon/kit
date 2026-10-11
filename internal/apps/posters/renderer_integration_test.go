@@ -49,16 +49,23 @@ func TestRendererEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var typeT BuiltinTemplate
+	var captionT BuiltinTemplate
 	for _, b := range bs {
-		if b.Key == "masthead" {
-			typeT = b
+		if b.Key == "caption" {
+			captionT = b
 		}
 	}
+	// Every layout takes a photo; three inline ones in one folder stand in
+	// for the library.
+	var photos []posterrender.ImageRef
+	for _, id := range []string{"p1", "p2", "p3"} {
+		photos = append(photos, posterrender.ImageRef{ID: id, Source: posterrender.SourceInline, Data: base64Encode(posterrender.PNG1x1), Modified: "1", Folder: "set"})
+	}
+	hero := posterrender.PhotoUse{ID: "p1", FocusX: 0.5, FocusY: 0.5, Zoom: 1}
 	content := posterrender.Content{Eyebrow: "Every Wednesday", Title: "Trivia night", Summary: "Free to play, no sign-up.", Details: []posterrender.Detail{{Label: "When", Value: "6:30 to 8:30pm"}}}
 	res, err := r.Render(ctx, posterrender.RenderRequest{
-		Kind: "template", Source: typeT.Source, Format: brand.PortraitFormat, Brand: *brand, Photos: []posterrender.ImageRef{},
-		Props: &posterrender.TemplateProps{Content: content, Photos: []posterrender.PhotoUse{}, Ground: "paper", Accent: "amber"},
+		Kind: "template", Source: captionT.Source, Format: brand.PortraitFormat, Brand: *brand, Photos: photos,
+		Props: &posterrender.TemplateProps{Content: content, Photos: []posterrender.PhotoUse{hero}, Ground: "paper", Accent: "amber"},
 	})
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -69,7 +76,7 @@ func TestRendererEndToEnd(t *testing.T) {
 	if len(res.PNG) < 1000 || string(res.PNG[1:4]) != "PNG" {
 		t.Fatalf("png = %d bytes", len(res.PNG))
 	}
-	if res.Meta == nil || res.Meta.Name != "Masthead" {
+	if res.Meta == nil || res.Meta.Name != "Caption" {
 		t.Errorf("meta = %+v", res.Meta)
 	}
 
@@ -93,20 +100,17 @@ func TestRendererEndToEnd(t *testing.T) {
 	// Options over the real generator: seven type-only candidates exist
 	// (type and when, two grounds each) so we ask for four.
 	var templates []posterrender.PlannedTemplate
-	// Every layout that stands without a photo: a type-only event's batch.
 	for _, b := range bs {
-		if b.Meta.Photos.Min == 0 {
-			templates = append(templates, posterrender.PlannedTemplate{ID: b.Key, Source: b.Source, Weight: 1, Meta: b.Meta})
-		}
+		templates = append(templates, posterrender.PlannedTemplate{ID: b.Key, Source: b.Source, Weight: 1, Meta: b.Meta})
 	}
 	// Nil lists are what Kit sends for a type-only event (no hero, no
 	// details); the client must not hand the renderer JSON null for them.
 	bare := content
 	bare.Details = nil
-	if _, err := r.Options(ctx, posterrender.OptionsRequest{Content: bare, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Count: 1}); err != nil {
+	if _, err := r.Options(ctx, posterrender.OptionsRequest{Content: bare, Brand: *brand, Format: brand.PortraitFormat, Templates: templates, Photos: photos, Hero: &hero, Count: 1}); err != nil {
 		t.Fatalf("options with nil lists: %v", err)
 	}
-	opts, err := r.Options(ctx, posterrender.OptionsRequest{Content: content, Brand: *brand, Format: brand.PortraitFormat, Photos: []posterrender.ImageRef{}, Templates: templates, Count: 4})
+	opts, err := r.Options(ctx, posterrender.OptionsRequest{Content: content, Brand: *brand, Format: brand.PortraitFormat, Photos: photos, Hero: &hero, Templates: templates, Count: 4})
 	if err != nil {
 		t.Fatalf("options: %v", err)
 	}

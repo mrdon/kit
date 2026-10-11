@@ -228,7 +228,7 @@ func (a *App) photoSet(ctx context.Context, tenantID uuid.UUID, hero *Photo) ([]
 // the render cache with their PNGs.
 func (a *App) storeBatch(ctx context.Context, tenantID uuid.UUID, poster *Poster, brand *posterrender.Brand, content *posterrender.Content, res *posterrender.OptionsResponse, byID map[string]Template, noPhoto bool, facts json.RawMessage, hash string) (*GenerateResult, error) {
 	if len(res.Options) == 0 {
-		reason := "no template could render this content inside the safe margins"
+		reason := "no active template could use this event's content and photos"
 		if len(res.Skipped) > 0 {
 			reason = res.Skipped[0].Reason
 		}

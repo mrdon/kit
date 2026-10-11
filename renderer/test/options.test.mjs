@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { brand, builtin, content, photo, save, service } from "./helpers.mjs";
+import { brand, builtin, content, photo, plain, save, service } from "./helpers.mjs";
 
-const NAMES = ["badge", "calendar", "caption", "corners", "marquee", "masthead", "twotone"];
+const NAMES = ["badge", "calendar", "caption", "marquee", "mosaic", "pair", "ticket"];
 const metas = {
-  badge: { photos: { min: 0, max: 1 } },
-  calendar: { photos: { min: 0, max: 1 } },
+  badge: { photos: { min: 1, max: 1 } },
+  calendar: { photos: { min: 1, max: 1 } },
   caption: { photos: { min: 1, max: 1 } },
-  corners: { photos: { min: 0, max: 1 } },
   marquee: { photos: { min: 1, max: 1 } },
-  masthead: { photos: { min: 0, max: 0 } },
-  twotone: { photos: { min: 0, max: 1 } },
+  mosaic: { photos: { min: 3, max: 3 } },
+  pair: { photos: { min: 2, max: 2 } },
+  ticket: { photos: { min: 1, max: 1 } },
 };
-// The templates that stand without a photo.
-const TYPE_ONLY = NAMES.filter((n) => metas[n].photos.min === 0);
 const templates = (weights = {}) =>
   NAMES.map((n) => ({ id: n, source: builtin(n), weight: weights[n] ?? 1, meta: { name: n, description: "", needs: ["eyebrow", "title"], ...metas[n] } }));
 
@@ -47,11 +45,12 @@ test("seven options spread template, ground and photo, and every one is a self-c
   }
 });
 
-test("without a hero only the templates that stand without a photo are offered, and weight orders them", async () => {
-  const r = await service.options({ content, brand, format: "portrait", photos: [], templates: templates({ masthead: 5 }), count: 7 });
-  assert.equal(r.options.length, 7, JSON.stringify(r.skipped));
-  assert.equal(r.options[0].templateId, "masthead");
-  for (const o of r.options) assert.ok(TYPE_ONLY.includes(o.templateId), o.templateId);
+test("every layout needs a photo, so without a hero nothing is offered; weight orders the rest", async () => {
+  const none = await service.options({ content, brand, format: "portrait", photos: [], templates: templates(), count: 7 });
+  assert.equal(none.options.length, 0);
+  const photos = [await photo("p1"), await photo("p2", "#1C3D1B"), await photo("p3", "#D9D3C4")];
+  const r = await service.options({ content, brand, format: "portrait", photos, hero: { id: "p1", focusX: 0.5, focusY: 0.5, zoom: 1 }, templates: templates({ ticket: 5 }), count: 3 });
+  assert.equal(r.options[0].templateId, "ticket");
 });
 
 test("templates already shown are left out when others remain", async () => {
@@ -59,20 +58,22 @@ test("templates already shown are left out when others remain", async () => {
     content,
     brand,
     format: "portrait",
-    photos: [],
+    photos: [await photo("p1"), await photo("p2", "#1C3D1B"), await photo("p3", "#D9D3C4")],
+    hero: { id: "p1", focusX: 0.5, focusY: 0.5, zoom: 1 },
     templates: templates(),
     count: 2,
-    exclude: TYPE_ONLY.filter((n) => n !== "twotone").flatMap((n) => Object.keys(brand.grounds).map((g) => `${n}|${g}`)),
+    exclude: NAMES.filter((n) => n !== "caption").flatMap((n) => Object.keys(brand.grounds).map((g) => `${n}|${g}`)),
   });
-  assert.deepEqual([...new Set(r.options.map((o) => o.templateId))], ["twotone"]);
+  assert.deepEqual([...new Set(r.options.map((o) => o.templateId))], ["caption"]);
 });
 
-test("a request with no photo list at all still produces type-only options", async () => {
-  // A Go nil slice arrives as JSON null; the service must not fall over on it.
-  const req = { content: { ...content, details: null }, brand, format: "portrait", photos: null, templates: templates(), count: 2 };
-  const r = await service.options(req);
-  assert.ok(r.options.length > 0, "no options");
-  const again = await service.render({ kind: "poster", source: r.options[0].source, format: "portrait", brand, photos: null });
+test("a request with no photo list at all does not fall over", async () => {
+  // A Go nil slice arrives as JSON null; the service must not throw on it.
+  const r = await service.options({ content: { ...content, details: null }, brand, format: "portrait", photos: null, templates: templates(), count: 2 });
+  assert.ok(Array.isArray(r.options));
+  const src = plain().replace(/export default function Template\(/, "function Template(").replace(/export const meta/, "const meta") +
+    `\nconst content = ${JSON.stringify(content)};\nexport default function Poster({ format }) { return <Template content={content} format={format} photos={[]} ground="paper" accent="amber" />; }\n`;
+  const again = await service.render({ kind: "poster", source: src, format: "portrait", brand, photos: null });
   assert.deepEqual(again.problems, []);
 });
 

@@ -14,6 +14,8 @@ export const { service } = await import("../dist/server.js");
 export const brand = JSON.parse(fs.readFileSync(path.join(here, "brand.gravity.json"), "utf8"));
 export const builtinsDir = path.resolve(here, "../../internal/apps/posters/builtins");
 export const builtin = (name) => fs.readFileSync(path.join(builtinsDir, `${name}.tsx`), "utf8");
+// A photo-less fixture template for tests that need a stable, simple subject.
+export const plain = () => fs.readFileSync(path.join(here, "plain.tsx"), "utf8");
 export const outDir = path.join(here, "out");
 
 export const content = {

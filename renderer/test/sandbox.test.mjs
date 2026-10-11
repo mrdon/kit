@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { brand, builtin, content, photo, service } from "./helpers.mjs";
+import { brand, builtin, content, photo, plain, service } from "./helpers.mjs";
 
-// A minimal poster: the Type template with the content inlined, so each
+// A minimal poster: the plain fixture with the content inlined, so each
 // test can swap one thing and watch the validator catch it.
 const posterFrom = (template, extra = "") =>
   template.replace(/export default function Template\(/, "function Template(").replace(/export const meta/, "const meta") +
@@ -17,24 +17,24 @@ export default function Poster({ format }) {
 const render = (source, photos = []) => service.render({ kind: "poster", source, format: "portrait", brand, photos });
 
 test("a poster with the content inlined renders clean", async () => {
-  const r = await render(posterFrom(builtin("masthead")));
+  const r = await render(posterFrom(plain()));
   assert.deepEqual(r.problems, []);
   assert.ok(r.png.length > 1000);
 });
 
 test("imports outside react and @poster/kit are refused before running", async () => {
-  await assert.rejects(render(`import fs from "node:fs";\n` + posterFrom(builtin("masthead"))), /import of "node:fs" is not allowed/);
+  await assert.rejects(render(`import fs from "node:fs";\n` + posterFrom(plain())), /import of "node:fs" is not allowed/);
 });
 
 test("the isolate has no host objects", async () => {
-  const src = posterFrom(builtin("masthead"), `const x = typeof fetch === "undefined" && typeof process === "undefined" && typeof require === "function"; if (!x) throw new Error("host leak");`);
+  const src = posterFrom(plain(), `const x = typeof fetch === "undefined" && typeof process === "undefined" && typeof require === "function"; if (!x) throw new Error("host leak");`);
   const r = await render(src);
   assert.deepEqual(r.problems, []);
-  await assert.rejects(render(posterFrom(builtin("masthead"), `fetch("https://example.com");`)), /fetch is not defined/);
+  await assert.rejects(render(posterFrom(plain(), `fetch("https://example.com");`)), /fetch is not defined/);
 });
 
 test("runaway code hits the timeout", async () => {
-  await assert.rejects(render(posterFrom(builtin("masthead"), `for (;;) {}`)), /longer than 2 seconds/);
+  await assert.rejects(render(posterFrom(plain(), `for (;;) {}`)), /longer than 2 seconds/);
 });
 
 test("drawing elements, off-token colors, gradients and a second accent are rejected", async () => {

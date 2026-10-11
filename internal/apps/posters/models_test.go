@@ -83,11 +83,13 @@ func TestTemplatesBuiltinsAndTenantCopies(t *testing.T) {
 	if band == nil || !band.Builtin() || band.CurrentVersionID == nil {
 		t.Fatalf("band built-in = %+v", band)
 	}
-	// Installing again adds no version when the source is unchanged.
+	// Installing again adds no version when the source is unchanged. (The
+	// shared rows outlive a test run, so count rather than expect one.)
+	before, _ := listTemplateVersions(f.ctx, f.pool, f.tenant.ID, band.ID)
 	f.app.installBuiltins(f.ctx)
 	vs, _ := listTemplateVersions(f.ctx, f.pool, f.tenant.ID, band.ID)
-	if len(vs) != 1 {
-		t.Errorf("built-in versions after reinstall = %d", len(vs))
+	if len(vs) != len(before) {
+		t.Errorf("built-in versions after reinstall = %d, was %d", len(vs), len(before))
 	}
 	// Built-ins cannot be versioned by a tenant.
 	if _, err := addTemplateVersion(f.ctx, f.pool, f.tenant.ID, band.ID, "x", "s", "agent", band.Meta, nil); err == nil {

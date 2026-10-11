@@ -4,7 +4,7 @@ import { AccentBar, FactsLine, Logo, Photo, Text, fitTitle, font, grounds, logoW
 export const meta = {
   name: "Badge",
   description: "A disc at the top, either the photo cropped round or the other ground holding the time, centred copy below, logo bottom-centre",
-  photos: { min: 0, max: 1 },
+  photos: { min: 1, max: 1 },
   needs: ["eyebrow", "title"],
 };
 
