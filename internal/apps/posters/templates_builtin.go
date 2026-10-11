@@ -124,9 +124,16 @@ func (a *App) installBuiltins(ctx context.Context) {
 		slog.Error("posters: reading built-in templates", "error", err)
 		return
 	}
+	keys := make([]string, 0, len(ts))
 	for _, t := range ts {
+		keys = append(keys, t.Key)
 		if err := upsertBuiltin(ctx, a.pool, t.Key, t.Meta, t.Source); err != nil {
 			slog.Error("posters: installing built-in template", "key", t.Key, "error", err)
 		}
+	}
+	if n, err := archiveBuiltinsExcept(ctx, a.pool, keys); err != nil {
+		slog.Error("posters: archiving retired built-ins", "error", err)
+	} else if n > 0 {
+		slog.Info("posters: archived retired built-in templates", "count", n)
 	}
 }

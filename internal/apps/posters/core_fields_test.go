@@ -59,7 +59,7 @@ func TestBuiltins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ts) != 7 || ts[0].Key != "split" || ts[6].Key != "type" {
+	if len(ts) != 7 || ts[0].Key != "badge" || ts[6].Key != "twotone" {
 		keys := make([]string, 0, len(ts))
 		for _, b := range ts {
 			keys = append(keys, b.Key)

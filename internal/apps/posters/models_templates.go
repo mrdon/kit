@@ -268,6 +268,19 @@ func getTemplateVersion(ctx context.Context, pool *pgxpool.Pool, tenantID, versi
 	return &v, nil
 }
 
+// archiveBuiltinsExcept retires shared built-in rows whose key is no longer
+// embedded. Posters made from them keep rendering (a version's source is
+// complete in itself); the generator just stops offering them.
+func archiveBuiltinsExcept(ctx context.Context, pool *pgxpool.Pool, keys []string) (int, error) {
+	tag, err := pool.Exec(ctx, `
+		UPDATE app_poster_templates SET status = $1, updated_at = now()
+		WHERE tenant_id IS NULL AND status <> $1 AND NOT (builtin_key = ANY($2))`, string(TemplateArchived), keys)
+	if err != nil {
+		return 0, fmt.Errorf("archiving retired built-ins: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 func setTemplateStatus(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, status TemplateStatus) error {
 	tag, err := pool.Exec(ctx, `UPDATE app_poster_templates SET status = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id, string(status))
 	if err != nil {

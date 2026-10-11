@@ -51,7 +51,7 @@ func TestRendererEndToEnd(t *testing.T) {
 	}
 	var typeT BuiltinTemplate
 	for _, b := range bs {
-		if b.Key == "type" {
+		if b.Key == "masthead" {
 			typeT = b
 		}
 	}

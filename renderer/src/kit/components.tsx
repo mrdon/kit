@@ -1,5 +1,5 @@
 import React from "react";
-import { accents, displayAdvance, font, grounds, logoAspects, weights, type Format } from "./brand";
+import { accents, displayAdvance, font, groundNames, grounds, logoAspects, weights, type Format } from "./brand";
 
 // The poster kit: the only building blocks a poster or template may use.
 // Every number is set in mono, every color comes from a ground or accent,
@@ -268,3 +268,40 @@ export const CopyBlock = ({ content, ground, accent, s, width, titleMax, titleLi
     />
   </div>
 );
+
+// The details as one line, "When" first, values joined with a middot and
+// the labels dropped: "Every Monday · 5:30 to 8:30pm · Free to play". How
+// venue posters usually state the facts; shorter than a label column.
+export const factsText = (content: Content, skip?: string) => {
+  const ds = content.details.filter((d) => d.label !== skip);
+  const when = ds.filter((d) => /^when$/i.test(d.label));
+  const rest = ds.filter((d) => !/^when$/i.test(d.label));
+  return [...when, ...rest].map((d) => d.value).join(" \u00b7 ");
+};
+
+export const FactsLine = ({ content, skip, size, bold = true, color, style }: {
+  content: Content;
+  skip?: string;
+  size: number;
+  bold?: boolean;
+  color?: string;
+  style?: Style;
+}) => {
+  const text = factsText(content, skip);
+  if (!text) return null;
+  return (
+    <p style={{ margin: 0, fontSize: size, lineHeight: 1.35, fontWeight: bold ? weights.textBold : weights.textRegular, color, textWrap: "balance", ...style }}>
+      <Text>{text}</Text>
+    </p>
+  );
+};
+
+// A short solid bar in the accent fill: the one accent element when a
+// layout has no eyebrow chip.
+export const AccentBar = ({ accent, width, height, style }: { accent: string; width: number; height: number; style?: Style }) => (
+  <div style={{ display: "flex", width, height, backgroundColor: accents[accent].fill, flexShrink: 0, ...style }} />
+);
+
+// The brand's other ground, for two-tone layouts; the same ground when a
+// brand has only one.
+export const otherGround = (ground: string) => groundNames.find((n) => n !== ground) ?? ground;

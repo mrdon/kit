@@ -42,7 +42,7 @@ test("a contact sheet holds up to twelve numbered thumbnails", async () => {
 });
 
 test("a template whose meta is missing or malformed cannot pass the check", async () => {
-  const noMeta = builtin("type").replace(/export const meta[\s\S]*?};\n/, "");
+  const noMeta = builtin("masthead").replace(/export const meta[\s\S]*?};\n/, "");
   const r = await service.templateCheck(noMeta, brand, []);
   const all = Object.values(r.problems).flat().join("\n");
   assert.match(all, /export const meta/);

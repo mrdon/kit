@@ -2,16 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { brand, builtin, content, photo, save, service } from "./helpers.mjs";
 
-const NAMES = ["split", "full", "type", "band", "strip", "inset", "when"];
+const NAMES = ["badge", "calendar", "caption", "corners", "marquee", "masthead", "twotone"];
 const metas = {
-  split: { photos: { min: 1, max: 1 } },
-  full: { photos: { min: 1, max: 1 } },
-  type: { photos: { min: 0, max: 0 } },
-  band: { photos: { min: 1, max: 1 } },
-  strip: { photos: { min: 3, max: 3 } },
-  inset: { photos: { min: 1, max: 1 } },
-  when: { photos: { min: 0, max: 0 } },
+  badge: { photos: { min: 0, max: 1 } },
+  calendar: { photos: { min: 0, max: 1 } },
+  caption: { photos: { min: 1, max: 1 } },
+  corners: { photos: { min: 0, max: 1 } },
+  marquee: { photos: { min: 1, max: 1 } },
+  masthead: { photos: { min: 0, max: 0 } },
+  twotone: { photos: { min: 0, max: 1 } },
 };
+// The templates that stand without a photo.
+const TYPE_ONLY = NAMES.filter((n) => metas[n].photos.min === 0);
 const templates = (weights = {}) =>
   NAMES.map((n) => ({ id: n, source: builtin(n), weight: weights[n] ?? 1, meta: { name: n, description: "", needs: ["eyebrow", "title"], ...metas[n] } }));
 
@@ -32,10 +34,10 @@ test("seven options spread template, ground and photo, and every one is a self-c
   assert.ok(r.options.some((o) => o.ground === "ink") && r.options.some((o) => o.ground === "paper"));
   // The pool is the hero's folder: the photo from "other" never appears.
   for (const o of r.options) assert.ok(!o.photos.some((p) => p.id === "x"));
-  // The strip template got three photos from the set.
-  const strip = r.options.find((o) => o.templateId === "strip");
-  assert.ok(strip);
-  assert.equal(strip.photos.length, 3);
+  // A photo template got the hero.
+  const marquee = r.options.find((o) => o.templateId === "marquee");
+  assert.ok(marquee);
+  assert.equal(marquee.photos[0].id, "p1");
   // Each option re-renders from its own source alone.
   for (const o of r.options) {
     const again = await service.render({ kind: "poster", source: o.source, format: "portrait", brand, photos });
@@ -44,11 +46,11 @@ test("seven options spread template, ground and photo, and every one is a self-c
   }
 });
 
-test("without a hero only the type-only templates are offered, and weight orders them", async () => {
-  const r = await service.options({ content, brand, format: "portrait", photos: [], templates: templates({ when: 5 }), count: 7 });
-  assert.equal(r.options.length, 4);
-  assert.equal(r.options[0].templateId, "when");
-  assert.deepEqual([...new Set(r.options.map((o) => o.templateId))].sort(), ["type", "when"]);
+test("without a hero only the templates that stand without a photo are offered, and weight orders them", async () => {
+  const r = await service.options({ content, brand, format: "portrait", photos: [], templates: templates({ masthead: 5 }), count: 7 });
+  assert.equal(r.options.length, 7, JSON.stringify(r.skipped));
+  assert.equal(r.options[0].templateId, "masthead");
+  for (const o of r.options) assert.ok(TYPE_ONLY.includes(o.templateId), o.templateId);
 });
 
 test("templates already shown are left out when others remain", async () => {
@@ -59,9 +61,9 @@ test("templates already shown are left out when others remain", async () => {
     photos: [],
     templates: templates(),
     count: 2,
-    exclude: Object.keys(brand.grounds).map((g) => `type|${g}`),
+    exclude: TYPE_ONLY.filter((n) => n !== "twotone").flatMap((n) => Object.keys(brand.grounds).map((g) => `${n}|${g}`)),
   });
-  assert.deepEqual([...new Set(r.options.map((o) => o.templateId))], ["when"]);
+  assert.deepEqual([...new Set(r.options.map((o) => o.templateId))], ["twotone"]);
 });
 
 test("a request with no photo list at all still produces type-only options", async () => {
