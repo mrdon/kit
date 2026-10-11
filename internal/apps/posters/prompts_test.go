@@ -12,7 +12,7 @@ func TestChatPromptsRenderWithAndWithoutOptionalKeys(t *testing.T) {
 	base := map[string]any{
 		"Title": "Trivia", "PosterID": "p", "EventLine": "Trivia night", "Format": "portrait",
 		"Grounds": "ink, paper", "Accents": "amber", "DisplayFont": "A", "TextFont": "B", "MonoFont": "C",
-		"StockAllowed": false, "RenderBudget": chatRenderBudget, "TemplatePrompt": "",
+		"StockAllowed": false, "RenderBudget": chatRenderBudget, "TemplatePrompt": "", "Placeholder": false,
 	}
 	out := mustRender("system_poster_chat.tmpl", base)
 	if strings.Contains(out, "own guidance") {
@@ -20,8 +20,9 @@ func TestChatPromptsRenderWithAndWithoutOptionalKeys(t *testing.T) {
 	}
 	base["TemplatePrompt"] = "Lead with the photo."
 	base["StockAllowed"] = true
+	base["Placeholder"] = true
 	out = mustRender("system_poster_chat.tmpl", base)
-	if !strings.Contains(out, "Lead with the photo.") || !strings.Contains(out, "find_stock_photos") {
+	if !strings.Contains(out, "Lead with the photo.") || !strings.Contains(out, "find_stock_photos") || !strings.Contains(out, "stand-in") {
 		t.Fatalf("prompt missing optional parts:\n%s", out)
 	}
 	tmpl := map[string]any{

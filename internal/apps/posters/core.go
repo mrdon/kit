@@ -46,6 +46,8 @@ func (a *App) dispatchCore(ctx context.Context, caller *services.Caller, name st
 		return a.coreGetPoster(ctx, caller, raw)
 	case "edit_poster_source":
 		return a.coreEditPoster(ctx, caller, raw)
+	case "patch_poster_source":
+		return a.corePatchPoster(ctx, caller, raw)
 	case "set_poster_fields":
 		return a.coreSetFields(ctx, caller, raw)
 	case "copy_poster_layout":
@@ -68,6 +70,8 @@ func (a *App) dispatchCore(ctx context.Context, caller *services.Caller, name st
 		return a.coreGetTemplate(ctx, caller, raw)
 	case "edit_template_source":
 		return a.coreEditTemplate(ctx, caller, raw)
+	case "patch_template_source":
+		return a.corePatchTemplate(ctx, caller, raw)
 	case "create_template":
 		return a.coreCreateTemplate(ctx, caller, raw)
 	case "delete_template":

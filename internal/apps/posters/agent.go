@@ -11,9 +11,9 @@ import (
 // chatToolNames is the clamp for poster and template chat: the app's own
 // tools plus what every chat needs (skills, attachments, the reply).
 var chatToolNames = []string{
-	"list_posters", "get_poster", "edit_poster_source", "set_poster_fields", "copy_poster_layout", "render_poster_formats",
+	"list_posters", "get_poster", "edit_poster_source", "patch_poster_source", "set_poster_fields", "copy_poster_layout", "render_poster_formats",
 	"search_photos", "find_stock_photos", "ask_for_photo", "update_poster_facts", "set_poster_on_event",
-	"list_templates", "get_template", "edit_template_source", "create_template", "delete_template",
+	"list_templates", "get_template", "edit_template_source", "patch_template_source", "create_template", "delete_template",
 	"load_skill", "search_skills", "read_attachment", "reply_in_thread",
 }
 

@@ -240,21 +240,6 @@ func TestGeneratePickAndStale(t *testing.T) {
 	}
 }
 
-func TestGenerateWithoutPhotosOffersTypeOnly(t *testing.T) {
-	f := newFixture(t)
-	ev := f.event(t)
-	res, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, false, nil)
-	if err != nil {
-		t.Fatalf("generate: %v", err)
-	}
-	if !res.NoPhoto || f.fake.OptionsCalls[0].Hero != nil {
-		t.Errorf("expected a photo-less batch, got %+v", f.fake.OptionsCalls[0].Hero)
-	}
-	if f.llm.calls != 1 {
-		t.Errorf("model calls = %d, want copy only (no candidates, no pick)", f.llm.calls)
-	}
-}
-
 func TestGenerateNeedsABrand(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.pool.Exec(f.ctx, "DELETE FROM skills WHERE tenant_id = $1", f.tenant.ID); err != nil {
@@ -409,5 +394,35 @@ func TestCopyPosterLayout(t *testing.T) {
 	}
 	if len(photos) != len(b.Options[0].Photos) {
 		t.Fatalf("photos = %+v, want B's own", photos)
+	}
+}
+
+// With nothing in the library, a batch still comes out on a grey stand-in,
+// and chat can swap it like any photo.
+func TestGenerateWithNoPhotoUsesAPlaceholder(t *testing.T) {
+	f := newFixture(t)
+	ev := f.event(t)
+	res, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, false, func(GenerateStage, map[string]any) {})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !res.NoPhoto || len(res.Options) == 0 {
+		t.Fatalf("no_photo=%v options=%d", res.NoPhoto, len(res.Options))
+	}
+	withPhoto := 0
+	for _, o := range res.Options {
+		if len(o.Photos) > 0 {
+			withPhoto++
+			if o.Photos[0].ID != PlaceholderID {
+				t.Fatalf("hero = %q, want the placeholder", o.Photos[0].ID)
+			}
+		}
+	}
+	if withPhoto == 0 {
+		t.Fatal("no option carried the placeholder")
+	}
+	refs, err := f.app.imageRefsFor(f.ctx, f.tenant.ID, res.Options[0].Source, false)
+	if err != nil || len(refs) != 1 || refs[0].ID != PlaceholderID || refs[0].Data == "" {
+		t.Fatalf("placeholder did not resolve for a render: %v %+v", err, refs)
 	}
 }

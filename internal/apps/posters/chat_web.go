@@ -193,6 +193,7 @@ func (a *App) posterChatSuffix(ctx context.Context, caller *services.Caller, id 
 	// text/template fails on a missing map key, so every key the prompt
 	// mentions is set, empty or not.
 	data["TemplatePrompt"] = ""
+	data["Placeholder"] = cur != nil && usesPlaceholder(cur.Source)
 	if cur != nil && cur.TemplateID != nil {
 		if t, err := getTemplate(ctx, a.pool, caller.TenantID, *cur.TemplateID); err == nil && t.Meta.Prompt != "" {
 			data["TemplatePrompt"] = t.Meta.Prompt

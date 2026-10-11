@@ -82,7 +82,7 @@ export default function EventPosterPicker({
       if (r.options.length === 0) {
         notes.push('No options came out of this run. Check the templates and photo index.');
       } else if (r.no_photo) {
-        notes.push('No photo in the library or stock fits this event.');
+        notes.push('No photo fits this event yet, so a grey stand-in holds the photo\'s place. Open the poster and ask chat to swap it: a library search, a stock photo, or upload one.');
       }
       if (notes.length) setNote(notes.join(' '));
     } catch (e) {

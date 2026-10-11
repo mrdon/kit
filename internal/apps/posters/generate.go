@@ -44,7 +44,8 @@ type GenerateResult struct {
 	BatchID uuid.UUID `json:"batch_id"`
 	Options []Version `json:"options"`
 	Skipped int       `json:"skipped"`
-	// NoPhoto says no photo, library or stock, fitted this event.
+	// NoPhoto says no photo, library or stock, fitted this event, so the
+	// options carry a grey stand-in where the photo goes.
 	NoPhoto bool `json:"no_photo"`
 	// StockHero says the hero is a stock photo (Pixabay), not the library's.
 	StockHero bool `json:"stock_hero"`
@@ -124,7 +125,7 @@ func (a *App) Generate(ctx context.Context, tenantID, userID uuid.UUID, eventID 
 		return nil, invalid("every layout has been shown on every ground; edit one in chat, or activate more templates")
 	}
 	raw, _ := jsonMarshal(facts)
-	out, err := a.storeBatch(ctx, tenantID, poster, brand, in.content, res, byID, in.hero == nil, raw, factsHash(facts))
+	out, err := a.storeBatch(ctx, tenantID, poster, brand, in.content, res, byID, in.placeholder, raw, factsHash(facts))
 	if err != nil {
 		return nil, err
 	}
@@ -177,11 +178,12 @@ func skippedReasons(skipped []posterrender.Skipped) []string {
 // the image references the renderer may use (the hero's set, or the one
 // stock photo), whether the hero is stock, and whether the copy is new.
 type batchInputs struct {
-	content *posterrender.Content
-	hero    *posterrender.PhotoUse
-	refs    []posterrender.ImageRef
-	stock   bool
-	fresh   bool
+	content     *posterrender.Content
+	hero        *posterrender.PhotoUse
+	refs        []posterrender.ImageRef
+	stock       bool
+	placeholder bool
+	fresh       bool
 }
 
 func (a *App) posterForEventOrCreate(ctx context.Context, tenantID, userID uuid.UUID, ev *events.Event) (*Poster, error) {
@@ -202,7 +204,7 @@ func (a *App) posterForEventOrCreate(ctx context.Context, tenantID, userID uuid.
 func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Poster, ev *events.Event, brand *posterrender.Brand, more bool, hash string, progress Progress) (*batchInputs, error) {
 	if more {
 		if last, ok := a.lastBatchInputs(ctx, tenantID, poster); ok && last.hash == hash {
-			return &batchInputs{content: last.content, hero: last.hero, refs: last.refs, stock: last.stock}, nil
+			return &batchInputs{content: last.content, hero: last.hero, refs: last.refs, stock: last.stock, placeholder: last.hero != nil && last.hero.ID == PlaceholderID}, nil
 		}
 	}
 	progress(StageCopy, nil)
@@ -221,6 +223,11 @@ func (a *App) copyAndPhoto(ctx context.Context, tenantID uuid.UUID, poster *Post
 		if in.refs, in.stock, err = a.heroRefs(ctx, tenantID, pick); err != nil {
 			return nil, err
 		}
+	} else {
+		// Nothing fitted: a flat stand-in keeps the batch coming, and the
+		// drawer and chat say to swap it.
+		use := placeholderUse()
+		in.hero, in.refs, in.placeholder = &use, []posterrender.ImageRef{placeholderRef()}, true
 	}
 	return in, nil
 }

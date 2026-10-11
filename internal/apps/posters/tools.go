@@ -36,6 +36,29 @@ var posterTools = []services.ToolMeta{
 		}, "poster_id", "source", "summary"),
 	},
 	{
+		Name: "patch_poster_source",
+		Description: "Change a few lines of a poster's TSX source without resending the file: a list of find-and-replace edits, applied in " +
+			"order. Each find must match exactly once (quote it verbatim, whitespace included; add surrounding lines to make it unique). " +
+			"Then the same checks and save as edit_poster_source, with the render attached. Prefer this for any change smaller than a " +
+			"rewrite; it is many times faster.",
+		Schema: services.PropsReq(map[string]any{
+			"poster_id": services.Field("string", "Poster id."),
+			"edits": map[string]any{
+				"type":        "array",
+				"description": "Edits in order; each must match exactly once.",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"find":    services.Field("string", "Exact text in the current source."),
+						"replace": services.Field("string", "What to put there; empty deletes it."),
+					},
+					"required": []string{"find", "replace"},
+				},
+			},
+			"summary": services.Field("string", "One line saying what changed. Shown in the version history."),
+		}, "poster_id", "edits", "summary"),
+	},
+	{
 		Name: "set_poster_fields",
 		Description: "Quick edits to a poster without rewriting its code: swap the template (layout), the ground, the hero photo, " +
 			"or the hero's zoom and focus point. Renders and saves a new version like edit_poster_source. " +
@@ -147,6 +170,27 @@ var posterTools = []services.ToolMeta{
 			"source":      services.Field("string", "The complete TSX file: exports meta and default-exports Template({ content, format, photos, ground, accent })."),
 			"summary":     services.Field("string", "One line saying what changed."),
 		}, "template_id", "source", "summary"),
+	},
+	{
+		Name: "patch_template_source",
+		Description: "Change a few lines of a tenant template's TSX source without resending the file: find-and-replace edits applied in " +
+			"order, each matching exactly once, then the same three-canvas check and save as edit_template_source. Prefer it for small changes.",
+		Schema: services.PropsReq(map[string]any{
+			"template_id": services.Field("string", "Template id."),
+			"edits": map[string]any{
+				"type":        "array",
+				"description": "Edits in order; each must match exactly once.",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"find":    services.Field("string", "Exact text in the current source."),
+						"replace": services.Field("string", "What to put there; empty deletes it."),
+					},
+					"required": []string{"find", "replace"},
+				},
+			},
+			"summary": services.Field("string", "One line saying what changed."),
+		}, "template_id", "edits", "summary"),
 	},
 	{
 		Name: "create_template",

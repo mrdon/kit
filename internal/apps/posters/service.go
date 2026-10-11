@@ -74,6 +74,9 @@ func (a *App) imageRefsFor(ctx context.Context, tenantID uuid.UUID, source strin
 		}
 		refs = append(refs, s.Ref())
 	}
+	if usesPlaceholder(source) {
+		refs = append(refs, placeholderRef())
+	}
 	for _, m := range attachPattern.FindAllStringSubmatch(source, -1) {
 		if seen[m[0]] {
 			continue
