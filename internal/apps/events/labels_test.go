@@ -267,7 +267,7 @@ func TestCloneCopiesLabels(t *testing.T) {
 // so this reads the actual file. Cheaper than an endpoint plus a load state
 // for seven words that change about once a year.
 func TestConsoleStandardLabelsMatchGo(t *testing.T) {
-	const consoleAPI = "../../../web/console/src/api.ts"
+	const consoleAPI = "../../../web/console/src/api/events.types.ts"
 	src, err := os.ReadFile(consoleAPI)
 	if err != nil {
 		t.Fatalf("reading %s: %v", consoleAPI, err)
