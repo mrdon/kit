@@ -61,6 +61,9 @@ export type ImageRef = {
   // that turns a file id into a download URL (with its own key).
   fileId?: string;
   url?: string;
+  // A smaller copy to try first when only looking (sheets, closer looks);
+  // the original is the fallback and what renders use.
+  thumbUrl?: string;
   // Cache key discriminator (Drive modifiedTime, Pixabay id...).
   modified?: string;
   // Only for source "inline": base64 bytes.

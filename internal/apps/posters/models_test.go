@@ -190,3 +190,45 @@ func TestImageRefsCarryDriveFileIDNotURL(t *testing.T) {
 		t.Fatal("the Drive key is in the brand JSON")
 	}
 }
+
+// One listing records every file in a batch: new files start unmeasured
+// unless Drive already reported their size, a changed file is measured
+// again, and the page helpers count and slice without loading the library.
+func TestRecordListedPhotosBatch(t *testing.T) {
+	f := newFixture(t)
+	files := []DriveFile{
+		{ID: "a", Name: "a.jpg", Folder: "patio", Modified: "m1", Width: 4000, Height: 3000},
+		{ID: "b", Name: "b.jpg", Folder: "patio", Modified: "m1"},
+		{ID: "c", Name: "c.jpg", Folder: "", Modified: "m1"},
+	}
+	n, err := recordListedPhotos(f.ctx, f.pool, f.tenant.ID, files)
+	if err != nil || n != 3 {
+		t.Fatalf("record: %v new=%d", err, n)
+	}
+	a, _ := getPhotoByFileID(f.ctx, f.pool, f.tenant.ID, "a")
+	if a.Width != 4000 || a.Orientation != "landscape" || a.C2PA != posterrender.C2PAUnchecked {
+		t.Fatalf("drive dimensions not stored: %+v", a)
+	}
+	un, _ := listUnmeasured(f.ctx, f.pool, f.tenant.ID, 10)
+	if len(un) != 2 {
+		t.Fatalf("unmeasured = %d, want b and c", len(un))
+	}
+	// Same listing again: nothing new, nothing reset.
+	if n, _ = recordListedPhotos(f.ctx, f.pool, f.tenant.ID, files); n != 0 {
+		t.Fatalf("relisting counted %d new", n)
+	}
+	// a changed on Drive without dimensions this time: measured again.
+	files[0] = DriveFile{ID: "a", Name: "a.jpg", Folder: "patio", Modified: "m2"}
+	if _, err := recordListedPhotos(f.ctx, f.pool, f.tenant.ID, files); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := countUnmeasured(f.ctx, f.pool, f.tenant.ID); c != 3 {
+		t.Fatalf("unmeasured after change = %d, want 3", c)
+	}
+	total, _ := countPhotos(f.ctx, f.pool, f.tenant.ID, PhotoFilter{Folder: "patio"})
+	page, _ := listPhotos(f.ctx, f.pool, f.tenant.ID, PhotoFilter{Folder: "patio", Limit: 1, Offset: 1})
+	folders, _ := listFolders(f.ctx, f.pool, f.tenant.ID)
+	if total != 2 || len(page) != 1 || page[0].Filename != "b.jpg" || len(folders) != 2 {
+		t.Fatalf("paging: total=%d page=%+v folders=%v", total, page, folders)
+	}
+}

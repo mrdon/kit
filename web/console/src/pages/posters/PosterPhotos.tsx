@@ -11,23 +11,36 @@ import { PostersTabs, errText } from './common';
 
 type StatusFilter = '' | PosterPhotoStatus;
 
+// PHOTO_PAGE matches the server's default page; the server caps larger asks.
+const PHOTO_PAGE = 96;
+
 export default function PosterPhotos() {
   const [data, setData] = useState<PosterPhotosPayload | null>(null);
   const [status, setStatus] = useState<StatusFilter>('');
   const [folder, setFolder] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // One page at a time: a library can run to thousands of photos.
+  const [page, setPage] = useState(0);
 
   const load = useCallback(() => {
     api
-      .listPosterPhotos({ status, folder })
+      .listPosterPhotos({ status, folder, limit: PHOTO_PAGE, offset: page * PHOTO_PAGE })
       .then((r) => {
         setData(r);
         setErr(null);
       })
       .catch((e) => setErr(errText(e)));
-  }, [status, folder]);
+  }, [status, folder, page]);
   useEffect(load, [load]);
+  const pickStatus = (v: StatusFilter) => {
+    setStatus(v);
+    setPage(0);
+  };
+  const pickFolder = (v: string) => {
+    setFolder(v);
+    setPage(0);
+  };
   useSetChatContext('the Poster photos page', load);
 
   const counts = data?.counts;
@@ -74,13 +87,13 @@ export default function PosterPhotos() {
               key={v}
               type="button"
               className={`chip${status === v ? ' chip-active' : ''}`}
-              onClick={() => setStatus(v)}
+              onClick={() => pickStatus(v)}
             >
               {label} <span className="chip-count">{n}</span>
             </button>
           ))}
           {data && data.folders.length > 1 && (
-            <select className="mini-select" value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="Folder">
+            <select className="mini-select" value={folder} onChange={(e) => pickFolder(e.target.value)} aria-label="Folder">
               <option value="">All folders</option>
               {data.folders.map((f) => (
                 <option key={f} value={f}>
@@ -98,6 +111,25 @@ export default function PosterPhotos() {
           No photos here. An admin sets the Drive folder under{' '}
           <Link to="/admin/posters">Posters settings</Link> and syncs it, or a harness runs sync_poster_photos.
         </p>
+      )}
+
+      {data && data.total > data.limit && (
+        <div className="poster-pager">
+          <button type="button" className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </button>
+          <span className="muted">
+            {data.offset + 1}–{Math.min(data.offset + data.photos.length, data.total)} of {data.total}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={data.offset + data.photos.length >= data.total}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
       )}
 
       <div className="poster-photo-grid">

@@ -330,7 +330,12 @@ Indexing is split so that **Kit never spends its own model on it**:
 
 - **Sync (Kit, no LLM).** Listing the folder tree happens on "sync now", on the
   `sync_poster_photos` tool, or hourly from a scheduled task (function lane) that is
-  off by default and switched on per workspace with the auto-sync setting. New or changed files get a `pending` row with size,
+  off by default and switched on per workspace with the auto-sync setting. A sync only
+  lists and records (one statement per 500 files); a separate `posters.measure_photos`
+  task fills in size, orientation and provenance forty photos at a time, and with a
+  Drive API key the listing already carries dimensions so almost nothing is downloaded.
+  Contact sheets and closer looks use Drive's sized thumbnails; originals are fetched
+  only to render, where the renderer refuses an AI provenance assertion itself. New or changed files get a `pending` row with size,
   orientation and C2PA verdict from `/inspect`. Files gone from Drive become `removed`
   (kept, so old poster versions can say why they can't re-render).
 - **Describe (Claude Code, over MCP).** Someone runs Claude Code against Kit's MCP

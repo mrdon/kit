@@ -99,13 +99,17 @@ const (
 // id, and never a URL: only the renderer builds Drive URLs, so the server's
 // Drive key never leaves it.
 type ImageRef struct {
-	ID       string      `json:"id"`
-	Source   ImageSource `json:"source"`
-	FileID   string      `json:"fileId,omitempty"`
-	URL      string      `json:"url,omitempty"`
-	Modified string      `json:"modified,omitempty"`
-	Data     string      `json:"data,omitempty"`
-	Folder   string      `json:"folder,omitempty"`
+	ID     string      `json:"id"`
+	Source ImageSource `json:"source"`
+	FileID string      `json:"fileId,omitempty"`
+	URL    string      `json:"url,omitempty"`
+	// ThumbURL is a smaller copy to try first when the image is only being
+	// looked at (contact sheets, a closer look). The original is the
+	// fallback, and always what a render uses.
+	ThumbURL string `json:"thumbUrl,omitempty"`
+	Modified string `json:"modified,omitempty"`
+	Data     string `json:"data,omitempty"`
+	Folder   string `json:"folder,omitempty"`
 }
 
 // normalized returns the request with nil lists as empty ones. A nil Go
@@ -260,6 +264,10 @@ const (
 	C2PACamera  C2PA = "camera"  // signed by a camera or editor, no AI claim
 	C2PAAI      C2PA = "ai"      // a generative-AI assertion; never offered
 	C2PAUnknown C2PA = "unknown" // a manifest we could not read
+	// C2PAUnchecked marks a photo measured from Drive metadata, never
+	// downloaded. The renderer checks provenance when it fetches the
+	// original and refuses an AI assertion at that point.
+	C2PAUnchecked C2PA = "unchecked"
 )
 
 // InspectResponse describes an image without a render.

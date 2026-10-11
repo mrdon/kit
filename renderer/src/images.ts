@@ -35,7 +35,7 @@ export class ImageStore {
   }
 
   private key(ref: ImageRef) {
-    return crypto.createHash("sha1").update(`${ref.source}|${ref.id}|${ref.fileId ?? ""}|${ref.modified ?? ""}|${ref.url ?? ""}`).digest("hex");
+    return crypto.createHash("sha1").update(`${ref.source}|${ref.id}|${ref.fileId ?? ""}|${ref.modified ?? ""}|${ref.url ?? ""}|${ref.thumbUrl ?? ""}`).digest("hex");
   }
 
   // An upright JPEG no larger than the working size, plus what the sync
@@ -83,12 +83,23 @@ export class ImageStore {
       if (!ref.data) throw new ImageError(`image ${ref.id} has no data`);
       return Buffer.from(ref.data, "base64");
     }
-    const url = ref.url ?? this.driveURL(ref);
+    if (ref.thumbUrl) {
+      // Drive refuses some thumbnails; the original is the fallback.
+      const small = await this.get(ref.thumbUrl);
+      if (small) return small;
+    }
+    const buf = await this.get(ref.url ?? this.driveURL(ref));
+    if (!buf) {
+      throw new ImageError(`image ${ref.id} could not be downloaded; for Drive, is the folder shared with anyone who has the link?`);
+    }
+    return buf;
+  }
+
+  // One GET; null when the answer is not an image.
+  private async get(url: string): Promise<Buffer | null> {
     const res = await fetch(url, { redirect: "follow" });
     const type = res.headers.get("content-type") ?? "";
-    if (!res.ok || type.startsWith("text/html")) {
-      throw new ImageError(`image ${ref.id} could not be downloaded (HTTP ${res.status}); for Drive, is the folder shared with anyone who has the link?`);
-    }
+    if (!res.ok || type.startsWith("text/html")) return null;
     return Buffer.from(await res.arrayBuffer());
   }
 

@@ -242,6 +242,10 @@ export interface PosterPhotosPayload {
   photos: PosterPhoto[];
   folders: string[];
   counts: PosterPhotoCounts;
+  /** Total rows behind the current filter; photos is one page of them. */
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface PosterPhotoPatch {
@@ -351,6 +355,8 @@ export interface PostersSettings {
   renderer_ready: boolean;
   /** The server has a Pixabay key; without it the stock switch does nothing. */
   stock_configured: boolean;
+  /** The server lists Drive through the API (paginated, with dimensions), not the public page. */
+  drive_api_key: boolean;
   /** What to paste into Claude Code to describe the pending photos. */
   index_prompt: string;
 }
@@ -366,7 +372,8 @@ export interface PostersSettingsBody {
 export interface PosterSyncResult {
   listed: number;
   new: number;
-  inspecting: number;
+  /** Photos still without dimensions; a background task measures them a batch at a time. */
+  to_measure: number;
   removed: number;
   pending: number;
   problems: string[] | null;

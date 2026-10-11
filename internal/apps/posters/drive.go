@@ -31,6 +31,10 @@ type DriveFile struct {
 	Folder   string // slug path of parent folders under the root, "" at root
 	Modified string
 	Mime     string
+	// Width and Height come from Drive's image metadata when the API key
+	// is set, which spares a download per photo just to measure it.
+	Width  int
+	Height int
 }
 
 var folderIDPatterns = []*regexp.Regexp{
@@ -116,7 +120,7 @@ func (d driveLister) listViaAPI(ctx context.Context, id string) ([]DriveFile, er
 		q.Set("q", fmt.Sprintf("'%s' in parents and trashed = false", id))
 		q.Set("key", d.apiKey)
 		q.Set("pageSize", "1000")
-		q.Set("fields", "nextPageToken,files(id,name,mimeType,modifiedTime)")
+		q.Set("fields", "nextPageToken,files(id,name,mimeType,modifiedTime,imageMediaMetadata(width,height))")
 		if pageToken != "" {
 			q.Set("pageToken", pageToken)
 		}
@@ -137,13 +141,21 @@ func (d driveLister) listViaAPI(ctx context.Context, id string) ([]DriveFile, er
 				Name         string `json:"name"`
 				MimeType     string `json:"mimeType"`
 				ModifiedTime string `json:"modifiedTime"`
+				Image        *struct {
+					Width  int `json:"width"`
+					Height int `json:"height"`
+				} `json:"imageMediaMetadata"`
 			} `json:"files"`
 		}
 		if err := json.Unmarshal(body, &page); err != nil {
 			return nil, fmt.Errorf("decoding Drive listing: %w", err)
 		}
 		for _, f := range page.Files {
-			out = append(out, DriveFile{ID: f.ID, Name: f.Name, Mime: f.MimeType, Modified: f.ModifiedTime})
+			df := DriveFile{ID: f.ID, Name: f.Name, Mime: f.MimeType, Modified: f.ModifiedTime}
+			if f.Image != nil {
+				df.Width, df.Height = f.Image.Width, f.Image.Height
+			}
+			out = append(out, df)
 		}
 		if page.NextPageToken == "" {
 			return out, nil

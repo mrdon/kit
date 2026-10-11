@@ -75,9 +75,10 @@ var posterTools = []services.ToolMeta{
 	},
 	{
 		Name: "find_stock_photos",
-		Description: "Search Pixabay for a stock photo when the library has nothing that fits. Results are usable directly as " +
-			"<Photo id=\"pixabay:<id>\" />. Screen each pick: no visible logos or trademarks, no recognisable person in a " +
-			"misleading role, and prefer real photographs (Pixabay cannot guarantee a stock image was camera-made). " +
+		Description: "Search Pixabay for a stock photo when the library has nothing that fits. Returns up to 8 hits with a " +
+			"numbered preview sheet attached: look at it and rule out anything with a visible logo, trademark, team mark or " +
+			"recognisable person BEFORE placing one, so a render is not spent finding that out. Results are usable directly as " +
+			"<Photo id=\"pixabay:<id>\" />. Prefer real photographs (Pixabay cannot guarantee a stock image was camera-made). " +
 			"Name Pixabay as the source when you tell the user.",
 		Schema: services.PropsReq(map[string]any{
 			"query": services.Field("string", "Search words, e.g. 'vinyl record turntable'."),
@@ -190,7 +191,8 @@ var indexTools = []services.ToolMeta{
 			"Describe them with index_photos following the indexing-poster-photos skill (load it first). " +
 			"Pending photos are not offered to posters until indexed.",
 		Schema: services.Props(map[string]any{
-			"limit": services.Field("integer", "Max rows, default 48."),
+			"limit":  services.Field("integer", "Max rows, default 48."),
+			"folder": services.Field("string", "Only this set (subfolder slug), so several indexers can split a large library by folder."),
 		}),
 	},
 	{

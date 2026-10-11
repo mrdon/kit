@@ -134,10 +134,12 @@ export const postersApi = {
   },
   posterTemplateReferenceURL: (id: string) => `${API_BASE}/posters/templates/${id}/reference`,
 
-  listPosterPhotos: (opts: { status?: PosterPhotoStatus | ''; folder?: string } = {}) => {
+  listPosterPhotos: (opts: { status?: PosterPhotoStatus | ''; folder?: string; limit?: number; offset?: number } = {}) => {
     const q = new URLSearchParams();
     if (opts.status) q.set('status', opts.status);
     if (opts.folder) q.set('folder', opts.folder);
+    if (opts.limit) q.set('limit', String(opts.limit));
+    if (opts.offset) q.set('offset', String(opts.offset));
     const qs = q.toString();
     return apiGet<PosterPhotosPayload>(`/posters/photos${qs ? `?${qs}` : ''}`);
   },

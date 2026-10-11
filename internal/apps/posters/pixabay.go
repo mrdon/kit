@@ -34,6 +34,7 @@ type StockPhoto struct {
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
 	Preview  string `json:"preview_url"`
+	Web      string `json:"web_url"` // ~640px, for looking
 	Large    string `json:"large_url"`
 	PageURL  string `json:"page_url"`
 	User     string `json:"user"`
@@ -44,6 +45,14 @@ type StockPhoto struct {
 // Ref is the renderer's reference for the hit.
 func (s StockPhoto) Ref() posterrender.ImageRef {
 	return posterrender.ImageRef{ID: pixabayPrefix + s.ID, Source: posterrender.SourcePixabay, URL: s.Large, Modified: s.ID, Folder: "pixabay"}
+}
+
+// LookRef is the hit for a preview sheet: the mid-size copy first.
+func (s StockPhoto) LookRef() posterrender.ImageRef {
+	r := s.Ref()
+	r.ThumbURL = s.Web
+	r.Modified = s.ID + "#look"
+	return r
 }
 
 type pixabayClient struct {
@@ -79,7 +88,7 @@ func toStock(h pixabayHit) StockPhoto {
 	if large == "" {
 		large = h.WebformatURL
 	}
-	return StockPhoto{ID: strconv.Itoa(h.ID), Tags: h.Tags, Width: h.ImageWidth, Height: h.ImageHeight, Preview: h.PreviewURL, Large: large, PageURL: h.PageURL, User: h.User, Likes: h.Likes, Comments: h.Comments}
+	return StockPhoto{ID: strconv.Itoa(h.ID), Tags: h.Tags, Width: h.ImageWidth, Height: h.ImageHeight, Preview: h.PreviewURL, Web: h.WebformatURL, Large: large, PageURL: h.PageURL, User: h.User, Likes: h.Likes, Comments: h.Comments}
 }
 
 // query runs one API call through the 24h cache. Results do not depend on

@@ -277,3 +277,11 @@
   padding: 0.4rem 0.7rem; border-radius: 0.4rem; border: 1px solid var(--line); font-size: 0.85rem; font-weight: 600;
 }
 .poster-pair small { font-weight: 400; opacity: 0.8; margin-left: 0.3rem; }
+
+/* Library paging: a row between the filters and the grid. */
+.poster-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+}

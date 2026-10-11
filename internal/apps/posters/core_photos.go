@@ -59,12 +59,27 @@ func (a *App) coreStockPhotos(ctx context.Context, caller *services.Caller, raw 
 	if len(hits) == 0 {
 		return textResult("Pixabay has nothing for %q.", in.Query)
 	}
-	var b strings.Builder
-	b.WriteString("Pixabay results (use as <Photo id=\"pixabay:<id>\" />; screen for logos, trademarks and recognisable people; say the source is Pixabay):\n")
-	for _, h := range hits {
-		fmt.Fprintf(&b, "- pixabay:%s %dx%d, tags: %s, by %s, %s\n", h.ID, h.Width, h.Height, h.Tags, h.User, h.PageURL)
+	if len(hits) > stockSheetMax {
+		hits = hits[:stockSheetMax]
 	}
-	return textResult("%s", b.String())
+	var b strings.Builder
+	b.WriteString("Pixabay results, numbered to match the attached preview sheet. LOOK at the sheet and rule out anything with a visible logo, trademark, team mark or recognisable person before placing one; use as <Photo id=\"pixabay:<id>\" /> and say the source is Pixabay:\n")
+	items := make([]posterrender.SheetItem, 0, len(hits))
+	for i, h := range hits {
+		fmt.Fprintf(&b, "%d. pixabay:%s %dx%d, tags: %s, by %s\n", i+1, h.ID, h.Width, h.Height, h.Tags, h.User)
+		items = append(items, posterrender.SheetItem{Image: h.LookRef(), Label: fmt.Sprintf("%d. pixabay:%s", i+1, h.ID)})
+	}
+	out := &coreResult{Text: b.String()}
+	if a.renderer != nil {
+		if brand, err := a.brandFor(ctx, caller.TenantID); err == nil {
+			if png, err := a.renderer.Sheet(ctx, items, *brand); err == nil {
+				out.png(png)
+			} else {
+				out.Text += "\n(The preview sheet could not be made: " + err.Error() + ". Judge from the tags, or get_photo is not available for stock; prefer a library photo.)"
+			}
+		}
+	}
+	return out, nil
 }
 
 type askArg struct {
@@ -88,8 +103,16 @@ func (a *App) coreAskForPhoto(ctx context.Context, caller *services.Caller, raw 
 }
 
 type pendingArg struct {
-	Limit int `json:"limit"`
+	Limit  int    `json:"limit"`
+	Folder string `json:"folder"`
 }
+
+// sheetLookSize is the thumbnail width asked of Drive for contact-sheet
+// cells, a little over the cell's own width.
+const sheetLookSize = 800
+
+// stockSheetMax is how many stock hits go on the preview sheet.
+const stockSheetMax = 8
 
 func (a *App) coreListPending(ctx context.Context, caller *services.Caller, raw json.RawMessage) (*coreResult, error) {
 	var in pendingArg
@@ -99,7 +122,7 @@ func (a *App) coreListPending(ctx context.Context, caller *services.Caller, raw 
 	if in.Limit <= 0 {
 		in.Limit = 48
 	}
-	photos, err := listPhotos(ctx, a.pool, caller.TenantID, PhotoFilter{Status: PhotoPending, Limit: in.Limit})
+	photos, err := listPhotos(ctx, a.pool, caller.TenantID, PhotoFilter{Status: PhotoPending, Folder: in.Folder, Limit: in.Limit})
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +176,7 @@ func (a *App) coreSheet(ctx context.Context, caller *services.Caller, raw json.R
 		if !ok {
 			continue
 		}
-		items = append(items, posterrender.SheetItem{Image: p.Ref(), Label: fmt.Sprintf("%d. %s", i+1, p.Filename)})
+		items = append(items, posterrender.SheetItem{Image: p.LookRef(sheetLookSize), Label: fmt.Sprintf("%d. %s", i+1, p.Filename)})
 		fmt.Fprintf(&legend, "%d. %s (%s/%s)\n", i+1, p.ID, p.Folder, p.Filename)
 	}
 	if a.renderer == nil {
@@ -193,7 +216,7 @@ func (a *App) coreGetPhoto(ctx context.Context, caller *services.Caller, raw jso
 	if size <= 0 {
 		size = 1024
 	}
-	jpeg, err := a.renderer.Photo(ctx, p.Ref(), size)
+	jpeg, err := a.renderer.Photo(ctx, p.LookRef(min(size, 2048)), size)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +321,7 @@ func (a *App) coreSyncPhotos(ctx context.Context, caller *services.Caller) (*cor
 	if err != nil {
 		return nil, err
 	}
-	text := fmt.Sprintf("Listed %d photos: %d new, %d removed, %d waiting for descriptions. %d new or changed files are being measured in the background; their size and orientation appear shortly.", res.Listed, res.New, res.Removed, res.Pending, res.Inspecting)
+	text := fmt.Sprintf("Listed %d photos: %d new, %d removed, %d waiting for descriptions. %d still need measuring; a background task does that a batch at a time, and describing does not have to wait for it.", res.Listed, res.New, res.Removed, res.Pending, res.ToMeasure)
 	if len(res.Problems) > 0 {
 		text += "\nProblems:\n- " + strings.Join(res.Problems, "\n- ")
 	}

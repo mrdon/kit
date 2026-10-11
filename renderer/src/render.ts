@@ -3,7 +3,7 @@
 import { Resvg } from "@resvg/resvg-js";
 import satori from "satori";
 import type { SatoriFont } from "./fonts.ts";
-import { fitPhoto, type Fitted, type ImageStore } from "./images.ts";
+import { ImageError, fitPhoto, type Fitted, type ImageStore } from "./images.ts";
 import type { Brand, Format, ImageRef, PhotoUse, TreeNode } from "./types.ts";
 
 type SatoriElement = { type: string; key?: string; props: Record<string, unknown> };
@@ -68,7 +68,13 @@ async function collectPhotos(node: TreeNode, format: Format, images: ImageSet, s
     if (!out.has(key)) {
       const ref = images.photos.get(use.id);
       if (!ref) return; // validation already reported it
-      out.set(key, await fitPhoto(await store.prepare(ref), use, format));
+      const prepared = await store.prepare(ref);
+      // Provenance is checked here, on the original, because Kit may have
+      // measured the photo from Drive metadata without ever fetching it.
+      if (prepared.c2pa === "ai") {
+        throw new ImageError(`photo ${use.id} carries an AI provenance assertion and cannot be used`);
+      }
+      out.set(key, await fitPhoto(prepared, use, format));
     }
     return;
   }

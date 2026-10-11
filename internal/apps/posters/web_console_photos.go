@@ -2,13 +2,24 @@ package posters
 
 import (
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mrdon/kit/internal/auth"
 )
+
+// photoPageDefault is one page of the library in the console.
+const photoPageDefault = 96
+
+// queryInt reads a non-negative integer query parameter.
+func queryInt(raw string, fallback int) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
+}
 
 // photoView adds the Drive thumbnail the console shows.
 type photoView struct {
@@ -19,7 +30,16 @@ type photoView struct {
 func (a *App) handleListPhotos(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	q := r.URL.Query()
-	photos, err := listPhotos(r.Context(), a.pool, caller.TenantID, PhotoFilter{Status: PhotoStatus(q.Get("status")), Folder: q.Get("folder")})
+	filter := PhotoFilter{Status: PhotoStatus(q.Get("status")), Folder: q.Get("folder"), Limit: queryInt(q.Get("limit"), photoPageDefault), Offset: queryInt(q.Get("offset"), 0)}
+	if filter.Limit > photoPageDefault*4 {
+		filter.Limit = photoPageDefault * 4
+	}
+	photos, err := listPhotos(r.Context(), a.pool, caller.TenantID, filter)
+	if err != nil {
+		a.httpErr(w, err)
+		return
+	}
+	total, err := countPhotos(r.Context(), a.pool, caller.TenantID, filter)
 	if err != nil {
 		a.httpErr(w, err)
 		return
@@ -29,20 +49,11 @@ func (a *App) handleListPhotos(w http.ResponseWriter, r *http.Request) {
 		a.httpErr(w, err)
 		return
 	}
-	all, err := listPhotos(r.Context(), a.pool, caller.TenantID, PhotoFilter{})
+	folders, err := listFolders(r.Context(), a.pool, caller.TenantID)
 	if err != nil {
 		a.httpErr(w, err)
 		return
 	}
-	folderSet := map[string]bool{}
-	for _, p := range all {
-		folderSet[p.Folder] = true
-	}
-	folders := make([]string, 0, len(folderSet))
-	for f := range folderSet {
-		folders = append(folders, f)
-	}
-	sort.Strings(folders)
 	out := make([]photoView, 0, len(photos))
 	for _, p := range photos {
 		out = append(out, photoView{Photo: p, Thumb: driveThumbnailURL(p.DriveFileID, 400)})
@@ -51,6 +62,9 @@ func (a *App) handleListPhotos(w http.ResponseWriter, r *http.Request) {
 		"photos":  out,
 		"folders": folders,
 		"counts":  map[string]int{"pending": counts[PhotoPending], "indexed": counts[PhotoIndexed], "removed": counts[PhotoRemoved]},
+		"total":   total,
+		"limit":   filter.Limit,
+		"offset":  filter.Offset,
 	})
 }
 
@@ -97,7 +111,7 @@ func (a *App) handlePhotoImage(w http.ResponseWriter, r *http.Request) {
 	if size <= 0 {
 		size = 1024
 	}
-	jpeg, err := a.renderer.Photo(r.Context(), p.Ref(), size)
+	jpeg, err := a.renderer.Photo(r.Context(), p.LookRef(min(size, 2048)), size)
 	if err != nil {
 		a.httpErr(w, err)
 		return

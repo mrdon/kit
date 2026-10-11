@@ -50,9 +50,20 @@ type Photo struct {
 	UpdatedAt       time.Time         `json:"updated_at"`
 }
 
-// Ref is the photo as the renderer fetches it.
+// Ref is the photo as the renderer fetches it for a render: the original.
 func (p Photo) Ref() posterrender.ImageRef {
 	return posterrender.ImageRef{ID: p.ID.String(), Source: posterrender.SourceDrive, FileID: p.DriveFileID, Modified: p.DriveModifiedAt, Folder: p.Folder}
+}
+
+// LookRef is the photo for looking at, not rendering: Drive's sized
+// thumbnail first, the original as fallback. A contact sheet of twelve
+// costs twelve small fetches instead of twelve originals, which is what
+// makes describing a library of thousands affordable.
+func (p Photo) LookRef(size int) posterrender.ImageRef {
+	r := p.Ref()
+	r.ThumbURL = driveThumbnailURL(p.DriveFileID, size)
+	r.Modified = fmt.Sprintf("%s#look%d", p.DriveModifiedAt, size)
+	return r
 }
 
 // Use is the photo cropped around its focus point.
@@ -94,27 +105,151 @@ func scanPhotos(rows pgx.Rows) ([]Photo, error) {
 	return out, rows.Err()
 }
 
-// upsertListedPhoto records a file the sync found. A changed Drive
-// modifiedTime resets the size facts (the renderer re-inspects); the
-// description survives, since it is keyed by file and the subject rarely
-// changes when a file is re-exported.
-func upsertListedPhoto(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, fileID, modified, folder, filename string) (*Photo, bool, error) {
-	var changed bool
-	p, err := scanPhoto(pool.QueryRow(ctx, `
-		INSERT INTO app_poster_photos (tenant_id, drive_file_id, drive_modified_at, folder, filename)
-		VALUES ($1, $2, $3, $4, $5)
+// recordListedPhotos records every file one listing found, in one
+// statement per 500 files. A new file starts pending and unmeasured; a
+// file whose Drive modified time moved has its measurements reset so the
+// measure task looks again; dimensions the listing already knows (the
+// Drive API reports them) are stored at once, with provenance left to the
+// renderer when it first fetches the original. It returns how many were new.
+func recordListedPhotos(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, files []DriveFile) (int, error) {
+	inserted := 0
+	for start := 0; start < len(files); start += 500 {
+		chunk := files[start:min(start+500, len(files))]
+		n, err := recordChunk(ctx, pool, tenantID, chunk)
+		if err != nil {
+			return 0, err
+		}
+		inserted += n
+	}
+	return inserted, nil
+}
+
+func recordChunk(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, chunk []DriveFile) (int, error) {
+	n := len(chunk)
+	ids, mods, folders, names, orients := make([]string, n), make([]string, n), make([]string, n), make([]string, n), make([]string, n)
+	widths, heights := make([]int32, n), make([]int32, n)
+	for i, f := range chunk {
+		ids[i], mods[i], folders[i], names[i] = f.ID, f.Modified, f.Folder, f.Name
+		widths[i], heights[i], orients[i] = int32(f.Width), int32(f.Height), orientationOf(f.Width, f.Height) //nolint:gosec // image dimensions
+	}
+	rows, err := pool.Query(ctx, `
+		INSERT INTO app_poster_photos (tenant_id, drive_file_id, drive_modified_at, folder, filename, width, height, orientation, c2pa)
+		SELECT $1, u.file_id, u.modified, u.folder, u.filename, u.width, u.height, u.orientation,
+		       CASE WHEN u.width > 0 THEN $2 ELSE 'none' END
+		FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::int[], $8::int[], $9::text[])
+		  AS u(file_id, modified, folder, filename, width, height, orientation)
 		ON CONFLICT (tenant_id, drive_file_id) DO UPDATE SET
 			drive_modified_at = EXCLUDED.drive_modified_at,
 			folder = EXCLUDED.folder,
 			filename = EXCLUDED.filename,
+			width = CASE WHEN EXCLUDED.width > 0 THEN EXCLUDED.width
+			             WHEN app_poster_photos.drive_modified_at <> EXCLUDED.drive_modified_at THEN 0
+			             ELSE app_poster_photos.width END,
+			height = CASE WHEN EXCLUDED.width > 0 THEN EXCLUDED.height
+			              WHEN app_poster_photos.drive_modified_at <> EXCLUDED.drive_modified_at THEN 0
+			              ELSE app_poster_photos.height END,
+			orientation = CASE WHEN EXCLUDED.width > 0 THEN EXCLUDED.orientation
+			                   WHEN app_poster_photos.drive_modified_at <> EXCLUDED.drive_modified_at THEN ''
+			                   ELSE app_poster_photos.orientation END,
+			c2pa = CASE WHEN EXCLUDED.width > 0 AND app_poster_photos.drive_modified_at <> EXCLUDED.drive_modified_at THEN EXCLUDED.c2pa
+			            ELSE app_poster_photos.c2pa END,
 			status = CASE WHEN app_poster_photos.status = 'removed' THEN 'pending' ELSE app_poster_photos.status END,
 			updated_at = now()
-		RETURNING `+photoColumns, tenantID, fileID, modified, folder, filename))
+		RETURNING (xmax = 0)`,
+		tenantID, string(posterrender.C2PAUnchecked), ids, mods, folders, names, widths, heights, orients)
 	if err != nil {
-		return nil, false, fmt.Errorf("recording listed photo: %w", err)
+		return 0, fmt.Errorf("recording listed photos: %w", err)
 	}
-	changed = p.Width == 0 || p.DriveModifiedAt != modified
+	defer rows.Close()
+	inserted := 0
+	for rows.Next() {
+		var isNew bool
+		if err := rows.Scan(&isNew); err != nil {
+			return 0, fmt.Errorf("recording listed photos: %w", err)
+		}
+		if isNew {
+			inserted++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("recording listed photos: %w", err)
+	}
+	return inserted, nil
+}
+
+// orientationOf uses the renderer's thresholds so the two agree.
+func orientationOf(w, h int) string {
+	switch {
+	case w <= 0 || h <= 0:
+		return ""
+	case float64(w) > float64(h)*1.1:
+		return "landscape"
+	case float64(h) > float64(w)*1.1:
+		return "portrait"
+	default:
+		return "square"
+	}
+}
+
+// upsertListedPhoto records one file and says whether it needs measuring
+// again: new, changed on Drive, or never measured. Tests use it; the sync
+// goes through recordListedPhotos.
+func upsertListedPhoto(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, fileID, modified, folder, filename string) (*Photo, bool, error) {
+	before, err := getPhotoByFileID(ctx, pool, tenantID, fileID)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := recordListedPhotos(ctx, pool, tenantID, []DriveFile{{ID: fileID, Name: filename, Folder: folder, Modified: modified}}); err != nil {
+		return nil, false, err
+	}
+	p, err := getPhotoByFileID(ctx, pool, tenantID, fileID)
+	if err != nil {
+		return nil, false, err
+	}
+	changed := before == nil || before.DriveModifiedAt != modified || p.Width == 0
 	return p, changed, nil
+}
+
+func getPhotoByFileID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, fileID string) (*Photo, error) {
+	p, err := scanPhoto(pool.QueryRow(ctx, `SELECT `+photoColumns+` FROM app_poster_photos WHERE tenant_id = $1 AND drive_file_id = $2`, tenantID, fileID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil //nolint:nilnil // not found is not an error here
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading photo by file id: %w", err)
+	}
+	return p, nil
+}
+
+// listUnmeasured returns photos still without dimensions, oldest attempt
+// first, so one that keeps failing rotates to the back.
+func listUnmeasured(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, limit int) ([]Photo, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT `+photoColumns+` FROM app_poster_photos
+		WHERE tenant_id = $1 AND width = 0 AND status <> $2
+		ORDER BY updated_at, filename LIMIT $3`, tenantID, PhotoRemoved, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing unmeasured photos: %w", err)
+	}
+	return scanPhotos(rows)
+}
+
+func countUnmeasured(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (int, error) {
+	var n int
+	err := pool.QueryRow(ctx, `SELECT count(*) FROM app_poster_photos WHERE tenant_id = $1 AND width = 0 AND status <> $2`, tenantID, PhotoRemoved).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting unmeasured photos: %w", err)
+	}
+	return n, nil
+}
+
+// touchPhoto moves a photo to the back of the measuring queue.
+func touchPhoto(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID) error {
+	_, err := pool.Exec(ctx, `UPDATE app_poster_photos SET updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("touching photo: %w", err)
+	}
+	return nil
 }
 
 func setPhotoFacts(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, width, height int, orientation string, c2pa posterrender.C2PA) error {
@@ -229,21 +364,54 @@ type PhotoFilter struct {
 	Status PhotoStatus
 	Folder string
 	Limit  int
+	Offset int
 }
+
+const photoPageMax = 2000
 
 func listPhotos(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f PhotoFilter) ([]Photo, error) {
 	limit := f.Limit
-	if limit <= 0 || limit > 2000 {
-		limit = 2000
+	if limit <= 0 || limit > photoPageMax {
+		limit = photoPageMax
 	}
 	rows, err := pool.Query(ctx, `
 		SELECT `+photoColumns+` FROM app_poster_photos
 		WHERE tenant_id = $1 AND ($2 = '' OR status = $2) AND ($3 = '' OR folder = $3)
-		ORDER BY folder, filename LIMIT $4`, tenantID, string(f.Status), f.Folder, limit)
+		ORDER BY folder, filename LIMIT $4 OFFSET $5`, tenantID, string(f.Status), f.Folder, limit, max(f.Offset, 0))
 	if err != nil {
 		return nil, fmt.Errorf("listing photos: %w", err)
 	}
 	return scanPhotos(rows)
+}
+
+// countPhotos is the total behind a filtered page.
+func countPhotos(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f PhotoFilter) (int, error) {
+	var n int
+	err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM app_poster_photos
+		WHERE tenant_id = $1 AND ($2 = '' OR status = $2) AND ($3 = '' OR folder = $3)`, tenantID, string(f.Status), f.Folder).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("counting photos: %w", err)
+	}
+	return n, nil
+}
+
+// listFolders is every set name in the library, without loading the rows.
+func listFolders(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]string, error) {
+	rows, err := pool.Query(ctx, `SELECT DISTINCT folder FROM app_poster_photos WHERE tenant_id = $1 ORDER BY folder`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing photo folders: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // searchPhotos is the full-text search over indexed, offerable photos.

@@ -168,6 +168,13 @@ export default function PostersSettings() {
                   Subfolders are sets: a poster borrows a second photo only from the hero's folder.
                 </span>
               </label>
+              {!st.drive_api_key && (
+                <p className="field-note">
+                  This server lists Drive through the public folder page, which is fine for a few hundred
+                  photos. For a bigger library the operator should set GDRIVE_API_KEY: listing is then paged and
+                  carries each photo's dimensions, so nothing is downloaded just to measure it.
+                </p>
+              )}
               <label className="field">
                 <span>Logo folder link</span>
                 <input
@@ -292,7 +299,7 @@ export default function PostersSettings() {
             </div>
             {sync && (
               <p className="status-line">
-                Listed {sync.listed}, {sync.new} new, {sync.inspecting} being measured, {sync.removed} removed,{' '}
+                Listed {sync.listed}, {sync.new} new, {sync.to_measure} still to measure, {sync.removed} removed,{' '}
                 {sync.pending} pending.
                 {sync.problems && sync.problems.length > 0 && (
                   <>

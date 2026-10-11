@@ -3,7 +3,6 @@ package posters
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -16,26 +15,34 @@ import (
 )
 
 // The sync lists the photo folder and keeps the index in step with it: new
-// or changed files get a pending row with size and provenance from the
-// renderer; files gone from Drive become removed. No model is involved;
-// describing photos is done from a harness over MCP (core_photos.go).
+// or changed files get a pending row, files gone from Drive become
+// removed, and a separate measure task fills in size and provenance a
+// batch at a time. No model is involved; describing photos is done from a
+// harness over MCP (core_photos.go).
 //
-// The hourly run is opt-in per workspace (Settings.AutoSync). The harness
+// The hourly sync is opt-in per workspace (Settings.AutoSync). The harness
 // loop starts with sync_poster_photos anyway, so by default Kit only lists
 // Drive when a person or a tool asks.
 
 // SyncResult is what one pass did. Listing and recording are quick and
-// happen before the result returns; inspecting new files means downloading
-// each one through the renderer, so that continues in the background and
-// Inspecting says how many are on their way.
+// finish before the result returns. Measuring a photo (size, orientation,
+// provenance) can mean downloading it, so that is the measure task's job,
+// a few minutes at a time; ToMeasure says how many are waiting for it. The
+// Drive API reports dimensions in the listing, so with a key almost
+// nothing waits.
 type SyncResult struct {
-	Listed     int      `json:"listed"`
-	New        int      `json:"new"`
-	Inspecting int      `json:"inspecting"`
-	Removed    int      `json:"removed"`
-	Pending    int      `json:"pending"`
-	Problems   []string `json:"problems"`
+	Listed    int      `json:"listed"`
+	New       int      `json:"new"`
+	ToMeasure int      `json:"to_measure"`
+	Removed   int      `json:"removed"`
+	Pending   int      `json:"pending"`
+	Problems  []string `json:"problems"`
 }
+
+// measureBatch is how many photos one run of the measure task downloads.
+// Five minutes apart, forty a run keeps a first sync of a few thousand
+// photos moving without holding the function lane for long.
+const measureBatch = 40
 
 func (a *App) registerScheduledTasks() {
 	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
@@ -46,6 +53,15 @@ func (a *App) registerScheduledTasks() {
 		Run: func(ctx context.Context, job models.Job) error {
 			_, err := a.SyncPhotos(ctx, job.TenantID)
 			return err
+		},
+	})
+	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
+		Key:         "posters.measure_photos",
+		Description: "Measure new poster photos (size, orientation, provenance)",
+		DefaultCron: "*/5 * * * *",
+		AppliesTo:   a.photoFolderConfigured,
+		Run: func(ctx context.Context, job models.Job) error {
+			return a.measurePhotos(ctx, job.TenantID, measureBatch)
 		},
 	})
 	// Unpicked options are candidates, not history. Thirty days is long
@@ -70,25 +86,30 @@ func (a *App) enabledFor(ctx context.Context, tenantID uuid.UUID) bool {
 	return apps.IsEnabled(ctx, tenantID, AppName)
 }
 
-// autoSyncOn is the hourly task's AppliesTo: the app is enabled, a photo
-// folder is set, and the admin switched the schedule on. Anything else
-// retires the row, so a workspace that never opted in has no job at all.
-func (a *App) autoSyncOn(ctx context.Context, tenantID uuid.UUID) bool {
+// photoFolderConfigured: the app is on and a photo folder is set.
+func (a *App) photoFolderConfigured(ctx context.Context, tenantID uuid.UUID) bool {
 	if !a.enabledFor(ctx, tenantID) {
 		return false
 	}
 	s, err := getSettings(ctx, a.pool, tenantID)
-	return err == nil && s.PhotoFolderID != "" && s.AutoSync
+	return err == nil && s.PhotoFolderID != ""
+}
+
+// autoSyncOn is the hourly task's AppliesTo: a folder is set and the admin
+// switched the schedule on. Anything else retires the row, so a workspace
+// that never opted in has no job at all.
+func (a *App) autoSyncOn(ctx context.Context, tenantID uuid.UUID) bool {
+	if !a.photoFolderConfigured(ctx, tenantID) {
+		return false
+	}
+	s, err := getSettings(ctx, a.pool, tenantID)
+	return err == nil && s.AutoSync
 }
 
 // SyncPhotos runs one pass for a tenant. The result is also recorded on
-// the settings row so the admin page can show when it last ran. New or
-// changed files are inspected after the result returns, detached from the
-// caller's request: an MCP client or a browser gives up long before a
-// library of a few dozen photos has downloaded, and a cancelled request
-// used to leave the tail of the list without dimensions.
+// the settings row so the admin page can show when it last ran.
 func (a *App) SyncPhotos(ctx context.Context, tenantID uuid.UUID) (*SyncResult, error) {
-	res, toInspect, err := a.syncPhotos(ctx, tenantID)
+	res, err := a.syncPhotos(ctx, tenantID)
 	msg := ""
 	if err != nil {
 		msg = err.Error()
@@ -98,88 +119,83 @@ func (a *App) SyncPhotos(ctx context.Context, tenantID uuid.UUID) (*SyncResult, 
 	if rerr := setSyncResult(ctx, a.pool, tenantID, msg); rerr != nil {
 		slog.Warn("posters: recording sync", "error", rerr)
 	}
-	if err == nil && len(toInspect) > 0 {
-		a.inspectDetached(ctx, tenantID, toInspect)
-	}
 	return res, err
 }
 
-// inspectDetached downloads and measures new photos after the sync has
-// answered. One pass per tenant at a time; a file this pass misses still
-// has no width, so the next sync picks it up.
-func (a *App) inspectDetached(ctx context.Context, tenantID uuid.UUID, photos []*Photo) {
-	if _, busy := a.inspecting.LoadOrStore(tenantID, true); busy {
-		return
-	}
-	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Minute)
-	go func() {
-		defer cancel()
-		defer a.inspecting.Delete(tenantID)
-		var problems []string
-		for _, p := range photos {
-			if err := a.inspectPhoto(bg, tenantID, p); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %s", p.Filename, truncate(err.Error(), 160)))
-			}
-		}
-		slog.Info("posters: inspected photos", "tenant_id", tenantID, "count", len(photos)-len(problems), "problems", len(problems))
-		if len(problems) > 0 {
-			if err := setSyncResult(bg, a.pool, tenantID, strings.Join(problems, "; ")); err != nil {
-				slog.Warn("posters: recording inspection problems", "error", err)
-			}
-		}
-	}()
-}
-
-// syncPhotos lists the folder and records what is there. It returns the
-// photos that still need inspecting rather than inspecting them.
-func (a *App) syncPhotos(ctx context.Context, tenantID uuid.UUID) (*SyncResult, []*Photo, error) {
+// syncPhotos lists the folder tree and records it in a handful of
+// statements, whatever the library's size. Nothing here downloads a photo.
+func (a *App) syncPhotos(ctx context.Context, tenantID uuid.UUID) (*SyncResult, error) {
 	settings, err := getSettings(ctx, a.pool, tenantID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if settings.PhotoFolderID == "" {
-		return nil, nil, errors.New("no photo folder is set")
+		return nil, errors.New("no photo folder is set")
 	}
 	files, err := driveLister{apiKey: a.driveKey}.Walk(ctx, settings.PhotoFolderID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	res := &SyncResult{Problems: []string{}}
+	images := make([]DriveFile, 0, len(files))
 	seen := make([]string, 0, len(files))
-	var toInspect []*Photo
 	for _, f := range files {
-		if !isImageFile(f) {
-			continue
-		}
-		res.Listed++
-		seen = append(seen, f.ID)
-		photo, changed, err := upsertListedPhoto(ctx, a.pool, tenantID, f.ID, f.Modified, f.Folder, f.Name)
-		if err != nil {
-			return nil, nil, err
-		}
-		if photo.CreatedAt.Equal(photo.UpdatedAt) {
-			res.New++
-		}
-		if changed {
-			toInspect = append(toInspect, photo)
+		if isImageFile(f) {
+			images = append(images, f)
+			seen = append(seen, f.ID)
 		}
 	}
-	if a.renderer == nil && len(toInspect) > 0 {
-		res.Problems = append(res.Problems, "the renderer is not configured, so new photos cannot be measured")
-		toInspect = nil
+	res := &SyncResult{Listed: len(images), Problems: []string{}}
+	if res.New, err = recordListedPhotos(ctx, a.pool, tenantID, images); err != nil {
+		return nil, err
 	}
-	res.Inspecting = len(toInspect)
 	if res.Listed > 0 {
 		if res.Removed, err = markRemovedExcept(ctx, a.pool, tenantID, seen); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
+	}
+	if res.ToMeasure, err = countUnmeasured(ctx, a.pool, tenantID); err != nil {
+		return nil, err
+	}
+	if res.ToMeasure > 0 && a.renderer == nil {
+		res.Problems = append(res.Problems, "the renderer is not configured, so new photos cannot be measured")
 	}
 	counts, err := photoCounts(ctx, a.pool, tenantID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	res.Pending = counts[PhotoPending]
-	return res, toInspect, nil
+	return res, nil
+}
+
+// measurePhotos is one run of the measure task: up to limit photos without
+// dimensions, each downloaded once through the renderer. A failure is
+// logged and the photo moves to the back of the queue rather than stopping
+// the run; nothing downstream waits on a measurement, since describing
+// uses thumbnails and renders measure the original themselves.
+func (a *App) measurePhotos(ctx context.Context, tenantID uuid.UUID, limit int) error {
+	if a.renderer == nil {
+		return nil
+	}
+	photos, err := listUnmeasured(ctx, a.pool, tenantID, limit)
+	if err != nil {
+		return err
+	}
+	done, failed := 0, 0
+	for i := range photos {
+		if err := a.inspectPhoto(ctx, tenantID, &photos[i]); err != nil {
+			failed++
+			slog.Warn("posters: measuring photo", "tenant_id", tenantID, "photo_id", photos[i].ID, "file", photos[i].Filename, "error", err)
+			if terr := touchPhoto(ctx, a.pool, tenantID, photos[i].ID); terr != nil {
+				return terr
+			}
+			continue
+		}
+		done++
+	}
+	if done+failed > 0 {
+		slog.Info("posters: measured photos", "tenant_id", tenantID, "measured", done, "failed", failed)
+	}
+	return nil
 }
 
 // inspectPhoto asks the renderer for a photo's facts. The renderer

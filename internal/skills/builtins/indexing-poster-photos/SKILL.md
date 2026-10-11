@@ -10,7 +10,7 @@ Kit keeps an index of the photo library, not the photos. The description you wri
 ## The loop
 
 1. `sync_poster_photos` once, so new Drive files are in the index. Kit does not poll Drive on its own unless an admin turned on auto-sync.
-2. `list_pending_photos` for a batch (up to 48).
+2. `list_pending_photos` for a batch (up to 48). Pass `folder` to work one set at a time, or to split a large library between several sessions. A photo may still show 0x0 while a background task measures it; describe it from what you see anyway.
 3. `get_photo_sheet` with up to 12 ids at a time: one numbered contact sheet. Use `get_photo` on a single id when you need to place a focus point precisely or check a detail.
 4. `index_photos` with one entry per photo. Repeat until nothing is pending.
 5. `update_photo_index` later to correct one.

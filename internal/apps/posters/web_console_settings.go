@@ -36,9 +36,13 @@ type settingsPayload struct {
 	RendererReady bool            `json:"renderer_ready"`
 	// RendererConfigured separates "not set up on this server" from
 	// "starting"; the UI only promises a retry for the second.
-	RendererConfigured bool   `json:"renderer_configured"`
-	StockEnabled       bool   `json:"stock_configured"`
-	IndexPrompt        string `json:"index_prompt"`
+	RendererConfigured bool `json:"renderer_configured"`
+	StockEnabled       bool `json:"stock_configured"`
+	// DriveAPIKey says the server lists Drive through the API (paginated,
+	// with image dimensions) rather than scraping the public folder page,
+	// which is what a library beyond a few hundred files needs.
+	DriveAPIKey bool   `json:"drive_api_key"`
+	IndexPrompt string `json:"index_prompt"`
 }
 
 func folderURL(id string) string {
@@ -75,7 +79,7 @@ func (a *App) settingsPayload(ctx context.Context, tenantID uuid.UUID) (*setting
 		Settings: s, PhotoFolder: folderURL(s.PhotoFolderID), LogoFolder: folderURL(s.LogoFolderID),
 		Brand: brand, FontProblems: []string{}, LogoFiles: []logoCandidate{}, LogoVariants: []string{},
 		Counts:        map[string]int{"pending": counts[PhotoPending], "indexed": counts[PhotoIndexed], "removed": counts[PhotoRemoved]},
-		RendererReady: a.RendererReady(ctx), RendererConfigured: a.renderer != nil, StockEnabled: a.stockConfigured(ctx, tenantID),
+		RendererReady: a.RendererReady(ctx), RendererConfigured: a.renderer != nil, StockEnabled: a.stockConfigured(ctx, tenantID), DriveAPIKey: a.driveKey != "",
 		IndexPrompt: "Load the indexing-poster-photos skill, then list_pending_photos and describe them in batches with get_photo_sheet and index_photos until none are pending.",
 	}
 	if brand.Brand != nil {
