@@ -298,7 +298,7 @@ func (a *App) coreSyncPhotos(ctx context.Context, caller *services.Caller) (*cor
 	if err != nil {
 		return nil, err
 	}
-	text := fmt.Sprintf("Listed %d photos: %d new, %d inspected, %d removed, %d waiting for descriptions.", res.Listed, res.New, res.Inspected, res.Removed, res.Pending)
+	text := fmt.Sprintf("Listed %d photos: %d new, %d removed, %d waiting for descriptions. %d new or changed files are being measured in the background; their size and orientation appear shortly.", res.Listed, res.New, res.Removed, res.Pending, res.Inspecting)
 	if len(res.Problems) > 0 {
 		text += "\nProblems:\n- " + strings.Join(res.Problems, "\n- ")
 	}

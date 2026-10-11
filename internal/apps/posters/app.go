@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -69,6 +70,9 @@ type App struct {
 	// chatLimiter is the same per-user window and in-flight cap card chat
 	// applies; poster chat is not a way around it.
 	chatLimiter *chat.ExecuteLimiter
+	// inspecting holds the tenants whose new photos are being measured in
+	// the background after a sync (sync.go).
+	inspecting sync.Map
 }
 
 // Instance exposes the registered app.

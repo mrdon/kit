@@ -292,7 +292,7 @@ export default function PostersSettings() {
             </div>
             {sync && (
               <p className="status-line">
-                Listed {sync.listed}, {sync.new} new, {sync.inspected} inspected, {sync.removed} removed,{' '}
+                Listed {sync.listed}, {sync.new} new, {sync.inspecting} being measured, {sync.removed} removed,{' '}
                 {sync.pending} pending.
                 {sync.problems && sync.problems.length > 0 && (
                   <>

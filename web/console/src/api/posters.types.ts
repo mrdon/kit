@@ -366,7 +366,7 @@ export interface PostersSettingsBody {
 export interface PosterSyncResult {
   listed: number;
   new: number;
-  inspected: number;
+  inspecting: number;
   removed: number;
   pending: number;
   problems: string[] | null;
