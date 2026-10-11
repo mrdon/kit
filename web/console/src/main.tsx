@@ -17,7 +17,7 @@ import MenuHappyHour from './pages/MenuHappyHour';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
-import Events from './pages/Events';
+import Events from './pages/events/Events';
 import EventsSettingsPage from './pages/EventsSettings';
 import EventsStaffPage from './pages/EventsStaff';
 import EventsChannelsPage from './pages/EventsChannels';
