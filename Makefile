@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-build renderer-test renderer-typecheck renderer-clean
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -73,21 +73,43 @@ app-clean: ## Remove frontend build output + shared node_modules
 # have nothing to do with the browser bundles.
 RENDERER_DIR=renderer
 
-$(RENDERER_DIR)/node_modules:
-	@cd $(RENDERER_DIR) && npm install
+# The renderer is pinned to the Node major prod runs (Dockerfile: node:22).
+# isolated-vm is compiled for one Node ABI, so installing, testing and
+# running it must all use the same major; a newer system Node fails deep in
+# node-gyp. A Homebrew node@22 keg is picked up when present (it does not
+# replace the default node); otherwise node on PATH must already be 22.
+RENDERER_NODE_MAJOR=22
+RENDERER_NODE_KEG=$(firstword $(wildcard /opt/homebrew/opt/node@$(RENDERER_NODE_MAJOR)/bin /usr/local/opt/node@$(RENDERER_NODE_MAJOR)/bin))
+RENDERER_PATH=$(if $(RENDERER_NODE_KEG),$(RENDERER_NODE_KEG):)$(PATH)
+RENDERER_NPM=cd $(RENDERER_DIR) && PATH="$(RENDERER_PATH)" npm
+# Kit spawns the renderer with this node (see POSTER_RENDERER_NODE).
+export POSTER_RENDERER_NODE ?= $(if $(RENDERER_NODE_KEG),$(RENDERER_NODE_KEG)/node,node)
 
-renderer-init: ## Install poster renderer deps
-	@cd $(RENDERER_DIR) && npm install
+renderer-node:
+	@v=$$(PATH="$(RENDERER_PATH)" node -p 'process.versions.node.split(".")[0]' 2>/dev/null); \
+	if [ "$$v" != "$(RENDERER_NODE_MAJOR)" ]; then \
+		echo "The poster renderer needs Node $(RENDERER_NODE_MAJOR) (found $${v:-none})."; \
+		echo "  macOS: brew install node@$(RENDERER_NODE_MAJOR)   (keg-only; the Makefile finds it)"; \
+		echo "  nvm/fnm: use the version in renderer/.nvmrc"; \
+		echo "Then: make renderer-clean"; \
+		exit 1; \
+	fi
 
-renderer-build: $(RENDERER_DIR)/node_modules ## Build the poster renderer to renderer/dist
+$(RENDERER_DIR)/node_modules: | renderer-node
+	@$(RENDERER_NPM) install
+
+renderer-init: renderer-node ## Install poster renderer deps
+	@$(RENDERER_NPM) install
+
+renderer-build: renderer-node $(RENDERER_DIR)/node_modules ## Build the poster renderer to renderer/dist
 	@echo "Building poster renderer..."
-	@cd $(RENDERER_DIR) && npm run build
+	@$(RENDERER_NPM) run build
 
-renderer-typecheck: $(RENDERER_DIR)/node_modules ## Typecheck the poster renderer
-	@cd $(RENDERER_DIR) && npm run typecheck
+renderer-typecheck: renderer-node $(RENDERER_DIR)/node_modules ## Typecheck the poster renderer
+	@$(RENDERER_NPM) run typecheck
 
-renderer-test: $(RENDERER_DIR)/node_modules ## Run the poster renderer's tests (offline; builds first)
-	@cd $(RENDERER_DIR) && npm test
+renderer-test: renderer-node $(RENDERER_DIR)/node_modules ## Run the poster renderer's tests (offline; builds first)
+	@$(RENDERER_NPM) test
 
 renderer-clean: ## Remove renderer build output + node_modules
 	@rm -rf $(RENDERER_DIR)/dist $(RENDERER_DIR)/node_modules

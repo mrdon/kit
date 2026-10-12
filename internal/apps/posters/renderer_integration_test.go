@@ -31,7 +31,7 @@ func TestRendererEndToEnd(t *testing.T) {
 	t.Setenv("POSTER_FONT_DIR", filepath.Join(dir, "test", "fonts"))
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	r, stop, err := posterrender.Start(ctx, posterrender.Config{Dir: dir, Port: 8497, CacheDir: t.TempDir()})
+	r, stop, err := posterrender.Start(ctx, posterrender.Config{Dir: dir, Node: os.Getenv("POSTER_RENDERER_NODE"), Port: 8497, CacheDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
