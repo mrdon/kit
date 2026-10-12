@@ -1,5 +1,7 @@
 package buildinfo
 
+import "os"
+
 var (
 	// Version will be set via ldflags during build.
 	Version = "dev"
@@ -21,6 +23,13 @@ var (
 func Token() string {
 	if Commit != "" && Commit != "none" {
 		return Commit
+	}
+	// Dokku builds from the Dockerfile without passing COMMIT, so the ldflag
+	// is "none" in production and the token was a constant "dev": no open
+	// screen ever saw a deploy. Dokku does set GIT_REV, the pushed sha, in
+	// every container's environment.
+	if rev := os.Getenv("GIT_REV"); rev != "" {
+		return rev
 	}
 	// A local `go run` has no ldflags, so this is the stable "dev" and a
 	// developer's screen never self-reloads -- which is what you want while

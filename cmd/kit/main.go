@@ -63,6 +63,7 @@ func main() {
 	slog.Info("starting kit",
 		"version", buildinfo.Version,
 		"commit", buildinfo.Commit,
+		"build", buildinfo.Token(),
 		"date", buildinfo.Date,
 	)
 
