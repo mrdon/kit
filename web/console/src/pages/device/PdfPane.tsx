@@ -18,6 +18,13 @@ import type { PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // page, with an @page rule sized to the PDF's own sheet and no margin: no
 // margin leaves the browser nowhere to put a header, and an image the size
 // of the page has nothing to shrink.
+//
+// Except in Safari, which is the bar iPad. Safari draws its own title, URL
+// and page number on any web page it prints, whatever the page's margins,
+// so the images would come out with footers anyway. Safari only prints a PDF
+// clean when the PDF is the document, so there Print opens it in a tab of
+// its own and AirPrint goes through the Share button. The iPad has tabs and
+// a back button; the kiosk-mode laptop, which has neither, runs Chrome.
 
 type Sheets = { urls: string[]; widthPt: number; heightPt: number };
 
@@ -29,6 +36,7 @@ export function PdfPane({ src, title }: { src: string; title: string }) {
   const [sheets, setSheets] = useState<Sheets | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const printWhenMounted = useRef(false);
 
   useEffect(() => {
@@ -40,11 +48,20 @@ export function PdfPane({ src, title }: { src: string; title: string }) {
 
   // A new PDF (the other week, a reloaded menu) makes the old images stale.
   useEffect(() => () => sheets?.urls.forEach((u) => URL.revokeObjectURL(u)), [sheets]);
-  useEffect(() => setSheets(null), [src]);
+  useEffect(() => {
+    setSheets(null);
+    setHint(null);
+  }, [src]);
 
   const print = async () => {
-    setBusy(true);
     setError(null);
+    if (isSafari()) {
+      // Synchronous, inside the tap, or the popup blocker eats it.
+      window.open(src, '_blank');
+      setHint('The PDF opened in a new tab. Tap the Share button there, then Print. Close that tab to come back.');
+      return;
+    }
+    setBusy(true);
     try {
       const next = await rasterize(src);
       printWhenMounted.current = true;
@@ -64,11 +81,23 @@ export function PdfPane({ src, title }: { src: string; title: string }) {
           {busy ? 'Preparing…' : 'Print'}
         </button>
       </div>
+      {hint && <p className="banner banner-ok">{hint}</p>}
       {error && <p className="banner banner-error">Couldn’t prepare the print: {error}</p>}
       <iframe className="pdf-pane-frame" src={src} title={title} />
       {sheets && createPortal(<PrintSheets sheets={sheets} />, document.body)}
     </section>
   );
+}
+
+// isSafari reports a WebKit browser that adds its own print header and
+// footer: Safari on a Mac, and every browser on an iPad or iPhone, which are
+// all WebKit underneath. iPadOS reports itself as a Mac, so a touch screen
+// is what gives it away.
+function isSafari(): boolean {
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+  return /Safari\//.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
 }
 
 // PrintSheets is invisible on screen and is the only thing on paper while it

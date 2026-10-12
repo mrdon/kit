@@ -283,7 +283,7 @@ The address is public, like the menu screen, so paste it into a kiosk board once
 
 ### The table topper
 
-The cog menu on the Events page prints the week's card for the taproom tables — **Table topper — this week** or **next week** — a coloured band per event with the day, the door time, a couple of lines about it, and the event's own poster. It's a PDF: two identical 4x6in cards on one portrait Letter sheet, with dashed lines to cut along. One sheet covers two tables, and a cut card drops straight into a standard 4x6 table frame.
+The cog menu on the Events page prints the week's card for the taproom tables — **Table topper — this week** or **next week** — a coloured band per event with the day, the door time, a couple of lines about it, and the event's own poster. It's a PDF: two identical 4x6in cards on one landscape sheet, with dashed lines to cut along. One sheet covers two tables, and a cut card drops straight into a standard 4x6 table frame.
 
 Nothing to lay out: it's built from the events you already entered, and only from **published, public** ones — a private booking never appears on a card sitting in front of customers. The bullets come from the event's **summary** — the one-line teaser — or, if you wrote the description as a list of short lines, from those lines instead. Repeating events show the date they land on *this* week, so a weekly quiz prints with this Wednesday on it.
 

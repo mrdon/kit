@@ -19,10 +19,8 @@ import (
 // panel is measured once, the bands are given their share, and text is fitted
 // into the space that remains.
 //
-// Two copies are printed side by side on a portrait Letter sheet. One sheet,
+// Two copies are printed side by side on a landscape Letter sheet. One sheet,
 // one cut down the middle plus a trim around the pair, two tables covered.
-// Portrait because that is what every print dialog defaults to: a landscape
-// sheet sent to a printer set for portrait came out rotated and shrunk.
 
 //go:embed fonts/*.ttf
 var topperFonts embed.FS
@@ -45,14 +43,14 @@ const (
 // print, cut, slide the card in. Two sit side by side with no gutter -- the
 // cut line down the middle is the shared edge, so a slightly off-centre cut
 // costs a millimetre of margin, not content -- and the pair is centred on the
-// sheet, which leaves 6.35mm of paper on each side and 31.75mm above and
-// below -- clear of a typical printer's unprintable border.
+// sheet, which leaves 38mm of paper on each side, well clear of any printer's
+// unprintable border.
 //
 // Every other measurement on the card is proportioned to this panel. Changing
 // the panel size means re-fitting them, not just these two numbers.
 const (
-	sheetW  = 215.9
-	sheetH  = 279.4
+	sheetW  = 279.4
+	sheetH  = 215.9
 	panelW  = 101.6
 	panelH  = 152.4
 	originX = (sheetW - 2*panelW) / 2
