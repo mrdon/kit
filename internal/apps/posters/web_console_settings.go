@@ -2,6 +2,7 @@ package posters
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -169,12 +170,17 @@ func (a *App) logoFiles(ctx context.Context, s Settings) ([]logoCandidate, strin
 	return out, ""
 }
 
+// maxGuidance caps the admin's prompt guidance: it rides along on every
+// poster and template chat message.
+const maxGuidance = 4000
+
 type settingsBody struct {
 	PhotoFolder      string              `json:"photo_folder_url"`
 	LogoFolder       string              `json:"logo_folder_url"`
 	LogoMap          map[string]LogoFile `json:"logo_map"`
 	AllowStockPhotos bool                `json:"allow_stock_photos"`
 	AutoSync         bool                `json:"auto_sync"`
+	Guidance         string              `json:"guidance"`
 }
 
 // variantInName finds a variant word in a logo filename. Underscores count
@@ -189,6 +195,10 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	caller := auth.CallerFromContext(r.Context())
 	var body settingsBody
 	if !readBody(w, r, &body) {
+		return
+	}
+	if len(body.Guidance) > maxGuidance {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("guidance is %d characters; keep it under %d", len(body.Guidance), maxGuidance))
 		return
 	}
 	photoID, err := driveFolderID(body.PhotoFolder)
@@ -224,7 +234,7 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		autoMapLogos(files, logoMap, wanted)
 	}
-	s := Settings{TenantID: caller.TenantID, PhotoFolderID: photoID, LogoFolderID: logoID, LogoMap: logoMap, AllowStockPhotos: body.AllowStockPhotos, AutoSync: body.AutoSync}
+	s := Settings{TenantID: caller.TenantID, PhotoFolderID: photoID, LogoFolderID: logoID, LogoMap: logoMap, AllowStockPhotos: body.AllowStockPhotos, AutoSync: body.AutoSync, Guidance: strings.TrimSpace(body.Guidance)}
 	if _, err := upsertSettings(r.Context(), a.pool, s); err != nil {
 		a.httpErr(w, err)
 		return

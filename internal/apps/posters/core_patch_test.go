@@ -6,7 +6,7 @@ import (
 )
 
 func TestApplyPatches(t *testing.T) {
-	src := "a\nconst ground = \"paper\";\nb\nb\n"
+	src := "a\nconst ground = \"paper\";\nb\nb\n" //nolint:dupword // the repeated line is the ambiguous-find case
 	out, err := applyPatches(src, []patchEdit{{Find: `const ground = "paper";`, Replace: `const ground = "ink";`}})
 	if err != nil || !strings.Contains(out, `"ink"`) || strings.Contains(out, `"paper"`) {
 		t.Fatalf("single edit: %v %q", err, out)

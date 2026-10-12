@@ -17,7 +17,9 @@ Two hard rules carry over from the prototype and are non-negotiable:
 
 1. **No generated imagery.** Every image in a poster is a real photo from the tenant's
    Drive library (or Pixabay, if the tenant turns stock on) or an approved logo file. No image-generation model is ever called, and the
-   agent cannot draw imagery (no inline SVG). Photos may be cropped and scaled.
+   agent cannot draw imagery. Inline SVG is allowed for simple vector shapes only (rect,
+   circle, ellipse, line, polyline, polygon, path, g; no `<image>`, `<text>`, `<use>`, href or
+   external `url()`). Photos may be cropped and scaled.
 2. **No invented facts.** Copy comes from the event's public fields. `prep_notes`
    (staff notes) never reach public copy.
 
@@ -182,9 +184,12 @@ only code absorbs anything.
    `<Logo variant="white" />`. The host resolves ids against the photos Kit sent; an
    unknown id is a validation error. Source never sees bytes or URLs.
 4. **Validate the tree** (host side, before Satori):
-   - element types only `div`, `span`, `p`, `h1`–`h3`, `img` (from Photo/Logo); **no
-     `svg`, `path`, or other drawing elements**
+   - element types only `div`, `span`, `p`, `h1`–`h3`, `img` (from Photo/Logo), and `svg`
+     holding vector shapes; no `url()` in any style (hard limits, always enforced)
    - every color value is one of the tenant's tokens; no gradients, shadows, opacity
+   - the brand rules (colors, effects, accents, pairings, mono digits, copy) are defaults:
+     a render with `allowOffBrand` (the edit tools' `off_brand`, set when a person asked)
+     reports them as `off-brand:` warnings and saves; the version keeps the flag
    - every `fontFamily` is one of the tenant's families
    - accent rules from the tenant brand (Gravity: exactly one amber element, never
      amber with ember)
@@ -309,6 +314,8 @@ full background; that goes away, as decided.
   Only the mapping is stored; the renderer fetches, trims padding and caches the files.
 - **Stock photos:** `allow_stock_photos` (default **off**). Controls whether the agent
   gets the Pixabay tool and what its prompt says about stock. No approval step.
+- **Poster guidance:** free text (up to 4000 characters) added to the poster and template
+  chat prompts. It can change style and brand defaults, never the hard limits.
 - **Derived brand** (read-only, above) and **photo index status** ("12 waiting for
   descriptions").
 

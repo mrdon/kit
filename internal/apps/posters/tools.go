@@ -25,7 +25,9 @@ var posterTools = []services.ToolMeta{
 	{
 		Name: "edit_poster_source",
 		Description: "Replace a poster's TSX source. The renderer validates it against the brand (token colors only, approved pairings, " +
-			"one accent element, numbers in the mono face, no drawing elements, type inside the safe margins) and renders it. " +
+			"one accent element, numbers in the mono face, no gradients or effects, type inside the safe margins) and renders it. " +
+			"Simple vector shapes are allowed as inline <svg> (rect, circle, ellipse, line, polyline, polygon, path, g) in token colors; " +
+			"images are only library photos and the logo, never drawn or generated pictures. " +
 			"On success a new version is saved and the render comes back as an image: LOOK at it before replying. " +
 			"On failure nothing is saved and the problems come back for you to fix. Photos are referenced by id only " +
 			"(<Photo id=\"…\" />); find ids with search_photos.",
@@ -33,6 +35,7 @@ var posterTools = []services.ToolMeta{
 			"poster_id": services.Field("string", "Poster id."),
 			"source":    services.Field("string", "The complete TSX file. Imports only from react and @poster/kit; default-exports Poster({ format })."),
 			"summary":   services.Field("string", "One line saying what changed, e.g. 'Bigger title, photo on the left'. Shown in the version history."),
+			"off_brand": services.Field("boolean", offBrandField),
 		}, "poster_id", "source", "summary"),
 	},
 	{
@@ -55,7 +58,8 @@ var posterTools = []services.ToolMeta{
 					"required": []string{"find", "replace"},
 				},
 			},
-			"summary": services.Field("string", "One line saying what changed. Shown in the version history."),
+			"summary":   services.Field("string", "One line saying what changed. Shown in the version history."),
+			"off_brand": services.Field("boolean", offBrandField),
 		}, "poster_id", "edits", "summary"),
 	},
 	{
@@ -326,3 +330,8 @@ var indexTools = []services.ToolMeta{
 		}, "event_id"),
 	},
 }
+
+// offBrandField describes the edit tools' off_brand switch.
+const offBrandField = "Set true only when the user explicitly asked for something the brand guide rules out (a gradient, a fade, " +
+	"a shadow, an off-palette color, a second accent). Brand findings then come back as warnings prefixed off-brand: and the " +
+	"version saves; fix any you were not asked for. Never needed for vector shapes. Raster or generated images stay refused."

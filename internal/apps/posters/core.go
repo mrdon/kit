@@ -187,6 +187,7 @@ type editArg struct {
 	PosterID string `json:"poster_id"`
 	Source   string `json:"source"`
 	Summary  string `json:"summary"`
+	OffBrand bool   `json:"off_brand"`
 }
 
 func (a *App) coreEditPoster(ctx context.Context, caller *services.Caller, raw json.RawMessage) (*coreResult, error) {
@@ -205,7 +206,7 @@ func (a *App) coreEditPoster(ctx context.Context, caller *services.Caller, raw j
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.saveEdit(ctx, caller.TenantID, poster, in.Source, strOr(in.Summary, "Edited"), AuthorAgent)
+	res, err := a.saveEdit(ctx, caller.TenantID, poster, in.Source, strOr(in.Summary, "Edited"), AuthorAgent, in.OffBrand)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import {
 } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { errText, fmtDay } from './common';
+import PosterGuidanceField from './PosterGuidanceField';
 
 // Admin setup for posters: the two Drive folders, which logo file is which
 // variant, the stock-photo switch, the photo index status, and the brand
@@ -24,6 +25,7 @@ export default function PostersSettings() {
   const [logoFiles, setLogoFiles] = useState<PosterLogoCandidate[]>([]);
   const [allowStock, setAllowStock] = useState(false);
   const [autoSync, setAutoSync] = useState(false);
+  const [guidance, setGuidance] = useState('');
   const [sync, setSync] = useState<PosterSyncResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export default function PostersSettings() {
     setLogoFiles(next.logo_files ?? []);
     setAllowStock(next.settings.allow_stock_photos);
     setAutoSync(next.settings.auto_sync);
+    setGuidance(next.settings.guidance ?? '');
   };
 
   useEffect(() => {
@@ -84,6 +87,7 @@ export default function PostersSettings() {
         logo_map: logoMap(),
         allow_stock_photos: allowStock,
         auto_sync: autoSync,
+        guidance,
       });
       apply(r);
       setNote('Saved.');
@@ -243,6 +247,8 @@ export default function PostersSettings() {
                 </p>
               )}
             </section>
+
+            <PosterGuidanceField value={guidance} onChange={setGuidance} />
 
             <section className="panel">
               <h2 className="panel-title">Drive sync</h2>

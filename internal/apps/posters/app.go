@@ -4,7 +4,9 @@
 //
 // Two rules carry through every path and have no exceptions: no generated
 // imagery (every image is a real photo from the library or an approved
-// logo, and the renderer refuses drawing elements), and no invented facts
+// logo; inline svg is limited to vector shapes, and the renderer refuses
+// <img>, url() and anything in an svg that could carry a picture), and no
+// invented facts
 // (copy comes from the event's public fields, never prep_notes).
 //
 // Kit's own model use is small: a handful of Sonnet calls a person

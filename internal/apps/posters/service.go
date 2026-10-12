@@ -122,7 +122,7 @@ func (a *App) renderVersion(ctx context.Context, tenantID uuid.UUID, v *Version,
 	if format == "" {
 		format = brand.PortraitFormat
 	}
-	res, err := a.renderSource(ctx, tenantID, brand, v.Source, format)
+	res, err := a.renderSource(ctx, tenantID, brand, v.Source, format, v.OffBrand)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -133,7 +133,8 @@ func (a *App) renderVersion(ctx context.Context, tenantID uuid.UUID, v *Version,
 }
 
 // renderSource renders poster source at a format with the images it names.
-func (a *App) renderSource(ctx context.Context, tenantID uuid.UUID, brand *posterrender.Brand, source, format string) (*posterrender.RenderResponse, error) {
+// offBrand reports brand-guide findings as warnings rather than refusing.
+func (a *App) renderSource(ctx context.Context, tenantID uuid.UUID, brand *posterrender.Brand, source, format string, offBrand bool) (*posterrender.RenderResponse, error) {
 	if a.renderer == nil {
 		return nil, invalid("the poster renderer is not configured")
 	}
@@ -145,7 +146,7 @@ func (a *App) renderSource(ctx context.Context, tenantID uuid.UUID, brand *poste
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.renderer.Render(ctx, posterrender.RenderRequest{Kind: "poster", Source: source, Format: format, Brand: withAttachmentLogos(*brand, refs), Photos: refs})
+	res, err := a.renderer.Render(ctx, posterrender.RenderRequest{Kind: "poster", Source: source, Format: format, Brand: withAttachmentLogos(*brand, refs), Photos: refs, AllowOffBrand: offBrand})
 	var rerr *posterrender.RequestError
 	if errors.As(err, &rerr) {
 		// A refusal (bad source, missing image) is a problem the caller
@@ -168,13 +169,23 @@ type EditResult struct {
 }
 
 // saveEdit renders new source for a poster and, if it passes, stores it as
-// a new version descending from the current one.
-func (a *App) saveEdit(ctx context.Context, tenantID uuid.UUID, poster *Poster, source, instruction string, author Author) (*EditResult, error) {
+// a new version descending from the current one. offBrand is set when a
+// person asked for something the brand guide rules out; a poster that is
+// already off-brand stays allowed, so a later edit does not trip over the
+// gradient someone asked for earlier.
+func (a *App) saveEdit(ctx context.Context, tenantID uuid.UUID, poster *Poster, source, instruction string, author Author, offBrand bool) (*EditResult, error) {
 	brand, err := a.brandFor(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.renderSource(ctx, tenantID, brand, source, brand.PortraitFormat)
+	var cur *Version
+	if poster.CurrentVersionID != nil {
+		if v, err := getVersion(ctx, a.pool, tenantID, *poster.CurrentVersionID); err == nil {
+			cur = v
+		}
+	}
+	offBrand = offBrand || (cur != nil && cur.OffBrand)
+	res, err := a.renderSource(ctx, tenantID, brand, source, brand.PortraitFormat, offBrand)
 	if err != nil {
 		return nil, err
 	}
@@ -183,12 +194,11 @@ func (a *App) saveEdit(ctx context.Context, tenantID uuid.UUID, poster *Poster, 
 		return out, nil
 	}
 	in := VersionInput{PosterID: poster.ID, ParentID: poster.CurrentVersionID, Source: source, Format: brand.PortraitFormat, Instruction: instruction, Author: author}
-	if poster.CurrentVersionID != nil {
-		if cur, err := getVersion(ctx, a.pool, tenantID, *poster.CurrentVersionID); err == nil {
-			in.TemplateID, in.TemplateVersionID = cur.TemplateID, cur.TemplateVersionID
-			in.Content, in.Photos, in.Ground = cur.Content, cur.Photos, cur.Ground
-			in.Facts, in.FactsHash = cur.Facts, cur.FactsHash
-		}
+	in.OffBrand = offBrand && hasOffBrand(res.Warnings)
+	if cur != nil {
+		in.TemplateID, in.TemplateVersionID = cur.TemplateID, cur.TemplateVersionID
+		in.Content, in.Photos, in.Ground = cur.Content, cur.Photos, cur.Ground
+		in.Facts, in.FactsHash = cur.Facts, cur.FactsHash
 	}
 	v, err := insertVersion(ctx, a.pool, tenantID, in)
 	if err != nil {
@@ -322,4 +332,15 @@ func withAttachmentLogos(brand posterrender.Brand, refs []posterrender.ImageRef)
 	}
 	brand.Logos = logos
 	return brand
+}
+
+// hasOffBrand says whether a render broke the brand guide with leave to:
+// the renderer prefixes those warnings.
+func hasOffBrand(warnings []string) bool {
+	for _, w := range warnings {
+		if strings.HasPrefix(w, "off-brand: ") {
+			return true
+		}
+	}
+	return false
 }

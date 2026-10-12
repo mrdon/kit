@@ -201,6 +201,9 @@ type RenderRequest struct {
 	Brand  Brand          `json:"brand"`
 	Photos []ImageRef     `json:"photos"`
 	Props  *TemplateProps `json:"props,omitempty"`
+	// AllowOffBrand turns brand-guide findings into warnings, for an edit a
+	// person explicitly asked for. Hard limits (no raster images) still hold.
+	AllowOffBrand bool `json:"allowOffBrand,omitempty"`
 }
 
 // RenderResponse is a render's outcome. PNG is empty when Problems is not.

@@ -6,7 +6,10 @@ Grounds: {{ .Grounds }}. Accents: {{ .Accents }}. Fonts: display {{ .DisplayFont
 
 `@poster/kit`: `Text`, `Photo`, `Logo`, `Eyebrow`, `CopyHead`, `CopyFoot`, `CopyBlock`, `fitTitle`, and `tokens`, `grounds`, `accents`, `font`, `weights`, `formats`. Scale sizes by `s = min(width, height) / 1080`. Use `format.safe` for margins; `tall = height >= width` for the two orientations.
 
-Rules the renderer enforces: no drawing elements, no gradients or shadows, token colors only, approved pairings, one accent element, numbers in the mono face via Text, everything inside the safe margins. Templates take their photos from the `photos` prop by index; never hard-code a photo id.
+Rules the renderer enforces: no gradients, opacity or shadows, token colors only, approved pairings, one accent element, numbers in the mono face via Text, everything inside the safe margins. Templates take their photos from the `photos` prop by index; never hard-code a photo id, and never add any other picture: no `<img>`, no `url()`, nothing generated. Simple vector shapes are fine: inline `<svg>` with `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path` and `g`, painted with token colors through `fill` and `stroke`, no text inside. Templates hold to the brand guide; an off-brand touch someone asks for (a gradient, a fade) is made on the poster in poster chat, not in the template.{{ if .Guidance }}
+
+Guidance from this workspace's admin (follow it within the rules above):
+{{ .Guidance }}{{ end }}
 
 From a reference image the user uploaded: call read_attachment on it with these instructions: "{{ .ImageInstructions }}" Then write a template that reproduces the STRUCTURE in this brand's tokens, fonts and logos, and pass the attachment id as reference_attachment_id with origin "image". Never copy another brand's artwork, logo, colors or text. The reference image itself is never placed in a poster.
 

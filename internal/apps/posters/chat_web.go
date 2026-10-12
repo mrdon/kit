@@ -189,6 +189,7 @@ func (a *App) posterChatSuffix(ctx context.Context, caller *services.Caller, id 
 	data["EventLine"] = eventLine
 	data["Format"] = brand.PortraitFormat
 	data["StockAllowed"] = a.stockAllowed(ctx, caller)
+	data["Guidance"] = a.guidance(ctx, caller.TenantID)
 	data["RenderBudget"] = chatRenderBudget
 	// text/template fails on a missing map key, so every key the prompt
 	// mentions is set, empty or not.
@@ -218,7 +219,19 @@ func (a *App) templateChatSuffix(ctx context.Context, caller *services.Caller, i
 	data["Status"] = string(t.Status)
 	data["Builtin"] = t.Builtin()
 	data["ImageInstructions"] = mustRender("user_image_structure.tmpl", nil)
+	data["Guidance"] = a.guidance(ctx, caller.TenantID)
 	return mustRender("system_template_chat.tmpl", data), nil
+}
+
+// guidance is the admin's own instruction from Posters settings; a
+// settings read failure leaves it out rather than failing the chat.
+func (a *App) guidance(ctx context.Context, tenantID uuid.UUID) string {
+	s, err := getSettings(ctx, a.pool, tenantID)
+	if err != nil {
+		slog.Warn("posters: loading guidance", "error", err)
+		return ""
+	}
+	return s.Guidance
 }
 
 func brandPromptData(b *posterrender.Brand) map[string]any {

@@ -62,6 +62,7 @@ type Version struct {
 	Instruction       string                  `json:"instruction"`
 	Author            Author                  `json:"author"`
 	Picked            bool                    `json:"picked"`
+	OffBrand          bool                    `json:"off_brand"`
 	Facts             json.RawMessage         `json:"-"`
 	FactsHash         string                  `json:"-"`
 	CreatedAt         time.Time               `json:"created_at"`
@@ -203,13 +204,13 @@ func deletePoster(ctx context.Context, pool *pgxpool.Pool, tenantID, posterID uu
 	return nil
 }
 
-const versionColumns = `id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, created_at, facts, facts_hash`
+const versionColumns = `id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, created_at, facts, facts_hash, off_brand`
 
 func scanVersion(row pgx.Row) (*Version, error) {
 	var v Version
 	var facts []byte
 	var content, photos, problems []byte
-	if err := row.Scan(&v.ID, &v.PosterID, &v.ParentID, &v.BatchID, &v.TemplateID, &v.TemplateVersionID, &v.Source, &content, &photos, &v.Ground, &v.Format, &problems, &v.Instruction, &v.Author, &v.Picked, &v.CreatedAt, &facts, &v.FactsHash); err != nil {
+	if err := row.Scan(&v.ID, &v.PosterID, &v.ParentID, &v.BatchID, &v.TemplateID, &v.TemplateVersionID, &v.Source, &content, &photos, &v.Ground, &v.Format, &problems, &v.Instruction, &v.Author, &v.Picked, &v.CreatedAt, &facts, &v.FactsHash, &v.OffBrand); err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal(content, &v.Content)
@@ -246,6 +247,8 @@ type VersionInput struct {
 	Instruction       string
 	Author            Author
 	Picked            bool
+	// OffBrand: a person asked to break the brand guide in this version.
+	OffBrand bool
 	// Facts the copy was written from, carried so a later pick compares
 	// against what this version says, not what the event says now.
 	Facts     json.RawMessage
@@ -263,10 +266,10 @@ func insertVersion(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, 
 	photos, _ := json.Marshal(in.Photos)
 	problems, _ := json.Marshal(in.Problems)
 	v, err := scanVersion(pool.QueryRow(ctx, `
-		INSERT INTO app_poster_versions (tenant_id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, facts, facts_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		INSERT INTO app_poster_versions (tenant_id, poster_id, parent_id, batch_id, template_id, template_version_id, source, content, photos, ground, format, problems, instruction, author, picked, facts, facts_hash, off_brand)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING `+versionColumns,
-		tenantID, in.PosterID, in.ParentID, in.BatchID, in.TemplateID, in.TemplateVersionID, in.Source, content, photos, in.Ground, in.Format, problems, in.Instruction, in.Author, in.Picked, jsonOrNull(in.Facts), in.FactsHash))
+		tenantID, in.PosterID, in.ParentID, in.BatchID, in.TemplateID, in.TemplateVersionID, in.Source, content, photos, in.Ground, in.Format, problems, in.Instruction, in.Author, in.Picked, jsonOrNull(in.Facts), in.FactsHash, in.OffBrand))
 	if err != nil {
 		return nil, fmt.Errorf("saving poster version: %w", err)
 	}

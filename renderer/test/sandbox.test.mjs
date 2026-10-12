@@ -44,8 +44,8 @@ import { grounds, accents, font, type TemplateProps } from "@poster/kit";
 export default function Poster({ format }) {
   return <div style={{ display: "flex", width: format.width, height: format.height, backgroundColor: grounds.paper.bg }}>${jsx}</div>;
 }`;
-  let r = await render(bad(`<svg width="10" height="10"><path d="M0 0L10 10" /></svg>`));
-  assert.ok(r.problems.some((p) => p.includes("<svg> is not allowed")), r.problems.join("; "));
+  let r = await render(bad(`<img src="https://example.com/x.png" width={10} height={10} />`));
+  assert.ok(r.problems.some((p) => p.includes("<img> is not allowed")), r.problems.join("; "));
 
   r = await render(bad(`<div style={{ display: "flex", backgroundColor: "#ff00ff", width: 10, height: 10 }} />`));
   assert.ok(r.problems.some((p) => p.includes("not a brand color token")), r.problems.join("; "));
@@ -70,6 +70,53 @@ export default function Poster({ format }) {
 
   r = await render(bad(`<div style={{ display: "flex", color: grounds.paper.text, fontFamily: font.text }}>Don't miss our amazing night</div>`));
   assert.ok(r.problems.some((p) => p.includes('banned "amazing"')), r.problems.join("; "));
+});
+
+// The shared bare poster the svg tests draw into.
+const shapes = (jsx) =>
+  `import React from "react";
+import { grounds, accents } from "@poster/kit";
+export default function Poster({ format }) {
+  return <div style={{ display: "flex", width: format.width, height: format.height, backgroundColor: grounds.paper.bg }}>${jsx}</div>;
+}`;
+
+test("simple svg shapes in token colors render", async () => {
+  const r = await render(
+    shapes(`<svg width="200" height="200" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="80" fill={grounds.paper.text} />
+      <path d="M20 180L180 20" stroke={grounds.paper.text} strokeWidth="6" fill="none" />
+      <polygon points="100,10 120,80 190,80" fill={accents.amber.fill} />
+    </svg>`),
+  );
+  assert.deepEqual(r.problems, []);
+  assert.ok(r.png.length > 1000);
+});
+
+test("svg cannot carry an image, text or an outside reference", async () => {
+  let r = await render(shapes(`<svg width="10" height="10"><image href="https://example.com/x.png" width="10" height="10" /></svg>`));
+  assert.ok(r.problems.some((p) => p.includes("<image> is not allowed inside <svg>")), r.problems.join("; "));
+  r = await render(shapes(`<svg width="10" height="10"><text>Hi</text></svg>`));
+  assert.ok(r.problems.some((p) => p.includes("<text> is not allowed inside <svg>")), r.problems.join("; "));
+  r = await render(shapes(`<svg width="10" height="10"><rect width="10" height="10" fill="url(https://example.com/x.png)" /></svg>`));
+  assert.ok(r.problems.some((p) => p.includes("may only reference a gradient")), r.problems.join("; "));
+  r = await render(shapes(`<svg width="10" height="10"><rect width="10" height="10" fill="#ff00ff" /></svg>`));
+  assert.ok(r.problems.some((p) => p.includes("not a brand color token")), r.problems.join("; "));
+});
+
+test("off-brand renders turn brand findings into warnings, never the hard limits", async () => {
+  const offBrand = (source) => service.render({ kind: "poster", source, format: "portrait", brand, photos: [], allowOffBrand: true });
+  let r = await offBrand(
+    shapes(`<div style={{ display: "flex", width: 100, height: 100, opacity: 0.5, backgroundImage: "linear-gradient(#000, #fff)" }} />
+      <svg width="100" height="100"><defs><linearGradient id="g"><stop offset="0" stopColor="#ff00ff" /></linearGradient></defs><rect width="100" height="100" fill="url(#g)" opacity="0.4" /></svg>`),
+  );
+  assert.deepEqual(r.problems, []);
+  assert.ok(r.warnings.some((w) => w.startsWith("off-brand: ") && w.includes("gradient")), r.warnings.join("; "));
+  assert.ok(r.png.length > 1000);
+
+  r = await offBrand(shapes(`<div style={{ display: "flex", width: 100, height: 100, backgroundImage: "url(https://example.com/x.png)" }} />`));
+  assert.ok(r.problems.some((p) => p.includes("loads an image")), r.problems.join("; "));
+  r = await offBrand(shapes(`<img src="https://example.com/x.png" width={10} height={10} />`));
+  assert.ok(r.problems.some((p) => p.includes("<img> is not allowed")), r.problems.join("; "));
 });
 
 test("an unknown photo id is a validation error, and a known one renders", async () => {

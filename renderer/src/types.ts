@@ -115,6 +115,9 @@ export type RenderRequest = {
   photos: ImageRef[];
   // Template renders take the props a poster would have inlined.
   props?: TemplateProps;
+  // A person asked for something the brand guide rules out: brand findings
+  // come back as warnings instead of problems. Hard limits still hold.
+  allowOffBrand?: boolean;
 };
 
 export type RenderResponse = {

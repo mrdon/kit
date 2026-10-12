@@ -347,6 +347,8 @@ export interface PostersSettingsRow {
   logo_map: Record<string, PosterLogoFile>;
   allow_stock_photos: boolean;
   auto_sync: boolean;
+  /** Admin instruction added to poster and template chat. */
+  guidance: string;
   brand_hash: string;
   brand_problems: string[];
   brand_derived_at?: string;
@@ -380,6 +382,7 @@ export interface PostersSettingsBody {
   logo_map: Record<string, PosterLogoFile>;
   allow_stock_photos: boolean;
   auto_sync: boolean;
+  guidance: string;
 }
 
 export interface PosterSyncResult {

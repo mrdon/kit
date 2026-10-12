@@ -1,21 +1,49 @@
-// Validates the element tree before Satori sees it. Every rule here is a
-// brand-guide rule a layout could break by writing code: an off-token color,
-// a third typeface, a gradient, a second accent, a number in the text face,
-// a drawing element. Problems are plain sentences for the agent to act on.
+// Validates the element tree before Satori sees it. Two kinds of finding:
+//
+// Hard limits hold always. A poster shows real photos and the logo, never a
+// picture made any other way: no <img>, no url() in any style, and inline
+// SVG is vector shapes only (no <image>, <text>, <use>, <filter> or href),
+// so nothing can smuggle in a raster or generated image.
+//
+// Brand rules (off-token colors, gradients, opacity, shadows, transforms, a
+// second accent, an unapproved pairing, a number in the text face, banned
+// copy) are the default. A render made with allowOffBrand, because a person
+// asked for exactly that, reports them as warnings instead of refusing.
+// Findings are plain sentences for the agent to act on.
 import { checkText } from "./copy.ts";
 import type { Brand, ImageRef, TreeNode } from "./types.ts";
 
 type Elem = Exclude<TreeNode, string | number | null>;
 
-const ALLOWED_TYPES = new Set(["div", "span", "p", "h1", "h2", "h3", "__photo", "__logo", "__fragment"]);
+const ALLOWED_TYPES = new Set(["div", "span", "p", "h1", "h2", "h3", "svg", "__photo", "__logo", "__fragment"]);
 
-const COLOR_PROPS = new Set(["color", "background", "backgroundColor", "borderColor", "borderTopColor", "borderBottomColor", "borderLeftColor", "borderRightColor"]);
+const SVG_SHAPES = new Set(["g", "rect", "circle", "ellipse", "line", "polyline", "polygon", "path"]);
+// Gradient definitions are off-brand, not dangerous: they hold only stops.
+const SVG_GRADIENT = new Set(["defs", "linearGradient", "radialGradient", "stop"]);
+const SVG_ATTRS = new Set([
+  "style", "width", "height", "viewBox", "preserveAspectRatio", "xmlns",
+  "x", "y", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "d", "points",
+  "fill", "fillRule", "stroke", "strokeWidth", "strokeLinecap", "strokeLinejoin",
+  "strokeDasharray", "strokeDashoffset", "strokeMiterlimit",
+]);
+// Effects and gradient plumbing: allowed when off-brand is, never a way to
+// reach outside the svg. Everything not in either list (href, filter,
+// mask, clipPath, …) is refused.
+const SVG_EFFECT_ATTRS = new Set([
+  "opacity", "fillOpacity", "strokeOpacity", "transform", "id", "offset", "stopColor", "stopOpacity",
+  "gradientUnits", "gradientTransform", "spreadMethod", "fx", "fy",
+]);
+const SVG_PAINT = new Set(["fill", "stroke"]);
+const PAINT_KEYWORDS = new Set(["none", "currentColor"]);
+const LOCAL_REF = /^url\(#[\w-]+\)$/;
+
+const COLOR_PROPS = new Set(["color", "fill", "stroke", "background", "backgroundColor", "borderColor", "borderTopColor", "borderBottomColor", "borderLeftColor", "borderRightColor"]);
 const BORDER_SHORTHANDS = new Set(["border", "borderTop", "borderBottom", "borderLeft", "borderRight"]);
-const FORBIDDEN_PROPS: Record<string, string> = {
+const OFF_BRAND_PROPS: Record<string, string> = {
   opacity: "opacity",
   boxShadow: "a shadow",
   textShadow: "a shadow",
-  backgroundImage: "a background image or gradient",
+  backgroundImage: "a gradient",
   filter: "a filter",
   backdropFilter: "a filter",
   transform: "a transform",
@@ -30,6 +58,8 @@ export type ValidationContext = {
   brand: Brand;
   photos: Map<string, ImageRef>;
   logoVariants: Set<string>;
+  // A person asked for something the brand guide rules out.
+  allowOffBrand?: boolean;
 };
 
 type Inherited = { color?: string; bg?: string; fontFamily?: string; fontSize?: number };
@@ -60,6 +90,13 @@ class Validator {
     for (const p of ctx.brand.pairs) if (p.minSizePx) this.pairMin.set(`${p.fg}/${p.bg}`, p.minSizePx);
   }
 
+  // A brand-guide finding: refused by default, a warning when a person
+  // asked for it.
+  private brand(msg: string) {
+    if (this.ctx.allowOffBrand) this.warnings.push(`off-brand: ${msg}`);
+    else this.problems.push(msg);
+  }
+
   walk(node: TreeNode, inh: Inherited) {
     if (node === null) return;
     if (typeof node === "string" || typeof node === "number") {
@@ -67,7 +104,11 @@ class Validator {
       return;
     }
     if (!ALLOWED_TYPES.has(node.type)) {
-      this.problems.push(`<${node.type}> is not allowed; a poster may only use div, span, p, h1 to h3, Photo and Logo`);
+      this.problems.push(`<${node.type}> is not allowed; a poster may only use div, span, p, h1 to h3, svg shapes, Photo and Logo`);
+      return;
+    }
+    if (node.type === "svg") {
+      this.svg(node, inh);
       return;
     }
     if (node.type === "__photo") {
@@ -89,12 +130,14 @@ class Validator {
     const next: Inherited = { ...inh };
     for (const [prop, raw] of Object.entries(style)) {
       if (raw === undefined || raw === null) continue;
-      if (prop in FORBIDDEN_PROPS) {
-        this.problems.push(`${FORBIDDEN_PROPS[prop]} is not allowed (${prop})`);
-        continue;
-      }
       const value = String(raw);
-      if (COLOR_PROPS.has(prop)) {
+      if (/url\(/i.test(value)) {
+        this.problems.push(`${prop} loads an image; a poster's only pictures are library photos and the logo`);
+      } else if (prop in OFF_BRAND_PROPS) {
+        this.brand(`${OFF_BRAND_PROPS[prop]} is not in the brand (${prop})`);
+      } else if (/gradient\(/i.test(value)) {
+        this.brand(`${prop} uses a gradient, which the brand rules out`);
+      } else if (COLOR_PROPS.has(prop)) {
         const token = this.token(value, prop);
         if (!token) continue;
         if (prop === "color") next.color = token;
@@ -102,28 +145,60 @@ class Validator {
         this.countAccent(token);
       } else if (BORDER_SHORTHANDS.has(prop)) {
         const hex = value.match(/#[0-9a-fA-F]{3,8}/)?.[0];
-        if (!hex) this.problems.push(`${prop} must name a color token hex, got "${value}"`);
+        if (!hex) this.brand(`${prop} must name a color token hex, got "${value}"`);
         else {
           const token = this.token(hex, prop);
           if (token) this.countAccent(token);
         }
       } else if (prop === "fontFamily") {
+        // Not a brand preference: a family the brand does not load cannot render.
         if (!this.families.has(value)) this.problems.push(`fontFamily "${value}" is not one of the brand's families (${[...this.families].join(", ")})`);
         next.fontFamily = value;
       } else if (prop === "fontSize") {
         const n = parseFontSize(value, inh.fontSize ?? 16);
         if (n !== undefined) next.fontSize = n;
-      } else if (/gradient|url\(/i.test(value)) {
-        this.problems.push(`${prop} uses a gradient or image, which the brand forbids`);
       }
     }
     return next;
   }
 
+  // An svg and everything in it: vector shapes in token paint, no text, no
+  // references outside itself.
+  private svg(node: Elem, inh: Inherited) {
+    if (SVG_GRADIENT.has(node.type)) this.brand(`<${node.type}> draws a gradient, which the brand rules out`);
+    for (const [prop, raw] of Object.entries(node.props)) {
+      if (raw === undefined || raw === null) continue;
+      const value = String(raw).trim();
+      if (SVG_EFFECT_ATTRS.has(prop)) {
+        if (prop !== "id" && prop !== "offset") this.brand(`${prop} on <${node.type}> is not in the brand`);
+      } else if (!SVG_ATTRS.has(prop)) {
+        this.problems.push(`${prop} is not allowed on <${node.type}>; an svg shape takes geometry, fill and stroke only`);
+      } else if (SVG_PAINT.has(prop) && !PAINT_KEYWORDS.has(value)) {
+        if (LOCAL_REF.test(value)) this.brand(`${prop} on <${node.type}> uses a gradient, which the brand rules out`);
+        else if (/url\(/i.test(value)) this.problems.push(`${prop} on <${node.type}> may only reference a gradient in the same svg`);
+        else {
+          const token = this.token(value, prop);
+          if (token) this.countAccent(token);
+        }
+      }
+    }
+    const next = this.style(node, inh);
+    for (const c of svgChildren(node.children)) {
+      if (c === null) continue;
+      if (typeof c === "string" || typeof c === "number") {
+        if (String(c).trim()) this.problems.push(`text inside <svg> is not allowed; set words with Text`);
+      } else if (!SVG_SHAPES.has(c.type) && !SVG_GRADIENT.has(c.type)) {
+        this.problems.push(`<${c.type}> is not allowed inside <svg>; use g, rect, circle, ellipse, line, polyline, polygon or path`);
+      } else {
+        this.svg(c, next);
+      }
+    }
+  }
+
   private token(value: string, prop: string): string | undefined {
     const t = this.hexToToken.get(value.trim().toLowerCase());
     if (!t) {
-      this.problems.push(`${prop} "${value}" is not a brand color token; use one of ${Object.keys(this.ctx.brand.tokens).join(", ")}`);
+      this.brand(`${prop} "${value}" is not a brand color token; use one of ${Object.keys(this.ctx.brand.tokens).join(", ")}`);
       return undefined;
     }
     return t;
@@ -137,19 +212,19 @@ class Validator {
     if (!text.trim()) return;
     const mono = this.ctx.brand.fonts.mono.family;
     if (/\d/.test(text) && inh.fontFamily !== mono) {
-      this.problems.push(`"${text.trim().slice(0, 30)}" has a number outside the mono family; wrap copy in <Text> so figures are set in ${mono}`);
+      this.brand(`"${text.trim().slice(0, 30)}" has a number outside the mono family; wrap copy in <Text> so figures are set in ${mono}`);
     }
     if (inh.color && inh.bg) {
       const key = `${inh.color}/${inh.bg}`;
       if (!this.pairs.has(key)) {
-        this.problems.push(`${inh.color} text on ${inh.bg} is not an approved pairing ("${text.trim().slice(0, 30)}")`);
+        this.brand(`${inh.color} text on ${inh.bg} is not an approved pairing ("${text.trim().slice(0, 30)}")`);
       } else {
         const min = this.pairMin.get(key);
-        if (min && (inh.fontSize ?? 16) < min) this.problems.push(`${inh.color} on ${inh.bg} needs ${min}px or larger type ("${text.trim().slice(0, 30)}")`);
+        if (min && (inh.fontSize ?? 16) < min) this.brand(`${inh.color} on ${inh.bg} needs ${min}px or larger type ("${text.trim().slice(0, 30)}")`);
       }
     }
     const r = checkText(`"${text.trim().slice(0, 30)}"`, text, this.ctx.brand.bannedWords ?? []);
-    this.problems.push(...r.problems);
+    for (const p of r.problems) this.brand(p);
     this.warnings.push(...r.warnings);
   }
 
@@ -157,12 +232,16 @@ class Validator {
     const rules = this.ctx.brand.accentRules;
     const used = [...this.accentCounts.entries()].filter(([, n]) => n > 0);
     for (const [name, n] of used) {
-      if (n > rules.maxElements) this.problems.push(`${name} appears on ${n} elements; the brand allows ${rules.maxElements}`);
+      if (n > rules.maxElements) this.brand(`${name} appears on ${n} elements; the brand allows ${rules.maxElements}`);
     }
     if (!rules.together && used.length > 1) {
-      this.problems.push(`${used.map(([n]) => n).join(" and ")} are both used; the brand allows one accent per composition`);
+      this.brand(`${used.map(([n]) => n).join(" and ")} are both used; the brand allows one accent per composition`);
     }
   }
+}
+
+function svgChildren(children: TreeNode[]): TreeNode[] {
+  return children.flatMap((c) => (c !== null && typeof c === "object" && c.type === "__fragment" ? svgChildren(c.children) : [c]));
 }
 
 function parseFontSize(value: string, parent: number): number | undefined {

@@ -58,7 +58,7 @@ func (a *App) coreCopyLayout(ctx context.Context, caller *services.Caller, raw j
 		return nil, invalid("that poster was restructured in chat, so its layout cannot be copied mechanically; read it with get_poster and adapt its source to this event by hand")
 	}
 	label := strOr(from.Title, fromID.String())
-	res, err := a.saveEdit(ctx, caller.TenantID, poster, source, "Layout from "+label, AuthorAgent)
+	res, err := a.saveEdit(ctx, caller.TenantID, poster, source, "Layout from "+label, AuthorAgent, false)
 	if err != nil {
 		return nil, err
 	}

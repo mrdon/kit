@@ -263,7 +263,7 @@ func TestSaveEditRefusesProblems(t *testing.T) {
 	}
 	poster, _ := getPoster(f.ctx, f.pool, f.tenant.ID, res.Poster.ID)
 	before := *poster.CurrentVersionID
-	edit, err := f.app.saveEdit(f.ctx, f.tenant.ID, poster, "bad source", "add a monkey", "agent")
+	edit, err := f.app.saveEdit(f.ctx, f.tenant.ID, poster, "bad source", "add a monkey", "agent", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,6 +273,42 @@ func TestSaveEditRefusesProblems(t *testing.T) {
 	poster, _ = getPoster(f.ctx, f.pool, f.tenant.ID, poster.ID)
 	if *poster.CurrentVersionID != before {
 		t.Error("a failed render changed the current version")
+	}
+}
+
+// An edit the user asked to take off-brand renders with leave to, keeps
+// the flag on its version (so later renders at other formats pass), and a
+// later edit inherits it without asking again.
+func TestSaveEditOffBrandSticks(t *testing.T) {
+	f := newFixture(t)
+	ev := f.event(t)
+	res, err := f.app.Generate(f.ctx, f.tenant.ID, f.user.ID, ev.ID, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asked []bool
+	f.fake.RenderFn = func(req posterrender.RenderRequest) (*posterrender.RenderResponse, error) {
+		asked = append(asked, req.AllowOffBrand)
+		if !req.AllowOffBrand {
+			return &posterrender.RenderResponse{Problems: []string{"a gradient is not in the brand (backgroundImage)"}}, nil
+		}
+		return &posterrender.RenderResponse{PNG: []byte("png"), Warnings: []string{"off-brand: a gradient is not in the brand (backgroundImage)"}}, nil
+	}
+	poster, _ := getPoster(f.ctx, f.pool, f.tenant.ID, res.Poster.ID)
+	edit, err := f.app.saveEdit(f.ctx, f.tenant.ID, poster, "fade source", "fade the photo", AuthorAgent, true)
+	if err != nil || edit.Version == nil || !edit.Version.OffBrand {
+		t.Fatalf("off-brand edit = %+v, %v", edit, err)
+	}
+	poster, _ = getPoster(f.ctx, f.pool, f.tenant.ID, poster.ID)
+	edit, err = f.app.saveEdit(f.ctx, f.tenant.ID, poster, "fade source, bigger title", "bigger title", AuthorAgent, false)
+	if err != nil || edit.Version == nil || !edit.Version.OffBrand {
+		t.Fatalf("follow-up edit = %+v, %v", edit, err)
+	}
+	if _, _, err := f.app.renderVersion(f.ctx, f.tenant.ID, edit.Version, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 3 || !asked[0] || !asked[1] || !asked[2] {
+		t.Fatalf("renders asked for off-brand leave as %v", asked)
 	}
 }
 

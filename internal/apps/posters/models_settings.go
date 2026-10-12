@@ -33,7 +33,10 @@ type Settings struct {
 	// AutoSync turns on the hourly Drive listing. Off by default: a harness
 	// indexing over MCP syncs for itself, and Kit should not poll Drive for
 	// a workspace nobody asked it to.
-	AutoSync       bool                `json:"auto_sync"`
+	AutoSync bool `json:"auto_sync"`
+	// Guidance is the admin's own instruction for poster and template
+	// chat, added to the built-in prompt: house style, things to try.
+	Guidance       string              `json:"guidance"`
 	Brand          *posterrender.Brand `json:"brand,omitempty"`
 	BrandHash      string              `json:"brand_hash"`
 	BrandProblems  []string            `json:"brand_problems"`
@@ -43,13 +46,13 @@ type Settings struct {
 	UpdatedAt      time.Time           `json:"updated_at"`
 }
 
-const settingsColumns = `tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, auto_sync,
+const settingsColumns = `tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, auto_sync, guidance,
 	brand_json, brand_hash, brand_problems, brand_derived_at, last_sync_at, last_sync_error, updated_at`
 
 func scanSettings(row pgx.Row) (Settings, error) {
 	var s Settings
 	var logoMap, brand []byte
-	err := row.Scan(&s.TenantID, &s.PhotoFolderID, &s.LogoFolderID, &logoMap, &s.AllowStockPhotos, &s.AutoSync,
+	err := row.Scan(&s.TenantID, &s.PhotoFolderID, &s.LogoFolderID, &logoMap, &s.AllowStockPhotos, &s.AutoSync, &s.Guidance,
 		&brand, &s.BrandHash, &s.BrandProblems, &s.BrandDerivedAt, &s.LastSyncAt, &s.LastSyncError, &s.UpdatedAt)
 	if err != nil {
 		return Settings{}, err
@@ -92,17 +95,18 @@ func upsertSettings(ctx context.Context, pool *pgxpool.Pool, s Settings) (Settin
 		return Settings{}, fmt.Errorf("encoding logo map: %w", err)
 	}
 	out, err := scanSettings(pool.QueryRow(ctx, `
-		INSERT INTO app_poster_settings (tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, auto_sync, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())
+		INSERT INTO app_poster_settings (tenant_id, photo_folder_id, logo_folder_id, logo_map, allow_stock_photos, auto_sync, guidance, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
 			photo_folder_id = EXCLUDED.photo_folder_id,
 			logo_folder_id = EXCLUDED.logo_folder_id,
 			logo_map = EXCLUDED.logo_map,
 			allow_stock_photos = EXCLUDED.allow_stock_photos,
 			auto_sync = EXCLUDED.auto_sync,
+			guidance = EXCLUDED.guidance,
 			updated_at = now()
 		RETURNING `+settingsColumns,
-		s.TenantID, s.PhotoFolderID, s.LogoFolderID, logoMap, s.AllowStockPhotos, s.AutoSync))
+		s.TenantID, s.PhotoFolderID, s.LogoFolderID, logoMap, s.AllowStockPhotos, s.AutoSync, s.Guidance))
 	if err != nil {
 		return Settings{}, fmt.Errorf("saving poster settings: %w", err)
 	}

@@ -25,6 +25,7 @@ type patchArg struct {
 	TemplateID string      `json:"template_id"`
 	Edits      []patchEdit `json:"edits"`
 	Summary    string      `json:"summary"`
+	OffBrand   bool        `json:"off_brand"`
 }
 
 // applyPatches applies the edits in order. Each find must appear exactly
@@ -80,7 +81,7 @@ func (a *App) corePatchPoster(ctx context.Context, caller *services.Caller, raw 
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.saveEdit(ctx, caller.TenantID, poster, source, strOr(in.Summary, "Edited"), AuthorAgent)
+	res, err := a.saveEdit(ctx, caller.TenantID, poster, source, strOr(in.Summary, "Edited"), AuthorAgent, in.OffBrand)
 	if err != nil {
 		return nil, err
 	}

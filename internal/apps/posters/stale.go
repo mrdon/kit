@@ -90,7 +90,7 @@ func (a *App) UpdateFacts(ctx context.Context, tenantID uuid.UUID, posterID uuid
 	if len(out.Changes) > 0 {
 		instruction += ": " + strings.Join(out.Changes, "; ")
 	}
-	res, err := a.saveEdit(ctx, tenantID, poster, out.Source, instruction, author)
+	res, err := a.saveEdit(ctx, tenantID, poster, out.Source, instruction, author, false)
 	if err != nil {
 		return nil, nil, err
 	}

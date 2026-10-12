@@ -73,7 +73,12 @@ export class Service {
         problems.push(...checkMeta(out.meta));
         meta = out.meta ?? undefined;
       }
-      const v = validateTree(out.tree, { brand: req.brand, photos: images.photos, logoVariants: new Set(logos.keys()) });
+      const v = validateTree(out.tree, {
+        brand: req.brand,
+        photos: images.photos,
+        logoVariants: new Set(logos.keys()),
+        allowOffBrand: req.allowOffBrand,
+      });
       problems.push(...v.problems);
       warnings.push(...v.warnings);
       let png: Buffer = Buffer.alloc(0);
