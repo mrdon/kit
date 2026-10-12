@@ -22,7 +22,9 @@ import (
 
 const (
 	maxIterations = 10
-	maxTokens     = 4096
+	// maxTokens is per reply and includes thinking: 4096 left a model that
+	// thought about a design no room to write the edit (2026-10-12).
+	maxTokens = 16000
 )
 
 // Agent runs the observe/reason/act loop for a single message.
@@ -233,6 +235,16 @@ func (a *Agent) Run(ctx context.Context, in RunInput) error {
 			"content": resp.Content,
 		})
 		messages = append(messages, anthropic.Message{Role: "assistant", Content: resp.Content})
+
+		if resp.StopReason == "max_tokens" {
+			slog.Warn("agent reply hit max_tokens", "session_id", session.ID, "iteration", i, "tool_uses", len(resp.ToolUses()))
+			results := cutOffReply(resp)
+			_ = models.AppendSessionEvent(ctx, a.pool, tenant.ID, session.ID, models.EventTypeToolResults, map[string]any{
+				"content": results,
+			})
+			messages = append(messages, anthropic.Message{Role: "user", Content: results})
+			continue
+		}
 
 		if resp.StopReason == "tool_use" {
 			toolResults, terminal := a.executeTools(ec, registry, resp, status, in.Channel)

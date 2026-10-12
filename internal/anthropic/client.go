@@ -48,9 +48,10 @@ type Client struct {
 // NewClient creates a new Anthropic API client.
 func NewClient(apiKey string) *Client {
 	return &Client{
-		apiKey:     apiKey,
-		baseURL:    defaultBaseURL,
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		apiKey:  apiKey,
+		baseURL: defaultBaseURL,
+		// A full 16k-token agent reply runs past two minutes.
+		httpClient: &http.Client{Timeout: 300 * time.Second},
 	}
 }
 
