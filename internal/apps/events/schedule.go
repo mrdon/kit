@@ -62,13 +62,19 @@ func (a *App) registerScheduledTasks() {
 	// to remember to press publish — an event edited on Tuesday afternoon is
 	// live by Wednesday morning rather than whenever someone next notices.
 	//
+	// Every night, unconditionally. The site also goes stale with no edit at
+	// all: an event that happened yesterday stays listed and a weekly series
+	// keeps showing last week's date until something rebuilds. Building only
+	// when an edit was pending left the site five days out of date after a
+	// quiet week.
+	//
 	// 2am tenant-local, clear of the 3am profile sync.
 	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
 		Key:         "events.publish_site",
 		Description: "Publish the events website overnight",
 		DefaultCron: "0 2 * * *",
 		AppliesTo:   a.buildHookConfigured,
-		Run:         a.publishSiteIfChanged,
+		Run:         a.publishSiteNightly,
 	})
 
 	// Morning-of, in the venue's own zone. The notice has to land before the
@@ -111,20 +117,10 @@ func (a *App) shiftNoticesConfigured(ctx context.Context, tenantID uuid.UUID) bo
 	return exists
 }
 
-// publishSiteIfChanged rebuilds the website only when something is waiting
-// to go out.
-//
-// Netlify bills build minutes, and most nights nothing has changed — a blind
-// nightly build would spend them to produce a byte-identical site. Checking
-// first costs one query.
-func (a *App) publishSiteIfChanged(ctx context.Context, job models.Job) error {
-	status, err := a.svc.SiteStatus(ctx, job.TenantID)
-	if err != nil {
-		return fmt.Errorf("checking site status: %w", err)
-	}
-	if len(status.Pending) == 0 {
-		return nil
-	}
+// publishSiteNightly rebuilds the website. No check for pending edits first:
+// the passage of time changes what the site should show, and a build is the
+// only thing that drops past events off it.
+func (a *App) publishSiteNightly(ctx context.Context, job models.Job) error {
 	if _, err := a.svc.PublishSite(ctx, job.TenantID, "schedule"); err != nil {
 		return fmt.Errorf("publishing site: %w", err)
 	}
