@@ -74,12 +74,17 @@ func TestTamperRejected(t *testing.T) {
 	wire := s.Sign([]byte("payload"), time.Minute)
 	body, mac, _ := strings.Cut(wire, ".")
 
+	// Flip the FIRST character, not the last. The last character of an
+	// unpadded encoding can carry spare bits that Strict decoding requires
+	// to be zero, so swapping it ('A' -> 'B') could turn a tampered token
+	// into a malformed one -- about one run in sixteen, depending on the
+	// MAC. Every bit of the first character is data.
 	flip := func(in string) string {
 		b := []byte(in)
-		if b[len(b)-1] == 'A' {
-			b[len(b)-1] = 'B'
+		if b[0] == 'A' {
+			b[0] = 'B'
 		} else {
-			b[len(b)-1] = 'A'
+			b[0] = 'A'
 		}
 		return string(b)
 	}
