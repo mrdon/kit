@@ -19,15 +19,21 @@
       <img src="{{ .Logo }}" alt="">
       <p class="brand-name">{{ .Venue.Wordmark }}</p>
     </div>
-    <!-- Empty outside happy hour. "On Tap" over a tap list told nobody
-         anything, and a corner that is normally bare makes the banner land
-         when it does appear. The clock went too: the rail's progress ticks
-         already show a frozen board, and nobody reads the time off a menu. -->
+    <!-- Happy hour takes the middle of the header, centred on the board
+         rather than between its neighbours, as a gold block with the deal in
+         it: "$5 pints" is what makes someone walking past order another, and
+         a pill tucked in the corner was easy to miss. It is absolutely
+         positioned and no taller than the logo, so the header's height, and
+         with it the fitted tap list, does not move when it flips on at 3pm. -->
     {{- if .HappyBanner }}
-    <div class="head-r">
-      <p class="head-tag head-hh">{{ .HappyBanner }}</p>
+    <div class="head-hh">
+      <span class="hh-title">Happy hour</span>
+      <span class="hh-deal">{{ .HappyBanner }}</span>
     </div>
     {{- end }}
+    <!-- The clock is the board's liveness signal: a frozen time is how anyone
+         walking past can tell the screen has died. -->
+    <p class="head-clock" id="clock"></p>
   </header>
 
   <div class="body">
@@ -38,7 +44,7 @@
         <div class="sect">
           <p class="sect-head">{{ .Name }}{{ if .Continued }} <span class="sect-cont">cont.</span>{{ end }}</p>
           {{- range .Taps }}
-          <div class="tap">
+          <div class="tap{{ if .HappyPrice }} tap-on-hh{{ end }}">
             <div class="tap-l">
               <!-- The badge sits INSIDE the fitted name, so the width pass
                    measures the pill along with the letters and shrinks the row
@@ -216,6 +222,20 @@
   }
   window.addEventListener('load', refit);
   refit();
+
+  /* Clock. The wall panel runs in the taproom's timezone, so the screen's
+     own time is the venue's. */
+  var clock = document.getElementById('clock');
+  function tick() {
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    var ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12; if (h === 0) h = 12;
+    clock.textContent = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] +
+      ' ' + h + ':' + (m < 10 ? '0' + m : m) + ' ' + ampm;
+  }
+  tick();
+  setInterval(tick, 10000);
 
   /* Notice a new board.
      The server syncs from Untappd every minute, but a screen that loaded once

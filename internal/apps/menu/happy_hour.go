@@ -184,9 +184,10 @@ func (h HappyHour) Summary() string {
 	return s
 }
 
-// applyHappyHour marks the taps on happy hour and returns the banner text,
-// for a happy hour that is on. until is when it ends, "" when nothing will
-// end it but somebody pressing End now.
+// applyHappyHour marks the taps on happy hour and returns the banner's deal
+// line, "$5 pints · till 5pm", for a happy hour that is on; the board prints
+// "Happy hour" beside it. until is when it ends, "" when nothing will end it
+// but somebody pressing End now.
 //
 // Only a tap poured at the happy hour size is marked. A beer on the list that
 // the board offers in a 10oz pour is not $5, and the wall must not say so.
@@ -204,13 +205,17 @@ func applyHappyHour(b *Board, h *HappyHour, until string) string {
 		t.HappyPrice = h.Price()
 		marked++
 	}
-	switch {
-	case marked == 0:
+	if marked == 0 {
 		return ""
-	case until == "":
-		return "Happy hour"
 	}
-	return "Happy hour · till " + until
+	deal := "$" + h.Price() + " " + h.Size + " pours"
+	if strings.EqualFold(h.Size, DefaultPour) {
+		deal = "$" + h.Price() + " pints"
+	}
+	if until == "" {
+		return deal
+	}
+	return deal + " · till " + until
 }
 
 // parseClock reads "15:00" into minutes after midnight.

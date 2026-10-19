@@ -29,7 +29,9 @@ import (
 // comma-separated key=path list standing in for the images Kit would have
 // stored, so the preview shows the real graphics rather than nothing.
 // MENU_PREVIEW_GLUTEN is a comma-separated list of beers to mark gluten
-// reduced, standing in for the stored list.
+// reduced, standing in for the stored list. MENU_PREVIEW_HAPPY is a
+// comma-separated list of beers to put on the default happy hour, rendered
+// as if it were on now.
 func TestPreview(t *testing.T) {
 	out := os.Getenv("MENU_PREVIEW_OUT")
 	if out == "" {
@@ -90,6 +92,12 @@ func TestPreview(t *testing.T) {
 
 	if gr := os.Getenv("MENU_PREVIEW_GLUTEN"); gr != "" {
 		applyGlutenReduced(board, strings.Split(gr, ","))
+	}
+
+	if hh := os.Getenv("MENU_PREVIEW_HAPPY"); hh != "" {
+		h := DefaultHappyHour()
+		h.Beers = strings.Split(hh, ",")
+		board.HappyBanner = applyHappyHour(board, &h, clockLabel(h.End))
 	}
 
 	html, err := Render(board, assets, "preview")

@@ -210,7 +210,7 @@ func TestApplyHappyHourMarksOnlyThePour(t *testing.T) {
 	}}
 	h := weekdayHH()
 	banner := applyHappyHour(b, &h, h.Until(at("2026-10-12 15:30"), denver))
-	if banner != "Happy hour · till 5pm" {
+	if banner != "$5 pints · till 5pm" {
 		t.Errorf("banner = %q", banner)
 	}
 	if b.Taps[0].HappyPrice != "5" {
@@ -232,8 +232,11 @@ func TestApplyHappyHourMarksOnlyThePour(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(html, `class="head-tag head-hh"`) || !strings.Contains(html2, "Happy hour · till 5pm") {
+	if strings.Contains(html, `class="head-hh"`) || !strings.Contains(html2, "$5 pints · till 5pm") {
 		t.Error("banner should render only when set")
+	}
+	if strings.Count(html2, `class="tap tap-on-hh"`) != 1 {
+		t.Error("only the happy hour row should be highlighted")
 	}
 	if !strings.Contains(html2, `<p class="tap-was">6.5</p>`) {
 		t.Error("the regular price should render struck beside the happy price")

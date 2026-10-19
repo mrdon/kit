@@ -75,8 +75,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .brand { display: flex; align-items: center; gap: 18px; }
 .brand img { width: 54px; height: auto; filter: brightness(0) invert(1); }
 .brand-name { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: .04em; text-transform: uppercase; color: #fff; line-height: 1; }
-.head-r { display: flex; align-items: baseline; gap: 26px; }
-.head-tag { font-family: var(--display); font-weight: 600; font-size: 22px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-l); line-height: 1; }
+.head-clock { font-family: var(--display); font-weight: 500; font-size: 26px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------- body ---------- */
 .body { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 520px; gap: 38px; padding: 20px 0 16px; min-height: 0; }
@@ -183,12 +182,31 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 
 /* Happy hour. The price turns gold and the regular price sits under it, struck,
    in the slot the pour label uses -- a happy hour pour is the house pint, so
-   that slot is empty on exactly these rows. The banner appears in the
-   header's otherwise empty right corner, which does not change the header's
-   height, so nothing in the fitted tap list moves when it flips on at 3pm. */
-.tap-price.tap-hh { color: var(--accent-hot); }
+   that slot is empty on exactly these rows. The row itself warms toward the
+   price, so the happy hour beers read as a set from across the room without
+   anything on the row changing size. */
+.tap.tap-on-hh { background: linear-gradient(90deg, rgba(255, 194, 71, 0) 35%, rgba(255, 194, 71, .13) 100%); }
+.tap-price.tap-hh { color: var(--accent-hot); font-weight: 700; }
 .tap-was { font-family: var(--beer); font-size: var(--pour-size, 19px); color: var(--dim); text-decoration: line-through; margin-top: 1px; font-variant-numeric: tabular-nums; }
-.head-tag.head-hh { color: var(--navy-2); background: var(--accent-hot); padding: 7px 14px 6px; border-radius: 4px; }
+
+/* The header banner: the board's one block of solid gold, centred on the
+   board. Absolutely positioned and shorter than the logo, so switching it on
+   cannot change the header's height. The slow glow is the only motion in the
+   header, which is what pulls an eye up to it. */
+.head-hh {
+  position: absolute; left: 50%; top: 50%; margin-top: -9px;
+  -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%);
+  display: flex; align-items: center; white-space: nowrap;
+  background: var(--accent-hot); color: var(--navy-2);
+  border-radius: 6px; padding: 9px 24px 8px;
+  font-family: var(--display); text-transform: uppercase; line-height: 1;
+  -webkit-animation: hh-glow 3s ease-in-out infinite alternate;
+  animation: hh-glow 3s ease-in-out infinite alternate;
+}
+.hh-title { font-weight: 700; font-size: 36px; letter-spacing: .05em; }
+.hh-deal { font-weight: 600; font-size: 28px; letter-spacing: .05em; padding-left: 20px; margin-left: 20px; border-left: 2px solid rgba(20, 34, 45, .35); }
+@-webkit-keyframes hh-glow { from { box-shadow: 0 0 10px rgba(255, 194, 71, .25); } to { box-shadow: 0 0 34px rgba(255, 194, 71, .6); } }
+@keyframes hh-glow { from { box-shadow: 0 0 10px rgba(255, 194, 71, .25); } to { box-shadow: 0 0 34px rgba(255, 194, 71, .6); } }
 
 /* ---------- rotating rail ---------- */
 .rail {

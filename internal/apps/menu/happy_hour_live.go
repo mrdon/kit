@@ -110,7 +110,7 @@ func (h HappyHour) Until(now time.Time, loc *time.Location) string {
 // bannerUntil is the end time the wall's banner states: today's only. A
 // happy hour started by hand after today's window runs to the next scheduled
 // end, but nobody needs "till Mon 5pm" on the wall at 8pm on a Friday, so the
-// banner just says "Happy hour" until the day it ends.
+// banner just gives the deal until the day it ends.
 func (h HappyHour) bannerUntil(now time.Time, loc *time.Location) string {
 	now = now.In(loc)
 	end, ok := h.nextEnd(now)
