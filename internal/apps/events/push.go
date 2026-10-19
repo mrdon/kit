@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"log/slog"
+	"time"
 )
 
 // Immediate calendar push.
@@ -49,11 +50,39 @@ func (a *App) installSyncHook() {
 		return
 	}
 	a.svc.push = func(ctx context.Context, e *Event) error {
+		started := time.Now()
 		writer, settings, err := a.writerFor(ctx, e.TenantID)
 		if err != nil {
 			return err
 		}
-		_, err = a.syncOne(ctx, writer, settings, e)
-		return err
+		d, err := a.syncOne(ctx, writer, settings, e)
+		// Recorded in the sync history like any other run. Nearly every
+		// calendar write happens here now, so the 15-minute sync usually finds
+		// nothing to do and records nothing -- leaving these out made the
+		// history read weeks stale while the calendar was fully up to date.
+		if err != nil {
+			a.auditFailed(ctx, e.TenantID, "edit", err, time.Since(started))
+			return err
+		}
+		if sum := deltaSummary(d); sum.changed() {
+			a.auditCompleted(ctx, e.TenantID, "edit", sum, time.Since(started))
+		}
+		return nil
 	}
+}
+
+// deltaSummary counts one event's outcome the way a full run would.
+func deltaSummary(d delta) Summary {
+	var sum Summary
+	switch d {
+	case deltaCreated:
+		sum.Created = 1
+	case deltaUpdated:
+		sum.Updated = 1
+	case deltaDeleted:
+		sum.Deleted = 1
+	case deltaNone:
+		sum.Skipped = 1
+	}
+	return sum
 }

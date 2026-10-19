@@ -91,3 +91,36 @@ func TestNoHookIsHarmless(t *testing.T) {
 		t.Fatalf("Publish without a hook: %v", err)
 	}
 }
+
+// The sync history has to show writes made on save. They are most of the
+// calendar traffic, and without them the history read weeks stale while the
+// calendar was current -- which looks exactly like a broken sync.
+func TestImmediatePushIsRecordedInSyncHistory(t *testing.T) {
+	sf := newSyncFixture(t)
+	sf.app.installSyncHook()
+
+	e := sf.create(t, CreateParams{Title: "Bike Night", Visibility: VisibilityPublic})
+	sf.publish(t, e)
+
+	runs, err := sf.app.ListRecentRuns(sf.ctx, sf.tenant.ID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("got %d sync history entries after one publish, want 1", len(runs))
+	}
+	r := runs[0]
+	if !r.Succeeded() || r.Meta.TriggeredBy != "edit" || r.Meta.Created != 1 {
+		t.Fatalf("history entry = %+v, want a successful edit that created 1", r)
+	}
+
+	// Saving with nothing calendar-visible changed writes nothing, so it
+	// records nothing either.
+	same := e.Title
+	if _, err := sf.svc.Update(sf.ctx, sf.tenant.ID, e.ID, UpdateParams{Title: &same}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if runs, _ = sf.app.ListRecentRuns(sf.ctx, sf.tenant.ID, 5); len(runs) != 1 {
+		t.Fatalf("a no-op save added a history entry: %d entries", len(runs))
+	}
+}
