@@ -265,3 +265,29 @@ func decodedSize(t *testing.T, raw []byte) (int, int) {
 	}
 	return cfg.Width, cfg.Height
 }
+
+// An event on set dates is a string of separate nights, so coming soon lists
+// each one past the week, like events entered one by one -- not just the next
+// date, which would drop it whenever that night is on the week slide.
+func TestComposeScreenListsEachSetDateInComingSoon(t *testing.T) {
+	now := screenNow(t)
+	loc := now.Location()
+	at := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 17, 30, 0, 0, loc) }
+
+	battles := screenEvent("Battles & Brews", at(8, 11), func(e *Event) {
+		e.RDates = []time.Time{at(8, 25), at(9, 8), at(10, 6)}
+	})
+	watch := screenEvent("Watch Party", at(8, 30))
+	s := composeScreen([]Event{battles, watch}, now, "Gravity", "")
+
+	// Aug 11 is this week's; Oct 6 is past the look-ahead.
+	if got, want := titles(s.Soon), "Battles & Brews,Watch Party,Battles & Brews"; got != want {
+		t.Fatalf("soon = %s, want %s", got, want)
+	}
+	if s.Soon[0].Date != "Aug 25" || s.Soon[2].Date != "Sep 8" {
+		t.Errorf("battles dates = %s, %s", s.Soon[0].Date, s.Soon[2].Date)
+	}
+	if got := titles(s.Overview); got != "Battles & Brews,Watch Party" {
+		t.Errorf("overview = %s, want one card per event", got)
+	}
+}

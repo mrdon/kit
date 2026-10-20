@@ -144,11 +144,42 @@ func composeScreen(events []Event, now time.Time, venue, site string) *Screen {
 		if len(s.Overview) < screenOverviewMax {
 			s.Overview = append(s.Overview, c)
 		}
-		if !c.at.Before(weekEnd) && c.at.Before(soonEnd) && len(s.Soon) < screenSoonMax {
-			s.Soon = append(s.Soon, c)
+	}
+	s.Soon = soonCards(events, now, weekEnd, soonEnd)
+	return s
+}
+
+// soonCards is the look-ahead: what happens after this week, soonest first.
+//
+// An event with a list of set dates gets a card per date, the same as if each
+// had been entered on its own: a monthly Battles & Brews is a string of
+// separate nights to plan around, and showing only the next one would drop it
+// off the list whenever that night falls inside the week slide. A rule-based
+// series still gets one card at its next date -- weekly trivia here would be
+// the week slide again, and it would never be past the week anyway.
+func soonCards(events []Event, now, weekEnd, soonEnd time.Time) []screenCard {
+	var out []screenCard
+	for i := range events {
+		e := &events[i]
+		if !e.IsPubliclyVisible() || e.IsStandingOffer() {
+			continue
+		}
+		perDate := e.RRule == "" && len(e.RDates) > 0
+		for _, occ := range e.Occurrences(dayStart(now), soonEnd) {
+			if occ.End.Before(now) {
+				continue
+			}
+			at := occ.Start.In(now.Location())
+			if !at.Before(weekEnd) {
+				out = append(out, newScreenCard(e, at, now))
+			}
+			if !perDate {
+				break
+			}
 		}
 	}
-	return s
+	slices.SortStableFunc(out, func(a, b screenCard) int { return a.at.Compare(b.at) })
+	return out[:min(len(out), screenSoonMax)]
 }
 
 // nextCards is one card per event, at the next time it actually happens,
