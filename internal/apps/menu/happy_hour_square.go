@@ -287,6 +287,7 @@ func (a *App) pushHappyHour(ctx context.Context, tenantID uuid.UUID, state *Happ
 			text += "\n\nCould not record this sync: " + rerr.Error()
 			out.ok = false
 		}
+		a.alertHappyHour(ctx, tenantID, hhAlertFor(state, key, out.ok), key, text)
 	}
 	return text, out.ok
 }

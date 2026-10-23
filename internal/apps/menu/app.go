@@ -9,6 +9,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/web"
 )
@@ -30,6 +31,7 @@ type App struct {
 	signer  *auth.SessionSigner
 	fetcher *web.Fetcher
 	baseURL string
+	enc     *crypto.Encryptor
 }
 
 // Init builds the service once the pool exists. Called by apps.Init.
@@ -41,14 +43,16 @@ func (a *App) Init(pool *pgxpool.Pool) {
 
 // Configure wires the console session signer and the external base URL used
 // to render a board's copyable public link — the string an admin pastes into
-// a kiosk board.
-func Configure(signer *auth.SessionSigner, fetcher *web.Fetcher, baseURL string) {
+// a kiosk board. The encryptor opens the workspace's bot token, for the DM
+// that says happy hour did not reach Square.
+func Configure(signer *auth.SessionSigner, fetcher *web.Fetcher, baseURL string, enc *crypto.Encryptor) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
 	instance.fetcher = fetcher
 	instance.baseURL = baseURL
+	instance.enc = enc
 }
 
 func (a *App) Name() string { return AppName }
