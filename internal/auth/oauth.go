@@ -237,10 +237,13 @@ func (s *OAuthServer) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := models.GetUserBySlackID(ctx, s.pool, tenant.ID, slackUser.UserID)
-	if err != nil || user == nil {
-		slog.Error("user not found", "slack_user_id", slackUser.UserID, "error", err)
-		http.Error(w, "user not found — message Kit in Slack first to create your account", http.StatusNotFound)
+	// Slack has just proven this person is a member of the tenant's
+	// workspace, so they get an account on first sign-in — the roles sheet
+	// already lists every workspace member, not only those who have DM'd Kit.
+	user, err := models.EnsureUserBySlackID(ctx, s.pool, tenant.ID, slackUser.UserID)
+	if err != nil {
+		slog.Error("ensuring user on sign-in", "slack_user_id", slackUser.UserID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -292,12 +295,16 @@ func (s *OAuthServer) handlePWACallback(w http.ResponseWriter, r *http.Request, 
 	}
 	tenant, err := models.GetTenantBySlackTeamID(r.Context(), s.pool, ident.TeamID)
 	if err != nil || tenant == nil {
+		slog.Warn("pwa sign-in for unknown workspace", "slack_team_id", ident.TeamID, "error", err)
 		http.Error(w, "organization not found — install Kit into your Slack workspace first", http.StatusNotFound)
 		return
 	}
-	user, err := models.GetUserBySlackID(r.Context(), s.pool, tenant.ID, ident.UserID)
-	if err != nil || user == nil {
-		http.Error(w, "user not found — message Kit in Slack first to create your account", http.StatusNotFound)
+	// Same rule as the MCP branch: a verified workspace member gets an
+	// account on first sign-in rather than being told to DM the bot.
+	user, err := models.EnsureUserBySlackID(r.Context(), s.pool, tenant.ID, ident.UserID)
+	if err != nil {
+		slog.Error("ensuring user on pwa sign-in", "slack_user_id", ident.UserID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if !models.IsValidSlug(tenant.Slug) {

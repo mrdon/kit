@@ -124,7 +124,7 @@ func GetOrCreateUser(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 
 // GetUserBySlackID finds a user by tenant + slack_user_id. Returns
 // nil-nil when no row exists (callers who want auto-create should use
-// EnsureUserBySlackID instead — auth/messenger paths legitimately
+// EnsureUserBySlackID instead — messenger paths legitimately
 // distinguish "user not registered" from "user with empty fields"). If
 // a row is found with empty display_name or timezone, hydrates them
 // from Slack via the registered enricher (best-effort, persisted).
@@ -208,9 +208,9 @@ func SetUserPrimaryRoleID(ctx context.Context, pool *pgxpool.Pool, tenantID, use
 //     fields will fill in next call)
 //
 // Use this from any path that adds a user to Kit's world based on a
-// Slack ID (app invites, role assignments).
-// Auth and messenger paths that want to detect "not registered" should
-// keep using GetUserBySlackID (read-only, returns nil-nil if absent).
+// Slack ID (app invites, role assignments, Slack sign-in).
+// Messenger paths that want to detect "not registered" should keep
+// using GetUserBySlackID (read-only, returns nil-nil if absent).
 func EnsureUserBySlackID(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, slackUserID string) (*User, error) {
 	u, err := GetOrCreateUser(ctx, pool, tenantID, slackUserID, "", "")
 	if err != nil {
