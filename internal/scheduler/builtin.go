@@ -65,6 +65,7 @@ const expiredTokenGrace = 7 * 24 * time.Hour
 // answerable from the row.
 func (s *Scheduler) ExecuteBuiltinTask(ctx context.Context, job models.Job) {
 	var lastErr *string
+	notify := true
 	record := func(err error) {
 		slog.Error("registered job failed", "job_id", job.ID, "key", job.BuiltinKey, "error", err)
 		msg := err.Error()
@@ -82,9 +83,14 @@ func (s *Scheduler) ExecuteBuiltinTask(ctx context.Context, job models.Job) {
 			// reconcile pass retires it. Deliberately not left 'running'
 			// — that would wedge the row until the recovery sweep.
 			record(errors.New(retiredUnregistered))
+			notify = false // a deploy dropped it; nothing for the owner to fix
 		} else if err := task.Run(ctx, job); err != nil {
 			record(err)
 		}
+	}
+
+	if notify {
+		s.notifyJobOutcome(ctx, job, lastErr)
 	}
 
 	nextRun, err := models.NextCronRun(job.CronExpr, job.Timezone, time.Now())

@@ -250,8 +250,7 @@ func main() {
 	// fetcher to pull poster images server-side (so images never travel
 	// inside a tap-list update), and the base URL for the public link an
 	// admin copies into a kiosk board. The board page is unauthenticated.
-	// The encryptor is for DMing an admin when happy hour fails to reach Square.
-	menu.Configure(sessionSigner, app.Fetcher, cfg.BaseURL, enc)
+	menu.Configure(sessionSigner, app.Fetcher, cfg.BaseURL)
 
 	// Vault uses the same CardService for both admin grant-request
 	// decision cards and user-targeted security-tripwire briefings

@@ -233,11 +233,12 @@ func (a *App) SyncHappyHour(ctx context.Context, tenantID uuid.UUID, apply bool)
 	return a.pushHappyHour(ctx, tenantID, state, !apply)
 }
 
-// reconcileHappyHour is the every-minute check, and what Start now / End now
-// call: push only when the state Square should be in has changed. A push that
-// failed is retried after retryFailedPush rather than every minute, so a token
-// without permission produces one log entry every few minutes, not sixty an
-// hour.
+// reconcileHappyHour is the every-minute check: push only when the state
+// Square should be in has changed. A push that failed is retried after
+// retryFailedPush rather than every minute, so a token without permission
+// produces one log entry every few minutes, not sixty an hour. While it waits
+// it still reports the failure, so the job reads as failing throughout rather
+// than flickering clean between retries -- the scheduler alerts on the change.
 func (a *App) reconcileHappyHour(ctx context.Context, tenantID uuid.UUID) error {
 	state, err := LoadHappyHour(ctx, a.pool, tenantID)
 	if err != nil || !state.Configured {
@@ -249,7 +250,7 @@ func (a *App) reconcileHappyHour(ctx context.Context, tenantID uuid.UUID) error 
 			return nil
 		}
 		if state.SyncedAt != nil && timeNow().Sub(*state.SyncedAt) < retryFailedPush {
-			return nil
+			return errors.New(state.SyncLog)
 		}
 	}
 	if state.SyncedAt == nil && key == "off" && len(state.SquareIDs) == 0 {
@@ -287,7 +288,6 @@ func (a *App) pushHappyHour(ctx context.Context, tenantID uuid.UUID, state *Happ
 			text += "\n\nCould not record this sync: " + rerr.Error()
 			out.ok = false
 		}
-		a.alertHappyHour(ctx, tenantID, hhAlertFor(state, key, out.ok), key, text)
 	}
 	return text, out.ok
 }

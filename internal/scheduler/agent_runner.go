@@ -39,14 +39,14 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 	tenant, err := models.GetTenantByID(ctx, s.pool, job.TenantID)
 	if err != nil || tenant == nil {
 		slog.Error("looking up tenant for job", "job_id", job.ID, "error", err)
-		s.recordAgentTaskError(ctx, job, "looking up tenant", nil, nil)
+		s.recordAgentTaskError(ctx, job, "looking up tenant")
 		return
 	}
 
 	botToken, err := s.enc.Decrypt(tenant.BotToken)
 	if err != nil {
 		slog.Error("decrypting bot token for job", "job_id", job.ID, "error", err)
-		s.recordAgentTaskError(ctx, job, "decrypting bot token", nil, nil)
+		s.recordAgentTaskError(ctx, job, "decrypting bot token")
 		return
 	}
 	slack := kitslack.NewClient(botToken)
@@ -54,7 +54,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 	user, err := models.GetUserByID(ctx, s.pool, tenant.ID, job.CreatedBy)
 	if err != nil || user == nil {
 		slog.Error("looking up user for job", "job_id", job.ID, "error", err)
-		s.recordAgentTaskError(ctx, job, "looking up user", slack, nil)
+		s.recordAgentTaskError(ctx, job, "looking up user")
 		return
 	}
 
@@ -81,7 +81,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 		created, err := models.CreateAgentSession(ctx, s.pool, tenant.ID, job.ChannelID, threadTS, user.ID, services.AgentLabel(job.Description))
 		if err != nil {
 			slog.Error("creating session for job", "job_id", job.ID, "error", err)
-			s.recordAgentTaskError(ctx, job, "creating session", slack, user)
+			s.recordAgentTaskError(ctx, job, "creating session")
 			return
 		}
 		session = created
@@ -94,7 +94,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 	policy, err := models.ParseConfigPolicy(job.Config)
 	if err != nil {
 		slog.Error("parsing job policy", "job_id", job.ID, "error", err)
-		s.recordAgentTaskError(ctx, job, "parsing job policy", slack, user)
+		s.recordAgentTaskError(ctx, job, "parsing job policy")
 		return
 	}
 	tc := &agent.JobContext{
@@ -114,7 +114,7 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 		if serr != nil || skill == nil {
 			msg := fmt.Sprintf("loading skill %s", job.SkillID)
 			slog.Error("loading skill for job", "job_id", job.ID, "skill_id", *job.SkillID, "error", serr)
-			s.recordAgentTaskError(ctx, job, msg, slack, user)
+			s.recordAgentTaskError(ctx, job, msg)
 			return
 		}
 		userText = fmt.Sprintf(
@@ -140,12 +140,8 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 		slog.Error("job agent run failed", "job_id", job.ID, "error", err)
 		errStr := err.Error()
 		lastError = &errStr
-		dmCh, dmErr := slack.OpenConversation(ctx, user.SlackUserID)
-		if dmErr == nil {
-			_ = slack.PostMessage(ctx, dmCh, "",
-				fmt.Sprintf("⚠️ Scheduled job failed: _%s_\nError: %s", job.Description, errStr))
-		}
 	}
+	s.notifyJobOutcome(ctx, job, lastError)
 
 	if job.RunOnce {
 		if err := models.CompleteTask(ctx, s.pool, job.TenantID, job.ID, lastError); err != nil {
@@ -169,19 +165,10 @@ func (s *Scheduler) executeAgentTask(ctx context.Context, job models.Job) {
 }
 
 // recordAgentTaskError handles the error-path bookkeeping for an agent
-// job: DM the creator if we have slack+user, mark the row completed (or
+// job: tell the owner if it just started failing, mark the row completed (or
 // advance next_run_at) so the scheduler doesn't spin on a broken row.
-func (s *Scheduler) recordAgentTaskError(ctx context.Context, job models.Job, msg string, slack *kitslack.Client, user *models.User) {
-	if slack != nil {
-		errText := fmt.Sprintf("⚠️ Scheduled job failed: _%s_\nError: %s", job.Description, msg)
-		if user != nil {
-			if dmCh, err := slack.OpenConversation(ctx, user.SlackUserID); err == nil {
-				_ = slack.PostMessage(ctx, dmCh, "", errText)
-			}
-		} else {
-			_ = slack.PostMessage(ctx, job.ChannelID, "", errText)
-		}
-	}
+func (s *Scheduler) recordAgentTaskError(ctx context.Context, job models.Job, msg string) {
+	s.notifyJobOutcome(ctx, job, &msg)
 	if job.RunOnce {
 		_ = models.CompleteTask(ctx, s.pool, job.TenantID, job.ID, &msg)
 		return
