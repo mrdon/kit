@@ -1,6 +1,9 @@
 package buildinfo
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 var (
 	// Version will be set via ldflags during build.
@@ -35,4 +38,11 @@ func Token() string {
 	// developer's screen never self-reloads -- which is what you want while
 	// you are the one pressing reload.
 	return Version
+}
+
+// BuiltAt is when this binary was built, from the Date ldflag. ok is false
+// for a build without a stamp, which is every local `go run`.
+func BuiltAt() (t time.Time, ok bool) {
+	t, err := time.Parse(time.RFC3339, Date)
+	return t, err == nil
 }

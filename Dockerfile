@@ -61,10 +61,13 @@ COPY --from=frontend /app/web/console/dist ./web/console/dist
 
 ARG VERSION=dev
 ARG COMMIT=none
-ARG DATE=unknown
+# DATE defaults to the build's own clock. It is the build stamp internal/fence
+# compares, so an orphaned older container stands down for a newer one.
+ARG DATE=
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
+    DATE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
     CGO_ENABLED=0 go build \
     -ldflags "-s -w -X github.com/mrdon/kit/internal/buildinfo.Version=$VERSION -X github.com/mrdon/kit/internal/buildinfo.Commit=$COMMIT -X github.com/mrdon/kit/internal/buildinfo.Date=$DATE" \
     -o /kit ./cmd/kit

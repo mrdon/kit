@@ -123,6 +123,10 @@ const (
 // registry. Runs at startup and on a ticker; both are cheap enough to repeat
 // because every operation is idempotent.
 func (s *Scheduler) reconcileRegistry(ctx context.Context) {
+	// An older build would retire every task it has never heard of.
+	if !s.active() {
+		return
+	}
 	tenants, err := models.ListAllTenants(ctx, s.pool)
 	if err != nil {
 		slog.Error("listing tenants for job registry reconcile", "error", err)

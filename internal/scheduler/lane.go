@@ -81,7 +81,7 @@ func (l *laneRunner) free() int {
 // claims across the fleet, which is what production does.
 func (l *laneRunner) claimAndDispatch(ctx context.Context, tenantID *uuid.UUID) {
 	free := l.free()
-	if free <= 0 {
+	if free <= 0 || !l.s.active() {
 		return
 	}
 

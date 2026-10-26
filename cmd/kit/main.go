@@ -293,8 +293,10 @@ func main() {
 	// immediate Slack DM in addition to the swipe-stack landing.
 	cards.ConfigurePushNotifier(newCardsPushNotifier(pool, app.Messenger))
 
-	// Job scheduler
+	// Job scheduler, fenced so an orphaned older container stands down
+	// instead of running jobs on stale code.
 	sched := scheduler.New(pool, enc, app.Agent)
+	sched.SetGate(startFence(ctx, pool))
 
 	// Gated-tool wiring (§11 of decision-cards-as-gated-tool-calls plan).
 	//

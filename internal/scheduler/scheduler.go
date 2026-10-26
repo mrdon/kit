@@ -21,7 +21,17 @@ type Scheduler struct {
 	agent *agent.Agent
 	// lanes is one runner per execution pool, built from lanePolicies.
 	lanes []*laneRunner
+	// gate, when set, says whether this process may claim and reconcile.
+	// It is false while a newer build is running (see internal/fence).
+	gate interface{ Active() bool }
 }
+
+// SetGate makes every claim and reconcile pass ask gate first. Without one
+// the scheduler always runs, which is what tests want.
+func (s *Scheduler) SetGate(gate interface{ Active() bool }) { s.gate = gate }
+
+// active reports whether this process may do scheduled work right now.
+func (s *Scheduler) active() bool { return s.gate == nil || s.gate.Active() }
 
 // New creates a new Scheduler.
 func New(pool *pgxpool.Pool, enc *crypto.Encryptor, a *agent.Agent) *Scheduler {
@@ -60,20 +70,27 @@ func (s *Scheduler) Kick() {
 // on startup and run via the same job loop as user-created jobs.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.reconcileRegistry(ctx)
-	// Jobs left in 'running' by a previous crash get reclaimed. Use a
-	// generous cutoff so we don't race a sibling scheduler that is still
-	// running the job in a rolling-deploy window.
-	if n, err := models.RecoverStuckTasks(ctx, s.pool, 15*time.Minute); err != nil {
-		slog.Warn("recovering stuck jobs", "error", err)
-	} else if n > 0 {
-		slog.Info("recovered stuck jobs", "count", n)
-	}
+	s.recoverStuck(ctx)
 	for _, lane := range s.lanes {
 		slog.Info("starting job lane", "lane", lane.policy.Lane,
 			"max_parallel", lane.policy.MaxParallel, "poll", lane.policy.PollInterval)
 		go lane.run(ctx)
 	}
 	go s.runRegistryReconcileLoop(ctx)
+}
+
+// recoverStuck reclaims jobs left in 'running' by a previous crash. Use a
+// generous cutoff so we don't race a sibling scheduler that is still running
+// the job in a rolling-deploy window.
+func (s *Scheduler) recoverStuck(ctx context.Context) {
+	if !s.active() {
+		return
+	}
+	if n, err := models.RecoverStuckTasks(ctx, s.pool, 15*time.Minute); err != nil {
+		slog.Warn("recovering stuck jobs", "error", err)
+	} else if n > 0 {
+		slog.Info("recovered stuck jobs", "count", n)
+	}
 }
 
 // registryReconcileInterval is how often the code registry is re-converged
