@@ -448,7 +448,9 @@ Beers that are **gluten reduced** wear an outlined **GR** badge, and while any o
 
 The **side panels** are the rotating rail beside the tap list — a weekly agenda, a poster, or a "book the space" call to action. Change them with `set_menu_panels`, which replaces the panels and **nothing else**: your taps, wordmark and footer are untouched whatever you pass. Use `set_menu_board` only when you mean to set the tap list or the venue chrome by hand, since that one replaces the whole document.
 
-Panels hold **text, not a calendar**. Nothing in a panel expires on its own, so a one-off date written into one is still on the wall weeks after the event — write recurring wording like "Every Wed" instead, and let a scheduled job refresh anything dated.
+Panels can **follow the events calendar**, rebuilt every time the page loads, so nothing dated goes stale. Give a panel a `source`: `events:upcoming` on a poster panel shows each one-off night at the venue this week that has a poster, and drops it once the night is over; `events:weekly` on an agenda lists the weekly series under their current names; `events:label:giveback` on a call to action takes its picture from the next event with that label. To write a panel by hand for one event, pin it with `event` and the event's id: it comes down when the event ends, and that event gets no automatic poster. Anything else in a panel is plain text that never expires, so give it recurring wording like "Every Wed".
+
+A call to action's picture sits behind the text, darkened. For a logo or anything with lettering, set `image_layout` to `above` to show it as a picture over the text instead.
 
 ### Happy hour
 

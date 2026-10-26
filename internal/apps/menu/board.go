@@ -114,6 +114,12 @@ type Panel struct {
 	Headline string   `json:"headline,omitempty"`
 	Body     string   `json:"body,omitempty"`
 	Contact  []string `json:"contact,omitempty"`
+
+	// Source fills the panel from the events calendar each time the page
+	// loads; see event_panels.go. Event pins a hand-written panel to one
+	// event: it comes down when that event is over.
+	Source string `json:"source,omitempty"`
+	Event  string `json:"event,omitempty"`
 }
 
 // Event is one dated line in an agenda panel.
@@ -175,6 +181,9 @@ func (p *Panel) validate(i int) error {
 		return fmt.Errorf("%w: panel %d image must be %q plus an uploaded asset key, "+
 			"or a data:image/ URI", ErrPayloadInvalid, i+1, AssetRef)
 	}
+	if err := p.validateEvents(i); err != nil {
+		return err
+	}
 	switch p.ImageLayout {
 	case "", ImageBackground, ImageAbove:
 	default:
@@ -183,11 +192,11 @@ func (p *Panel) validate(i int) error {
 	}
 	switch p.Kind {
 	case PanelAgenda:
-		if len(p.Events) == 0 {
+		if len(p.Events) == 0 && p.Source != SourceWeekly {
 			return fmt.Errorf("%w: agenda panel %d has no events", ErrPayloadInvalid, i+1)
 		}
 	case PanelPoster:
-		if p.Image == "" {
+		if p.Image == "" && p.Source != SourceUpcoming {
 			return fmt.Errorf("%w: poster panel %d has no image", ErrPayloadInvalid, i+1)
 		}
 	case PanelCTA:

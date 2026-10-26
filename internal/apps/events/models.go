@@ -55,10 +55,10 @@ type Event struct {
 	// rather than the extremes is the interesting value.
 	Prominence Prominence `json:"prominence"`
 	// Labels say what KIND of thing this is -- "giveback", "food", "trivia".
-	// Open-ended and multi-valued, unlike the three closed axes above, and
-	// nothing in Kit branches on them: they exist so a downstream reader can
-	// group events without any axis here being bent to mean two things. See
-	// migration 094. Always non-nil; the column is NOT NULL DEFAULT '{}'.
+	// Open-ended and multi-valued, unlike the three closed axes above. They
+	// exist so a reader can group events without any axis here being bent to
+	// mean two things: the menu board's Give Back panel finds its cause by
+	// one. See migration 094. Always non-nil; the column is NOT NULL DEFAULT '{}'.
 	Labels []string `json:"labels,omitempty"`
 
 	PriceCents         *int64 `json:"price_cents,omitempty"`

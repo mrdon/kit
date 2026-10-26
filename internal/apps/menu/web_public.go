@@ -89,8 +89,9 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	gr := a.glutenReducedFor(r.Context(), tenant.ID)
 	applyGlutenReduced(board, gr)
+	ev := a.applyEventPanels(r.Context(), tenant.ID, board, assets)
 
-	html, err := Render(board, assets, liveVersion(row, hh, gr, loc))
+	html, err := Render(board, assets, eventVersion(ev, liveVersion(row, hh, gr, loc)))
 	if err != nil {
 		slog.Error("rendering menu board", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -124,7 +125,8 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		hh := a.happyHourFor(r.Context(), tenant.ID)
 		gr := a.glutenReducedFor(r.Context(), tenant.ID)
-		version = liveVersion(a.EnsureFresh(r.Context(), tenant.ID, row), hh, gr, locationOf(tenant.Timezone))
+		row = a.EnsureFresh(r.Context(), tenant.ID, row)
+		version = eventVersion(a.eventStamp(r.Context(), tenant.ID, row), liveVersion(row, hh, gr, locationOf(tenant.Timezone)))
 	case !errors.Is(err, ErrNotFound):
 		slog.Error("reading menu version", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -170,6 +172,27 @@ func liveVersion(row *BoardRow, hh *HappyHourState, gr []string, loc *time.Locat
 		v = s + "." + v
 	}
 	return v
+}
+
+// eventVersion puts the calendar panels' stamp in front of the live version,
+// so the wall reloads when a poster comes down or a series is renamed. In
+// front, like happy hour's, so the render stamp stays the suffix.
+func eventVersion(stamp, v string) string {
+	if stamp == "" {
+		return v
+	}
+	return stamp + "." + v
+}
+
+// eventStamp is applyEventPanels' stamp without loading any posters: the
+// version is about which posters, not their bytes. A board that no longer
+// parses has no panels to stamp, and handleBoard is where that gets reported.
+func (a *App) eventStamp(ctx context.Context, tenantID uuid.UUID, row *BoardRow) string {
+	board, err := ParseBoard(row.Payload)
+	if err != nil {
+		return ""
+	}
+	return a.applyEventPanels(ctx, tenantID, board, nil)
 }
 
 // glutenReducedFor loads the gluten reduced list for the wall. A failure to
