@@ -235,6 +235,35 @@ func TestRenderPosterKeepsItsDataURI(t *testing.T) {
 	}
 }
 
+// A logo laid out above a cta's text has to be a picture, not a backdrop: the
+// darkening scrim behind a panel-photo is what made lettering unreadable.
+func TestRenderCTAImageAbove(t *testing.T) {
+	const img = "data:image/png;base64,iVBORw0KGgo="
+	b := &Board{
+		Venue: Venue{Wordmark: "Gravity"},
+		Taps:  []Tap{tap("Lagers", "Beer", DefaultPour)},
+		Panels: []Panel{{Kind: PanelCTA, Label: "Give Back", Headline: "$2 a pint.",
+			Image: img, ImageLayout: ImageAbove, Alt: "Cause logo"}},
+	}
+	html, err := Render(b, nil, "v1")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(html, `class="cta-img" src="`+img) {
+		t.Error("image above the text missing from the page")
+	}
+	if strings.Contains(html, "pnl-photo-0") {
+		t.Error("image above the text was also painted as a backdrop")
+	}
+}
+
+func TestImageLayoutIsValidated(t *testing.T) {
+	p := Panel{Kind: PanelCTA, Headline: "x", ImageLayout: "beside"}
+	if err := p.validate(0); err == nil {
+		t.Error("unknown image_layout was accepted")
+	}
+}
+
 // TestRealBoardPayload runs the actual taproom board -- the same document the
 // authoring repo pushes -- through parse and render. It is the one test that
 // would catch a schema drift between what gets authored and what this app

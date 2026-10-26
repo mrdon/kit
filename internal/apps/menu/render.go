@@ -144,9 +144,10 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 			img = assets[key]
 		}
 		v := panelView{Panel: p, ImageURL: template.URL(img)} //nolint:gosec // a data:image/ URI, validated in Panel.validate or built from stored bytes
-		// A poster is the panel's content and renders as an <img>; on any
-		// other kind the photo is atmosphere behind the text.
-		if img != "" && p.Kind != PanelPoster {
+		// A poster is the panel's content and renders as an <img>, as does
+		// an image laid out above the text; otherwise the photo is
+		// atmosphere behind the text.
+		if img != "" && p.Kind != PanelPoster && p.ImageLayout != ImageAbove {
 			v.PhotoClass = fmt.Sprintf("pnl-photo-%d", i)
 			fmt.Fprintf(&photoCSS, ".%s{--photo:url(%s)}\n", v.PhotoClass, img)
 		}

@@ -97,6 +97,9 @@
         {{- end }}
         {{- else }}
         <div class="cta">
+          {{- if and $p.ImageURL (eq $p.ImageLayout "above") }}
+          <img class="cta-img" src="{{ $p.ImageURL }}" alt="{{ $p.Alt }}">
+          {{- end }}
           <p class="cta-head">{{ $p.Headline }}</p>
           <p class="cta-body">{{ $p.Body }}</p>
           <p class="cta-contact">{{ range $p.Contact }}<span>{{ . }}</span>{{ end }}</p>

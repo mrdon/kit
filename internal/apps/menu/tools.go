@@ -59,7 +59,9 @@ func toolMetas() []services.ToolMeta {
 				"replaces what is there, so include the panels you want to keep. Each panel is " +
 				"{kind, label} plus its own fields: agenda takes `events` (when, time, title, " +
 				"note), poster takes `image` and `alt`, cta takes `headline`, `body` and " +
-				"`contact`. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
+				"`contact`, plus an optional `image`. A cta image is a darkened backdrop " +
+				"unless `image_layout` is 'above', which shows it as a picture over the " +
+				"text: use that for a logo or anything with lettering. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
 				"one-off calendar date into a panel: stored text does not expire, so a date " +
 				"typed here is still on the wall long after the event. Recurring wording " +
 				"('Every Wed') is safe; 'Today' and 'Sat 3 Oct' are not.",

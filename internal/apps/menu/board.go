@@ -90,15 +90,25 @@ const (
 	PanelCTA    = "cta"
 )
 
+// Where a non-poster panel's image goes. Behind the text suits a photo that
+// only sets the mood; above it suits a logo or anything with its own lettering,
+// which a darkened backdrop turns unreadable.
+const (
+	ImageBackground = "background"
+	ImageAbove      = "above"
+)
+
 // Panel is one slide in the rotating side rail.
 type Panel struct {
 	Kind   string  `json:"kind"`
 	Label  string  `json:"label"`
 	Events []Event `json:"events,omitempty"`
 
-	// Poster.
-	Image string `json:"image,omitempty"`
-	Alt   string `json:"alt,omitempty"`
+	// Poster. On the other kinds Image is optional and ImageLayout says where
+	// it sits: ImageBackground (the default) or ImageAbove.
+	Image       string `json:"image,omitempty"`
+	ImageLayout string `json:"image_layout,omitempty"`
+	Alt         string `json:"alt,omitempty"`
 
 	// CTA.
 	Headline string   `json:"headline,omitempty"`
@@ -164,6 +174,12 @@ func (p *Panel) validate(i int) error {
 		!strings.HasPrefix(p.Image, "data:image/") {
 		return fmt.Errorf("%w: panel %d image must be %q plus an uploaded asset key, "+
 			"or a data:image/ URI", ErrPayloadInvalid, i+1, AssetRef)
+	}
+	switch p.ImageLayout {
+	case "", ImageBackground, ImageAbove:
+	default:
+		return fmt.Errorf("%w: panel %d has unknown image_layout %q (want %s or %s)",
+			ErrPayloadInvalid, i+1, p.ImageLayout, ImageBackground, ImageAbove)
 	}
 	switch p.Kind {
 	case PanelAgenda:
