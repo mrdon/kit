@@ -20,7 +20,7 @@ are usually one-offs. So discover first, and never upload without asking.
 
 ```bash
 ls -lt ~/Pictures/darktable_exported | head -20
-gws drive files list --params '{"q":"'"'"'1lP9MBD6nQILxlxrvtT4rDDlnV02Cq6fq'"'"' in parents and trashed=false","fields":"files(name)","pageSize":100}'
+gws drive files list --params '{"q":"'"'"'1lP9MBD6nQILxlxrvtT4rDDlnV02Cq6fq'"'"' in parents and trashed=false","fields":"files(name)","pageSize":100,"supportsAllDrives":true,"includeItemsFromAllDrives":true}'
 ```
 
 Uploaded files are renamed, so match on dates, not filenames: a set whose
