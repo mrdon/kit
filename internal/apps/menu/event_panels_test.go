@@ -81,6 +81,14 @@ func TestTonightPanelsShareASlot(t *testing.T) {
 	if none := expandEventPanels([]Panel{{Kind: PanelPoster, Source: SourceTonight}}, &events.BoardFeed{}); len(none) != 0 {
 		t.Errorf("a night with nothing on left %+v", none)
 	}
+
+	// No one-off left today: the BOGO deal gets the slot instead.
+	f.Upcoming = f.Upcoming[2:]
+	f.Background = []events.BoardEvent{{Title: "BOGO Pizza", When: "Tonight", PosterID: &a}}
+	got = expandEventPanels([]Panel{{Kind: PanelPoster, Source: SourceTonight}}, f)
+	if len(got) != 1 || got[0].Label != "Tonight · BOGO Pizza" {
+		t.Errorf("fallback = %+v", got)
+	}
 }
 
 func TestEventPanelValidation(t *testing.T) {

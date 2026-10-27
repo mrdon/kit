@@ -26,7 +26,9 @@ const (
 	// brewery this week that has a poster, soonest first. None, if none.
 	SourceUpcoming = "events:upcoming"
 	// SourceTonight is the same posters cut to today's nights that are not
-	// over yet, sharing one slot when there are several. None, if none.
+	// over yet, sharing one slot when there are several. With no one-off
+	// left today it falls back to what else is on: the regulars, the
+	// background nights and the standing offers. None, if none of those.
 	SourceTonight = "events:tonight"
 	// SourceWeekly fills an agenda with the series that repeat on a rule.
 	SourceWeekly = "events:weekly"
@@ -139,7 +141,7 @@ func expandEventPanels(panels []Panel, f *events.BoardFeed) []Panel {
 		case p.Source == SourceUpcoming:
 			out = append(out, upcomingPanels(p, f.Upcoming)...)
 		case p.Source == SourceTonight:
-			out = append(out, tonightPanels(p, i, f.Upcoming)...)
+			out = append(out, tonightPanels(p, i, f)...)
 		case p.Source == SourceWeekly:
 			if p.Events = weeklyEvents(f.Weekly, p.Events); len(p.Events) > 0 {
 				out = append(out, p)
@@ -186,13 +188,17 @@ func featuredPanel(tmpl Panel, ev events.BoardEvent) Panel {
 	return p
 }
 
-// tonightPanels is upcomingPanels for today only, every poster in one slot.
-func tonightPanels(tmpl Panel, i int, evs []events.BoardEvent) []Panel {
+// tonightPanels is upcomingPanels for today only, every poster in one slot,
+// or today's background when no one-off is left.
+func tonightPanels(tmpl Panel, i int, f *events.BoardFeed) []Panel {
 	var today []events.BoardEvent
-	for _, ev := range evs {
+	for _, ev := range f.Upcoming {
 		if ev.When == "Tonight" || ev.When == "Today" {
 			today = append(today, ev)
 		}
+	}
+	if len(today) == 0 {
+		today = f.Background
 	}
 	if tmpl.Group == "" {
 		tmpl.Group = fmt.Sprintf("tonight-%d", i)

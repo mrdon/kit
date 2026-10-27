@@ -74,6 +74,10 @@ type BoardFeed struct {
 	Weekly   []BoardWeekly
 	ByLabel  map[string]BoardEvent
 	Featured *BoardEvent // nil when nothing featured is coming up
+	// Background is what else is on today and not over: the regulars, the
+	// background nights and the standing offers, for a night with no
+	// one-off to put up. Soonest first.
+	Background []BoardEvent
 }
 
 // BoardFeed reads the board's events for a tenant at this moment.
@@ -128,6 +132,7 @@ func composeBoardFeed(events []Event, now time.Time, req BoardRequest) *BoardFee
 		}
 	}
 	f.Upcoming = boardUpcoming(events, now, req.Labels, taken)
+	f.Background = boardBackground(events, now, taken)
 	f.Weekly = boardWeekly(events, now)
 	return f
 }
@@ -160,6 +165,38 @@ func boardUpcoming(events []Event, now time.Time, labels []string, taken map[uui
 	evs := make([]BoardEvent, 0, min(len(out), boardUpcomingMax))
 	for _, d := range out[:min(len(out), boardUpcomingMax)] {
 		evs = append(evs, d.ev)
+	}
+	return evs
+}
+
+// boardBackground is today's repeating and standing events that have a poster
+// and are not over yet: everything with a poster that boardUpcoming leaves out.
+// The board hangs in our own taproom, so a partner's offer sold here is worth
+// a slide on a night with nothing else on.
+func boardBackground(events []Event, now time.Time, taken map[uuid.UUID]bool) []BoardEvent {
+	start := dayStart(now)
+	type dated struct {
+		ev BoardEvent
+		at time.Time
+	}
+	var out []dated
+	for i := range events {
+		e := &events[i]
+		if !e.IsPubliclyVisible() || e.Venue == VenueOffsite || e.HeroAttachmentID == nil || taken[e.ID] ||
+			(e.RRule == "" && !e.IsStandingOffer()) {
+			continue
+		}
+		for _, occ := range e.Occurrences(start, start.AddDate(0, 0, 1)) {
+			if !occ.End.Before(now) {
+				out = append(out, dated{boardEvent(e, occ, now), occ.Start})
+				break
+			}
+		}
+	}
+	slices.SortStableFunc(out, func(a, b dated) int { return a.at.Compare(b.at) })
+	evs := make([]BoardEvent, len(out))
+	for i, d := range out {
+		evs[i] = d.ev
 	}
 	return evs
 }

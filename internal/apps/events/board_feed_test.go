@@ -81,6 +81,26 @@ func TestComposeBoardFeedPicksTheWallsEvents(t *testing.T) {
 	}
 }
 
+func TestBoardBackgroundIsWhatElseIsOnToday(t *testing.T) {
+	now := screenNow(t) // Wed Aug 5, noon
+	loc := now.Location()
+	weekly := func(title, rule string, h int, opts ...func(*Event)) Event {
+		return screenEvent(title, time.Date(2026, 1, 7, h, 0, 0, 0, loc),
+			append([]func(*Event){withPoster, func(e *Event) { e.RRule = rule }}, opts...)...)
+	}
+	events := []Event{
+		weekly("Half-price Calzones", "FREQ=WEEKLY;BYDAY=WE", 16, func(e *Event) { e.Prominence = ProminenceAmenity }),
+		weekly("Trivia", "FREQ=WEEKLY;BYDAY=WE", 18),
+		weekly("Brunch", "FREQ=WEEKLY;BYDAY=WE", 9),         // over by noon
+		weekly("BOGO Pizza", "FREQ=WEEKLY;BYDAY=MO,TU", 16), // not today
+		weekly("No Poster", "FREQ=WEEKLY;BYDAY=WE", 17, func(e *Event) { e.HeroAttachmentID = nil }),
+		screenEvent("One-off", time.Date(2026, 8, 5, 19, 0, 0, 0, loc), withPoster), // boardUpcoming's
+	}
+	if got := boardTitles(boardBackground(events, now, nil)); got != "Half-price Calzones,Trivia" {
+		t.Errorf("background = %s", got)
+	}
+}
+
 func TestBoardWeeklyReadsAsAWeek(t *testing.T) {
 	now := screenNow(t)
 	loc := now.Location()
