@@ -34,9 +34,7 @@ export default function DeviceSign() {
 
   const posters = events.filter((e) => e.has_poster);
   const src =
-    pick === null
-      ? null
-      : `/${SLUG}/events/sign.pdf?day=${day}` + (pick ? `&poster=${encodeURIComponent(pick)}` : '');
+    pick === null ? null : `/${SLUG}/events/sign.pdf?day=${day}` + (pick ? `&poster=${encodeURIComponent(pick)}` : '');
   const chosen = posters.find((e) => e.id === pick);
 
   return (
@@ -53,28 +51,43 @@ export default function DeviceSign() {
         </p>
       </div>
       {err && <p className="banner banner-error">{err}</p>}
-      <section className="device-actions device-actions-row">
-        {(['today', 'tomorrow'] as Day[]).map((d) => (
-          <button key={d} className={`btn device-btn${day === d ? ' selected' : ''}`} type="button" onClick={() => setDay(d)}>
-            {d === 'today' ? 'Today' : 'Tomorrow'}
-          </button>
-        ))}
-      </section>
-      <section className="device-actions">
-        <button className={`btn device-btn${pick === '' ? ' selected' : ''}`} type="button" onClick={() => setPick('')}>
-          {events.length ? 'Sign with everything on' : 'Sign (nothing on the calendar)'}
-        </button>
-        {posters.map((e) => (
+      <div className="device-group">
+        <p className="device-group-label">Day</p>
+        <section className="device-actions device-actions-row">
+          {(['today', 'tomorrow'] as Day[]).map((d) => (
+            <button
+              key={d}
+              className={`btn device-btn${day === d ? ' selected' : ''}`}
+              type="button"
+              onClick={() => setDay(d)}
+            >
+              {d === 'today' ? 'Today' : 'Tomorrow'}
+            </button>
+          ))}
+        </section>
+      </div>
+      <div className="device-group">
+        <p className="device-group-label">Print</p>
+        <section className="device-actions">
           <button
-            key={e.id}
-            className={`btn device-btn${pick === e.id ? ' selected' : ''}`}
+            className={`btn device-btn${pick === '' ? ' selected' : ''}`}
             type="button"
-            onClick={() => setPick(e.id)}
+            onClick={() => setPick('')}
           >
-            {e.title} poster
+            {events.length ? 'Sign with everything on' : 'Sign (nothing on the calendar)'}
           </button>
-        ))}
-      </section>
+          {posters.map((e) => (
+            <button
+              key={e.id}
+              className={`btn device-btn${pick === e.id ? ' selected' : ''}`}
+              type="button"
+              onClick={() => setPick(e.id)}
+            >
+              {e.title} poster
+            </button>
+          ))}
+        </section>
+      </div>
       {src && <PdfPane src={src} title={chosen ? `${chosen.title} poster` : 'Entrance sign'} />}
     </div>
   );

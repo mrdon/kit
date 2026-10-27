@@ -234,6 +234,20 @@
   flex-wrap: wrap;
 }
 
+/* A page with more than one group of buttons (the entrance sign's day, then
+   what to print) labels each and keeps them apart, so one group does not
+   read as part of the next. */
+.device-group + .device-group {
+  margin-top: 1.75rem;
+}
+
+.device-group-label {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .device-btn.selected {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
