@@ -32,10 +32,10 @@ const (
 	// such event is booked. The text stays hand-written: Give Back copy
 	// carries a per-pint figure Colorado requires word for word.
 	SourceLabel = "events:label:"
-	// SourceFeatured fills a cta from the next featured night at the brewery:
-	// its name and when as the headline, its summary as the body and its
-	// poster as the image. The stored label and contact lines stay. None, if
-	// nothing featured is coming up.
+	// SourceFeatured fills a poster panel with the next featured night's
+	// poster, filling the whole panel with no label: someone put a lot of work
+	// into that poster, and it says what and when better than a caption would.
+	// None, if nothing featured is coming up.
 	SourceFeatured = "events:featured"
 )
 
@@ -68,7 +68,7 @@ func (p *Panel) validateEvents(i int) error {
 	case p.Source == SourceWeekly:
 		want = PanelAgenda
 	case p.Source == SourceFeatured:
-		want = PanelCTA
+		want = PanelPoster
 	case strings.HasPrefix(p.Source, SourceLabel) && len(p.Source) > len(SourceLabel):
 		want = PanelCTA
 	default:
@@ -171,20 +171,11 @@ func upcomingPanels(tmpl Panel, evs []events.BoardEvent) []Panel {
 	return out
 }
 
-// featuredPanel writes the cta for the featured night: "Halloween Party,
-// Saturday 6 to 9pm." over its summary and poster.
+// featuredPanel is the featured night's poster, the panel to itself.
 func featuredPanel(tmpl Panel, ev events.BoardEvent) Panel {
 	p := tmpl
 	p.Source = ""
-	when := ev.When
-	if when == "Tonight" || when == "Today" || when == "Tomorrow" || strings.HasPrefix(when, "In ") {
-		when = strings.ToLower(when)
-	}
-	if ev.Time != "" {
-		when += " " + ev.Time
-	}
-	p.Headline = ev.Title + ", " + when + "."
-	p.Body = ev.Summary
+	p.Feature = true
 	p.Image = AssetRef + posterAsset + ev.PosterID.String()
 	p.Alt = "Poster for " + ev.Title
 	return p

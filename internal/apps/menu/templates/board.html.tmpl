@@ -79,8 +79,10 @@
 
     <div class="rail" id="rail">
       {{- range $i, $p := .Panels }}
-      <section class="panel{{ if eq $i 0 }} is-on{{ end }}{{ with $p.PhotoClass }} panel-photo {{ . }}{{ end }}">
+      <section class="panel{{ if eq $i 0 }} is-on{{ end }}{{ if $p.Feature }} panel-feature{{ end }}{{ with $p.PhotoClass }} panel-photo {{ . }}{{ end }}">
+        {{- if not $p.Feature }}
         <p class="panel-label">{{ $p.Label }}</p>
+        {{- end }}
         {{- if eq $p.Kind "agenda" }}
         <ul class="ev-list">
           {{- range $p.Events }}

@@ -24,7 +24,7 @@ func TestExpandEventPanels(t *testing.T) {
 	}
 	panels := []Panel{
 		{Kind: PanelPoster, Source: SourceUpcoming},
-		{Kind: PanelCTA, Label: "Don't miss", Source: SourceFeatured, Contact: []string{"thegravitybrewing.com"}},
+		{Kind: PanelPoster, Label: "Don't miss", Source: SourceFeatured},
 		{Kind: PanelAgenda, Label: "Every week", Source: SourceWeekly, Events: []Event{{Title: "Guesstronaut Trivia"}}},
 		{Kind: PanelCTA, Label: "Give Back", Headline: "$2 a pint.", Image: "asset:give-back", Source: SourceLabel + "giveback"},
 		{Kind: PanelCTA, Label: "Holiday parties", Headline: "Book here."},
@@ -43,11 +43,8 @@ func TestExpandEventPanels(t *testing.T) {
 	if got[0].Image != AssetRef+posterAsset+poster.String() {
 		t.Errorf("poster image = %q", got[0].Image)
 	}
-	if got[1].Headline != "Cribbage Night, tonight 6 to 8pm." || got[1].Body != "Beginners welcome." {
-		t.Errorf("featured = %q / %q", got[1].Headline, got[1].Body)
-	}
-	if got[1].Image != AssetRef+posterAsset+crib.String() || got[1].Contact[0] != "thegravitybrewing.com" {
-		t.Errorf("featured image %q, contact %v", got[1].Image, got[1].Contact)
+	if !got[1].Feature || got[1].Image != AssetRef+posterAsset+crib.String() {
+		t.Errorf("featured = %+v", got[1])
 	}
 	if got[2].Events[0].Title != "Guesstronauts Trivia" {
 		t.Errorf("weekly kept the stored name: %q", got[2].Events[0].Title)
@@ -76,8 +73,8 @@ func TestEventPanelValidation(t *testing.T) {
 		{"upcoming poster needs no image", Panel{Kind: PanelPoster, Source: SourceUpcoming}, true},
 		{"weekly agenda needs no events", Panel{Kind: PanelAgenda, Source: SourceWeekly}, true},
 		{"label cta", Panel{Kind: PanelCTA, Headline: "x", Source: SourceLabel + "giveback"}, true},
-		{"featured cta needs no headline", Panel{Kind: PanelCTA, Source: SourceFeatured}, true},
-		{"featured on a poster", Panel{Kind: PanelPoster, Image: "asset:x", Source: SourceFeatured}, false},
+		{"featured poster needs no image", Panel{Kind: PanelPoster, Source: SourceFeatured}, true},
+		{"featured on a cta", Panel{Kind: PanelCTA, Headline: "x", Source: SourceFeatured}, false},
 		{"source on the wrong kind", Panel{Kind: PanelCTA, Headline: "x", Source: SourceUpcoming}, false},
 		{"unknown source", Panel{Kind: PanelPoster, Image: "asset:x", Source: "events:soon"}, false},
 		{"empty label", Panel{Kind: PanelCTA, Headline: "x", Source: SourceLabel}, false},

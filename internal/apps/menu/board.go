@@ -118,6 +118,9 @@ type Panel struct {
 	// Source fills the panel from the events calendar each time the page
 	// loads; see event_panels.go.
 	Source string `json:"source,omitempty"`
+	// Feature is set by the expansion, never stored: the panel is a featured
+	// poster, shown full size with no label.
+	Feature bool `json:"-"`
 }
 
 // Event is one dated line in an agenda panel.
@@ -194,11 +197,11 @@ func (p *Panel) validate(i int) error {
 			return fmt.Errorf("%w: agenda panel %d has no events", ErrPayloadInvalid, i+1)
 		}
 	case PanelPoster:
-		if p.Image == "" && p.Source != SourceUpcoming {
+		if p.Image == "" && p.Source != SourceUpcoming && p.Source != SourceFeatured {
 			return fmt.Errorf("%w: poster panel %d has no image", ErrPayloadInvalid, i+1)
 		}
 	case PanelCTA:
-		if strings.TrimSpace(p.Headline) == "" && p.Source != SourceFeatured {
+		if strings.TrimSpace(p.Headline) == "" {
 			return fmt.Errorf("%w: cta panel %d has no headline", ErrPayloadInvalid, i+1)
 		}
 	default:
