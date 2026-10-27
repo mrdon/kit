@@ -158,6 +158,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	}
 	a.registerFeedRoutes(mux)
 	registerTopperRoutes(mux, a)
+	registerSignRoutes(mux, a)
 	registerScreenRoutes(mux, a)
 	registerConsoleRoutes(mux, a)
 	registerPosterUploadRoutes(mux, a)

@@ -12,6 +12,7 @@ import type {
   EventsSiteStatus,
   EventsStaff,
   PromoPayload,
+  SignChoice,
 } from './events.types';
 
 export const eventsApi = {
@@ -65,6 +66,8 @@ export const eventsApi = {
     apiPost<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}/reopen`),
 
   eventsSettings: () => apiGet<EventsSettings>('/events/settings'),
+  eventsSign: (day: 'today' | 'tomorrow') =>
+    apiGet<{ date: string; events: SignChoice[] }>(`/events/sign?day=${day}`),
   saveEventsSettings: (body: {
     calendar_id?: string;
     timezone?: string;

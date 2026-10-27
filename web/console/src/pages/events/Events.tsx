@@ -30,6 +30,12 @@ function openTopper(week: 'this' | 'next') {
   window.open(`/${SLUG}/events/topper.pdf?week=${week}`, '_blank', 'noopener');
 }
 
+// openSign opens today's entrance sign, the letter page for the stand by
+// the door, the same way.
+function openSign() {
+  window.open(`/${SLUG}/events/sign.pdf?day=today`, '_blank', 'noopener');
+}
+
 // openScreen opens the wall slideshow. It is a public page, so the tab's own
 // address is the one to paste into a kiosk board.
 function openScreen() {
@@ -155,6 +161,10 @@ export default function Events() {
                 {
                   label: 'Table topper — next week',
                   onClick: () => openTopper('next'),
+                },
+                {
+                  label: 'Entrance sign — today',
+                  onClick: openSign,
                 },
                 {
                   label: 'Wall screen',

@@ -17,7 +17,7 @@ interface DeviceTile {
   blurb: string;
 }
 
-// One tile per capability. A device holding every taproom capability plus
+// One tile per job, each behind a capability. A device holding every taproom capability plus
 // trivia shows all five; the trivia laptop shows one.
 const DEVICE_TILES: DeviceTile[] = [
   {
@@ -37,6 +37,12 @@ const DEVICE_TILES: DeviceTile[] = [
     to: '/device/topper',
     title: 'Table topper',
     blurb: 'Print this week’s or next week’s events card.',
+  },
+  {
+    cap: 'events.topper',
+    to: '/device/sign',
+    title: 'Entrance sign',
+    blurb: 'Print today’s events for the stand by the door.',
   },
   {
     cap: 'menu.gluten_reduced',

@@ -368,3 +368,11 @@ export interface EventsReconcilePlan {
   restores?: string[];
   message: string;
 }
+
+// One of the day's events, as the entrance sign page offers it.
+export interface SignChoice {
+  id: string;
+  title: string;
+  time?: string;
+  has_poster: boolean;
+}
