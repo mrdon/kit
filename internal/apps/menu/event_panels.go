@@ -32,6 +32,11 @@ const (
 	// such event is booked. The text stays hand-written: Give Back copy
 	// carries a per-pint figure Colorado requires word for word.
 	SourceLabel = "events:label:"
+	// SourceFeatured fills a cta from the next featured night at the brewery:
+	// its name and when as the headline, its summary as the body and its
+	// poster as the image. The stored label and contact lines stay. None, if
+	// nothing featured is coming up.
+	SourceFeatured = "events:featured"
 )
 
 // posterAsset prefixes the asset key a calendar poster is served under, so it
@@ -54,11 +59,6 @@ var boardEvents = func() eventFeed {
 }
 
 func (p *Panel) validateEvents(i int) error {
-	if p.Event != "" {
-		if _, err := uuid.Parse(p.Event); err != nil {
-			return fmt.Errorf("%w: panel %d event %q is not an event id", ErrPayloadInvalid, i+1, p.Event)
-		}
-	}
 	want := ""
 	switch {
 	case p.Source == "":
@@ -67,11 +67,13 @@ func (p *Panel) validateEvents(i int) error {
 		want = PanelPoster
 	case p.Source == SourceWeekly:
 		want = PanelAgenda
+	case p.Source == SourceFeatured:
+		want = PanelCTA
 	case strings.HasPrefix(p.Source, SourceLabel) && len(p.Source) > len(SourceLabel):
 		want = PanelCTA
 	default:
-		return fmt.Errorf("%w: panel %d has unknown source %q (want %s, %s or %s<label>)",
-			ErrPayloadInvalid, i+1, p.Source, SourceUpcoming, SourceWeekly, SourceLabel)
+		return fmt.Errorf("%w: panel %d has unknown source %q (want %s, %s, %s or %s<label>)",
+			ErrPayloadInvalid, i+1, p.Source, SourceUpcoming, SourceWeekly, SourceFeatured, SourceLabel)
 	}
 	if p.Kind != want {
 		return fmt.Errorf("%w: panel %d source %q needs kind %q", ErrPayloadInvalid, i+1, p.Source, want)
@@ -117,10 +119,7 @@ func eventRequest(panels []Panel) (events.BoardRequest, bool) {
 	var req events.BoardRequest
 	ask := false
 	for _, p := range panels {
-		if id, err := uuid.Parse(p.Event); err == nil {
-			req.Claimed = append(req.Claimed, id)
-			ask = true
-		}
+		req.Featured = req.Featured || p.Source == SourceFeatured
 		if label, ok := strings.CutPrefix(p.Source, SourceLabel); ok {
 			req.Labels = append(req.Labels, label)
 		}
@@ -133,9 +132,6 @@ func eventRequest(panels []Panel) (events.BoardRequest, bool) {
 func expandEventPanels(panels []Panel, f *events.BoardFeed) []Panel {
 	out := make([]Panel, 0, len(panels))
 	for _, p := range panels {
-		if id, err := uuid.Parse(p.Event); err == nil && !f.Live[id] {
-			continue
-		}
 		switch {
 		case p.Source == SourceUpcoming:
 			out = append(out, upcomingPanels(p, f.Upcoming)...)
@@ -148,6 +144,10 @@ func expandEventPanels(panels []Panel, f *events.BoardFeed) []Panel {
 				p.Image = AssetRef + posterAsset + ev.PosterID.String()
 			}
 			out = append(out, p)
+		case p.Source == SourceFeatured:
+			if f.Featured != nil {
+				out = append(out, featuredPanel(p, *f.Featured))
+			}
 		default:
 			out = append(out, p)
 		}
@@ -169,6 +169,25 @@ func upcomingPanels(tmpl Panel, evs []events.BoardEvent) []Panel {
 		out = append(out, p)
 	}
 	return out
+}
+
+// featuredPanel writes the cta for the featured night: "Halloween Party,
+// Saturday 6 to 9pm." over its summary and poster.
+func featuredPanel(tmpl Panel, ev events.BoardEvent) Panel {
+	p := tmpl
+	p.Source = ""
+	when := ev.When
+	if when == "Tonight" || when == "Today" || when == "Tomorrow" || strings.HasPrefix(when, "In ") {
+		when = strings.ToLower(when)
+	}
+	if ev.Time != "" {
+		when += " " + ev.Time
+	}
+	p.Headline = ev.Title + ", " + when + "."
+	p.Body = ev.Summary
+	p.Image = AssetRef + posterAsset + ev.PosterID.String()
+	p.Alt = "Poster for " + ev.Title
+	return p
 }
 
 // weeklyEvents turns the calendar's series into agenda lines. With nothing

@@ -116,10 +116,8 @@ type Panel struct {
 	Contact  []string `json:"contact,omitempty"`
 
 	// Source fills the panel from the events calendar each time the page
-	// loads; see event_panels.go. Event pins a hand-written panel to one
-	// event: it comes down when that event is over.
+	// loads; see event_panels.go.
 	Source string `json:"source,omitempty"`
-	Event  string `json:"event,omitempty"`
 }
 
 // Event is one dated line in an agenda panel.
@@ -200,7 +198,7 @@ func (p *Panel) validate(i int) error {
 			return fmt.Errorf("%w: poster panel %d has no image", ErrPayloadInvalid, i+1)
 		}
 	case PanelCTA:
-		if strings.TrimSpace(p.Headline) == "" {
+		if strings.TrimSpace(p.Headline) == "" && p.Source != SourceFeatured {
 			return fmt.Errorf("%w: cta panel %d has no headline", ErrPayloadInvalid, i+1)
 		}
 	default:

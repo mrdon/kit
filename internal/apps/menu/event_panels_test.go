@@ -11,19 +11,20 @@ import (
 )
 
 func TestExpandEventPanels(t *testing.T) {
-	poster, logo := uuid.New(), uuid.New()
-	over, live := uuid.New(), uuid.New()
+	poster, logo, crib := uuid.New(), uuid.New(), uuid.New()
 	f := &events.BoardFeed{
 		Today:    "2026-10-26",
 		Upcoming: []events.BoardEvent{{Title: "Halloween Party", When: "Saturday", PosterID: &poster}},
 		Weekly:   []events.BoardWeekly{{When: "Every Thu", Time: "6:30 to 8pm", Title: "Guesstronauts Trivia"}},
 		ByLabel:  map[string]events.BoardEvent{"giveback": {Title: "SPAN", PosterID: &logo}},
-		Live:     map[uuid.UUID]bool{live: true},
+		Featured: &events.BoardEvent{
+			Title: "Cribbage Night", When: "Tonight", Time: "6 to 8pm",
+			Summary: "Beginners welcome.", PosterID: &crib,
+		},
 	}
 	panels := []Panel{
 		{Kind: PanelPoster, Source: SourceUpcoming},
-		{Kind: PanelCTA, Label: "Cribbage", Headline: "Cribbage night.", Event: live.String()},
-		{Kind: PanelCTA, Label: "Tsar Bomba Day", Headline: "Tsar Bomba.", Event: over.String()},
+		{Kind: PanelCTA, Label: "Don't miss", Source: SourceFeatured, Contact: []string{"thegravitybrewing.com"}},
 		{Kind: PanelAgenda, Label: "Every week", Source: SourceWeekly, Events: []Event{{Title: "Guesstronaut Trivia"}}},
 		{Kind: PanelCTA, Label: "Give Back", Headline: "$2 a pint.", Image: "asset:give-back", Source: SourceLabel + "giveback"},
 		{Kind: PanelCTA, Label: "Holiday parties", Headline: "Book here."},
@@ -35,13 +36,18 @@ func TestExpandEventPanels(t *testing.T) {
 	for _, p := range got {
 		labels = append(labels, p.Label)
 	}
-	// Tsar Bomba Day is pinned to an event that is over, so it is gone.
-	want := "Saturday · Halloween Party|Cribbage|Every week|Give Back|Holiday parties"
+	want := "Saturday · Halloween Party|Don't miss|Every week|Give Back|Holiday parties"
 	if strings.Join(labels, "|") != want {
 		t.Fatalf("panels = %s, want %s", strings.Join(labels, "|"), want)
 	}
 	if got[0].Image != AssetRef+posterAsset+poster.String() {
 		t.Errorf("poster image = %q", got[0].Image)
+	}
+	if got[1].Headline != "Cribbage Night, tonight 6 to 8pm." || got[1].Body != "Beginners welcome." {
+		t.Errorf("featured = %q / %q", got[1].Headline, got[1].Body)
+	}
+	if got[1].Image != AssetRef+posterAsset+crib.String() || got[1].Contact[0] != "thegravitybrewing.com" {
+		t.Errorf("featured image %q, contact %v", got[1].Image, got[1].Contact)
 	}
 	if got[2].Events[0].Title != "Guesstronauts Trivia" {
 		t.Errorf("weekly kept the stored name: %q", got[2].Events[0].Title)
@@ -53,9 +59,9 @@ func TestExpandEventPanels(t *testing.T) {
 		t.Error("give back copy was touched")
 	}
 
-	// Nothing upcoming: no poster panel at all, and the Give Back panel keeps
-	// its stored image.
-	empty := expandEventPanels(panels, &events.BoardFeed{Live: map[uuid.UUID]bool{}})
+	// Nothing upcoming or featured: neither panel at all, and the Give Back
+	// panel keeps its stored image.
+	empty := expandEventPanels(panels, &events.BoardFeed{})
 	if empty[0].Label != "Every week" || empty[1].Image != "asset:give-back" {
 		t.Errorf("empty feed expanded to %+v", empty)
 	}
@@ -70,11 +76,11 @@ func TestEventPanelValidation(t *testing.T) {
 		{"upcoming poster needs no image", Panel{Kind: PanelPoster, Source: SourceUpcoming}, true},
 		{"weekly agenda needs no events", Panel{Kind: PanelAgenda, Source: SourceWeekly}, true},
 		{"label cta", Panel{Kind: PanelCTA, Headline: "x", Source: SourceLabel + "giveback"}, true},
-		{"pinned cta", Panel{Kind: PanelCTA, Headline: "x", Event: uuid.NewString()}, true},
+		{"featured cta needs no headline", Panel{Kind: PanelCTA, Source: SourceFeatured}, true},
+		{"featured on a poster", Panel{Kind: PanelPoster, Image: "asset:x", Source: SourceFeatured}, false},
 		{"source on the wrong kind", Panel{Kind: PanelCTA, Headline: "x", Source: SourceUpcoming}, false},
 		{"unknown source", Panel{Kind: PanelPoster, Image: "asset:x", Source: "events:soon"}, false},
 		{"empty label", Panel{Kind: PanelCTA, Headline: "x", Source: SourceLabel}, false},
-		{"bad event id", Panel{Kind: PanelCTA, Headline: "x", Event: "cribbage"}, false},
 	} {
 		err := tc.p.validate(0)
 		if (err == nil) != tc.ok {

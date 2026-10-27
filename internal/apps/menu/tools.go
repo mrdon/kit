@@ -66,12 +66,13 @@ func toolMetas() []services.ToolMeta {
 				"'events:upcoming' on a poster panel becomes one poster per one-off night at " +
 				"the brewery this week (none if none), 'events:weekly' on an agenda fills it " +
 				"from the weekly series, and 'events:label:<label>' on a cta takes its image " +
-				"from the next event with that label. `event` (an event id) pins a " +
-				"hand-written panel to one event: it comes down when the event is over, and " +
-				"that event gets no automatic poster. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
-				"one-off calendar date into a panel without pinning it with `event`: stored " +
-				"text does not expire, so a date typed here is still on the wall long after " +
-				"the event. Recurring wording " +
+				"from the next event with that label. 'events:featured' on a cta fills its " +
+				"headline, body and image from the next featured night at the brewery (gone " +
+				"if none), keeping its label and contact; that night gets no poster of its " +
+				"own. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
+				"one-off calendar date into a panel: stored text does not expire, so a date " +
+				"typed here is still on the wall long after the event; mark the event " +
+				"featured instead. Recurring wording " +
 				"('Every Wed') is safe; 'Today' and 'Sat 3 Oct' are not.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{

@@ -29,7 +29,10 @@ func TestComposeBoardFeedPicksTheWallsEvents(t *testing.T) {
 	loc := now.Location()
 	at := func(m time.Month, d, h int) time.Time { return time.Date(2026, m, d, h, 0, 0, 0, loc) }
 
-	cribbage := screenEvent("Cribbage Night", at(8, 6, 18), withPoster)
+	cribbage := screenEvent("Cribbage Night", at(8, 6, 18), withPoster, func(e *Event) {
+		e.Prominence = ProminenceFeatured
+		e.Summary = "Beginners welcome."
+	})
 	events := []Event{
 		screenEvent("Halloween Party", at(8, 8, 12), withPoster),
 		cribbage,
@@ -39,15 +42,16 @@ func TestComposeBoardFeedPicksTheWallsEvents(t *testing.T) {
 		}),
 		screenEvent("No Poster Night", at(8, 7, 18)),
 		screenEvent("Over Already", at(8, 5, 8), withPoster),
+		screenEvent("Featured Fest", at(8, 9, 12), func(e *Event) { e.Prominence = ProminenceFeatured }),
 		screenEvent("Next Month", at(8, 20, 18), withPoster),
 		screenEvent("Beer Fest", at(8, 9, 12), withPoster, func(e *Event) { e.Venue = VenueOffsite }),
 		screenEvent("Draft Party", at(8, 9, 12), withPoster, func(e *Event) { e.Status = StatusDraft }),
 		screenEvent("Trivia", at(1, 7, 18), func(e *Event) { e.RRule = "FREQ=WEEKLY;BYDAY=WE" }),
 	}
 
-	f := composeBoardFeed(events, now, BoardRequest{Labels: []string{"giveback"}, Claimed: []uuid.UUID{cribbage.ID}})
+	f := composeBoardFeed(events, now, BoardRequest{Labels: []string{"giveback"}, Featured: true})
 
-	// Cribbage is claimed by a hand-written panel, SPAN by the Give Back one,
+	// Cribbage is the featured panel's, SPAN the Give Back one's,
 	// the rest are unposted, over, too far out, offsite, unpublished or weekly.
 	if got, want := boardTitles(f.Upcoming), "Halloween Party,Battles & Brews"; got != want {
 		t.Errorf("upcoming = %s, want %s", got, want)
@@ -58,14 +62,22 @@ func TestComposeBoardFeedPicksTheWallsEvents(t *testing.T) {
 	if got := f.ByLabel["giveback"].Title; got != "Give Back: SPAN" {
 		t.Errorf("giveback = %q", got)
 	}
-	if !f.Live[cribbage.ID] {
-		t.Error("cribbage is still to come")
+	// Featured Fest is featured too but has no poster to show.
+	if f.Featured == nil || f.Featured.EventID != cribbage.ID {
+		t.Fatalf("featured = %+v, want cribbage", f.Featured)
+	}
+	if f.Featured.When != "Tomorrow" || f.Featured.Time != "6 to 8pm" || f.Featured.Summary != "Beginners welcome." {
+		t.Errorf("featured = %+v", *f.Featured)
 	}
 
-	// The morning after, cribbage is over and its panel should come down.
-	after := composeBoardFeed(events, at(8, 7, 9), BoardRequest{Claimed: []uuid.UUID{cribbage.ID}})
-	if after.Live[cribbage.ID] {
-		t.Error("cribbage is over but still live")
+	// The morning after, cribbage is over: nothing featured is left.
+	if after := composeBoardFeed(events, at(8, 7, 9), BoardRequest{Featured: true}); after.Featured != nil {
+		t.Errorf("featured after cribbage = %+v", *after.Featured)
+	}
+
+	// Without a featured panel to claim it, cribbage gets a poster like any night.
+	if got := boardTitles(composeBoardFeed(events, now, BoardRequest{}).Upcoming); !strings.HasPrefix(got, "Cribbage Night,") {
+		t.Errorf("upcoming without featured = %s", got)
 	}
 }
 

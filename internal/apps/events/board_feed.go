@@ -31,9 +31,9 @@ const (
 	// normal-length note overflows the agenda panel, which hides overflow
 	// rather than wrapping, so the entry simply is not there.
 	boardWeeklyMax = 5
-	// boardLabelDays is how far ahead a label lookup reaches. A Give Back
-	// night is booked weeks out, and its cause should show from the night
-	// after the last one.
+	// boardLabelDays is how far ahead a label or featured lookup reaches. A
+	// Give Back night is booked weeks out, and its cause should show from the
+	// night after the last one; a featured night is worth building up to.
 	boardLabelDays = 45
 	// boardNoteMax keeps an agenda note to one line on the wall.
 	boardNoteMax = 48
@@ -44,9 +44,9 @@ type BoardRequest struct {
 	// Labels are the labels a panel takes its image from. An event carrying
 	// one is that panel's, so it gets no poster of its own as well.
 	Labels []string
-	// Claimed are events a hand-written panel is pinned to. They get no
-	// automatic poster, and Live reports whether each is still to come.
-	Claimed []uuid.UUID
+	// Featured asks for the next featured night. It gets the board's featured
+	// panel, so it gets no poster of its own as well.
+	Featured bool
 }
 
 // BoardEvent is one event as the board shows it.
@@ -54,6 +54,8 @@ type BoardEvent struct {
 	EventID  uuid.UUID
 	Title    string
 	When     string // "Tonight", "Tomorrow", "Saturday"
+	Time     string // "6 to 8pm", or "" all day
+	Summary  string
 	PosterID *uuid.UUID
 }
 
@@ -71,7 +73,7 @@ type BoardFeed struct {
 	Upcoming []BoardEvent
 	Weekly   []BoardWeekly
 	ByLabel  map[string]BoardEvent
-	Live     map[uuid.UUID]bool
+	Featured *BoardEvent // nil when nothing featured is coming up
 }
 
 // BoardFeed reads the board's events for a tenant at this moment.
@@ -112,27 +114,20 @@ func composeBoardFeed(events []Event, now time.Time, req BoardRequest) *BoardFee
 	f := &BoardFeed{
 		Today:   dayStart(now).Format(time.DateOnly),
 		ByLabel: map[string]BoardEvent{},
-		Live:    map[uuid.UUID]bool{},
-	}
-	claimed := map[uuid.UUID]bool{}
-	for _, id := range req.Claimed {
-		claimed[id] = true
-	}
-	for i := range events {
-		e := &events[i]
-		if !e.IsPubliclyVisible() {
-			continue
-		}
-		if claimed[e.ID] {
-			f.Live[e.ID] = nextOccurrence(e, now, dayStart(now).AddDate(0, 0, boardLabelDays)) != nil
-		}
 	}
 	for _, label := range req.Labels {
-		if be, ok := nextWithLabel(events, label, now); ok {
+		if be, ok := nextMatching(events, now, func(e *Event) bool { return e.HasLabel(label) }); ok {
 			f.ByLabel[label] = be
 		}
 	}
-	f.Upcoming = boardUpcoming(events, now, req.Labels, claimed)
+	taken := map[uuid.UUID]bool{}
+	if req.Featured {
+		if be, ok := nextMatching(events, now, isFeaturedOnTheWall); ok {
+			f.Featured = &be
+			taken[be.EventID] = true
+		}
+	}
+	f.Upcoming = boardUpcoming(events, now, req.Labels, taken)
 	f.Weekly = boardWeekly(events, now)
 	return f
 }
@@ -141,7 +136,7 @@ func composeBoardFeed(events []Event, now time.Time, req BoardRequest) *BoardFee
 // poster, soonest first. An event with a list of set dates counts once per
 // date, the way the screen's look-ahead treats it: each Battles & Brews night
 // is its own night to plan around.
-func boardUpcoming(events []Event, now time.Time, labels []string, claimed map[uuid.UUID]bool) []BoardEvent {
+func boardUpcoming(events []Event, now time.Time, labels []string, taken map[uuid.UUID]bool) []BoardEvent {
 	end := dayStart(now).AddDate(0, 0, boardHorizonDays)
 	type dated struct {
 		ev BoardEvent
@@ -150,7 +145,7 @@ func boardUpcoming(events []Event, now time.Time, labels []string, claimed map[u
 	var out []dated
 	for i := range events {
 		e := &events[i]
-		if !onTheWall(e) || e.RRule != "" || e.HeroAttachmentID == nil || claimed[e.ID] ||
+		if !onTheWall(e) || e.RRule != "" || e.HeroAttachmentID == nil || taken[e.ID] ||
 			slices.ContainsFunc(labels, e.HasLabel) {
 			continue
 		}
@@ -158,8 +153,7 @@ func boardUpcoming(events []Event, now time.Time, labels []string, claimed map[u
 			if occ.End.Before(now) {
 				continue
 			}
-			at := occ.Start.In(now.Location())
-			out = append(out, dated{boardEvent(e, at, now), at})
+			out = append(out, dated{boardEvent(e, occ, now), occ.Start})
 		}
 	}
 	slices.SortStableFunc(out, func(a, b dated) int { return a.at.Compare(b.at) })
@@ -177,14 +171,20 @@ func onTheWall(e *Event) bool {
 	return e.IsPubliclyVisible() && !e.IsStandingOffer() && e.Venue != VenueOffsite
 }
 
-// nextWithLabel is the soonest event carrying a label that is still to come.
-func nextWithLabel(events []Event, label string, now time.Time) (BoardEvent, bool) {
+// isFeaturedOnTheWall is what the featured panel shows: a featured night here,
+// with a poster to show for it.
+func isFeaturedOnTheWall(e *Event) bool {
+	return onTheWall(e) && e.IsFeatured() && e.HeroAttachmentID != nil
+}
+
+// nextMatching is the soonest public event that matches and is still to come.
+func nextMatching(events []Event, now time.Time, match func(*Event) bool) (BoardEvent, bool) {
 	var best BoardEvent
 	var bestAt time.Time
 	horizon := dayStart(now).AddDate(0, 0, boardLabelDays)
 	for i := range events {
 		e := &events[i]
-		if !e.IsPubliclyVisible() || !e.HasLabel(label) {
+		if !e.IsPubliclyVisible() || !match(e) {
 			continue
 		}
 		occ := nextOccurrence(e, now, horizon)
@@ -192,7 +192,7 @@ func nextWithLabel(events []Event, label string, now time.Time) (BoardEvent, boo
 			continue
 		}
 		bestAt = occ.Start
-		best = boardEvent(e, occ.Start.In(now.Location()), now)
+		best = boardEvent(e, *occ, now)
 	}
 	return best, !bestAt.IsZero()
 }
@@ -207,11 +207,16 @@ func nextOccurrence(e *Event, now, horizon time.Time) *Occurrence {
 	return nil
 }
 
-func boardEvent(e *Event, at, now time.Time) BoardEvent {
-	return BoardEvent{
+func boardEvent(e *Event, occ Occurrence, now time.Time) BoardEvent {
+	be := BoardEvent{
 		EventID:  e.ID,
 		Title:    strings.TrimSpace(e.Title),
-		When:     relativeDay(at, now, e.AllDay),
+		When:     relativeDay(occ.Start.In(now.Location()), now, e.AllDay),
+		Summary:  strings.TrimSpace(e.Summary),
 		PosterID: e.HeroAttachmentID,
 	}
+	if !e.AllDay {
+		be.Time = timeRange(occ.Start.In(now.Location()), occ.End.In(now.Location()))
+	}
+	return be
 }
