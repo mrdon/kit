@@ -254,10 +254,9 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .panel-label { font-family: var(--display); font-weight: 700; font-size: 21px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-hot); flex: 0 0 auto; margin-bottom: 22px; }
 
 /* Panel bodies stack from the top rather than centring in the leftover space.
-   The board runs on a TV with a dead backlight LED in the bottom right, so
-   anything that drifts down the panel lands in the dim corner. Top-aligning
-   keeps the copy in the lit two-thirds; the slack collects at the bottom
-   where nobody can read it anyway. */
+   This began as a workaround for a dead backlight LED in the old TV's bottom
+   right corner. The replacement TV has no dim corner, so the bottom of the
+   panel is as readable as the top: centre a panel if it reads better. */
 .ev-list { list-style: none; display: flex; flex-direction: column; justify-content: flex-start; gap: 34px; flex: 1 1 auto; }
 .ev { padding: 4px 0; }
 .ev-when { font-family: var(--mono); font-size: 15px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-hot); margin-bottom: 6px; }
@@ -272,9 +271,7 @@ body { display: grid; place-items: center; font-family: var(--beer); -webkit-fon
 .poster-wrap { flex: 1 1 auto; display: grid; place-items: start center; min-height: 0; }
 .poster { width: 100%; max-height: 100%; height: auto; object-fit: contain; border-radius: 4px; display: block; }
 /* The featured night's poster has the panel to itself, as large as it fits
-   and centred: it carries its own what and when, so it gets no label. This
-   one does reach toward the dim corner described above; a poster that has had
-   that much work put into it is worth the trade. */
+   and centred: it carries its own what and when, so it gets no label. */
 .panel-feature { padding: 14px; }
 .panel-feature .poster-wrap { place-items: center; }
 .panel-feature .poster { width: auto; max-width: 100%; height: 100%; }
