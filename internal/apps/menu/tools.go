@@ -83,11 +83,12 @@ func toolMetas() []services.ToolMeta {
 			Description: "Store an image the menu can show, by giving Kit a URL to fetch it from. " +
 				"Kit downloads and keeps the bytes, so the board page stays self-contained and the " +
 				"image does not travel inside every tap-list update. Reference it from a panel as " +
-				"\"asset:<key>\". Re-run with the same key to replace it.",
+				"\"asset:<key>\". Re-run with the same key to replace it. The url can also be a " +
+				"'pixabay:<id>' from find_stock_photos.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{
 				"key": services.Field("string", "Short name to reference this image by, e.g. 'anniversary'."),
-				"url": services.Field("string", "Public https URL of the image. Kit fetches it once; the page never fetches it."),
+				"url": services.Field("string", "Public https URL of the image, or 'pixabay:<id>'. Kit fetches it once; the page never fetches it."),
 			}, "key", "url"),
 		},
 		{
@@ -247,7 +248,11 @@ func saveAsset(ctx context.Context, pool *pgxpool.Pool, f *web.Fetcher, tenantID
 	if f == nil {
 		return "", errors.New("this surface cannot fetch images")
 	}
-	data, mime, err := f.FetchImage(ctx, strings.TrimSpace(args.URL))
+	src, err := imageSource(ctx, tenantID, strings.TrimSpace(args.URL))
+	if err != nil {
+		return "", err
+	}
+	data, mime, err := f.FetchImage(ctx, src)
 	if err != nil {
 		return "", err
 	}

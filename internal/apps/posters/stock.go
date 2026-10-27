@@ -81,3 +81,22 @@ func (a *App) stockAllowed(ctx context.Context, caller *services.Caller) bool {
 	s, err := getSettings(ctx, a.pool, caller.TenantID)
 	return err == nil && s.AllowStockPhotos && a.stockConfigured(ctx, caller.TenantID)
 }
+
+// StockPhotoURL resolves a pixabay:<id> reference to a URL its full-size
+// image can be downloaded from, for an app that keeps its own copy, such as
+// the menu board's stored images. Pixabay's download URLs expire, so this is
+// for fetching once, never for storing.
+func (a *App) StockPhotoURL(ctx context.Context, tenantID uuid.UUID, ref string) (string, error) {
+	key, err := a.pixabayKey(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if key == "" || a.pixabay == nil {
+		return "", errors.New("pixabay is not connected for this workspace")
+	}
+	s, err := a.pixabay.Lookup(ctx, key, ref)
+	if err != nil {
+		return "", err
+	}
+	return s.Large, nil
+}
