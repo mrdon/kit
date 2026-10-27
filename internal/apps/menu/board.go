@@ -88,6 +88,9 @@ const (
 	PanelAgenda = "agenda"
 	PanelPoster = "poster"
 	PanelCTA    = "cta"
+	// PanelSpotlight is a rotation of beers, shown only while on tap; see
+	// spotlight.go.
+	PanelSpotlight = "spotlight"
 )
 
 // Where a non-poster panel's image goes. Behind the text suits a photo that
@@ -118,6 +121,16 @@ type Panel struct {
 	// Source fills the panel from the events calendar each time the page
 	// loads; see event_panels.go.
 	Source string `json:"source,omitempty"`
+	// Group puts panels in one slot on the rail: they take turns, one per
+	// pass, so adding to a group never makes the rail longer.
+	Group string `json:"group,omitempty"`
+
+	// Spotlight.
+	Beers []SpotlightBeer `json:"beers,omitempty"`
+
+	// Detail is the style and ABV under a spotlit beer, from the tap list
+	// at render time. Never stored.
+	Detail string `json:"-"`
 	// Feature is set by the expansion, never stored: the panel is a featured
 	// poster, shown full size with no label.
 	Feature bool `json:"-"`
@@ -204,8 +217,10 @@ func (p *Panel) validate(i int) error {
 		if strings.TrimSpace(p.Headline) == "" {
 			return fmt.Errorf("%w: cta panel %d has no headline", ErrPayloadInvalid, i+1)
 		}
+	case PanelSpotlight:
+		return p.validateSpotlight(i)
 	default:
-		return fmt.Errorf("%w: panel %d has unknown kind %q (want agenda, poster, or cta)",
+		return fmt.Errorf("%w: panel %d has unknown kind %q (want agenda, poster, cta or spotlight)",
 			ErrPayloadInvalid, i+1, p.Kind)
 	}
 	return nil

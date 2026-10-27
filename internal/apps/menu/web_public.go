@@ -89,6 +89,7 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	gr := a.glutenReducedFor(r.Context(), tenant.ID)
 	applyGlutenReduced(board, gr)
+	board.Panels = expandSpotlight(board.Panels, board.Taps)
 	ev := a.applyEventPanels(r.Context(), tenant.ID, board, assets)
 
 	html, err := Render(board, assets, eventVersion(ev, liveVersion(row, hh, gr, loc)))

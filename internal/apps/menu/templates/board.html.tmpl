@@ -79,7 +79,7 @@
 
     <div class="rail" id="rail">
       {{- range $i, $p := .Panels }}
-      <section class="panel{{ if eq $i 0 }} is-on{{ end }}{{ if $p.Feature }} panel-feature{{ end }}{{ with $p.PhotoClass }} panel-photo {{ . }}{{ end }}">
+      <section class="panel{{ if eq $i 0 }} is-on{{ end }}{{ if $p.Feature }} panel-feature{{ end }}{{ with $p.PhotoClass }} panel-photo {{ . }}{{ end }}" data-slot="{{ $p.Slot }}">
         {{- if not $p.Feature }}
         <p class="panel-label">{{ $p.Label }}</p>
         {{- end }}
@@ -93,6 +93,15 @@
           </li>
           {{- end }}
         </ul>
+        {{- else if eq $p.Kind "spotlight" }}
+        <div class="spot">
+          {{- with $p.ImageURL }}
+          <div class="spot-photo"><img src="{{ . }}" alt="{{ $p.Alt }}"></div>
+          {{- end }}
+          <p class="spot-name">{{ $p.Headline }}</p>
+          <p class="spot-meta">{{ $p.Detail }}</p>
+          <p class="spot-body">{{ $p.Body }}</p>
+        </div>
         {{- else if eq $p.Kind "poster" }}
         {{- with $p.ImageURL }}
         <div class="poster-wrap"><img class="poster" src="{{ . }}" alt="{{ $p.Alt }}"></div>
@@ -269,11 +278,21 @@
   }
   setInterval(reloadIfStale, VERSION_POLL);
 
-  /* Rotate the side panel. Set up once: a new board arrives as a reload. */
-  var panels = document.querySelectorAll('.panel');
+  /* Rotate the side panel. Set up once: a new board arrives as a reload.
+
+     Panels sharing a group share a slot, and each pass round the rail shows
+     the next one in it. The pass is counted from the clock rather than from
+     page load, so a reload carries on through a group instead of starting it
+     over from its first panel every time a beer changes. */
+  var slots = [];
+  var all = document.querySelectorAll('.panel');
+  for (var n = 0; n < all.length; n++) {
+    var s = +all[n].getAttribute('data-slot');
+    (slots[s] = slots[s] || []).push(all[n]);
+  }
   var ticks = document.getElementById('ticks');
-  if (panels.length > 1) {
-    for (var j = 0; j < panels.length; j++) {
+  if (all.length > 1) {
+    for (var j = 0; j < slots.length; j++) {
       var t = document.createElement('div');
       t.className = 'tick';
       t.appendChild(document.createElement('i'));
@@ -282,6 +301,14 @@
     ticks.style.setProperty('--dwell', DWELL + 'ms');
 
     var at = 0;
+    var pass = Math.floor(Date.now() / (DWELL * slots.length));
+    var shown = null;
+    function show() {
+      var members = slots[at];
+      if (shown) { shown.classList.remove('is-on'); }
+      shown = members[pass % members.length];
+      shown.classList.add('is-on');
+    }
     function paintTicks() {
       for (var k = 0; k < ticks.children.length; k++) {
         var c = ticks.children[k];
@@ -292,12 +319,14 @@
       void live.offsetWidth;
       live.className = 'tick live';
     }
+    all[0].classList.remove('is-on');
+    show();
     paintTicks();
 
     setInterval(function () {
-      panels[at].classList.remove('is-on');
-      at = (at + 1) % panels.length;
-      panels[at].classList.add('is-on');
+      at = (at + 1) % slots.length;
+      if (at === 0) { pass++; }
+      show();
       paintTicks();
     }, DWELL);
   }

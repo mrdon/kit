@@ -112,6 +112,9 @@ type panelView struct {
 	// attribute: html/template rewrites a data: URI in CSS context to
 	// "#ZgotmplZ", so it would silently render no background at all.
 	PhotoClass string
+	// Slot is the panel's place in the rotation. Panels in one group share
+	// a slot, which takes the place of the group's first panel.
+	Slot int
 }
 
 // Render produces the whole self-contained page for a board.
@@ -137,17 +140,18 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 	}
 
 	panels := make([]panelView, len(b.Panels))
+	slots := panelSlots(b.Panels)
 	var photoCSS strings.Builder
 	for i, p := range b.Panels {
 		img := p.Image
 		if key, ok := strings.CutPrefix(img, AssetRef); ok {
 			img = assets[key]
 		}
-		v := panelView{Panel: p, ImageURL: template.URL(img)} //nolint:gosec // a data:image/ URI, validated in Panel.validate or built from stored bytes
-		// A poster is the panel's content and renders as an <img>, as does
-		// an image laid out above the text; otherwise the photo is
-		// atmosphere behind the text.
-		if img != "" && p.Kind != PanelPoster && p.ImageLayout != ImageAbove {
+		v := panelView{Panel: p, ImageURL: template.URL(img), Slot: slots[i]} //nolint:gosec // a data:image/ URI, validated in Panel.validate or built from stored bytes
+		// A poster or a spotlit beer is the panel's content and renders as
+		// an <img>, as does an image laid out above the text; otherwise the
+		// photo is atmosphere behind the text.
+		if img != "" && p.Kind != PanelPoster && p.Kind != PanelSpotlight && p.ImageLayout != ImageAbove {
 			v.PhotoClass = fmt.Sprintf("pnl-photo-%d", i)
 			fmt.Fprintf(&photoCSS, ".%s{--photo:url(%s)}\n", v.PhotoClass, img)
 		}
@@ -170,6 +174,26 @@ func Render(b *Board, assets map[string]string, version string) (string, error) 
 		return "", fmt.Errorf("rendering menu board: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// panelSlots numbers each panel's slot on the rail, counting a group once at
+// its first panel.
+func panelSlots(panels []Panel) []int {
+	slots := make([]int, len(panels))
+	byGroup := map[string]int{}
+	next := 0
+	for i, p := range panels {
+		if s, ok := byGroup[p.Group]; ok && p.Group != "" {
+			slots[i] = s
+			continue
+		}
+		slots[i] = next
+		if p.Group != "" {
+			byGroup[p.Group] = next
+		}
+		next++
+	}
+	return slots
 }
 
 // stylesheet is the embedded CSS with the one @font-face rule prepended.

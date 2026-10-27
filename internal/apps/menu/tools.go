@@ -68,7 +68,12 @@ func toolMetas() []services.ToolMeta {
 				"from the weekly series, and 'events:label:<label>' on a cta takes its image " +
 				"from the next event with that label. 'events:featured' on a poster panel " +
 				"shows the next featured night's poster filling the whole panel, no label " +
-				"(gone if none); that night gets no other poster. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
+				"(gone if none); that night gets no other poster. Panels with the same " +
+				"`group` share one slot on the rail, taking turns each pass, so grouping keeps " +
+				"the rail short. A spotlight panel takes `beers`, a list of {name, image, alt, " +
+				"blurb (at most 160 characters)}: the wall shows only those on tap, one per " +
+				"pass in one slot, with style and ABV from the tap list; name must match the " +
+				"tap list's. An image is 'asset:<key>' from set_menu_asset. NEVER write a " +
 				"one-off calendar date into a panel: stored text does not expire, so a date " +
 				"typed here is still on the wall long after the event; mark the event " +
 				"featured instead. Recurring wording " +
@@ -84,11 +89,12 @@ func toolMetas() []services.ToolMeta {
 				"Kit downloads and keeps the bytes, so the board page stays self-contained and the " +
 				"image does not travel inside every tap-list update. Reference it from a panel as " +
 				"\"asset:<key>\". Re-run with the same key to replace it. The url can also be a " +
-				"'pixabay:<id>' from find_stock_photos.",
+				"'pixabay:<id>' from find_stock_photos, or a 'photo:<id>' from search_photos " +
+				"for a photo in the workspace's own library.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{
 				"key": services.Field("string", "Short name to reference this image by, e.g. 'anniversary'."),
-				"url": services.Field("string", "Public https URL of the image, or 'pixabay:<id>'. Kit fetches it once; the page never fetches it."),
+				"url": services.Field("string", "Public https URL of the image, 'pixabay:<id>', or 'photo:<id>' from search_photos. Kit fetches it once; the page never fetches it."),
 			}, "key", "url"),
 		},
 		{
@@ -245,14 +251,7 @@ func saveAsset(ctx context.Context, pool *pgxpool.Pool, f *web.Fetcher, tenantID
 	if !keyPattern.MatchString(key) {
 		return "", ErrKeyInvalid
 	}
-	if f == nil {
-		return "", errors.New("this surface cannot fetch images")
-	}
-	src, err := imageSource(ctx, tenantID, strings.TrimSpace(args.URL))
-	if err != nil {
-		return "", err
-	}
-	data, mime, err := f.FetchImage(ctx, src)
+	data, mime, err := assetBytes(ctx, f, tenantID, strings.TrimSpace(args.URL))
 	if err != nil {
 		return "", err
 	}
@@ -262,6 +261,23 @@ func saveAsset(ctx context.Context, pool *pgxpool.Pool, f *web.Fetcher, tenantID
 	}
 	return fmt.Sprintf("Stored %q — %s, %d KB.\n\nUse it from a panel as %q.",
 		key, mime, len(data)/1024, AssetRef+key), nil
+}
+
+// assetBytes is the image behind a stored asset's source: a library photo, or
+// a fetch of a URL or stock reference.
+func assetBytes(ctx context.Context, f *web.Fetcher, tenantID uuid.UUID, src string) ([]byte, string, error) {
+	if strings.HasPrefix(src, photoRef) {
+		data, err := libraryPhoto(ctx, tenantID, src)
+		return data, "image/jpeg", err
+	}
+	if f == nil {
+		return nil, "", errors.New("this surface cannot fetch images")
+	}
+	url, err := imageSource(ctx, tenantID, src)
+	if err != nil {
+		return nil, "", err
+	}
+	return f.FetchImage(ctx, url)
 }
 
 // savePrintConfig validates and stores the printed menu's settings.

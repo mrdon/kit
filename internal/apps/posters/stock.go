@@ -100,3 +100,17 @@ func (a *App) StockPhotoURL(ctx context.Context, tenantID uuid.UUID, ref string)
 	}
 	return s.Large, nil
 }
+
+// LibraryPhotoJPEG renders one library photo, with its darktable look, as a
+// JPEG no larger than size on the long edge, for an app that keeps its own
+// copy, such as the menu board's stored images.
+func (a *App) LibraryPhotoJPEG(ctx context.Context, tenantID, id uuid.UUID, size int) ([]byte, error) {
+	p, err := getPhoto(ctx, a.pool, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if a.renderer == nil {
+		return nil, errors.New("the poster renderer is not configured")
+	}
+	return a.renderer.Photo(ctx, p.LookRef(size), size)
+}
