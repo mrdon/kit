@@ -210,7 +210,7 @@ func (p *Panel) validate(i int) error {
 			return fmt.Errorf("%w: agenda panel %d has no events", ErrPayloadInvalid, i+1)
 		}
 	case PanelPoster:
-		if p.Image == "" && p.Source != SourceUpcoming && p.Source != SourceFeatured {
+		if p.Image == "" && p.Source != SourceUpcoming && p.Source != SourceTonight && p.Source != SourceFeatured {
 			return fmt.Errorf("%w: poster panel %d has no image", ErrPayloadInvalid, i+1)
 		}
 	case PanelCTA:

@@ -64,6 +64,25 @@ func TestExpandEventPanels(t *testing.T) {
 	}
 }
 
+func TestTonightPanelsShareASlot(t *testing.T) {
+	a, b, c := uuid.New(), uuid.New(), uuid.New()
+	f := &events.BoardFeed{Upcoming: []events.BoardEvent{
+		{Title: "Cribbage Night", When: "Tonight", PosterID: &a},
+		{Title: "Lunch Thing", When: "Today", PosterID: &b},
+		{Title: "Broncos", When: "Sunday", PosterID: &c},
+	}}
+	got := expandEventPanels([]Panel{{Kind: PanelPoster, Source: SourceTonight}}, f)
+	if len(got) != 2 || got[0].Label != "Tonight · Cribbage Night" || got[1].Label != "Today · Lunch Thing" {
+		t.Fatalf("tonight = %+v", got)
+	}
+	if got[0].Group == "" || got[0].Group != got[1].Group {
+		t.Errorf("tonight posters do not share a slot: %q, %q", got[0].Group, got[1].Group)
+	}
+	if none := expandEventPanels([]Panel{{Kind: PanelPoster, Source: SourceTonight}}, &events.BoardFeed{}); len(none) != 0 {
+		t.Errorf("a night with nothing on left %+v", none)
+	}
+}
+
 func TestEventPanelValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name string

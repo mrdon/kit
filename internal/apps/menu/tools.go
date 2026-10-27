@@ -64,7 +64,8 @@ func toolMetas() []services.ToolMeta {
 				"text: use that for a logo or anything with lettering. Panels can follow the " +
 				"events calendar, expanded every time the page loads: `source` " +
 				"'events:upcoming' on a poster panel becomes one poster per one-off night at " +
-				"the brewery this week (none if none), 'events:weekly' on an agenda fills it " +
+				"the brewery this week (none if none), 'events:tonight' on a poster panel the same " +
+				"cut to today's nights not yet over, sharing one slot, 'events:weekly' on an agenda fills it " +
 				"from the weekly series, and 'events:label:<label>' on a cta takes its image " +
 				"from the next event with that label. 'events:featured' on a poster panel " +
 				"shows the next featured night's poster filling the whole panel, no label " +

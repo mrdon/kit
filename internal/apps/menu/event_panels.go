@@ -25,6 +25,9 @@ const (
 	// SourceUpcoming expands to one poster panel per one-off night at the
 	// brewery this week that has a poster, soonest first. None, if none.
 	SourceUpcoming = "events:upcoming"
+	// SourceTonight is the same posters cut to today's nights that are not
+	// over yet, sharing one slot when there are several. None, if none.
+	SourceTonight = "events:tonight"
 	// SourceWeekly fills an agenda with the series that repeat on a rule.
 	SourceWeekly = "events:weekly"
 	// SourceLabel takes a cta's image from the poster of the next event
@@ -63,7 +66,7 @@ func (p *Panel) validateEvents(i int) error {
 	switch {
 	case p.Source == "":
 		return nil
-	case p.Source == SourceUpcoming:
+	case p.Source == SourceUpcoming, p.Source == SourceTonight:
 		want = PanelPoster
 	case p.Source == SourceWeekly:
 		want = PanelAgenda
@@ -72,8 +75,8 @@ func (p *Panel) validateEvents(i int) error {
 	case strings.HasPrefix(p.Source, SourceLabel) && len(p.Source) > len(SourceLabel):
 		want = PanelCTA
 	default:
-		return fmt.Errorf("%w: panel %d has unknown source %q (want %s, %s, %s or %s<label>)",
-			ErrPayloadInvalid, i+1, p.Source, SourceUpcoming, SourceWeekly, SourceFeatured, SourceLabel)
+		return fmt.Errorf("%w: panel %d has unknown source %q (want %s, %s, %s, %s or %s<label>)",
+			ErrPayloadInvalid, i+1, p.Source, SourceUpcoming, SourceTonight, SourceWeekly, SourceFeatured, SourceLabel)
 	}
 	if p.Kind != want {
 		return fmt.Errorf("%w: panel %d source %q needs kind %q", ErrPayloadInvalid, i+1, p.Source, want)
@@ -131,10 +134,12 @@ func eventRequest(panels []Panel) (events.BoardRequest, bool) {
 // expandEventPanels is the pure half of applyEventPanels.
 func expandEventPanels(panels []Panel, f *events.BoardFeed) []Panel {
 	out := make([]Panel, 0, len(panels))
-	for _, p := range panels {
+	for i, p := range panels {
 		switch {
 		case p.Source == SourceUpcoming:
 			out = append(out, upcomingPanels(p, f.Upcoming)...)
+		case p.Source == SourceTonight:
+			out = append(out, tonightPanels(p, i, f.Upcoming)...)
 		case p.Source == SourceWeekly:
 			if p.Events = weeklyEvents(f.Weekly, p.Events); len(p.Events) > 0 {
 				out = append(out, p)
@@ -179,6 +184,20 @@ func featuredPanel(tmpl Panel, ev events.BoardEvent) Panel {
 	p.Image = AssetRef + posterAsset + ev.PosterID.String()
 	p.Alt = "Poster for " + ev.Title
 	return p
+}
+
+// tonightPanels is upcomingPanels for today only, every poster in one slot.
+func tonightPanels(tmpl Panel, i int, evs []events.BoardEvent) []Panel {
+	var today []events.BoardEvent
+	for _, ev := range evs {
+		if ev.When == "Tonight" || ev.When == "Today" {
+			today = append(today, ev)
+		}
+	}
+	if tmpl.Group == "" {
+		tmpl.Group = fmt.Sprintf("tonight-%d", i)
+	}
+	return upcomingPanels(tmpl, today)
 }
 
 // weeklyEvents turns the calendar's series into agenda lines. With nothing
