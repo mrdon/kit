@@ -89,8 +89,7 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	gr := a.glutenReducedFor(r.Context(), tenant.ID)
 	applyGlutenReduced(board, gr)
-	board.Panels = expandSpotlight(board.Panels, board.Taps)
-	ev := a.applyEventPanels(r.Context(), tenant.ID, board, assets)
+	ev := a.expandPanels(r.Context(), tenant.ID, board, assets)
 
 	html, err := Render(board, assets, eventVersion(ev, liveVersion(row, hh, gr, loc)))
 	if err != nil {
@@ -193,7 +192,16 @@ func (a *App) eventStamp(ctx context.Context, tenantID uuid.UUID, row *BoardRow)
 	if err != nil {
 		return ""
 	}
-	return a.applyEventPanels(ctx, tenantID, board, nil)
+	return a.expandPanels(ctx, tenantID, board, nil)
+}
+
+// expandPanels is every render-time panel expansion, and the only place one
+// is applied, so the page and the version it polls hash the same panels. When
+// they hashed different ones, the stamp never matched and the wall reloaded
+// every poll.
+func (a *App) expandPanels(ctx context.Context, tenantID uuid.UUID, b *Board, assets map[string]string) string {
+	b.Panels = expandSpotlight(b.Panels, b.Taps)
+	return a.applyEventPanels(ctx, tenantID, b, assets)
 }
 
 // glutenReducedFor loads the gluten reduced list for the wall. A failure to

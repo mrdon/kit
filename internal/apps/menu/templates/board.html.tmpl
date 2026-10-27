@@ -303,10 +303,9 @@
     var at = 0;
     var pass = Math.floor(Date.now() / (DWELL * slots.length));
     var shown = null;
-    function show() {
-      var members = slots[at];
+    function show(el) {
       if (shown) { shown.classList.remove('is-on'); }
-      shown = members[pass % members.length];
+      shown = el || slots[at][pass % slots[at].length];
       shown.classList.add('is-on');
     }
     function paintTicks() {
@@ -323,12 +322,33 @@
     show();
     paintTicks();
 
-    setInterval(function () {
+    function advance() {
       at = (at + 1) % slots.length;
       if (at === 0) { pass++; }
       show();
       paintTicks();
-    }, DWELL);
+    }
+    var timer = setInterval(advance, DWELL);
+
+    /* Arrow keys step through every panel, each member of a group in turn,
+       so a whole rotation can be checked without waiting it out. The timer
+       restarts, so the panel stepped to gets its full dwell. */
+    document.addEventListener('keydown', function (e) {
+      var dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!dir) { return; }
+      var flat = [];
+      for (var s = 0; s < slots.length; s++) {
+        for (var m = 0; m < slots[s].length; m++) { flat.push({ slot: s, el: slots[s][m] }); }
+      }
+      var i = 0;
+      while (i < flat.length && flat[i].el !== shown) { i++; }
+      var next = flat[(i + dir + flat.length) % flat.length];
+      at = next.slot;
+      show(next.el);
+      paintTicks();
+      clearInterval(timer);
+      timer = setInterval(advance, DWELL);
+    });
   }
 })();
 </script>

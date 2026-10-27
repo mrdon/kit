@@ -1,9 +1,15 @@
 package menu
 
 import (
+	"context"
 	"errors"
+	"html/template"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/mrdon/kit/internal/apps/events"
 )
 
 func TestExpandSpotlightShowsOnlyWhatIsPouring(t *testing.T) {
@@ -100,5 +106,39 @@ func TestRenderSharesASlot(t *testing.T) {
 	}
 	if !strings.Contains(html, `class="spot-name">Wicked Nebula`) || !strings.Contains(html, "IPA · 6.5%") {
 		t.Error("spotlight did not render its beer")
+	}
+}
+
+type stubFeed struct{ f *events.BoardFeed }
+
+func (s stubFeed) BoardFeed(context.Context, uuid.UUID, events.BoardRequest) (*events.BoardFeed, error) {
+	return s.f, nil
+}
+
+func (s stubFeed) BoardPoster(context.Context, uuid.UUID, uuid.UUID) template.URL { return "" }
+
+// The page and the version it polls must stamp the same panels, or the wall
+// reloads every poll: the spotlight once expanded on one path only.
+func TestPageAndVersionStampAgree(t *testing.T) {
+	orig := boardEvents
+	t.Cleanup(func() { boardEvents = orig })
+	poster := uuid.New()
+	boardEvents = func() eventFeed {
+		return stubFeed{&events.BoardFeed{Today: "2026-10-27", Upcoming: []events.BoardEvent{{Title: "Halloween", PosterID: &poster}}}}
+	}
+	board := func() *Board {
+		return &Board{
+			Taps: []Tap{{Name: "Wicked Nebula", Section: "IPA"}},
+			Panels: []Panel{
+				{Kind: PanelPoster, Source: SourceUpcoming},
+				{Kind: PanelSpotlight, Beers: []SpotlightBeer{{Name: "Wicked Nebula", Image: "asset:n", Blurb: "Hazy."}}},
+			},
+		}
+	}
+	a := &App{}
+	page := a.expandPanels(context.Background(), uuid.New(), board(), map[string]string{})
+	version := a.expandPanels(context.Background(), uuid.New(), board(), nil)
+	if page == "" || page != version {
+		t.Errorf("page stamp %q, version stamp %q", page, version)
 	}
 }
