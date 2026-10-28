@@ -72,6 +72,11 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 	}
 
 	rows = mergeExtras(rows, cfg.Extras)
+	out, err := LoadEightySix(ctx, a.pool, tenant.ID)
+	if err != nil {
+		return PrintMenu{}, err
+	}
+	rows = dropEightySixRows(rows, out)
 	if err := a.markGlutenReduced(ctx, tenant.ID, rows); err != nil {
 		return PrintMenu{}, err
 	}

@@ -27,6 +27,12 @@ const DEVICE_TILES: DeviceTile[] = [
     blurb: 'Start it or end it. The board and Square follow.',
   },
   {
+    cap: 'menu.eighty_six',
+    to: '/device/86',
+    title: '86',
+    blurb: 'Out of a beer? Tick it and the screen and the menu drop it.',
+  },
+  {
     cap: 'menu.print',
     to: '/device/print',
     title: 'Print the menu',

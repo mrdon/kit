@@ -158,7 +158,7 @@ func toolMetas() []services.ToolMeta {
 			Schema:    services.Props(map[string]any{}),
 		},
 	}
-	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta())
+	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta())
 }
 
 // setSourceArgs is the shared input shape for set_menu_source.
@@ -486,6 +486,7 @@ func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uui
 	b.WriteString(describePrint(ctx, pool, tenantID))
 	b.WriteString(describeHappyHour(ctx, a, tenantID))
 	b.WriteString(describeGlutenReduced(ctx, pool, tenantID))
+	b.WriteString(describeEightySix(ctx, pool, tenantID))
 
 	assets, err := ListAssetKeys(ctx, a.pool, tenantID)
 	if err != nil {

@@ -33,6 +33,7 @@ import Admin from './pages/Admin';
 import Devices from './pages/Devices';
 import DeviceHappyHour from './pages/device/DeviceHappyHour';
 import DeviceGlutenReduced from './pages/device/DeviceGlutenReduced';
+import DeviceEightySix from './pages/device/DeviceEightySix';
 import DeviceScreens from './pages/device/DeviceScreens';
 import DevicePrint from './pages/device/DevicePrint';
 import DeviceTopper from './pages/device/DeviceTopper';
@@ -106,6 +107,7 @@ createRoot(document.getElementById('root')!).render(
               APIs as the admin pages, gated by the device's capabilities. */}
           <Route path="/device/happy-hour" element={<DeviceHappyHour />} />
           <Route path="/device/gluten-reduced" element={<DeviceGlutenReduced />} />
+          <Route path="/device/86" element={<DeviceEightySix />} />
           <Route path="/device/screens" element={<DeviceScreens />} />
           <Route path="/device/print" element={<DevicePrint />} />
           <Route path="/device/topper" element={<DeviceTopper />} />

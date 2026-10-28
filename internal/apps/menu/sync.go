@@ -189,6 +189,7 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 		res.Err = err
 		return res
 	}
+	a.pruneEightySix(ctx, tenantID, taps)
 	res.Changed = true
 	return res
 }

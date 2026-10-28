@@ -204,6 +204,8 @@ export const menuApi = {
   menuPrintNotes: () => apiGet<{ beers: MenuPrintBeer[] }>('/menu/print/notes'),
   saveMenuPrintNote: (name: string, text: string) =>
     apiPut<{ beers: MenuPrintBeer[] }>('/menu/print/notes', { name, text }),
+  eightySix: () => apiGet<GlutenReduced>('/menu/86'),
+  saveEightySix: (beers: string[]) => apiPut<GlutenReduced>('/menu/86', { beers }),
   glutenReduced: () => apiGet<GlutenReduced>('/menu/gluten-reduced'),
   saveGlutenReduced: (beers: string[]) =>
     apiPut<GlutenReduced>('/menu/gluten-reduced', { beers }),

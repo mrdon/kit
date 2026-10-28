@@ -11,10 +11,15 @@ import (
 
 func registerAgentTools(_ context.Context, registerer any, caller *services.Caller, isAdmin bool, a *App) {
 	r, ok := registerer.(*tools.Registry)
-	if !ok || !isAdmin || caller == nil || a.svc == nil {
+	if !ok || caller == nil || a.svc == nil {
 		return
 	}
+	// Members get the tools that are not admin only, which is set_menu_86:
+	// whoever finds the keg blown is the one who should be able to say so.
 	for _, meta := range toolMetas() {
+		if meta.AdminOnly && !isAdmin {
+			continue
+		}
 		r.Register(tools.Def{
 			Name:        meta.Name,
 			Description: meta.Description,
@@ -54,6 +59,10 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 	case "set_menu_gluten_reduced":
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
 			return setGlutenReduced(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
+		}
+	case "set_menu_86":
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return setEightySix(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
 		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {

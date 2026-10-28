@@ -98,6 +98,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 		registerPrintRoutes(mux, a)
 		registerHappyHourRoutes(mux, a)
 		registerGlutenReducedRoutes(mux, a)
+		registerEightySixRoutes(mux, a)
 	}
 }
 

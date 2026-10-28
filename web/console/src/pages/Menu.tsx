@@ -4,6 +4,7 @@ import { api, type MenuBoard } from '../api';
 import { useSetChatContext } from '../chatContext';
 import { useMe } from '../me';
 import MenuGlutenReduced from './MenuGlutenReduced';
+import MenuEightySix from './MenuEightySix';
 import { SLUG } from '../workspace';
 
 // The Menu page exists to answer one question: what URL do I paste into the
@@ -147,6 +148,8 @@ export default function Menu() {
           both: the screen and the paper read the same list. Admin-only, like
           the endpoint behind it. */}
       {board && !board.empty && me?.is_admin && <MenuGlutenReduced />}
+
+      {board && !board.empty && <MenuEightySix />}
 
       {board && !board.empty && (
         <section className="panel">

@@ -17,6 +17,7 @@ const (
 	CapMenuHappyHour     = "menu.happy_hour"
 	CapMenuGlutenReduced = "menu.gluten_reduced"
 	CapMenuPrint         = "menu.print"
+	CapMenuEightySix     = "menu.eighty_six"
 	CapKioskRepoint      = "kiosk.repoint"
 	CapTriviaHost        = "trivia.host"
 	CapEventsTopper      = "events.topper"
@@ -47,6 +48,7 @@ var Capabilities = []Capability{
 	{Name: CapMenuHappyHour, Label: "Start and end happy hour", Human: HumanAdmin},
 	{Name: CapMenuPrint, Label: "Print the menu", Human: HumanMember},
 	{Name: CapMenuGlutenReduced, Label: "Tick gluten reduced beers", Human: HumanAdmin},
+	{Name: CapMenuEightySix, Label: "86 beers that have run out", Human: HumanMember},
 	{Name: CapEventsTopper, Label: "Print the table topper and entrance sign", Human: HumanMember},
 	{Name: CapKioskRepoint, Label: "Repoint wall screens", Human: HumanMember},
 	{Name: CapTriviaHost, Label: "Host trivia", Human: HumanMember},
