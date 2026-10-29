@@ -14,6 +14,7 @@ import TriviaQuestions from './pages/TriviaQuestions';
 import Menu from './pages/Menu';
 import MenuPrintSettings from './pages/MenuPrintSettings';
 import MenuHappyHour from './pages/MenuHappyHour';
+import MenuEightySixChannel from './pages/MenuEightySixChannel';
 import Widget from './pages/Widget';
 import Tasks from './pages/Tasks';
 import EmailIntakeSettings from './pages/EmailIntakeSettings';
@@ -116,6 +117,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/admin/trivia" element={<TriviaQuestions />} />
           <Route path="/admin/menu" element={<MenuPrintSettings />} />
           <Route path="/admin/happy-hour" element={<MenuHappyHour />} />
+          <Route path="/admin/menu-86" element={<MenuEightySixChannel />} />
           <Route path="/admin/events" element={<EventsSettingsPage />} />
           <Route path="/admin/events-staff" element={<EventsStaffPage />} />
           <Route path="/admin/events-channels" element={<EventsChannelsPage />} />

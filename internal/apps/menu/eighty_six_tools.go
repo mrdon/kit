@@ -127,7 +127,8 @@ func (a *App) tapNames(ctx context.Context, tenantID uuid.UUID) ([]string, error
 }
 
 // setEightySix is the handler both surfaces call.
-func setEightySix(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.UUID, raw []byte) (string, error) {
+func setEightySix(ctx context.Context, pool *pgxpool.Pool, a *App, caller *services.Caller, raw []byte) (string, error) {
+	tenantID := caller.TenantID
 	args, err := parseEightySixArgs(raw)
 	if err != nil {
 		return "", err
@@ -159,7 +160,7 @@ func setEightySix(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid
 		}
 	}
 	next = tidyBeerNames(next)
-	if err := SaveEightySix(ctx, pool, tenantID, next); err != nil {
+	if err := a.saveEightySixBy(ctx, tenantID, caller, current, next); err != nil {
 		return "", err
 	}
 	return eightySixSummary(next) + "\nThe menu board follows this already; the printed menu " +

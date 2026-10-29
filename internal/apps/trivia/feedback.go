@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mrdon/kit/internal/crypto"
-	"github.com/mrdon/kit/internal/models"
 	kitslack "github.com/mrdon/kit/internal/slack"
 )
 
@@ -122,21 +121,7 @@ func (s *slackFeedback) client(ctx context.Context, tenantID uuid.UUID) (*kitsla
 
 // tenantSlackClient builds a client with the workspace's bot token.
 func tenantSlackClient(ctx context.Context, pool *pgxpool.Pool, enc *crypto.Encryptor, tenantID uuid.UUID) (*kitslack.Client, error) {
-	if enc == nil {
-		return nil, errors.New("slack is not configured on this deployment")
-	}
-	tenant, err := models.GetTenantByID(ctx, pool, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("loading tenant: %w", err)
-	}
-	if tenant == nil {
-		return nil, fmt.Errorf("tenant %s not found", tenantID)
-	}
-	botToken, err := enc.Decrypt(tenant.BotToken)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting bot token: %w", err)
-	}
-	return kitslack.NewClient(botToken), nil
+	return kitslack.TenantClient(ctx, pool, enc, tenantID)
 }
 
 // post sends to the channel the workspace picked.

@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client';
+import type { TriviaFeedbackChannel } from './events.types';
 
 // A kiosk board: one unattended screen. `key` is baked into the machine's
 // browser homepage, so it is the stable half; `public_url` is what an admin
@@ -206,6 +207,10 @@ export const menuApi = {
     apiPut<{ beers: MenuPrintBeer[] }>('/menu/print/notes', { name, text }),
   eightySix: () => apiGet<GlutenReduced>('/menu/86'),
   saveEightySix: (beers: string[]) => apiPut<GlutenReduced>('/menu/86', { beers }),
+  // Same shape as trivia's ratings channel: the setting plus the picker.
+  eightySixChannel: () => apiGet<TriviaFeedbackChannel>('/menu/86/channel'),
+  saveEightySixChannel: (channelId: string) =>
+    apiPut<TriviaFeedbackChannel>('/menu/86/channel', { channel_id: channelId }),
   glutenReduced: () => apiGet<GlutenReduced>('/menu/gluten-reduced'),
   saveGlutenReduced: (beers: string[]) =>
     apiPut<GlutenReduced>('/menu/gluten-reduced', { beers }),

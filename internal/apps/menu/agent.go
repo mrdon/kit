@@ -62,7 +62,7 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		}
 	case "set_menu_86":
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
-			return setEightySix(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
+			return setEightySix(ec.Ctx, ec.Pool, a, ec.Caller(), raw)
 		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {

@@ -124,6 +124,13 @@ export const SECTIONS: Section[] = [
     app: 'menu',
   },
   {
+    to: '/admin/menu-86',
+    label: '86 alerts',
+    blurb: 'The Slack channel told when someone 86s a beer.',
+    admin: true,
+    app: 'menu',
+  },
+  {
     to: '/admin/events',
     label: 'Events calendar & feed',
     blurb: 'Pick the calendar events sync to, and the feed your website builds from.',

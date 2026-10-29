@@ -9,6 +9,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/crypto"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/web"
 )
@@ -30,6 +31,8 @@ type App struct {
 	signer  *auth.SessionSigner
 	fetcher *web.Fetcher
 	baseURL string
+	// enc unlocks the bot token 86s are posted to Slack with. Nil posts nothing.
+	enc *crypto.Encryptor
 }
 
 // Init builds the service once the pool exists. Called by apps.Init.
@@ -39,16 +42,17 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.registerScheduledTasks()
 }
 
-// Configure wires the console session signer and the external base URL used
-// to render a board's copyable public link — the string an admin pastes into
-// a kiosk board.
-func Configure(signer *auth.SessionSigner, fetcher *web.Fetcher, baseURL string) {
+// Configure wires the console session signer, the external base URL used to
+// render a board's copyable public link — the string an admin pastes into a
+// kiosk board — and the encryptor for the bot token 86s are posted with.
+func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner, fetcher *web.Fetcher, baseURL string) {
 	if instance == nil {
 		return
 	}
 	instance.signer = signer
 	instance.fetcher = fetcher
 	instance.baseURL = baseURL
+	instance.enc = enc
 }
 
 func (a *App) Name() string { return AppName }
@@ -99,6 +103,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 		registerHappyHourRoutes(mux, a)
 		registerGlutenReducedRoutes(mux, a)
 		registerEightySixRoutes(mux, a)
+		registerEightySixChannelRoutes(mux, a)
 	}
 }
 

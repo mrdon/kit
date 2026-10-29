@@ -49,7 +49,14 @@ func (a *App) handleSaveEightySix(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not read the list: " + err.Error()})
 		return
 	}
-	if err := SaveEightySix(r.Context(), a.pool, tenant.ID, body.Beers); err != nil {
+	prev, err := LoadEightySix(r.Context(), a.pool, tenant.ID)
+	if err != nil {
+		slog.Error("loading 86'd beers", "tenant_id", tenant.ID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	caller := auth.CallerFromContext(r.Context())
+	if err := a.saveEightySixBy(r.Context(), tenant.ID, caller, prev, body.Beers); err != nil {
 		slog.Error("saving 86'd beers", "tenant_id", tenant.ID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return

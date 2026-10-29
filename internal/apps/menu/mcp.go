@@ -116,7 +116,7 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 			if err != nil {
 				return "", fmt.Errorf("reading %s arguments: %w", name, err)
 			}
-			return setEightySix(ctx, pool, a, c.TenantID, raw)
+			return setEightySix(ctx, pool, a, c, raw)
 		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
