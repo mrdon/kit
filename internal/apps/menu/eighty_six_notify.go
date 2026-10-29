@@ -94,16 +94,21 @@ func newlyEightySixed(prev, next []string) []string {
 	return added
 }
 
-// eightySixWho names whoever did it: a person as a mention, a device or a
-// job by its label.
+// eightySixWho says who did it: a person as a mention, a job by its name.
+// Most 86s come from the taproom device, whose login is the device and not
+// whoever is holding it, so the best there is says which device.
 func eightySixWho(c *services.Caller) string {
 	switch {
 	case c == nil:
 		return ""
 	case c.IsUser() && c.Identity != "":
-		return "<@" + c.Identity + ">"
+		return " by <@" + c.Identity + ">"
+	case c.Label == "":
+		return ""
+	case c.Kind == services.CallerDevice:
+		return " on " + slackEscape(c.Label)
 	default:
-		return slackEscape(c.Label)
+		return " by " + slackEscape(c.Label)
 	}
 }
 
@@ -113,11 +118,7 @@ func eightySixText(beers []string, who string) string {
 	for _, b := range beers {
 		names = append(names, "*"+slackEscape(b)+"*")
 	}
-	text := ":no_entry_sign: 86'd: " + strings.Join(names, ", ")
-	if who != "" {
-		text += " (by " + who + ")"
-	}
-	return text + ". It's off the menu board and the printed menu until it's back on tap."
+	return strings.Join(names, ", ") + " 86'd" + who
 }
 
 // slackEscape neutralises the three characters Slack treats as markup.

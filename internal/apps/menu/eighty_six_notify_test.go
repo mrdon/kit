@@ -25,9 +25,10 @@ func TestEightySixWhoNamesTheActor(t *testing.T) {
 		caller *services.Caller
 		want   string
 	}{
-		{&services.Caller{Kind: services.CallerUser, Identity: "U123"}, "<@U123>"},
-		{&services.Caller{Kind: services.CallerDevice, Label: "Bar <iPad>"}, "Bar &lt;iPad&gt;"},
-		{&services.Caller{Kind: services.CallerAgent, Identity: "U123", Label: "Keg check job"}, "Keg check job"},
+		{&services.Caller{Kind: services.CallerUser, Identity: "U123"}, " by <@U123>"},
+		{&services.Caller{Kind: services.CallerDevice, Label: "Bar <iPad>"}, " on Bar &lt;iPad&gt;"},
+		{&services.Caller{Kind: services.CallerAgent, Identity: "U123", Label: "Keg check job"}, " by Keg check job"},
+		{&services.Caller{Kind: services.CallerDevice}, ""},
 		{nil, ""},
 	}
 	for _, c := range cases {
@@ -38,11 +39,11 @@ func TestEightySixWhoNamesTheActor(t *testing.T) {
 }
 
 func TestEightySixTextEscapesBeerNames(t *testing.T) {
-	got := eightySixText([]string{"Hazy <!channel> IPA", "Stout"}, "<@U1>")
+	got := eightySixText([]string{"Hazy <!channel> IPA", "Stout"}, " by <@U1>")
 	if strings.Contains(got, "<!channel>") {
 		t.Errorf("text %q would ping the channel", got)
 	}
-	if !strings.Contains(got, "*Stout*") || !strings.Contains(got, "(by <@U1>)") {
+	if !strings.Contains(got, "*Stout*") || !strings.HasSuffix(got, " 86'd by <@U1>") {
 		t.Errorf("text %q is missing the beer or who", got)
 	}
 }
