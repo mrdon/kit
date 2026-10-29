@@ -15,7 +15,8 @@ import (
 // on today to someone who is already inside.
 //
 // A poster sells a night ahead of time; this greets the people who came. So it
-// says "Tonight" rather than a date, puts every one of the day's events on one
+// says "Tonight" rather than a date -- so a sheet printed for one Tuesday can
+// go back on the stand the next time the day's lineup repeats -- puts every one of the day's events on one
 // page, and leaves the standing offers to a single line at the foot. When a
 // poster really is the right thing for the stand, the print route takes a
 // poster= instead and prints that, fitted to the page.
@@ -35,7 +36,7 @@ const signEveningHour = 16
 type SignEvent struct {
 	EventID  uuid.UUID
 	Title    string
-	Time     string // "6:30pm"; empty for an all-day event
+	Time     string // "3 to 5pm", or "6:30pm" with no end; empty for an all-day event
 	Lines    []string
 	Poster   *signImage
 	posterID *uuid.UUID
@@ -45,7 +46,7 @@ type SignEvent struct {
 // Sign is everything one entrance sign shows.
 type Sign struct {
 	Heading string // "Tonight at Gravity Brewing"
-	Date    string // "Tuesday, October 27"
+	Date    string // "Tuesday, October 27"; for the taproom picker, never printed
 	Events  []SignEvent
 	Also    []string // standing offers and overflow: "Happy Hour · 3pm"
 	Site    string
@@ -115,9 +116,9 @@ func composeSign(events []Event, day time.Time, venue string) Sign {
 			at := occ.Start.In(day.Location())
 			se := SignEvent{EventID: e.ID, Title: strings.TrimSpace(e.Title), posterID: e.HeroAttachmentID, at: at}
 			if !e.AllDay {
-				se.Time = topperTime(at)
+				se.Time = signTime(e, at, occ.End.In(day.Location()))
 			}
-			se.Lines = topperBullets(e, bandFacts{Weekday: at.Format("Monday"), Time: se.Time, Title: se.Title})
+			se.Lines = topperBullets(e, bandFacts{Weekday: at.Format("Monday"), Time: topperTime(at), Title: se.Title})
 			picks = append(picks, pick{se, topperOccurrence{at: at, prominence: e.Prominence}, e.IsStandingOffer()})
 		}
 	}
@@ -135,6 +136,16 @@ func composeSign(events []Event, day time.Time, venue string) Sign {
 	slices.SortStableFunc(s.Events, func(a, b SignEvent) int { return a.at.Compare(b.at) })
 	s.Heading = signWhen(s.Events) + " at " + venue
 	return s
+}
+
+// signTime is the span when the event has a real end -- "3 to 5pm" is the
+// whole point of a happy hour -- and just the start otherwise, since End()
+// would invent an hour nobody set.
+func signTime(e *Event, start, end time.Time) string {
+	if e.EndsAt == nil {
+		return topperTime(start)
+	}
+	return timeRange(start, end)
 }
 
 // signWhen is "Tonight" when everything on the sign is an evening thing.

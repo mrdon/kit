@@ -109,7 +109,8 @@ func signCentre(pdf *fpdf.Fpdf, s string, baseline float64) {
 	pdf.Text((signW-pdf.GetStringWidth(s))/2, baseline, s)
 }
 
-// drawSignHead draws the heading and date and returns where the events start.
+// drawSignHead draws the heading and returns where the events start. No date:
+// the same lineup on another day reuses the sheet.
 func drawSignHead(pdf *fpdf.Fpdf, s Sign) float64 {
 	inner := signW - 2*signMargin
 	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
@@ -118,10 +119,6 @@ func drawSignHead(pdf *fpdf.Fpdf, s Sign) float64 {
 	pdf.SetFont(fontDisplay, "", size)
 	y := signAccent + 10 + ptToMM(size)*0.75
 	signCentre(pdf, head, y)
-
-	pdf.SetFont(fontText, "", 20)
-	y += 11
-	signCentre(pdf, spaced(strings.ToUpper(s.Date)), y)
 	return y + 9
 }
 
