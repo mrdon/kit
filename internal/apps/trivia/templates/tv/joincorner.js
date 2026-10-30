@@ -61,7 +61,7 @@ function renderJoinCorner() {
 
   // The board gets the corner at full size: it is the phase with the most
   // empty stage and the most time, so it is where a latecomer will actually
-  // get their phone out, and a 220px code is one anybody can scan from a
+  // get their phone out, and a 250px code is one anybody can scan from a
   // table away.
   //
   // Every other phase gets the COMPACT form, which is short enough to sit

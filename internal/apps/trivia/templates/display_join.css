@@ -16,7 +16,7 @@
    width, and the line below wraps into it. */
 #joincorner {
   position: absolute; right: 48px; bottom: 44px; z-index: 30;
-  display: none; text-align: center; width: 300px;
+  display: none; text-align: center; width: 330px;
   padding: 18px 20px 16px; border-radius: 24px;
   background: rgba(0, 0, 0, .42); border: 3px solid var(--line);
   animation: jc-in .45s cubic-bezier(.2, .9, .3, 1.1) both;
@@ -33,11 +33,11 @@
 }
 /* The QR is the same generated SVG as the lobby's, sized down here rather than
    rendered twice: it carries width/height attributes, and a CSS width beats
-   them. 220px on a 1920 stage is roughly a 140mm square on a 55" panel, which
+   them. 250px on a 1920 stage is roughly a 160mm square on a 55" panel, which
    scans from a table away -- which is the range that matters, because nobody
    walks up to a wall to join. */
 .jc-qr svg {
-  display: block; width: 220px; height: 220px;
+  display: block; width: 250px; height: 250px;
   border-radius: 14px; background: #fff;
 }
 .jc-url {
@@ -50,14 +50,14 @@
    above it keep its full width on the one screen that has the least to spare.
    The QR shrinks and stays square; everything else stacks beside it. */
 #joincorner.small {
-  display: none; padding: 14px 18px; text-align: left; width: 400px;
+  display: none; padding: 12px 18px; text-align: left; width: 420px;
 }
 #joincorner.small.on {
   display: grid; grid-template-columns: auto auto; align-items: center; gap: 18px;
   grid-template-areas: "qr label" "qr url";
 }
 #joincorner.small .jc-qr { grid-area: qr; }
-#joincorner.small .jc-qr svg { width: 130px; height: 130px; border-radius: 10px; }
+#joincorner.small .jc-qr svg { width: 150px; height: 150px; border-radius: 10px; }
 #joincorner.small .jc-label { grid-area: label; margin: 0; font-size: 20px; align-self: end; }
 #joincorner.small .jc-url { grid-area: url; margin: 0; font-size: 16px; align-self: start; }
 
@@ -87,7 +87,7 @@
    instead would have cost a whole row of tiles most of its face, whereas a
    column that is 20% narrower still sets $1,000 at the size `fitCellValues`
    was always going to shrink it to anyway. */
-#s-board.cornered { padding-right: 380px; }
+#s-board.cornered { padding-right: 410px; }
 /* On the cards screen only the FOOTER gives ground, because the compact form
    is short enough to stay inside its band. The countdown ring and the answer
    band are both centred in that row, so they simply shift; the DECK ABOVE
@@ -98,12 +98,12 @@
    them, to make room for a code -- and the cards are what the room is looking
    at. Reveal reserves on the right, scoring on the left, because scoring's
    right-hand 540px is already the standings rail. */
-.cards-screen.cornered .cards-footer { padding-right: 490px; }
-.cards-screen.cornered-left .cards-footer { padding-left: 490px; }
+.cards-screen.cornered .cards-footer { padding-right: 510px; }
+.cards-screen.cornered-left .cards-footer { padding-left: 510px; }
 /* The question screen gives up the right of its BOTTOM ROW only -- the
    answered bars and the count. The strip is told not to wrap here: at
    eighteen tables the bars no longer fit at full width, and a wrapped second
    row lands on the count. Squeezed, they still read as a row of tables. The
    question text and the ring above keep the full width. */
-#s-question.cornered .q-wrap > div:last-child { padding-right: 460px; }
+#s-question.cornered .q-wrap > div:last-child { padding-right: 480px; }
 #s-question.cornered .answered-strip { flex-wrap: nowrap; }
