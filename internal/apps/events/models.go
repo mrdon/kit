@@ -342,6 +342,12 @@ func listEvents(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f L
 	// precise matters more here than it does for rules -- date lists are finite
 	// by nature, and a blanket exemption would pin every finished series to the
 	// top of the list forever.
+	//
+	// The bound is when the event ENDS, so it stays listed while it is on. An
+	// all-day event is stored as local midnight of its (inclusive) last day,
+	// so it ends at the next local midnight -- comparing the stored value
+	// itself dropped a Halloween party off the website at 12:01am on
+	// Halloween. A timed event with no end runs an hour, as Event.End says.
 	rows, err := pool.Query(ctx, `
 		SELECT `+eventColumns+`
 		FROM app_events
@@ -351,7 +357,11 @@ func listEvents(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f L
 		  AND ($4::timestamptz IS NULL
 		       OR rrule IS NOT NULL
 		       OR greatest(
-		            coalesce(ends_at, starts_at),
+		            CASE WHEN all_day
+		              THEN ((coalesce(ends_at, starts_at) AT TIME ZONE timezone)::date + 1)::timestamp
+		                     AT TIME ZONE timezone
+		              ELSE coalesce(ends_at, starts_at + interval '1 hour')
+		            END,
 		            (SELECT max(d) FROM unnest(rdates) AS d)
 		          ) >= $4)
 		  AND ($5::timestamptz IS NULL OR starts_at < $5)
