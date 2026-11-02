@@ -19,8 +19,9 @@ const (
 	// bare Caller{} literal in a test still behaves as a person.
 	CallerUser CallerKind = "user"
 	// CallerDevice is a paired shared device (the trivia laptop, the bar
-	// iPad). It holds capabilities, not roles, and no human is accountable
-	// per action.
+	// iPad). Capabilities decide which console pages it may use; the roles
+	// assigned to it decide what Kit knowledge it can see. It is never an
+	// admin, and no human is accountable per action.
 	CallerDevice CallerKind = "device"
 	// CallerAgent is a scheduled job running on behalf of its owner. It
 	// never exceeds the owner (models.Policy plus the owner's live roles)
@@ -74,15 +75,18 @@ func NewWidgetCaller(tenant *models.Tenant) *Caller {
 	}
 }
 
-// NewDeviceCaller builds the caller for a paired device. It has no roles
-// and no Identity; routes that need a person must refuse it.
-func NewDeviceCaller(tenant *models.Tenant, actor *models.Actor) *Caller {
+// NewDeviceCaller builds the caller for a paired device from the roles
+// assigned to it (see ResolveDeviceRoles). It has no Identity and is never
+// an admin, whatever cr says; routes that need a person must refuse it.
+func NewDeviceCaller(tenant *models.Tenant, actor *models.Actor, cr CallerRoles) *Caller {
 	return &Caller{
 		Kind:         CallerDevice,
 		TenantID:     tenant.ID,
 		ActorID:      actor.ID,
 		Label:        actor.Label,
 		Capabilities: slices.Clone(actor.Capabilities),
+		Roles:        cr.Names,
+		RoleIDs:      cr.IDs,
 		Timezone:     ResolveTimezone("", tenant.Timezone),
 	}
 }

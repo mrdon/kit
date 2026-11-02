@@ -90,10 +90,22 @@ export interface RoleUser {
   roles: string[];
 }
 
+// A paired device row. Devices hold only the roles ticked for them: no
+// member catchall, and never admin.
+export interface RoleDevice {
+  actor_id: string;
+  label: string;
+  roles: string[];
+}
+
 export interface RolesMatrix {
   roles: RoleInfo[];
   users: RoleUser[];
+  devices: RoleDevice[];
 }
+
+// Who a role change applies to: a person by Slack id or a device by actor id.
+export type RoleTarget = { slack_user_id: string } | { actor_id: string };
 
 export interface Task {
   id: string;
@@ -321,16 +333,10 @@ export const coreApi = {
     apiPut<{ enabled: boolean }>(`/apps/${encodeURIComponent(name)}`, { enabled }),
 
   roles: () => apiGet<RolesMatrix>('/roles'),
-  assignRole: (slackUserID: string, roleName: string) =>
-    apiPost<void>('/roles/assign', {
-      slack_user_id: slackUserID,
-      role_name: roleName,
-    }),
-  unassignRole: (slackUserID: string, roleName: string) =>
-    apiPost<void>('/roles/unassign', {
-      slack_user_id: slackUserID,
-      role_name: roleName,
-    }),
+  assignRole: (target: RoleTarget, roleName: string) =>
+    apiPost<void>('/roles/assign', { ...target, role_name: roleName }),
+  unassignRole: (target: RoleTarget, roleName: string) =>
+    apiPost<void>('/roles/unassign', { ...target, role_name: roleName }),
 
   tasksMeta: () => apiGet<TasksMeta>('/tasks/meta'),
   listTasks: (f: TaskFilters = {}) =>

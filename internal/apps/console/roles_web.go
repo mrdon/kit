@@ -35,9 +35,18 @@ type roleUserInfo struct {
 	Roles       []string `json:"roles"`
 }
 
+// roleDeviceInfo is a paired device row in the matrix. Devices hold only
+// the roles ticked for them: no member catchall, never admin.
+type roleDeviceInfo struct {
+	ActorID string   `json:"actor_id"`
+	Label   string   `json:"label"`
+	Roles   []string `json:"roles"`
+}
+
 type rolesResponse struct {
-	Roles []roleInfo     `json:"roles"`
-	Users []roleUserInfo `json:"users"`
+	Roles   []roleInfo       `json:"roles"`
+	Users   []roleUserInfo   `json:"users"`
+	Devices []roleDeviceInfo `json:"devices"`
 }
 
 // handleRoles returns the full role/user matrix from the service and maps it
@@ -55,8 +64,9 @@ func (a *App) handleRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := rolesResponse{
-		Roles: make([]roleInfo, 0, len(m.Roles)),
-		Users: make([]roleUserInfo, 0, len(m.Users)),
+		Roles:   make([]roleInfo, 0, len(m.Roles)),
+		Users:   make([]roleUserInfo, 0, len(m.Users)),
+		Devices: make([]roleDeviceInfo, 0, len(m.Devices)),
 	}
 	for _, role := range m.Roles {
 		resp.Roles = append(resp.Roles, roleInfo{
@@ -78,11 +88,17 @@ func (a *App) handleRoles(w http.ResponseWriter, r *http.Request) {
 			Roles:       roles,
 		})
 	}
+	for _, d := range m.Devices {
+		resp.Devices = append(resp.Devices, roleDeviceInfo{ActorID: d.ActorID, Label: d.Label, Roles: d.Roles})
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// roleAssignBody names a person (slack_user_id) or a paired device
+// (actor_id), never both.
 type roleAssignBody struct {
 	SlackUserID string `json:"slack_user_id"`
+	ActorID     string `json:"actor_id"`
 	RoleName    string `json:"role_name"`
 }
 
@@ -95,7 +111,8 @@ func (a *App) handleRoleUnassign(w http.ResponseWriter, r *http.Request) {
 }
 
 // roleMembership assigns (assign=true) or removes (assign=false) a role from
-// a user, identified by Slack user ID to match the RoleService API.
+// a user, identified by Slack user ID to match the RoleService API, or from a
+// paired device by actor id.
 func (a *App) roleMembership(w http.ResponseWriter, r *http.Request, assign bool) {
 	caller := auth.CallerFromContext(r.Context())
 	if caller == nil {
@@ -107,15 +124,20 @@ func (a *App) roleMembership(w http.ResponseWriter, r *http.Request, assign bool
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
 		return
 	}
-	if body.SlackUserID == "" || body.RoleName == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "slack_user_id and role_name are required"})
+	if (body.SlackUserID == "") == (body.ActorID == "") || body.RoleName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "role_name and one of slack_user_id or actor_id are required"})
 		return
 	}
 	svc := services.NewRoleService(a.pool)
 	var err error
-	if assign {
+	switch {
+	case body.ActorID != "" && assign:
+		_, err = svc.AssignDevice(r.Context(), caller, body.ActorID, body.RoleName)
+	case body.ActorID != "":
+		_, err = svc.UnassignDevice(r.Context(), caller, body.ActorID, body.RoleName)
+	case assign:
 		err = svc.Assign(r.Context(), caller, body.SlackUserID, body.RoleName)
-	} else {
+	default:
 		err = svc.Unassign(r.Context(), caller, body.SlackUserID, body.RoleName)
 	}
 	if err != nil {
@@ -172,6 +194,8 @@ func writeRolesErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Role does not exist."})
 	case errors.Is(err, services.ErrLastAdmin):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "Can't remove the last admin."})
+	case errors.Is(err, services.ErrDeviceAdmin):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "A device can't be an admin."})
 	case errors.Is(err, services.ErrCannotLeaveMember):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "Everyone is a member; that role can't be changed."})
 	default:

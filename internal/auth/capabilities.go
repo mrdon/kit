@@ -75,7 +75,8 @@ func IsCapability(name string) bool {
 // Allows reports whether caller may use a route guarded by this
 // capability, with human as the role test for people. A person never
 // passes on capabilities (they hold none); a device never passes on
-// roles (it holds none). Any other caller kind is refused.
+// roles, even ones assigned to it — those govern what knowledge it sees,
+// not which routes it may use. Any other caller kind is refused.
 func (c Capability) Allows(caller *services.Caller, human HumanCheck) bool {
 	if caller == nil {
 		return false

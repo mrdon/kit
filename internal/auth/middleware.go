@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -237,7 +238,11 @@ func resolveActorCaller(ctx context.Context, pool *pgxpool.Pool, tenant *models.
 	}
 	switch actor.Kind {
 	case models.ActorKindDevice:
-		return services.NewDeviceCaller(tenant, actor), nil
+		cr, err := services.NewRoleService(pool).ResolveDeviceRoles(ctx, tenant.ID, actor.ID)
+		if err != nil {
+			return nil, fmt.Errorf("resolving device roles: %w", err)
+		}
+		return services.NewDeviceCaller(tenant, actor, cr), nil
 	default:
 		slog.Warn("api token held by actor of unsupported kind", "actor_id", actor.ID, "kind", actor.Kind)
 		return nil, nil //nolint:nilnil // reads as "no session", the same as a revoked actor

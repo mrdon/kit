@@ -107,6 +107,37 @@ func TestDeviceSessionAdmittedWhenRouteOptsIn(t *testing.T) {
 	}
 }
 
+// A device's session carries the roles assigned to it, and nothing more:
+// no member catchall and never admin.
+func TestDeviceSessionCarriesAssignedRoles(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	tenant := oneTenant(t, ctx, pool)
+	signer := testSigner(t)
+	for _, name := range []string{models.RoleMember, "bartender"} {
+		if _, err := models.GetOrCreateRole(ctx, pool, tenant.ID, name, name); err != nil {
+			t.Fatalf("creating role %s: %v", name, err)
+		}
+	}
+	actor := makeDevice(t, ctx, pool, tenant.ID, "menu.print")
+	if err := models.AssignActorRole(ctx, pool, tenant.ID, actor.ID, "bartender"); err != nil {
+		t.Fatalf("assigning role: %v", err)
+	}
+	cookie := deviceCookie(t, ctx, pool, signer, tenant, actor)
+
+	var got *services.Caller
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = CallerFromContext(r.Context()) })
+	rec := httptest.NewRecorder()
+	AllowDeviceCallers(signer.Middleware(pool, next)).ServeHTTP(rec, deviceRequest(tenant, cookie))
+
+	if rec.Code != http.StatusOK || got == nil {
+		t.Fatalf("status = %d, caller = %v", rec.Code, got)
+	}
+	if len(got.Roles) != 1 || got.Roles[0] != "bartender" || len(got.RoleIDs) != 1 || got.IsAdmin {
+		t.Fatalf("device roles = %v / %v admin=%v, want bartender only", got.Roles, got.RoleIDs, got.IsAdmin)
+	}
+}
+
 func TestRevokedDeviceIsNoSession(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()

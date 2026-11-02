@@ -18,12 +18,16 @@ var RoleTools = []ToolMeta{
 	{Name: "create_role", Description: "Create a new role.", Schema: propsReq(map[string]any{
 		"name": field("string", "Role name (e.g., 'bartender')"), "description": field("string", "Brief description"),
 	}, "name"), AdminOnly: true},
-	{Name: "assign_role", Description: "Assign a role to a Slack user.", Schema: propsReq(map[string]any{
-		"slack_user_id": field("string", "Slack user ID (e.g., 'U1234567890')"), "role_name": field("string", "Role name to assign"),
-	}, "slack_user_id", "role_name"), AdminOnly: true},
-	{Name: "unassign_role", Description: "Remove a role from a user.", Schema: propsReq(map[string]any{
-		"slack_user_id": field("string", "Slack user ID"), "role_name": field("string", "Role name to remove"),
-	}, "slack_user_id", "role_name"), AdminOnly: true},
+	{Name: "assign_role", Description: "Assign a role to a Slack user or a paired device (the bar iPad, the trivia laptop). Pass exactly one of slack_user_id or device. A device sees the knowledge its roles grant; it never gets member automatically and can't be an admin.", Schema: propsReq(map[string]any{
+		"slack_user_id": field("string", "Slack user ID (e.g., 'U1234567890')"),
+		"device":        field("string", "Paired device name (e.g., 'Bar iPad') or id, instead of slack_user_id"),
+		"role_name":     field("string", "Role name to assign"),
+	}, "role_name"), AdminOnly: true},
+	{Name: "unassign_role", Description: "Remove a role from a user or a paired device. Pass exactly one of slack_user_id or device.", Schema: propsReq(map[string]any{
+		"slack_user_id": field("string", "Slack user ID"),
+		"device":        field("string", "Paired device name or id, instead of slack_user_id"),
+		"role_name":     field("string", "Role name to remove"),
+	}, "role_name"), AdminOnly: true},
 	{Name: "update_role", Description: "Update a role's description.", Schema: propsReq(map[string]any{
 		"name": field("string", "Role name"), "description": field("string", "New description"),
 	}, "name", "description"), AdminOnly: true},
@@ -31,7 +35,7 @@ var RoleTools = []ToolMeta{
 		"name":  field("string", "Role name"),
 		"force": map[string]any{"type": "boolean", "description": "Confirm deletion even if the role has scope-attached data."},
 	}, "name"), AdminOnly: true},
-	{Name: "list_role_members", Description: "List all users assigned to a role.", Schema: propsReq(map[string]any{
+	{Name: "list_role_members", Description: "List all users and paired devices assigned to a role.", Schema: propsReq(map[string]any{
 		"role_name": field("string", "Role name"),
 	}, "role_name"), AdminOnly: true},
 }
@@ -255,11 +259,12 @@ func (s *RoleService) ListMembers(ctx context.Context, c *Caller, roleName strin
 // records) plus the roles each effectively holds. It's the single source
 // the console Roles page renders — no surface recomputes membership itself.
 type RoleMembership struct {
-	Roles []RoleSummary
-	Users []UserRoles
+	Roles   []RoleSummary
+	Users   []UserRoles
+	Devices []DeviceRoles
 }
 
-// RoleSummary is a role plus how many people effectively hold it. Catchall
+// RoleSummary is a role plus how many people and devices hold it. Catchall
 // marks the universal `member` role: everyone holds it and it can't be
 // toggled, so the UI renders it locked.
 type RoleSummary struct {
@@ -338,6 +343,11 @@ func (s *RoleService) Membership(ctx context.Context, c *Caller, lister Workspac
 	}
 	sort.Slice(users, func(i, j int) bool { return users[i].DisplayName < users[j].DisplayName })
 
+	devices, err := s.deviceMembership(ctx, c.TenantID, counts)
+	if err != nil {
+		return nil, err
+	}
+
 	summaries := make([]RoleSummary, 0, len(roles))
 	for _, r := range roles {
 		desc := ""
@@ -352,7 +362,7 @@ func (s *RoleService) Membership(ctx context.Context, c *Caller, lister Workspac
 		})
 	}
 
-	return &RoleMembership{Roles: summaries, Users: users}, nil
+	return &RoleMembership{Roles: summaries, Users: users, Devices: devices}, nil
 }
 
 // WorkspacePerson is one workspace member: a Slack identity + display name.

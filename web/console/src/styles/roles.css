@@ -58,3 +58,12 @@
   cursor: progress;
   opacity: 0.5;
 }
+
+.roles-section {
+  background: var(--panel);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

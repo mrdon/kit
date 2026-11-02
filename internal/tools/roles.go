@@ -74,19 +74,7 @@ func handleListRoleMembers(ec *ExecContext, input json.RawMessage) (string, erro
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	members, err := ec.Svc.Roles.ListMembers(ec.Ctx, ec.Caller(), inp.RoleName)
-	if err != nil {
-		return "", err
-	}
-	if len(members) == 0 {
-		return "No users assigned to role '" + inp.RoleName + "'.", nil
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Members of '%s':\n", inp.RoleName)
-	for _, m := range members {
-		b.WriteString("- " + services.FormatUserLine(&m) + "\n")
-	}
-	return b.String(), nil
+	return ec.Svc.Roles.RoleMembersText(ec.Ctx, ec.Caller(), inp.RoleName)
 }
 
 func handleCreateRole(ec *ExecContext, input json.RawMessage) (string, error) {
@@ -101,36 +89,26 @@ func handleCreateRole(ec *ExecContext, input json.RawMessage) (string, error) {
 	return fmt.Sprintf("Role '%s' created.", role.Name), nil
 }
 
+type roleChangeInput struct {
+	SlackUserID string `json:"slack_user_id"`
+	Device      string `json:"device"`
+	RoleName    string `json:"role_name"`
+}
+
 func handleAssignRole(ec *ExecContext, input json.RawMessage) (string, error) {
-	var inp struct {
-		SlackUserID string `json:"slack_user_id"`
-		RoleName    string `json:"role_name"`
-	}
-	if err := json.Unmarshal(input, &inp); err != nil {
-		return "", err
-	}
-	if err := ec.Svc.Roles.Assign(ec.Ctx, ec.Caller(), inp.SlackUserID, inp.RoleName); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Role '%s' assigned to %s.", inp.RoleName, inp.SlackUserID), nil
+	return changeRole(ec, input, true)
 }
 
 func handleUnassignRole(ec *ExecContext, input json.RawMessage) (string, error) {
-	var inp struct {
-		SlackUserID string `json:"slack_user_id"`
-		RoleName    string `json:"role_name"`
-	}
+	return changeRole(ec, input, false)
+}
+
+func changeRole(ec *ExecContext, input json.RawMessage, assign bool) (string, error) {
+	var inp roleChangeInput
 	if err := json.Unmarshal(input, &inp); err != nil {
 		return "", err
 	}
-	err := ec.Svc.Roles.Unassign(ec.Ctx, ec.Caller(), inp.SlackUserID, inp.RoleName)
-	if errors.Is(err, services.ErrNotFound) {
-		return "User not found.", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Role '%s' removed from %s.", inp.RoleName, inp.SlackUserID), nil
+	return ec.Svc.Roles.ChangeRole(ec.Ctx, ec.Caller(), inp.SlackUserID, inp.Device, inp.RoleName, assign)
 }
 
 func handleUpdateRole(ec *ExecContext, input json.RawMessage) (string, error) {
