@@ -70,7 +70,12 @@ function renderJoinCorner() {
   // `fitCardValues` then had to shrink every numeral to fit the narrower box
   // -- a wall of three-digit numbers a size smaller, to make room for a code.
   // Wrong trade: the cards are what the room is looking at.
-  var small = on && state.phase !== PHASE.BOARD;
+  //
+  // The question screen gets the full size too. Its ring is centred, so the
+  // bottom-right beside it is empty stage above the answered strip, which
+  // already gives up its right-hand 480px -- and it is the screen latecomers
+  // walk in on most often.
+  var small = on && state.phase !== PHASE.BOARD && state.phase !== PHASE.QUESTION;
   // Scoring is the one phase where the right-hand 540px already belongs to
   // the standings rail, so the corner crosses to the left.
   var left = on && state.phase === PHASE.SCORING;
@@ -81,7 +86,7 @@ function renderJoinCorner() {
   var cards = document.getElementById('cards-screen');
   cards.classList.toggle('cornered', small && !left);
   cards.classList.toggle('cornered-left', left);
-  document.getElementById('s-question').classList.toggle('cornered', small && state.phase === PHASE.QUESTION);
+  document.getElementById('s-question').classList.toggle('cornered', on && state.phase === PHASE.QUESTION);
 }
 
 /* ---------- the arrivals toast ---------- */
