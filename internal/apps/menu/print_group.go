@@ -27,9 +27,10 @@ import (
 // printUnit is one thing the layout places: a beer, a family of beers sharing
 // a description, or a section's sentence.
 type printUnit struct {
-	Beer  *Beer
-	Group *beerGroup
-	Blurb string
+	Featured *Featured
+	Beer     *Beer
+	Group    *beerGroup
+	Blurb    string
 }
 
 // beerGroup is a run of rows printed under one description.
@@ -61,6 +62,9 @@ const (
 // sectionUnits turns a section into what the layout places, in order: its
 // sentence first, then its rows with every run of shared descriptions folded.
 func sectionUnits(s PrintSection) []printUnit {
+	if s.featured != nil {
+		return []printUnit{{Featured: s.featured}}
+	}
 	var out []printUnit
 	if b := strings.TrimSpace(s.Blurb); b != "" {
 		out = append(out, printUnit{Blurb: b})

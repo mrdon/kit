@@ -67,6 +67,10 @@ type PrintConfig struct {
 	// set_menu_asset. Empty prints the masthead as a flat colour band, which
 	// is a clean result rather than a degraded one.
 	Hero string `json:"hero,omitempty"`
+
+	// Featured is the one beer boxed at the head of the menu, with its reason
+	// and photo. Nil prints no box. See print_featured_config.go.
+	Featured *FeaturedConfig `json:"featured,omitempty"`
 }
 
 // PrintState is the stored row.

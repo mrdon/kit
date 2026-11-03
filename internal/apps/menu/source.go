@@ -56,6 +56,10 @@ type Beer struct {
 	// workspace's list (see gluten_reduced.go). Never stored on the row: the
 	// list is kept by beer name so a mark survives a beer going off tap.
 	GlutenReduced bool `json:"-"`
+
+	// Featured marks the row of the beer boxed at the head of the printed
+	// menu, so its own section shows a star beside it. Print time only.
+	Featured bool `json:"-"`
 }
 
 // Pour is one container and its price.

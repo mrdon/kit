@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client';
+import { API_BASE, apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client';
 import type { TriviaFeedbackChannel } from './events.types';
 
 // A kiosk board: one unattended screen. `key` is baked into the machine's
@@ -43,6 +43,26 @@ export interface MenuPrintConfig {
    */
   blurbs?: Record<string, string>;
   extras?: MenuExtra[];
+  /** The one beer boxed at the head of the printed menu. */
+  featured?: MenuFeatured;
+}
+
+/**
+ * The featured beer. `photo` is stored as "asset:<key>" or "none"; on save it
+ * may also be "auto" (find one by name) or "photo:<id>" (a library photo,
+ * which the server fetches and keeps).
+ */
+export interface MenuFeatured {
+  beer: string;
+  label?: string;
+  text?: string;
+  photo?: string;
+}
+
+/** A photo the featured box could use, best first. */
+export interface MenuFeaturedPhoto {
+  ref: string;
+  label: string;
 }
 
 /** One synced beer, as the settings page shows it. Facts are read-only here —
@@ -199,6 +219,12 @@ export const menuApi = {
   saveMenuPrint: (body: MenuPrintConfig) =>
     apiPut<MenuPrint>('/menu/print', body),
   syncMenuPrint: () => apiPost<MenuSyncResult>('/menu/print/sync', {}),
+  menuFeaturedPhotos: (beer: string) =>
+    apiGet<{ candidates: MenuFeaturedPhoto[] }>(
+      `/menu/print/featured/photos?beer=${encodeURIComponent(beer)}`,
+    ),
+  menuFeaturedPhotoUrl: (ref: string) =>
+    `${API_BASE}/menu/print/featured/photo?ref=${encodeURIComponent(ref)}`,
   menuPrintNotes: () => apiGet<{ beers: MenuPrintBeer[] }>('/menu/print/notes'),
   saveMenuPrintNote: (name: string, text: string) =>
     apiPut<{ beers: MenuPrintBeer[] }>('/menu/print/notes', { name, text }),

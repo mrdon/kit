@@ -7,6 +7,7 @@ import {
   type MenuPrintConfig,
 } from '../api';
 import { useSetChatContext } from '../chatContext';
+import MenuFeaturedPanel from './MenuFeaturedPanel';
 
 // Settings for the printed menu.
 //
@@ -310,6 +311,12 @@ export default function MenuPrintSettings() {
               </span>
             </label>
           </section>
+
+          <MenuFeaturedPanel
+            featured={cfg.featured}
+            beers={data?.beers ?? []}
+            onChange={(f) => set('featured', f)}
+          />
 
           <section className="panel">
             <h2 className="panel-title">Wording</h2>

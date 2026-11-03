@@ -44,6 +44,8 @@ const (
 // unitHeight is how far a unit advances the cursor.
 func unitHeight(pdf *fpdf.Fpdf, u printUnit) float64 {
 	switch {
+	case u.Featured != nil:
+		return featuredHeight(pdf, u.Featured)
 	case u.Group != nil:
 		g := u.Group
 		h := float64(len(descLines(pdf, g.Notes)))*descLead + float64(len(g.Rows))*variantH
@@ -320,8 +322,9 @@ func pourSize(b Beer) string {
 
 // The two marks a row can wear, as the board draws them.
 const (
-	badgeGR  = "GR"
-	badgeNew = "NEW"
+	badgeGR   = "GR"
+	badgeNew  = "NEW"
+	badgeStar = "★"
 )
 
 func beerBadges(b Beer) []string {
@@ -332,6 +335,9 @@ func beerBadges(b Beer) []string {
 	if isNewAt(b.AddedAt, timeNow()) {
 		out = append(out, badgeNew)
 	}
+	if b.Featured {
+		out = append(out, badgeStar)
+	}
 	return out
 }
 
@@ -339,6 +345,10 @@ func beerBadges(b Beer) []string {
 // capitals, and returns its width: GR outlined in navy, NEW filled gold, both
 // in small tracked capitals.
 func drawBadge(pdf *fpdf.Fpdf, x, base float64, text string, lineSize float64) float64 {
+	if text == badgeStar {
+		drawStar(pdf, x+5, base-lineSize*capHeight/2, 5)
+		return 10
+	}
 	w := badgeWidth(pdf, text)
 	h := badgePt * 1.55
 	top := base - lineSize*capHeight/2 - h/2
@@ -357,6 +367,9 @@ func drawBadge(pdf *fpdf.Fpdf, x, base float64, text string, lineSize float64) f
 }
 
 func badgeWidth(pdf *fpdf.Fpdf, text string) float64 {
+	if text == badgeStar {
+		return 10
+	}
 	pdf.SetFont(printBold, "", badgePt)
 	return spacedWidth(pdf, text, 0.1, badgePt) + 5
 }

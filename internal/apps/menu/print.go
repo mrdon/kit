@@ -23,6 +23,10 @@ type PrintSection struct {
 	Name string
 	Rows []Beer
 
+	// featured is set only on the headless section the renderer puts first
+	// to carry the featured box through the same flow as everything else.
+	featured *Featured
+
 	// Blurb is a sentence set under the heading, before any rows. It is how
 	// the menu says a thing exists without pricing it line by line -- snacks
 	// being the case it was added for: a taproom puts out pretzels and popcorn
@@ -45,8 +49,9 @@ type PrintMenu struct {
 	FootLeft  string
 	FootRight string
 	Sections  []PrintSection
-	Hero      []byte // optional masthead photo, JPEG or PNG
-	HeroKind  string // fpdf's image-type string
+	Featured  *Featured // the one beer boxed at the head of the menu, if any
+	Hero      []byte    // optional masthead photo, JPEG or PNG
+	HeroKind  string    // fpdf's image-type string
 	Logo      []byte
 }
 

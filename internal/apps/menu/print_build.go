@@ -81,7 +81,10 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		return PrintMenu{}, err
 	}
 
+	featured := a.resolveFeatured(ctx, tenant.ID, cfg.Featured, rows)
+
 	m := PrintMenu{
+		Featured:  featured,
 		Title:     firstNonEmpty(cfg.Title, "Beers"),
 		Subtitle:  firstNonEmpty(cfg.Subtitle, "& Beverages"),
 		Flight:    firstNonEmpty(cfg.Flight, defaultFlight),
@@ -115,6 +118,48 @@ func markGlutenReducedRows(rows []Beer, beers []string) {
 			rows[i].GlutenReduced = true
 		}
 	}
+}
+
+// resolveFeatured turns the setting into the box, from storage only. The beer
+// has to be on the printed tap list -- pouring, not 86'd -- or there is no
+// box: paper that pushes a beer the bar cannot pour is worse than no push.
+// Its row is starred in its own section. A photo that will not load costs the
+// photo, never the box or the print.
+func (a *App) resolveFeatured(ctx context.Context, tenantID uuid.UUID, fc *FeaturedConfig, rows []Beer) *Featured {
+	if fc == nil || strings.TrimSpace(fc.Beer) == "" {
+		return nil
+	}
+	want := nameKey(fc.Beer)
+	for i := range rows {
+		if nameKey(rows[i].Name) != want {
+			continue
+		}
+		rows[i].Featured = true
+		f := &Featured{
+			Beer:  rows[i],
+			Label: firstNonEmpty(fc.Label, defaultFeaturedLabel),
+			Blurb: fc.Text,
+		}
+		if key, ok := strings.CutPrefix(fc.Photo, AssetRef); ok {
+			a.attachFeaturedPhoto(ctx, tenantID, key, f)
+		}
+		return f
+	}
+	return nil
+}
+
+func (a *App) attachFeaturedPhoto(ctx context.Context, tenantID uuid.UUID, key string, f *Featured) {
+	asset, err := loadPrintAsset(ctx, a.pool, tenantID, key)
+	if err != nil {
+		slog.Warn("menu print: loading featured photo", "tenant_id", tenantID, "key", key, "error", err)
+		return
+	}
+	photo, err := cropPortrait(asset.Bytes)
+	if err != nil {
+		slog.Warn("menu print: cropping featured photo", "tenant_id", tenantID, "key", key, "error", err)
+		return
+	}
+	f.Photo, f.PhotoKind = photo, "JPG"
 }
 
 // printBrand is the masthead's name: the board's wordmark, so paper and wall

@@ -40,6 +40,7 @@ func registerPrintConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/api/menu/print/sync",
 		console.RequireCapAdmin(a.pool, a.signer, auth.CapMenuPrint, a.handleSyncPrint))
 	registerNotesRoutes(mux, a)
+	registerFeaturedRoutes(mux, a)
 }
 
 // printConfigPayload is the wire shape.
@@ -264,6 +265,10 @@ func (a *App) handleSavePrintConfig(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var cfg PrintConfig
 	if err := dec.Decode(&cfg); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := prepareFeatured(ctx, a.pool, tenant.ID, &cfg); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

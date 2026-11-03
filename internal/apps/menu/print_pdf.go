@@ -115,7 +115,11 @@ func RenderPrintPDF(m PrintMenu, out io.Writer) error {
 
 	sh := &sheet{pdf: pdf, m: m, anyGR: menuHasGR(m)}
 	sh.registerImages()
-	plan, pages := planLayout(pdf, m.Sections)
+	sections := m.Sections
+	if m.Featured != nil {
+		sections = append([]PrintSection{{featured: sh.m.Featured}}, sections...)
+	}
+	plan, pages := planLayout(pdf, sections)
 
 	for p := range pages {
 		pdf.AddPage()
@@ -233,6 +237,12 @@ func (f *flow) section(s *PrintSection) {
 	}
 	for i, u := range units {
 		h := unitHeight(f.pdf, u)
+		if s.Name == "" {
+			// A headless section: the featured box. No heading, never split.
+			f.fit(h, true)
+			f.place(placement{sec: s, unit: u}, h)
+			continue
+		}
 		// The balanced line is a target, not a wall, for a section's last
 		// unit: running it past the line to the footer beats leaving one beer
 		// alone at the top of the next column under "cont." with half a page
@@ -303,6 +313,8 @@ func drawPlacement(pdf *fpdf.Fpdf, pl placement) {
 	switch {
 	case pl.heading:
 		drawHeading(pdf, x, pl.y, pl.sec.Name, pl.cont)
+	case pl.unit.Featured != nil:
+		drawFeatured(pdf, x, pl.y, pl.unit.Featured)
 	case pl.unit.Group != nil:
 		drawGroup(pdf, x, pl.y, pl.unit.Group)
 	case pl.unit.Beer != nil:
@@ -352,6 +364,14 @@ func (sh *sheet) registerImages() {
 		if pdf.Error() != nil {
 			pdf.ClearError()
 			sh.m.Hero = nil
+		}
+	}
+	if f := sh.m.Featured; f != nil && len(f.Photo) > 0 {
+		pdf.RegisterImageOptionsReader("menu-print-featured",
+			fpdf.ImageOptions{ImageType: f.PhotoKind}, bytes.NewReader(f.Photo))
+		if pdf.Error() != nil {
+			pdf.ClearError()
+			f.Photo = nil
 		}
 	}
 	if len(sh.m.Logo) > 0 {

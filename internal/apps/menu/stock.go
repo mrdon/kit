@@ -43,6 +43,11 @@ var libraryPhotos = func() func(ctx context.Context, tenantID, id uuid.UUID, siz
 
 // libraryPhoto loads the bytes behind a photo:<id> reference.
 func libraryPhoto(ctx context.Context, tenantID uuid.UUID, ref string) ([]byte, error) {
+	return libraryPhotoAt(ctx, tenantID, ref, photoSize)
+}
+
+// libraryPhotoAt is libraryPhoto at a given long edge, for a thumbnail.
+func libraryPhotoAt(ctx context.Context, tenantID uuid.UUID, ref string, size int) ([]byte, error) {
 	id, err := uuid.Parse(strings.TrimPrefix(ref, photoRef))
 	if err != nil {
 		return nil, fmt.Errorf("%q is not a photo id from search_photos", ref)
@@ -51,7 +56,7 @@ func libraryPhoto(ctx context.Context, tenantID uuid.UUID, ref string) ([]byte, 
 	if render == nil {
 		return nil, errors.New("the photo library is not available here")
 	}
-	return render(ctx, tenantID, id, photoSize)
+	return render(ctx, tenantID, id, size)
 }
 
 // imageSource is the URL to fetch an asset from: the one given, or the
