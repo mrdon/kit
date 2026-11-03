@@ -61,15 +61,16 @@ func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) 
 	// Per-user sliding-window + concurrency caps. Transcription spawns
 	// ffmpeg and whisper-cli subprocesses, each CPU-heavy, so we gate
 	// both on request rate and on simultaneous in-flight handlers.
-	if !a.chatLimiter.AllowTranscribe(caller.UserID) {
+	key := limitKey(caller)
+	if !a.chatLimiter.AllowTranscribe(key) {
 		http.Error(w, "too many voice uploads; please wait a moment and retry", http.StatusTooManyRequests)
 		return
 	}
-	if !a.chatLimiter.Acquire(caller.UserID) {
+	if !a.chatLimiter.Acquire(key) {
 		http.Error(w, "too many requests in flight; please wait", http.StatusTooManyRequests)
 		return
 	}
-	defer a.chatLimiter.Release(caller.UserID)
+	defer a.chatLimiter.Release(key)
 
 	sw, err := sse.New(w, r)
 	if err != nil {
@@ -80,7 +81,7 @@ func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) 
 	emit := chat.Emitter(sw.Emit)
 
 	mime := header.Header.Get("Content-Type")
-	slog.Info("chat transcribe request", "user_id", caller.UserID, "content_type", mime, "size", header.Size)
+	slog.Info("chat transcribe request", "user_id", caller.UserID, "actor_id", caller.ActorID, "content_type", mime, "size", header.Size)
 	if _, err := chat.Transcribe(r.Context(), a.transcriber, file, mime, emit); err != nil {
 		// chat.Transcribe has already emitted an error event.
 		slog.Warn("chat transcribe failed", "error", err)

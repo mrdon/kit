@@ -21,6 +21,7 @@ const (
 	CapKioskRepoint      = "kiosk.repoint"
 	CapTriviaHost        = "trivia.host"
 	CapEventsTopper      = "events.topper"
+	CapKitChat           = "kit.chat"
 )
 
 // HumanCheck is the role test a person must pass for a capability.
@@ -52,6 +53,7 @@ var Capabilities = []Capability{
 	{Name: CapEventsTopper, Label: "Print the table topper and entrance sign", Human: HumanMember},
 	{Name: CapKioskRepoint, Label: "Repoint wall screens", Human: HumanMember},
 	{Name: CapTriviaHost, Label: "Host trivia", Human: HumanMember},
+	{Name: CapKitChat, Label: "Ask Kit questions, typed or spoken", Human: HumanMember},
 }
 
 // LookupCapability finds a capability by name.

@@ -15,8 +15,9 @@ import { useBuildReload } from './useBuildReload';
 // through MeContext.
 //
 // A paired device (me.kind === 'device') gets a different chrome: its label
-// in place of a person's name, no nav to other apps, no chat and no sign
-// out (signing out would unpair it). The pages themselves are the same;
+// in place of a person's name, no nav to other apps and no sign out
+// (signing out would unpair it). It gets the chat button only when it holds
+// kit.chat, and then only for questions. The pages themselves are the same;
 // the server refuses any API the device's capabilities don't cover.
 export default function Shell() {
   // undefined while /me is in flight, so a device never flashes the
@@ -35,6 +36,7 @@ export default function Shell() {
 
   if (me === undefined) return null;
   const device = me?.kind === 'device';
+  const deviceChat = device && (me?.capabilities ?? []).includes('kit.chat');
 
   return (
     <MeContext.Provider value={me}>
@@ -44,7 +46,7 @@ export default function Shell() {
           <main className={device ? 'content content-device' : 'content'}>
             <Outlet />
           </main>
-          {!device && <ConsoleChat />}
+          {(!device || deviceChat) && <ConsoleChat device={device} />}
         </ChatContextProvider>
       </MeRefreshContext.Provider>
     </MeContext.Provider>

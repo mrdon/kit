@@ -188,6 +188,7 @@ func (a *CardsApp) RegisterMCPTools(_ *pgxpool.Pool, svc *services.Services) []m
 
 func (a *CardsApp) RegisterRoutes(mux apps.Mux) {
 	registerCardsRoutes(mux, a)
+	registerDeviceChatRoutes(mux, a)
 }
 
 // Tool names exposed by this app. Kept as constants so the switch in

@@ -88,6 +88,9 @@ func NewDeviceCaller(tenant *models.Tenant, actor *models.Actor, cr CallerRoles)
 		Roles:        cr.Names,
 		RoleIDs:      cr.IDs,
 		Timezone:     ResolveTimezone("", tenant.Timezone),
+		// Kit's own product docs are for the people running Kit, not
+		// whoever is standing at the bar.
+		HideBuiltinSkills: true,
 	}
 }
 

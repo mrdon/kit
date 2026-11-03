@@ -198,3 +198,20 @@ func GetOrCreateWidgetSession(ctx context.Context, pool *pgxpool.Pool, tenantID 
 	}
 	return s, nil
 }
+
+// GetOrCreateDeviceSession returns the chat session for a paired device's
+// conversation, creating it on first use. Like a widget session it has no
+// user; actor_kind/actor_label record which device it was.
+func GetOrCreateDeviceSession(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, channelID, threadTS, label string) (*Session, error) {
+	s, err := scanSession(pool.QueryRow(ctx, `
+		INSERT INTO sessions (id, tenant_id, slack_channel_id, slack_thread_ts, user_id, actor_kind, actor_label)
+		VALUES ($1, $2, $3, $4, NULL, $5, $6)
+		ON CONFLICT (tenant_id, slack_channel_id, slack_thread_ts)
+		DO UPDATE SET updated_at = now()
+		RETURNING `+sessionColumns,
+		uuid.New(), tenantID, channelID, threadTS, ActorKindDevice, label))
+	if err != nil {
+		return nil, fmt.Errorf("get or create device session: %w", err)
+	}
+	return s, nil
+}

@@ -134,6 +134,12 @@ type RunInput struct {
 	// where User is nil and the prompt must not mention Slack.
 	WidgetMode bool
 
+	// Device, when set, runs the turn as a paired device (the bar iPad):
+	// User is nil, the caller is the device with its assigned roles, and
+	// the system prompt is the staff-device one. Pair with
+	// WidgetAllowedTools to keep it to read-only answers.
+	Device *models.Actor
+
 	// WidgetTenantName overrides the tenant name used by the widget
 	// system prompt. Falls back to Tenant.Name when empty.
 	WidgetTenantName string
@@ -304,6 +310,7 @@ func (a *Agent) buildExecContext(ctx context.Context, in RunInput) *tools.ExecCo
 		OnToolCall:  in.OnToolCall,
 		OnIteration: in.OnIteration,
 		WidgetMode:  in.WidgetMode,
+		Device:      in.Device,
 	}
 	if in.Job != nil && in.Job.ID != (uuid.UUID{}) {
 		jobID := in.Job.ID
@@ -330,9 +337,12 @@ func (a *Agent) buildInitialMessages(ctx context.Context, in RunInput) []anthrop
 
 func (a *Agent) buildSystemPrompt(ctx context.Context, in RunInput) []anthropic.SystemBlock {
 	var systemText string
-	if in.WidgetMode {
+	switch {
+	case in.WidgetMode:
 		systemText = BuildWidgetSystemPrompt(ctx, a.pool, in.Tenant)
-	} else {
+	case in.Device != nil:
+		systemText = BuildDeviceSystemPrompt(ctx, a.pool, in.Tenant, in.Device)
+	default:
 		systemText = BuildSystemPrompt(ctx, a.pool, a.baseURL, in.Tenant, in.User, in.Job)
 	}
 	if in.SystemSuffix != "" {

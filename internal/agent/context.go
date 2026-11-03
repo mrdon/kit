@@ -108,3 +108,16 @@ func BuildWidgetSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *mo
 	}
 	return strings.Join(parts, "\n\n")
 }
+
+// BuildDeviceSystemPrompt is the system prompt for chat from a paired
+// device: staff asking at a shared screen, answered from the knowledge the
+// device's roles can see.
+func BuildDeviceSystemPrompt(ctx context.Context, pool *pgxpool.Pool, tenant *models.Tenant, device *models.Actor) string {
+	cr, _ := services.NewRoleService(pool).ResolveDeviceRoles(ctx, tenant.ID, device.ID)
+	caller := services.NewDeviceCaller(tenant, device, cr)
+	parts := []string{
+		mustRender("system_device.tmpl", map[string]any{"TenantName": tenant.Name, "DeviceLabel": device.Label}),
+		services.BuildKnowledgeContext(ctx, pool, caller, tenant),
+	}
+	return strings.Join(parts, "\n\n")
+}

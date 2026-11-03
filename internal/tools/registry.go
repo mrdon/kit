@@ -118,6 +118,11 @@ type ExecContext struct {
 	// role, HideBuiltinSkills=true) instead of looking up the user's
 	// roles in the DB.
 	WidgetMode bool
+
+	// Device is set for chat runs from a paired device (the bar iPad).
+	// Caller() then acts as the device, with the roles assigned to it,
+	// instead of as a user; User is nil.
+	Device *models.Actor
 }
 
 // Caller builds a services.Caller from the current execution context.
@@ -125,10 +130,14 @@ type ExecContext struct {
 // Widget-mode runs short-circuit the DB role lookup and return a fixed
 // anonymous Caller: member role only, HideBuiltinSkills enabled so the
 // Kit user-guide and other product-internal skills don't leak into the
-// public Q&A surface.
+// public Q&A surface. Device runs act as the device with its own roles.
 func (ec *ExecContext) Caller() *services.Caller {
 	if ec.WidgetMode {
 		return services.NewWidgetCaller(ec.Tenant)
+	}
+	if ec.Device != nil {
+		cr, _ := services.NewRoleService(ec.Pool).ResolveDeviceRoles(ec.Ctx, ec.Tenant.ID, ec.Device.ID)
+		return services.NewDeviceCaller(ec.Tenant, ec.Device, cr)
 	}
 	cr, _ := services.NewRoleService(ec.Pool).ResolveCallerRoles(ec.Ctx, ec.Tenant, ec.User.ID)
 	caller := services.NewUserCaller(ec.Tenant, ec.User, cr)
