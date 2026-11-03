@@ -507,7 +507,7 @@ Configure the printed menu with `set_menu_print`, passing a JSON document:
 - `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. Without it Sync doesn't even try for descriptions. They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
 - `title` / `subtitle` — printed small beside your name in the masthead, e.g. `"Beers"` and `"& More"`. The name itself is the menu board's wordmark.
 - `flight` — the short line under "Try a flight" in the masthead badge, e.g. `"Any four 4oz pours"`.
-- `sizes` — the pour-size note in the footer, e.g. `"Pours are 16oz unless marked · 9oz & 4oz too"`.
+- `sizes` — the pour-size note in the footer, e.g. `"Pours are 16oz unless marked · Also available in 9oz & 4oz"`.
 - `foot_left` / `foot_right` — the wifi and social lines.
 - `notes` — beer name to a description you write yourself. These win over Untappd, so they're the fix for a beer Untappd has no page for, and the way to say something on paper you don't want on your public brewery listing.
 - `blurbs` — section heading to a single sentence printed under that heading. A heading that matches your tap list gets the sentence above its beers; a heading that matches nothing becomes a section of its own at the end of the menu. This is how **snacks** go on a beer menu: one bar saying `Snacks` and one line saying what's behind it, rather than a row and a price for every bag of pretzels.

@@ -353,7 +353,7 @@ export default function MenuPrintSettings() {
               <span>Pour sizes note</span>
               <input
                 value={cfg.sizes ?? ''}
-                placeholder="Pours are 16oz unless marked · 9oz & 4oz too"
+                placeholder="Pours are 16oz unless marked · Also available in 9oz & 4oz"
                 onChange={(e) => set('sizes', e.target.value)}
               />
               <span className="field-note">

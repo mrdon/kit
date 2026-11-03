@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="__KIT_BASE__/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1f2937" />
+    <!-- iOS ignores the SVG for the home screen; without this an iPad
+         install shows a screenshot of the page instead of the logo. -->
+    <link rel="apple-touch-icon" sizes="192x192" href="__KIT_BASE__/icon-192.png" />
+    <meta name="apple-mobile-web-app-title" content="__KIT_TITLE__" />
     <title>__KIT_TITLE__</title>
   </head>
   <body>

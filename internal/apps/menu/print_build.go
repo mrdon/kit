@@ -44,7 +44,7 @@ const defaultFlight = "Any four 4oz pours"
 // defaultSizes explains the one price column. The menu prints the full pour;
 // every beer also has a half pour and a taster, and saying so once here beats
 // three columns of numbers on every row.
-const defaultSizes = "Pours are 16oz unless marked · 9oz & 4oz too"
+const defaultSizes = "Pours are 16oz unless marked · Also available in 9oz & 4oz"
 
 // buildPrintMenu gathers everything one sheet needs, all of it from storage.
 func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintMenu, error) {
