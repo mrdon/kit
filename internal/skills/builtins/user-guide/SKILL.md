@@ -453,7 +453,7 @@ The **screen address** is the wall display: a permanent public URL you paste int
 
 A beer wears a gold **New** badge for its first week on the wall. The date comes from your Untappd board — each row there records when it was added — so nothing needs marking in Kit, and the badge goes out on its own seven days later. The catch is that it dates the *row*, not the beer: deleting a row in Untappd and adding it back starts the week over, so if the whole board suddenly reads as new, something reshuffled it. It ages out by itself either way. A tap list set by hand with `set_menu_board` carries no dates and gets no badges.
 
-Beers that are **gluten reduced** wear an outlined **GR** badge, and while any of them is on the wall the footer explains it: "Gluten reduced. May contain gluten." The printed menu puts the same line at the start of the beer's description. Untappd has nowhere to keep this, so Kit keeps it, by beer name: tick a beer once under **Gluten reduced** on the **Menu** page (each tick saves straight away), or have an agent use `set_menu_gluten_reduced` (`add`, `remove`, or the whole list as `beers`), and it is marked again every time it comes back on tap. Names have to match the board's, ignoring only case and spacing. The wording is always "gluten reduced", never "gluten free": a beer brewed from barley and treated to break the gluten down cannot be called gluten free.
+Beers that are **gluten reduced** — or made with no gluten ingredients, like a hard seltzer or a house soda — wear an outlined **GR** badge, and while any of them is on the wall the footer explains it: "Gluten reduced or no gluten ingredients. May contain gluten." The printed menu wears the same badge and carries the same line in its footer. Untappd has nowhere to keep this, so Kit keeps it, by beer name: tick a beer once under **Gluten reduced** on the **Menu** page (each tick saves straight away), or have an agent use `set_menu_gluten_reduced` (`add`, `remove`, or the whole list as `beers`), and it is marked again every time it comes back on tap. Names have to match the board's, ignoring only case and spacing. The wording is always "gluten reduced", never "gluten free": a beer brewed from barley and treated to break the gluten down cannot be called gluten free.
 
 When a keg blows, **86** it in Kit instead of waiting for someone to edit Untappd: tick it under **86** on the **Menu** page or on the taproom device's **86** tile, or ask Kit ("86 the hazy") and it uses `set_menu_86`. Any member can do it. The beer drops off the wall, the spotlight and the printed menu at once. It stays in the checklist, ticked, so if it was a mistake, untick it to bring it back. Once the beer comes off Untappd too, its 86 clears by itself, so the next keg of it is not hidden. To tell the team, an admin picks a Slack channel under **Admin → 86 alerts**; every 86 is posted there with who did it (bringing a beer back is not posted).
 
@@ -475,11 +475,13 @@ While it is on, the **screen** shows a gold happy hour banner across the top wit
 
 Only beers that are **actually pouring** reach the printed menu — Kit takes that from whether Untappd prices a 4oz taster, which every tap has and nothing else does. A beer whose prices you clear in Untappd drops off the paper (and its heading with it, if it was the last one under it), and a can listed beside the taps never appears as though you could order a glass of it. Put cans and bottles in `extras` instead.
 
-**Printable menu** on the same page opens a letter-sized PDF for the tables: a coloured band per section, and a row per beer with its style, ABV, half-pour and full-pour prices, and a sentence about it. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size beside the price, so nobody is quoted a 16oz they cannot order.
+**Printable menu** on the same page opens a letter-sized PDF for the tables, set like the menu board: a navy masthead with your mark and name and a "Try a flight" badge, then two columns of beers, each with its name, GR and NEW badges, style and ABV, price, and its description. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size under the price, as on the wall, so nobody is quoted a 16oz they cannot order. Prices print as the wall shows them ("6.5", "8").
+
+Beers that sit next to each other and share the **same description** print as one entry: the description once, under the name they share, with a line per beer for its own strength, price and badges. Untappd repeats one paragraph across "2026 Tsar Bomba", "2026 Barrel Aged Tsar Bomba" and "2025 Tsar Bomba", and the paper prints it once under **Tsar Bomba**. Give each its own description and they go back to separate rows; there's no setting.
 
 The sheet prints **what was last synced**, not whatever Untappd says at the moment you open it. Press **Sync from Untappd** on the settings page after the taps change. That keeps a third party off the critical path of somebody standing at a printer, and it means a failure to reach Untappd lands in front of you when you asked for it rather than silently subtracting the descriptions from a document.
 
-Pages fill up before they break, and a section that doesn't fit continues on the next page under a repeated heading. Keeping whole sections together was tried and looked worse — three tall beers that won't fit leave the bottom half of a page white, which on a menu reads as a mistake rather than as design.
+Columns fill up before they break, and a section that doesn't fit continues at the top of the next column under its heading marked "cont.", as the board does. Keeping whole sections together was tried and looked worse — three tall beers that won't fit leave the bottom half of a page white, which on a menu reads as a mistake rather than as design.
 
 ### Why descriptions often don't come down
 
@@ -501,16 +503,16 @@ Stored descriptions are kept forever, so this is a once-per-new-beer job, not a 
 Configure the printed menu with `set_menu_print`, passing a JSON document:
 
 - `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. Without it Sync doesn't even try for descriptions. They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
-- `title` / `subtitle` — the masthead, e.g. `"Beers"` and `"& Beverages"`.
-- `flight` — the line above the footer, e.g. `"Try any set of four 4oz pours as a flight"`.
+- `title` / `subtitle` — printed small beside your name in the masthead, e.g. `"Beers"` and `"& More"`. The name itself is the menu board's wordmark.
+- `flight` — the short line under "Try a flight" in the masthead badge, e.g. `"Any four 4oz pours"`.
+- `sizes` — the pour-size note in the footer, e.g. `"Pours are 16oz unless marked · 9oz & 4oz too"`.
 - `foot_left` / `foot_right` — the wifi and social lines.
-- `colors` — section heading name to a `#rrggbb` bar colour. Sections you don't name get one from the house palette.
 - `notes` — beer name to a description you write yourself. These win over Untappd, so they're the fix for a beer Untappd has no page for, and the way to say something on paper you don't want on your public brewery listing.
 - `blurbs` — section heading to a single sentence printed under that heading. A heading that matches your tap list gets the sentence above its beers; a heading that matches nothing becomes a section of its own at the end of the menu. This is how **snacks** go on a beer menu: one bar saying `Snacks` and one line saying what's behind it, rather than a row and a price for every bag of pretzels.
-- `hero` — the key of an image stored with `set_menu_asset`, printed behind the masthead. A `print_logo` asset, if you upload one, goes on the masthead too — use a white knockout, it sits on a colour band.
-- `extras` — the rows Untappd has no opinion about: canned non-alcoholics, sodas, juice boxes. Each has a `section`, `name`, optional `style`, and `pours: [{size, label, price}]`. A section whose rows are all packaged prints one price column instead of three.
+- `hero` — the key of an image stored with `set_menu_asset`, printed behind the masthead under a navy wash. A `print_logo` PNG, if you upload one, goes at the left of the masthead — a mark rather than a full logo with your name in it, since the name is printed beside it. It sits on navy, so colour or white both read.
+- `extras` — the rows Untappd has no opinion about: canned non-alcoholics, sodas, juice boxes. Each has a `section`, `name`, optional `style`, and `pours: [{size, label, price}]`. A section name that matches one on the tap list joins it, ignoring case, spaces and punctuation — "Non-Alcoholic" lands with Untappd's "Non Alcoholic".
 
-Everything is optional. A workspace that configures none of it still prints a usable menu — the headings and beers come from Untappd and the colours cycle.
+Everything is optional. A workspace that configures none of it still prints a usable menu — the headings and beers come from Untappd.
 
 All of the same settings have a form in the console, under **Admin → Printed menu** (`/<your-slug>/web/admin/menu`), which is usually easier than hand-writing the JSON.
 

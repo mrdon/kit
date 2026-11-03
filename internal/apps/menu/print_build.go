@@ -36,15 +36,15 @@ import (
 // PDF, and anything approaching it is a fault rather than a slow upstream.
 const printTimeout = 10 * time.Second
 
-// defaultFlight is what the strap says when a venue has not written one. It is
-// the line the original carried, and it is true of every taproom that pours
-// four-ounce tasters.
-const defaultFlight = "Try any set of four 4oz pours as a flight"
+// defaultFlight is what the masthead's flight badge says under "Try a flight"
+// when a venue has not written its own line. It is true of every taproom that
+// pours four-ounce tasters.
+const defaultFlight = "Any four 4oz pours"
 
 // defaultSizes explains the one price column. The menu prints the full pour;
 // every beer also has a half pour and a taster, and saying so once here beats
 // three columns of numbers on every row.
-const defaultSizes = "Full pours are 16oz unless marked — 9oz and 4oz also available"
+const defaultSizes = "Pours are 16oz unless marked · 9oz & 4oz too"
 
 // buildPrintMenu gathers everything one sheet needs, all of it from storage.
 func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintMenu, error) {
@@ -88,18 +88,17 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		Sizes:     firstNonEmpty(cfg.Sizes, defaultSizes),
 		FootLeft:  cfg.FootLeft,
 		FootRight: cfg.FootRight,
-		Sections:  buildSections(rows, cfg.Colors, cfg.Blurbs),
+		Sections:  buildSections(rows, cfg.Blurbs),
+		Brand:     a.printBrand(ctx, tenant),
 	}
 	a.attachPrintArt(ctx, tenant.ID, cfg, &m)
 	return m, nil
 }
 
-// markGlutenReduced puts the caveat at the head of each gluten reduced beer's
-// description. Paper has no footer key a reader can be trusted to find, so
-// the mark and its caveat travel together in the beer's own line, and going
-// through the description means the row is measured for it like any other
-// prose. A load failure fails the print: a dietary mark silently missing from
-// paper that then sits on tables for a month is worse than a retry.
+// markGlutenReduced flags each gluten reduced beer for its GR badge; the
+// footer carries the key. A load failure fails the print: a dietary mark
+// silently missing from paper that then sits on tables for a month is worse
+// than a retry.
 func (a *App) markGlutenReduced(ctx context.Context, tenantID uuid.UUID, rows []Beer) error {
 	beers, err := LoadGlutenReduced(ctx, a.pool, tenantID)
 	if err != nil {
@@ -113,9 +112,23 @@ func markGlutenReducedRows(rows []Beer, beers []string) {
 	keys := glutenReducedKeys(beers)
 	for i := range rows {
 		if keys[nameKey(rows[i].Name)] {
-			rows[i].Notes = strings.TrimSpace(GlutenReducedNote + " " + rows[i].Notes)
+			rows[i].GlutenReduced = true
 		}
 	}
+}
+
+// printBrand is the masthead's name: the board's wordmark, so paper and wall
+// agree, falling back to the workspace's own name. A board that will not load
+// costs the wordmark, never the print.
+func (a *App) printBrand(ctx context.Context, tenant *models.Tenant) string {
+	if row, err := GetBoard(ctx, a.pool, tenant.ID); err == nil && row != nil {
+		if board, perr := ParseBoard(row.Payload); perr == nil {
+			if w := strings.TrimSpace(board.Venue.Wordmark); w != "" {
+				return w
+			}
+		}
+	}
+	return strings.TrimSpace(tenant.Name)
 }
 
 // attachPrintArt loads the masthead images. Both are optional and neither is
@@ -131,8 +144,8 @@ func (a *App) attachPrintArt(ctx context.Context, tenantID uuid.UUID, cfg PrintC
 		}
 	}
 	// The logo is conventional rather than configured: a venue that wants one
-	// on the masthead uploads it under this key, knocked out white for the
-	// colour band it sits on.
+	// on the masthead uploads it under this key. It sits on the navy band, so
+	// a mark in colour or knocked out white both read.
 	if asset, err := loadPrintAsset(ctx, a.pool, tenantID, printLogoKey); err == nil {
 		if imageKind(asset.Mime) == "PNG" {
 			m.Logo = asset.Bytes

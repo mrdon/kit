@@ -34,14 +34,16 @@ type PrintConfig struct {
 	FootLeft  string `json:"foot_left,omitempty"`  // "WIFI: Gravity  PW: ..."
 	FootRight string `json:"foot_right,omitempty"` // "@thegravitybrewing"
 
-	// Colors maps a section heading to a #rrggbb bar colour.
-	//
-	// The three collections below carry no omitempty, unlike the strings. An
+	// The collections below carry no omitempty, unlike the strings. An
 	// omitted empty map is indistinguishable from an absent one on the wire,
 	// and a console doing `.map(...)` on the result gets `undefined` rather
 	// than an empty list -- which in React takes the whole page down. Storing
-	// "colors": {} is a little noisier and a lot harder to trip over.
-	Colors map[string]string `json:"colors"`
+	// "notes": {} is a little noisier and a lot harder to trip over.
+	//
+	// There was a Colors map here, a bar colour per section. The sheet now
+	// follows the menu board, one gold rule under every heading, so it went;
+	// a stored config that still carries "colors" decodes without it and
+	// sheds it on the next save.
 
 	// Notes are descriptions written here rather than in Untappd, keyed by
 	// beer name. They win over anything scraped, which makes them both the fix

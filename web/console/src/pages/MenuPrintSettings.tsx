@@ -31,14 +31,14 @@ import { useSetChatContext } from '../chatContext';
 //
 // Everything else here is what Untappd cannot tell us. The beers, prices, strengths
 // and descriptions all come from the tap list; this page is the masthead
-// wording, the colour of each section bar, the rows that are not on tap at all
+// wording, the rows that are not on tap at all
 // — cans, sodas, juice boxes — and the headings that are a sentence rather
 // than a list, which is how snacks go on a beer menu.
 //
 // It is one form saved whole, not a set of live-updating fields. The config is
 // stored as a single document and replaced on write, so a per-field save would
-// be a lie about what the backend does, and a half-typed section colour
-// landing on a printed menu mid-edit is worse than an explicit Save.
+// be a lie about what the backend does, and a half-typed blurb landing on a
+// printed menu mid-edit is worse than an explicit Save.
 
 // Empty rows to append, kept out of the component so the shapes are stated
 // once rather than inline at each call site.
@@ -89,14 +89,6 @@ export default function MenuPrintSettings() {
   ) {
     setCfg((c) => (c ? { ...c, [key]: value } : c));
     setSaved(false);
-  }
-
-  function setColor(section: string, hex: string) {
-    if (!cfg) return;
-    const colors = { ...(cfg.colors ?? {}) };
-    if (hex) colors[section] = hex;
-    else delete colors[section];
-    set('colors', colors);
   }
 
   function setBlurb(i: number, patch: Partial<BlurbRow>) {
@@ -217,8 +209,8 @@ export default function MenuPrintSettings() {
         <h1>Printed menu</h1>
         <p className="page-sub">
           The beers, prices and strengths come from your tap list. This is
-          everything else — the wording around the edges, the colour of each
-          section, and the drinks that are not on tap.
+          everything else — the wording around the edges and the drinks that
+          are not on tap.
         </p>
       </div>
 
@@ -323,7 +315,7 @@ export default function MenuPrintSettings() {
             <h2 className="panel-title">Wording</h2>
             <div className="field-row">
               <label className="field">
-                <span>Masthead</span>
+                <span>Masthead title</span>
                 <input
                   value={cfg.title ?? ''}
                   placeholder="Beers"
@@ -340,18 +332,21 @@ export default function MenuPrintSettings() {
               </label>
             </div>
             <label className="field">
-              <span>Line above the footer</span>
+              <span>Flight badge</span>
               <input
                 value={cfg.flight ?? ''}
-                placeholder="Try any set of four 4oz pours as a flight"
+                placeholder="Any four 4oz pours"
                 onChange={(e) => set('flight', e.target.value)}
               />
+              <span className="field-note">
+                Printed under “Try a flight” in the masthead. Keep it short.
+              </span>
             </label>
             <label className="field">
               <span>Pour sizes note</span>
               <input
                 value={cfg.sizes ?? ''}
-                placeholder="Full pours are 16oz unless marked — 9oz and 4oz also available"
+                placeholder="Pours are 16oz unless marked · 9oz & 4oz too"
                 onChange={(e) => set('sizes', e.target.value)}
               />
               <span className="field-note">
@@ -377,57 +372,6 @@ export default function MenuPrintSettings() {
                 />
               </label>
             </div>
-          </section>
-
-          <section className="panel">
-            <h2 className="panel-title">Section colours</h2>
-            <p className="card-desc">
-              The headings on your tap list. Anything left unset cycles through
-              the house colours, so a new section on the board still prints
-              looking deliberate.
-            </p>
-            {sections.length === 0 ? (
-              <p className="muted">
-                No tap list yet — sections appear here once there is one.
-              </p>
-            ) : (
-              sections.map((name) => (
-                <div className="field-row" key={name}>
-                  <label className="field">
-                    <span>{name}</span>
-                    <div className="drawer-actions">
-                      <input
-                        type="color"
-                        aria-label={`${name} colour`}
-                        value={cfg.colors?.[name] ?? '#cccccc'}
-                        onChange={(e) => setColor(name, e.target.value)}
-                      />
-                      {data.palette.map((hex) => (
-                        <button
-                          key={hex}
-                          type="button"
-                          className="btn btn-ghost"
-                          title={hex}
-                          style={{ background: hex, minWidth: '2.5rem' }}
-                          onClick={() => setColor(name, hex)}
-                        >
-                          {' '}
-                        </button>
-                      ))}
-                      {cfg.colors?.[name] && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => setColor(name, '')}
-                        >
-                          Reset
-                        </button>
-                      )}
-                    </div>
-                  </label>
-                </div>
-              ))
-            )}
           </section>
 
           <section className="panel">

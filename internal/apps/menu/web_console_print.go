@@ -45,16 +45,14 @@ func registerPrintConsoleRoutes(mux apps.Mux, a *App) {
 // printConfigPayload is the wire shape.
 //
 // It carries the sections currently on the board alongside the saved config,
-// so the colour editor can offer the headings that actually exist rather than
-// asking an admin to type them from memory and silently doing nothing when
-// they typo one.
+// so the blurb and extras editors can offer the headings that actually exist
+// rather than asking an admin to type them from memory and silently doing
+// nothing when they typo one.
 type printConfigPayload struct {
 	Config PrintConfig `json:"config"`
 
 	// Sections are the headings on the tap list right now, in board order.
 	Sections []string `json:"sections"`
-	// Palette is the house colour cycle, offered as swatches.
-	Palette []string `json:"palette"`
 	// NotesCached is how many descriptions have been fetched and stored.
 	NotesCached int `json:"notes_cached"`
 	// PrintURL is where the sheet lives, so the page can link to it.
@@ -97,14 +95,8 @@ func (p printConfigPayload) MarshalJSON() ([]byte, error) {
 	if p.Sections == nil {
 		p.Sections = []string{}
 	}
-	if p.Palette == nil {
-		p.Palette = []string{}
-	}
 	if p.Config.Extras == nil {
 		p.Config.Extras = []Beer{}
-	}
-	if p.Config.Colors == nil {
-		p.Config.Colors = map[string]string{}
 	}
 	if p.Config.Notes == nil {
 		p.Config.Notes = map[string]string{}
@@ -134,15 +126,15 @@ func (a *App) handleGetPrintConfig(w http.ResponseWriter, r *http.Request) {
 
 // boardSections lists the headings on the stored tap list, in board order.
 //
-// It reads the saved board rather than pulling Untappd: this is a hint for a
-// colour picker, and making an admin wait on a third party to see their own
+// It reads the saved board rather than pulling Untappd: this is a hint for the
+// section pickers, and making an admin wait on a third party to see their own
 // settings would be a poor trade. A workspace with no board yet simply gets no
 // suggestions, and any heading can still be typed by hand.
 //
-// The configured sections are folded in too, so a colour set for a beer that
+// The configured sections are folded in too, so a blurb set for a heading that
 // has since gone off tap stays visible and editable rather than vanishing from
 // the page while remaining in the stored config. That includes headings that
-// exist only as a blurb -- snacks have no tap and still want a bar colour.
+// exist only as a blurb -- snacks have no tap.
 func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintConfig) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -167,10 +159,7 @@ func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintCo
 	}
 	// The config maps have no order of their own. Sorted, or the list
 	// reshuffles between page loads for no reason the reader can see.
-	named := make([]string, 0, len(cfg.Colors)+len(cfg.Blurbs))
-	for name := range cfg.Colors {
-		named = append(named, name)
-	}
+	named := make([]string, 0, len(cfg.Blurbs))
 	for name := range cfg.Blurbs {
 		named = append(named, name)
 	}
@@ -187,7 +176,6 @@ func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintCo
 func (a *App) printPayload(ctx context.Context, slug string, tenantID uuid.UUID, state *PrintState) printConfigPayload {
 	return printConfigPayload{
 		Config:      state.Config,
-		Palette:     printPalette,
 		NotesCached: len(state.Notes),
 		PrintURL:    a.baseURL + "/" + slug + "/menu/print.pdf",
 		Sections:    a.boardSections(ctx, tenantID, state.Config),
@@ -210,7 +198,7 @@ func printBeers(state *PrintState) []printBeer {
 		}
 		b.Note, _ = findNote(state.Notes, r.Name)
 		if pour, ok := r.Headline(); ok {
-			b.Price = money(pour.Price)
+			b.Price = shortPrice(pour.Price)
 		}
 		// Hand-written wins, and says so -- the page marks it, because "this
 		// is your copy, Untappd will not overwrite it" is the whole reason the

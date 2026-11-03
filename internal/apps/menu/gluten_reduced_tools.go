@@ -24,9 +24,9 @@ func glutenReducedToolMeta() services.ToolMeta {
 	}
 	return services.ToolMeta{
 		Name: "set_menu_gluten_reduced",
-		Description: "Mark which beers are gluten reduced. The menu board shows a GR badge beside " +
-			"each one, with \"" + GlutenReducedNote + "\" in the footer, and the printed menu puts " +
-			"the same line in the beer's description. Kept by beer name, so a beer keeps its mark " +
+		Description: "Mark which beers are gluten reduced, or made with no gluten ingredients " +
+			"(a seltzer, a house soda). The menu board and the printed menu show a GR badge beside " +
+			"each one, with \"" + GlutenReducedNote + "\" in the footer. Kept by beer name, so a beer keeps its mark " +
 			"when it goes off tap and comes back. Pass `add` and `remove` to change a few, or " +
 			"`beers` to replace the whole list (an empty list clears it). Names are as the menu " +
 			"board shows them, matched ignoring only case and spacing. Never describe these beers " +

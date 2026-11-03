@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,6 +23,10 @@ import (
 //	MENU_PRINT_BOARD=22128 MENU_PRINT_BRAND=gravitybrewing \
 //	MENU_PRINT_OUT=/tmp/menu.pdf \
 //	go test ./internal/apps/menu/ -run TestPrintLive -v
+//
+// For a sheet that looks like the real one, MENU_PRINT_WORDMARK names the
+// venue, MENU_PRINT_LOGO points at a PNG for the masthead, and MENU_PRINT_GR is
+// a comma-separated list of beers to mark gluten reduced.
 
 const liveTimeout = 60 * time.Second
 
@@ -77,21 +82,13 @@ func TestPrintLive(t *testing.T) {
 	}
 
 	cfg := samplePrintConfig()
-	m := PrintMenu{
-		Title:     cfg.Title,
-		Subtitle:  cfg.Subtitle,
-		Flight:    cfg.Flight,
-		Sizes:     defaultSizes,
-		FootLeft:  cfg.FootLeft,
-		FootRight: cfg.FootRight,
-		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Colors, cfg.Blurbs),
-	}
+	m := previewMenu(t, mergeExtras(rows, cfg.Extras), cfg)
 	for _, s := range m.Sections {
 		t.Logf("  %-20s %d rows", s.Name, len(s.Rows))
 		for _, r := range s.Rows {
 			pour, _ := r.Headline()
 			t.Logf("    %-30s %-24s %-6s %s %s  notes:%d",
-				r.Name, tidyStyle(r.Style), tidyABV(r.ABV), money(pour.Price), pour.Size, len(r.Notes))
+				r.Name, tidyStyle(r.Style), tidyABV(r.ABV), shortPrice(pour.Price), pour.Size, len(r.Notes))
 		}
 	}
 
@@ -108,4 +105,31 @@ func TestPrintLive(t *testing.T) {
 		}
 		t.Logf("wrote %s (%d KB)", out, buf.Len()/1024)
 	}
+}
+
+// previewMenu builds the sheet the live check renders, dressed from the
+// MENU_PRINT_* environment so the preview can look like the real thing.
+func previewMenu(t *testing.T, rows []Beer, cfg PrintConfig) PrintMenu {
+	t.Helper()
+	if gr := os.Getenv("MENU_PRINT_GR"); gr != "" {
+		markGlutenReducedRows(rows, strings.Split(gr, ","))
+	}
+	m := PrintMenu{
+		Brand:     os.Getenv("MENU_PRINT_WORDMARK"),
+		Title:     cfg.Title,
+		Subtitle:  cfg.Subtitle,
+		Flight:    cfg.Flight,
+		Sizes:     defaultSizes,
+		FootLeft:  cfg.FootLeft,
+		FootRight: cfg.FootRight,
+		Sections:  buildSections(rows, cfg.Blurbs),
+	}
+	if path := os.Getenv("MENU_PRINT_LOGO"); path != "" {
+		logo, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading logo: %v", err)
+		}
+		m.Logo = logo
+	}
+	return m
 }

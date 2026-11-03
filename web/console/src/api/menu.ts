@@ -35,7 +35,6 @@ export interface MenuPrintConfig {
   foot_left?: string;
   foot_right?: string;
   hero?: string;
-  colors?: Record<string, string>;
   notes?: Record<string, string>;
   /**
    * Section heading to a sentence printed under it. A heading named here that
@@ -130,10 +129,8 @@ export interface GlutenReduced {
 
 export interface MenuPrint {
   config: MenuPrintConfig;
-  /** Headings on the tap list right now, offered to the colour editor. */
+  /** Headings on the tap list right now, offered to the section pickers. */
   sections: string[];
-  /** The house colour cycle, offered as swatches. */
-  palette: string[];
   /** How many descriptions have been fetched from Untappd and stored. */
   notes_cached: number;
   print_url: string;

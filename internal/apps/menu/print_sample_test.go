@@ -15,16 +15,6 @@ func samplePrintConfig() PrintConfig {
 		Flight:    "Try any set of four 4oz pours as a flight",
 		FootLeft:  "WIFI: Gravity  PW: beerparlor1",
 		FootRight: "@thegravitybrewing",
-		Colors: map[string]string{
-			"Lagers":           "#fec111",
-			"Pub Ales":         "#1b4525",
-			"Belgian Styles":   "#f58a22",
-			"Pale Ales & IPAs": "#fec111",
-			"Stouts & Porters": "#678f42",
-			"Specialty":        "#1b4525",
-			"Non-Alcoholic":    "#f58a22",
-			"Sodas & Juices":   "#fec111",
-		},
 		Blurbs: map[string]string{
 			"Snacks": "Pretzels, chips, popcorn and pub mix — ask at the bar.",
 		},

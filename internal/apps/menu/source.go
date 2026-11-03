@@ -51,6 +51,11 @@ type Beer struct {
 	// carries no prose -- so it is filled in separately from the beer's page
 	// on the consumer site, and is empty until then.
 	Notes string `json:"notes,omitempty"`
+
+	// GlutenReduced is the printed menu's GR mark, set at print time from the
+	// workspace's list (see gluten_reduced.go). Never stored on the row: the
+	// list is kept by beer name so a mark survives a beer going off tap.
+	GlutenReduced bool `json:"-"`
 }
 
 // Pour is one container and its price.

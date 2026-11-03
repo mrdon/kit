@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // The printed menu.
@@ -17,11 +18,10 @@ import (
 // thrown away; the only thing that persists is the config and the description
 // cache.
 
-// PrintSection is a run of rows under one coloured heading.
+// PrintSection is a run of rows under one heading.
 type PrintSection struct {
-	Name  string
-	Color string // #rrggbb
-	Rows  []Beer
+	Name string
+	Rows []Beer
 
 	// Blurb is a sentence set under the heading, before any rows. It is how
 	// the menu says a thing exists without pricing it line by line -- snacks
@@ -35,6 +35,9 @@ type PrintSection struct {
 
 // PrintMenu is everything one print run needs.
 type PrintMenu struct {
+	// Brand is the venue's name for the masthead -- the board's wordmark, so
+	// paper and wall say the same thing. Empty puts the title there instead.
+	Brand     string
 	Title     string
 	Subtitle  string
 	Flight    string
@@ -45,47 +48,6 @@ type PrintMenu struct {
 	Hero      []byte // optional masthead photo, JPEG or PNG
 	HeroKind  string // fpdf's image-type string
 	Logo      []byte
-}
-
-// Draft returns whether a section pours beer, and therefore whether it needs
-// the ABV and two-pour columns or just a single price column.
-//
-// The test is deliberately asymmetric. A section is treated as packaged only
-// when every row in it positively says so -- each has pours, and none of them
-// is a draft. A beer whose price has been cleared in Untappd has no pours at
-// all, and it must not drag its whole section into the single-column layout:
-// that would relabel a list of beers as 12oz cans on the strength of one
-// missing number.
-func (s PrintSection) Draft() bool {
-	for _, r := range s.Rows {
-		if r.HasDraft() || len(r.Pours) == 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// PackagedSize is the column heading for a section of cans and bottles: the
-// size they mostly come in, so a list of twelve-ounce cans says so once at the
-// top rather than on every row.
-func (s PrintSection) PackagedSize() string {
-	counts := map[string]int{}
-	best, bestN := "", 0
-	for _, r := range s.Rows {
-		for _, p := range r.Pours {
-			if p.Size == "" {
-				continue
-			}
-			counts[p.Size]++
-			if counts[p.Size] > bestN {
-				best, bestN = p.Size, counts[p.Size]
-			}
-		}
-	}
-	if best == "" {
-		return "Price"
-	}
-	return best
 }
 
 // tidyStyle turns Untappd's catalogue ordering into the way a menu says it.
@@ -129,35 +91,37 @@ func tidyABV(s string) string {
 }
 
 // buildSections groups rows into their headings, in the order the headings
-// first appear upstream, and colours each one.
+// first appear upstream.
 //
 // Order comes from the source rather than from sorting, because the order
 // beers appear on the Untappd board is a decision somebody made -- lagers
 // first, the strong stuff last -- and re-sorting it here would quietly
 // override them.
-func buildSections(rows []Beer, colors, blurbs map[string]string) []PrintSection {
+func buildSections(rows []Beer, blurbs map[string]string) []PrintSection {
 	order := make([]string, 0, 8)
-	byName := make(map[string][]Beer)
+	names := make(map[string]string) // key -> the spelling seen first
+	byKey := make(map[string][]Beer)
 	for _, r := range rows {
 		name := strings.TrimSpace(r.Section)
 		if name == "" {
 			name = "On Tap"
 		}
-		if _, seen := byName[name]; !seen {
-			order = append(order, name)
+		key := sectionKey(name)
+		if _, seen := byKey[key]; !seen {
+			order = append(order, key)
+			names[key] = name
 		}
-		byName[name] = append(byName[name], r)
+		byKey[key] = append(byKey[key], r)
 	}
 	out := make([]PrintSection, 0, len(order))
-	for i, name := range order {
+	for _, key := range order {
 		out = append(out, PrintSection{
-			Name:  name,
-			Color: sectionColor(name, i, colors),
-			Blurb: lookupFold(blurbs, name),
-			Rows:  byName[name],
+			Name:  names[key],
+			Blurb: lookupFold(blurbs, names[key]),
+			Rows:  byKey[key],
 		})
 	}
-	return standaloneBlurbs(out, blurbs, colors)
+	return standaloneBlurbs(out, blurbs)
 }
 
 // standaloneBlurbs adds a heading for every blurb that matched no section.
@@ -170,17 +134,17 @@ func buildSections(rows []Beer, colors, blurbs map[string]string) []PrintSection
 // They land after everything that pours, which is where a food line belongs on
 // a drinks menu, and in name order so that two of them do not swap places
 // between prints for no reason a reader could see.
-func standaloneBlurbs(sections []PrintSection, blurbs, colors map[string]string) []PrintSection {
+func standaloneBlurbs(sections []PrintSection, blurbs map[string]string) []PrintSection {
 	if len(blurbs) == 0 {
 		return sections
 	}
 	used := make(map[string]bool, len(sections))
 	for _, s := range sections {
-		used[strings.ToLower(strings.TrimSpace(s.Name))] = true
+		used[sectionKey(s.Name)] = true
 	}
 	names := make([]string, 0, len(blurbs))
 	for name, text := range blurbs {
-		if strings.TrimSpace(text) == "" || used[strings.ToLower(strings.TrimSpace(name))] {
+		if strings.TrimSpace(text) == "" || used[sectionKey(name)] {
 			continue
 		}
 		names = append(names, name)
@@ -189,64 +153,42 @@ func standaloneBlurbs(sections []PrintSection, blurbs, colors map[string]string)
 	for _, name := range names {
 		sections = append(sections, PrintSection{
 			Name:  name,
-			Color: freshColor(name, sections, colors),
 			Blurb: blurbs[name],
 		})
 	}
 	return sections
 }
 
-// freshColor picks a bar for an appended section, stepping through the palette
-// until it differs from the heading above it.
-//
-// The plain cycle cannot promise that here. Everything before this point may
-// have been coloured by hand, and a gold Snacks bar landing under a gold Sodas
-// bar reads as one long heading with a hole punched in it.
-func freshColor(name string, prior []PrintSection, colors map[string]string) string {
-	if c := lookupFold(colors, name); c != "" {
-		return c
-	}
-	above := ""
-	if len(prior) > 0 {
-		above = prior[len(prior)-1].Color
-	}
-	for i := range printPalette {
-		c := printPalette[(len(prior)+i)%len(printPalette)]
-		if !strings.EqualFold(c, above) {
-			return c
-		}
-	}
-	return printPalette[len(prior)%len(printPalette)]
-}
-
-// House colours, cycled when a section has not been given one. Gold, dark
-// green and orange are the brewery's; the mid green breaks up a run of three
-// so two adjacent headings are never the same.
-var printPalette = []string{"#fec111", "#1b4525", "#f58a22", "#678f42"}
-
-func sectionColor(name string, i int, colors map[string]string) string {
-	if c := lookupFold(colors, name); c != "" {
-		return c
-	}
-	return printPalette[i%len(printPalette)]
-}
-
 // lookupFold reads a hand-typed config map with a scraped key.
 //
 // One side is written by a person and the other comes off Untappd, so "Pub
-// Ales" and "PUB ALES" have to be one entry. An exact hit is tried first, so a
+// Ales", "PUB ALES" and "Pub-Ales" have to be one entry (see sectionKey). An exact hit is tried first, so a
 // config that does distinguish two casings is not second-guessed.
 func lookupFold(m map[string]string, key string) string {
 	if v, ok := m[key]; ok && v != "" {
 		return v
 	}
-	lower := strings.ToLower(strings.TrimSpace(key))
+	want := sectionKey(key)
 	for k, v := range m {
-		if strings.ToLower(strings.TrimSpace(k)) == lower && v != "" {
+		if sectionKey(k) == want && v != "" {
 			return v
 		}
 	}
 	return ""
+}
+
+// sectionKey is a heading as matching sees it: letters and digits only, in
+// lower case. Untappd's "Non Alcoholic" and a hand-typed "Non-Alcoholic" are
+// the same heading, and printing them as two sections, one under the other,
+// is the bug this exists to prevent.
+func sectionKey(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // mergeExtras appends the configured non-Untappd rows.
@@ -261,12 +203,12 @@ func mergeExtras(rows, extras []Beer) []Beer {
 	}
 	seen := make(map[string]int, len(rows))
 	for i, r := range rows {
-		seen[strings.ToLower(strings.TrimSpace(r.Section))] = i
+		seen[sectionKey(r.Section)] = i
 	}
 	out := append([]Beer(nil), rows...)
 	var fresh []Beer
 	for _, e := range extras {
-		if _, ok := seen[strings.ToLower(strings.TrimSpace(e.Section))]; ok {
+		if _, ok := seen[sectionKey(e.Section)]; ok {
 			out = append(out, e)
 			continue
 		}
@@ -281,9 +223,9 @@ func mergeExtras(rows, extras []Beer) []Beer {
 }
 
 func sectionIndex(rows []Beer, section string) int {
-	key := strings.ToLower(strings.TrimSpace(section))
+	key := sectionKey(section)
 	for i, r := range rows {
-		if strings.ToLower(strings.TrimSpace(r.Section)) == key {
+		if sectionKey(r.Section) == key {
 			return i
 		}
 	}

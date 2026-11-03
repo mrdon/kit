@@ -105,9 +105,10 @@ func toolMetas() []services.ToolMeta {
 				"this is everything that is not on it. The payload is one JSON document: `brand` " +
 				"(the brewery's untappd.com slug, e.g. 'gravitybrewing' — without it the menu " +
 				"prints no beer descriptions, because the digital board carries none), `title` and " +
-				"`subtitle` (the masthead, e.g. 'Beers' / '& Beverages'), `flight` (the line above " +
-				"the footer), `foot_left` and `foot_right` (the wifi and social lines), `colors` " +
-				"(section heading name to #rrggbb), `notes` (beer name to a description you " +
+				"`subtitle` (the masthead line beside the board's wordmark, e.g. 'Beers' / '& More'), " +
+				"`flight` (the short line in the masthead's flight badge, e.g. 'Any four 4oz pours'), " +
+				"`sizes` (the pour-size note in the footer), `foot_left` and `foot_right` (the wifi " +
+				"and social lines), `notes` (beer name to a description you " +
 				"write yourself, which wins over Untappd — use it for anything Untappd has no " +
 				"page for), `blurbs` (section heading name to one sentence printed under that " +
 				"heading — a heading named here that is not on the tap list becomes a section " +
@@ -300,7 +301,7 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	var b strings.Builder
 	fmt.Fprintf(&b, "Printed menu configured — %s, %s, %s.",
 		plural(len(cfg.Extras), "extra row"),
-		plural(len(cfg.Colors), "section colour"),
+		plural(len(cfg.Notes), "written description"),
 		plural(len(cfg.Blurbs), "blurb"))
 	if strings.TrimSpace(cfg.Brand) == "" {
 		b.WriteString("\n\nNo `brand` set, so the menu will print without beer descriptions: " +

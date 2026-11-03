@@ -109,20 +109,23 @@ func TestGlutenReducedArgs(t *testing.T) {
 	}
 }
 
-func TestPrintedMenuCarriesTheCaveatInTheRow(t *testing.T) {
+// The printed menu marks a gluten reduced beer with its badge and leaves the
+// description alone: the caveat lives once, in the footer's key, rather than
+// opening every marked beer's paragraph.
+func TestPrintedMenuFlagsGlutenReducedRows(t *testing.T) {
 	rows := []Beer{
 		{Name: "Cerveza Espacial", Notes: "Crisp Mexican-style lager."},
 		{Name: "Wavelength"},
 		{Name: "Galactic Orbit", Notes: "West Coast IPA."},
 	}
 	markGlutenReducedRows(rows, []string{"Cerveza Espacial", "Wavelength"})
-	if rows[0].Notes != GlutenReducedNote+" Crisp Mexican-style lager." {
-		t.Errorf("described beer = %q", rows[0].Notes)
+	if !rows[0].GlutenReduced || !rows[1].GlutenReduced {
+		t.Errorf("marked beers lost their flag: %+v", rows[:2])
 	}
-	if rows[1].Notes != GlutenReducedNote {
-		t.Errorf("a beer with no description still gets the line, got %q", rows[1].Notes)
+	if rows[2].GlutenReduced {
+		t.Error("an unmarked beer was flagged")
 	}
-	if rows[2].Notes != "West Coast IPA." {
-		t.Errorf("an unmarked beer must be untouched, got %q", rows[2].Notes)
+	if rows[0].Notes != "Crisp Mexican-style lager." {
+		t.Errorf("the description must be left as written, got %q", rows[0].Notes)
 	}
 }

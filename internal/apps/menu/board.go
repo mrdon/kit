@@ -228,8 +228,8 @@ func (p *Panel) validate(i int) error {
 
 // shortPrice drops trailing zeros from a price for the wall: "6.50" shows as
 // "6.5" and "8.00" as "8". The number is there for anyone who looks, but it
-// should not read as the loudest thing on the row. The printed menu pads the
-// other way (see money) because a page is read up close, in columns.
+// should not read as the loudest thing on the row. The printed menu writes
+// prices the same way, so paper and wall quote the same number.
 func shortPrice(s string) string {
 	s = strings.TrimSpace(s)
 	if !strings.Contains(s, ".") {

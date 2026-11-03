@@ -26,11 +26,16 @@ import (
 // barley and treated to break the gluten down cannot be called gluten free
 // (TTB Ruling 2014-2), and the people who read this mark are the ones for whom
 // the difference matters. So the mark always travels with the caveat: the
-// wall's footer carries it beside the badge's key, and the printed menu puts
-// it in the beer's own line.
+// wall's footer and the printed menu's both carry it beside the badge's key.
+//
+// The list holds more than treated barley beers. A hard seltzer or a house
+// soda made with no gluten ingredients wears the same badge, because it is
+// made in a brewery that handles gluten all day and "gluten free" is a claim
+// a shared facility cannot stand behind untested. The key says both, and
+// ends on the caveat that covers both.
 
 // GlutenReducedNote is the caveat printed wherever a beer is marked.
-const GlutenReducedNote = "Gluten reduced. May contain gluten."
+const GlutenReducedNote = "Gluten reduced or no gluten ingredients. May contain gluten."
 
 // LoadGlutenReduced reads the workspace's list. None stored is an empty list.
 func LoadGlutenReduced(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]string, error) {

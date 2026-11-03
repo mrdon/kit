@@ -32,20 +32,17 @@ func TestPrintConfigPayloadNeverSendsNull(t *testing.T) {
 
 	var back struct {
 		Config struct {
-			Colors map[string]string `json:"colors"`
 			Notes  map[string]string `json:"notes"`
 			Blurbs map[string]string `json:"blurbs"`
 			Extras []Beer            `json:"extras"`
 		} `json:"config"`
 		Sections []string    `json:"sections"`
-		Palette  []string    `json:"palette"`
 		Beers    []printBeer `json:"beers"`
 	}
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("round trip: %v", err)
 	}
-	if back.Sections == nil || back.Palette == nil || back.Beers == nil ||
-		back.Config.Extras == nil || back.Config.Colors == nil ||
+	if back.Sections == nil || back.Beers == nil || back.Config.Extras == nil ||
 		back.Config.Notes == nil || back.Config.Blurbs == nil {
 		t.Errorf("an empty collection came back nil: %s", raw)
 	}
@@ -68,7 +65,7 @@ func TestPrintConfigRoundTripsThroughTheToolShape(t *testing.T) {
 		t.Fatalf("the tool would reject what the console writes: %v", err)
 	}
 	if back.Brand != cfg.Brand || len(back.Extras) != len(cfg.Extras) ||
-		len(back.Colors) != len(cfg.Colors) {
+		len(back.Blurbs) != len(cfg.Blurbs) {
 		t.Error("config did not survive the round trip intact")
 	}
 }

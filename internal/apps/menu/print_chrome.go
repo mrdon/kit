@@ -1,6 +1,7 @@
 package menu
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/go-pdf/fpdf"
@@ -8,178 +9,240 @@ import (
 
 // The page furniture: the masthead, the running head, and the footer.
 //
-// Split from print_pdf.go because it is the half that changes for a reason
-// unrelated to the tap list. Rows move when beers change; this moves when a
-// venue rewrites its wifi password or puts a new photograph at the top, and
-// keeping the two apart means neither edit has to read the other.
+// Split from the rows because it changes for reasons unrelated to the tap
+// list. Rows move when beers change; this moves when a venue rewrites its wifi
+// password or swaps its logo, and keeping the two apart means neither edit has
+// to read the other.
 
-// drawMasthead is the first page's title block: the photograph, a wash of
-// colour over it so white type stays readable whatever the picture is, the
-// wordmark and the title.
-//
-// Title and subtitle share one baseline, the title at the left margin and the
-// subtitle at the right. Stacking them put the subtitle alone in the corner
-// with a wedge of empty colour above it; across one line the band holds the
-// full width and needs a third less height.
-func drawMasthead(pdf *fpdf.Fpdf, m PrintMenu) {
-	x, w := d(marginX-4.9), d(contentW+12.3)
-	if len(m.Hero) > 0 {
-		pdf.ImageOptions("menu-print-hero", x, d(heroTop), w, d(heroH), false,
-			fpdf.ImageOptions{ImageType: m.HeroKind}, 0, "")
-		pdf.SetAlpha(0.66, "Normal")
-	}
-	r, g, b := hexRGB("#f58a22")
-	pdf.SetFillColor(r, g, b)
-	pdf.Rect(x, d(heroTop), w, d(heroH), "F")
-	pdf.SetAlpha(1, "Normal")
-
-	// The title clears the wordmark when there is one and moves over to the
-	// margin when there is not -- an indent that exists to make room for a
-	// logo reads as a mistake once the logo is gone.
-	//
-	// The logo is measured off the band rather than pinned to numbers of its
-	// own, so shortening the band cannot leave it hanging over the edge.
-	titleX := d(marginX + 16)
-	if len(m.Logo) > 0 {
-		logoH := heroH - 2*logoInset
-		logoW := logoH * logoAspect
-		pdf.ImageOptions("menu-print-logo", d(marginX+logoInset), d(heroTop+logoInset),
-			d(logoW), d(logoH), false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
-		titleX = d(marginX + logoInset + logoW + 22)
-	}
-
-	pdf.SetTextColor(255, 255, 255)
-	title := strings.ToUpper(m.Title)
-	subRight := d(marginX + contentW - 16)
-
-	// The two are set at opposite ends of one line, so a long title is the one
-	// way they can collide. The title gives way rather than the subtitle: it
-	// is the larger of the two and has the room to lose.
-	pdf.SetFont(printBody, "", heroSubPt*designScale)
-	subW := pdf.GetStringWidth(m.Subtitle)
-	titlePt := fitHeroTitle(pdf, title, subRight-titleX-subW-d(24))
-
-	pdf.SetFont(printBold, "", titlePt)
-	baseline := d(capCentredBaseline(heroTop, heroH, heroTitlePt))
-	pdf.Text(titleX, baseline, title)
-
-	pdf.SetFont(printBody, "", heroSubPt*designScale)
-	rightText(pdf, subRight, alignedBaseline(baseline, titlePt, heroSubPt*designScale), m.Subtitle)
-}
-
-// Logo geometry, as fractions of the band. The aspect is the original art's;
-// the inset is the breathing room above and below it.
+// Masthead geometry and type, in points.
 const (
-	logoInset  = 12.0
-	logoAspect = 197.06 / 165.53
+	mastPad      = 10.0 // band edge -> logo, and badge -> band edge
+	mastLogoH    = 36.0
+	brandPt      = 17.0
+	brandMinPt   = 11.0
+	brandEm      = 0.06
+	mastSubPt    = 9.0
+	mastSubEm    = 0.12
+	badgeTitle   = "TRY A FLIGHT"
+	badgeTitlePt = 10.5
+	badgeLinePt  = 8.5
+	badgeMaxW    = 170.0
+
+	runLogoH = 18.0
+	runBase  = 47.0
+	runRuleY = 54.0
+
+	footDefsPt = 8.0
+	footDefsY  = 748.0
+	footRuleY  = 756.0
+	footLinePt = 7.5
+	footLineY  = 770.0
 )
 
-// fitHeroTitle returns the largest size at or below the design size that fits
-// the width, stopping well short of illegible -- a masthead that has shrunk to
-// body copy is worse than one that is merely tight.
-func fitHeroTitle(pdf *fpdf.Fpdf, title string, width float64) float64 {
-	full := heroTitlePt * designScale
-	if width <= 0 {
-		return full
+// drawMasthead is page one's band: the venue's mark and name, the menu's own
+// title beside them, and the flight badge on the right. It is the board's
+// header, set on paper.
+func (sh *sheet) drawMasthead() {
+	pdf := sh.pdf
+	if len(sh.m.Hero) > 0 {
+		pdf.ImageOptions("menu-print-hero", marginX, mastTop, contentW, mastH, false,
+			fpdf.ImageOptions{ImageType: sh.m.HeroKind}, 0, "")
+		pdf.SetAlpha(0.8, "Normal")
 	}
-	for pt := full; pt >= full*0.6; pt -= 1 {
-		pdf.SetFont(printBold, "", pt)
-		if pdf.GetStringWidth(title) <= width {
-			return pt
-		}
+	setFill(pdf, printNavy)
+	pdf.Rect(marginX, mastTop, contentW, mastH, "F")
+	pdf.SetAlpha(1, "Normal")
+	setFill(pdf, printGold)
+	pdf.Rect(marginX, mastTop+mastH, contentW, mastRuleH, "F")
+
+	x := marginX + mastPad
+	if sh.logoAspect > 0 {
+		w := mastLogoH * sh.logoAspect
+		pdf.ImageOptions("menu-print-logo", x, mastTop+(mastH-mastLogoH)/2, w, mastLogoH,
+			false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+		x += w + 10
 	}
-	return full * 0.6
+	badgeX := sh.drawFlightBadge()
+	sh.drawMastText(x, badgeX-12)
 }
 
-// drawContinuedHead is the plain wordmark on pages two and up. The photograph
-// is a first-page event; repeating it would cost a third of every sheet for a
+// drawMastText sets the name and the title line between the logo and the
+// badge. The name gives way first, shrinking to a floor; the title line is
+// dropped before anything overlaps.
+func (sh *sheet) drawMastText(x, limit float64) {
+	pdf := sh.pdf
+	name, sub := mastWords(sh.m)
+	base := capCentredBaseline(mastTop, mastH, brandPt)
+
+	pdf.SetFont(printBody, "", mastSubPt)
+	subW := spacedWidth(pdf, sub, mastSubEm, mastSubPt)
+	size := brandPt
+	for ; size > brandMinPt; size -= 0.5 {
+		pdf.SetFont(printBold, "", size)
+		if x+spacedWidth(pdf, name, brandEm, size)+12+subW <= limit {
+			break
+		}
+	}
+	setText(pdf, printWhite)
+	pdf.SetFont(printBold, "", size)
+	w := drawSpaced(pdf, x, base, name, brandEm, size)
+
+	if sub == "" || x+w+12+subW > limit {
+		return
+	}
+	setText(pdf, printPale)
+	pdf.SetFont(printBody, "", mastSubPt)
+	drawSpaced(pdf, x+w+12, base, sub, mastSubEm, mastSubPt)
+}
+
+// mastWords is what the band says: the venue's name large and the menu's
+// title small beside it ("GRAVITY BREWING  BEERS & MORE"). With no name, the
+// title takes the large slot and the subtitle the small one.
+func mastWords(m PrintMenu) (string, string) {
+	title := strings.TrimSpace(m.Title)
+	sub := strings.TrimSpace(m.Subtitle)
+	if brand := strings.TrimSpace(m.Brand); brand != "" {
+		return strings.ToUpper(brand), strings.ToUpper(strings.TrimSpace(title + " " + sub))
+	}
+	return strings.ToUpper(title), strings.ToUpper(sub)
+}
+
+// drawFlightBadge is the gold badge at the right of the band, and returns its
+// left edge so the name can stop short of it. The venue's own line goes under
+// a fixed "Try a flight", shrunk to fit the badge's width.
+func (sh *sheet) drawFlightBadge() float64 {
+	pdf := sh.pdf
+	line := strings.TrimSpace(sh.m.Flight)
+	pdf.SetFont(printBold, "", badgeTitlePt)
+	titleW := spacedWidth(pdf, badgeTitle, 0.08, badgeTitlePt)
+	lineSize := badgeLinePt
+	pdf.SetFont(printBody, "", lineSize)
+	for lineSize > 6.5 && pdf.GetStringWidth(line) > badgeMaxW-20 {
+		lineSize -= 0.5
+		pdf.SetFont(printBody, "", lineSize)
+	}
+	w := max(titleW, pdf.GetStringWidth(line)) + 20
+	h := mastLogoH
+	x := marginX + contentW - mastPad - w
+	y := mastTop + (mastH-h)/2
+
+	setFill(pdf, printHot)
+	pdf.RoundedRect(x, y, w, h, 3, "1234", "F")
+	setText(pdf, printNavy)
+	pdf.SetFont(printBold, "", badgeTitlePt)
+	if line == "" {
+		drawSpacedCentre(pdf, x+w/2, capCentredBaseline(y, h, badgeTitlePt), badgeTitle, 0.08, badgeTitlePt)
+		return x
+	}
+	drawSpacedCentre(pdf, x+w/2, y+15, badgeTitle, 0.08, badgeTitlePt)
+	pdf.SetFont(printBody, "", lineSize)
+	centreText(pdf, x+w/2, y+28, clipTo(pdf, line, badgeMaxW-20))
+	return x
+}
+
+// drawRunningHead is the one line at the top of pages two and up: the small
+// mark and the name, and the flight on the right, over a gold rule. The band
+// is a first-page event; repeating it would spend a sixth of every sheet on a
 // reader who already knows what they are holding.
-func drawContinuedHead(pdf *fpdf.Fpdf, m PrintMenu) {
-	pdf.SetTextColor(printInk[0], printInk[1], printInk[2])
-	pdf.SetFont(printBold, "", contTitlePt*designScale)
-	title := "MORE " + strings.ToUpper(m.Title)
-	baseline := d(contHeadY)
-	pdf.Text(d(marginX), baseline, title)
-	w := pdf.GetStringWidth(title)
-	// The subtitle is a third smaller, so sharing the baseline would hang it
-	// low. Centre its capitals against the title's instead.
-	pdf.SetFont(printBody, "", contSubPt*designScale)
-	pdf.Text(d(marginX)+w+d(10),
-		alignedBaseline(baseline, d(contTitlePt), d(contSubPt)), m.Subtitle)
+func (sh *sheet) drawRunningHead() {
+	pdf := sh.pdf
+	x := marginX
+	if sh.logoAspect > 0 {
+		w := runLogoH * sh.logoAspect
+		pdf.ImageOptions("menu-print-logo", x, runBase-runLogoH+4, w, runLogoH,
+			false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+		x += w + 8
+	}
+	name, sub := mastWords(sh.m)
+	setText(pdf, printNavy)
+	pdf.SetFont(printBold, "", 10)
+	w := drawSpaced(pdf, x, runBase, name, brandEm, 10)
+	if sub != "" {
+		setText(pdf, printMuted)
+		pdf.SetFont(printBody, "", 7.5)
+		drawSpaced(pdf, x+w+10, runBase, sub, mastSubEm, 7.5)
+	}
+	if line := strings.TrimSpace(sh.m.Flight); line != "" {
+		setText(pdf, printMuted)
+		pdf.SetFont(printBody, "", 7.5)
+		drawSpacedRight(pdf, marginX+contentW, runBase,
+			strings.ToUpper("Try a flight: "+line), 0.08, 7.5)
+	}
+	setFill(pdf, printGold)
+	pdf.Rect(marginX, runRuleY, contentW, headRuleH, "F")
 }
 
-// drawPrintFooter is the strap and the house lines, ruled off from the menu.
-func drawPrintFooter(pdf *fpdf.Fpdf, m PrintMenu) {
-	pdf.SetDrawColor(printInk[0], printInk[1], printInk[2])
-	pdf.SetLineWidth(d(1.88))
-	pdf.Line(d(marginX-5), d(footRuleTop), d(marginX+contentW+7), d(footRuleTop))
-	pdf.Line(d(marginX-5), d(footRule2Y), d(marginX+contentW+7), d(footRule2Y))
+// drawFooter is the key line, a rule, and the house lines with the page count
+// between them. The key carries the pour-size note, and the GR caveat when a
+// GR badge is on the menu: every page gets it, because a sheet separated from
+// its partner still has to explain its own marks.
+func (sh *sheet) drawFooter(page, pages int) {
+	pdf := sh.pdf
+	sh.drawFooterKey()
 
-	pdf.SetTextColor(printInk[0], printInk[1], printInk[2])
-	if strap := strings.TrimSpace(m.Flight); strap != "" {
-		pdf.SetFont(printBold, "", footPt*designScale)
-		drawSpacedCentre(pdf, d(pageW/2), d(footStrapY), strings.ToUpper(strap),
-			footStrapEm, footPt*designScale)
+	setDraw(pdf, printNavy)
+	pdf.SetLineWidth(0.75)
+	pdf.Line(marginX, footRuleY, marginX+contentW, footRuleY)
+
+	setText(pdf, printMuted)
+	pdf.SetFont(printBody, "", footLinePt)
+	if s := strings.TrimSpace(sh.m.FootLeft); s != "" {
+		drawSpaced(pdf, marginX, footLineY, s, 0.1, footLinePt)
 	}
-	// The pour sizes live here rather than in a column of their own. Every
-	// beer has a 9oz and a 4oz price, and printing all three made a wall of
-	// numbers where the useful fact -- one price, and the sizes exist -- fits
-	// on a line. The exceptions still carry their size beside the price.
-	if sizes := strings.TrimSpace(m.Sizes); sizes != "" {
-		pdf.SetFont(printBody, "", footSizesPt*designScale)
-		drawSpacedCentre(pdf, d(pageW/2), d(footSizesY), sizes,
-			footSizesEm, footSizesPt*designScale)
+	if pages > 1 {
+		label := fmt.Sprintf("PAGE %d OF %d", page, pages)
+		drawSpacedCentre(pdf, pageW/2, footLineY, label, 0.1, footLinePt)
 	}
-	pdf.SetFont(printBody, "", footPt*designScale)
-	if m.FootLeft != "" {
-		drawSpaced(pdf, d(marginX-5), d(footLineY+12), m.FootLeft,
-			footLineEm, footPt*designScale)
-	}
-	if m.FootRight != "" {
-		drawSpacedRight(pdf, d(marginX+contentW+7), d(footLineY+12), m.FootRight,
-			footLineEm, footPt*designScale)
+	if s := strings.TrimSpace(sh.m.FootRight); s != "" {
+		drawSpacedRight(pdf, marginX+contentW, footLineY, s, 0.1, footLinePt)
 	}
 }
 
-// drawLargePour writes the headline price, right-aligned, carrying its size
-// when that size is not the house pour.
-//
-// The size rides along in smaller type rather than at full weight: it is a
-// caveat on the number, not part of it, and setting it the same size as the
-// price made a 12oz beer shout louder than the pints beside it.
-func drawLargePour(pdf *fpdf.Fpdf, baseline float64, r Beer) {
-	pour, _ := r.Headline()
-	price, size := pour.Price, pour.Size
-	if price == "" {
-		pdf.SetFont(printBody, "", rowMetaPt*designScale)
-		rightText(pdf, d(colLargeRight), baseline, "-")
+// drawFooterKey centres "16oz unless marked · [GR] the caveat" on one line,
+// shrinking it before it would run past the margins.
+func (sh *sheet) drawFooterKey() {
+	pdf := sh.pdf
+	sizes := strings.TrimSpace(sh.m.Sizes)
+	if sizes == "" && !sh.anyGR {
 		return
 	}
-	price = money(price)
-	if size == "" || size == DefaultPour {
-		pdf.SetFont(printBody, "", rowMetaPt*designScale)
-		rightText(pdf, d(colLargeRight), baseline, price)
-		return
-	}
-	note := " (" + size + ")"
-	pdf.SetFont(printBody, "", rowSizePt*designScale)
-	noteW := pdf.GetStringWidth(note)
-	pdf.SetFont(printBody, "", rowMetaPt*designScale)
-	priceW := pdf.GetStringWidth(price)
-	x := d(colLargeRight) - priceW - noteW
-	pdf.Text(x, baseline, price)
-	pdf.SetFont(printBody, "", rowSizePt*designScale)
-	pdf.Text(x+priceW, baseline, note)
-}
-
-// fitStyleSize returns the largest size at or below the body size that fits,
-// stopping at rowMetaMin so a style never shrinks to unreadable.
-func fitStyleSize(pdf *fpdf.Fpdf, s string, width float64) float64 {
-	for pt := rowMetaPt; pt >= rowMetaMin; pt -= 0.5 {
-		pdf.SetFont(printBody, "", pt*designScale)
-		if pdf.GetStringWidth(s) <= width {
-			return pt * designScale
+	size := footDefsPt
+	var width float64
+	for ; size >= 6; size -= 0.25 {
+		width = sh.footerKeyWidth(sizes, size)
+		if width <= contentW {
+			break
 		}
 	}
-	return rowMetaMin * designScale
+	x := pageW/2 - width/2
+	setText(pdf, printNavy)
+	pdf.SetFont(printBody, "", size)
+	if sizes != "" {
+		pdf.Text(x, footDefsY, sizes)
+		x += pdf.GetStringWidth(sizes)
+		if sh.anyGR {
+			pdf.Text(x, footDefsY, "  ·  ")
+			x += pdf.GetStringWidth("  ·  ")
+		}
+	}
+	if sh.anyGR {
+		x += drawBadge(pdf, x, footDefsY, badgeGR, size) + 4
+		setText(pdf, printNavy)
+		pdf.SetFont(printBody, "", size)
+		pdf.Text(x, footDefsY, GlutenReducedNote)
+	}
+}
+
+func (sh *sheet) footerKeyWidth(sizes string, size float64) float64 {
+	pdf := sh.pdf
+	pdf.SetFont(printBody, "", size)
+	w := pdf.GetStringWidth(sizes)
+	if sh.anyGR {
+		if sizes != "" {
+			w += pdf.GetStringWidth("  ·  ")
+		}
+		w += pdf.GetStringWidth(GlutenReducedNote) + 4
+		w += badgeWidth(pdf, badgeGR)
+	}
+	return w
 }
