@@ -34,9 +34,11 @@ const (
 	metaH    = 11.5 // style and ABV line
 	variantH = 14.0 // one row inside a family
 	rowGap   = 8.0  // after every unit
-	// sizeClear is what a row with no meta line still needs under its name,
-	// so a size beneath the price does not touch the next beer.
-	sizeClear = 10.0
+	// A drink with nothing written about it -- a can, a soda -- is one line:
+	// smaller name, style beside it, size beside the price.
+	compactPt  = 10.5
+	compactH   = 15.5
+	compactGap = 3.0
 )
 
 // unitHeight is how far a unit advances the cursor.
@@ -57,11 +59,12 @@ func unitHeight(pdf *fpdf.Fpdf, u printUnit) float64 {
 }
 
 func beerHeight(pdf *fpdf.Fpdf, b Beer) float64 {
+	if isCompact(b) {
+		return compactH + compactGap
+	}
 	h := nameH
-	if beerMeta(b) != "" {
+	if beerMeta(b) != "" || pourSize(b) != "" {
 		h += metaH
-	} else if pourSize(b) != "" {
-		h += sizeClear
 	}
 	return h + float64(len(descLines(pdf, b.Notes)))*descLead + rowGap
 }
@@ -95,19 +98,73 @@ func drawHeading(pdf *fpdf.Fpdf, x, y float64, name string, cont bool) {
 // drawBeer is one row: name and marks, price on the right with its size under
 // it, the style and ABV, then the description.
 func drawBeer(pdf *fpdf.Fpdf, x, y float64, b Beer) {
+	if isCompact(b) {
+		drawCompact(pdf, x, y, b)
+		return
+	}
 	right := x + colW
 	base := y + namePt*0.8
-	priceW := drawPrice(pdf, right, base, b)
+	// With no style or strength to print, the size moves into that line
+	// rather than hanging under the price over an empty one.
+	noMeta := beerMeta(b) == ""
+	priceW := drawPrice(pdf, right, base, b, !noMeta)
 	drawName(pdf, x, base, b.Name, right-priceW-10, beerBadges(b))
 
 	cursor := y + nameH
-	if meta := beerMeta(b); meta != "" {
+	switch {
+	case !noMeta:
 		drawMeta(pdf, x, cursor+metaPt*0.8, tidyStyle(b.Style), tidyABV(b.ABV))
 		cursor += metaH
-	} else if pourSize(b) != "" {
-		cursor += sizeClear
+	case pourSize(b) != "":
+		drawMeta(pdf, x, cursor+metaPt*0.8, pourSize(b), "")
+		cursor += metaH
 	}
 	drawDesc(pdf, x, cursor, b.Notes)
+}
+
+// isCompact is whether a row prints on one line. A row with a description is
+// a beer someone will read about; one without is a list entry, and setting a
+// can of soda at the size of a beer with a paragraph gave a page of cans the
+// weight of a page of beers.
+func isCompact(b Beer) bool { return strings.TrimSpace(b.Notes) == "" }
+
+// drawCompact is a one-line row: name and marks, then the style and ABV in
+// grey, and the size and price at the right.
+func drawCompact(pdf *fpdf.Fpdf, x, y float64, b Beer) {
+	right := x + colW
+	base := y + compactPt*0.95
+	pour, ok := b.Headline()
+	price := "-"
+	if ok && pour.Price != "" {
+		price = shortPrice(pour.Price)
+	}
+	setText(pdf, printNavy)
+	pdf.SetFont(printMedium, "", pricePt*0.9)
+	priceW := pdf.GetStringWidth(price)
+	rightText(pdf, right, base, price)
+	edge := right - priceW - 8
+	if size := pourSize(b); size != "" {
+		setText(pdf, printMuted)
+		pdf.SetFont(printBody, "", sizePt)
+		edge -= pdf.GetStringWidth(size)
+		pdf.Text(edge, base, size)
+		edge -= 8
+	}
+
+	name := strings.ToUpper(b.Name)
+	setText(pdf, printNavy)
+	pdf.SetFont(printSemi, "", compactPt)
+	name = clipTo(pdf, name, edge-x)
+	pdf.Text(x, base, name)
+	cur := x + pdf.GetStringWidth(name)
+	for _, bd := range beerBadges(b) {
+		cur += 4 + drawBadge(pdf, cur+4, base, bd, compactPt)
+	}
+	if meta := beerMeta(b); meta != "" && cur+8 < edge {
+		setText(pdf, printMuted)
+		pdf.SetFont(printBody, "", metaPt)
+		pdf.Text(cur+7, base, clipTo(pdf, meta, edge-cur-7))
+	}
 }
 
 // drawGroup is a family: its shared name and style, the description once, then
@@ -202,8 +259,9 @@ func drawMeta(pdf *fpdf.Fpdf, x, base float64, style, abv string) {
 }
 
 // drawPrice sets the headline price right-aligned, with its size under it when
-// that is not the house pour, and returns the width the price took.
-func drawPrice(pdf *fpdf.Fpdf, right, base float64, b Beer) float64 {
+// that is not the house pour and withSize is set, and returns the width the
+// price took.
+func drawPrice(pdf *fpdf.Fpdf, right, base float64, b Beer, withSize bool) float64 {
 	pour, ok := b.Headline()
 	price := "-"
 	if ok && pour.Price != "" {
@@ -213,7 +271,7 @@ func drawPrice(pdf *fpdf.Fpdf, right, base float64, b Beer) float64 {
 	pdf.SetFont(printMedium, "", pricePt)
 	w := pdf.GetStringWidth(price)
 	rightText(pdf, right, base, price)
-	if size := pourSize(b); size != "" {
+	if size := pourSize(b); size != "" && withSize {
 		setText(pdf, printMuted)
 		pdf.SetFont(printBody, "", sizePt)
 		rightText(pdf, right, base+sizePt+3, size)

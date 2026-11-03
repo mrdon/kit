@@ -5,6 +5,8 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"math"
+	"slices"
 
 	"github.com/go-pdf/fpdf"
 )
@@ -24,13 +26,13 @@ import (
 // beer under it. Layout is planned first and drawn second, so the footer can
 // say "Page 1 of 2" and a test can walk the same plan the printer does.
 //
-// The rule is greedy: fill a column, and move on only when the next thing
-// genuinely will not fit. A heading never sits alone at the foot of a column,
-// and a section that carries over repeats its heading marked "cont.", as the
-// board does. Tidier-sounding rules were tried on the old one-column sheet and
-// both lost: keeping sections whole left half a page white, and a widow guard
-// gave up a quarter of a page to save one beer. The content moves every week,
-// so the worst case is what matters, and greedy has no bad one.
+// Within a column the rule is greedy: fill it, and move on only when the next
+// thing will not fit above the column's bottom line, which planLayout sets so
+// the columns come out level. A heading never sits alone at the foot of a
+// column, and a section that carries over repeats its heading marked "cont.",
+// as the board does. Tidier-sounding rules were tried on the old one-column
+// sheet and both lost: keeping sections whole left half a page white, and a
+// widow guard gave up a quarter of a page to save one beer.
 
 //go:embed fonts/Archivo-Regular.ttf fonts/Archivo-Medium.ttf fonts/Archivo-SemiBold.ttf fonts/Archivo-Bold.ttf
 var printFonts embed.FS
@@ -142,12 +144,73 @@ func RenderPrintPDF(m PrintMenu, out io.Writer) error {
 // planLayout flows every section through the columns and reports where each
 // heading and unit lands, and how many pages that took. An empty menu is one
 // page: the masthead and footer still print.
+//
+// The columns are balanced rather than packed. Filling each column to the
+// footer and moving on left the last one holding three sodas under a page of
+// beers, which reads as lopsided however good the rows are. So the plan first
+// finds how many pages the menu needs, then the highest common bottom line at
+// which it still fits in every column of those pages, and breaks there: the
+// columns end level, and the white space, if any, is shared out evenly at the
+// foot of every column instead of pooled in the last.
 func planLayout(pdf *fpdf.Fpdf, sections []PrintSection) ([]placement, int) {
-	f := &flow{pdf: pdf, y: bodyTopFirst, atTop: true}
+	plan, cols := flowAt(pdf, sections, bodyBottom)
+	pages := (cols + 1) / 2
+	bottom := balancedBottom(pdf, sections, 2*pages)
+	if bottom < bodyBottom {
+		plan, cols = flowAt(pdf, sections, bottom)
+	}
+	return plan, (cols + 1) / 2
+}
+
+// balancedBottom is the bottom line that makes the columns most even. Of the
+// lines at which the menu still fits in cols columns, it keeps the one whose
+// columns end closest together, breaking ties toward the shorter. It is not
+// simply the lowest line that fits: a section's last unit may run past the
+// line, and the lowest line is often the one that makes the most of them do
+// so, leaving one column long and the next short. Candidates are tried every
+// few points; a menu is a few dozen units, so this is cheap.
+func balancedBottom(pdf *fpdf.Fpdf, sections []PrintSection, cols int) float64 {
+	best, bestScore := bodyBottom, math.Inf(1)
+	for line := bodyBottom; line >= bodyTopFirst; line -= 4 {
+		plan, n := flowAt(pdf, sections, line)
+		if n > cols {
+			break // lower lines only need more columns
+		}
+		lo, hi := columnEnds(pdf, plan, cols)
+		if score := (hi - lo) + hi/100; score < bestScore {
+			best, bestScore = line, score
+		}
+	}
+	return best
+}
+
+// columnEnds reports how far down the shortest and the longest of cols
+// columns run. An empty column ends at its own top.
+func columnEnds(pdf *fpdf.Fpdf, plan []placement, cols int) (float64, float64) {
+	ends := make([]float64, cols)
+	for c := range ends {
+		ends[c] = bodyTop(c / 2)
+	}
+	for _, pl := range plan {
+		h := headingH
+		if !pl.heading {
+			h = unitHeight(pdf, pl.unit) - rowGap
+		}
+		if c := 2*pl.page + pl.col; c < cols {
+			ends[c] = max(ends[c], pl.y+h)
+		}
+	}
+	return slices.Min(ends), slices.Max(ends)
+}
+
+// flowAt runs the flow with every column ending at bottom, and reports the
+// placements and how many columns they used.
+func flowAt(pdf *fpdf.Fpdf, sections []PrintSection, bottom float64) ([]placement, int) {
+	f := &flow{pdf: pdf, y: bodyTopFirst, atTop: true, bottom: bottom}
 	for i := range sections {
 		f.section(&sections[i])
 	}
-	return f.out, f.page + 1
+	return f.out, 2*f.page + f.col + 1
 }
 
 // flow is the cursor the plan walks.
@@ -155,7 +218,8 @@ type flow struct {
 	pdf       *fpdf.Fpdf
 	page, col int
 	y         float64
-	atTop     bool // nothing placed in this column yet
+	atTop     bool    // nothing placed in this column yet
+	bottom    float64 // where every column ends; bodyBottom at the most
 	out       []placement
 }
 
@@ -169,10 +233,23 @@ func (f *flow) section(s *PrintSection) {
 	}
 	for i, u := range units {
 		h := unitHeight(f.pdf, u)
+		// The balanced line is a target, not a wall, for a section's last
+		// unit: running it past the line to the footer beats leaving one beer
+		// alone at the top of the next column under "cont." with half a page
+		// of white above where it could have gone.
+		last := i == len(units)-1
 		if i == 0 {
-			f.fit(headingH + h)
+			// Nor does a section start with its heading and one unit at the
+			// foot of a column and the rest overleaf: it starts where its first
+			// two fit, or in the next column.
+			need, needLast := headingH+h, last
+			if len(units) > 1 {
+				need += unitHeight(f.pdf, units[1])
+				needLast = len(units) == 2
+			}
+			f.fit(need, needLast)
 			f.place(placement{sec: s, heading: true}, headingH)
-		} else if f.fit(h) {
+		} else if f.fit(h, last) {
 			f.place(placement{sec: s, heading: true, cont: true}, headingH)
 		}
 		f.place(placement{sec: s, unit: u}, h)
@@ -181,11 +258,16 @@ func (f *flow) section(s *PrintSection) {
 }
 
 // fit moves to the next column when h will not fit below the cursor, and
-// reports whether it moved. A column with nothing in it yet takes whatever it
-// is given: a unit taller than a whole column is drawn and allowed to overrun
-// rather than looping forever.
-func (f *flow) fit(h float64) bool {
-	if f.atTop || f.y+h <= bodyBottom {
+// reports whether it moved. The column ends at the balanced line, or at the
+// footer for a section's last unit. A column with nothing in it yet takes
+// whatever it is given: a unit taller than a whole column is drawn and allowed
+// to overrun rather than looping forever.
+func (f *flow) fit(h float64, last bool) bool {
+	limit := f.bottom
+	if last {
+		limit = bodyBottom
+	}
+	if f.atTop || f.y+h <= limit {
 		return false
 	}
 	f.col++

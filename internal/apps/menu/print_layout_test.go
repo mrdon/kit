@@ -59,23 +59,26 @@ func TestPlanNeverRunsIntoTheFooter(t *testing.T) {
 	}
 }
 
-// Columns are filled before the flow moves on: a column may only end where
-// the next thing genuinely would not have fitted.
-func TestColumnsFillBeforeMovingOn(t *testing.T) {
+// Columns are filled up to the balanced line before the flow moves on: a
+// column may only end where the next thing would not have fitted above it.
+func TestColumnsFillToTheBalancedLine(t *testing.T) {
 	pdf := newMeasuringPDF(t)
-	plan, _ := planLayout(pdf, layoutSections(7, 5))
+	sections := layoutSections(7, 5)
+	plan, pages := planLayout(pdf, sections)
+	bottom := balancedBottom(pdf, sections, 2*pages)
 	for i := 1; i < len(plan); i++ {
 		prev, cur := plan[i-1], plan[i]
 		if prev.page == cur.page && prev.col == cur.col {
 			continue
 		}
-		// cur opened a new column. What it brought (with a heading, the unit
-		// after it too) must not have fitted where prev ended.
 		need := headingH
 		if !cur.heading {
 			need = unitHeight(pdf, cur.unit)
-		} else if i+1 < len(plan) {
-			need += unitHeight(pdf, plan[i+1].unit)
+		} else {
+			// A section opens only where its first two units fit.
+			for j := i + 1; j < len(plan) && j <= i+2 && plan[j].sec == cur.sec && !plan[j].heading; j++ {
+				need += unitHeight(pdf, plan[j].unit)
+			}
 		}
 		end := prev.y + headingH
 		if !prev.heading {
@@ -84,9 +87,106 @@ func TestColumnsFillBeforeMovingOn(t *testing.T) {
 		if !cur.cont {
 			end += sectionGap
 		}
-		if end+need <= bodyBottom {
-			t.Errorf("moved to page %d col %d with %.0f free and %.0f needed",
-				cur.page, cur.col, bodyBottom-end, need)
+		limit := bottom
+		if isLastOfSection(plan, i) || (cur.heading && !cur.cont && sectionLen(plan, i) <= 2) {
+			limit = bodyBottom
+		}
+		if end+need <= limit {
+			t.Errorf("moved to page %d col %d with %.0f free above the line and %.0f needed",
+				cur.page, cur.col, bottom-end, need)
+		}
+	}
+}
+
+// isLastOfSection reports whether the unit opening a column at plan[i] (or the
+// one after its heading) is its section's last.
+func isLastOfSection(plan []placement, i int) bool {
+	j := i
+	if plan[j].heading && j+1 < len(plan) {
+		j++
+	}
+	return j+1 >= len(plan) || plan[j+1].sec != plan[j].sec
+}
+
+// sectionLen counts the units of the section whose heading is plan[i].
+func sectionLen(plan []placement, i int) int {
+	n := 0
+	for j := i + 1; j < len(plan) && plan[j].sec == plan[i].sec; j++ {
+		if !plan[j].heading {
+			n++
+		}
+	}
+	return n
+}
+
+// A section's last unit never sits alone at the top of a column when it would
+// have fitted above the footer where its section was.
+func TestLastUnitIsNotStranded(t *testing.T) {
+	pdf := newMeasuringPDF(t)
+	for _, n := range []int{3, 5, 7} {
+		plan, _ := planLayout(pdf, layoutSections(n, 3))
+		for i := 2; i < len(plan); i++ {
+			cur, head, prev := plan[i], plan[i-1], plan[i-2]
+			if !head.cont || cur.heading || !isLastOfSection(plan, i) {
+				continue
+			}
+			end := prev.y + unitHeight(pdf, prev.unit)
+			if end+unitHeight(pdf, cur.unit) <= bodyBottom {
+				t.Errorf("%s: last row moved to a new column with room for it above the footer",
+					cur.sec.Name)
+			}
+		}
+	}
+}
+
+// A section never opens with its heading and one unit at a column's foot and
+// carries on in the next column.
+func TestFirstUnitIsNotStranded(t *testing.T) {
+	pdf := newMeasuringPDF(t)
+	for _, n := range []int{3, 5, 7} {
+		plan, _ := planLayout(pdf, layoutSections(n, 3))
+		for i := 0; i+3 < len(plan); i++ {
+			head, first, next := plan[i], plan[i+1], plan[i+2]
+			if !head.heading || head.cont || next.sec != head.sec {
+				continue
+			}
+			if next.heading && (next.page != first.page || next.col != first.col) {
+				t.Errorf("%s: one row at a column's foot, the rest in the next column", head.sec.Name)
+			}
+		}
+	}
+}
+
+// Balancing evens the columns out; it never costs a page.
+func TestBalancingNeverAddsAPage(t *testing.T) {
+	pdf := newMeasuringPDF(t)
+	for _, n := range []int{1, 3, 5, 7, 9} {
+		sections := layoutSections(n, 4)
+		_, packed := flowAt(pdf, sections, bodyBottom)
+		_, pages := planLayout(pdf, sections)
+		if pages != (packed+1)/2 {
+			t.Errorf("%d sections: %d pages balanced, %d packed", n, pages, (packed+1)/2)
+		}
+	}
+}
+
+// Balanced columns end far closer together than packed ones. Not exactly
+// level: breaks fall between rows, and a section's last row is never sent
+// alone to the next column to even things out.
+func TestColumnsComeOutLevel(t *testing.T) {
+	pdf := newMeasuringPDF(t)
+	for _, n := range []int{2, 5, 7} {
+		sections := layoutSections(n, 4)
+		packed, cols := flowAt(pdf, sections, bodyBottom)
+		cols = 2 * ((cols + 1) / 2)
+		plan, _ := planLayout(pdf, sections)
+		plo, phi := columnEnds(pdf, packed, cols)
+		lo, hi := columnEnds(pdf, plan, cols)
+		if hi-lo > phi-plo {
+			t.Errorf("%d sections: balanced spread %.0f is worse than packed %.0f", n, hi-lo, phi-plo)
+		}
+		if hi-lo > (bodyBottom-bodyTopRest)/2 {
+			t.Errorf("%d sections: columns end %.0f apart, over half a column", n, hi-lo)
 		}
 	}
 }
