@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/mrdon/kit/internal/apps"
+	"github.com/mrdon/kit/internal/auth"
 	consoleweb "github.com/mrdon/kit/web/console"
 )
 
@@ -23,6 +24,9 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	// HTML. The {rest...} wildcard covers /{slug}/web/ and any deeper
 	// client route (e.g. /{slug}/web/admin/integrations) on reload.
 	shell := func(h http.HandlerFunc) http.Handler { return ShellRoute(a.pool, a.signer, h) }
+	// The manifest is public: browsers fetch it without cookies.
+	mux.Handle("GET /{slug}/"+Segment+"/manifest.webmanifest",
+		auth.TenantFromPath(a.pool)(http.HandlerFunc(handleManifest)))
 	mux.Handle("GET /{slug}/"+Segment, shell(a.handleShell))
 	mux.Handle("GET /{slug}/"+Segment+"/{rest...}", shell(a.handleShell))
 

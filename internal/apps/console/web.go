@@ -29,7 +29,8 @@ func (a *App) handleShell(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = tenant.Slug
 	}
-	body, err := consoleweb.IndexHTML(tenant.Slug, title)
+	body, err := consoleweb.IndexHTML(tenant.Slug, title,
+		manifestURL(tenant.Slug, auth.CallerFromContext(r.Context())))
 	if err != nil {
 		http.Error(w, "console not built", http.StatusServiceUnavailable)
 		return

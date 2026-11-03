@@ -25,6 +25,10 @@ const basePlaceholder = "__KIT_BASE__"
 // titlePlaceholder is rewritten to the workspace display name for <title>.
 const titlePlaceholder = "__KIT_TITLE__"
 
+// manifestPlaceholder is rewritten to the PWA manifest URL, which differs
+// for a paired device (see console.handleManifest).
+const manifestPlaceholder = "__KIT_MANIFEST__"
+
 // AssetHandler serves the shared console bundle under /console/assets/*.
 // It does NOT cover the HTML entry point — that is routed per-workspace
 // via /{slug}/web in internal/apps/console.
@@ -65,8 +69,12 @@ func AssetHandler() http.Handler {
 // slug and title substituted in. Same bytes for every request under
 // /{slug}/web except for those tokens; the shared JS/CSS bundle lives at
 // /console/assets/ and is referenced absolutely by the Vite build.
-func IndexHTML(slug, title string) ([]byte, error) {
-	return entryHTML("index.html", slug, title)
+func IndexHTML(slug, title, manifest string) ([]byte, error) {
+	out, err := entryHTML("index.html", slug, title)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.ReplaceAll(out, []byte(manifestPlaceholder), []byte(manifest)), nil
 }
 
 // PlayHTML returns the trivia player entry point with the per-workspace slug
