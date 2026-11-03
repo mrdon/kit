@@ -191,3 +191,11 @@ func TestMastWords(t *testing.T) {
 		t.Errorf("without a brand: %q / %q", name, sub)
 	}
 }
+
+// The masthead logo is found by convention, so its key has to be one an admin
+// can actually store with set_menu_asset. The first one did not.
+func TestPrintLogoKeyCanBeSet(t *testing.T) {
+	if !keyPattern.MatchString(printLogoKeys[0]) {
+		t.Errorf("logo key %q is refused by set_menu_asset", printLogoKeys[0])
+	}
+}

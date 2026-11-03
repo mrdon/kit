@@ -146,15 +146,24 @@ func (a *App) attachPrintArt(ctx context.Context, tenantID uuid.UUID, cfg PrintC
 	// The logo is conventional rather than configured: a venue that wants one
 	// on the masthead uploads it under this key. It sits on the navy band, so
 	// a mark in colour or knocked out white both read.
-	if asset, err := loadPrintAsset(ctx, a.pool, tenantID, printLogoKey); err == nil {
+	for _, key := range printLogoKeys {
+		asset, err := loadPrintAsset(ctx, a.pool, tenantID, key)
+		if err != nil {
+			continue
+		}
 		if imageKind(asset.Mime) == "PNG" {
 			m.Logo = asset.Bytes
 		}
+		return
 	}
 }
 
-// printLogoKey is the asset key the masthead logo is looked up under.
-const printLogoKey = "print_logo"
+// printLogoKeys are the asset keys the masthead logo is looked up under, in
+// order. The key was "print_logo" until it turned out set_menu_asset only
+// takes lowercase letters, digits and hyphens, so the documented key could
+// never be set. "print-logo" is the one to use; the old one is still read in
+// case a row was ever written by hand.
+var printLogoKeys = []string{"print-logo", "print_logo"}
 
 // loadPrintAsset reads one asset's bytes. LoadAssets returns data URIs for the
 // board's inline rendering; a PDF wants the bytes themselves.
