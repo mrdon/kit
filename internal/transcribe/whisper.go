@@ -29,9 +29,11 @@ const MaxUploadBytes int64 = 5 * 1024 * 1024
 var ErrNotConfigured = errors.New("whisper binary or model not configured")
 
 // Transcriber turns an audio stream into text, streaming segments out
-// via onSegment as they become available.
+// via onSegment as they become available. hint is optional text in the
+// style of the expected speech (names, jargon); whisper leans toward its
+// spellings, which matters most for words the model rarely saw.
 type Transcriber interface {
-	Transcribe(ctx context.Context, audio io.Reader, mime string, onSegment func(text string)) (string, error)
+	Transcribe(ctx context.Context, audio io.Reader, mime, hint string, onSegment func(text string)) (string, error)
 }
 
 // WhisperCLI is a Transcriber backed by the whisper.cpp `whisper-cli`
@@ -67,7 +69,7 @@ func New(whisperBin, whisperModel, ffmpegBin string) (*WhisperCLI, error) {
 //
 // mime is informational — ffmpeg autodetects the container, so the
 // argument just keeps the tempfile suffix honest for debugging.
-func (c *WhisperCLI) Transcribe(ctx context.Context, audio io.Reader, mime string, onSegment func(text string)) (string, error) {
+func (c *WhisperCLI) Transcribe(ctx context.Context, audio io.Reader, mime, hint string, onSegment func(text string)) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "kit-chat-audio-")
 	if err != nil {
 		return "", fmt.Errorf("creating tempdir: %w", err)
@@ -85,7 +87,7 @@ func (c *WhisperCLI) Transcribe(ctx context.Context, audio io.Reader, mime strin
 		return "", fmt.Errorf("ffmpeg: %w", err)
 	}
 
-	return c.runWhisper(ctx, wavPath, onSegment)
+	return c.runWhisper(ctx, wavPath, hint, onSegment)
 }
 
 func writeTemp(path string, r io.Reader) error {
@@ -122,14 +124,18 @@ func (c *WhisperCLI) convertToWav(ctx context.Context, in, out string) error {
 // is the transcript and nothing else. whisper.cpp prints segments as it
 // produces them when --output-txt-stdout is set, giving us a natural
 // streaming hook via bufio line reads.
-func (c *WhisperCLI) runWhisper(ctx context.Context, wavPath string, onSegment func(text string)) (string, error) {
-	cmd := exec.CommandContext(ctx, c.WhisperBin,
+func (c *WhisperCLI) runWhisper(ctx context.Context, wavPath, hint string, onSegment func(text string)) (string, error) {
+	args := []string{
 		"-m", c.WhisperModel,
 		"-f", wavPath,
 		"--no-timestamps",
 		"--no-prints",
 		"--output-txt",
-	)
+	}
+	if hint != "" {
+		args = append(args, "--prompt", hint)
+	}
+	cmd := exec.CommandContext(ctx, c.WhisperBin, args...)
 	// We don't use --output-txt-stdout (not all builds have it). Instead,
 	// read stdout directly — whisper-cli prints segments to stdout by
 	// default when --no-prints silences the progress noise.

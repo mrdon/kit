@@ -82,7 +82,8 @@ func (a *CardsApp) handleChatTranscribe(w http.ResponseWriter, r *http.Request) 
 
 	mime := header.Header.Get("Content-Type")
 	slog.Info("chat transcribe request", "user_id", caller.UserID, "actor_id", caller.ActorID, "content_type", mime, "size", header.Size)
-	if _, err := chat.Transcribe(r.Context(), a.transcriber, file, mime, emit); err != nil {
+	hint := chat.VocabularyHint(r.Context(), a.pool, caller)
+	if _, err := chat.Transcribe(r.Context(), a.transcriber, file, mime, hint, emit); err != nil {
 		// chat.Transcribe has already emitted an error event.
 		slog.Warn("chat transcribe failed", "error", err)
 	}

@@ -55,13 +55,14 @@ type Emitter func(event EventType, data any) error
 
 // Transcribe runs whisper over the uploaded audio and emits partial and
 // final events. Returns the full joined transcript for the caller's
-// convenience (equivalent to the value of the final event).
-func Transcribe(ctx context.Context, t transcribe.Transcriber, audio io.Reader, mime string, emit Emitter) (string, error) {
+// convenience (equivalent to the value of the final event). hint steers
+// whisper's spelling; see VocabularyHint.
+func Transcribe(ctx context.Context, t transcribe.Transcriber, audio io.Reader, mime, hint string, emit Emitter) (string, error) {
 	if t == nil {
 		_ = emit(EventError, map[string]any{"message": "voice transcription is not configured"})
 		return "", transcribe.ErrNotConfigured
 	}
-	final, err := t.Transcribe(ctx, audio, mime, func(segment string) {
+	final, err := t.Transcribe(ctx, audio, mime, hint, func(segment string) {
 		_ = emit(EventPartial, map[string]any{"text": segment})
 	})
 	if err != nil {
