@@ -86,7 +86,9 @@ func (s *Service) State(ctx context.Context, caller *services.Caller) (*State, e
 	if err != nil {
 		return nil, err
 	}
-	st := &State{Today: today, Plan: d.plan, Settings: d.settings}
+	// Every list goes out as [], never null: an empty brewery is the first
+	// thing anyone sees, and the screens read .length on all of them.
+	st := &State{Today: today, Plan: d.plan, Settings: d.settings, Beers: []*Beer{}}
 	st.Vessels = d.tiles(now, loc)
 	if st.LastCount, err = s.lastCount(ctx, caller.TenantID); err != nil {
 		return nil, err

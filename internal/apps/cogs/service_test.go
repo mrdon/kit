@@ -2,6 +2,7 @@ package cogs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -324,5 +325,39 @@ func TestOccurredAt(t *testing.T) {
 	}
 	if _, err := occurredAt("2026-03-11", loc, now, false); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("future: err = %v", err)
+	}
+}
+
+// A brewery with nothing set up is the first screen anyone sees; every list
+// must go out as [] (the console reads .length on them), never null.
+func TestEmptyBreweryHasNoNullLists(t *testing.T) {
+	f := newFixture(t)
+	other := *f.admin
+	teamID := "T_cogs_empty_" + uuid.NewString()
+	tenant, err := models.UpsertTenant(f.ctx, f.svc.pool, teamID, "empty", "x",
+		models.SanitizeSlug("cogs-empty-"+uuid.NewString(), teamID), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = f.svc.pool.Exec(f.ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID) })
+	other.TenantID = tenant.ID
+	st, err := f.svc.State(f.ctx, &other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup, err := f.svc.Setup(f.ctx, tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]any{"state": st, "setup": setup} {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"vessels", "beers", "formats", "this_week", "packaged", "schedule", "plan"} {
+			if strings.Contains(string(raw), "\""+key+"\":null") {
+				t.Errorf("%s has %s: null", name, key)
+			}
+		}
 	}
 }

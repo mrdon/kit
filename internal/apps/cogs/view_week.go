@@ -21,7 +21,7 @@ type WeekItem struct {
 
 func (d *stateData) thisWeek(st *State, now time.Time, loc *time.Location) []WeekItem {
 	horizon := dateOnly(now.AddDate(0, 0, 7))
-	var out []WeekItem
+	out := []WeekItem{}
 	for i := range d.plan {
 		p := &d.plan[i]
 		if p.BatchID != nil || p.BrewOn > horizon {
@@ -96,7 +96,7 @@ type Bar struct {
 
 func (d *stateData) schedule(tiles []BoardVessel, now time.Time, loc *time.Location) []Lane {
 	today := dayOf(now, loc)
-	var out []Lane
+	out := []Lane{}
 	for _, t := range tiles {
 		if t.Kind != KindFermenter && t.Kind != KindBrite {
 			continue

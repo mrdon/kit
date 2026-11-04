@@ -43,7 +43,7 @@ func listVessels(ctx context.Context, q querier, tenantID uuid.UUID, withRetired
 		return nil, fmt.Errorf("listing vessels: %w", err)
 	}
 	defer rows.Close()
-	var out []*Vessel
+	out := []*Vessel{}
 	for rows.Next() {
 		v, err := scanVessel(rows)
 		if err != nil {
@@ -166,7 +166,7 @@ func listBeers(ctx context.Context, q querier, tenantID uuid.UUID) ([]*Beer, err
 		return nil, fmt.Errorf("listing beers: %w", err)
 	}
 	defer rows.Close()
-	var out []*Beer
+	out := []*Beer{}
 	for rows.Next() {
 		b, err := scanBeer(rows)
 		if err != nil {
@@ -285,7 +285,7 @@ func listFormats(ctx context.Context, q querier, tenantID uuid.UUID, withRetired
 		return nil, fmt.Errorf("listing formats: %w", err)
 	}
 	defer rows.Close()
-	var out []*Format
+	out := []*Format{}
 	for rows.Next() {
 		var f Format
 		if err := rows.Scan(&f.ID, &f.Name, &f.Kind, &f.BBLPerUnit, &f.UnitsPerCase, &f.Returnable,

@@ -31,7 +31,7 @@ func isReversed(ctx context.Context, q querier, tenantID, actionID uuid.UUID) (b
 
 func actionVessels(events []Event) []uuid.UUID {
 	seen := map[uuid.UUID]bool{}
-	var out []uuid.UUID
+	out := []uuid.UUID{}
 	for _, ev := range events {
 		for _, p := range []*uuid.UUID{ev.VesselID, ev.ToVesselID} {
 			if p != nil && !seen[*p] {
