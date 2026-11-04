@@ -23,7 +23,7 @@ func TestBuildDescriptionPutsOperationalFactsFirst(t *testing.T) {
 	got := buildDescription(e)
 
 	where := strings.Index(got, "Where: Taproom")
-	reserve := strings.Index(got, "Reserve: part of the room, for ~30 people.")
+	reserve := strings.Index(got, "Reserve: part of the space, for ~30 people.")
 	blurb := strings.Index(got, "Long public blurb")
 	notes := strings.Index(got, "Staff notes:")
 
@@ -50,8 +50,8 @@ func TestBriefingSpaceAndHeadcountCombinations(t *testing.T) {
 		want  string
 	}{
 		{"partial with headcount", Event{SpaceImpact: SpaceImpactPartial, ExpectedAttendance: &n},
-			"Reserve: part of the room, for ~20 people."},
-		{"partial alone", Event{SpaceImpact: SpaceImpactPartial}, "Reserve: part of the room."},
+			"Reserve: part of the space, for ~20 people."},
+		{"partial alone", Event{SpaceImpact: SpaceImpactPartial}, "Reserve: part of the space."},
 		{"headcount alone", Event{SpaceImpact: SpaceImpactNone, ExpectedAttendance: &n},
 			"Expect: ~20 people. Room stays open as usual."},
 	}

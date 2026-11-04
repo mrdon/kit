@@ -192,7 +192,7 @@ Three things describe an event, and they're independent rather than one "type":
 
 - **visibility** — `public` (website + feed) or `private` (internal only)
 - **venue** — `onsite`, or `offsite` for a festival you're attending. An offsite event can still be public: "come see us there" belongs on the site.
-- **space impact** — whether it reserves part of the room, so whoever's working knows
+- **space impact** — whether it reserves part of the space (a room, the patio, the parking lot), so whoever's working knows
 
 **Prominence** is how loudly an event speaks, and whose it is. Most events need nothing set — `normal` is the default and already headlines its own day.
 

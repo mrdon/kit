@@ -34,7 +34,7 @@ func TestNoticeBodyCarriesPrivateBookings(t *testing.T) {
 	for _, want := range []string{
 		"Gollata wedding rehearsal",
 		"7:00pm",
-		"part of the room",
+		"part of the space",
 		"30 people",
 		"Cash bar",
 	} {

@@ -176,9 +176,9 @@ func briefingLines(e *Event) []string {
 	// do I hold, and for how many?"), so they sit together.
 	switch {
 	case e.SpaceImpact == SpaceImpactPartial && e.ExpectedAttendance != nil:
-		add("Reserve: part of the room, for ~%d people.", *e.ExpectedAttendance)
+		add("Reserve: part of the space, for ~%d people.", *e.ExpectedAttendance)
 	case e.SpaceImpact == SpaceImpactPartial:
-		add("Reserve: part of the room.")
+		add("Reserve: part of the space.")
 	case e.ExpectedAttendance != nil:
 		add("Expect: ~%d people. Room stays open as usual.", *e.ExpectedAttendance)
 	}

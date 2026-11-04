@@ -24,7 +24,7 @@ func FormatEvent(e *Event, s Settings) string {
 		b.WriteString("  offsite event\n")
 	}
 	if e.SpaceImpact == SpaceImpactPartial {
-		b.WriteString("  reserves part of the room\n")
+		b.WriteString("  reserves part of the space\n")
 	}
 	if price := formatPrice(e); price != "" {
 		fmt.Fprintf(&b, "  price: %s\n", price)
