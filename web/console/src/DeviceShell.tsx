@@ -63,6 +63,12 @@ const DEVICE_TILES: DeviceTile[] = [
     blurb: 'Change what a screen is showing.',
   },
   {
+    cap: 'cogs.log',
+    to: '/cogs',
+    title: 'Brewhouse',
+    blurb: 'Tanks, brew day, packaging and the weekly count.',
+  },
+  {
     cap: 'trivia.host',
     to: '/trivia',
     title: 'Host trivia',

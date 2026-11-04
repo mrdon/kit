@@ -43,6 +43,12 @@ export const SECTIONS: Section[] = [
     app: 'menu',
   },
   {
+    to: '/cogs',
+    label: 'COGS',
+    blurb: 'What is in every tank, what was packaged, and the brewer\'s log.',
+    app: 'cogs',
+  },
+  {
     to: '/kiosk',
     label: 'Kiosk',
     blurb: 'Change what your wall screens show without touching the machine.',
@@ -157,6 +163,13 @@ export const SECTIONS: Section[] = [
     blurb: 'Photo and logo folders, the derived brand, stock photos.',
     admin: true,
     app: 'posters',
+  },
+  {
+    to: '/cogs/setup',
+    label: 'COGS setup',
+    blurb: 'Tanks, barrels, package formats and beers; the day-one load, the plan and corrections.',
+    admin: true,
+    app: 'cogs',
   },
   {
     to: '/admin/square-shifts',

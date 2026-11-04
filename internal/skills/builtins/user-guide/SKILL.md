@@ -105,6 +105,7 @@ For deliberate, do-it-yourself work on a desktop, open the web console at `/<you
 - **Vault** — the shared-password vault (set up, unlock, add, reveal, rotate), end-to-end encrypted in your browser.
 - **Skills** — browse the knowledge base, search, and open a skill to read it. Admins can create, edit (name, description, content), delete, and attach files; built-in skills show read-only. Everyone sees only the skills their roles can.
 - **Jobs** — your scheduled work: each row shows its schedule, status, linked skill, last run, and any error. Open one to edit its description, change or clear the linked skill, adjust the capability policy, or delete it. You see your own jobs plus role/tenant ones; admins see and manage every job in the workspace. Create new jobs by asking Kit in chat.
+- **COGS** — brewery production: what's in every fermenter, brite tank, serving tank and barrel, the packaged kegs, cans and bottles, and a four-week schedule. See "COGS" below.
 - **Devices** — admin-only page to pair a shared machine (the trivia laptop, the bar iPad) with a picture match instead of a sign-in, and choose what it may do.
 - **Apps** — admin-only page to turn features (vault, calendar, events, kiosk, and so on) on or off for the whole workspace. Disabling a feature removes it everywhere — its tools, pages, cards, and the agent's knowledge of it — for everyone, until an admin turns it back on. Only user-facing features appear here; core plumbing (the console itself, admin tools, file attachments, the card feed, and the integrations registry) is always on.
 - **Integrations** — connect external services from one page: click **Connect** and enter the secret on a secure one-time form (it never passes through the assistant). Personal email is self-service for any user; workspace-wide services (Square, Google Calendar) are admin-only.
@@ -626,3 +627,21 @@ The list is on your own panel in the order the screen shows it, so you are readi
 Kit calls `trivia_status` and `trivia_results`. Those are the only two trivia tools and both are read-only — nothing about running a live game is improved by asking an assistant to press the button in a loud room.
 
 Game addresses are **public and unauthenticated**: that's what lets somebody scan a QR code and play without a Kit account. Anyone with the link can watch, and a phone with no cookie gets the full read-only view.
+
+## COGS
+
+The COGS app tracks brewery production: what beer is in which vessel, how old it is, what was packaged from it, and what happened to it since. The brewer logs physical facts; nothing on their screens shows money.
+
+**The brewhouse iPad.** Pair it on the Devices page with the **Brewhouse iPad** preset, and it opens to the brewer's screens: **Tanks**, **Packaged**, **Schedule** and a **Brew day** button. Everyone else finds the same screens under **COGS** in the console.
+- **Tanks** shows a tile per vessel with the beer, "stage · day N", how full it is, what's next, and a badge (Due, Dirty, Empty, On tap). **This week** lists what needs doing, each with a button that opens the right form already filled in.
+- Tap a tank to log what happened: dry hopped, moved, packaged, kicked, on tap, read the level, spilled or dumped, became a variant, cleaned. Entries can be dated up to 7 days back.
+- **Brew day** is logged once, at knockout, pre-filled from the plan. A second brew into the same fermenter the same day adds to the same batch. A typed new beer name is saved straight away and lands in the admin queue to set up.
+- Kegs, cans and bottles are counted from zero, never pre-filled. The "is now empty" box ticks itself when a move or packaging takes about the whole tank, and writes off whatever is left.
+- **Packaged** holds the weekly **Count** (blind: the expected numbers are never shown, and Save waits until every row is touched), **Repack or make a variant** (break a keg into sixtels, can off a keg, or pull a sixtel from a ½ and make it a variant, with "put the rest back" returning the ½ as a partial; repacked beer keeps its original packaging date), and **Out, not sold**.
+- The confirmation banner and a tank's newest entry have **Undo**. Older mistakes are fixed by an admin from the console.
+
+**Setting up (admins).** From **COGS setup**: add vessels (a numbered run like FV-1 to FV-6 in one go), package formats, beers with their stage durations and shelf lives, and the brewery settings. Then use **Day-one load** to record what is already in each vessel and in the chiller. **Plan** holds the planned brews that drive the schedule and This week; the brewer can't move them, but can send a "this date won't work" note. **Queue** collects new beers to set up, flagged plan dates and counts that didn't match. **Corrections** lists every entry and reverses any of them; to change one, reverse it and log it again.
+
+**Rules the ledger keeps.** Every entry is kept: undo adds a reversing entry rather than deleting anything. A move into a tank holding a different beer is refused; the same beer from another batch makes a blend batch that remembers both, so every keg traces back to its brews. Taking more than a tank holds is refused unless it's marked empty, and then the extra is recorded as a gain. An entry dated in the past is checked against the tank as it was that day, and one that would contradict a later entry (packaging a tank the day before it was filled) is refused. A kick empties the serving tank without writing anything off, since nobody knows yet how much was poured.
+
+Kit can read all of it: ask "what's in FV-3?" or "what did we package last week?" and it uses `get_cogs_state` and `get_cogs_history`. Both are read-only; logging happens on the iPad or the console. Costs per keg, the brew planner and TTB reports come later.

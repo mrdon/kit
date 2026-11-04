@@ -7,7 +7,8 @@ import (
 )
 
 // Preset is a starting capability set the approver picks from. The trivia
-// driver is exact; the taproom admin comes pre-ticked and editable.
+// driver and the brewhouse iPad are exact; the taproom admin comes
+// pre-ticked and editable.
 type Preset struct {
 	Key          string   `json:"key"`
 	Label        string   `json:"label"`
@@ -16,6 +17,7 @@ type Preset struct {
 
 var presets = []Preset{
 	{Key: "trivia", Label: "Trivia driver", Capabilities: []string{auth.CapTriviaHost}},
+	{Key: "brewhouse", Label: "Brewhouse iPad", Capabilities: []string{auth.CapCogsLog}},
 	{Key: "taproom", Label: "Taproom admin", Capabilities: []string{
 		auth.CapMenuHappyHour, auth.CapMenuPrint, auth.CapMenuGlutenReduced, auth.CapEventsTopper, auth.CapKioskRepoint, auth.CapKitChat,
 	}},

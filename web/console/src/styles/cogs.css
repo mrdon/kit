@@ -1,0 +1,763 @@
+/* Brewing: the brewer's screens (a wall-mounted iPad in the brewhouse, a
+   phone, or the console). Warm and high contrast so it reads across a
+   brewhouse; every target is at least 44px. Import order matters -- see
+   main.tsx. Tokens are scoped to .brew so the rest of the console keeps its
+   own palette. */
+
+.brew {
+  --b-bg: #f5efe2;
+  --b-panel: #fbf7ec;
+  --b-ink: #1c1a17;
+  --b-ink-soft: #4a4339;
+  --b-muted: #6f6656;
+  --b-line: #d9cfba;
+  --b-line-soft: #e5dcc8;
+  --b-accent: #9a4814;
+  --b-accent-ink: #ffffff;
+  --b-amber: #e8a547;
+  --b-amber-soft: #f7e3c4;
+  --b-hop: #4a5d2c;
+  --b-hop-ink: #ffffff;
+  --b-bar: #1c1a17;
+  --b-bar-ink: #f5efe2;
+  --b-error-bg: #fbe2dc;
+  --b-error-ink: #8a2a12;
+  background: var(--b-bg);
+  color: var(--b-ink);
+  min-height: calc(100vh - 4rem);
+  font-size: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .brew {
+    --b-bg: #1a1815;
+    --b-panel: #24211d;
+    --b-ink: #f5efe2;
+    --b-ink-soft: #d9cfba;
+    --b-muted: #b0a690;
+    --b-line: #433c33;
+    --b-line-soft: #332e28;
+    --b-accent: #e0894a;
+    --b-accent-ink: #1c1a17;
+    --b-amber: #e8a547;
+    --b-amber-soft: #4a3a1f;
+    --b-hop: #8fae5a;
+    --b-hop-ink: #1c1a17;
+    --b-bar: #0f0e0c;
+    --b-error-bg: #4a1f16;
+    --b-error-ink: #ffcbbd;
+  }
+}
+
+/* The brewer's screens take the whole width: tiles need it on an iPad. */
+.content:has(> .brew) {
+  max-width: none;
+  padding: 0;
+}
+
+.brew button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.brew button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.brew button:focus-visible,
+.brew input:focus-visible,
+.brew select:focus-visible,
+.brew textarea:focus-visible {
+  outline: 3px solid var(--b-amber);
+  outline-offset: 2px;
+}
+
+/* --- Top bar: Tanks · Packaged · Schedule, and Brew day --- */
+
+.brew-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--b-bar);
+  color: var(--b-bar-ink);
+}
+
+.brew-bar-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-right: auto;
+}
+
+.brew-bar-date {
+  color: #c9bfa8;
+  font-size: 0.95rem;
+  font-weight: 400;
+  margin-left: 0.75rem;
+}
+
+.brew-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.brew-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border-radius: 1.4rem;
+  color: var(--b-bar-ink);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1.05rem;
+  border: 1px solid #4a4339;
+}
+
+.brew-tab-active {
+  background: var(--b-bar-ink);
+  color: var(--b-bar);
+  border-color: var(--b-bar-ink);
+}
+
+.brew-brewday {
+  min-height: 3rem;
+  padding: 0 1.4rem;
+  border-radius: 0.75rem;
+  border: 0;
+  background: var(--b-amber);
+  color: #1c1a17;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.brew-admin-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 1.5rem;
+  background: var(--b-line-soft);
+  font-size: 0.9rem;
+}
+
+.brew-admin-links a {
+  color: var(--b-accent);
+  font-weight: 600;
+}
+
+.brew-body {
+  padding: 1rem 1.5rem 3rem;
+}
+
+/* --- Toast: what was just recorded, with Undo --- */
+
+.brew-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.9rem 1.5rem 0;
+  padding: 0.6rem 0.6rem 0.6rem 1.2rem;
+  border-radius: 0.75rem;
+  background: var(--b-hop);
+  color: var(--b-hop-ink);
+}
+
+.brew-toast-error {
+  background: var(--b-error-bg);
+  color: var(--b-error-ink);
+}
+
+.brew-toast-text {
+  flex: 1;
+  line-height: 1.35;
+}
+
+.brew-toast button {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+}
+
+.brew-toast .brew-toast-undo {
+  background: var(--b-bg);
+  color: var(--b-ink);
+  border-color: transparent;
+}
+
+/* --- Tanks: tiles by area, and This week --- */
+
+.brew-home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .brew-home {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.brew-area-title {
+  margin: 0.5rem 0 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--b-ink-soft);
+}
+
+.brew-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.brew-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-height: 9.5rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+  color: var(--b-ink);
+  text-align: left;
+}
+
+.brew-tile:active {
+  border-color: var(--b-accent);
+}
+
+.brew-tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.brew-tile-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.brew-tile-size {
+  color: var(--b-muted);
+  font-size: 0.85rem;
+}
+
+.brew-tile-beer {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.brew-tile-stage {
+  color: var(--b-ink-soft);
+  font-size: 0.9rem;
+}
+
+.brew-tile-next {
+  margin-top: auto;
+  color: var(--b-muted);
+  font-size: 0.85rem;
+  line-height: 1.25;
+}
+
+.brew-fill {
+  height: 0.45rem;
+  border-radius: 0.25rem;
+  background: var(--b-line-soft);
+  overflow: hidden;
+}
+
+.brew-fill > span {
+  display: block;
+  height: 100%;
+  background: var(--b-accent);
+}
+
+.brew-badge {
+  align-self: flex-start;
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--b-line-soft);
+  color: var(--b-ink-soft);
+}
+
+.brew-badge-due {
+  background: var(--b-accent);
+  color: var(--b-accent-ink);
+}
+
+.brew-badge-dirty {
+  background: var(--b-amber-soft);
+  color: var(--b-ink);
+}
+
+.brew-badge-on_tap {
+  background: var(--b-hop);
+  color: var(--b-hop-ink);
+}
+
+.brew-week {
+  padding: 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+}
+
+.brew-week h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.brew-week ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.brew-week li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--b-line-soft);
+}
+
+.brew-week li:first-child {
+  border-top: 0;
+}
+
+.brew-week-text {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.brew-week-when {
+  display: block;
+  color: var(--b-muted);
+  font-size: 0.85rem;
+}
+
+.brew-empty {
+  color: var(--b-muted);
+}
+
+/* --- Buttons --- */
+
+.brew-btn {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+  color: var(--b-ink);
+  font-weight: 600;
+}
+
+.brew-btn-primary {
+  background: var(--b-accent);
+  border-color: var(--b-accent);
+  color: var(--b-accent-ink);
+}
+
+.brew-btn-big {
+  min-height: 3.25rem;
+  padding: 0 1.5rem;
+  font-size: 1.1rem;
+}
+
+.brew-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.6rem;
+}
+
+.brew-actions .brew-btn {
+  min-height: 3.5rem;
+  font-size: 1.05rem;
+}
+
+/* --- Sheet: tank detail and every form open over the screen --- */
+
+.brew-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: rgba(28, 26, 23, 0.55);
+  overflow-y: auto;
+}
+
+.brew-sheet {
+  width: min(44rem, 100%);
+  padding: 1.25rem 1.5rem 1.5rem;
+  border-radius: 1rem;
+  background: var(--b-bg);
+  color: var(--b-ink);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.35);
+}
+
+.brew-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.brew-sheet-head h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.brew-sheet-sub {
+  margin: 0.2rem 0 0;
+  color: var(--b-ink-soft);
+}
+
+.brew-section {
+  margin-top: 1.1rem;
+}
+
+.brew-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--b-ink-soft);
+}
+
+.brew-hint {
+  margin: 0.35rem 0 0;
+  color: var(--b-muted);
+  font-size: 0.9rem;
+}
+
+.brew-warn {
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--b-amber-soft);
+  color: var(--b-ink);
+}
+
+.brew-error {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  background: var(--b-error-bg);
+  color: var(--b-error-ink);
+}
+
+.brew-sheet-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.4rem;
+}
+
+.brew-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.brew-chip {
+  min-height: 2.75rem;
+  padding: 0.3rem 0.9rem;
+  border-radius: 1.4rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+  color: var(--b-ink);
+  font-weight: 600;
+  text-align: left;
+  line-height: 1.15;
+}
+
+.brew-chip small {
+  display: block;
+  font-weight: 400;
+  color: var(--b-muted);
+  font-size: 0.8rem;
+}
+
+.brew-chip-on {
+  background: var(--b-ink);
+  border-color: var(--b-ink);
+  color: var(--b-bg);
+}
+
+.brew-chip-on small {
+  color: var(--b-line);
+}
+
+.brew-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.brew-stepper button {
+  min-width: 2.9rem;
+  min-height: 2.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+  color: var(--b-ink);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.brew-stepper input {
+  width: 5rem;
+  min-height: 2.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+  color: var(--b-ink);
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.brew-stepper-unit {
+  color: var(--b-ink-soft);
+  margin-left: 0.25rem;
+}
+
+.brew-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.brew-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--b-line-soft);
+  background: var(--b-panel);
+}
+
+.brew-row-name {
+  font-weight: 600;
+}
+
+.brew-row-sub {
+  display: block;
+  color: var(--b-muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.brew-row-touched {
+  border-color: var(--b-hop);
+}
+
+.brew-check {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  font-weight: 600;
+}
+
+.brew-check input {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.brew-input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--b-line);
+  background: var(--b-panel);
+  color: var(--b-ink);
+  font: inherit;
+}
+
+.brew-summary {
+  margin-top: 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  background: var(--b-line-soft);
+  font-weight: 600;
+}
+
+/* --- History --- */
+
+.brew-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.brew-history li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--b-line-soft);
+}
+
+.brew-history-date {
+  flex: 0 0 4.5rem;
+  color: var(--b-muted);
+  font-size: 0.9rem;
+}
+
+.brew-history-text {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.brew-history-reversed .brew-history-text {
+  text-decoration: line-through;
+  color: var(--b-muted);
+}
+
+/* --- Packaged --- */
+
+.brew-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--b-panel);
+  border-radius: 0.85rem;
+  overflow: hidden;
+}
+
+.brew-table th,
+.brew-table td {
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+  border-bottom: 1px solid var(--b-line-soft);
+}
+
+.brew-table th {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--b-ink-soft);
+}
+
+.brew-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.brew-stale {
+  color: var(--b-accent);
+  font-weight: 700;
+}
+
+.brew-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+/* --- Schedule: four weeks of lanes --- */
+
+.brew-sched {
+  overflow-x: auto;
+}
+
+.brew-sched-grid {
+  min-width: 46rem;
+}
+
+.brew-sched-days,
+.brew-lane {
+  display: grid;
+  grid-template-columns: 4.5rem repeat(28, minmax(0, 1fr));
+  align-items: center;
+}
+
+.brew-sched-days span {
+  font-size: 0.75rem;
+  color: var(--b-muted);
+  text-align: center;
+}
+
+.brew-lane {
+  min-height: 3.1rem;
+  border-top: 1px solid var(--b-line-soft);
+}
+
+.brew-lane-name {
+  font-weight: 700;
+}
+
+.brew-bar-seg {
+  height: 2.4rem;
+  margin: 0 1px;
+  padding: 0 0.4rem;
+  border-radius: 0.45rem;
+  border: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.brew-seg-in_tank {
+  background: var(--b-accent);
+  color: var(--b-accent-ink);
+}
+
+.brew-seg-planned {
+  background: transparent;
+  border: 2px dashed var(--b-accent);
+  color: var(--b-ink);
+}
+
+.brew-seg-clash {
+  border-color: #c0392b;
+}
+
+.brew-seg-clean {
+  background: var(--b-amber-soft);
+  color: var(--b-ink);
+}
+
+.brew-seg-free {
+  background: transparent;
+  color: var(--b-muted);
+  font-weight: 400;
+}
+
+.brew-photo {
+  max-width: 100%;
+  max-height: 14rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--b-line);
+}

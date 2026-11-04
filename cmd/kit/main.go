@@ -22,6 +22,7 @@ import (
 	attachmentapp "github.com/mrdon/kit/internal/apps/attachment"
 	_ "github.com/mrdon/kit/internal/apps/calendar"
 	"github.com/mrdon/kit/internal/apps/cards"
+	"github.com/mrdon/kit/internal/apps/cogs"
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/apps/devices"
 	"github.com/mrdon/kit/internal/apps/email"
@@ -245,6 +246,8 @@ func main() {
 	kiosk.Configure(sessionSigner, cfg.BaseURL)
 	// Device pairing mints device sessions with the same signer.
 	devices.Configure(sessionSigner, cfg.BaseURL)
+	// COGS serves the brewhouse iPad and the console over the same signer.
+	cogs.Configure(sessionSigner)
 
 	// Menu boards need the signer for the console's read-only board list, the
 	// fetcher to pull poster images server-side (so images never travel

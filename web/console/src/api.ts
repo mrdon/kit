@@ -7,6 +7,7 @@ export * from './api/events.types';
 export * from './api/events';
 export * from './api/posters.types';
 export * from './api/posters';
+export * from './api/cogs';
 
 import { coreApi } from './api/core';
 import { devicesApi } from './api/devices';
@@ -14,6 +15,7 @@ import { menuApi } from './api/menu';
 import { triviaApi } from './api/trivia';
 import { eventsApi } from './api/events';
 import { postersApi } from './api/posters';
+import { cogsApi } from './api/cogs';
 
 // One object, so `api.someMethod` keeps working from every page. Each
 // area owns its own slice in ./api/<area>.ts; this just spreads them.
@@ -24,4 +26,5 @@ export const api = {
   ...triviaApi,
   ...eventsApi,
   ...postersApi,
+  ...cogsApi,
 };

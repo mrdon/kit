@@ -1,0 +1,153 @@
+/* COGS console pages: setup, day-one load, plan, queue, history. Import order matters -- see main.tsx. */
+
+.brew-admin .panel + .panel {
+  margin-top: 1.25rem;
+}
+
+.brew-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.brew-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.brew-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.brew-table input,
+.brew-table select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.brew-table input[type='checkbox'] {
+  width: auto;
+}
+
+.brew-table .brew-num {
+  max-width: 6rem;
+}
+
+.brew-retired td {
+  color: var(--muted);
+}
+
+.brew-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.brew-subform .brew-row-actions,
+.brew-admin .stack-form > .brew-row-actions {
+  justify-content: flex-start;
+}
+
+.brew-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.brew-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.brew-subform {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.brew-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.brew-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.brew-beer-list,
+.brew-load-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.brew-beer,
+.brew-load-list > li {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.brew-needs-setup {
+  background: var(--error-bg);
+  padding-left: 0.6rem;
+  padding-right: 0.6rem;
+  border-radius: 0.4rem;
+}
+
+.brew-beer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brew-beer-row .pill {
+  margin-left: 0.4rem;
+}
+
+.brew-small {
+  font-size: 0.85rem;
+}
+
+.brew-prewrap {
+  white-space: pre-wrap;
+}
+
+.brew-reversed .card-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.brew-filter {
+  max-width: 16rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 720px) {
+  .brew-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

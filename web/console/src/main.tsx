@@ -44,6 +44,15 @@ import Vault from './pages/Vault';
 import Skills from './pages/Skills';
 import Jobs from './pages/Jobs';
 import Connect from './pages/Connect';
+import BrewShell from './pages/cogs/BrewShell';
+import BrewTanks from './pages/cogs/Tanks';
+import BrewPackaged from './pages/cogs/Packaged';
+import BrewSchedule from './pages/cogs/Schedule';
+import CogsSetup from './pages/cogs/admin/CogsSetup';
+import CogsLoad from './pages/cogs/admin/CogsLoad';
+import CogsPlan from './pages/cogs/admin/CogsPlan';
+import CogsQueue from './pages/cogs/admin/CogsQueue';
+import CogsHistory from './pages/cogs/admin/CogsHistory';
 import { BASENAME } from './workspace';
 // Console styles, split by area. The order below is the order the blocks sat
 // in the old single styles.css and it matters: dark.css redefines the :root
@@ -64,6 +73,8 @@ import './styles/trivia.css';
 import './styles/event-labels.css';
 import './styles/devices.css';
 import './styles/posters.css';
+import './styles/cogs.css';
+import './styles/cogs-admin.css';
 import '@chat/chat.css';
 
 // The console is a desktop tool, not an installable PWA — it deliberately
@@ -114,6 +125,18 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/device/topper" element={<DeviceTopper />} />
           <Route path="/device/sign" element={<DeviceSign />} />
           <Route path="/device/descriptions" element={<DeviceDescriptions />} />
+          {/* The brewer's screens: home of the brewhouse iPad, and the
+              COGS section for people. Forms open as sheets inside. */}
+          <Route path="/cogs" element={<BrewShell />}>
+            <Route index element={<BrewTanks />} />
+            <Route path="packaged" element={<BrewPackaged />} />
+            <Route path="schedule" element={<BrewSchedule />} />
+          </Route>
+          <Route path="/cogs/setup" element={<CogsSetup />} />
+          <Route path="/cogs/load" element={<CogsLoad />} />
+          <Route path="/cogs/plan" element={<CogsPlan />} />
+          <Route path="/cogs/queue" element={<CogsQueue />} />
+          <Route path="/cogs/history" element={<CogsHistory />} />
           <Route path="/admin/trivia" element={<TriviaQuestions />} />
           <Route path="/admin/menu" element={<MenuPrintSettings />} />
           <Route path="/admin/happy-hour" element={<MenuHappyHour />} />
