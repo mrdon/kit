@@ -24,6 +24,16 @@ const driveFolderMime = "application/vnd.google-apps.folder"
 
 var driveHTTP = &http.Client{Timeout: 30 * time.Second}
 
+// unsyncedFolders are top-level folders under the photo root that the
+// library never lists. "Beers" holds per-beer copies of product shots for
+// people to browse; syncing it would index every copy a second time.
+var unsyncedFolders = map[string]bool{"beers": true}
+
+// skipFolder reports whether a subfolder stays out of the walk.
+func skipFolder(rel, name string) bool {
+	return rel == "" && unsyncedFolders[strings.ToLower(strings.TrimSpace(name))]
+}
+
 // DriveFile is one listed file with the path of folders above it.
 type DriveFile struct {
 	ID       string
@@ -85,6 +95,9 @@ func (d driveLister) Walk(ctx context.Context, folderID string) ([]DriveFile, er
 		}
 		for _, f := range files {
 			if f.Mime == driveFolderMime {
+				if skipFolder(rel, f.Name) {
+					continue
+				}
 				sub := slugify(f.Name)
 				if rel != "" {
 					sub = rel + "/" + sub

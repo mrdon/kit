@@ -11,6 +11,10 @@ and its slug becomes the photo's `folder` (`2026-10-26 Magic night` →
 `2026-10-26-magic-night`). Kit never sees the Mac's disk; a photo exists for
 Kit once it is in Drive and `sync_poster_photos` has run.
 
+`Photos/Beers/<Beer name>/` is the exception: per-beer copies of product
+shots for staff to browse, which Kit's sync skips so nothing is indexed
+twice. Step 5 keeps it current.
+
 ## 1. Discover, then ask which sets to include
 
 Exports land in `~/Pictures/darktable_exported/`, usually one dated folder
@@ -62,8 +66,26 @@ the current tap list (`get_menu_board`) as options:
 Name files for what is in them (`LittleDipper_Pumpkins_MagicCards.jpg`); the
 indexer and later choosers read filenames. The script converts to full-size
 JPEG (q90), creates the subfolder if needed, and skips names already there.
+It prints each uploaded file's Drive id, which step 5 needs.
 
-## 5. Sync and index in Kit (kit-gravity MCP)
+## 5. Copy clear beer shots into Beers
+
+Product photography only: the beer is the subject, in a glass or its
+can/bottle/pack, with nothing else competing for the frame. Event shots that
+happen to include a beer (cards, people, pumpkins), taps, menu boards, and
+glasses of more than one beer stay out. The beer name comes from step 3,
+never from colour alone; if you aren't sure which beer it is, leave it out.
+
+```bash
+.claude/skills/upload-photos/beers.sh "Light Lift Lager" <drive-file-id> ...
+```
+
+One call per beer. Use the tap-list name (`Golden Mosaic`, not `GoldenMosaic`)
+so a beer's photos land in one folder across shoots; list `Beers` first and
+reuse the existing spelling. Copies keep the uploaded name; the originals
+stay in the dated set.
+
+## 6. Sync and index in Kit (kit-gravity MCP)
 
 1. `sync_poster_photos`
 2. `load_skill indexing-poster-photos` and follow it
@@ -71,4 +93,5 @@ JPEG (q90), creates the subfolder if needed, and skips names already there.
    set's purpose in the description and tags. Note date-sensitive content
    (tap list, prices) as going stale.
 
-Report the Drive folder(s) and how many photos were indexed.
+Report the Drive folder(s), how many photos were indexed, and what went
+into Beers.
