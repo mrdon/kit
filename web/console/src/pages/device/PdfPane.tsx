@@ -22,9 +22,16 @@ import type { PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // Except in Safari, which is the bar iPad. Safari draws its own title, URL
 // and page number on any web page it prints, whatever the page's margins,
 // so the images would come out with footers anyway. Safari only prints a PDF
-// clean when the PDF is the document, so there Print opens it in a tab of
-// its own and AirPrint goes through the Share button. The iPad has tabs and
-// a back button; the kiosk-mode laptop, which has neither, runs Chrome.
+// clean when the PDF is the document, so there Print hands the PDF itself to
+// the share sheet, whose Print is AirPrint. It used to open the PDF in a tab
+// and point at Safari's Share button, but the iPad now runs the console as a
+// home-screen app: no tabs, no toolbar, no back, so that "tab" filled the
+// screen with nothing to tap. The share sheet is a popover over this page,
+// so dismissing it lands back here either way.
+//
+// navigator.share needs the tap's user activation, which an await on a fetch
+// can spend, so the PDF is fetched when the pane opens and Print shares a
+// file already in hand.
 
 type Sheets = { urls: string[]; widthPt: number; heightPt: number };
 
@@ -38,6 +45,7 @@ export function PdfPane({ src, title }: { src: string; title: string }) {
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const printWhenMounted = useRef(false);
+  const shareFile = useSharedPdf(src, title);
 
   useEffect(() => {
     if (!sheets || !printWhenMounted.current) return;
@@ -55,8 +63,23 @@ export function PdfPane({ src, title }: { src: string; title: string }) {
 
   const print = async () => {
     setError(null);
-    if (isSafari()) {
-      // Synchronous, inside the tap, or the popup blocker eats it.
+    if (shareFile) {
+      try {
+        // No await before this: it must run inside the tap.
+        await navigator.share({ files: [shareFile], title });
+      } catch (e) {
+        // Closing the sheet without printing is not an error.
+        if (!(e instanceof DOMException && e.name === 'AbortError')) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      }
+      return;
+    }
+    if (isSafari() && !isStandalone()) {
+      // A browser tab has a toolbar and a way back; a home-screen app does
+      // not, so there this falls through to printing images, footers and all,
+      // rather than trapping anyone. Synchronous, inside the tap, or the popup
+      // blocker eats it.
       window.open(src, '_blank');
       setHint('The PDF opened in a new tab. Tap the Share button there, then Print. Close that tab to come back.');
       return;
@@ -77,8 +100,13 @@ export function PdfPane({ src, title }: { src: string; title: string }) {
     <section className="pdf-pane">
       <div className="pdf-pane-bar">
         <span className="pdf-pane-title">{title}</span>
-        <button className="btn device-btn-sm" type="button" onClick={() => void print()} disabled={busy}>
-          {busy ? 'Preparing…' : 'Print'}
+        <button
+          className="btn device-btn-sm"
+          type="button"
+          onClick={() => void print()}
+          disabled={busy || shareFile === undefined}
+        >
+          {busy || shareFile === undefined ? 'Preparing…' : 'Print'}
         </button>
       </div>
       {hint && <p className="banner banner-ok">{hint}</p>}
@@ -98,6 +126,42 @@ function isSafari(): boolean {
   if (/iPad|iPhone|iPod/.test(ua)) return true;
   if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
   return /Safari\//.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
+}
+
+// isStandalone reports a home-screen app: no tabs, no address bar, no back.
+function isStandalone(): boolean {
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return nav.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+}
+
+// useSharedPdf fetches the PDF as a File ready for the share sheet, on the
+// WebKit browsers that print through it. undefined while it loads (Print
+// waits), null where sharing is not the way to print or the fetch failed --
+// the caller then falls back rather than leaving Print dead.
+function useSharedPdf(src: string, title: string): File | null | undefined {
+  const wanted = isSafari() && typeof navigator.canShare === 'function';
+  const [file, setFile] = useState<File | null | undefined>(wanted ? undefined : null);
+  useEffect(() => {
+    if (!wanted) return;
+    let live = true;
+    setFile(undefined);
+    fetch(src, { credentials: 'same-origin' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`the PDF did not load (${res.status})`);
+        return res.blob();
+      })
+      .then((blob) => {
+        const f = new File([blob], `${title}.pdf`, { type: 'application/pdf' });
+        if (live) setFile(navigator.canShare({ files: [f] }) ? f : null);
+      })
+      .catch(() => {
+        if (live) setFile(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [src, title, wanted]);
+  return file;
 }
 
 // PrintSheets is invisible on screen and is the only thing on paper while it
