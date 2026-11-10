@@ -130,7 +130,7 @@ func (a *App) tapNames(ctx context.Context, tenantID uuid.UUID) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	return append(names, ov.names()...), nil
+	return append(names, ov.itemNames()...), nil
 }
 
 // setEightySix is the handler both surfaces call.

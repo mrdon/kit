@@ -11,13 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// Where a configured extra row shows. One list feeds both menus because a can
-// of soda is the same can on paper and on the wall, but the two have different
-// room: the sheet lists every non-alcoholic can by name, while the wall gets
-// one line for all of them and no juice boxes at all.
-//
-// Empty means print, which is what every row meant before the wall read this
-// list, so a stored config keeps doing exactly what it did.
+// Where a Kit item shows. There is one menu config, and both the wall and the
+// paper read it; this is its only per-menu knob, because the wall has less
+// room: paper can list every non-alcoholic can by name while the wall shows
+// one line for all of them. Empty means both.
 const (
 	ShowPrint = "print"
 	ShowBoard = "board"
@@ -32,38 +29,31 @@ func validShow(s string) bool {
 	return false
 }
 
-func (b Beer) onPrint() bool { return b.Show == "" || b.Show == ShowPrint || b.Show == ShowBoth }
-func (b Beer) onBoard() bool { return b.Show == ShowBoard || b.Show == ShowBoth }
+func (b Beer) onPrint() bool { return b.Show != ShowBoard }
+func (b Beer) onBoard() bool { return b.Show != ShowPrint }
 
-// validateExtras rejects a show value nobody will see the effect of. A typo
-// here would otherwise quietly keep a row off both menus.
-func validateExtras(extras []Beer) error {
-	for _, e := range extras {
+// validateItems rejects what would otherwise fail quietly: a show nobody will
+// see the effect of, or a row with no name or section to file it under.
+func validateItems(items []Beer) error {
+	for _, e := range items {
+		if strings.TrimSpace(e.Name) == "" || strings.TrimSpace(e.Section) == "" {
+			return fmt.Errorf("%w: every item needs a name and a section (got %q in %q)",
+				ErrPayloadInvalid, e.Name, e.Section)
+		}
 		if !validShow(e.Show) {
-			return fmt.Errorf("%w: extra %q has show %q; use print, board or both",
+			return fmt.Errorf("%w: item %q has show %q; use print, board or both",
 				ErrPayloadInvalid, e.Name, e.Show)
 		}
 	}
 	return nil
 }
 
-// printExtras is the slice of the list the printed menu draws.
-func printExtras(extras []Beer) []Beer {
-	var out []Beer
-	for _, e := range extras {
-		if e.onPrint() {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// boardExtras turns the wall's share of the list into taps. A row with no
+// boardItems turns the wall's share of the items into taps. A row with no
 // price is dropped for the reason ParseUntappdBoard drops one: an empty price
 // column on a wall reads as a mistake.
-func boardExtras(extras []Beer) []Tap {
+func boardItems(items []Beer) []Tap {
 	var out []Tap
-	for _, e := range extras {
+	for _, e := range items {
 		if !e.onBoard() {
 			continue
 		}
@@ -83,15 +73,25 @@ func boardExtras(extras []Beer) []Tap {
 	return out
 }
 
-// mergeBoardExtras places each extra after the last tap in its section, or in
-// a section of its own at the end, the same order mergeExtras gives paper.
-func mergeBoardExtras(taps, extras []Tap) []Tap {
-	if len(extras) == 0 {
+func printItems(items []Beer) []Beer {
+	var out []Beer
+	for _, e := range items {
+		if e.onPrint() {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// mergeBoardItems places each item after the last tap in its section, or in a
+// section of its own at the end, the same order mergeExtras gives paper.
+func mergeBoardItems(taps, items []Tap) []Tap {
+	if len(items) == 0 {
 		return taps
 	}
 	out := append([]Tap(nil), taps...)
 	var fresh []Tap
-	for _, e := range extras {
+	for _, e := range items {
 		at := -1
 		for i, t := range out {
 			if sectionKey(t.Section) == sectionKey(e.Section) {
@@ -107,24 +107,17 @@ func mergeBoardExtras(taps, extras []Tap) []Tap {
 	return append(out, fresh...)
 }
 
-// Overrides are the venue's edits to the Untappd tap list: rows it adds that
-// Untappd does not carry, and names it takes off for now. Both menus apply the
-// same Overrides in the same order, extras on and then the 86 off, so a can
-// that runs out leaves the wall and the paper together, and neither menu has
-// its own idea of what Kit changed.
-//
-// What they deliberately do not share: an extra's Show says which menu has
-// room for the row, permanently; the 86 list says what is unavailable today,
-// on both. Hiding something for the day is always an 86, never a Show edit.
+// Overrides are everything Kit changes about the Untappd tap list before a
+// menu draws it: the standing edits and today's 86 list. Both menus apply the
+// same Overrides in the same order -- items on, then hidden and 86'd names
+// off -- so the wall and the paper never disagree about what Kit changed.
 type Overrides struct {
-	Extras    []Beer
+	Edits
 	EightySix []string
 }
 
-// loadOverrides reads both halves. The extras live in the printed menu's
-// stored config, where the console edits them.
 func (a *App) loadOverrides(ctx context.Context, tenantID uuid.UUID) (Overrides, error) {
-	state, err := LoadPrintState(ctx, a.pool, tenantID)
+	edits, err := LoadEdits(ctx, a.pool, tenantID)
 	if err != nil {
 		return Overrides{}, err
 	}
@@ -132,7 +125,7 @@ func (a *App) loadOverrides(ctx context.Context, tenantID uuid.UUID) (Overrides,
 	if err != nil {
 		return Overrides{}, err
 	}
-	return Overrides{Extras: state.Config.Extras, EightySix: out}, nil
+	return Overrides{Edits: edits, EightySix: out}, nil
 }
 
 // overridesFor is loadOverrides for the wall, where a failure costs the edits
@@ -147,39 +140,80 @@ func (a *App) overridesFor(ctx context.Context, tenantID uuid.UUID) Overrides {
 	return ov
 }
 
+// hidden reports whether a row is hidden, its own name or its whole section.
+func (o Overrides) hidden(section, name string) bool {
+	for _, s := range o.Hidden.Sections {
+		if sectionKey(s) == sectionKey(section) {
+			return true
+		}
+	}
+	return containsName(o.Hidden.Items, name)
+}
+
+// gone reports whether a row stays off the menus: hidden or 86'd.
+func (o Overrides) gone(section, name string) bool {
+	return o.hidden(section, name) || containsName(o.EightySix, name)
+}
+
+func containsName(names []string, name string) bool {
+	key := nameKey(name)
+	for _, n := range names {
+		if nameKey(n) == key {
+			return true
+		}
+	}
+	return false
+}
+
 // applyBoard edits the wall's tap list in place.
 func (o Overrides) applyBoard(b *Board) {
-	b.Taps = mergeBoardExtras(b.Taps, boardExtras(o.Extras))
-	dropEightySix(b, o.EightySix)
+	taps := mergeBoardItems(b.Taps, boardItems(o.Items))
+	kept := make([]Tap, 0, len(taps))
+	for _, t := range taps {
+		if !o.gone(t.Section, t.Name) {
+			kept = append(kept, t)
+		}
+	}
+	b.Taps = kept
 }
 
 // applyRows edits the printed menu's rows.
 func (o Overrides) applyRows(rows []Beer) []Beer {
-	return dropEightySixRows(mergeExtras(rows, printExtras(o.Extras)), o.EightySix)
+	merged := mergeExtras(rows, printItems(o.Items))
+	kept := make([]Beer, 0, len(merged))
+	for _, r := range merged {
+		if !o.gone(r.Section, r.Name) {
+			kept = append(kept, r)
+		}
+	}
+	return kept
 }
 
-// names is every row Kit itself lists, which the 86 list may name even
+// itemNames is every row Kit itself lists, which the 86 list may name even
 // though no Untappd sync ever sees them.
-func (o Overrides) names() []string {
-	out := make([]string, 0, len(o.Extras))
-	for _, e := range o.Extras {
+func (o Overrides) itemNames() []string {
+	out := make([]string, 0, len(o.Items))
+	for _, e := range o.Items {
 		out = append(out, e.Name)
 	}
 	return out
 }
 
-// version puts the overrides in front of the wall's version, so an 86 or a
-// changed extra reaches the screen on its next poll. In front, like the other
-// stamps, so the render stamp stays the suffix.
+// version puts the overrides in front of the wall's version, so an edit or an
+// 86 reaches the screen on its next poll. In front, like the other stamps, so
+// the render stamp stays the suffix.
 func (o Overrides) version(v string) string {
 	v = eightySixVersion(o.EightySix, v)
-	extras := boardExtras(o.Extras)
-	if len(extras) == 0 {
-		return v
-	}
-	lines := make([]string, 0, len(extras))
-	for _, e := range extras {
+	var lines []string
+	for _, e := range boardItems(o.Items) {
 		lines = append(lines, strings.Join([]string{e.Section, e.Name, e.Style, e.ABV, e.Price, e.Size}, "\x1f"))
+	}
+	if len(o.Hidden.Items)+len(o.Hidden.Sections) > 0 {
+		lines = append(lines, "items:"+strings.Join(o.Hidden.Items, "\x1f"),
+			"sections:"+strings.Join(o.Hidden.Sections, "\x1f"))
+	}
+	if len(lines) == 0 {
+		return v
 	}
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return "x" + hex.EncodeToString(sum[:])[:6] + "." + v

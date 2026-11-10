@@ -42,8 +42,6 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return handleSetAsset(a)
 	case "set_menu_print":
 		return handleSetPrint()
-	case "sync_menu_print":
-		return handleSyncPrint()
 	case "set_menu_notes":
 		return handleSetNotes()
 	case "get_menu_board":
@@ -64,9 +62,9 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
 			return setEightySix(ec.Ctx, ec.Pool, a, ec.Caller(), raw)
 		}
-	case "set_menu_extras":
+	case "set_menu_items":
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
-			return saveExtras(ec.Ctx, ec.Pool, ec.Tenant.ID, raw)
+			return setMenuItems(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
 		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
@@ -140,12 +138,6 @@ func handleSetPrint() tools.HandlerFunc {
 			return "", err
 		}
 		return savePrintConfig(ec.Ctx, ec.Pool, ec.Tenant.ID, args)
-	}
-}
-
-func handleSyncPrint() tools.HandlerFunc {
-	return func(ec *tools.ExecContext, _ json.RawMessage) (string, error) {
-		return syncPrint(ec.Ctx, ec.Pool, ec.Tenant.ID)
 	}
 }
 

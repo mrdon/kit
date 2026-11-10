@@ -1,36 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import { useSetChatContext } from '../../chatContext';
 import { SLUG } from '../../workspace';
 import { PdfPane } from './PdfPane';
 
-// Print the menu, from the bar iPad. Two steps on purpose: the paper menu
-// prints from a stored tap list that only changes when somebody syncs it
-// (there is no cron, by design), so after a keg change "Print" alone would
-// hand out last week's beers. Sync first, read the summary, then open.
+// Print the menu, from the bar iPad. The menu follows Untappd on its own, so
+// there is nothing to refresh first: open it and print. What it does warn
+// about is a beer with no description, because Kit cannot fetch them and the
+// fix is a minute on the descriptions page before the paper goes out.
 
 export default function DevicePrint() {
   useSetChatContext('the print-the-menu page on a taproom device');
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
-  // The PDF is fetched when asked for, and again after every sync: the
-  // query string changes so the viewer never shows a cached menu.
+  const [missing, setMissing] = useState<string[]>([]);
+  // The PDF is fetched when asked for; the query string changes so the
+  // viewer never shows a cached menu.
   const [shownAt, setShownAt] = useState<number | null>(null);
 
-  async function sync() {
-    setBusy(true);
-    setNote(null);
-    try {
-      const res = await api.syncMenuPrint();
-      setNote({ text: res.summary || 'Tap list refreshed.', ok: !res.state.sync_error });
-      if (shownAt !== null) setShownAt(Date.now());
-    } catch (e) {
-      setNote({ text: e instanceof Error ? e.message : String(e), ok: false });
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    api
+      .menuPrintNotes()
+      .then((d) => setMissing(d.missing ?? []))
+      .catch(() => setMissing([]));
+  }, [shownAt]);
 
   return (
     <div className="page">
@@ -41,15 +33,15 @@ export default function DevicePrint() {
           <span>Print the menu</span>
         </nav>
         <h1>Print the menu</h1>
-        <p className="page-sub">
-          Refresh the tap list first if a keg changed, write a description for anything new, then open the menu and press Print.
-        </p>
+        <p className="page-sub">Open the menu and press Print. It already has today&rsquo;s taps.</p>
       </div>
-      {note && <p className={note.ok ? 'banner banner-ok' : 'banner banner-error'}>{note.text}</p>}
+      {missing.length > 0 && (
+        <p className="banner banner-error">
+          No description yet, so these print without one: {missing.join(', ')}.{' '}
+          <Link to="/device/descriptions">Write them</Link> first if you can.
+        </p>
+      )}
       <section className="device-actions">
-        <button className="btn device-btn" type="button" onClick={() => void sync()} disabled={busy}>
-          {busy ? 'Refreshing…' : 'Refresh tap list'}
-        </button>
         <button className="btn device-btn" type="button" onClick={() => setShownAt(Date.now())}>
           {shownAt === null ? 'Open the menu' : 'Reload the menu'}
         </button>

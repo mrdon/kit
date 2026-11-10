@@ -33,12 +33,6 @@ func registerPrintConsoleRoutes(mux apps.Mux, a *App) {
 	}
 	mux.Handle("GET /{slug}/api/menu/print", adminRoute(a.handleGetPrintConfig))
 	mux.Handle("PUT /{slug}/api/menu/print", adminRoute(a.handleSavePrintConfig))
-	// Sync is not configuration: it refreshes the tap list the paper menu
-	// prints from, and nothing else does (there is no cron). A device that
-	// can print must be able to sync first, or it prints last week's kegs.
-	// Still admin for people, as before.
-	mux.Handle("POST /{slug}/api/menu/print/sync",
-		console.RequireCapAdmin(a.pool, a.signer, auth.CapMenuPrint, a.handleSyncPrint))
 	registerNotesRoutes(mux, a)
 	registerFeaturedRoutes(mux, a)
 }
@@ -96,9 +90,6 @@ func (p printConfigPayload) MarshalJSON() ([]byte, error) {
 	if p.Sections == nil {
 		p.Sections = []string{}
 	}
-	if p.Config.Extras == nil {
-		p.Config.Extras = []Beer{}
-	}
 	if p.Config.Notes == nil {
 		p.Config.Notes = map[string]string{}
 	}
@@ -155,8 +146,10 @@ func (a *App) boardSections(ctx context.Context, tenantID uuid.UUID, cfg PrintCo
 			}
 		}
 	}
-	for _, e := range cfg.Extras {
-		add(e.Section)
+	if edits, err := LoadEdits(ctx, a.pool, tenantID); err == nil {
+		for _, e := range edits.Items {
+			add(e.Section)
+		}
 	}
 	// The config maps have no order of their own. Sorted, or the list
 	// reshuffles between page loads for no reason the reader can see.
@@ -212,48 +205,6 @@ func printBeers(state *PrintState) []printBeer {
 	return out
 }
 
-// syncResponse carries the new state alongside what the sync did.
-//
-// The state is a named field rather than an embedded one on purpose.
-// printConfigPayload has its own MarshalJSON, and embedding promotes that
-// method to the outer struct -- encoding/json would then call it and emit the
-// payload alone, silently dropping the report and the summary. A field cannot
-// do that.
-type syncResponse struct {
-	State   printConfigPayload `json:"state"`
-	Report  SyncReport         `json:"report"`
-	Summary string             `json:"summary"`
-}
-
-// handleSyncPrint refreshes the tap list from Untappd on request.
-//
-// A sync that cannot reach the description pages is a success with a warning,
-// not a failure, so the report comes back on a 200 alongside the new state and
-// the page shows both. Only losing the board itself is an error, because
-// without it there is no menu to show.
-func (a *App) handleSyncPrint(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenant := auth.TenantFromContext(ctx)
-
-	rep, err := SyncPrintMenu(ctx, a.pool, tenant.ID)
-	if err != nil {
-		slog.Warn("menu print: sync", "tenant_id", tenant.ID, "error", err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	state, err := LoadPrintState(ctx, a.pool, tenant.ID)
-	if err != nil {
-		slog.Error("loading print config after sync", "tenant_id", tenant.ID, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
-		return
-	}
-	writeJSON(w, http.StatusOK, syncResponse{
-		State:   a.printPayload(ctx, tenant.Slug, tenant.ID, state),
-		Report:  rep,
-		Summary: rep.Summary(),
-	})
-}
-
 func (a *App) handleSavePrintConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenant := auth.TenantFromContext(ctx)
@@ -265,10 +216,6 @@ func (a *App) handleSavePrintConfig(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var cfg PrintConfig
 	if err := dec.Decode(&cfg); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := validateExtras(cfg.Extras); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

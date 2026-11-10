@@ -78,8 +78,15 @@ func (a *App) writeNotes(w http.ResponseWriter, r *http.Request, tenantID uuid.U
 	if beers == nil {
 		beers = []printBeer{}
 	}
+	// Missing is what will print with no description: the warning shown
+	// before printing, now that Kit no longer tries to fetch them.
+	missing := []string{}
+	if ov, err := a.loadOverrides(r.Context(), tenantID); err == nil {
+		missing = append(missing, missingDescriptions(state, ov)...)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"beers":     beers,
+		"missing":   missing,
 		"synced_at": state.SyncedAt,
 	})
 }

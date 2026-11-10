@@ -165,48 +165,6 @@ func TestTidyABV(t *testing.T) {
 	}
 }
 
-func TestNormalizeBeerNameAndMatching(t *testing.T) {
-	index := map[string]string{
-		"newtonian amber ale":      "https://untappd.com/b/newtonian/1",
-		"acceleration":             "https://untappd.com/b/acceleration/2",
-		"barrel aged acceleration": "https://untappd.com/b/ba-acceleration/3",
-		"viener vino barrel aged":  "https://untappd.com/b/viener/4",
-		"mr radar nitro":           "https://untappd.com/b/radar/5",
-	}
-	for name, want := range map[string]string{
-		"Newtonian":                 "https://untappd.com/b/newtonian/1",
-		"Mr. Radar Nitro (Nitro)":   "https://untappd.com/b/radar/5",
-		"Viener Vino (Barrel-Aged)": "https://untappd.com/b/viener/4",
-	} {
-		got, ok := matchBeer(index, name)
-		if !ok || got != want {
-			t.Errorf("matchBeer(%q) = %q/%v, want %q", name, got, ok, want)
-		}
-	}
-	if _, ok := matchBeer(index, "Something Else Entirely"); ok {
-		t.Error("matchBeer matched an unrelated name")
-	}
-}
-
-func TestFetchBeerNoteReadsTheDescription(t *testing.T) {
-	// The markup Untappd serves, class-name typo included.
-	page := `<div class="desc">
-		<div class="beer-descrption-read-more">Award winning British style ale.</div>
-		<div class="beer-descrption-read-less" style="display: none;">
-			Award winning British style ale. Marris Otter Malt and East Kent Golding Hops.
-			<a href="#" class="read-less">Show Less</a>
-		</div>
-	</div>`
-	note := parseBeerNote(page)
-	want := "Award winning British style ale. Marris Otter Malt and East Kent Golding Hops."
-	if note != want {
-		t.Errorf("parseBeerNote() = %q, want %q", note, want)
-	}
-	if parseBeerNote("<html>no description here</html>") != "" {
-		t.Error("a page with no description should yield empty, not junk")
-	}
-}
-
 // The document has to actually compose: fonts embed, pages break, and the
 // bytes come out looking like a PDF.
 func TestRenderPrintPDF(t *testing.T) {
@@ -231,7 +189,7 @@ func TestRenderPrintPDF(t *testing.T) {
 		Sizes:     defaultSizes,
 		FootLeft:  cfg.FootLeft,
 		FootRight: cfg.FootRight,
-		Sections:  buildSections(mergeExtras(rows, cfg.Extras), cfg.Blurbs),
+		Sections:  buildSections(mergeExtras(rows, sampleItems()), cfg.Blurbs),
 	}
 	var buf bytes.Buffer
 	if err := RenderPrintPDF(m, &buf); err != nil {

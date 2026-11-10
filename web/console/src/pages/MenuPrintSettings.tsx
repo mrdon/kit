@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  api,
-  type MenuExtra,
-  type MenuPrint,
-  type MenuPrintConfig,
-} from '../api';
+import { api, type MenuPrint, type MenuPrintConfig } from '../api';
 import { useSetChatContext } from '../chatContext';
 import MenuFeaturedPanel from './MenuFeaturedPanel';
 
@@ -17,38 +12,19 @@ import MenuFeaturedPanel from './MenuFeaturedPanel';
 // I paste into the screen". The endpoints are admin-only regardless; this is
 // where the tile is.
 //
-// The tap list is synced, not fetched at print time. Printing used to scrape
-// Untappd on the way to the PDF, which put a third party on the critical path
-// of somebody standing at a printer and made every failure silent. Now Sync
-// fills the menu in and says what it could not reach, and the sheet renders
-// from what is stored.
+// The tap list is the menu's own: the same Untappd pull the wall makes, with
+// Kit's items, hides and 86s applied on the Menu page. Kit does not fetch
+// descriptions (untappd.com refuses a server), so this page lists the beers
+// that would print without one and is where they get written.
 //
-// The two halves of that sync fail independently, and the page has to be
-// honest about it. The board — beers, prices, ABVs — answers anybody. The
-// descriptions live on untappd.com, which refuses a datacenter IP, so on a
-// server that half usually cannot succeed at all. A beer with no description
-// is therefore a normal outcome and not an error, and the page offers the
-// missing list as work rather than as a fault.
-//
-// Everything else here is what Untappd cannot tell us. The beers, prices, strengths
-// and descriptions all come from the tap list; this page is the masthead
-// wording, the rows that are not on tap at all
-// — cans, sodas, juice boxes — and the headings that are a sentence rather
-// than a list, which is how snacks go on a beer menu.
+// Everything else here is paper-only: the masthead wording, the featured beer,
+// and the headings that are a sentence rather than a list, which is how snacks
+// go on a beer menu.
 //
 // It is one form saved whole, not a set of live-updating fields. The config is
 // stored as a single document and replaced on write, so a per-field save would
 // be a lie about what the backend does, and a half-typed blurb landing on a
 // printed menu mid-edit is worse than an explicit Save.
-
-// Empty rows to append, kept out of the component so the shapes are stated
-// once rather than inline at each call site.
-const BLANK_EXTRA: MenuExtra = {
-  section: '',
-  name: '',
-  style: '',
-  pours: [{ size: '12oz', label: '12oz Can', price: '' }],
-};
 
 // A blurb is edited as a heading and a sentence side by side, not as a map
 // entry. Typing into a key rewrites it on every keystroke, which remounts the
@@ -68,8 +44,6 @@ export default function MenuPrintSettings() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -95,69 +69,6 @@ export default function MenuPrintSettings() {
   function setBlurb(i: number, patch: Partial<BlurbRow>) {
     setBlurbs((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
     setSaved(false);
-  }
-
-  function setExtra(i: number, patch: Partial<MenuExtra>) {
-    if (!cfg) return;
-    const extras = [...(cfg.extras ?? [])];
-    extras[i] = { ...extras[i], ...patch };
-    set('extras', extras);
-  }
-
-  // Order here is order on the sheet. mergeExtras keeps these rows in the
-  // order they are stored -- beside their own heading when the section is
-  // already on tap, at the end when it is not -- so moving a row up is the
-  // only way to say a lemonade should print above a root beer.
-  function moveExtra(i: number, delta: number) {
-    if (!cfg) return;
-    const j = i + delta;
-    const extras = [...(cfg.extras ?? [])];
-    if (j < 0 || j >= extras.length) return;
-    [extras[i], extras[j]] = [extras[j], extras[i]];
-    set('extras', extras);
-  }
-
-  // Price lives inside the row's first pour, because that is the shape the
-  // renderer reads. The form flattens it so nobody has to think about pours to
-  // put a lemonade on the menu.
-  function setExtraPrice(i: number, price: string) {
-    if (!cfg) return;
-    const extras = [...(cfg.extras ?? [])];
-    const pours = [...(extras[i].pours ?? [{ ...BLANK_EXTRA.pours![0] }])];
-    pours[0] = { ...pours[0], price };
-    extras[i] = { ...extras[i], pours };
-    set('extras', extras);
-  }
-
-  function setExtraSize(i: number, size: string) {
-    if (!cfg) return;
-    const extras = [...(cfg.extras ?? [])];
-    const pours = [...(extras[i].pours ?? [{ ...BLANK_EXTRA.pours![0] }])];
-    // The label is what marks a row as packaged rather than poured, so it has
-    // to track the size or a can starts printing in the draft columns.
-    pours[0] = { ...pours[0], size, label: `${size} Can` };
-    extras[i] = { ...extras[i], pours };
-    set('extras', extras);
-  }
-
-  // Sync writes on the server, so the whole page state comes back with it
-  // rather than being patched locally — including the descriptions it found,
-  // which the notes fields below are showing.
-  async function sync() {
-    setSyncing(true);
-    setErr(null);
-    setSyncMsg(null);
-    try {
-      const res = await api.syncMenuPrint();
-      setData(res.state);
-      setCfg(res.state.config);
-      setBlurbs(toBlurbRows(res.state.config.blurbs));
-      setSyncMsg(res.summary);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSyncing(false);
-    }
   }
 
   // setNote writes a description into config.notes, the layer that wins over
@@ -195,7 +106,7 @@ export default function MenuPrintSettings() {
   }
 
   const sections = data?.sections ?? [];
-  const extras = cfg?.extras ?? [];
+  const missing = (data?.beers ?? []).filter((b) => !b.note.trim()).map((b) => b.name);
 
   return (
     <div className="page">
@@ -209,9 +120,10 @@ export default function MenuPrintSettings() {
         </nav>
         <h1>Printed menu</h1>
         <p className="page-sub">
-          The beers, prices and strengths come from your tap list. This is
-          everything else — the wording around the edges and the drinks that
-          are not on tap.
+          The beers, prices and strengths come from the menu, the same one the
+          wall shows. Cans, hidden beers and 86s are set on the{' '}
+          <Link to="/menu">Menu page</Link>. This is the wording around the
+          edges and what each beer says.
         </p>
       </div>
 
@@ -223,49 +135,30 @@ export default function MenuPrintSettings() {
           <section className="panel">
             <h2 className="panel-title">Tap list</h2>
             <p className="card-desc">
-              The printed menu shows what was last synced — it doesn&rsquo;t go
-              to Untappd when you open it, so printing is instant and never
-              half-finished. Sync after the taps change.
-            </p>
-            {syncMsg && (
-              <p className="banner" style={{ whiteSpace: 'pre-wrap' }}>
-                {syncMsg}
-              </p>
-            )}
-            <p className="card-desc">
               {data.synced_at ? (
                 <>
-                  {data.beers.length} beers · last synced{' '}
-                  {new Date(data.synced_at).toLocaleString()}
+                  {data.beers.length} beers, as of{' '}
+                  {new Date(data.synced_at).toLocaleString()}. It follows
+                  Untappd on its own, like the wall.
                 </>
               ) : (
-                <em>
-                  Never synced — the sheet has no beers on it until you do.
-                </em>
+                <em>No tap list yet. It fills in from the Untappd board the wall follows.</em>
               )}
             </p>
-            {data.sync_error && (
+            {missing.length > 0 && (
               <p className="banner banner-error">
-                Descriptions: {data.sync_error}. The beers and prices are fine —
-                Kit&rsquo;s server can read the board but not the brewery pages.
-                Write the copy below, or have an agent on your own machine fill
-                it in with <code>set_menu_notes</code>.
+                No description yet, so these print without one:{' '}
+                {missing.join(', ')}. Write them below.
               </p>
             )}
-            <div className="drawer-actions">
-              <button className="btn" onClick={sync} disabled={syncing}>
-                {syncing ? 'Syncing…' : 'Sync from Untappd'}
-              </button>
-            </div>
           </section>
 
           {data.beers.length > 0 && (
             <section className="panel">
               <h2 className="panel-title">What each beer says</h2>
               <p className="card-desc">
-                Style, strength and price follow the board and change on the
-                next sync. The description is yours: anything you write here
-                wins over Untappd and is never overwritten.
+                Style, strength and price follow the board. The description is
+                yours: anything you write here is what prints.
               </p>
               {data.beers.map((b) => (
                 <div className="field-row" key={b.name}>
@@ -289,28 +182,6 @@ export default function MenuPrintSettings() {
               ))}
             </section>
           )}
-
-          <section className="panel">
-            <h2 className="panel-title">Descriptions</h2>
-            <label className="field">
-              <span>Untappd brewery page</span>
-              <input
-                value={cfg.brand ?? ''}
-                placeholder="gravitybrewing"
-                spellCheck={false}
-                onChange={(e) => set('brand', e.target.value)}
-              />
-              <span className="field-note">
-                The name in <code>untappd.com/…</code> — the brewery page, not
-                the digital board. Without it the menu prints with no beer
-                descriptions at all, because the board carries none. Kit reads
-                each beer&rsquo;s own page once and remembers it.
-                {data.notes_cached > 0 && (
-                  <> {data.notes_cached} stored so far.</>
-                )}
-              </span>
-            </label>
-          </section>
 
           <MenuFeaturedPanel
             featured={cfg.featured}
@@ -438,126 +309,11 @@ export default function MenuPrintSettings() {
             </div>
           </section>
 
-          <section className="panel">
-            <h2 className="panel-title">Not on tap</h2>
-            <p className="card-desc">
-              Cans, sodas and juice boxes — anything Untappd has no opinion
-              about. A section whose rows are all packaged prints one price
-              column instead of three. They show in the order below, gathered
-              under their section heading. "Show on" picks the menu: the wall
-              has less room, so one line there can stand for several cans on
-              paper. To take one off for the day, 86 it.
-            </p>
-            {extras.map((row, i) => (
-              <div className="field-row" key={i}>
-                <label className="field">
-                  <span>Section</span>
-                  <input
-                    value={row.section}
-                    placeholder="Sodas & Juices"
-                    list="menu-print-sections"
-                    onChange={(e) => setExtra(i, { section: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Name</span>
-                  <input
-                    value={row.name}
-                    placeholder="Lemonade"
-                    onChange={(e) => setExtra(i, { name: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Style</span>
-                  <input
-                    value={row.style ?? ''}
-                    placeholder="optional"
-                    onChange={(e) => setExtra(i, { style: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Size</span>
-                  <input
-                    value={row.pours?.[0]?.size ?? ''}
-                    placeholder="12oz"
-                    onChange={(e) => setExtraSize(i, e.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>Price</span>
-                  <input
-                    value={row.pours?.[0]?.price ?? ''}
-                    placeholder="4.50"
-                    onChange={(e) => setExtraPrice(i, e.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>Show on</span>
-                  <select
-                    value={row.show ?? 'print'}
-                    onChange={(e) =>
-                      setExtra(i, { show: e.target.value as MenuExtra['show'] })
-                    }
-                  >
-                    <option value="print">Paper</option>
-                    <option value="board">Wall</option>
-                    <option value="both">Both</option>
-                  </select>
-                </label>
-                <div className="row-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    aria-label={`Move ${row.name || 'this drink'} up`}
-                    disabled={i === 0}
-                    onClick={() => moveExtra(i, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    aria-label={`Move ${row.name || 'this drink'} down`}
-                    disabled={i === extras.length - 1}
-                    onClick={() => moveExtra(i, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() =>
-                      set(
-                        'extras',
-                        extras.filter((_, j) => j !== i),
-                      )
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
+          <datalist id="menu-print-sections">
+            {sections.map((s) => (
+              <option key={s} value={s} />
             ))}
-            <datalist id="menu-print-sections">
-              {sections.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-            <div className="drawer-actions">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() =>
-                  set('extras', [
-                    ...extras,
-                    { ...BLANK_EXTRA, pours: [{ ...BLANK_EXTRA.pours![0] }] },
-                  ])
-                }
-              >
-                Add a drink
-              </button>
-            </div>
-          </section>
+          </datalist>
 
           <section className="panel">
             <div className="drawer-actions">

@@ -15,16 +15,48 @@ export interface MenuPour {
   price: string;
 }
 
-/** A row Untappd does not carry — a can, a soda. */
-export interface MenuExtra {
+/** An item Kit adds to the Untappd menu — a can, a soda. */
+export interface MenuItem {
   section: string;
   name: string;
   style?: string;
   abv?: string;
   notes?: string;
   pours?: MenuPour[];
-  /** Which menu it is on; omitted means the printed one. */
+  /** Which menu it is on; omitted means both. */
   show?: 'print' | 'board' | 'both';
+}
+
+/** Kit's standing edits to the Untappd menu. */
+export interface MenuEdits {
+  items: MenuItem[];
+  hidden: { items: string[]; sections: string[] };
+}
+
+/** One line of the merged menu list. */
+export interface MenuItemRow {
+  name: string;
+  source: 'untappd' | 'kit';
+  style: string;
+  price: string;
+  size: string;
+  show: '' | 'print' | 'board' | 'both';
+  hidden: boolean;
+  out: boolean;
+  /** A Kit item's place in edits.items; -1 for Untappd rows. */
+  index: number;
+}
+
+export interface MenuItems {
+  sections: { name: string; hidden: boolean; items: MenuItemRow[] }[];
+  edits: MenuEdits;
+}
+
+/** A change to the menu list: the same arguments set_menu_items takes. */
+export interface MenuItemsChange {
+  items?: MenuItem[];
+  hide?: string[];
+  unhide?: string[];
 }
 
 /** Everything about the printed menu the tap list cannot say. All optional. */
@@ -44,7 +76,6 @@ export interface MenuPrintConfig {
    * how snacks reach a beer menu without a row and a price each.
    */
   blurbs?: Record<string, string>;
-  extras?: MenuExtra[];
   /** The one beer boxed at the head of the printed menu. */
   featured?: MenuFeatured;
 }
@@ -76,25 +107,8 @@ export interface MenuPrintBeer {
   abv: string;
   price: string;
   note: string;
-  /** True when the description was typed in Kit rather than scraped. */
+  /** True when the description was typed in Kit rather than cached from Untappd. */
   written: boolean;
-}
-
-/** What one sync did. `missing` is the work list for an agent that can reach
- *  untappd.com — Kit's own server usually cannot. */
-export interface MenuSyncReport {
-  rows: number;
-  dropped: number;
-  described: number;
-  missing: string[];
-  fetched: number;
-  notes_error?: string;
-}
-
-export interface MenuSyncResult {
-  state: MenuPrint;
-  report: MenuSyncReport;
-  summary: string;
 }
 
 /** The happy hour setting. Both the wall and Square are derived from it. */
@@ -160,8 +174,6 @@ export interface MenuPrint {
   beers: MenuPrintBeer[];
   /** Null until the first sync. The page leads with the button while it is. */
   synced_at: string | null;
-  /** The last sync's warning, normally that descriptions were unreachable. */
-  sync_error: string;
 }
 
 export interface MenuBoard {
@@ -220,16 +232,19 @@ export const menuApi = {
   menuPrint: () => apiGet<MenuPrint>('/menu/print'),
   saveMenuPrint: (body: MenuPrintConfig) =>
     apiPut<MenuPrint>('/menu/print', body),
-  syncMenuPrint: () => apiPost<MenuSyncResult>('/menu/print/sync', {}),
   menuFeaturedPhotos: (beer: string) =>
     apiGet<{ candidates: MenuFeaturedPhoto[] }>(
       `/menu/print/featured/photos?beer=${encodeURIComponent(beer)}`,
     ),
   menuFeaturedPhotoUrl: (ref: string) =>
     `${API_BASE}/menu/print/featured/photo?ref=${encodeURIComponent(ref)}`,
-  menuPrintNotes: () => apiGet<{ beers: MenuPrintBeer[] }>('/menu/print/notes'),
+  /** `missing` is what will print without a description. */
+  menuPrintNotes: () =>
+    apiGet<{ beers: MenuPrintBeer[]; missing: string[] }>('/menu/print/notes'),
   saveMenuPrintNote: (name: string, text: string) =>
     apiPut<{ beers: MenuPrintBeer[] }>('/menu/print/notes', { name, text }),
+  menuItems: () => apiGet<MenuItems>('/menu/items'),
+  saveMenuItems: (change: MenuItemsChange) => apiPut<MenuItems>('/menu/items', change),
   eightySix: () => apiGet<GlutenReduced>('/menu/86'),
   saveEightySix: (beers: string[]) => apiPut<GlutenReduced>('/menu/86', { beers }),
   // Same shape as trivia's ratings channel: the setting plus the picker.

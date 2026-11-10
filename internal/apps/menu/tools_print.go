@@ -26,9 +26,6 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	if err := dec.Decode(&cfg); err != nil {
 		return "", fmt.Errorf("%w: %w", ErrPayloadInvalid, err)
 	}
-	if err := validateExtras(cfg.Extras); err != nil {
-		return "", err
-	}
 	if err := prepareFeatured(ctx, pool, tenantID, &cfg); err != nil {
 		return "", err
 	}
@@ -37,8 +34,7 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Printed menu configured — %s, %s, %s.",
-		plural(len(cfg.Extras), "extra row"),
+	fmt.Fprintf(&b, "Printed menu configured — %s, %s.",
 		plural(len(cfg.Notes), "written description"),
 		plural(len(cfg.Blurbs), "blurb"))
 	if f := cfg.Featured; f != nil {
@@ -48,11 +44,6 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 		}
 		fmt.Fprintf(&b, "\n\nFeatured: %s (%s), %s. It prints only while it is on tap.",
 			f.Beer, firstNonEmpty(f.Label, defaultFeaturedLabel), photo)
-	}
-	if strings.TrimSpace(cfg.Brand) == "" {
-		b.WriteString("\n\nNo `brand` set, so the menu will print without beer descriptions: " +
-			"the Untappd digital board does not carry them, and the brewery's untappd.com slug " +
-			"is what finds the pages that do.")
 	}
 	return b.String(), nil
 }
@@ -64,18 +55,6 @@ func plural(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-// syncPrint refreshes the tap list and reports what happened, for both
-// surfaces. The report is worth returning in full: the missing-description
-// list is the work an agent picks up next, and hiding it behind a count would
-// mean a second round trip to find out which beers.
-func syncPrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (string, error) {
-	rep, err := SyncPrintMenu(ctx, pool, tenantID)
-	if err != nil {
-		return "", err
-	}
-	return rep.Summary(), nil
 }
 
 // saveNotes merges descriptions into the store.
@@ -146,42 +125,29 @@ func strayNotes(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, set
 	return stray
 }
 
-// describePrint summarises the printed menu for get_menu_board.
-func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) string {
+// describePrint summarises the menu edits and the printed menu for
+// get_menu_board.
+func describePrint(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uuid.UUID) string {
 	state, err := LoadPrintState(ctx, pool, tenantID)
+	if err != nil {
+		return ""
+	}
+	ov, err := a.loadOverrides(ctx, tenantID)
 	if err != nil {
 		return ""
 	}
 	cfg := state.Config
 	var b strings.Builder
 	b.WriteString("\nPrinted menu:\n")
-	if strings.TrimSpace(cfg.Brand) == "" {
-		b.WriteString("  no brewery slug set — will print without descriptions\n")
-	} else {
-		fmt.Fprintf(&b, "  descriptions from untappd.com/%s (%d cached)\n", cfg.Brand, len(state.Notes))
-	}
-	if len(cfg.Extras) > 0 {
-		fmt.Fprintf(&b, "  %d extra rows (non-Untappd), %d printed, %d on the wall\n",
-			len(cfg.Extras), len(printExtras(cfg.Extras)), len(boardExtras(cfg.Extras)))
-		b.WriteString(describeExtras(cfg.Extras))
-	}
 	if state.SyncedAt == nil {
-		b.WriteString("  never synced — the sheet has no beers on it until sync_menu_print runs\n")
+		b.WriteString("  no tap list yet — it fills in from the Untappd board the wall follows\n")
 	} else {
-		fmt.Fprintf(&b, "  %d beers, synced %s\n",
+		fmt.Fprintf(&b, "  %d beers, as of %s\n",
 			len(state.Rows), state.SyncedAt.Format("2 Jan 2006 15:04 MST"))
-		var missing []string
-		for _, r := range state.Rows {
-			if _, ok := findNote(mergedNotes(state.Notes, cfg.Notes), r.Name); !ok {
-				missing = append(missing, r.Name)
-			}
-		}
-		if len(missing) > 0 {
-			fmt.Fprintf(&b, "  no description yet: %s\n", strings.Join(missing, ", "))
-		}
 	}
-	if state.SyncError != "" {
-		fmt.Fprintf(&b, "  last sync warning: %s\n", state.SyncError)
+	if missing := missingDescriptions(state, ov); len(missing) > 0 {
+		fmt.Fprintf(&b, "  NO DESCRIPTION, will print without one: %s (write them with set_menu_notes)\n",
+			strings.Join(missing, ", "))
 	}
 	if len(cfg.Blurbs) > 0 {
 		names := make([]string, 0, len(cfg.Blurbs))

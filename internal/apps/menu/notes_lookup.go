@@ -2,6 +2,7 @@ package menu
 
 import (
 	"maps"
+	"regexp"
 	"strings"
 )
 
@@ -106,4 +107,19 @@ func mergedNotes(cache, written map[string]string) map[string]string {
 	maps.Copy(out, cache)
 	maps.Copy(out, foldNotes(written))
 	return out
+}
+
+var (
+	parenRe   = regexp.MustCompile(`\([^)]*\)`)
+	nonWordRe = regexp.MustCompile(`[^a-z0-9 ]+`)
+	spaceRe   = regexp.MustCompile(`\s+`)
+)
+
+// normalizeBeerName reduces a name to what two spellings of it share:
+// lower case, no punctuation, no parenthetical, single spaces.
+func normalizeBeerName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = parenRe.ReplaceAllString(s, " ")
+	s = nonWordRe.ReplaceAllString(s, " ")
+	return strings.TrimSpace(spaceRe.ReplaceAllString(s, " "))
 }

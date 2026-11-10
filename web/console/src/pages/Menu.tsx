@@ -4,13 +4,12 @@ import { api, type MenuBoard } from '../api';
 import { useSetChatContext } from '../chatContext';
 import { useMe } from '../me';
 import MenuGlutenReduced from './MenuGlutenReduced';
-import MenuEightySix from './MenuEightySix';
+import MenuItems from './MenuItems';
 import { SLUG } from '../workspace';
 
-// The Menu page exists to answer one question: what URL do I paste into the
-// screen? The tap list follows Untappd and the presentation is pushed from an
-// AI client, so there is nothing to edit here — an address, a copy button, and
-// enough state to tell whether it is working.
+// The Menu page answers what URL to paste into the screen, and holds the one
+// menu both the screen and the paper read: Untappd's tap list plus Kit's
+// items, hides and 86s (see MenuItems).
 //
 // The printed menu hangs off this page because it is the same tap list on
 // paper. The events table topper is a separate thing on a separate page: that
@@ -34,6 +33,7 @@ export default function Menu() {
   const [board, setBoard] = useState<MenuBoard | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [missing, setMissing] = useState<string[]>([]);
   const field = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -42,6 +42,16 @@ export default function Menu() {
       .then(setBoard)
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
+
+  // Descriptions are admin data, so only an admin is warned, and only an
+  // admin can fix it. A failure just leaves the warning off.
+  useEffect(() => {
+    if (!me?.is_admin) return;
+    api
+      .menuPrintNotes()
+      .then((d) => setMissing(d.missing ?? []))
+      .catch(() => setMissing([]));
+  }, [me?.is_admin]);
 
   // The address is shown in a real text field and copying falls back to
   // selecting it. navigator.clipboard is not always available — an extension
@@ -149,7 +159,7 @@ export default function Menu() {
           the endpoint behind it. */}
       {board && !board.empty && me?.is_admin && <MenuGlutenReduced />}
 
-      {board && !board.empty && <MenuEightySix />}
+      {board && !board.empty && <MenuItems isAdmin={!!me?.is_admin} />}
 
       {board && !board.empty && (
         <section className="panel">
@@ -160,10 +170,14 @@ export default function Menu() {
             price and description, and no section ever split across a page.
           </p>
           <p className="card-desc">
-            It prints what was last synced rather than going to Untappd when
-            you open it, so it comes out instantly and never half-finished.
-            Sync it after the taps change, on the settings page.
+            It prints the same menu as the wall, with the items, hides and 86s
+            above. Descriptions are written on the settings page.
           </p>
+          {missing.length > 0 && (
+            <p className="banner banner-error">
+              No description yet, so these print without one: {missing.join(', ')}.
+            </p>
+          )}
           <div className="drawer-actions">
             <button className="btn" onClick={openPrintMenu}>
               Open printable menu

@@ -124,7 +124,7 @@ func (a *App) pruneEightySix(ctx context.Context, tenantID uuid.UUID, taps []Tap
 		return
 	}
 	seen := append([]Tap(nil), taps...)
-	for _, name := range ov.names() {
+	for _, name := range ov.itemNames() {
 		seen = append(seen, Tap{Name: name})
 	}
 	kept := stillPouring(beers, seen)

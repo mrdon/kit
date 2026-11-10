@@ -52,9 +52,8 @@ type Beer struct {
 	// on the consumer site, and is empty until then.
 	Notes string `json:"notes,omitempty"`
 
-	// Show is which menus a configured extra row appears on: print (the
-	// default when empty), board or both. Untappd rows never set it. See
-	// extras.go.
+	// Show is which menus a Kit item appears on: print, board, or both
+	// (empty). Untappd rows never set it. See overrides.go.
 	Show string `json:"show,omitempty"`
 
 	// GlutenReduced is the printed menu's GR mark, set at print time from the

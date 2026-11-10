@@ -458,6 +458,13 @@ Beers that are **gluten reduced** — or made with no gluten ingredients, like a
 
 When a keg blows, **86** it in Kit instead of waiting for someone to edit Untappd: tick it under **86** on the **Menu** page or on the taproom device's **86** tile, or ask Kit ("86 the hazy") and it uses `set_menu_86`. Any member can do it. The beer drops off the wall, the spotlight and the printed menu at once. It stays in the checklist, ticked, so if it was a mistake, untick it to bring it back. Once the beer comes off Untappd too, its 86 clears by itself, so the next keg of it is not hidden. To tell the team, an admin picks a Slack channel under **Admin → 86 alerts**; every 86 is posted there with who did it (bringing a beer back is not posted).
 
+**Menu items** on the **Menu** page is the one menu both the wall and the printed menu read: Untappd's tap list, plus what Kit adds and hides. The 86 ticks live there too. An admin can:
+
+- **Add an item** Untappd does not carry, like a canned non-alcoholic or a soda: a section (pick one already on the menu, such as "Non Alcoholic", or type a new one), a name, a size and a price. **Show on** is Wall + paper by default; set it to Wall only or Paper only when the two need different rows, e.g. each N/A can by name on paper and one "Athletic & Sierra Nevada N/A" line on the wall.
+- **Hide** a beer or a whole section (e.g. "Tapping Soon"). Unlike an 86 it lasts until someone unhides it, even if Untappd drops the beer and brings it back.
+
+An agent does the same with `set_menu_items` (`items` to replace Kit's own items, `hide` and `unhide` for names), and `get_menu_board` lists them in the shape that tool takes. To take an added item off for the day, 86 it like a tap.
+
 The **side panels** are the rotating rail beside the tap list — a weekly agenda, a poster, or a "book the space" call to action. Change them with `set_menu_panels`, which replaces the panels and **nothing else**: your taps, wordmark and footer are untouched whatever you pass. Use `set_menu_board` only when you mean to set the tap list or the venue chrome by hand, since that one replaces the whole document.
 
 Panels can **follow the events calendar**, rebuilt every time the page loads, so nothing dated goes stale. Give a panel a `source`: `events:upcoming` on a poster panel shows each one-off night at the venue this week that has a poster, and drops it once the night is over; `events:tonight` does the same for today alone, in a single slot; `events:weekly` on an agenda lists the weekly series under their current names; `events:label:giveback` on a call to action takes its picture from the next event with that label; and `events:featured` on a poster panel spotlights the next **featured** night at the venue, its poster filling the whole panel, and steps aside when nothing featured is coming up. To give a night the spotlight, mark the event featured on the calendar rather than writing a panel for it. To keep the rail short, give panels the same `group` and they share one slot, taking turns each time the rail comes round: the featured poster then comes up more often. A **beer spotlight** is a panel of kind `spotlight` holding a list of beers, each with a photo and a short blurb; the wall shows only the ones on tap right now, one per pass in a single slot, with the style and ABV straight from the tap list. Anything else in a panel is plain text that never expires, so give it recurring wording like "Every Wed".
@@ -474,7 +481,7 @@ While it is on, the **screen** shows a gold happy hour banner across the top wit
 
 **Square follows by itself.** While happy hour is on, Kit keeps an automatic discount on those beers' pours, sized from each beer's own price to land on the happy hour price ($1.50 off a $6.50 pint, $3 off an $8 one); while it is off, the discount is gone. Kit checks every minute, and pushes at once after Start now or End now, so the bartender rings a pint as usual. A beer must match a Square item's name or kitchen name exactly, or nothing is sent. **Preview** shows what Square rings, and the page always shows the last Square update's full log, Square's error text included: if it says a permission is missing, the Square token under Integrations needs `ITEMS_READ` and `ITEMS_WRITE`. A failed update is retried every 10 minutes.
 
-Only beers that are **actually pouring** reach the printed menu — Kit takes that from whether Untappd prices a 4oz taster, which every tap has and nothing else does. A beer whose prices you clear in Untappd drops off the paper (and its heading with it, if it was the last one under it), and a can listed beside the taps never appears as though you could order a glass of it. Put cans and bottles in `extras` instead.
+Only beers that are **actually pouring** reach the printed menu — Kit takes that from whether Untappd prices a 4oz taster, which every tap has and nothing else does. A beer whose prices you clear in Untappd drops off the paper (and its heading with it, if it was the last one under it), and a can listed beside the taps never appears as though you could order a glass of it. Add cans and bottles as **Menu items** instead.
 
 **Printable menu** on the same page opens a letter-sized PDF for the tables, set like the menu board: a navy masthead with your mark and name and a "Try a flight" badge, then two columns of beers, each with its name, GR and NEW badges, style and ABV, price, and its description. It paginates itself, so a beer added in Untappd pushes the rest along instead of needing a designer. A beer that pours in something other than a pint carries its size under the price, as on the wall, so nobody is quoted a 16oz they cannot order. Prices print as the wall shows them ("6.5", "8").
 
@@ -482,30 +489,23 @@ Only beers that are **actually pouring** reach the printed menu — Kit takes th
 
 Beers that sit next to each other and share the **same description** print as one entry: the description once, under the name they share, with a line per beer for its own strength, price and badges. Untappd repeats one paragraph across "2026 Tsar Bomba", "2026 Barrel Aged Tsar Bomba" and "2025 Tsar Bomba", and the paper prints it once under **Tsar Bomba**. Give each its own description and they go back to separate rows; there's no setting.
 
-The sheet prints **what was last synced**, not whatever Untappd says at the moment you open it. Press **Sync from Untappd** on the settings page after the taps change. That keeps a third party off the critical path of somebody standing at a printer, and it means a failure to reach Untappd lands in front of you when you asked for it rather than silently subtracting the descriptions from a document.
+There is no sync step: the sheet uses the same tap list as the wall, which follows Untappd on its own, and opening the printable menu checks Untappd first (at most once a minute).
 
 Columns fill up before they break, and a section that doesn't fit continues at the top of the next column under its heading marked "cont.", as the board does. Keeping whole sections together was tried and looked worse — three tall beers that won't fit leave the bottom half of a page white, which on a menu reads as a mistake rather than as design.
 
-### Why descriptions often don't come down
+### Descriptions
 
-Sync reads **two different Untappds, and they fail independently.**
+Kit does not fetch descriptions. They live on untappd.com, which refuses a server, so Kit stopped trying. Instead, before you print, the **Menu** page, the printed menu's settings and the taproom device's **Print the menu** tile all list any beer on the menu with no description, since it would print without one. Two ways to fill them in:
 
-- The digital board (`business.untappd.com`) has the beers, sections, prices and ABVs. It answers anybody, so this half essentially always works.
-- The descriptions live on the consumer site (`untappd.com`), which sits behind Cloudflare bot management. It answers a laptop fine and answers a server with a challenge — so from Kit's own host this half usually **cannot** succeed, whatever the network is doing.
+1. **Type them** on the settings page under "What each beer says", or on the device's **Beer descriptions** tile.
+2. **Have an agent do it.** Claude Code (or any MCP harness) on your own machine can read untappd.com; `get_menu_board` lists the beers with none, and `set_menu_notes` pushes them back. It **merges**, unlike `set_menu_print`, which replaces the whole configuration.
 
-So "16 beers synced, 0 descriptions" is a normal result, not a fault, and Sync says so rather than leaving you to notice on paper. Three ways to fill them in:
-
-1. **Type them** on the settings page, under "What each beer says". Anything written in Kit wins over Untappd and is never overwritten.
-2. **Have an agent do it.** Point Claude Code (or any MCP harness) on your own machine at Kit: it can reach untappd.com, and `sync_menu_print` reports exactly which beers have no description, so it has a work list. It pushes them back with `set_menu_notes`, which **merges** — unlike `set_menu_print`, which replaces the whole configuration.
-3. **Write them in Untappd** and sync from a machine that can reach it.
-
-Stored descriptions are kept forever, so this is a once-per-new-beer job, not a recurring one.
+Stored descriptions are kept forever, so this is a once-per-new-beer job.
 
 ### Configuring it
 
 Configure the printed menu with `set_menu_print`, passing a JSON document:
 
-- `brand` — your untappd.com slug, the `gravitybrewing` in `untappd.com/gravitybrewing`. Without it Sync doesn't even try for descriptions. They're fetched once per beer and then remembered, so a description you correct in Kit is not overwritten later.
 - `title` / `subtitle` — printed small beside your name in the masthead, e.g. `"Beers"` and `"& More"`. The name itself is the menu board's wordmark.
 - `flight` — the short line under "Try a flight" in the masthead badge, e.g. `"Any four 4oz pours"`.
 - `sizes` — the pour-size note in the footer, e.g. `"Pours are 16oz unless marked · Also available in 9oz & 4oz"`.
@@ -514,7 +514,6 @@ Configure the printed menu with `set_menu_print`, passing a JSON document:
 - `blurbs` — section heading to a single sentence printed under that heading. A heading that matches your tap list gets the sentence above its beers; a heading that matches nothing becomes a section of its own at the end of the menu. This is how **snacks** go on a beer menu: one bar saying `Snacks` and one line saying what's behind it, rather than a row and a price for every bag of pretzels.
 - `hero` — the key of an image stored with `set_menu_asset`, printed behind the masthead under a navy wash. A PNG stored with `set_menu_asset` under the key `print-logo`, if you upload one, goes at the left of the masthead — a mark rather than a full logo with your name in it, since the name is printed beside it. It sits on navy, so colour or white both read.
 - `featured` — `{beer, label, text, photo}`: the beer boxed at the top of the menu. `label` is the reason (default "Brewer's pick"), `text` replaces its description in the box, and `photo` is `"auto"`, `"none"`, `"asset:<key>"`, or `"photo:<id>"` from `search_photos`.
-- `extras` — the rows Untappd has no opinion about: canned non-alcoholics, sodas, juice boxes. Each has a `section`, `name`, optional `style`, and `pours: [{size, label, price}]`. A section name that matches one on the tap list joins it, ignoring case, spaces and punctuation — "Non-Alcoholic" lands with Untappd's "Non Alcoholic". `show` says which menu the row is on: `print` (the default), `board` for the wall menu only, or `both`. The wall has less room than paper, so a common setup is each canned non-alcoholic on paper and one `board` row that names them together. `set_menu_extras` edits this list alone, without resending the rest of the printed menu's settings. To take an extra off for the day, 86 it like a tap.
 
 Everything is optional. A workspace that configures none of it still prints a usable menu — the headings and beers come from Untappd.
 

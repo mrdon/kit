@@ -152,6 +152,13 @@ func (a *App) syncBoard(ctx context.Context, tenantID uuid.UUID, row *BoardRow) 
 	}
 	res.Taps = len(taps)
 
+	// The printed menu reads the same pull: every pour of every beer actually
+	// pouring, which the wall's one price per tap cannot be turned back into.
+	// Saving it here is what lets paper print without a sync step of its own.
+	if err := SavePrintRows(ctx, a.pool, tenantID, OnTapOnly(ParseBeers(body)), ""); err != nil {
+		slog.Warn("saving printed menu rows", "tenant_id", tenantID, "error", err)
+	}
+
 	board, err := ParseBoard(row.Payload)
 	if err != nil {
 		// A board whose stored payload no longer parses still has a usable

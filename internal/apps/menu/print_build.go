@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -48,14 +47,24 @@ const defaultSizes = "Pours are 16oz unless marked · Also available in 9oz & 4o
 
 // buildPrintMenu gathers everything one sheet needs, all of it from storage.
 func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintMenu, error) {
+	// Ask upstream first, as the wall does, so paper printed after a keg
+	// change has the new keg. At most once a minute, and a failure prints
+	// the last tap list rather than nothing.
+	if row, err := GetBoard(ctx, a.pool, tenant.ID); err == nil && row != nil {
+		a.EnsureFresh(ctx, tenant.ID, row)
+	}
 	state, err := LoadPrintState(ctx, a.pool, tenant.ID)
 	if err != nil {
 		return PrintMenu{}, err
 	}
 	cfg := state.Config
 
+	ov, err := a.loadOverrides(ctx, tenant.ID)
+	if err != nil {
+		return PrintMenu{}, err
+	}
 	rows := append([]Beer(nil), state.Rows...)
-	if len(rows) == 0 && len(cfg.Extras) == 0 {
+	if len(rows) == 0 && len(ov.Items) == 0 {
 		return PrintMenu{}, ErrNotSynced
 	}
 
@@ -71,11 +80,7 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 		}
 	}
 
-	out, err := LoadEightySix(ctx, a.pool, tenant.ID)
-	if err != nil {
-		return PrintMenu{}, err
-	}
-	rows = Overrides{Extras: cfg.Extras, EightySix: out}.applyRows(rows)
+	rows = ov.applyRows(rows)
 	if err := a.markGlutenReduced(ctx, tenant.ID, rows); err != nil {
 		return PrintMenu{}, err
 	}
@@ -235,13 +240,6 @@ func imageKind(mime string) string {
 		return "GIF"
 	}
 	return ""
-}
-
-// printClient reads both Untappd hosts. The timeout is per-request and longer
-// than the board sync's, because this path is not on a wall display's critical
-// path and a description is worth waiting a moment for.
-func printClient() *http.Client {
-	return &http.Client{Timeout: 12 * time.Second}
 }
 
 func firstNonEmpty(vals ...string) string {

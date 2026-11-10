@@ -34,7 +34,6 @@ func TestPrintConfigPayloadNeverSendsNull(t *testing.T) {
 		Config struct {
 			Notes  map[string]string `json:"notes"`
 			Blurbs map[string]string `json:"blurbs"`
-			Extras []Beer            `json:"extras"`
 		} `json:"config"`
 		Sections []string    `json:"sections"`
 		Beers    []printBeer `json:"beers"`
@@ -42,7 +41,7 @@ func TestPrintConfigPayloadNeverSendsNull(t *testing.T) {
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("round trip: %v", err)
 	}
-	if back.Sections == nil || back.Beers == nil || back.Config.Extras == nil ||
+	if back.Sections == nil || back.Beers == nil ||
 		back.Config.Notes == nil || back.Config.Blurbs == nil {
 		t.Errorf("an empty collection came back nil: %s", raw)
 	}
@@ -64,32 +63,8 @@ func TestPrintConfigRoundTripsThroughTheToolShape(t *testing.T) {
 	if err := dec.Decode(&back); err != nil {
 		t.Fatalf("the tool would reject what the console writes: %v", err)
 	}
-	if back.Brand != cfg.Brand || len(back.Extras) != len(cfg.Extras) ||
+	if back.Brand != cfg.Brand ||
 		len(back.Blurbs) != len(cfg.Blurbs) {
 		t.Error("config did not survive the round trip intact")
-	}
-}
-
-// The sync response must carry its report. printConfigPayload has a custom
-// MarshalJSON, and embedding it here would promote that method and quietly
-// emit the payload alone -- a bug with no symptom but a Sync button that never
-// says what it did.
-func TestSyncResponseKeepsItsReport(t *testing.T) {
-	raw, err := json.Marshal(syncResponse{
-		State:   printConfigPayload{},
-		Report:  SyncReport{Rows: 16, Described: 14, Missing: []string{"Mars Water"}},
-		Summary: "Synced 16 beers from Untappd.",
-	})
-	if err != nil {
-		t.Fatalf("marshalling: %v", err)
-	}
-	var got map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("unmarshalling: %v", err)
-	}
-	for _, key := range []string{"state", "report", "summary"} {
-		if _, ok := got[key]; !ok {
-			t.Errorf("response lost %q: %s", key, raw)
-		}
 	}
 }

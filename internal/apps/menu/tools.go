@@ -99,15 +99,13 @@ func toolMetas() []services.ToolMeta {
 		{
 			Name: "set_menu_print",
 			Description: "Configure the printed menu — the letter-sized PDF at /<slug>/menu/print.pdf. " +
-				"The beers, prices and ABVs come from the same Untappd board the screen follows; " +
-				"this is everything that is not on it. The payload is one JSON document: `brand` " +
-				"(the brewery's untappd.com slug, e.g. 'gravitybrewing' — without it the menu " +
-				"prints no beer descriptions, because the digital board carries none), `title` and " +
-				"`subtitle` (the masthead line beside the board's wordmark, e.g. 'Beers' / '& More'), " +
+				"The beers, prices and ABVs come from the same menu the screen shows (Untappd plus " +
+				"set_menu_items); this is the paper-only wording around it. The payload is one JSON " +
+				"document: `title` and `subtitle` (the masthead line beside the board's wordmark, e.g. 'Beers' / '& More'), " +
 				"`flight` (the short line in the masthead's flight badge, e.g. 'Any four 4oz pours'), " +
 				"`sizes` (the pour-size note in the footer), `foot_left` and `foot_right` (the wifi " +
 				"and social lines), `notes` (beer name to a description you " +
-				"write yourself, which wins over Untappd — use it for anything Untappd has no " +
+				"write yourself, which wins over a stored one — use it for anything Untappd has no " +
 				"page for), `blurbs` (section heading name to one sentence printed under that " +
 				"heading — a heading named here that is not on the tap list becomes a section " +
 				"of its own at the end, which is how snacks go on a beer menu without a row " +
@@ -117,38 +115,21 @@ func toolMetas() []services.ToolMeta {
 				"reason, default \"Brewer's pick\"; text replaces its description in the box; photo " +
 				"is \"auto\" to find one by name — the spotlight's, a menu image named beer-<name>, " +
 				"or a library photo tagged with the beer — \"none\", \"asset:<key>\" or " +
-				"\"photo:<id>\" from search_photos), and `extras` (rows Untappd does not " +
-				"carry — canned non-alcoholics, sodas, juice boxes — each with section, name, " +
-				"style, pours: [{size, label, price}] and an optional `show`: \"print\" (the default), " +
-				"\"board\" for the wall menu only or \"both\". The wall takes one price per row and " +
-				"drops a row with none; set_menu_extras edits them alone. Replaces the whole configuration.",
+				"\"photo:<id>\" from search_photos). Items Untappd does not carry (cans, sodas) " +
+				"are not here: set_menu_items edits those for both menus. Replaces the whole " +
+				"configuration.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{
 				"payload": services.Field("string", "The printed menu's configuration as a JSON document."),
 			}, "payload"),
 		},
 		{
-			Name: "sync_menu_print",
-			Description: "Refresh the printed menu's tap list from the Untappd board. The printed " +
-				"menu no longer fetches anything when it is opened — it renders what was last " +
-				"synced — so this is what puts a new beer on the paper. It reads the digital " +
-				"board for beers, sections, prices and ABVs, and tries the brewery's untappd.com " +
-				"pages for descriptions. Those two do not fail together: the board answers " +
-				"anybody, while the consumer site sits behind bot management and usually refuses " +
-				"a server, so a sync that gets the beers and no prose is normal. It reports which " +
-				"beers have no description; fill those with set_menu_notes.",
-			AdminOnly: true,
-			Schema:    services.Props(map[string]any{}),
-		},
-		{
 			Name: "set_menu_notes",
 			Description: "Store beer descriptions for the printed menu, merging them into what is " +
 				"already there rather than replacing it — unlike set_menu_print, which replaces " +
-				"the whole configuration. Use this to fill in the beers sync_menu_print reports " +
-				"as having no description. It is the way an agent running somewhere untappd.com " +
-				"will actually talk to — a laptop rather than a datacenter — can crawl the " +
-				"brewery's beer pages and push the prose into Kit. Names are matched loosely " +
-				"against the tap list, so the board's spelling and Untappd's need not agree.",
+				"the whole configuration. Kit does not fetch descriptions itself (untappd.com " +
+				"refuses servers), so this is how they get written: get_menu_board lists the beers " +
+				"on the tap list that have none. Names are matched loosely against the tap list.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{
 				"notes": services.Field("object",
@@ -164,7 +145,7 @@ func toolMetas() []services.ToolMeta {
 			Schema:    services.Props(map[string]any{}),
 		},
 	}
-	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta(), extrasToolMeta())
+	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta(), itemsToolMeta())
 }
 
 // setSourceArgs is the shared input shape for set_menu_source.
@@ -325,7 +306,8 @@ func describeBoard(ctx context.Context, pool *pgxpool.Pool, a *App, tenantID uui
 		}
 	}
 
-	b.WriteString(describePrint(ctx, pool, tenantID))
+	b.WriteString(describeEdits(a.overridesFor(ctx, tenantID).Edits))
+	b.WriteString(describePrint(ctx, pool, a, tenantID))
 	b.WriteString(describeHappyHour(ctx, a, tenantID))
 	b.WriteString(describeGlutenReduced(ctx, pool, tenantID))
 	b.WriteString(describeEightySix(ctx, pool, tenantID))

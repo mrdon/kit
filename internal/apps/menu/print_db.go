@@ -21,10 +21,9 @@ import (
 // feature works before anybody configures it, and configuring it is how a
 // venue makes it theirs.
 type PrintConfig struct {
-	// Brand is the brewery's untappd.com slug -- the "gravitybrewing" in
-	// untappd.com/gravitybrewing. Without it there are no descriptions: the
-	// digital board carries no prose, and nothing in it points at the consumer
-	// pages that do.
+	// Brand is the brewery's untappd.com slug. Nothing reads it now that Kit
+	// does not fetch descriptions; it stays so a stored config, or a caller
+	// that still sends it, decodes rather than failing.
 	Brand string `json:"brand,omitempty"`
 
 	Title     string `json:"title,omitempty"`      // "BEERS"
@@ -56,12 +55,6 @@ type PrintConfig struct {
 	// list becomes a section of its own at the end of the menu, which is how
 	// snacks get onto a beer list: one heading, one line, no price column.
 	Blurbs map[string]string `json:"blurbs"`
-
-	// Extras are the rows Untappd has no opinion about: canned non-alcoholics,
-	// sodas, juice boxes. They are Beers rather than a lesser type because
-	// a soda still has a section, a name and a price, and the renderer should
-	// not have to care which half of the menu a row came from.
-	Extras []Beer `json:"extras"`
 
 	// Hero is the asset key of the masthead photograph, uploaded with
 	// set_menu_asset. Empty prints the masthead as a flat colour band, which

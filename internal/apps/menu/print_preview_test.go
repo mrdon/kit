@@ -40,7 +40,7 @@ func TestPrintLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout)
 	defer cancel()
-	client := printClient()
+	client := untappdClient()
 
 	body, _, err := FetchUntappdBody(ctx, client, board)
 	if err != nil {
@@ -59,30 +59,8 @@ func TestPrintLive(t *testing.T) {
 		}
 	}
 
-	if brand := os.Getenv("MENU_PRINT_BRAND"); brand != "" {
-		found, unmatched, err := AttachNotes(ctx, client, brand, rows, map[string]string{})
-		if err != nil {
-			t.Fatalf("fetching descriptions for %s: %v", brand, err)
-		}
-		t.Logf("descriptions: %d of %d taps", len(found), len(rows))
-		// A tap whose page the listings never showed us is a coverage bug, not
-		// a beer nobody wrote up. Two of Gravity's sixteen were invisible this
-		// way for weeks, so the live check fails on it rather than logging it.
-		if len(unmatched) > 0 {
-			t.Errorf("no Untappd page found for %v — the brewery listings are not covering the board",
-				unmatched)
-		}
-		// Some beers genuinely have no write-up in Untappd, but most do. A
-		// run that matches almost nothing means the name matching broke, not
-		// that the brewery stopped writing.
-		if len(found)*2 < len(rows) {
-			t.Errorf("only %d of %d taps matched a description — name matching looks broken",
-				len(found), len(rows))
-		}
-	}
-
 	cfg := samplePrintConfig()
-	m := previewMenu(t, mergeExtras(rows, cfg.Extras), cfg)
+	m := previewMenu(t, mergeExtras(rows, sampleItems()), cfg)
 	for _, s := range m.Sections {
 		t.Logf("  %-20s %d rows", s.Name, len(s.Rows))
 		for _, r := range s.Rows {

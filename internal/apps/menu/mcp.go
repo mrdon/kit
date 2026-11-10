@@ -77,10 +77,6 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 				Payload: req.GetString("payload", ""),
 			})
 		})
-	case "sync_menu_print":
-		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
-			return syncPrint(ctx, pool, c.TenantID)
-		})
 	case "set_menu_notes":
 		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
 			args, err := notesFromRequest(req)
@@ -118,14 +114,14 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 			}
 			return setEightySix(ctx, pool, a, c, raw)
 		})
-	case "set_menu_extras":
+	case "set_menu_items":
 		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
 			// Re-encoded so both surfaces parse the exact same bytes.
 			raw, err := json.Marshal(req.GetArguments())
 			if err != nil {
 				return "", fmt.Errorf("reading %s arguments: %w", name, err)
 			}
-			return saveExtras(ctx, pool, c.TenantID, raw)
+			return setMenuItems(ctx, pool, a, c.TenantID, raw)
 		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
