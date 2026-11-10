@@ -118,6 +118,15 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 			}
 			return setEightySix(ctx, pool, a, c, raw)
 		})
+	case "set_menu_extras":
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			// Re-encoded so both surfaces parse the exact same bytes.
+			raw, err := json.Marshal(req.GetArguments())
+			if err != nil {
+				return "", fmt.Errorf("reading %s arguments: %w", name, err)
+			}
+			return saveExtras(ctx, pool, c.TenantID, raw)
+		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
 			return describeBoard(ctx, pool, a, c.TenantID)

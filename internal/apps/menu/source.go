@@ -52,6 +52,11 @@ type Beer struct {
 	// on the consumer site, and is empty until then.
 	Notes string `json:"notes,omitempty"`
 
+	// Show is which menus a configured extra row appears on: print (the
+	// default when empty), board or both. Untappd rows never set it. See
+	// extras.go.
+	Show string `json:"show,omitempty"`
+
 	// GlutenReduced is the printed menu's GR mark, set at print time from the
 	// workspace's list (see gluten_reduced.go). Never stored on the row: the
 	// list is kept by beer name so a mark survives a beer going off tap.

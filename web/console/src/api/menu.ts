@@ -15,7 +15,7 @@ export interface MenuPour {
   price: string;
 }
 
-/** A row on the printed menu that Untappd does not carry — a can, a soda. */
+/** A row Untappd does not carry — a can, a soda. */
 export interface MenuExtra {
   section: string;
   name: string;
@@ -23,6 +23,8 @@ export interface MenuExtra {
   abv?: string;
   notes?: string;
   pours?: MenuPour[];
+  /** Which menu it is on; omitted means the printed one. */
+  show?: 'print' | 'board' | 'both';
 }
 
 /** Everything about the printed menu the tap list cannot say. All optional. */

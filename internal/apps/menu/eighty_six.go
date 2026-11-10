@@ -110,31 +110,30 @@ func stillPouring(beers []string, taps []Tap) []string {
 	return kept
 }
 
-// pruneEightySix clears the 86 on every beer a sync no longer sees. A failure
-// leaves the list alone: a beer hidden a little longer is the safe side.
+// pruneEightySix clears the 86 on every beer a sync no longer sees. The
+// configured extras count as seen: Untappd never carries them, so a sync
+// saying nothing about them is not news. A failure leaves the list alone: a
+// beer hidden a little longer is the safe side.
 func (a *App) pruneEightySix(ctx context.Context, tenantID uuid.UUID, taps []Tap) {
 	beers, err := LoadEightySix(ctx, a.pool, tenantID)
 	if err != nil || len(beers) == 0 {
 		return
 	}
-	kept := stillPouring(beers, taps)
+	ov, err := a.loadOverrides(ctx, tenantID)
+	if err != nil {
+		return
+	}
+	seen := append([]Tap(nil), taps...)
+	for _, name := range ov.names() {
+		seen = append(seen, Tap{Name: name})
+	}
+	kept := stillPouring(beers, seen)
 	if len(kept) == len(beers) {
 		return
 	}
 	if err := SaveEightySix(ctx, a.pool, tenantID, kept); err != nil {
 		slog.Warn("clearing 86'd beers Untappd dropped", "tenant_id", tenantID, "error", err)
 	}
-}
-
-// eightySixFor loads the list for the wall. A failure to load shows the beer
-// rather than blanking the board.
-func (a *App) eightySixFor(ctx context.Context, tenantID uuid.UUID) []string {
-	beers, err := LoadEightySix(ctx, a.pool, tenantID)
-	if err != nil {
-		slog.Warn("loading 86'd beers for the board", "tenant_id", tenantID, "error", err)
-		return nil
-	}
-	return beers
 }
 
 // eightySixVersion puts the list's stamp in front of the version, so an 86

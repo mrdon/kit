@@ -443,8 +443,10 @@ export default function MenuPrintSettings() {
             <p className="card-desc">
               Cans, sodas and juice boxes — anything Untappd has no opinion
               about. A section whose rows are all packaged prints one price
-              column instead of three. They print in the order below, gathered
-              under their section heading.
+              column instead of three. They show in the order below, gathered
+              under their section heading. "Show on" picks the menu: the wall
+              has less room, so one line there can stand for several cans on
+              paper. To take one off for the day, 86 it.
             </p>
             {extras.map((row, i) => (
               <div className="field-row" key={i}>
@@ -488,6 +490,19 @@ export default function MenuPrintSettings() {
                     placeholder="4.50"
                     onChange={(e) => setExtraPrice(i, e.target.value)}
                   />
+                </label>
+                <label className="field">
+                  <span>Show on</span>
+                  <select
+                    value={row.show ?? 'print'}
+                    onChange={(e) =>
+                      setExtra(i, { show: e.target.value as MenuExtra['show'] })
+                    }
+                  >
+                    <option value="print">Paper</option>
+                    <option value="board">Wall</option>
+                    <option value="both">Both</option>
+                  </select>
                 </label>
                 <div className="row-actions">
                   <button

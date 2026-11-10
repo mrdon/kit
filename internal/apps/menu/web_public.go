@@ -82,8 +82,8 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := a.eightySixFor(r.Context(), tenant.ID)
-	dropEightySix(board, out)
+	ov := a.overridesFor(r.Context(), tenant.ID)
+	ov.applyBoard(board)
 	hh := a.happyHourFor(r.Context(), tenant.ID)
 	loc := locationOf(tenant.Timezone)
 	if now := timeNow(); hh != nil && hh.OnAt(now, loc) {
@@ -93,7 +93,7 @@ func (a *App) handleBoard(w http.ResponseWriter, r *http.Request) {
 	applyGlutenReduced(board, gr)
 	ev := a.expandPanels(r.Context(), tenant.ID, board, assets)
 
-	html, err := Render(board, assets, eightySixVersion(out, eventVersion(ev, liveVersion(row, hh, gr, loc))))
+	html, err := Render(board, assets, ov.version(eventVersion(ev, liveVersion(row, hh, gr, loc))))
 	if err != nil {
 		slog.Error("rendering menu board", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -128,8 +128,8 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 		hh := a.happyHourFor(r.Context(), tenant.ID)
 		gr := a.glutenReducedFor(r.Context(), tenant.ID)
 		row = a.EnsureFresh(r.Context(), tenant.ID, row)
-		out := a.eightySixFor(r.Context(), tenant.ID)
-		version = eightySixVersion(out, eventVersion(a.eventStamp(r.Context(), tenant.ID, row, out), liveVersion(row, hh, gr, locationOf(tenant.Timezone))))
+		ov := a.overridesFor(r.Context(), tenant.ID)
+		version = ov.version(eventVersion(a.eventStamp(r.Context(), tenant.ID, row, ov), liveVersion(row, hh, gr, locationOf(tenant.Timezone))))
 	case !errors.Is(err, ErrNotFound):
 		slog.Error("reading menu version", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -190,15 +190,15 @@ func eventVersion(stamp, v string) string {
 // eventStamp is applyEventPanels' stamp without loading any posters: the
 // version is about which posters, not their bytes. A board that no longer
 // parses has no panels to stamp, and handleBoard is where that gets reported.
-// The 86'd beers come off first, as they do on the page: the spotlight picks
+// The overrides go on first, as they do on the page: the spotlight picks
 // from the taps, so stamping it over a different tap list than the page drew
 // would never match and the wall would reload on every poll.
-func (a *App) eventStamp(ctx context.Context, tenantID uuid.UUID, row *BoardRow, out []string) string {
+func (a *App) eventStamp(ctx context.Context, tenantID uuid.UUID, row *BoardRow, ov Overrides) string {
 	board, err := ParseBoard(row.Payload)
 	if err != nil {
 		return ""
 	}
-	dropEightySix(board, out)
+	ov.applyBoard(board)
 	return a.expandPanels(ctx, tenantID, board, nil)
 }
 

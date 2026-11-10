@@ -64,6 +64,10 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
 			return setEightySix(ec.Ctx, ec.Pool, a, ec.Caller(), raw)
 		}
+	case "set_menu_extras":
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return saveExtras(ec.Ctx, ec.Pool, ec.Tenant.ID, raw)
+		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown menu tool: %s", name)

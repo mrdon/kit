@@ -106,7 +106,10 @@ func resolveAll(names, candidates []string, what string) ([]string, error) {
 	return out, nil
 }
 
-// tapNames is the stored board's tap list, before any 86 is applied.
+// tapNames is the stored board's tap list, before any 86 is applied, plus the
+// configured extras. An extra runs out like a tap does, and the 86 list is the
+// one place anything goes off both menus for the day; an extra's own `show`
+// says which menu has room for it, never whether it is available.
 func (a *App) tapNames(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
 	row, err := GetBoard(ctx, a.pool, tenantID)
 	if err != nil {
@@ -123,7 +126,11 @@ func (a *App) tapNames(ctx context.Context, tenantID uuid.UUID) ([]string, error
 	for _, t := range board.Taps {
 		names = append(names, t.Name)
 	}
-	return names, nil
+	ov, err := a.loadOverrides(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return append(names, ov.names()...), nil
 }
 
 // setEightySix is the handler both surfaces call.

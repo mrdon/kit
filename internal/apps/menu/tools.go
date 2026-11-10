@@ -119,7 +119,9 @@ func toolMetas() []services.ToolMeta {
 				"or a library photo tagged with the beer — \"none\", \"asset:<key>\" or " +
 				"\"photo:<id>\" from search_photos), and `extras` (rows Untappd does not " +
 				"carry — canned non-alcoholics, sodas, juice boxes — each with section, name, " +
-				"style and pours: [{size, label, price}]). Replaces the whole configuration.",
+				"style, pours: [{size, label, price}] and an optional `show`: \"print\" (the default), " +
+				"\"board\" for the wall menu only or \"both\". The wall takes one price per row and " +
+				"drops a row with none; set_menu_extras edits them alone. Replaces the whole configuration.",
 			AdminOnly: true,
 			Schema: services.PropsReq(map[string]any{
 				"payload": services.Field("string", "The printed menu's configuration as a JSON document."),
@@ -162,7 +164,7 @@ func toolMetas() []services.ToolMeta {
 			Schema:    services.Props(map[string]any{}),
 		},
 	}
-	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta())
+	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta(), extrasToolMeta())
 }
 
 // setSourceArgs is the shared input shape for set_menu_source.

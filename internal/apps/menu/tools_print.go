@@ -26,6 +26,9 @@ func savePrintConfig(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID
 	if err := dec.Decode(&cfg); err != nil {
 		return "", fmt.Errorf("%w: %w", ErrPayloadInvalid, err)
 	}
+	if err := validateExtras(cfg.Extras); err != nil {
+		return "", err
+	}
 	if err := prepareFeatured(ctx, pool, tenantID, &cfg); err != nil {
 		return "", err
 	}
@@ -158,7 +161,9 @@ func describePrint(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) 
 		fmt.Fprintf(&b, "  descriptions from untappd.com/%s (%d cached)\n", cfg.Brand, len(state.Notes))
 	}
 	if len(cfg.Extras) > 0 {
-		fmt.Fprintf(&b, "  %d extra rows (non-Untappd)\n", len(cfg.Extras))
+		fmt.Fprintf(&b, "  %d extra rows (non-Untappd), %d printed, %d on the wall\n",
+			len(cfg.Extras), len(printExtras(cfg.Extras)), len(boardExtras(cfg.Extras)))
+		b.WriteString(describeExtras(cfg.Extras))
 	}
 	if state.SyncedAt == nil {
 		b.WriteString("  never synced — the sheet has no beers on it until sync_menu_print runs\n")
