@@ -78,3 +78,6 @@ web/console/*.tsbuildinfo
 # Playwright MCP screenshots
 .playwright-mcp/
 stack-*.png
+
+# Pinned toolchains fetched by the Makefile (Node for the poster renderer)
+/.tools/

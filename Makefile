@@ -75,31 +75,47 @@ RENDERER_DIR=renderer
 
 # The renderer is pinned to the Node major prod runs (Dockerfile: node:22).
 # isolated-vm is compiled for one Node ABI, so installing, testing and
-# running it must all use the same major; a newer system Node fails deep in
-# node-gyp. A Homebrew node@22 keg is picked up when present (it does not
-# replace the default node); otherwise node on PATH must already be 22.
-RENDERER_NODE_MAJOR=22
-RENDERER_NODE_KEG=$(firstword $(wildcard /opt/homebrew/opt/node@$(RENDERER_NODE_MAJOR)/bin /usr/local/opt/node@$(RENDERER_NODE_MAJOR)/bin))
-RENDERER_PATH=$(if $(RENDERER_NODE_KEG),$(RENDERER_NODE_KEG):)$(PATH)
+# running it must all use the same Node; a newer one fails deep in node-gyp.
+#
+# The build never trusts whatever node is on PATH (nvm defaults, Homebrew
+# kegs and system packages all drift). It downloads this exact version from
+# nodejs.org into .tools/, checks it against the published SHA-256 sums, and
+# uses only that. Bump the version here and in renderer/.nvmrc together;
+# node_modules is reinstalled automatically when it changes.
+RENDERER_NODE_VERSION=22.23.4
+RENDERER_NODE_OS:=$(shell uname -s | tr '[:upper:]' '[:lower:]')
+RENDERER_NODE_ARCH:=$(shell uname -m | sed -e 's/^x86_64$$/x64/' -e 's/^aarch64$$/arm64/')
+RENDERER_NODE_DIST=node-v$(RENDERER_NODE_VERSION)-$(RENDERER_NODE_OS)-$(RENDERER_NODE_ARCH)
+RENDERER_NODE_BIN=$(CURDIR)/.tools/$(RENDERER_NODE_DIST)/bin
+RENDERER_PATH=$(RENDERER_NODE_BIN):$(PATH)
 RENDERER_NPM=cd $(RENDERER_DIR) && PATH="$(RENDERER_PATH)" npm
+RENDERER_DEPS_STAMP=$(RENDERER_DIR)/node_modules/.installed-with-node-v$(RENDERER_NODE_VERSION)
 # Kit spawns the renderer with this node (see POSTER_RENDERER_NODE).
-export POSTER_RENDERER_NODE ?= $(if $(RENDERER_NODE_KEG),$(RENDERER_NODE_KEG)/node,node)
+export POSTER_RENDERER_NODE ?= $(RENDERER_NODE_BIN)/node
 
-renderer-node:
-	@v=$$(PATH="$(RENDERER_PATH)" node -p 'process.versions.node.split(".")[0]' 2>/dev/null); \
-	if [ "$$v" != "$(RENDERER_NODE_MAJOR)" ]; then \
-		echo "The poster renderer needs Node $(RENDERER_NODE_MAJOR) (found $${v:-none})."; \
-		echo "  macOS: brew install node@$(RENDERER_NODE_MAJOR)   (keg-only; the Makefile finds it)"; \
-		echo "  nvm/fnm: use the version in renderer/.nvmrc"; \
-		echo "Then: make renderer-clean"; \
-		exit 1; \
-	fi
+renderer-node: $(RENDERER_NODE_BIN)/node
 
-$(RENDERER_DIR)/node_modules: | renderer-node
+$(RENDERER_NODE_BIN)/node:
+	@echo "Fetching Node $(RENDERER_NODE_VERSION) for the poster renderer..."
+	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	base=https://nodejs.org/dist/v$(RENDERER_NODE_VERSION); \
+	curl -fsSL -o "$$tmp/$(RENDERER_NODE_DIST).tar.gz" "$$base/$(RENDERER_NODE_DIST).tar.gz"; \
+	curl -fsSL -o "$$tmp/SHASUMS256.txt" "$$base/SHASUMS256.txt"; \
+	cd "$$tmp"; grep " $(RENDERER_NODE_DIST).tar.gz\$$" SHASUMS256.txt > sum.txt; \
+	if command -v sha256sum >/dev/null; then sha256sum -c sum.txt; else shasum -a 256 -c sum.txt; fi; \
+	mkdir -p "$(CURDIR)/.tools"; tar -xzf "$(RENDERER_NODE_DIST).tar.gz" -C "$(CURDIR)/.tools"
+	@"$(RENDERER_NODE_BIN)/node" --version
+
+# Reinstall from scratch whenever the pinned Node changes: native modules
+# built against another Node's ABI fail at load time, not install time.
+$(RENDERER_DEPS_STAMP): $(RENDERER_NODE_BIN)/node $(RENDERER_DIR)/package-lock.json
+	@rm -rf $(RENDERER_DIR)/node_modules
 	@$(RENDERER_NPM) install
+	@touch $@
 
-renderer-init: renderer-node ## Install poster renderer deps
-	@$(RENDERER_NPM) install
+$(RENDERER_DIR)/node_modules: $(RENDERER_DEPS_STAMP)
+
+renderer-init: $(RENDERER_DEPS_STAMP) ## Install poster renderer deps
 
 renderer-build: renderer-node $(RENDERER_DIR)/node_modules ## Build the poster renderer to renderer/dist
 	@echo "Building poster renderer..."
