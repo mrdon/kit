@@ -39,10 +39,24 @@ func TestFormatEventRendersFullDescription(t *testing.T) {
 	if !strings.Contains(got, "  summary: Unplug, unwind, and make something by hand.\n") {
 		t.Errorf("summary missing from output:\n%s", got)
 	}
-	// PrepNotes stays truncated to its first line: it is the internal brief and
-	// has never been part of the public payload.
-	if strings.Contains(got, "Host arrives at 12:30") {
-		t.Errorf("staff notes should stay first-line only:\n%s", got)
+}
+
+// Staff notes render in full. update_event replaces the whole field, so a
+// caller shown only the first line could not edit multi-line notes without
+// silently deleting the rest.
+func TestFormatEventRendersFullStaffNotes(t *testing.T) {
+	e := &Event{
+		Title:     "Pottery and Sips",
+		StartsAt:  time.Date(2026, 9, 5, 13, 0, 0, 0, time.UTC),
+		Timezone:  "America/Denver",
+		Status:    StatusPublished,
+		PrepNotes: "Tables needed for the session.\n\nHost arrives at 12:30.",
+	}
+
+	got := FormatEvent(e, Settings{})
+
+	if !strings.Contains(got, "  staff notes:\n    Tables needed for the session.\n\n    Host arrives at 12:30.\n") {
+		t.Errorf("staff notes not rendered in full as an indented block:\n%s", got)
 	}
 }
 

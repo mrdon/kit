@@ -53,8 +53,11 @@ func FormatEvent(e *Event, s Settings) string {
 	if e.Description != "" {
 		fmt.Fprintf(&b, "  description:\n%s", indentLines(e.Description, "    "))
 	}
+	// Staff notes render in full. This output only reaches staff (the agent
+	// and MCP tools), and update_event replaces the whole field, so a
+	// truncated view made every edit to multi-line notes a blind overwrite.
 	if e.PrepNotes != "" {
-		fmt.Fprintf(&b, "  staff notes: %s\n", firstLine(e.PrepNotes))
+		fmt.Fprintf(&b, "  staff notes:\n%s", indentLines(e.PrepNotes, "    "))
 	}
 	return b.String()
 }

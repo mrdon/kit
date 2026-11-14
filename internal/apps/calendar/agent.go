@@ -180,12 +180,9 @@ func formatEvents(events []Event, loc *time.Location) string {
 		if e.Location != "" {
 			fmt.Fprintf(&b, "    @ %s\n", e.Location)
 		}
-		if e.Description != "" {
-			desc := e.Description
-			if len(desc) > 200 {
-				desc = desc[:200] + "…"
-			}
-			fmt.Fprintf(&b, "    %s\n", desc)
+		// The full description, never a preview: no other tool returns it.
+		if desc := strings.TrimSpace(e.Description); desc != "" {
+			fmt.Fprintf(&b, "    %s\n", strings.ReplaceAll(desc, "\n", "\n    "))
 		}
 	}
 	return b.String()
