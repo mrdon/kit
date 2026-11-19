@@ -90,7 +90,8 @@ func (p *planner) createItem(b Beer) (sqAdd, bool) {
 		return sqAdd{}, false
 	}
 	id := p.temp("item")
-	data := map[string]any{"name": b.Name, "abbreviation": abbreviation(b.Name)}
+	name := squareName(b.Name)
+	data := map[string]any{"name": name, "abbreviation": abbreviation(name)}
 	if notes := strings.TrimSpace(b.Notes); notes != "" {
 		data["description"] = notes
 	}
@@ -113,8 +114,12 @@ func (p *planner) createItem(b Beer) (sqAdd, bool) {
 	data["variations"] = vars
 	item := map[string]any{"type": "ITEM", "id": id, "item_data": data}
 	copyPresence(tpl.Raw, item)
+	created := "created in Square"
+	if name != b.Name {
+		created += " as " + name
+	}
 	return sqAdd{
-		Summary: fmt.Sprintf("%s: created in Square, set up like %s (%s)", b.Name, tpl.Name, strings.Join(sizes, ", ")),
+		Summary: fmt.Sprintf("%s: %s, set up like %s (%s)", b.Name, created, tpl.Name, strings.Join(sizes, ", ")),
 		Objects: []map[string]any{item},
 		Fresh:   b.Name,
 	}, true

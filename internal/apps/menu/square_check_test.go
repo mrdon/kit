@@ -233,3 +233,27 @@ func TestMenuNamesStripsOnlyALeadingYear(t *testing.T) {
 		}
 	}
 }
+
+// A vintage year stays on the menu but never goes into Square: a new item is
+// created without it, and a rename card suggests the kitchen name without it.
+func TestPlanSquareVintageYearStaysOutOfSquare(t *testing.T) {
+	rows := []Beer{soda("Graviton Grapefruit Soda"), soda("2026 Gaia Green Soda")}
+	plan := planSquare(rows, sqCatalog{Items: []sqItem{graviton()}}, map[string]bool{})
+	if len(plan.Adds) != 1 || plan.Adds[0].Fresh != "2026 Gaia Green Soda" {
+		t.Fatalf("want one create for Gaia, got:\n%s", summaries(plan))
+	}
+	data := obj(plan.Adds[0].Objects[0], "item_data")
+	if data["name"] != "Gaia Green Soda" || !strings.Contains(plan.Adds[0].Summary, "as Gaia Green Soda") {
+		t.Fatalf("created %v (%s), want it named without the year", data["name"], plan.Adds[0].Summary)
+	}
+
+	rows = []Beer{beer("2026 Mr. Radar (Nitro)", "7", "4")}
+	cat := sqCatalog{Items: []sqItem{rawItem("MR", "Mr Radar", rawVar("R16", "16oz", 700), rawVar("R4", "4oz", 400))}}
+	plan = planSquare(rows, cat, map[string]bool{})
+	if len(plan.Questions) != 1 || !strings.HasPrefix(plan.Questions[0].Key, "rename|") {
+		t.Fatalf("want a rename question, got %+v", plan.Questions)
+	}
+	if body := plan.Questions[0].Body; !strings.Contains(body, `kitchen name to "Mr. Radar (Nitro)"`) {
+		t.Fatalf("want the kitchen name suggested without the year, got %q", body)
+	}
+}

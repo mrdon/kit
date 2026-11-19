@@ -160,6 +160,13 @@ func menuNames(name string) []string {
 	return []string{name}
 }
 
+// squareName is the name a menu row goes into Square under: without its
+// vintage year, which belongs to Untappd's reviewers, not the register.
+func squareName(name string) string {
+	names := menuNames(name)
+	return names[len(names)-1]
+}
+
 // item finds a catalog item by its own name, for the crowler listings.
 func (c sqCatalog) item(name string) (sqItem, bool) {
 	for _, it := range c.Items {

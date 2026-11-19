@@ -218,7 +218,7 @@ func (p *planner) missingItem(b Beer) {
 			Title: fmt.Sprintf("Is %s the same as %s in Square?", b.Name, near.Name),
 			Body: fmt.Sprintf("The menu lists **%s**. Square has nothing by that name, but has **%s**. "+
 				"If it is the same drink, set the Square item's kitchen name to %q and the check will match them.",
-				b.Name, near.Name, b.Name),
+				b.Name, near.Name, squareName(b.Name)),
 			Options: []sqOption{
 				{ID: "same", Label: "Same drink, I'll fix the name"},
 				{ID: "create", Label: "Different drink, add it to Square", Fix: &sqFix{Kind: "item", Name: b.Name}},
@@ -233,7 +233,7 @@ func (p *planner) missingItem(b Beer) {
 			Title: b.Name + " is on the menu but not in Square",
 			Body: fmt.Sprintf("The printed menu lists **%s**, and Square has no item by that name, so it cannot be rung up. "+
 				"Kit only creates draft drinks by itself; add this one in Square, or give the Square item it rings as the kitchen name %q.",
-				b.Name, b.Name),
+				b.Name, squareName(b.Name)),
 			Options: []sqOption{{ID: "ok", Label: "Got it"}},
 		})
 		return
