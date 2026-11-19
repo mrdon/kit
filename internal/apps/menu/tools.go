@@ -145,7 +145,8 @@ func toolMetas() []services.ToolMeta {
 			Schema:    services.Props(map[string]any{}),
 		},
 	}
-	return append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta(), itemsToolMeta())
+	metas = append(append(metas, happyHourToolMetas()...), glutenReducedToolMeta(), eightySixToolMeta(), itemsToolMeta())
+	return append(metas, squareCheckToolMetas()...)
 }
 
 // setSourceArgs is the shared input shape for set_menu_source.

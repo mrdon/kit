@@ -47,40 +47,11 @@ const defaultSizes = "Pours are 16oz unless marked · Also available in 9oz & 4o
 
 // buildPrintMenu gathers everything one sheet needs, all of it from storage.
 func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintMenu, error) {
-	// Ask upstream first, as the wall does, so paper printed after a keg
-	// change has the new keg. At most once a minute, and a failure prints
-	// the last tap list rather than nothing.
-	if row, err := GetBoard(ctx, a.pool, tenant.ID); err == nil && row != nil {
-		a.EnsureFresh(ctx, tenant.ID, row)
-	}
-	state, err := LoadPrintState(ctx, a.pool, tenant.ID)
+	rows, state, err := a.menuRows(ctx, tenant.ID)
 	if err != nil {
 		return PrintMenu{}, err
 	}
 	cfg := state.Config
-
-	ov, err := a.loadOverrides(ctx, tenant.ID)
-	if err != nil {
-		return PrintMenu{}, err
-	}
-	rows := append([]Beer(nil), state.Rows...)
-	if len(rows) == 0 && len(ov.Items) == 0 {
-		return PrintMenu{}, ErrNotSynced
-	}
-
-	// Descriptions are stored, in two layers: what somebody wrote here wins
-	// over what was scraped, which is what makes Kit the last word on the copy
-	// a customer reads. Applied at build time rather than baked into the rows,
-	// so correcting a description takes effect on the next print rather than
-	// needing a re-sync.
-	notes := mergedNotes(state.Notes, cfg.Notes)
-	for i := range rows {
-		if note, ok := findNote(notes, rows[i].Name); ok {
-			rows[i].Notes = note
-		}
-	}
-
-	rows = ov.applyRows(rows)
 	if err := a.markGlutenReduced(ctx, tenant.ID, rows); err != nil {
 		return PrintMenu{}, err
 	}
@@ -100,6 +71,45 @@ func (a *App) buildPrintMenu(ctx context.Context, tenant *models.Tenant) (PrintM
 	}
 	a.attachPrintArt(ctx, tenant.ID, cfg, &m)
 	return m, nil
+}
+
+// menuRows is the menu as the printed page lists it: the tap list from the
+// wall's own Untappd pull, with each row's description, Kit's own items
+// merged in, and whatever is hidden or 86'd taken out. Anything that checks
+// the menu against something else reads this, so it can never be checking a
+// different menu from the one customers hold.
+func (a *App) menuRows(ctx context.Context, tenantID uuid.UUID) ([]Beer, *PrintState, error) {
+	// Ask upstream first, as the wall does, so paper printed after a keg
+	// change has the new keg. At most once a minute, and a failure prints
+	// the last tap list rather than nothing.
+	if row, err := GetBoard(ctx, a.pool, tenantID); err == nil && row != nil {
+		a.EnsureFresh(ctx, tenantID, row)
+	}
+	state, err := LoadPrintState(ctx, a.pool, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	ov, err := a.loadOverrides(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows := append([]Beer(nil), state.Rows...)
+	if len(rows) == 0 && len(ov.Items) == 0 {
+		return nil, nil, ErrNotSynced
+	}
+
+	// Descriptions are stored, in two layers: what somebody wrote here wins
+	// over what was scraped, which is what makes Kit the last word on the copy
+	// a customer reads. Applied at build time rather than baked into the rows,
+	// so correcting a description takes effect on the next print rather than
+	// needing a re-sync.
+	notes := mergedNotes(state.Notes, state.Config.Notes)
+	for i := range rows {
+		if note, ok := findNote(notes, rows[i].Name); ok {
+			rows[i].Notes = note
+		}
+	}
+	return ov.applyRows(rows), state, nil
 }
 
 // markGlutenReduced flags each gluten reduced beer for its GR badge; the

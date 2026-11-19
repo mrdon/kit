@@ -123,6 +123,18 @@ func mcpHandler(name string, pool *pgxpool.Pool, a *App) mcpserver.ToolHandlerFu
 			}
 			return setMenuItems(ctx, pool, a, c.TenantID, raw)
 		})
+	case checkSquareTool, applyFixTool:
+		return withBoard(a, func(ctx context.Context, req mcp.CallToolRequest, c *services.Caller) (string, error) {
+			// Re-encoded so both surfaces parse the exact same bytes.
+			raw, err := json.Marshal(req.GetArguments())
+			if err != nil {
+				return "", fmt.Errorf("reading %s arguments: %w", name, err)
+			}
+			if name == checkSquareTool {
+				return checkSquareFromTool(ctx, a, c.TenantID, raw)
+			}
+			return applyFixFromTool(ctx, a, c.TenantID, raw)
+		})
 	case "get_menu_board":
 		return withBoard(a, func(ctx context.Context, _ mcp.CallToolRequest, c *services.Caller) (string, error) {
 			return describeBoard(ctx, pool, a, c.TenantID)

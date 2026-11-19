@@ -254,6 +254,8 @@ func main() {
 	// inside a tap-list update), and the base URL for the public link an
 	// admin copies into a kiosk board. The board page is unauthenticated.
 	menu.Configure(enc, sessionSigner, app.Fetcher, cfg.BaseURL)
+	// The nightly Square check files its questions as decision cards.
+	menu.ConfigureCards(&menuCardAdapter{svc: cards.ServiceForGating()})
 
 	// Vault uses the same CardService for both admin grant-request
 	// decision cards and user-targeted security-tripwire briefings

@@ -14,7 +14,7 @@ import (
 )
 
 // registerScheduledTasks declares the minute check that keeps Square in step
-// with happy hour. Function lane: SQL and HTTP, no model call.
+// with happy hour, and the nightly check that Square can sell the menu. Function lane: SQL and HTTP, no model call.
 //
 // Every minute, because that is how late the register is allowed to be at
 // 3pm. It is cheap when nothing changes -- one row read and a comparison --
@@ -33,6 +33,34 @@ func (a *App) registerScheduledTasks() {
 			return err
 		},
 	})
+	// Nightly, after close: a drink added to Untappd during service is in
+	// Square, the flight and the online shop by opening, and anything that
+	// needs a person is a decision card waiting with the morning.
+	scheduler.RegisterScheduledTask(scheduler.ScheduledTask{
+		Key:         "menu.square_check",
+		Description: "Make sure Square can sell everything on the menu: items, flight options and crowlers",
+		DefaultCron: "0 4 * * *",
+		AppliesTo:   a.followsABoard,
+		Run: func(ctx context.Context, job models.Job) error {
+			_, err := a.checkSquare(ctx, job.TenantID, true)
+			if errors.Is(err, square.ErrNotConfigured) || errors.Is(err, ErrNotSynced) {
+				return nil
+			}
+			return err
+		},
+	})
+}
+
+// followsABoard is cheap by contract, like hasHappyHour: a menu with a tap
+// list to check.
+func (a *App) followsABoard(ctx context.Context, tenantID uuid.UUID) bool {
+	if a.pool == nil || !apps.IsEnabled(ctx, tenantID, AppName) {
+		return false
+	}
+	var ok bool
+	err := a.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM app_menu_boards WHERE tenant_id = $1 AND source_kind <> '')`, tenantID).Scan(&ok)
+	return err == nil && ok
 }
 
 // hasHappyHour is cheap by contract: AppliesTo runs for every tenant on every

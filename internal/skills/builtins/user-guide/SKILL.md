@@ -471,6 +471,14 @@ Panels can **follow the events calendar**, rebuilt every time the page loads, so
 
 A call to action's picture sits behind the text, darkened. For a logo or anything with lettering, set `image_layout` to `above` to show it as a picture over the text instead.
 
+### Square keeps up with the menu
+
+Every night at 4am Kit checks that Square can sell everything on the menu, reading the same menu the wall and the printed page show. Every drink and pour should be a Square item at the menu's price. Every tap drink with a 4oz pour should be in the **Flight pours** picker. Every drink with a crowler size should be listed, in stock, in the online **Crowler To Go** item (beer) or **Craft Soda Crowler** item (craft sodas). Names match the way happy hour matches them: the Square item's name or kitchen name.
+
+Where there is a right answer, Kit adds it. A new drink on Untappd becomes a Square item set up like the drink beside it, at the menu's prices. Then it gets its flight option, priced at its taster over the cheapest taster, and its online crowler at the price its own item rings. A briefing lists what was added. Where there isn't one, Kit asks on a decision card and changes nothing until an admin picks an option. That covers a price that disagrees between the menu and Square, a name that is nearly an existing item, a drink that is archived in Square, and a size such as a pitcher whose price differs from drink to drink. Each question is asked once. Kit never removes anything from Square.
+
+`check_menu_square` previews the check, and with `apply: true` runs it now.
+
 ### Happy hour
 
 **Admin → Happy hour** (`/<your-slug>/web/admin/happy-hour`) puts a fixed price on a few beers: the price, the pour it applies to (the Square variation name, e.g. `16oz`), and the beers.

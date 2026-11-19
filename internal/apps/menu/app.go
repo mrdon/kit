@@ -33,6 +33,8 @@ type App struct {
 	baseURL string
 	// enc unlocks the bot token 86s are posted to Slack with. Nil posts nothing.
 	enc *crypto.Encryptor
+	// cards files the Square check's questions. Nil files nothing.
+	cards CardSurface
 }
 
 // Init builds the service once the pool exists. Called by apps.Init.

@@ -66,6 +66,14 @@ func agentHandler(name string, a *App) tools.HandlerFunc {
 		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
 			return setMenuItems(ec.Ctx, ec.Pool, a, ec.Tenant.ID, raw)
 		}
+	case checkSquareTool:
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return checkSquareFromTool(ec.Ctx, a, ec.Tenant.ID, raw)
+		}
+	case applyFixTool:
+		return func(ec *tools.ExecContext, raw json.RawMessage) (string, error) {
+			return applyFixFromTool(ec.Ctx, a, ec.Tenant.ID, raw)
+		}
 	default:
 		return func(_ *tools.ExecContext, _ json.RawMessage) (string, error) {
 			return "", fmt.Errorf("unknown menu tool: %s", name)
