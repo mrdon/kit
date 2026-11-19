@@ -196,3 +196,40 @@ func TestAbbreviation(t *testing.T) {
 		}
 	}
 }
+
+// Untappd puts the vintage year in front of a name Square keeps without it,
+// and Square's kitchen name may hold the long form of a short item name. Both
+// are the same item, so nothing is created and nothing is asked.
+func TestPlanSquareVintageYearAndKitchenNameMatch(t *testing.T) {
+	ba := rawItem("BA", "BA Tsar Bomba", rawVar("BA-16", "16oz", 900), rawVar("BA-4", "4oz", 400))
+	ba.KitchenName = "Barrel Aged Tsar Bomba"
+	cat := sqCatalog{Items: []sqItem{
+		rawItem("TB", "Tsar Bomba", rawVar("TB-16", "16oz", 800), rawVar("TB-4", "4oz", 400)),
+		ba,
+	}}
+	for name, want := range map[string]string{"2026 Tsar Bomba": "TB", "2026 Barrel Aged Tsar Bomba": "BA"} {
+		if it, ok := cat.match(name); !ok || it.ID != want {
+			t.Errorf("match(%q) = %q, %v; want %q", name, it.ID, ok, want)
+		}
+	}
+	rows := []Beer{beer("2026 Tsar Bomba", "8", "4"), beer("2026 Barrel Aged Tsar Bomba", "9", "4")}
+	plan := planSquare(rows, cat, map[string]bool{})
+	if len(plan.Adds) != 0 || len(plan.Questions) != 0 {
+		t.Fatalf("want no adds or questions, got adds:\n%s\nquestions %+v", summaries(plan), plan.Questions)
+	}
+}
+
+func TestMenuNamesStripsOnlyALeadingYear(t *testing.T) {
+	for in, want := range map[string]string{
+		"2026 Tsar Bomba":  "2026 Tsar Bomba|Tsar Bomba",
+		"1999 Ale":         "1999 Ale|Ale",
+		"Tsar Bomba 2026":  "Tsar Bomba 2026",
+		"2026":             "2026",
+		"3026 Odyssey":     "3026 Odyssey",
+		"20260 Tsar Bomba": "20260 Tsar Bomba",
+	} {
+		if got := strings.Join(menuNames(in), "|"); got != want {
+			t.Errorf("menuNames(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

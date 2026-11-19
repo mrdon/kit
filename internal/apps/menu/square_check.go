@@ -3,6 +3,7 @@ package menu
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -17,7 +18,8 @@ import (
 // It reads the menu the printed page reads (menuRows) and nothing else, so it
 // can never disagree with what customers are shown. Square is matched by name
 // the way happy hour matches it: the item's name or kitchen name, case and
-// spacing aside, with no alias table.
+// spacing aside, with no alias table. A leading vintage year is ignored:
+// Untappd lists "2026 Tsar Bomba", and Square keeps years off the register.
 //
 // What it does about a gap depends on whether there is a right answer
 // already written down somewhere. A missing pour, flight option or crowler
@@ -131,16 +133,31 @@ func (c sqCatalog) archived(name string) (sqItem, bool) {
 }
 
 func (c sqCatalog) matchAny(name string, archived bool) (sqItem, bool) {
-	key := nameKey(name)
-	for _, it := range c.Items {
-		if it.Archived != archived {
-			continue
-		}
-		if nameKey(it.Name) == key || (it.KitchenName != "" && nameKey(it.KitchenName) == key) {
-			return it, true
+	for _, n := range menuNames(name) {
+		key := nameKey(n)
+		for _, it := range c.Items {
+			if it.Archived != archived {
+				continue
+			}
+			if nameKey(it.Name) == key || (it.KitchenName != "" && nameKey(it.KitchenName) == key) {
+				return it, true
+			}
 		}
 	}
 	return sqItem{}, false
+}
+
+// vintageRe is a leading vintage year, as Untappd writes "2026 Tsar Bomba".
+var vintageRe = regexp.MustCompile(`^(19|20)\d{2}\s+`)
+
+// menuNames lists the names a menu row may ring as: its own, then without a
+// leading vintage year, which Square names leave off.
+func menuNames(name string) []string {
+	name = strings.TrimSpace(name)
+	if bare := vintageRe.ReplaceAllString(name, ""); bare != name && bare != "" {
+		return []string{name, bare}
+	}
+	return []string{name}
 }
 
 // item finds a catalog item by its own name, for the crowler listings.
@@ -158,17 +175,19 @@ func (c sqCatalog) item(name string) (sqItem, bool) {
 // Such a row is a rename for a person, never a new item: creating one would
 // put the same beer on the register twice.
 func (c sqCatalog) near(name string) (sqItem, bool) {
-	key := looseKey(name)
-	for _, it := range c.Items {
-		if it.Archived {
-			continue
-		}
-		for _, n := range []string{it.Name, it.KitchenName} {
-			if n == "" {
+	for _, mn := range menuNames(name) {
+		key := looseKey(mn)
+		for _, it := range c.Items {
+			if it.Archived {
 				continue
 			}
-			if k := looseKey(n); k == key || closeness(k, key) >= 0.85 {
-				return it, true
+			for _, n := range []string{it.Name, it.KitchenName} {
+				if n == "" {
+					continue
+				}
+				if k := looseKey(n); k == key || closeness(k, key) >= 0.85 {
+					return it, true
+				}
 			}
 		}
 	}
