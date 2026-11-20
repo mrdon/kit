@@ -24,10 +24,11 @@ func squareCheckToolMetas() []services.ToolMeta {
 			Description: "Check that Square can sell everything on the menu (the same menu the wall and the " +
 				"printed page show): every drink and pour as an item at the menu's price, every tap drink " +
 				"with a taster in the Flight pours picker, and every crowler in the online crowler items, " +
-				"in stock. Without apply it previews and changes nothing. With apply=true it does what Kit " +
+				"in stock, with the crowlers of drinks no longer on the menu sold out. Without apply it previews and changes nothing. With apply=true it does what Kit " +
 				"does every night: adds what has a right answer (copying how similar drinks are set up, at " +
 				"the menu's or Square's own prices), and files a decision card for anything that needs a " +
-				"person, such as a price that disagrees. It never removes or reprices without a card.",
+				"person, such as a price that disagrees. It never removes or reprices without a card; marking an " +
+				"online crowler sold out or back on sale is a stock count and needs none.",
 			AdminOnly: true,
 			Schema: services.Props(map[string]any{
 				"apply": services.Field("boolean", "true to add to Square and file decision cards now; false or absent to preview."),

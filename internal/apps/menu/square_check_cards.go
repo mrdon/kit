@@ -105,14 +105,20 @@ func questionCard(q sqQuestion) (CardDecision, error) {
 }
 
 // briefAdds tells the admins what the check changed in Square.
-func (a *App) briefAdds(ctx context.Context, tenantID uuid.UUID, done []string) error {
-	if a.cards == nil || len(done) == 0 {
+func (a *App) briefAdds(ctx context.Context, tenantID uuid.UUID, done, counted []string) error {
+	if a.cards == nil || len(done)+len(counted) == 0 {
 		return nil
 	}
-	title := "Added to Square from the menu"
-	body := "The nightly check found these on the menu but not in Square, and added them:\n\n- " +
-		strings.Join(done, "\n- ")
-	return a.cards.CreateBriefing(ctx, tenantID, title, body, squareCardRoles)
+	var parts []string
+	if len(done) > 0 {
+		parts = append(parts, "The nightly check found these on the menu but not in Square, and added them:\n\n- "+
+			strings.Join(done, "\n- "))
+	}
+	if len(counted) > 0 {
+		parts = append(parts, "It kept the online crowlers in step with the menu:\n\n- "+
+			strings.Join(counted, "\n- "))
+	}
+	return a.cards.CreateBriefing(ctx, tenantID, "Square updated from the menu", strings.Join(parts, "\n\n"), squareCardRoles)
 }
 
 // claimQuestion records a question key, reporting false if it was already

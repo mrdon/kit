@@ -11,6 +11,8 @@ import (
 type sqPlan struct {
 	Adds      []sqAdd
 	Questions []sqQuestion
+	// Counts mark online crowlers sold out or back on sale.
+	Counts []sqCount
 	// Notes are gaps the check saw and left, said in the preview.
 	Notes []string
 }

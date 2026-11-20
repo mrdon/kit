@@ -2,10 +2,8 @@ package menu
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -20,15 +18,17 @@ const maxSquarePasses = 4
 
 // squareRun is what one check did.
 type squareRun struct {
-	Plan   sqPlan // the last look, after everything it added
-	Done   []string
-	Failed []string
-	Filed  int
+	Plan    sqPlan // the last look, after everything it added
+	Done    []string
+	Counted []string // online crowlers marked sold out or back on sale
+	Failed  []string
+	Filed   int
 }
 
 // checkSquare compares the menu with Square. Without apply it only looks.
 // With apply it adds what has a right answer, re-reading Square after each
-// round so a new item's flight option and crowler follow it, then files a
+// round so a new item's flight option and crowler follow it, sets the
+// online crowlers sold out or back on sale to match the menu, then files a
 // decision card for each question not asked before and a briefing of what
 // it added.
 func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (squareRun, error) {
@@ -43,10 +43,15 @@ func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (
 	}
 	fresh := map[string]bool{}
 	st := &stocker{client: client}
+	var countErr error
 	for range maxSquarePasses {
 		cat, err := loadSquareCatalog(ctx, client)
 		if err != nil {
 			return run, err
+		}
+		if cat.Counts, err = st.counts(ctx, cat); err != nil {
+			cat.Counts = nil
+			countErr = err
 		}
 		run.Plan = planSquare(rows, cat, fresh)
 		if !apply || len(run.Plan.Adds) == 0 {
@@ -58,18 +63,23 @@ func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (
 			break
 		}
 	}
+	if countErr != nil {
+		run.Plan.Notes = append(run.Plan.Notes, "online crowler stock not read, so none were marked sold out or back on sale: "+countErr.Error())
+	}
 	if !apply {
 		return run, nil
 	}
+	counted, failed := applyCounts(ctx, st, run.Plan.Counts)
+	run.Counted, run.Failed = counted, append(run.Failed, failed...)
 	if run.Filed, err = a.fileQuestions(ctx, tenantID, run.Plan.Questions); err != nil {
 		return run, err
 	}
-	if err := a.briefAdds(ctx, tenantID, run.Done); err != nil {
+	if err := a.briefAdds(ctx, tenantID, run.Done, run.Counted); err != nil {
 		return run, fmt.Errorf("filing the Square briefing: %w", err)
 	}
 	if len(run.Failed) > 0 {
-		return run, fmt.Errorf("square check: %d of %d additions failed: %s",
-			len(run.Failed), len(run.Failed)+len(run.Done), strings.Join(run.Failed, "; "))
+		return run, fmt.Errorf("square check: %d of %d changes failed: %s",
+			len(run.Failed), len(run.Failed)+len(run.Done)+len(run.Counted), strings.Join(run.Failed, "; "))
 	}
 	return run, nil
 }
@@ -88,7 +98,7 @@ func (a *App) applyAdds(ctx context.Context, client *square.Client, st *stocker,
 		}
 		var unstocked []string
 		for _, temp := range add.Stock {
-			if err := st.count(ctx, ids[temp]); err != nil {
+			if err := st.set(ctx, ids[temp], inStock); err != nil {
 				unstocked = append(unstocked, err.Error())
 			}
 		}
@@ -101,48 +111,23 @@ func (a *App) applyAdds(ctx context.Context, client *square.Client, st *stocker,
 	return done, failed
 }
 
-// stocker counts new online crowlers in at the one location they sell from.
-type stocker struct {
-	client   *square.Client
-	location string
-}
-
-func (s *stocker) count(ctx context.Context, variationID string) error {
-	if variationID == "" {
-		return errors.New("square did not return the new variation's id")
-	}
-	if s.location == "" {
-		locs, err := s.client.ListLocations(ctx)
-		if err != nil {
-			return fmt.Errorf("listing locations: %w", err)
-		}
-		var active []string
-		for _, l := range locs {
-			if l.Status == "" || l.Status == "ACTIVE" {
-				active = append(active, l.ID)
-			}
-		}
-		if len(active) != 1 {
-			return fmt.Errorf("%d active locations, so which one to count it in at is a choice", len(active))
-		}
-		s.location = active[0]
-	}
-	at := time.Now().UTC().Format(time.RFC3339)
-	return s.client.SetInventoryCount(ctx, uuid.NewString(), s.location, variationID, inStock, at)
-}
-
 // describeSquareRun is the tool's report.
 func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string {
 	var b strings.Builder
 	if apply {
 		writeList(&b, "Added to Square", run.Done)
+		writeList(&b, "Online crowlers", run.Counted)
 		writeList(&b, "Failed", run.Failed)
 	} else {
-		var adds []string
+		var adds, counts []string
 		for _, add := range run.Plan.Adds {
 			adds = append(adds, add.Summary)
 		}
+		for _, c := range run.Plan.Counts {
+			counts = append(counts, c.Summary)
+		}
 		writeList(&b, "Would add to Square", adds)
+		writeList(&b, "Would change online crowlers", counts)
 	}
 	var qs []string
 	for _, q := range run.Plan.Questions {

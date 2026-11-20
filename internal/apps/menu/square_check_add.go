@@ -222,9 +222,11 @@ func (p *planner) askFlightPrice(beer string, mod sqMod, want, base int) {
 }
 
 // crowlers lists every tap drink that sells a crowler in the online shop's
-// crowler item, at the crowler price its own item rings, and counts it in.
+// crowler item, at the crowler price its own item rings, and counts it in,
+// then marks the listings of drinks no longer on the menu sold out.
 func (p *planner) crowlers() {
 	missingList := map[string]bool{}
+	onMenu := map[string]bool{}
 	for _, b := range p.rows {
 		if !isTap(b) {
 			continue
@@ -246,11 +248,15 @@ func (p *planner) crowlers() {
 			missingList[listName] = true
 			continue
 		}
+		if listed, ok := list.variation(it.Name); ok {
+			onMenu[listed.ID] = true
+		}
 		p.crowler(b, it, own, list)
 	}
 	for name := range missingList {
 		p.plan.Notes = append(p.plan.Notes, "no "+name+" item in Square, so its crowlers were not checked")
 	}
+	p.crowlerStock(onMenu)
 }
 
 func (p *planner) crowler(b Beer, it sqItem, own sqVar, list sqItem) {
