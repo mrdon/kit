@@ -21,32 +21,6 @@ import (
 // tens of thousands of rows and anything larger is a mistake, not a bank.
 const importMaxBytes = 2 << 20
 
-// importResponse is what the host sees after an upload.
-//
-// The TOPIC HISTOGRAM comes back from this same call, deliberately. It is
-// what the setup page needs to offer column choices, and a host who uploads a
-// sheet and is told only "38 imported" has no idea what they got or whether
-// any column can fill a board.
-// importTarget names the dataset an import writes into.
-type importTarget struct {
-	Name       string
-	Notes      string
-	BuiltinKey string
-	// Replace empties the dataset first, so an upload is the dataset's new
-	// contents rather than an addition to them.
-	Replace bool
-}
-
-type importResponse struct {
-	DatasetID         string       `json:"dataset_id"`
-	Imported          int          `json:"imported"`
-	Updated           int          `json:"updated"`
-	SkippedDuplicates int          `json:"skipped_duplicates"`
-	Errors            []RowError   `json:"errors"`
-	Truncated         bool         `json:"truncated"`
-	Topics            []TopicCount `json:"topics"`
-}
-
 func (a *App) handleImport(w http.ResponseWriter, r *http.Request) {
 	tenant := auth.TenantFromContext(r.Context())
 
@@ -84,7 +58,7 @@ func (a *App) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.importPlan(r, tenant.ID, plan, importTarget{
+	resp, err := importQuestions(r.Context(), a.pool, tenant.ID, plan, importTarget{
 		Name:    name,
 		Notes:   strings.TrimSpace(r.FormValue("notes")),
 		Replace: true,
@@ -99,67 +73,6 @@ func (a *App) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, resp)
-}
-
-// importPlan writes the good rows and reports the bad. A three-hundred-row
-// sheet with two typos is not a total failure.
-func (a *App) importPlan(r *http.Request, tenantID uuid.UUID, plan ImportPlan, opts importTarget) (importResponse, error) {
-	resp := importResponse{
-		Errors:            plan.Errors,
-		Truncated:         plan.Truncated,
-		SkippedDuplicates: plan.Skipped,
-	}
-	if resp.Errors == nil {
-		resp.Errors = []RowError{}
-	}
-
-	tx, err := a.pool.Begin(r.Context())
-	if err != nil {
-		return resp, fmt.Errorf("beginning import: %w", err)
-	}
-	defer func() { _ = tx.Rollback(r.Context()) }()
-
-	datasetID, err := UpsertDataset(r.Context(), tx, tenantID, opts.Name, opts.Notes, opts.BuiltinKey)
-	if err != nil {
-		return resp, err
-	}
-	// A re-upload REPLACES the dataset's contents rather than merging into
-	// them. Merging would make a removed question impossible to remove: you
-	// would fix your sheet, upload it, and the stale row would still be
-	// there.
-	if opts.Replace {
-		if err := ClearDataset(r.Context(), tx, tenantID, datasetID); err != nil {
-			return resp, err
-		}
-	}
-
-	for _, q := range plan.Rows {
-		_, inserted, err := UpsertQuestion(r.Context(), tx, tenantID, datasetID, q)
-		if err != nil {
-			return resp, err
-		}
-		// Re-uploading a corrected sheet updates in place rather than
-		// duplicating, and the host is told which happened.
-		if inserted {
-			resp.Imported++
-		} else {
-			resp.Updated++
-		}
-	}
-	if err := tx.Commit(r.Context()); err != nil {
-		return resp, fmt.Errorf("committing import: %w", err)
-	}
-
-	resp.DatasetID = datasetID.String()
-	hist, err := TopicHistogram(r.Context(), a.pool, tenantID, []uuid.UUID{datasetID}, Freshness{})
-	if err != nil {
-		return resp, err
-	}
-	resp.Topics = hist
-	if resp.Topics == nil {
-		resp.Topics = []TopicCount{}
-	}
-	return resp, nil
 }
 
 // handleListQuestions serves the workspace's datasets plus the overall
@@ -212,7 +125,7 @@ func (a *App) handleLoadStarter(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "parsing a shipped trivia pack", err)
 		return
 	}
-	resp, err := a.importPlan(r, tenant.ID, plan, importTarget{
+	resp, err := importQuestions(r.Context(), a.pool, tenant.ID, plan, importTarget{
 		Name:       pack.Name,
 		Notes:      pack.Notes,
 		BuiltinKey: pack.Key,

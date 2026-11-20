@@ -254,3 +254,47 @@ func SetGameDatasets(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID u
 	}
 	return tx.Commit(ctx)
 }
+
+// BankQuestions loads the questions of the given datasets with their topics,
+// grouped by dataset and ordered easiest first, for the bank listing tool.
+func BankQuestions(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, datasetIDs []uuid.UUID) (map[uuid.UUID][]Question, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT q.dataset_id, `+questionColumns+`
+		  FROM app_trivia_questions q
+		 WHERE q.tenant_id = $1 AND q.dataset_id = ANY($2)
+		 ORDER BY q.difficulty NULLS LAST, q.prompt_key`, tenantID, datasetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("querying bank questions: %w", err)
+	}
+	defer rows.Close()
+	var all []Question
+	var owners []uuid.UUID
+	byID := map[uuid.UUID]int{}
+	for rows.Next() {
+		var ds uuid.UUID
+		var q Question
+		var difficulty *int16
+		if err := rows.Scan(&ds, &q.ID, &q.TenantID, &q.Prompt, &q.PromptKey,
+			&q.AnswerValue, &q.AnswerText, &q.LastUsedAt, &difficulty); err != nil {
+			return nil, fmt.Errorf("scanning bank question: %w", err)
+		}
+		if difficulty != nil {
+			d := int(*difficulty)
+			q.Difficulty = &d
+		}
+		byID[q.ID] = len(all)
+		all = append(all, q)
+		owners = append(owners, ds)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := attachTopics(ctx, pool, tenantID, all, byID); err != nil {
+		return nil, err
+	}
+	out := map[uuid.UUID][]Question{}
+	for i, q := range all {
+		out[owners[i]] = append(out[owners[i]], q)
+	}
+	return out, nil
+}

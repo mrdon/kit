@@ -13,7 +13,7 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// buildMCPTools wires both trivia tools onto the MCP surface. Each handler
+// buildMCPTools wires every trivia tool onto the MCP surface. Each handler
 // marshals the MCP arguments back to JSON and runs the SAME dispatchCore the
 // agent uses, so the two surfaces stay in parity by construction.
 func buildMCPTools(pool *pgxpool.Pool, svc *Service) []mcpserver.ServerTool {

@@ -8,7 +8,7 @@ import (
 	"github.com/mrdon/kit/internal/tools"
 )
 
-// registerAgentTools exposes both trivia tools to the LLM agent. Each handler
+// registerAgentTools exposes every trivia tool to the LLM agent. Each handler
 // runs the SAME dispatchCore the MCP surface uses, so the two cannot drift.
 func registerAgentTools(r *tools.Registry, pool *pgxpool.Pool, svc *Service) {
 	for _, meta := range triviaTools {

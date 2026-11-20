@@ -110,8 +110,8 @@ func TestAgentAndMCPSurfacesAgree(t *testing.T) {
 	app := &App{pool: f.pool, svc: f.svc}
 
 	metas := app.ToolMetas()
-	if len(metas) != 2 {
-		t.Fatalf("ToolMetas returned %d tools, want 2", len(metas))
+	if len(metas) != 4 {
+		t.Fatalf("ToolMetas returned %d tools, want 4", len(metas))
 	}
 	mcpTools := app.RegisterMCPTools(f.pool, nil)
 	if len(mcpTools) != len(metas) {
@@ -136,7 +136,8 @@ func TestAgentAndMCPSurfacesAgree(t *testing.T) {
 	}
 }
 
-// Both tools are read-only. If one ever gains a mutating path this test is
+// No tool moves a game. The game tools are read-only, and the bank tools
+// write only to the bank. If one ever gains a path into a game, this test is
 // where somebody has to think about it.
 func TestTriviaToolsAreReadOnly(t *testing.T) {
 	f := newFixture(t)
@@ -144,8 +145,14 @@ func TestTriviaToolsAreReadOnly(t *testing.T) {
 	game := f.newGame(defaultSettings(), topicSet())
 	before := f.reload(game.ID).StateVersion
 
-	for _, name := range []string{"trivia_status", "trivia_results"} {
-		if _, err := dispatchCore(f.ctx, f.caller(), f.pool, f.svc, name, json.RawMessage(`{}`)); err != nil {
+	calls := map[string]string{
+		"trivia_status":         `{}`,
+		"trivia_results":        `{}`,
+		"trivia_list_questions": `{"questions":true}`,
+		"trivia_import_pack":    `{"name":"Side pack","csv":"question,topics,answer\nHow many?,Misc,42\n"}`,
+	}
+	for name, in := range calls {
+		if _, err := dispatchCore(f.ctx, f.caller(), f.pool, f.svc, name, json.RawMessage(in)); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}

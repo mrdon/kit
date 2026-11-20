@@ -14,7 +14,7 @@ import (
 	"github.com/mrdon/kit/internal/services"
 )
 
-// dispatchCore is the one implementation of both trivia tools. The agent
+// dispatchCore is the one implementation of every trivia tool. The agent
 // registry and the MCP server are thin wrappers over this function, which is
 // what keeps the two surfaces byte-identical by construction rather than by
 // two hand-maintained switches that drift apart.
@@ -27,6 +27,10 @@ func dispatchCore(ctx context.Context, caller *services.Caller, pool *pgxpool.Po
 		return coreStatus(ctx, caller, pool, svc, raw)
 	case "trivia_results":
 		return coreResults(ctx, caller, pool, svc, raw)
+	case "trivia_list_questions":
+		return coreListQuestions(ctx, caller, pool, raw)
+	case "trivia_import_pack":
+		return coreImportPack(ctx, caller, pool, raw)
 	default:
 		return "", fmt.Errorf("trivia: unknown tool %q", name)
 	}

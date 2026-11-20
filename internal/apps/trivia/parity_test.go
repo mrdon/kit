@@ -66,13 +66,17 @@ func TestAgentAndMCPReturnByteIdenticalText(t *testing.T) {
 }
 
 func callMCP(ctx context.Context, serverTools []mcpserver.ServerTool, name string) (string, error) {
+	return callMCPWith(ctx, serverTools, name, map[string]any{})
+}
+
+func callMCPWith(ctx context.Context, serverTools []mcpserver.ServerTool, name string, args map[string]any) (string, error) {
 	for _, tool := range serverTools {
 		if tool.Tool.Name != name {
 			continue
 		}
 		var req mcp.CallToolRequest
 		req.Params.Name = name
-		req.Params.Arguments = map[string]any{}
+		req.Params.Arguments = args
 		res, err := tool.Handler(ctx, req)
 		if err != nil {
 			return "", err

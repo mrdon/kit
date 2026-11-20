@@ -2,13 +2,18 @@ package trivia
 
 import "github.com/mrdon/kit/internal/services"
 
-// Two tools, both READ-ONLY, and no SystemPrompt.
+// The game tools are READ-ONLY, and there is no SystemPrompt.
 //
 // Nothing about "pick cell 3, reveal now" is improved by routing through an
 // LLM in a loud bar, and a mis-fired tool during a live game is destructive
 // and unrecoverable — the kiosk app contributes zero tools for exactly this
 // reason. But asking in Slack the next morning how it went is real value, and
 // costs nothing to get wrong.
+//
+// The bank tools are the exception, and a safe one: they never touch a game.
+// trivia_import_pack goes through the same importQuestions the console upload
+// uses, so a pack on a live board still cannot be replaced, and it refuses to
+// overwrite a pack any night has already asked from (see coreImportPack).
 //
 // This slice is the single source of tool metadata. Both the agent registry
 // and the MCP server build their surfaces from it, so a field added here
@@ -30,5 +35,31 @@ var triviaTools = []services.ToolMeta{
 		Schema: services.Props(map[string]any{
 			"game": services.Field("string", "The game's three-word name. Omit for the most recent game."),
 		}),
+	},
+	{
+		Name: "trivia_list_questions",
+		Description: "The trivia question bank. Without questions=true it lists each pack (dataset) " +
+			"with its question count, how many no game has asked yet, average difficulty and notes. " +
+			"With questions=true it also lists every question: difficulty, prompt, answer and topics. " +
+			"Use it to check a new pack for overlap and to calibrate difficulty ratings.",
+		Schema: services.Props(map[string]any{
+			"pack":      services.Field("string", "Only this pack, by name. Omit for every pack."),
+			"questions": services.Field("boolean", "List the questions too, not just the pack summaries. Defaults to false."),
+		}),
+	},
+	{
+		Name: "trivia_import_pack",
+		Description: "Upload a trivia question pack from CSV text, the same import the console's " +
+			"'Upload a set' runs. Header row required: question, topics (';'-separated), answer " +
+			"(a plain number), and optionally difficulty (whole number 1-10). Other columns, " +
+			"like source, are ignored. Bad rows are reported and skipped. A pack name that " +
+			"already exists is refused unless replace=true, and a pack any game has already " +
+			"asked from cannot be replaced here.",
+		Schema: services.PropsReq(map[string]any{
+			"name":    services.Field("string", "The pack's name, at most 60 characters."),
+			"csv":     services.Field("string", "The whole CSV file, header row first."),
+			"notes":   services.Field("string", "Optional note shown with the pack, e.g. where the questions came from."),
+			"replace": services.Field("boolean", "Replace an existing, never-played pack of the same name. Defaults to false."),
+		}, "name", "csv"),
 	},
 }

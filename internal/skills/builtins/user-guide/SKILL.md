@@ -639,7 +639,9 @@ The list is on your own panel in the order the screen shows it, so you are readi
 > "How did trivia go last night?"
 > "What were the results for jumping-lion?"
 
-Kit calls `trivia_status` and `trivia_results`. Those are the only two trivia tools and both are read-only — nothing about running a live game is improved by asking an assistant to press the button in a loud room.
+Kit calls `trivia_status` and `trivia_results`. Both are read-only, and no Kit tool touches a game: nothing about running a live game is improved by asking an assistant to press the button in a loud room.
+
+**Ask about the question bank, or add a pack.** "What trivia packs do we have?" lists each pack with its question count, how many no game has asked yet, and its average difficulty (`trivia_list_questions`). Kit can also upload a pack you hand it as CSV, the same import as **Upload a set** (`trivia_import_pack`). It won't overwrite an existing pack unless you say so, and it never replaces a pack a game has already asked from. Do that in the console.
 
 Game addresses are **public and unauthenticated**: that's what lets somebody scan a QR code and play without a Kit account. Anyone with the link can watch, and a phone with no cookie gets the full read-only view.
 
