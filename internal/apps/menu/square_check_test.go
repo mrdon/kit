@@ -175,8 +175,41 @@ func TestPlanSquareHouseSizeOnOldItemAsks(t *testing.T) {
 	if strings.Contains(summaries(plan), "Crowler") {
 		t.Fatalf("filled in a size on an existing item:\n%s", summaries(plan))
 	}
-	if len(plan.Questions) != 1 || plan.Questions[0].Recommended != "c800" {
-		t.Fatalf("want one size question recommending $8.00, got %+v", plan.Questions)
+	if len(plan.Questions) != 1 || plan.Questions[0].Options[0].Fix.Cents != 800 {
+		t.Fatalf("want one yes/no crowler question at $8.00, got %+v", plan.Questions)
+	}
+}
+
+// The house sizes are a crowler of everything on tap and a pitcher of beer
+// up to 8%. A size the menu leaves off, like a 16oz of a strong beer, is
+// never asked about, however many other beers sell one.
+func TestPlanSquareHouseSizesFollowTheRules(t *testing.T) {
+	full := func(id, name string) sqItem {
+		return rawItem(id, name, rawVar(id+"16", "16oz", 650), rawVar(id+"4", "4oz", 300),
+			rawVar(id+"P", "Pitcher", 2200), rawVar(id+"C", "32oz Crowler", 1200), rawVar(id+"G", "64oz Growler", 1800))
+	}
+	strong := Beer{Section: "Stouts", Name: "Tsar Bomba", ABV: "11%", Pours: pours("9oz Draft", "8", "4oz Draft", "4")}
+	mild := beer("Little Dipper", "6.50", "3")
+	rows := []Beer{beer("Newtonian", "6.50", "3"), beer("Cerveza", "6.50", "3"), mild, strong}
+	cat := sqCatalog{Items: []sqItem{
+		full("NEW", "Newtonian"), full("CER", "Cerveza"),
+		rawItem("LD", "Little Dipper", rawVar("LD16", "16oz", 650), rawVar("LD4", "4oz", 300)),
+		rawItem("TB", "Tsar Bomba", rawVar("TB9", "9oz", 800), rawVar("TB4", "4oz", 400)),
+	}}
+	plan := planSquare(rows, cat, map[string]bool{})
+	var titles []string
+	for _, q := range plan.Questions {
+		titles = append(titles, q.Title)
+		if len(q.Options) != 2 || q.Recommended != "yes" {
+			t.Errorf("not a yes/no card: %+v", q)
+		}
+	}
+	got := strings.Join(titles, "\n")
+	want := "Add a 32oz Crowler of Little Dipper at $12.00?\n" +
+		"Add a Pitcher of Little Dipper at $22.00?\n" +
+		"Add a 32oz Crowler of Tsar Bomba at $12.00?"
+	if got != want {
+		t.Errorf("questions:\n%s\nwant:\n%s", got, want)
 	}
 }
 

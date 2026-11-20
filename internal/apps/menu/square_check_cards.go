@@ -48,8 +48,8 @@ func ConfigureCards(cards CardSurface) {
 // squareCardRoles is who the check asks: the people who can change Square.
 var squareCardRoles = []string{"admin"}
 
-// fileQuestions puts each question not asked before on a decision card and
-// reports how many it filed. A question is recorded before its card is made,
+// fileQuestions puts each question not asked before on a decision card, or
+// a briefing for a notice, and reports how many it filed. A question is recorded before its card is made,
 // so a failure part way never asks twice; at worst it never asks, and the
 // preview still shows it.
 func (a *App) fileQuestions(ctx context.Context, tenantID uuid.UUID, qs []sqQuestion) (int, error) {
@@ -63,6 +63,13 @@ func (a *App) fileQuestions(ctx context.Context, tenantID uuid.UUID, qs []sqQues
 			return filed, err
 		}
 		if !fresh {
+			continue
+		}
+		if q.Notice {
+			if err := a.cards.CreateBriefing(ctx, tenantID, q.Title, q.Body, squareCardRoles); err != nil {
+				return filed, fmt.Errorf("filing %q: %w", q.Title, err)
+			}
+			filed++
 			continue
 		}
 		card, err := questionCard(q)

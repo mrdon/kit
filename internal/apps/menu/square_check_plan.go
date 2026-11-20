@@ -2,7 +2,8 @@ package menu
 
 import (
 	"fmt"
-	"sort"
+	"math"
+	"strconv"
 	"strings"
 )
 
@@ -34,6 +35,9 @@ type sqQuestion struct {
 	Body        string
 	Options     []sqOption
 	Recommended string
+	// Notice is a gap only a person can close in Square, with nothing to
+	// choose: it goes out as a briefing, not a decision.
+	Notice bool
 }
 
 type sqOption struct {
@@ -181,15 +185,15 @@ func (p *planner) askPrice(beer, item string, v sqVar, want int, source string) 
 	}
 	p.plan.Questions = append(p.plan.Questions, sqQuestion{
 		Key:   fmt.Sprintf("price|%s|%s|%d|%d", v.ID, nameKey(source), v.Cents, want),
-		Title: fmt.Sprintf("%s %s: %s or %s?", beer, v.Name, dollars(want), have),
+		Title: fmt.Sprintf("Change %s %s in Square to %s?", beer, v.Name, dollars(want)),
 		Body: fmt.Sprintf("%s shows **%s %s at %s**, but Square rings **%s** (item %s). "+
-			"Pick the right price. If it is Square's, fix %s instead.",
+			"If Square is right, say no and fix %s instead.",
 			titleCase(source), beer, v.Name, dollars(want), have, item, source),
 		Options: []sqOption{
-			{ID: "use_menu", Label: "Set Square to " + dollars(want), Fix: &sqFix{Kind: "price", ObjectID: v.ID, Cents: want}},
-			{ID: "keep", Label: "Keep " + have + ", I'll fix " + source},
+			{ID: "yes", Label: "Yes, ring " + dollars(want), Fix: &sqFix{Kind: "price", ObjectID: v.ID, Cents: want}},
+			{ID: "no", Label: "No, keep " + have + ", I'll fix " + source},
 		},
-		Recommended: "use_menu",
+		Recommended: "yes",
 	})
 }
 
@@ -208,7 +212,7 @@ func (p *planner) missingItem(b Beer) {
 			Title: b.Name + " is on the menu but archived in Square",
 			Body: fmt.Sprintf("The menu lists **%s**, and its Square item is archived, so it cannot be rung up. "+
 				"Unarchive it in Square, or take it off the menu.", b.Name),
-			Options: []sqOption{{ID: "ok", Label: "Got it"}},
+			Notice: true,
 		})
 		return
 	}
@@ -220,8 +224,8 @@ func (p *planner) missingItem(b Beer) {
 				"If it is the same drink, set the Square item's kitchen name to %q and the check will match them.",
 				b.Name, near.Name, squareName(b.Name)),
 			Options: []sqOption{
-				{ID: "same", Label: "Same drink, I'll fix the name"},
-				{ID: "create", Label: "Different drink, add it to Square", Fix: &sqFix{Kind: "item", Name: b.Name}},
+				{ID: "same", Label: "Yes, I'll fix the name"},
+				{ID: "create", Label: "No, add it to Square", Fix: &sqFix{Kind: "item", Name: b.Name}},
 			},
 			Recommended: "same",
 		})
@@ -234,7 +238,7 @@ func (p *planner) missingItem(b Beer) {
 			Body: fmt.Sprintf("The printed menu lists **%s**, and Square has no item by that name, so it cannot be rung up. "+
 				"Kit only creates draft drinks by itself; add this one in Square, or give the Square item it rings as the kitchen name %q.",
 				b.Name, squareName(b.Name)),
-			Options: []sqOption{{ID: "ok", Label: "Got it"}},
+			Notice: true,
 		})
 		return
 	}
@@ -271,23 +275,9 @@ func (p *planner) template(b Beer) (sqItem, bool) {
 	return sqItem{}, false
 }
 
-// siblings are the Square items of the other tap rows of the same kind.
-func (p *planner) siblings(b Beer) []sqItem {
-	var out []sqItem
-	for _, other := range p.rows {
-		if !isTap(other) || isSoda(other) != isSoda(b) || nameKey(other.Name) == nameKey(b.Name) {
-			continue
-		}
-		if it, ok := p.cat.match(other.Name); ok {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
-// houseSizes adds the sizes the menu does not price -- a pitcher, a crowler,
-// a taster -- that most drinks of the same kind carry. It copies a price only
-// when every one of them charges the same; otherwise it asks.
+// houseSizes adds the sizes the menu does not price but the house always
+// sells: a crowler of every tap drink, and a pitcher of every beer up to
+// maxPitcherABV. Nothing else: a size the menu leaves off is not sold.
 func (p *planner) houseSizes() {
 	for _, b := range p.rows {
 		if !isTap(b) {
@@ -297,14 +287,32 @@ func (p *planner) houseSizes() {
 		if !ok {
 			continue
 		}
-		sibs := p.siblings(b)
-		for _, name := range commonSizes(sibs) {
+		for _, name := range houseSizeNames(b) {
 			if _, has := it.variation(name); has || p.menuSize(b, it, name) {
 				continue
 			}
-			p.houseSize(b, it, name, sibs)
+			p.houseSize(b, it, name)
 		}
 	}
+}
+
+// maxPitcherABV is the strongest beer we pour by the pitcher.
+const maxPitcherABV = 8.0
+
+const pitcherVariation = "Pitcher"
+
+func houseSizeNames(b Beer) []string {
+	out := []string{crowlerVariation}
+	if abv, ok := abvOf(b); ok && abv <= maxPitcherABV {
+		out = append(out, pitcherVariation)
+	}
+	return out
+}
+
+// abvOf reads "6.2%". Sodas have none.
+func abvOf(b Beer) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(b.ABV), "%"), 64)
+	return f, err == nil
 }
 
 // menuSize reports whether a size is one the menu prices for this row, which
@@ -321,69 +329,81 @@ func (p *planner) menuSize(b Beer, it sqItem, name string) bool {
 	return false
 }
 
-// commonSizes is every variation name more than half the items carry, kegs
-// aside: a keg is a wholesale price, set when a beer goes out to accounts.
-func commonSizes(items []sqItem) []string {
-	if len(items) == 0 {
-		return nil
-	}
-	count := map[string]int{}
-	first := map[string]string{}
-	for _, it := range items {
-		for _, v := range it.Vars {
-			k := nameKey(v.Name)
-			if strings.Contains(k, "keg") {
-				continue
-			}
-			if _, ok := first[k]; !ok {
-				first[k] = v.Name
-			}
-			count[k]++
-		}
-	}
-	var out []string
-	for k, n := range count {
-		if n*2 > len(items) {
-			out = append(out, first[k])
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func (p *planner) houseSize(b Beer, it sqItem, name string, sibs []sqItem) {
-	prices := map[int]bool{}
-	for _, s := range sibs {
-		if v, ok := s.variation(name); ok && v.Cents >= 0 {
-			prices[v.Cents] = true
-		}
-	}
-	if len(prices) == 1 && p.fresh[nameKey(b.Name)] {
-		for c := range prices {
-			p.addVariation(it, name, c, fmt.Sprintf("%s: added %s at %s, the price every other one has", b.Name, name, dollars(c)))
-		}
+// houseSize prices a missing house size like the drink of the same kind
+// that pours closest to it per ounce. A drink this run created takes that
+// price without asking when every such drink charges the same; otherwise a
+// yes/no card proposes it.
+func (p *planner) houseSize(b Beer, it sqItem, name string) {
+	near, cents, same, ok := p.sizePrice(b, name)
+	if !ok {
+		p.plan.Notes = append(p.plan.Notes, fmt.Sprintf("%s: no %s in Square, and no drink like it sells one to price it from", b.Name, name))
 		return
 	}
-	var list []int
-	for c := range prices {
-		list = append(list, c)
+	if same && p.fresh[nameKey(b.Name)] {
+		p.addVariation(it, name, cents, fmt.Sprintf("%s: added %s at %s, the price every other one has", b.Name, name, dollars(cents)))
+		return
 	}
-	sort.Ints(list)
-	q := sqQuestion{
-		Key:   "size|" + it.ID + "|" + nameKey(name),
-		Title: fmt.Sprintf("What does a %s of %s cost?", name, b.Name),
-		Body: fmt.Sprintf("Most of our drinks sell a **%s**, and **%s** has none in Square. "+
-			"Pick its price, or say it is not sold that way.", name, b.Name),
+	why := "We sell a crowler of everything on tap"
+	if name == pitcherVariation {
+		why = fmt.Sprintf("We sell a pitcher of every beer up to %g%%", maxPitcherABV)
 	}
-	if len(list) == 1 {
-		q.Recommended = fmt.Sprintf("c%d", list[0])
+	p.plan.Questions = append(p.plan.Questions, sqQuestion{
+		Key:   fmt.Sprintf("house|%s|%s|%d", it.ID, nameKey(name), cents),
+		Title: fmt.Sprintf("Add a %s of %s at %s?", name, b.Name, dollars(cents)),
+		Body: fmt.Sprintf("%s, and **%s** has none in Square. %s is priced like **%s**, which pours at a similar price per ounce.",
+			why, b.Name, dollars(cents), near),
+		Options: []sqOption{
+			{ID: "yes", Label: "Yes, add it at " + dollars(cents), Fix: &sqFix{Kind: "variation", ObjectID: it.ID, Name: name, Cents: cents}},
+			{ID: "no", Label: "No, I'll set it up in Square"},
+		},
+		Recommended: "yes",
+	})
+}
+
+// sizePrice is the price of a size on the drink of the same kind whose
+// largest glass costs nearest per ounce, and whether every such drink
+// charges the same.
+func (p *planner) sizePrice(b Beer, name string) (near string, cents int, same, ok bool) {
+	want, _ := perOunce(b)
+	best := -1.0
+	prices := map[int]bool{}
+	for _, other := range p.rows {
+		if !isTap(other) || isSoda(other) != isSoda(b) || nameKey(other.Name) == nameKey(b.Name) {
+			continue
+		}
+		it, found := p.cat.match(other.Name)
+		if !found {
+			continue
+		}
+		v, has := it.variation(name)
+		if !has || v.Cents < 0 {
+			continue
+		}
+		prices[v.Cents] = true
+		po, _ := perOunce(other)
+		if d := math.Abs(po - want); best < 0 || d < best {
+			best, near, cents = d, other.Name, v.Cents
+		}
 	}
-	for _, c := range list {
-		q.Options = append(q.Options, sqOption{
-			ID: fmt.Sprintf("c%d", c), Label: dollars(c),
-			Fix: &sqFix{Kind: "variation", ObjectID: it.ID, Name: name, Cents: c},
-		})
+	return near, cents, len(prices) == 1, best >= 0
+}
+
+// perOunce is the menu price per ounce of the row's largest priced draft.
+func perOunce(b Beer) (float64, bool) {
+	oz, price := 0.0, 0
+	for _, pr := range pricedPours(b) {
+		if !isDraft(pr.Label) {
+			continue
+		}
+		n, err := strconv.ParseFloat(strings.TrimSuffix(pr.Size, "oz"), 64)
+		c, ok := pourCents(pr.Price)
+		if err != nil || !ok || n <= oz {
+			continue
+		}
+		oz, price = n, c
 	}
-	q.Options = append(q.Options, sqOption{ID: "none", Label: "We don't sell it in that size"})
-	p.plan.Questions = append(p.plan.Questions, q)
+	if oz == 0 {
+		return 0, false
+	}
+	return float64(price) / oz, true
 }

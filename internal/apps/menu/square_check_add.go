@@ -210,14 +210,14 @@ func (p *planner) newFlightOption(name string, cents, ordinal int) map[string]an
 func (p *planner) askFlightPrice(beer string, mod sqMod, want, base int) {
 	p.plan.Questions = append(p.plan.Questions, sqQuestion{
 		Key:   fmt.Sprintf("flight|%s|%d|%d", mod.ID, mod.Cents, want),
-		Title: fmt.Sprintf("%s in a flight: +%s or +%s?", beer, dollars(want), dollars(max(mod.Cents, 0))),
+		Title: fmt.Sprintf("Charge +%s for %s in a flight?", dollars(want), beer),
 		Body: fmt.Sprintf("A flight pour costs its own taster price over the cheapest taster (%s). For **%s** that is "+
 			"**+%s**, but %s charges **+%s**.", dollars(base), beer, dollars(want), flightListName, dollars(max(mod.Cents, 0))),
 		Options: []sqOption{
-			{ID: "use_taster", Label: "Charge +" + dollars(want), Fix: &sqFix{Kind: "flight_price", ObjectID: mod.ID, Cents: want}},
-			{ID: "keep", Label: "Keep +" + dollars(max(mod.Cents, 0))},
+			{ID: "yes", Label: "Yes, charge +" + dollars(want), Fix: &sqFix{Kind: "flight_price", ObjectID: mod.ID, Cents: want}},
+			{ID: "no", Label: "No, keep +" + dollars(max(mod.Cents, 0))},
 		},
-		Recommended: "use_taster",
+		Recommended: "yes",
 	})
 }
 
@@ -269,13 +269,13 @@ func (p *planner) crowler(b Beer, it sqItem, own sqVar, list sqItem) {
 	}
 	p.plan.Questions = append(p.plan.Questions, sqQuestion{
 		Key:   fmt.Sprintf("crowler|%s|%d|%d", listed.ID, listed.Cents, own.Cents),
-		Title: fmt.Sprintf("%s crowler: %s or %s?", b.Name, dollars(own.Cents), dollars(max(listed.Cents, 0))),
+		Title: fmt.Sprintf("Sell the %s crowler online at %s?", b.Name, dollars(own.Cents)),
 		Body: fmt.Sprintf("At the bar a **%s** crowler rings **%s**, but online (%s) it is **%s**.",
 			b.Name, dollars(own.Cents), list.Name, dollars(max(listed.Cents, 0))),
 		Options: []sqOption{
-			{ID: "match_bar", Label: "Set online to " + dollars(own.Cents), Fix: &sqFix{Kind: "price", ObjectID: listed.ID, Cents: own.Cents}},
-			{ID: "keep", Label: "Leave them different"},
+			{ID: "yes", Label: "Yes, match the bar", Fix: &sqFix{Kind: "price", ObjectID: listed.ID, Cents: own.Cents}},
+			{ID: "no", Label: "No, leave them different"},
 		},
-		Recommended: "match_bar",
+		Recommended: "yes",
 	})
 }
