@@ -191,6 +191,10 @@ export interface HostFrame {
   phase: Phase;
   serverNow: number;
   deadlineMs: number;
+  // Non-zero while the host has the clock stopped; see liveStream.
+  pausedMs: number;
+  // The question up is the warm-up from the lobby and does not count.
+  practice: boolean;
   finalWager: boolean;
   // The night's position as a human says it: one-based, and the final counts
   // as a round. Two boards plus a final is "round 1 of 3".

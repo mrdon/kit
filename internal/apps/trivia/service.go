@@ -110,12 +110,17 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 		}
 	}
 	chipRound := ScaleRoundOf(live, cells)
+	var pausedMs int64
+	if game.PausedRemainingMs != nil {
+		pausedMs = int64(*game.PausedRemainingMs)
+	}
 
 	snap := &Snapshot{
 		GameID: gameID, TenantID: tenantID,
 		Name: game.Name, Title: game.Title, Phase: game.Phase,
 		StateVersion: game.StateVersion,
 		ServerNow:    time.Now().UTC(), Deadline: game.PhaseDeadline,
+		PausedMs: pausedMs, Practice: live != nil && live.IsPractice,
 		FinalWager: game.FinalWager, TokenValues: scaleValues(game.TokenValues, chipRound),
 		// Cell values are NOT scaled. A cell is worth what it was worth all
 		// night, and the stored points scoring pays are the unscaled ones --

@@ -45,6 +45,12 @@ export const ACTION = {
   RESUME: 'resume',
   // Appends one more board to a night that is going well.
   ADD_ROUND: 'add_round',
+  // One warm-up question from the lobby, wiped before the real game.
+  PRACTICE: 'practice',
+  // Stop and restart the clock on the phase that is up. Not RESUME, which
+  // ends the break between boards.
+  PAUSE: 'pause',
+  UNPAUSE: 'unpause',
 } as const;
 
 export type Action = (typeof ACTION)[keyof typeof ACTION];

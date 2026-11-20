@@ -105,6 +105,11 @@ export default function App() {
           {you ? <span className="score">{money(you.score)}</span> : null}
         </span>
       </header>
+      {/* Practice and pause are the host talking; the phone just agrees, so
+          a table that cannot hear the host still knows why nothing counts or
+          why the clock has stopped. */}
+      {frame.practice ? <p className="strip strip-practice">Practice round</p> : null}
+      {frame.pausedMs ? <p className="strip strip-paused">Paused · the host has stopped the clock</p> : null}
 
       {spectating && checked ? (
         <Lobby

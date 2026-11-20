@@ -48,12 +48,12 @@ const (
 func DefaultSettings() Settings {
 	return Settings{
 		BoardRows: 2, BoardColumns: 5,
-		// FLAT. Every cell in a round is worth the same -- the escalation is
-		// on the round axis, not down the rows, because a question carries no
-		// difficulty and the row it lands in is a shuffle. A 100/200 ladder
-		// here was the shipped counter-example to the rule the rest of the
-		// app states.
-		CellValues: []int{100, 100}, TokenValues: []int{100, 200},
+		// A LADDER down the rows: $100, then $200. The board puts the harder
+		// questions in the dearer rows (see rankByDifficulty), so a row's
+		// value says something true about it. This was flat for as long as
+		// questions carried no grade, because then the row was a shuffle and
+		// a dearer bottom row would only have LOOKED harder.
+		CellValues: []int{100, 200}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 60, RevealSeconds: 0, BetSeconds: 45,
 		// Thirty seconds to commit a number against nothing but a category.
 		// Shorter than the answer clock on purpose: there is nothing to work
@@ -109,6 +109,7 @@ func normaliseSettings(s Settings) Settings {
 	if len(s.CellValues) == 0 {
 		s.CellValues = d.CellValues
 	}
+	s.CellValues = cellLadder(s.CellValues[0], s.BoardRows)
 	if len(s.TokenValues) == 0 {
 		s.TokenValues = d.TokenValues
 	}
@@ -133,6 +134,18 @@ func normaliseSettings(s Settings) Settings {
 	// unexpressable. RepeatQuestions is the same shape and needs no line at
 	// all: false is both the zero value and the default.
 	return s
+}
+
+// cellLadder is the board's cell values: the first row at base, each row
+// below it one more base. ONE number sets the whole column, which is all the
+// setup page asks for, and a game saved with the old flat list (every row the
+// same) turns into a ladder the next time it is saved or copied.
+func cellLadder(base, rows int) []int {
+	out := make([]int, rows)
+	for i := range out {
+		out[i] = base * (i + 1)
+	}
+	return out
 }
 
 // validateSettings rejects a configuration that could not be played.

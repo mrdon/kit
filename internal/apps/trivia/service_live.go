@@ -40,6 +40,13 @@ const (
 	ActionFinal       Action = "final"
 	ActionExtend      Action = "extend"
 	ActionFinish      Action = "finish"
+	// ActionPractice plays one warm-up question from the lobby.
+	ActionPractice Action = "practice"
+	// ActionPause and ActionUnpause stop and restart the clock on whatever
+	// timed phase is up. Not to be confused with ActionResume, which ends
+	// the break between boards.
+	ActionPause   Action = "pause"
+	ActionUnpause Action = "unpause"
 )
 
 // ActionRequest is the one host endpoint's body.
@@ -102,6 +109,11 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		if len(cells) == 0 {
 			return fmt.Errorf("%w: this game has no board yet — add some questions and build one on the setup page", ErrBadRequest)
 		}
+		// Belt and braces: practice cleans up after itself on the way back
+		// to the lobby, and nothing it left behind may count.
+		if _, err := DeletePracticeRounds(ctx, s.pool, game.TenantID, game.ID); err != nil {
+			return err
+		}
 		if err := s.drawFirstPicker(ctx, game); err != nil {
 			return err
 		}
@@ -133,6 +145,12 @@ func (s *Service) applyAction(ctx context.Context, game *Game, req ActionRequest
 		return s.openFinal(ctx, game, req.QuestionID)
 	case ActionExtend:
 		return s.extend(ctx, game, req.Seconds)
+	case ActionPractice:
+		return s.startPractice(ctx, game)
+	case ActionPause:
+		return s.pauseClock(ctx, game, true)
+	case ActionUnpause:
+		return s.pauseClock(ctx, game, false)
 	case ActionFinish:
 		// Legal from any phase, and it ends the night wherever the night is.
 		// A quiz that has to stop because the kitchen is closing should not
@@ -170,20 +188,6 @@ func (s *Service) drawFirstPicker(ctx context.Context, game *Game) error {
 func (s *Service) moveTo(ctx context.Context, game *Game, to Phase, deadline *time.Time, roundID *uuid.UUID) error {
 	_, err := SetPhaseUnconditional(ctx, s.pool, game.TenantID, game.ID, to, deadline, roundID)
 	return err
-}
-
-func (s *Service) extend(ctx context.Context, game *Game, seconds int) error {
-	if seconds <= 0 || seconds > 300 {
-		return fmt.Errorf("%w: extension must be 1-300 seconds", ErrBadRequest)
-	}
-	_, ok, err := ExtendDeadline(ctx, s.pool, game.TenantID, game.ID, game.Phase, time.Duration(seconds)*time.Second)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrPhaseConflict
-	}
-	return nil
 }
 
 // openCell starts a round on a board cell. The unique index on
@@ -226,6 +230,8 @@ type roundSeed struct {
 	// category is looked up from the question inside the transaction.
 	Topic   string
 	IsFinal bool
+	// IsPractice is the warm-up from the lobby; see service_practice.go.
+	IsPractice bool
 }
 
 // openFinal starts the one round that stakes a team's own money.
@@ -291,7 +297,7 @@ func (s *Service) startRound(ctx context.Context, game *Game, seed roundSeed) er
 	phase, deadline := openingPhase(game, seed.IsFinal)
 	if _, err := tx.Exec(ctx, `
 		UPDATE app_trivia_games
-		   SET phase = $3, phase_deadline = $4, current_round_id = $5,
+		   SET phase = $3, phase_deadline = $4, current_round_id = $5, paused_remaining_ms = NULL,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2`,
 		game.TenantID, game.ID, phase, deadline, roundID); err != nil {
@@ -353,11 +359,11 @@ func insertRoundTx(ctx context.Context, tx pgx.Tx, game *Game, seed roundSeed) (
 	err = tx.QueryRow(ctx, `
 		INSERT INTO app_trivia_rounds
 		    (tenant_id, game_id, cell_id, question_id, prompt, prompt_key,
-		     answer_value, answer_text, topic, is_final, ordinal, points)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+		     answer_value, answer_text, topic, is_final, ordinal, points, is_practice)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
 		game.TenantID, game.ID, seed.CellID, seed.QuestionID,
 		question.Prompt, question.PromptKey, question.AnswerValue, question.AnswerText,
-		topic, seed.IsFinal, ordinal, seed.Points).Scan(&roundID)
+		topic, seed.IsFinal, ordinal, seed.Points, seed.IsPractice).Scan(&roundID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("inserting round: %w", err)
 	}
@@ -386,6 +392,12 @@ func firstTopicTx(ctx context.Context, tx pgx.Tx, tenantID, questionID uuid.UUID
 // afterScoring is the host's "next": back to the board, or -- when the board
 // is empty -- to the final if this game has one and to the podium if not.
 func (s *Service) afterScoring(ctx context.Context, game *Game) error {
+	if practice, err := s.inPractice(ctx, game); err != nil || practice {
+		if err != nil {
+			return err
+		}
+		return s.endPractice(ctx, game)
+	}
 	cells, err := ListBoardCells(ctx, s.pool, game.TenantID, game.ID)
 	if err != nil {
 		return err
@@ -457,6 +469,15 @@ func (s *Service) afterScoring(ctx context.Context, game *Game) error {
 // the projection from the night's rows, so a room that earned none simply
 // sees the plinths.
 func (s *Service) endOfNight(ctx context.Context, game *Game, roundID *uuid.UUID) error {
+	// Ending the night from the middle of practice must not put the practice
+	// question's cards, or its money, on the podium.
+	dropped, err := DeletePracticeRounds(ctx, s.pool, game.TenantID, game.ID)
+	if err != nil {
+		return err
+	}
+	if dropped {
+		roundID = nil
+	}
 	return s.moveTo(ctx, game, PhasePodium, nil, roundID)
 }
 

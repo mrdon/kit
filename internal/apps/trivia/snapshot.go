@@ -27,6 +27,12 @@ type Snapshot struct {
 	// SSE -- that would put the clock on bar wifi.
 	ServerNow time.Time
 	Deadline  *time.Time
+	// PausedMs is the clock a paused phase has left, or zero when it is
+	// running (a pause always keeps at least the grace window, so zero is
+	// never a paused value). Deadline is nil while it is set.
+	PausedMs int64
+	// Practice says the round on the wall is the warm-up from the lobby.
+	Practice bool
 
 	FinalWager  bool
 	TokenValues []int

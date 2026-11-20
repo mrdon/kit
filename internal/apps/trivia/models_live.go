@@ -38,8 +38,11 @@ type Round struct {
 	// Topic is the category label, copied for the same reason. The wager
 	// phase puts it on the wall while the prompt is still withheld, so the
 	// round has to carry it independently of the question row.
-	Topic         string
-	IsFinal       bool
+	Topic   string
+	IsFinal bool
+	// IsPractice marks the warm-up question played from the lobby. It is
+	// deleted when the practice ends; see service_practice.go.
+	IsPractice    bool
 	Ordinal       int
 	Points        int
 	WinningSlotID *uuid.UUID
@@ -49,13 +52,13 @@ type Round struct {
 
 const roundColumns = `id, game_id, cell_id, question_id, prompt,
 	COALESCE(answer_value, 0), answer_text, topic, is_final, ordinal, points,
-	winning_slot_id, started_at, scored_at`
+	winning_slot_id, started_at, scored_at, is_practice`
 
 func scanRound(row pgx.Row) (*Round, error) {
 	var r Round
 	err := row.Scan(&r.ID, &r.GameID, &r.CellID, &r.QuestionID,
 		&r.Prompt, &r.AnswerValue, &r.AnswerText, &r.Topic, &r.IsFinal, &r.Ordinal,
-		&r.Points, &r.WinningSlotID, &r.StartedAt, &r.ScoredAt)
+		&r.Points, &r.WinningSlotID, &r.StartedAt, &r.ScoredAt, &r.IsPractice)
 	if err != nil {
 		return nil, err
 	}

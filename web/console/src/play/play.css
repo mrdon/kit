@@ -46,6 +46,12 @@ body {
 .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .top .who { font-weight: 700; font-size: 15px; color: var(--accent-l); }
 .top .score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--gold); }
+.strip {
+  margin: 0 0 8px; padding: 6px 10px; border-radius: 8px;
+  font-size: 13px; font-weight: 700; text-align: center; letter-spacing: .03em;
+}
+.strip-practice { background: var(--gold); color: #0e1a23; }
+.strip-paused { background: var(--accent); color: #fff; }
 .offline { font-size: 13px; color: var(--accent); }
 
 .body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; }

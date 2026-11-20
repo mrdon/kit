@@ -355,3 +355,24 @@ func TestTemplateDemonstratesTheRightShape(t *testing.T) {
 		t.Fatal("the template is not cut from the shipped pack — it can drift out of shape")
 	}
 }
+
+// Difficulty is an optional 1-10 column. Blank is unrated; anything outside
+// the scale is refused, not clamped.
+func TestParseCSVDifficulty(t *testing.T) {
+	plan := parse(t, "question,topics,answer,difficulty\n"+
+		"How many legs on a spider?,Nature,8,1\n"+
+		"How many jelly beans in the jar?,Food,4521,\n"+
+		"How many grains of sand?,Nature,9,11\n")
+	if len(plan.Rows) != 2 || len(plan.Errors) != 1 {
+		t.Fatalf("rows=%d errors=%v", len(plan.Rows), plan.Errors)
+	}
+	if d := plan.Rows[0].Difficulty; d == nil || *d != 1 {
+		t.Fatalf("difficulty = %v, want 1", d)
+	}
+	if plan.Rows[1].Difficulty != nil {
+		t.Fatalf("a blank difficulty came back as %d", *plan.Rows[1].Difficulty)
+	}
+	if plan.Errors[0].Line != 4 {
+		t.Fatalf("the out-of-range grade was reported on line %d", plan.Errors[0].Line)
+	}
+}

@@ -26,7 +26,14 @@ type wireCommon struct {
 	Phase      string `json:"phase"`
 	ServerNow  int64  `json:"serverNow"`
 	DeadlineMs int64  `json:"deadlineMs"`
-	FinalWager bool   `json:"finalWager"`
+	// PausedMs is a stopped clock: non-zero means the host has paused the
+	// phase with this much left, and deadlineMs is 0. Every surface shows
+	// the frozen number rather than a countdown.
+	PausedMs   int64 `json:"pausedMs"`
+	FinalWager bool  `json:"finalWager"`
+	// Practice says the question up is the warm-up from the lobby: played in
+	// full, and wiped before the real game starts.
+	Practice bool `json:"practice"`
 	// RoundNumber and RoundCount are the night's position as a human says it
 	// out loud: one-based, and THE FINAL COUNTS AS A ROUND. Two boards plus a
 	// final is "round 1 of 3".
@@ -70,6 +77,7 @@ func commonOf(s *Snapshot) wireCommon {
 	c := wireCommon{
 		Version: s.StateVersion, Game: s.Name, Title: s.Title, Phase: string(s.Phase),
 		ServerNow: s.ServerNow.UnixMilli(), DeadlineMs: s.DeadlineMillis(),
+		PausedMs: s.PausedMs, Practice: s.Practice,
 		FinalWager: s.FinalWager, Build: buildinfo.Token(),
 		ChipsPerTable: ChipsPerTable(s.TokenValues, s.Round != nil && s.Round.IsFinal),
 	}

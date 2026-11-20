@@ -16,7 +16,13 @@ function renderBreak() {
     next.textContent = 'The final is next. Set your wager before you see the question.';
     return;
   }
-  var cell = state.board && state.board[0] ? ' Every square is ' + money(state.board[0].points) + '.' : '';
+  /* The rows climb, so name every value the board holds, cheapest first. */
+  var values = [];
+  (state.board || []).forEach(function (c) { if (values.indexOf(c.points) < 0) { values.push(c.points); } });
+  values.sort(function (a, b) { return a - b; });
+  var cell = '';
+  if (values.length === 1) { cell = ' Every square is ' + money(values[0]) + '.'; }
+  if (values.length > 1) { cell = ' Squares are ' + values.map(money).join(', ').replace(/, ([^,]*)$/, ' and $1') + '.'; }
   var chips = (state.tokens || []).map(function (t) { return money(t); }).join(' and ');
   next.textContent = 'Round ' + state.roundNumber + ' of ' + state.roundCount + ' is next.' +
     cell + ' Your chips are ' + chips + '.';

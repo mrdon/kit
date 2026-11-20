@@ -36,7 +36,7 @@ const graceWindow = 1500 * time.Millisecond
 func AdvancePhase(ctx context.Context, db Querier, tenantID, gameID uuid.UUID, from, to Phase, deadline *time.Time, requireDeadline bool) (*Game, bool, error) {
 	q := `
 		UPDATE app_trivia_games
-		   SET phase = $4, phase_deadline = $5,
+		   SET phase = $4, phase_deadline = $5, paused_remaining_ms = NULL,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2 AND phase = $3`
 	args := []any{tenantID, gameID, from, to, deadline}
@@ -63,7 +63,7 @@ func AdvancePhase(ctx context.Context, db Querier, tenantID, gameID uuid.UUID, f
 func SetPhaseUnconditional(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, to Phase, deadline *time.Time, roundID *uuid.UUID) (*Game, error) {
 	g, err := scanGame(pool.QueryRow(ctx, `
 		UPDATE app_trivia_games
-		   SET phase = $3, phase_deadline = $4, current_round_id = $5,
+		   SET phase = $3, phase_deadline = $4, current_round_id = $5, paused_remaining_ms = NULL,
 		       state_version = state_version + 1, updated_at = now()
 		 WHERE tenant_id = $1 AND id = $2
 		RETURNING `+gameColumns,
@@ -80,19 +80,72 @@ func SetPhaseUnconditional(ctx context.Context, pool *pgxpool.Pool, tenantID, ga
 // ExtendDeadline is the host's +15s. It only ever pushes the deadline out and
 // only while the game is in the phase the host thinks it is, so a click that
 // lands just after a phase closed does nothing rather than reopening it.
+//
+// A paused clock takes the time too: exactly one of the two columns is set,
+// and NULL plus anything stays NULL, so the one statement extends whichever
+// clock the phase actually has.
 func ExtendDeadline(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, from Phase, extra time.Duration) (*Game, bool, error) {
 	g, err := scanGame(pool.QueryRow(ctx, `
 		UPDATE app_trivia_games
 		   SET phase_deadline = phase_deadline + $4::interval,
+		       paused_remaining_ms = paused_remaining_ms + $5,
 		       state_version = state_version + 1, updated_at = now()
-		 WHERE tenant_id = $1 AND id = $2 AND phase = $3 AND phase_deadline IS NOT NULL
+		 WHERE tenant_id = $1 AND id = $2 AND phase = $3
+		   AND (phase_deadline IS NOT NULL OR paused_remaining_ms IS NOT NULL)
 		RETURNING `+gameColumns,
-		tenantID, gameID, from, fmt.Sprintf("%d milliseconds", extra.Milliseconds())))
+		tenantID, gameID, from, fmt.Sprintf("%d milliseconds", extra.Milliseconds()), int(extra.Milliseconds())))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("extending trivia deadline: %w", err)
+	}
+	return g, true, nil
+}
+
+// PausePhase stops a running clock where it is. The deadline goes to NULL,
+// which is the whole mechanism: the sweeper, the lazy sweep and the early
+// close all key on a deadline and simply stop seeing this game. Answers and
+// chips still land, because those check the phase and never the clock -- the
+// host pausing to explain something must not lock the room out.
+//
+// The remaining time is floored at the grace window rather than zero, so a
+// pause pressed on the last tick resumes into a beat the room can see rather
+// than a phase that closes as the button is released.
+func PausePhase(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, from Phase) (*Game, bool, error) {
+	g, err := scanGame(pool.QueryRow(ctx, fmt.Sprintf(`
+		UPDATE app_trivia_games
+		   SET paused_remaining_ms = GREATEST(%d,
+		         (EXTRACT(EPOCH FROM (phase_deadline - now())) * 1000)::int),
+		       phase_deadline = NULL,
+		       state_version = state_version + 1, updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2 AND phase = $3 AND phase_deadline IS NOT NULL
+		RETURNING `+gameColumns, graceWindow.Milliseconds()),
+		tenantID, gameID, from))
+	return pauseResult(g, err, "pausing")
+}
+
+// ResumePhase re-arms a paused clock from what it had left.
+func ResumePhase(ctx context.Context, pool *pgxpool.Pool, tenantID, gameID uuid.UUID, from Phase) (*Game, bool, error) {
+	g, err := scanGame(pool.QueryRow(ctx, `
+		UPDATE app_trivia_games
+		   SET phase_deadline = now() + paused_remaining_ms * interval '1 millisecond',
+		       paused_remaining_ms = NULL,
+		       state_version = state_version + 1, updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2 AND phase = $3 AND paused_remaining_ms IS NOT NULL
+		RETURNING `+gameColumns,
+		tenantID, gameID, from))
+	return pauseResult(g, err, "resuming")
+}
+
+// pauseResult maps "no row" to "nothing to do", the same convention as
+// ExtendDeadline: a pause landing after the phase moved on is not an error.
+func pauseResult(g *Game, err error, doing string) (*Game, bool, error) {
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("%s trivia clock: %w", doing, err)
 	}
 	return g, true, nil
 }

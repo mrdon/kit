@@ -369,6 +369,22 @@
   margin: 0.5rem 0;
 }
 
+.trivia-clock-paused {
+  opacity: 0.6;
+}
+
+.trivia-clock-note {
+  font-size: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.trivia-clock-controls {
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
 .trivia-win {
   border-color: var(--accent);
 }

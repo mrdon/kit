@@ -68,7 +68,11 @@ function startRing(where) {
   // scratch on every call otherwise, which re-baselines the arc to full --
   // during betting that is once per chip, and the countdown appeared to
   // jump backwards every time somebody bet.
-  var key = where + ':' + (state ? state.deadlineMs : 0);
+  //
+  // Keyed on the phase and round rather than the deadline: a pause takes the
+  // deadline away and a resume brings a new one, and neither should refill
+  // the arc. +15s still widens it, through the max below.
+  var key = where + ':' + (state ? state.phase + ':' + (state.round ? state.round.id : '') : '');
   if (ringTimer && key === ringKey) { return; }
   ringKey = key;
   if (ringTimer) { clearInterval(ringTimer); }
@@ -88,7 +92,7 @@ function startRing(where) {
       arc.style.strokeDashoffset = C;
       return;
     }
-    if (total === null) { total = Math.max(left, 1); }
+    if (total === null || left > total) { total = Math.max(left, 1); }
     var secs = Math.ceil(left / 1000);
     label.textContent = secs;
     // Three digits are wider than the ring's inside; a host who sets a

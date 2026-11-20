@@ -204,6 +204,9 @@ function clearTimers() {
 function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
 
 function remainingMs() {
+  // A paused clock is a frozen number, not an absence: the room should see
+  // how long it will have when the host carries on.
+  if (state && state.pausedMs) { return state.pausedMs; }
   if (!state || !state.deadlineMs) { return null; }
   return Math.max(0, state.deadlineMs - (Date.now() + skew));
 }
@@ -246,6 +249,16 @@ function money(n) {
   return (neg ? '-$' : '$') + s;
 }
 
+/* The two strips across the top of the wall that say the game is not running
+   normally: the warm-up is up, or the host has stopped the clock. Both are
+   things the host is saying out loud, so the wall only has to agree. */
+function renderBanners() {
+  var practice = document.getElementById('practice-banner');
+  var paused = document.getElementById('paused-banner');
+  if (practice) { practice.classList.toggle('on', !!state.practice); }
+  if (paused) { paused.classList.toggle('on', !!state.pausedMs); }
+}
+
 function render(prev) {
   if (!state) { return; }
   var key = state.phase + ':' + (state.round ? state.round.id : '');
@@ -273,6 +286,7 @@ function render(prev) {
     default:        show('s-hold');
   }
   noticeArrivals(prev);
+  renderBanners();
   // The corner shows the night's NAME as the host typed it ("Tuesday
   // Quiz"), not the two-word URL slug. The slug is only useful where
   // somebody has to type it, which is the join screen.

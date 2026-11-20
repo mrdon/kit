@@ -5,7 +5,7 @@ import { useSetChatContext } from '../../chatContext';
 import { BoardPanel } from './board_panel';
 import { NumberField } from './NumberField';
 import {
-  defaultSettings, estimateMinutes, PHASE, sameSettings,
+  defaultSettings, estimateMinutes, money, PHASE, sameSettings,
   type BoardQuestion, type Dataset, type TopicCount, type TriviaSettings,
 } from './common';
 
@@ -208,22 +208,12 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
   const edit = (next: TriviaSettings) => setS(next);
 
   const setRows = (rows: number) => {
-    // Every cell in a round is worth the SAME, so the values follow the row
-    // count by repeating, not by climbing.
-    //
-    // The escalation lives on the round axis instead (round two is worth
-    // double, chips included), and that is the only place it makes sense: a
-    // question carries no difficulty grade and the board fills each column by
-    // topic and a shuffle, so the row a question lands in is chance. A ladder
-    // down the rows would tell the room the bottom one is harder when it is
-    // not -- and once a cell outruns the biggest chip it also inverts the
-    // game, because only the table that WROTE the winning answer takes a
-    // cell while every table bets every round.
-    //
-    // Rows are therefore pure length: five rows is a longer round, not a
-    // steeper one.
+    // The values climb down the rows ($100, $200, ...) from the first one,
+    // and the board puts the harder questions in the dearer rows. The server
+    // builds the same ladder (cellLadder), so this only keeps the form honest
+    // until it saves.
     const value = s.cell_values[0] ?? 100;
-    edit({ ...s, board_rows: rows, cell_values: Array.from({ length: rows }, () => value) });
+    edit({ ...s, board_rows: rows, cell_values: ladder(value, rows) });
   };
 
   return (
@@ -265,16 +255,15 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         rounds are what add a break and step the money up.
       </p>
 
-      {/* ONE field, not one per row. Every cell in a round is worth the same,
-          so a column of per-row boxes was offering a ladder the game does not
-          have — and the first thing anybody did with it was build one. */}
+      {/* ONE field, not one per row: the rows below it climb by this much
+          each, so the host sets one number and reads the ladder. */}
       <div className="field-row">
         <label className="field">
-          <span>Cell value</span>
+          <span>Top row value</span>
           <NumberField min={1} value={s.cell_values[0] ?? 100} disabled={locked}
             onCommit={(n) => edit({
               ...s,
-              cell_values: Array.from({ length: s.board_rows }, () => n),
+              cell_values: ladder(n, s.board_rows),
             })} />
         </label>
       </div>
@@ -285,10 +274,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
         the room — but keep them near the chips, or the betting stops mattering.
       </p>
       <p className="page-sub">
-        Every cell in a round is worth this. Rows are <em>length</em>, not difficulty: questions
-        carry no grade and the board fills each column by topic and a shuffle, so a dearer bottom
-        row would look harder without being harder. The escalation lives on the rounds instead —
-        round two is worth double, chips included.
+        Rows climb from this: {s.cell_values.map((v) => money(v)).join(', ')}. Questions are graded
+        1 to 10, and the board puts the harder ones in the dearer rows. Each later round multiplies
+        the whole board and the chips by its number, Jeopardy-style: round two is{' '}
+        {s.cell_values.map((v) => money(v * 2)).join(', ')}.
       </p>
 
       <div className="field-row field-row-bottom">
@@ -388,4 +377,10 @@ function SettingsPanel({ game, onSaved }: { game: TriviaGame; onSaved: (g: Trivi
       {!locked ? <p className="page-sub">{saved ? 'Saved.' : 'Changes save themselves.'}</p> : null}
     </section>
   );
+}
+
+// The cell values for a board: the first row at base, each row below one more
+// base. Mirrors cellLadder on the server.
+function ladder(base: number, rows: number): number[] {
+  return Array.from({ length: rows }, (_, i) => base * (i + 1));
 }

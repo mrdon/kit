@@ -15,7 +15,7 @@ func nowForTest() time.Time { return time.Now().UTC() }
 func twoRoundSettings() Settings {
 	s := defaultSettings()
 	s.BoardRounds = 2
-	s.CellValues = []int{100, 100}
+	s.CellValues = []int{100, 200}
 	s.TokenValues = []int{100, 200}
 	return s
 }
@@ -69,7 +69,7 @@ func TestLaterRoundsScaleCellsAndChipsTogether(t *testing.T) {
 	cells := f.buildRounds(game, tenTopics())
 
 	for _, c := range cells {
-		want := s.CellValues[0] * (c.RoundIndex + 1)
+		want := s.CellValues[c.RowIndex] * (c.RoundIndex + 1)
 		if c.Points != want {
 			t.Fatalf("a round-%d cell is worth %d, want %d", c.RoundIndex, c.Points, want)
 		}
@@ -283,7 +283,7 @@ func TestSettingsSurviveTheRoundTrip(t *testing.T) {
 	f := newFixture(t)
 	want := Settings{
 		Title: "Tuesday Quiz", BoardRows: 2, BoardColumns: 4,
-		CellValues: []int{150, 150}, TokenValues: []int{100, 200},
+		CellValues: []int{150, 300}, TokenValues: []int{100, 200},
 		FinalWager: true, AnswerSeconds: 55, RevealSeconds: 10, BetSeconds: 40,
 		WagerSeconds: 25, GraceSeconds: 3, RepeatQuestions: true, BoardRounds: 3,
 	}

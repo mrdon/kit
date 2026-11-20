@@ -54,6 +54,17 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   font: 700 34px/1 var(--body); color: var(--dim); letter-spacing: .04em;
   font-variant-numeric: tabular-nums;
 }
+/* Practice and pause: a strip across the top centre, above every screen. The
+   paused one sits below the practice one so both can be up at once. */
+.banner-strip {
+  position: absolute; top: 22px; left: 50%; transform: translateX(-50%); z-index: 45;
+  padding: 10px 28px; border-radius: 999px;
+  font: 400 30px/1 var(--display); letter-spacing: .06em; white-space: nowrap;
+  background: var(--gold); color: var(--navy-3);
+  display: none;
+}
+.banner-strip.on { display: block; }
+.banner-paused { top: 82px; background: var(--accent); color: var(--cream); }
 #dot {
   position: absolute; top: 34px; right: 210px; z-index: 40;
   width: 20px; height: 20px; border-radius: 50%;

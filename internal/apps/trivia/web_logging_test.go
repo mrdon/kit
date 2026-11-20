@@ -58,7 +58,7 @@ func TestRefusedConsoleRequestIsLogged(t *testing.T) {
 
 	bad := Settings{
 		BoardRows: 2, BoardColumns: 5,
-		CellValues:    []int{500}, // one value for two rows: refused
+		CellValues:    []int{-500}, // a negative cell: refused
 		TokenValues:   []int{100, 200},
 		AnswerSeconds: 60, RevealSeconds: 15, BetSeconds: 45,
 	}

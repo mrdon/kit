@@ -112,6 +112,10 @@ export interface PlayerFrame {
   phase: Phase;
   serverNow: number;
   deadlineMs: number;
+  // Non-zero while the host has the clock stopped; see liveStream.
+  pausedMs: number;
+  // The question up is the warm-up from the lobby and does not count.
+  practice: boolean;
   finalWager: boolean;
   // Where the night is, as a human says it: one-based, final counted. The
   // server has always sent these; the phone was the one surface that never

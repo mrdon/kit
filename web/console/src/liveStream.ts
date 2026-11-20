@@ -24,6 +24,9 @@ export interface LiveFrame {
   version: number;
   serverNow: number;
   deadlineMs: number;
+  // Non-zero while the host has the clock stopped: the time it will have
+  // when it restarts. deadlineMs is 0 meanwhile.
+  pausedMs?: number;
 }
 
 export interface LiveStream<T> {
@@ -96,6 +99,7 @@ export function useLiveStream<T extends LiveFrame>({ streamUrl, stateUrl }: Live
   const versionRef = useRef(-1);
   const skewRef = useRef(0);
   const deadlineRef = useRef<number | null>(null);
+  const pausedRef = useRef<number | null>(null);
   // Any traffic at all on the socket: a frame, a ping, or an open. Silence on
   // THIS is what the watchdog reads, and a connect attempt stamps it so a
   // socket still coming up is never mistaken for one that has died.
@@ -116,6 +120,7 @@ export function useLiveStream<T extends LiveFrame>({ streamUrl, stateUrl }: Live
     // retype.
     skewRef.current = next.serverNow - Date.now();
     deadlineRef.current = next.deadlineMs || null;
+    pausedRef.current = next.pausedMs || null;
     // Deliberately does NOT stamp lastEventAt. That clock means "the SOCKET
     // is alive", and this runs for poll frames too -- so a working poll used
     // to refresh it, which meant a dead stream was never detected and never
@@ -319,6 +324,11 @@ export function useLiveStream<T extends LiveFrame>({ streamUrl, stateUrl }: Live
 
   useEffect(() => {
     const tick = window.setInterval(() => {
+      // A stopped clock shows what it stopped on, rather than vanishing.
+      if (pausedRef.current !== null) {
+        setMsLeft(pausedRef.current);
+        return;
+      }
       const d = deadlineRef.current;
       setMsLeft(d === null ? null : Math.max(0, d - (Date.now() + skewRef.current)));
     }, 100);

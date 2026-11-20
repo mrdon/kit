@@ -108,16 +108,18 @@ func (p *ImportPlan) addError(line int, msg string) {
 // columnMap is where each field was found. Matching is case-insensitive and
 // position-independent, so a sheet exported from anywhere works without being
 // rearranged first.
-type columnMap struct{ prompt, topics, answer int }
+type columnMap struct{ prompt, topics, answer, difficulty int }
 
 var columnAliases = map[string][]string{
 	"question": {"question", "prompt", "q"},
 	"topics":   {"topics", "topic", "category", "categories"},
 	"answer":   {"answer", "value", "a"},
+	// Optional. A sheet without it imports unrated questions.
+	"difficulty": {"difficulty", "level", "diff"},
 }
 
 func mapColumns(header []string) (columnMap, error) {
-	cm := columnMap{-1, -1, -1}
+	cm := columnMap{-1, -1, -1, -1}
 	for i, h := range header {
 		key := FoldKey(h)
 		switch {
@@ -132,6 +134,10 @@ func mapColumns(header []string) (columnMap, error) {
 		case matchesAlias(key, columnAliases["answer"]):
 			if cm.answer < 0 {
 				cm.answer = i
+			}
+		case matchesAlias(key, columnAliases["difficulty"]):
+			if cm.difficulty < 0 {
+				cm.difficulty = i
 			}
 		}
 	}
@@ -190,13 +196,38 @@ func parseRow(rec []string, cols columnMap, width int) (Question, string) {
 		return Question{}, fmt.Sprintf("answer %q is not a number", raw)
 	}
 
+	difficulty, derr := parseDifficulty(rec, cols)
+	if derr != "" {
+		return Question{}, derr
+	}
+
 	return Question{
 		Prompt:      prompt,
 		PromptKey:   FoldKey(prompt),
 		AnswerValue: value,
 		AnswerText:  raw,
 		Topics:      topics,
+		Difficulty:  difficulty,
 	}, ""
+}
+
+// parseDifficulty reads the optional 1-10 grade. Blank is unrated, which is
+// fine; anything else that is not a whole number in range is refused rather
+// than clamped, because a 0-100 scale pasted in by mistake would otherwise
+// import as a bank full of tens.
+func parseDifficulty(rec []string, cols columnMap) (*int, string) {
+	if cols.difficulty < 0 {
+		return nil, ""
+	}
+	raw := strings.TrimSpace(rec[cols.difficulty])
+	if raw == "" {
+		return nil, ""
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 10 {
+		return nil, fmt.Sprintf("difficulty %q is not a whole number from 1 to 10", raw)
+	}
+	return &n, ""
 }
 
 // parseTopics splits on ';', drops empties, folds to keys, and keeps the

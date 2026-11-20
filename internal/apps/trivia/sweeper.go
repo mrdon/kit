@@ -162,6 +162,12 @@ func (s *Service) everyoneIn(ctx context.Context, game *Game) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// Practice never closes itself. The host is talking the room through
+	// each step, and the phase ending because the last table tapped submit
+	// cuts them off mid-sentence; the button moves practice on.
+	if round.IsPractice {
+		return false, nil
+	}
 	teams, err := ListTeams(ctx, s.pool, game.TenantID, game.ID)
 	if err != nil {
 		return false, err

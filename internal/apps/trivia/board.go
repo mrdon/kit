@@ -13,6 +13,9 @@ import (
 type BoardCandidate struct {
 	QuestionID string
 	TopicKeys  []string
+	// Difficulty is 1-10, or 0 for unrated. It decides the ROW a question
+	// lands in, never whether it is placed: see rankByDifficulty.
+	Difficulty int
 }
 
 // Cell is one placed tile, in the order the board reads.
@@ -124,19 +127,24 @@ func BuildBoard(topics []string, rows int, values []int, bank []BoardCandidate, 
 		}
 	}
 
-	cells := make([]Cell, 0, len(demands))
+	byCol := make([][]int, len(topics))
 	for qi, di := range assignedTo {
-		if di < 0 {
-			continue
+		if di >= 0 {
+			byCol[demands[di].col] = append(byCol[demands[di].col], qi)
 		}
-		d := demands[di]
-		cells = append(cells, Cell{
-			ColIndex:   d.col,
-			RowIndex:   d.row,
-			Topic:      topics[d.col],
-			Points:     values[d.row],
-			QuestionID: bank[qi].QuestionID,
-		})
+	}
+	cells := make([]Cell, 0, len(demands))
+	for col, qs := range byCol {
+		rankByDifficulty(qs, bank)
+		for row, qi := range qs {
+			cells = append(cells, Cell{
+				ColIndex:   col,
+				RowIndex:   row,
+				Topic:      topics[col],
+				Points:     values[row],
+				QuestionID: bank[qi].QuestionID,
+			})
+		}
 	}
 	sort.Slice(cells, func(a, b int) bool {
 		if cells[a].RowIndex != cells[b].RowIndex {
@@ -145,6 +153,26 @@ func BuildBoard(topics []string, rows int, values []int, bank []BoardCandidate, 
 		return cells[a].ColIndex < cells[b].ColIndex
 	})
 	return cells, nil
+}
+
+// unratedDifficulty is where a question nobody has graded sits on the scale:
+// the middle, so it neither hogs the cheap row nor the dear one.
+const unratedDifficulty = 5
+
+// rankByDifficulty orders one column's questions easiest first, which is what
+// puts the hard ones in the dear rows.
+//
+// The matching decides WHICH questions a column gets and this only decides
+// the order they go down it, so grading can never cost a board its fill.
+// Ties keep the order the matching left them in, which is already a shuffle.
+func rankByDifficulty(qs []int, bank []BoardCandidate) {
+	grade := func(qi int) int {
+		if d := bank[qi].Difficulty; d > 0 {
+			return d
+		}
+		return unratedDifficulty
+	}
+	sort.SliceStable(qs, func(a, b int) bool { return grade(qs[a]) < grade(qs[b]) })
 }
 
 // augment is the Kuhn's-algorithm step: try to seat demand di on one of its

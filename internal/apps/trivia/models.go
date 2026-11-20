@@ -68,6 +68,10 @@ type Question struct {
 	AnswerText  string
 	LastUsedAt  *time.Time
 	Topics      []Topic
+	// Difficulty is 1 (everybody knows it) to 10 (the jelly beans in the
+	// jar), or nil when nobody has rated it. The board puts harder questions
+	// in dearer rows; see BuildBoard.
+	Difficulty *int
 }
 
 // Topic is one category spelling attached to a question.
@@ -103,14 +107,19 @@ func FoldKey(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-const questionColumns = `id, tenant_id, prompt, prompt_key, answer_value, answer_text, last_used_at`
+const questionColumns = `id, tenant_id, prompt, prompt_key, answer_value, answer_text, last_used_at, difficulty`
 
 func scanQuestion(row pgx.Row) (*Question, error) {
 	var q Question
+	var difficulty *int16
 	err := row.Scan(&q.ID, &q.TenantID, &q.Prompt, &q.PromptKey,
-		&q.AnswerValue, &q.AnswerText, &q.LastUsedAt)
+		&q.AnswerValue, &q.AnswerText, &q.LastUsedAt, &difficulty)
 	if err != nil {
 		return nil, err
+	}
+	if difficulty != nil {
+		d := int(*difficulty)
+		q.Difficulty = &d
 	}
 	return &q, nil
 }
@@ -139,15 +148,19 @@ func UpsertQuestion(ctx context.Context, tx pgx.Tx, tenantID, datasetID uuid.UUI
 	var id uuid.UUID
 	var inserted bool
 	err := tx.QueryRow(ctx, `
-		INSERT INTO app_trivia_questions (tenant_id, dataset_id, prompt, prompt_key, answer_value, answer_text)
-		VALUES ($1, $6, $2, $3, $4, $5)
+		INSERT INTO app_trivia_questions (tenant_id, dataset_id, prompt, prompt_key, answer_value, answer_text, difficulty)
+		VALUES ($1, $6, $2, $3, $4, $5, $7)
 		ON CONFLICT (tenant_id, dataset_id, prompt_key) DO UPDATE
 		   SET prompt = EXCLUDED.prompt,
 		       answer_value = EXCLUDED.answer_value,
 		       answer_text = EXCLUDED.answer_text,
+		       -- A sheet with no difficulty column must not wipe the grades
+		       -- the bank already has: re-uploading a corrected answer is the
+		       -- common case, and it says nothing about difficulty.
+		       difficulty = COALESCE(EXCLUDED.difficulty, app_trivia_questions.difficulty),
 		       updated_at = now()
 		RETURNING id, (xmax = 0)`,
-		tenantID, q.Prompt, q.PromptKey, q.AnswerValue, q.AnswerText, datasetID).Scan(&id, &inserted)
+		tenantID, q.Prompt, q.PromptKey, q.AnswerValue, q.AnswerText, datasetID, q.Difficulty).Scan(&id, &inserted)
 	if err != nil {
 		return uuid.Nil, false, fmt.Errorf("upserting trivia question: %w", err)
 	}

@@ -210,3 +210,42 @@ func TestBuildBoardRejectsTooFewCellValues(t *testing.T) {
 		t.Fatal("expected an error for 3 rows and 1 cell value")
 	}
 }
+
+// Harder questions go in the dearer rows. Every column here has one easy,
+// one hard and one unrated question, so the ladder must read easy, unrated
+// (mid-scale), hard down every column whatever the seed shuffled.
+func TestBuildBoardPutsHarderQuestionsLower(t *testing.T) {
+	topics := []string{"space", "film"}
+	var b []BoardCandidate
+	grades := []int{9, 0, 2}
+	for _, topic := range topics {
+		for _, d := range grades {
+			b = append(b, BoardCandidate{
+				QuestionID: fmt.Sprintf("%s-%d", topic, d), TopicKeys: []string{topic}, Difficulty: d,
+			})
+		}
+	}
+	for seed := int64(1); seed <= 5; seed++ {
+		cells, err := BuildBoard(topics, 3, []int{100, 200, 300}, b, seed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range cells {
+			want := fmt.Sprintf("%s-%d", c.Topic, []int{2, 0, 9}[c.RowIndex])
+			if c.QuestionID != want {
+				t.Fatalf("seed %d: row %d of %s holds %s, want %s", seed, c.RowIndex, c.Topic, c.QuestionID, want)
+			}
+			if c.Points != []int{100, 200, 300}[c.RowIndex] {
+				t.Fatalf("row %d is worth %d", c.RowIndex, c.Points)
+			}
+		}
+	}
+}
+
+// One number sets the column, and an old flat list becomes a ladder.
+func TestNormaliseSettingsLaddersCellValues(t *testing.T) {
+	s := normaliseSettings(Settings{BoardRows: 3, CellValues: []int{100, 100, 100}})
+	if !slices.Equal(s.CellValues, []int{100, 200, 300}) {
+		t.Fatalf("cell values = %v, want 100/200/300", s.CellValues)
+	}
+}

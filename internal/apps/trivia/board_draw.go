@@ -24,8 +24,9 @@ func drawBoard(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 
 // drawRound is drawBoard for one round of a multi-round night.
 //
-// round stamps the cells and scales what they are worth -- every cell in a
-// round is the same value, and the round doubles (see boardMultiplier). taken
+// round stamps the cells. Cells climb down the rows ($100, $200, ...) with the
+// harder questions in the dearer rows; the round scales the chips (see
+// boardMultiplier). taken
 // is the question ids already placed by EARLIER rounds of this same build,
 // which the bank query cannot know about: it reads the database, and nothing
 // has been written yet. Without it round two happily re-places round one's
@@ -46,7 +47,11 @@ func drawRound(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID,
 		for _, t := range q.Topics {
 			keys = append(keys, t.Key)
 		}
-		cands = append(cands, BoardCandidate{QuestionID: q.ID.String(), TopicKeys: keys})
+		cand := BoardCandidate{QuestionID: q.ID.String(), TopicKeys: keys}
+		if q.Difficulty != nil {
+			cand.Difficulty = *q.Difficulty
+		}
+		cands = append(cands, cand)
 	}
 	labels := topicLabels(bank)
 

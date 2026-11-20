@@ -3,7 +3,8 @@
    The mentions are the part of the night people have the most fun with, so
    they get the wall: big cards, dealt three at a time, and if there are
    more than three the screen turns the page every few seconds and deals
-   the next three. The podium sits above them, compact. The standings have
+   the next three (slowly the first time round, while the host reads them
+   out). The podium sits above them, compact. The standings have
    been public all night and the room already knows who won; the plinths
    confirm it and the crown gets its confetti, but the winner is not the
    thing anyone is still waiting to find out.
@@ -18,15 +19,22 @@
 var PODIUM_RISE_MS = 600;
 var AWARD_DEAL_MS = 700;
 var AWARDS_PER_PAGE = 3;
-var AWARD_PAGE_MS = 9000;
+/* The FIRST time through, each page holds long enough for the host to read
+   the three cards out and talk over them -- nine seconds kept turning the page
+   on her mid-sentence. Once every page has been read, the wall is ambient and
+   cycles at the quicker pace. */
+var AWARD_PAGE_FIRST_MS = 25000;
+var AWARD_PAGE_MS = 12000;
 
 var awardPage = 0;
+var awardLapped = false;
 var awardPageTimer = null;
 
 function renderPodium(phaseChanged) {
   show('s-podium');
   if (phaseChanged) {
     awardPage = 0;
+    awardLapped = false;
     if (awardPageTimer) { clearTimeout(awardPageTimer); awardPageTimer = null; }
   }
   renderPlinths(phaseChanged);
@@ -111,8 +119,9 @@ function dealMentionPage(list, pages) {
       awardPageTimer = null;
       if (state.phase !== PHASE.PODIUM) { return; }
       awardPage = (awardPage + 1) % pages;
+      if (awardPage === 0) { awardLapped = true; }
       dealMentionPage(state.awards || [], pages);
-    }, lead + page.length * AWARD_DEAL_MS + AWARD_PAGE_MS);
+    }, lead + page.length * AWARD_DEAL_MS + (awardLapped ? AWARD_PAGE_MS : AWARD_PAGE_FIRST_MS));
   }
 }
 

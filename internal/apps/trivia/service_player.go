@@ -116,6 +116,11 @@ func (s *Service) joinEligibleFrom(ctx context.Context, tenantID uuid.UUID, game
 	if round.IsFinal {
 		return 0, fmt.Errorf("%w: the final question is under way — this game is closing", ErrClosed)
 	}
+	// Practice is open to whoever walks in, and its ordinal is about to be
+	// handed back: the first real question is question one again.
+	if round.IsPractice {
+		return 1, nil
+	}
 	return round.Ordinal + 1, nil
 }
 

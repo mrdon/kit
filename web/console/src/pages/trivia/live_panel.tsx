@@ -1,4 +1,4 @@
-import { ACTION, boardIsEmpty, extraAction, money, PHASE, primaryAction, roundLabel, type HostFrame, type HostTeam } from './common';
+import { ACTION, boardIsEmpty, type Action, extraAction, money, PHASE, primaryAction, roundLabel, type HostFrame, type HostTeam } from './common';
 import { pickLine, signed } from './live_lastround';
 import { TeamBoard } from './live_tables';
 
@@ -22,7 +22,8 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
   skipReveal: boolean;
   onAct: (body: Record<string, unknown>) => void;
 }) {
-  const primary = primaryAction(frame.phase, boardIsEmpty(frame), frame.finalWager, frame.progress.finalPlayed, skipReveal);
+  const primary = practiceLabel(frame,
+    primaryAction(frame.phase, boardIsEmpty(frame), frame.finalWager, frame.progress.finalPlayed, skipReveal));
   const extra = extraAction(frame.phase, boardIsEmpty(frame), frame.roundCount);
 
   return (
@@ -35,7 +36,8 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
       {frame.round ? (
         <>
           <p className="card-desc">
-            {frame.round.isFinal ? 'FINAL · ' : ''}Question {frame.round.ordinal} · {money(frame.round.points)}
+            {frame.round.isFinal ? 'FINAL · ' : ''}
+            {frame.practice ? 'Practice question' : `Question ${frame.round.ordinal}`} · {money(frame.round.points)}
             {frame.round.category ? ` · ${frame.round.category}` : ''}
           </p>
           {/* Blank during the wager, and that is the point: the prompt is not
@@ -48,7 +50,12 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
         </>
       ) : null}
 
-      {secs !== null ? <div className="trivia-clock">{secs}</div> : null}
+      {secs !== null ? (
+        <div className={frame.pausedMs ? 'trivia-clock trivia-clock-paused' : 'trivia-clock'}>
+          {secs}{frame.pausedMs ? <span className="trivia-clock-note"> paused</span> : null}
+        </div>
+      ) : null}
+      {secs !== null ? <ClockControls frame={frame} busy={busy} onAct={onAct} /> : null}
 
       <AwardList frame={frame} />
 
@@ -69,12 +76,6 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
             {extra.label}
           </button>
         ) : null}
-        {secs !== null ? (
-          <button className="btn btn-danger" disabled={busy}
-            onClick={() => onAct({ action: ACTION.EXTEND, seconds: 15 })}>
-            +15s
-          </button>
-        ) : null}
       </div>
 
       {/* Rank, name, movement, phase state and score — one list, directly
@@ -83,6 +84,45 @@ export function StatusPanel({ frame, busy, secs, gameId, skipReveal, onAct }: {
       <TeamBoard frame={frame} gameId={gameId} />
     </aside>
   );
+}
+
+// The clock, under the host's hand. Pause is the big one: it is what lets a
+// host stop and answer a question from the room without the phase closing
+// under them. Practice gets a minute button too, because explaining the
+// betting takes longer than any clock was set for.
+function ClockControls({ frame, busy, onAct }: {
+  frame: HostFrame;
+  busy: boolean;
+  onAct: (body: Record<string, unknown>) => void;
+}) {
+  const paused = !!frame.pausedMs;
+  return (
+    <div className="page-head-actions trivia-clock-controls">
+      <button className="btn" disabled={busy}
+        onClick={() => onAct({ action: paused ? ACTION.UNPAUSE : ACTION.PAUSE })}>
+        {paused ? '▶ Resume clock' : '❚❚ Pause clock'}
+      </button>
+      <button className="btn btn-ghost" disabled={busy}
+        onClick={() => onAct({ action: ACTION.EXTEND, seconds: 15 })}>
+        +15s
+      </button>
+      {frame.practice ? (
+        <button className="btn btn-ghost" disabled={busy}
+          onClick={() => onAct({ action: ACTION.EXTEND, seconds: 60 })}>
+          +1 min
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// The practice question walks the same buttons as any other; only its way out
+// is different, and the label says where it goes.
+function practiceLabel(frame: HostFrame, primary: { action: Action; label: string } | null) {
+  if (frame.practice && frame.phase === PHASE.SCORING && primary) {
+    return { ...primary, label: 'End practice (back to the lobby)' };
+  }
+  return primary;
 }
 
 // Who is holding the room up. A count tells the host to wait; a list of names
@@ -166,6 +206,12 @@ export function teamState(frame: HostFrame, t: HostTeam): string {
 // The line the host reads out. One sentence, per phase, saying what is
 // happening and what to say about it.
 export function cueFor(frame: HostFrame): string {
+  const cue = phaseCue(frame);
+  if (!frame.practice) return cue;
+  return `Practice, nothing counts. ${cue}${frame.phase === PHASE.SCORING ? ' Scores reset when practice ends.' : ''}`;
+}
+
+function phaseCue(frame: HostFrame): string {
   switch (frame.phase) {
     case PHASE.SETUP:
     case PHASE.LOBBY: return cueLobby(frame);
@@ -183,7 +229,7 @@ export function cueFor(frame: HostFrame): string {
 function cueLobby(frame: HostFrame): string {
   const n = frame.teams.length;
   if (!n) return 'No tables yet. The join code is on the screen.';
-  return `${n} ${plural(n, 'table')} in. Start when ready.`;
+  return `${n} ${plural(n, 'table')} in. Run a practice round to teach the game, or start when ready.`;
 }
 
 // The break. The host is holding the room, not a clock, so the cue tells them
@@ -201,7 +247,10 @@ function cueIntermission(frame: HostFrame): string {
   if (boardIsEmpty(frame) && frame.finalWager && !frame.progress.finalPlayed) {
     return `Break. The final is next. They set their wagers before they see the question.${lead}`;
   }
-  const cell = frame.board[0] ? `Every square is ${money(frame.board[0].points)}. ` : '';
+  // The rows climb, so name every value on the board, cheapest first.
+  const values = [...new Set(frame.board.map((c) => c.points))].sort((a, b) => a - b);
+  const cell = values.length === 1 ? `Every square is ${money(values[0])}. `
+    : values.length > 1 ? `Squares are ${money(values[0])} to ${money(values[values.length - 1])}. ` : '';
   const chips = frame.tokens.map((t) => money(t)).join(' and ');
   return `Break. ${roundLabel(frame)} is next. ${cell}Chips are ${chips}.${lead}`;
 }

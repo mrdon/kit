@@ -66,6 +66,10 @@ type Game struct {
 	// and the final. See migration 106: it reads as a run-up on a long night
 	// and as an interruption on a short one, so the host chooses.
 	BreakBeforeFinal bool
+	// PausedRemainingMs is the clock a paused phase had left, or nil when the
+	// game is not paused. A paused game has no PhaseDeadline, which is what
+	// stops every closing path; see PausePhase.
+	PausedRemainingMs *int
 }
 
 // Settings are the per-game knobs. Board size, values and the final are
@@ -107,7 +111,7 @@ const gameColumns = `id, tenant_id, name, title, phase, board_rows, board_column
 	cell_values, token_values, final_wager, answer_seconds, reveal_seconds, bet_seconds,
 	wager_seconds, grace_seconds, current_round_id, phase_deadline, state_version, created_by, created_at, updated_at,
 	COALESCE(join_code, ''), picker_team_id, COALESCE(picker_reason, ''), repeat_questions, board_rounds,
-	break_before_final`
+	break_before_final, paused_remaining_ms`
 
 // gameColumnsQualified is the same list with a table alias, for the one query
 // that joins tenants.
@@ -115,7 +119,7 @@ const gameColumnsQualified = `g.id, g.tenant_id, g.name, g.title, g.phase, g.boa
 	g.cell_values, g.token_values, g.final_wager, g.answer_seconds, g.reveal_seconds, g.bet_seconds,
 	g.wager_seconds, g.grace_seconds, g.current_round_id, g.phase_deadline, g.state_version, g.created_by, g.created_at, g.updated_at,
 	COALESCE(g.join_code, ''), g.picker_team_id, COALESCE(g.picker_reason, ''), g.repeat_questions, g.board_rounds,
-	g.break_before_final`
+	g.break_before_final, g.paused_remaining_ms`
 
 func scanGame(row pgx.Row) (*Game, error) {
 	var g Game
@@ -125,7 +129,7 @@ func scanGame(row pgx.Row) (*Game, error) {
 		&g.CurrentRoundID, &g.PhaseDeadline, &g.StateVersion,
 		&g.CreatedBy, &g.CreatedAt, &g.UpdatedAt, &g.JoinCode,
 		&g.PickerTeamID, &g.PickerReason, &g.RepeatQuestions, &g.BoardRounds,
-		&g.BreakBeforeFinal)
+		&g.BreakBeforeFinal, &g.PausedRemainingMs)
 	if err != nil {
 		return nil, err
 	}

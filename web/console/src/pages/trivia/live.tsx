@@ -100,9 +100,18 @@ export default function TriviaLive() {
               down the panel read as a page with no start at all. Ending an
               unstarted game is the list page's Delete. */}
           {inLobby ? (
-            <button className="btn" disabled={busy} onClick={() => void act({ action: ACTION.START })}>
-              Start the game
-            </button>
+            <>
+              {/* Practice first, in the lobby, while the room is still
+                  arriving: one easy question played all the way through,
+                  money and all, then wiped. */}
+              <button className="btn btn-ghost btn-spaced" disabled={busy}
+                onClick={() => void act({ action: ACTION.PRACTICE })}>
+                Practice round
+              </button>
+              <button className="btn" disabled={busy} onClick={() => void act({ action: ACTION.START })}>
+                Start the game
+              </button>
+            </>
           ) : endedNaturally ? null : ending ? (
             <>
               <button className="btn btn-danger" disabled={busy}
