@@ -4,7 +4,7 @@
 
 Errors are things the import or the game would get wrong (a missing
 column, a decimal answer, a difficulty off the 1-10 scale). Warnings are
-rule breaks worth a second look (a long answer, a threshold phrasing).
+rule breaks worth a second look (a threshold phrasing, helper text).
 Exits 1 if there are any errors.
 """
 
@@ -58,10 +58,8 @@ def check(path):
             n = int(a)
             if n < 5:
                 errors.append(f"{where}: answer {n} is under 5")
-            if len(a) > 5:
+            if len(a) > 6:
                 errors.append(f"{where}: answer {a} has {len(a)} digits; ask in thousands or millions")
-            elif len(a) == 5:
-                warnings.append(f"{where}: answer {a} has 5 digits; could a bigger unit keep it to 4?")
             if 1000 <= n <= 2100 and re.search(r"\b(what|which) year\b|\bin what year\b", q, re.I):
                 years += 1
 

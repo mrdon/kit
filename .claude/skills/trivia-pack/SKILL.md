@@ -54,7 +54,8 @@ The user cares about these most. The brief template carries them to every resear
 **Answers are short whole numbers.**
 - **At least 5.** Small answers (3 stories, 2 Super Bowl wins) bunch every team on the same guess.
 - **No decimals.** Ask in a unit that makes the answer whole: "in dollars", "what percent", "in minutes".
-- **No more than 4 digits where possible, 5 at most.** Teams type their guess on a phone. For big numbers, ask in a natural unit so the answer stays short: "In millions, how many trips...?" (9,410), "In thousands of pounds...?". Pick the unit that reads naturally for the subject.
+- **6 digits at most.** Teams type their guess on a phone; 117,371 is fine. For 7 digits or more, ask in a natural unit so the answer stays short: "In millions, how many trips...?" (9,410), "In thousands, how many lamps...?" (2,617). Pick the unit that reads naturally for the subject.
+- **Make the unit impossible to miss.** Lead the asking sentence with it, spelled out in full: "In thousands of dollars, what did it cost?", not "what did it cost ($K)?" or a unit tucked at the end. A team that answers in the wrong unit loses by a factor of a thousand, so the unit is the one thing nobody can be left unsure about.
 - **Drop the remainder.** The answer is the sourced figure in that unit with the remainder dropped (2,617,215 lamps in thousands is 2617). Don't write "round down" or "so 171,000 would be 171" into the question; "in thousands" is enough.
 - **Year answers** are fine, at most two per pack.
 

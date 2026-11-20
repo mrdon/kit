@@ -29,7 +29,8 @@ needs to know has to be in the question.
 - **Answers are short whole numbers:**
   - at least 5
   - no decimals
-  - no more than 4 digits where possible, 5 at most; for big figures, ask "in thousands" or "in millions", and give the figure in that unit with the remainder dropped
+  - 6 digits at most; for bigger figures, ask "in thousands" or "in millions", and give the figure in that unit with the remainder dropped
+  - make the unit impossible to miss: start the asking sentence with it, spelled out ("In thousands of dollars, what did it cost?")
   - year answers are fine but don't lean on them
 - **Never a threshold answer** ("more than how many"). State the unit.
 - **Dated questions are great:** "In 2004, how many..." is hard to look up on a phone. Records broken often always get a year; never "the current record".
