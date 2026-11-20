@@ -177,8 +177,9 @@ func (p *planner) row(b Beer) {
 	}
 }
 
-// maxGlassOz is the biggest glass a beer is poured in: 9oz over 10% ABV,
-// 12oz over 8%. Weaker beers and sodas have no limit.
+// maxGlassOz is the biggest glass a beer is poured in at the bar: 9oz over
+// 10% ABV, 12oz over 8%. Weaker beers and sodas have no limit. To-go sizes
+// (crowlers, growlers) are not glasses and are never limited.
 func maxGlassOz(b Beer) (float64, bool) {
 	abv, ok := abvOf(b)
 	switch {
