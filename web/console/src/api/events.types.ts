@@ -280,6 +280,11 @@ export interface EventsChannelOption {
 
 // Where end-of-night trivia ratings are posted. channel_id "" means nowhere,
 // which is where every workspace starts.
+export interface TriviaExplainer {
+  link: string;
+  size_mb?: number;
+}
+
 export interface TriviaFeedbackChannel {
   channel_id: string;
   channel_name: string;

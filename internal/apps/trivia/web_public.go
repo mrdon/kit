@@ -56,6 +56,8 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	// is not a valid game name.
 	mux.Handle("GET /{slug}/trivia/tv", pub(a.handleLatestDisplay))
 	mux.Handle("GET /{slug}/trivia/tv.version", pub(a.handleTVVersion))
+	// The lobby video, a literal like "tv" so it wins over {game}.
+	mux.Handle("GET /{slug}/trivia/explainer.mp4", pub(a.handleExplainerVideo))
 
 	mux.Handle("GET /{slug}/trivia/{game}", pub(a.handlePlayerPage))
 	mux.Handle("GET /{slug}/trivia/{game}/me", pub(a.handleMe))

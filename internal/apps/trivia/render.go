@@ -158,6 +158,9 @@ type displayData struct {
 	// Rules are shown on the lobby screen. A stranger who has just walked in
 	// should be able to work the game out from the wall.
 	Rules []string
+	// ExplainerURL is the lobby video, "" for the plain join screen. With
+	// one, the lobby plays it and the rules give way to it.
+	ExplainerURL template.URL
 }
 
 // RenderDisplay produces the whole self-contained TV page.
@@ -167,7 +170,7 @@ type displayData struct {
 // wall the first time the network hiccups. Fonts are inlined as base64 data
 // URIs for the same reason -- a board that falls back to a system font loses
 // the size calibration the whole 1920x1080 layout is built around.
-func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string, error) {
+func RenderDisplay(baseURL, slug string, game *Game, followLatest bool, explainerLink string) (string, error) {
 	css, err := stylesheet()
 	if err != nil {
 		return "", err
@@ -202,6 +205,10 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 		heading = "Quiz night"
 	}
 	base := "/" + slug + "/trivia/" + game.Name
+	var explainer template.URL
+	if explainerLink != "" {
+		explainer = template.URL(explainerPath(slug)) //nolint:gosec // a fixed path built from the slug, not user input
+	}
 	versionURL := base + "/tv.version"
 	if followLatest {
 		versionURL = "/" + slug + "/trivia/tv.version"
@@ -209,18 +216,19 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool) (string,
 
 	var buf bytes.Buffer
 	err = displayTmpl.ExecuteTemplate(&buf, "display.html.tmpl", displayData{
-		Title:      title,
-		Heading:    heading,
-		JoinHost:   displayHost(join),
-		QR:         qr,
-		CSS:        template.CSS(css),
-		JS:         template.JS(js), //nolint:gosec // embedded first-party script, no interpolation
-		StreamURL:  template.URL(base + "/tv/stream"),
-		PollURL:    template.URL(base + "/tv/state"),
-		GameName:   game.Name,
-		Rules:      Rules(game.FinalWager, game.TokenValues),
-		Version:    displayVersion(game),
-		VersionURL: template.URL(versionURL),
+		Title:        title,
+		Heading:      heading,
+		JoinHost:     displayHost(join),
+		QR:           qr,
+		CSS:          template.CSS(css),
+		JS:           template.JS(js), //nolint:gosec // embedded first-party script, no interpolation
+		StreamURL:    template.URL(base + "/tv/stream"),
+		PollURL:      template.URL(base + "/tv/state"),
+		GameName:     game.Name,
+		Rules:        Rules(game.FinalWager, game.TokenValues),
+		Version:      displayVersion(game) + explainerStamp(explainerLink),
+		VersionURL:   template.URL(versionURL),
+		ExplainerURL: explainer,
 	})
 	if err != nil {
 		return "", fmt.Errorf("rendering trivia display: %w", err)

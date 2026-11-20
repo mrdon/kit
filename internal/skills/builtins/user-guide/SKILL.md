@@ -630,6 +630,8 @@ The list is on your own panel in the order the screen shows it, so you are readi
 
 **Screens pick up an update on their own.** If Kit is redeployed while a game is running, the TV reloads itself within about fifteen seconds and every phone reloads too, so a fix can reach the room mid-quiz without anybody touching a screen. Phones wait for the question to end before they reload, so nobody loses an answer they were typing. Nothing is lost either way: the whole game lives on the server and the screens repaint from it.
 
+**A how-to video in the lobby.** Paste a Google Drive link under **Admin → Trivia → Lobby video** and the TV's join screen plays it, muted and looping, beside a smaller QR code until the game starts, in place of the written rules. Share the file as "Anyone with the link"; Kit fetches it when you save, so a link it can't open is refused there rather than on the night. To change the video, upload a new version of the same file in Drive (File → Manage versions): the link stays the same and the TV picks it up within the hour. **Remove video** puts the rules back.
+
 **Tables rate the night.** Once the ending is up, every table's phone asks for one to five stars and an optional comment, under their result and the mentions. A table that has already rated sees "thanks" rather than being asked twice, and ratings post to Slack when they press **Send**. Pick the channel under **Admin → Trivia → Where ratings go**, and invite Kit to it first. Ratings aren't stored anywhere else, so until you pick a channel they go nowhere.
 
 **Ask about it afterwards.** In Slack:

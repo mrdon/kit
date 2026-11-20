@@ -107,3 +107,40 @@
    question text and the ring above keep the full width. */
 #s-question.cornered .q-wrap > div:last-child { padding-right: 480px; }
 #s-question.cornered .answered-strip { flex-wrap: nowrap; }
+
+/* ---------- the lobby video ---------- */
+/* With a how-to video set (Admin -> Trivia), the join screen plays it on the
+   left and the way in becomes a rail on the right: "scan to join", the QR,
+   the link and the count. The QR is still the one thing somebody has to act
+   on, so it keeps a 400px square -- smaller than the plain lobby's 700, but
+   well over the 250 the join corner proves scans from a table away -- and the
+   video takes what is left. The rules go: the video is the rules.
+
+   The rail is built from the plain lobby's own elements by turning
+   .join-left into `display: contents`, so the fit loops in join.js measure
+   the same ids either way and the plain lobby is untouched. If the video
+   fails to load, join.js drops the class and the screen is the plain one. */
+.join.with-video {
+  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-rows: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
+  grid-template-areas: "video ." "video scan" "video qr" "video meta" "video .";
+  column-gap: 48px; row-gap: 22px; align-content: center;
+}
+.join.with-video .join-video { grid-area: video; align-self: center; min-width: 0; }
+.join-video video {
+  display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 24px;
+  background: #000; box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+}
+.join-scan { display: none; }
+.join.with-video .join-scan {
+  display: block; grid-area: scan; text-align: center;
+  font: 400 44px/1 var(--display); color: var(--accent-l); letter-spacing: .04em;
+}
+.join.with-video .join-left { display: contents; }
+.join.with-video .join-words,
+.join.with-video .join-rules { display: none; }
+.join.with-video .join-right { grid-area: qr; }
+.join.with-video .join-qr svg { width: 400px; border-radius: 22px; }
+.join.with-video .join-meta { grid-area: meta; text-align: center; min-width: 0; }
+.join.with-video .join-url { margin-top: 0; font-size: 32px; }
+.join.with-video .join-count { margin-top: 14px; font-size: 56px; }

@@ -289,6 +289,9 @@ func main() {
 	// snapshots between web processes. rdb may be nil -- fan-out then stays
 	// per-process, which is exactly correct at web=1.
 	trivia.Configure(enc, sessionSigner, cfg.BaseURL, rdb)
+	// The Drive key lets the lobby video notice a new version within minutes
+	// rather than the hour it takes without one.
+	trivia.ConfigureExplainer(cfg.GDriveAPIKey)
 	trivia.StartLive(ctx)
 
 	console.Configure(sessionSigner, enc)

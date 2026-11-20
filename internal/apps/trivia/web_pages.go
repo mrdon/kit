@@ -31,7 +31,12 @@ func (a *App) handleDisplay(w http.ResponseWriter, r *http.Request) {
 // writeDisplay renders one game's TV page. Shared by the per-game address and
 // the stable latest-game one, so the two can never drift.
 func (a *App) writeDisplay(w http.ResponseWriter, r *http.Request, game *Game, slug string, followLatest bool) {
-	html, err := RenderDisplay(a.baseURL, slug, game, followLatest)
+	explainer, err := GetExplainerLink(r.Context(), a.pool, game.TenantID)
+	if err != nil {
+		// The lobby still works without its video; never blank the TV for it.
+		slog.Warn("loading trivia explainer link", "game_id", game.ID, "error", err)
+	}
+	html, err := RenderDisplay(a.baseURL, slug, game, followLatest, explainer)
 	if err != nil {
 		serverError(w, "rendering trivia display", err)
 		return
@@ -146,9 +151,13 @@ func (a *App) handleTVVersion(w http.ResponseWriter, r *http.Request) {
 			game = games[0]
 		}
 	}
+	explainer, err := GetExplainerLink(r.Context(), a.pool, tenant.ID)
+	if err != nil {
+		slog.Warn("loading trivia explainer link", "tenant_id", tenant.ID, "error", err)
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, must-revalidate")
-	if _, err := io.WriteString(w, displayVersion(game)); err != nil {
+	if _, err := io.WriteString(w, displayVersion(game)+explainerStamp(explainer)); err != nil {
 		slog.Warn("writing trivia display version", "error", err)
 	}
 }
@@ -186,6 +195,18 @@ func displayVersion(game *Game) string {
 		v += "-" + hex.EncodeToString(sum[:3])
 	}
 	return v + "-" + build
+}
+
+// explainerStamp adds the lobby video's link to the version, so adding,
+// changing or removing it reloads the screens. A new version of the same
+// Drive file keeps the link and needs no reload: the TV revalidates the
+// video itself.
+func explainerStamp(link string) string {
+	if link == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(link))
+	return "-x" + hex.EncodeToString(sum[:3])
 }
 
 // writeNoGamePlaceholder is the stable TV URL before any game exists.

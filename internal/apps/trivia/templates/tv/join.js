@@ -2,6 +2,7 @@
 /* --- 1. join --- */
 function renderJoin() {
   show('s-join');
+  playJoinVideo();
   // The night's name is already the hero here; repeating it in the corner
   // is noise.
   document.getElementById('gamename').style.visibility = 'hidden';
@@ -106,3 +107,33 @@ function fitJoinURL() {
     u.style.fontSize = size + 'px';
   }
 }
+
+/* The lobby video, when the venue has set one. Muted autoplay is allowed on
+   every browser a kiosk stick runs, but play() is still called by hand each
+   time the lobby shows, because show() pauses it on every other screen -- a
+   video decoding behind the board is wasted CPU on a small stick. A play()
+   that is refused just leaves the poster frame; nothing on this screen
+   depends on it. */
+function playJoinVideo() {
+  var v = document.getElementById('join-video');
+  if (!v || !v.paused) { return; }
+  var p = v.play();
+  if (p && p.catch) { p.catch(function () {}); }
+}
+
+/* No video beats a black box. If it cannot load (Drive link removed, the
+   server could not fetch it), drop back to the plain lobby with its big QR
+   and the rules. */
+(function () {
+  var v = document.getElementById('join-video');
+  if (!v) { return; }
+  v.addEventListener('error', function () {
+    var box = document.getElementById('join-video-box');
+    var join = document.querySelector('.join');
+    if (join) { join.classList.remove('with-video'); }
+    if (box) { box.parentNode.removeChild(box); }
+    if (document.getElementById('s-join').classList.contains('on')) {
+      fitJoinPills(); fitJoinHero(); fitJoinURL(); fitJoinRules();
+    }
+  });
+})();

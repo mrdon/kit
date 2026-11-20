@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client';
-import type { TriviaFeedbackChannel } from './events.types';
+import type { TriviaExplainer, TriviaFeedbackChannel } from './events.types';
 
 // --- Trivia ---
 //
@@ -76,6 +76,9 @@ export const triviaApi = {
     apiGet<TriviaFeedbackChannel>('/trivia/feedback-channel'),
   saveTriviaFeedbackChannel: (channelId: string) =>
     apiPut<TriviaFeedbackChannel>('/trivia/feedback-channel', { channel_id: channelId }),
+  // The lobby video. Saving fetches the file first, so a bad link fails here.
+  triviaExplainer: () => apiGet<TriviaExplainer>('/trivia/explainer'),
+  saveTriviaExplainer: (link: string) => apiPut<TriviaExplainer>('/trivia/explainer', { link }),
   triviaDatasets: () => apiGet<{ datasets: DatasetT[] }>('/trivia/datasets'),
   renameTriviaDataset: (id: string, name: string, notes: string) =>
     apiPatch<{ datasets: DatasetT[] }>(`/trivia/datasets/${id}`, { name, notes }),

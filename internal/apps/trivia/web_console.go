@@ -58,6 +58,9 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	}
 	mux.Handle("GET /{slug}/api/trivia/feedback-channel", adminRoute(a.handleGetFeedbackChannel))
 	mux.Handle("PUT /{slug}/api/trivia/feedback-channel", adminRoute(a.handleSaveFeedbackChannel))
+	// The lobby video is a workspace setting too.
+	mux.Handle("GET /{slug}/api/trivia/explainer", adminRoute(a.handleGetExplainer))
+	mux.Handle("PUT /{slug}/api/trivia/explainer", adminRoute(a.handleSaveExplainer))
 }
 
 func (a *App) handleGetGame(w http.ResponseWriter, r *http.Request) {

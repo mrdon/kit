@@ -20,11 +20,17 @@
 
   <!-- 1. join -->
   <section class="screen on" id="s-join">
-    <div class="join">
+    <div class="join{{ if .ExplainerURL }} with-video{{ end }}">
+      {{ if .ExplainerURL }}<div class="join-video" id="join-video-box">
+        <video id="join-video" src="{{ .ExplainerURL }}" muted autoplay loop playsinline preload="auto"></video>
+      </div>
+      <div class="join-scan">Scan to join</div>{{ end }}
       <div class="join-left">
         <div class="join-words" id="join-words"><span class="join-word">{{ .Heading }}</span></div>
-        <div class="join-url" id="join-url">{{ .JoinHost }}</div>
-        <div class="join-count" id="join-count">0 TEAMS IN</div>
+        <div class="join-meta">
+          <div class="join-url" id="join-url">{{ .JoinHost }}</div>
+          <div class="join-count" id="join-count">0 TEAMS IN</div>
+        </div>
         <ol class="join-rules" id="join-rules">
           {{ range .Rules }}<li>{{ . }}</li>{{ end }}
         </ol>

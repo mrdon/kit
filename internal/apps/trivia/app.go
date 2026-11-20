@@ -17,6 +17,7 @@ package trivia
 
 import (
 	"context"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -52,6 +53,9 @@ type App struct {
 	// channels in Admin. feedback is nil without it, which posts nothing.
 	enc      *crypto.Encryptor
 	feedback feedbackPoster
+	// explainer caches the lobby video fetched from Drive; see explainer.go.
+	explainer     *explainerCache
+	explainerOnce sync.Once
 }
 
 // Init builds the service once the pool exists. Called by apps.Init.

@@ -217,6 +217,9 @@ function show(id) {
   for (var i = 0; i < screens.length; i++) {
     screens[i].classList.toggle('on', screens[i].id === id);
   }
+  // The lobby video only plays on the lobby; renderJoin starts it again.
+  var v = document.getElementById('join-video');
+  if (v && id !== 's-join' && !v.paused) { v.pause(); }
 }
 
 function el(tag, cls, text) {
