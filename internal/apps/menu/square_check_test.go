@@ -290,3 +290,29 @@ func TestPlanSquareVintageYearStaysOutOfSquare(t *testing.T) {
 		t.Fatalf("want the kitchen name suggested without the year, got %q", body)
 	}
 }
+
+// A beer over 8% pours 12oz at most, over 10% 9oz. A bigger glass on the
+// menu is never added to Square, and one already in Square is reported.
+func TestPlanSquareGlassCapByABV(t *testing.T) {
+	strong := Beer{Section: "Belgian", Name: "Mendacious", ABV: "8.1%", Pours: pours("16oz Draft", "8", "9oz Draft", "5", "4oz Draft", "3")}
+	huge := Beer{Section: "Stouts", Name: "Tsar Bomba", ABV: "11%", Pours: pours("9oz Draft", "8", "4oz Draft", "4")}
+	cat := sqCatalog{Items: []sqItem{
+		rawItem("MEN", "Mendacious", rawVar("M9", "9oz", 500), rawVar("M4", "4oz", 300), rawVar("MC", "32oz Crowler", 1300)),
+		rawItem("TB", "Tsar Bomba", rawVar("T16", "16oz", 1000), rawVar("T9", "9oz", 800), rawVar("T4", "4oz", 400),
+			rawVar("TC", "32oz Crowler", 1900)),
+	}}
+	plan := planSquare([]Beer{strong, huge}, cat, map[string]bool{})
+	if strings.Contains(summaries(plan), "16oz") {
+		t.Fatalf("added a glass too big for the beer:\n%s", summaries(plan))
+	}
+	var keys []string
+	for _, q := range plan.Questions {
+		if !q.Notice {
+			t.Errorf("want only notices, got %+v", q)
+		}
+		keys = append(keys, q.Key)
+	}
+	if got := strings.Join(keys, ","); got != "glass|mendacious|16oz,glass|tsar bomba|16oz" {
+		t.Errorf("notices = %s", got)
+	}
+}
