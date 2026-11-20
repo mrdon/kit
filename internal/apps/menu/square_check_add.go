@@ -103,7 +103,7 @@ func (p *planner) createItem(b Beer) (sqAdd, bool) {
 	}
 	var vars []any
 	var sizes []string
-	for i, pr := range servedPours(b) {
+	for i, pr := range pricedPours(b) {
 		v, _ := pourVariation(b, tpl, pr)
 		cents, _ := pourCents(pr.Price)
 		nv := newVariation(sqItem{Vars: []sqVar{v}}, p.temp("var"), id, v.Name, cents)

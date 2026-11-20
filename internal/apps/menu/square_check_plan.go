@@ -153,26 +153,23 @@ func (p *planner) row(b Beer) {
 	if len(pricedPours(b)) == 0 {
 		return
 	}
-	limit, capped := maxGlassOz(b)
-	for _, pr := range pricedPours(b) {
-		if oz, ok := glassOz(pr); ok && capped && oz > limit {
-			p.tooBig(b, pr.Size, limit, "the menu sells one, so Kit leaves it out of Square. Fix the pour on Untappd")
-		}
-	}
 	it, ok := p.cat.match(b.Name)
 	if !ok {
 		p.missingItem(b)
 		return
 	}
-	for _, pr := range servedPours(b) {
+	for _, pr := range pricedPours(b) {
 		p.pour(b, it, pr)
 	}
+	// A bigger glass the menu lists is on purpose (Mendacious pours a
+	// pint at 8.1%); one only Square has is a leftover.
+	limit, capped := maxGlassOz(b)
 	if !capped {
 		return
 	}
 	for _, v := range it.Vars {
 		if oz, ok := ozOf(v.Name); ok && oz > limit && !p.menuSize(b, it, v.Name) {
-			p.tooBig(b, v.Name, limit, "Square still sells one. Take it off the item in Square")
+			p.tooBig(b, v.Name, limit)
 		}
 	}
 }
@@ -193,14 +190,6 @@ func maxGlassOz(b Beer) (float64, bool) {
 	return 0, false
 }
 
-// glassOz is the size of a draft pour, in ounces.
-func glassOz(pr Pour) (float64, bool) {
-	if !isDraft(pr.Label) {
-		return 0, false
-	}
-	return ozOf(pr.Size)
-}
-
 // ozOf reads a bare size such as "16oz", which is how Square names a glass.
 // "32oz Crowler" is not a glass.
 func ozOf(s string) (float64, bool) {
@@ -208,25 +197,13 @@ func ozOf(s string) (float64, bool) {
 	return n, err == nil && strings.HasSuffix(strings.TrimSpace(s), "oz")
 }
 
-// servedPours is the priced pours, less any glass too big for the beer.
-func servedPours(b Beer) []Pour {
-	limit, capped := maxGlassOz(b)
-	var out []Pour
-	for _, pr := range pricedPours(b) {
-		if oz, ok := glassOz(pr); ok && capped && oz > limit {
-			continue
-		}
-		out = append(out, pr)
-	}
-	return out
-}
-
 // tooBig tells the admins about a glass bigger than the beer is poured in.
-func (p *planner) tooBig(b Beer, size string, limit float64, what string) {
+func (p *planner) tooBig(b Beer, size string, limit float64) {
 	p.plan.Questions = append(p.plan.Questions, sqQuestion{
-		Key:    "glass|" + nameKey(b.Name) + "|" + nameKey(size),
-		Title:  fmt.Sprintf("%s is %s, too strong for a %s", b.Name, b.ABV, size),
-		Body:   fmt.Sprintf("We pour **%s** in a %goz glass at most, and %s.", b.Name, limit, what),
+		Key:   "glass|" + nameKey(b.Name) + "|" + nameKey(size),
+		Title: fmt.Sprintf("%s is %s, too strong for a %s", b.Name, b.ABV, size),
+		Body: fmt.Sprintf("We pour **%s** in a %goz glass at most and the menu has no %s, but Square still sells one. "+
+			"Take it off the item in Square, or add it to the menu if it is on purpose.", b.Name, limit, size),
 		Notice: true,
 	})
 }
@@ -329,7 +306,7 @@ func (p *planner) template(b Beer) (sqItem, bool) {
 			continue
 		}
 		all := true
-		for _, pr := range servedPours(b) {
+		for _, pr := range pricedPours(b) {
 			if _, ok := pourVariation(b, it, pr); !ok {
 				all = false
 				break
@@ -458,7 +435,7 @@ func (p *planner) sizePrice(b Beer, name string) (near string, cents int, same, 
 // perOunce is the menu price per ounce of the row's largest glass.
 func perOunce(b Beer) (float64, bool) {
 	oz, price := 0.0, 0
-	for _, pr := range servedPours(b) {
+	for _, pr := range pricedPours(b) {
 		if !isDraft(pr.Label) {
 			continue
 		}
