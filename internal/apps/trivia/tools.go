@@ -41,10 +41,12 @@ var triviaTools = []services.ToolMeta{
 		Description: "The trivia question bank. Without questions=true it lists each pack (dataset) " +
 			"with its question count, how many no game has asked yet, average difficulty and notes. " +
 			"With questions=true it also lists every question: difficulty, prompt, answer and topics. " +
-			"Use it to check a new pack for overlap and to calibrate difficulty ratings.",
+			"Use search to check a new pack for overlap, and the full listing to calibrate difficulty ratings.",
 		Schema: services.Props(map[string]any{
 			"pack":      services.Field("string", "Only this pack, by name. Omit for every pack."),
 			"questions": services.Field("boolean", "List the questions too, not just the pack summaries. Defaults to false."),
+			"search": services.Field("string", "Only questions whose text or topics contain one of these comma-separated terms "+
+				"(case-insensitive), e.g. 'christmas, hanukkah, santa'. Lists the matching questions under their packs."),
 		}),
 	},
 	{

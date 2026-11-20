@@ -17,11 +17,14 @@ import (
 type listQuestionsInput struct {
 	Pack      string `json:"pack"`
 	Questions bool   `json:"questions"`
+	Search    string `json:"search"`
 }
 
 // coreListQuestions is trivia_list_questions: the bank by pack, summaries
 // always, questions on request. The summaries alone are small enough to ask
-// for casually; the full bank is hundreds of lines, which is why it is opt-in.
+// for casually; the full bank is hundreds of lines, which is why it is opt-in,
+// and why search exists: checking a new pack for overlap wants the twenty
+// Christmas questions, not all five hundred.
 func coreListQuestions(ctx context.Context, caller *services.Caller, pool *pgxpool.Pool, raw json.RawMessage) (string, error) {
 	var in listQuestionsInput
 	if len(raw) > 0 {
@@ -50,24 +53,63 @@ func coreListQuestions(ctx context.Context, caller *services.Caller, pool *pgxpo
 		return "", err
 	}
 
+	terms := searchTerms(in.Search)
 	var b strings.Builder
 	for _, d := range sets {
 		qs := byDataset[d.ID]
+		hits := qs
+		if len(terms) > 0 {
+			hits = matchingQuestions(qs, terms)
+			if len(hits) == 0 {
+				continue
+			}
+		}
 		fmt.Fprintf(&b, "*%s*: %d question%s, %d never asked, average difficulty %s",
 			d.Name, d.Questions, plural(d.Questions), d.Fresh, averageDifficulty(qs))
 		if d.Notes != "" {
 			fmt.Fprintf(&b, ". %s", d.Notes)
 		}
 		b.WriteString("\n")
-		if !in.Questions {
+		if !in.Questions && len(terms) == 0 {
 			continue
 		}
-		for _, q := range qs {
+		for _, q := range hits {
 			fmt.Fprintf(&b, "- [%s] %s = %s (%s)\n", difficultyLabel(q.Difficulty), q.Prompt, q.AnswerText, joinTopicLabels(q.Topics))
 		}
 		b.WriteString("\n")
 	}
+	if b.Len() == 0 {
+		return fmt.Sprintf("No questions match %q.", in.Search), nil
+	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// searchTerms splits a comma-separated search into lowercase terms, so one
+// call can ask for "christmas, hanukkah, santa".
+func searchTerms(search string) []string {
+	var out []string
+	for part := range strings.SplitSeq(search, ",") {
+		if t := strings.ToLower(strings.TrimSpace(part)); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// matchingQuestions keeps the questions whose prompt or any topic contains
+// one of the terms, case-insensitively.
+func matchingQuestions(qs []Question, terms []string) []Question {
+	var out []Question
+	for _, q := range qs {
+		hay := strings.ToLower(q.Prompt + " " + joinTopicLabels(q.Topics))
+		for _, t := range terms {
+			if strings.Contains(hay, t) {
+				out = append(out, q)
+				break
+			}
+		}
+	}
+	return out
 }
 
 type importPackInput struct {

@@ -85,6 +85,19 @@ func TestImportPackThenListOnBothSurfaces(t *testing.T) {
 			t.Fatalf("listing missing %q:\n%s", want, agentOut)
 		}
 	}
+
+	// Search matches question text or a topic, on any of the terms, and
+	// lists only the hits.
+	hits := s.agent(t, "trivia_list_questions", map[string]any{"search": "OVEN, nothing-matches-this"})
+	if !strings.Contains(hits, "tallest pizza oven") || strings.Contains(hits, "pizzas, in millions") {
+		t.Fatalf("search should list only the oven question:\n%s", hits)
+	}
+	if byTopic := s.agent(t, "trivia_list_questions", map[string]any{"search": "food"}); !strings.Contains(byTopic, "pizzas, in millions") {
+		t.Fatalf("search should match on topic:\n%s", byTopic)
+	}
+	if none := s.agent(t, "trivia_list_questions", map[string]any{"search": "zebra"}); none != `No questions match "zebra".` {
+		t.Fatalf("a search with no hits should say so, got:\n%s", none)
+	}
 }
 
 func TestImportPackReplaceRules(t *testing.T) {
