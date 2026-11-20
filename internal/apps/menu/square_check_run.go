@@ -20,15 +20,15 @@ const maxSquarePasses = 4
 type squareRun struct {
 	Plan    sqPlan // the last look, after everything it added
 	Done    []string
-	Counted []string // online crowlers marked sold out or back on sale
+	Counted []string // online crowlers taken off the shop or back on sale
 	Failed  []string
 	Filed   int
 }
 
 // checkSquare compares the menu with Square. Without apply it only looks.
 // With apply it adds what has a right answer, re-reading Square after each
-// round so a new item's flight option and crowler follow it, sets the
-// online crowlers sold out or back on sale to match the menu, then files a
+// round so a new item's flight option and crowler follow it, takes the
+// crowlers of drinks no longer on the menu off the online shop, then files a
 // decision card for each question not asked before and a briefing of what
 // it added.
 func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (squareRun, error) {
@@ -64,7 +64,7 @@ func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (
 		}
 	}
 	if countErr != nil {
-		run.Plan.Notes = append(run.Plan.Notes, "online crowler stock not read, so none were marked sold out or back on sale: "+countErr.Error())
+		run.Plan.Notes = append(run.Plan.Notes, "online crowler stock not read, so none were counted back in: "+countErr.Error())
 	}
 	if !apply {
 		return run, nil

@@ -28,8 +28,8 @@ import (
 // existing item, or a size whose price differs from beer to beer has no
 // right answer to copy, so it becomes a decision card for an admin. Nothing
 // is ever removed or repriced without one: a beer off the wall for a day is
-// still a beer we pour. Its online crowler is the one exception, marked
-// sold out until it is back (see square_check_stock.go), because a crowler
+// still a beer we pour. Its online crowler is the one exception, taken off
+// the shop until it is back (see square_check_stock.go), because a crowler
 // is filled from the tap.
 
 // The Square objects the check knows by name. A workspace without one of

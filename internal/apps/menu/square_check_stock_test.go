@@ -21,55 +21,69 @@ func littleDipper() sqItem {
 		rawVar("LD-C", "32oz Crowler", 1100))
 }
 
-func counts(p sqPlan) map[string]string {
+func changes(p sqPlan) map[string]string {
 	out := map[string]string{}
 	for _, c := range p.Counts {
-		out[c.VariationID] = c.Quantity
+		if c.Remove {
+			out[c.VariationID] = "delete"
+		} else {
+			out[c.VariationID] = c.Quantity
+		}
 	}
 	return out
 }
 
-// A crowler whose drink left the menu goes sold out online; one still on
-// the menu is left alone.
-func TestPlanSquareOffMenuCrowlerSoldOut(t *testing.T) {
-	rows := []Beer{beer("Little Dipper", "7", "2.50")}
-	cat := sqCatalog{
+func dipperCatalog(counts map[string]string) sqCatalog {
+	return sqCatalog{
 		Items:  []sqItem{littleDipper(), gravityCrowlers()},
 		Flight: flightList(sqMod{ID: "M1", Name: "Little Dipper", Cents: 0}),
-		Counts: map[string]string{"CTG-L": "97", "CTG-S": "99"},
+		Counts: counts,
 	}
-	p := planSquare(rows, cat, map[string]bool{})
-	got := counts(p)
-	if len(got) != 1 || got["CTG-S"] != soldOut {
-		t.Fatalf("want only Snickers Tsar counted to 0, got %v", p.Counts)
+}
+
+// A crowler whose drink left the menu is taken off the shop; one still on
+// the menu is left alone.
+func TestPlanSquareOffMenuCrowlerDeleted(t *testing.T) {
+	rows := []Beer{beer("Little Dipper", "7", "2.50")}
+	p := planSquare(rows, dipperCatalog(map[string]string{"CTG-L": "97", "CTG-S": "0"}), map[string]bool{})
+	got := changes(p)
+	if len(got) != 1 || got["CTG-S"] != "delete" {
+		t.Fatalf("want only Snickers Tsar deleted, got %v", got)
 	}
-	if !strings.Contains(p.Counts[0].Summary, "sold out") {
+	if !strings.Contains(p.Counts[0].Summary, "taken out of") {
 		t.Errorf("summary = %q", p.Counts[0].Summary)
 	}
 }
 
-// A drink back on the menu is counted in again; one already sold out stays
-// out without another write.
+// A drink on the menu whose listing was counted out is counted back in.
 func TestPlanSquareCrowlerBackOnSale(t *testing.T) {
-	rows := []Beer{beer("Little Dipper", "7", "2.50")}
-	cat := sqCatalog{
-		Items:  []sqItem{littleDipper(), gravityCrowlers()},
-		Flight: flightList(sqMod{ID: "M1", Name: "Little Dipper", Cents: 0}),
-		Counts: map[string]string{"CTG-S": "0"}, // Little Dipper never counted
-	}
-	got := counts(planSquare(rows, cat, map[string]bool{}))
-	if len(got) != 1 || got["CTG-L"] != inStock {
-		t.Fatalf("want only Little Dipper counted in, got %v", got)
+	rows := []Beer{beer("Little Dipper", "7", "2.50"), beer("Snickers Tsar", "8", "3")}
+	snickers := rawItem("ST", "Snickers Tsar", rawVar("ST-16", "16oz", 800), rawVar("ST-4", "4oz", 300),
+		rawVar("ST-C", "32oz Crowler", 1900))
+	cat := dipperCatalog(map[string]string{"CTG-S": "0"}) // Little Dipper never counted
+	cat.Items = append(cat.Items, snickers)
+	cat.Flight.Mods = append(cat.Flight.Mods, sqMod{ID: "M2", Name: "Snickers Tsar", Cents: 0})
+	got := changes(planSquare(rows, cat, map[string]bool{}))
+	if len(got) != 2 || got["CTG-L"] != inStock || got["CTG-S"] != inStock {
+		t.Fatalf("want both counted in, got %v", got)
 	}
 }
 
-// Stock unread, or a menu that matches no crowler at all, changes nothing.
-func TestPlanSquareCrowlerStockNeedsBothSides(t *testing.T) {
-	cat := sqCatalog{Items: []sqItem{littleDipper(), gravityCrowlers()}}
-	if p := planSquare([]Beer{beer("Little Dipper", "7", "2.50")}, cat, map[string]bool{}); len(p.Counts) != 0 {
-		t.Errorf("counts unread, want no change, got %v", p.Counts)
+// Square keeps no item without a variation, so the last listing is only
+// counted out.
+func TestPlanSquareLastCrowlerKept(t *testing.T) {
+	rows := []Beer{beer("Little Dipper", "7", "2.50")}
+	cat := dipperCatalog(map[string]string{"CTG-L": "99", "CTG-S": "99", "CSC-G": "99"})
+	cat.Items = append(cat.Items, rawItem("CSC", sodaCrowlerItem, trackedVar("CSC-G", "Graviton Grapefruit Soda", 800)))
+	got := changes(planSquare(rows, cat, map[string]bool{}))
+	if got["CSC-G"] != soldOut || got["CTG-S"] != "delete" {
+		t.Fatalf("want Graviton counted out and Snickers deleted, got %v", got)
 	}
-	cat.Counts = map[string]string{"CTG-L": "99", "CTG-S": "99"}
+}
+
+// A menu that matches no crowler at all changes nothing.
+func TestPlanSquareCrowlerStockNeedsAMenu(t *testing.T) {
+	cat := dipperCatalog(map[string]string{"CTG-L": "99", "CTG-S": "99"})
 	p := planSquare([]Beer{beer("Somebody Else's IPA", "7", "2.50")}, cat, map[string]bool{})
 	if len(p.Counts) != 0 {
 		t.Errorf("no crowler on the menu, want no change, got %v", p.Counts)

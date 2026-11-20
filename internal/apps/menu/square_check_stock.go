@@ -13,56 +13,74 @@ import (
 )
 
 // An online crowler is filled from the tap on pickup day, so it can be sold
-// only while its drink is on the menu. The listings stay in the catalog
-// either way: a drink that comes off is counted to 0, which is how Square
-// shows it sold out, and counted back in when it returns. That is a count,
-// not a change to what Square sells, so it needs no card, and a drink 86'd
-// in Kit comes off the online shop with it.
+// only while its drink is on the menu. A listing whose drink comes off the
+// menu (or is 86'd in Kit) is deleted, so the online shop stops offering it
+// at all rather than showing it struck through, and the crowler pass adds
+// it back, in stock, when the drink returns. Square cannot hide one
+// variation from a channel through the API, so deleting it is the only way
+// to take it off the shop. A listing on the menu but counted out, by hand or
+// by an older run, is counted back in.
 
-// sqCount sets the stock of one online crowler listing.
+// sqCount changes one online crowler listing: sets its stock to Quantity,
+// or deletes it when Remove is set.
 type sqCount struct {
 	Summary     string
 	VariationID string
 	Quantity    string
+	Remove      bool
 }
 
-// soldOut is the count that shows a listing sold out online.
+// soldOut is the count that shows a listing sold out online. Only an item's
+// last listing is left this way: Square will not keep an item with no
+// variations.
 const soldOut = "0"
 
-// crowlerStock counts each crowler listing in or out to match the menu.
-// onMenu holds the listings of every tap drink the menu shows.
+// crowlerStock brings each crowler listing in line with the menu. onMenu
+// holds the listings of every tap drink the menu shows.
 func (p *planner) crowlerStock(onMenu map[string]bool) {
-	if p.cat.Counts == nil {
-		return
-	}
 	if len(onMenu) == 0 {
 		// A menu with no crowlers on it is a sync gone wrong far more often
 		// than a brewery with nothing on tap.
-		p.plan.Notes = append(p.plan.Notes, "no crowler on the menu matches Square, so none were marked sold out")
+		p.plan.Notes = append(p.plan.Notes, "no crowler on the menu matches Square, so none were taken off the online shop")
 		return
 	}
 	for _, name := range []string{beerCrowlerItem, sodaCrowlerItem} {
-		list, ok := p.cat.item(name)
-		if !ok {
-			continue
-		}
-		for _, v := range list.Vars {
-			if tracked, _ := obj(v.Raw, "item_variation_data")["track_inventory"].(bool); !tracked {
-				continue
-			}
-			n, _ := strconv.ParseFloat(p.cat.Counts[v.ID], 64)
-			switch {
-			case onMenu[v.ID] && n <= 0:
-				p.count(v, inStock, fmt.Sprintf("%s: back on the menu, so its %s is on sale online again", v.Name, list.Name))
-			case !onMenu[v.ID] && n > 0:
-				p.count(v, soldOut, fmt.Sprintf("%s: off the menu, so its %s shows sold out online", v.Name, list.Name))
-			}
+		if list, ok := p.cat.item(name); ok {
+			p.listStock(list, onMenu)
 		}
 	}
 }
 
-func (p *planner) count(v sqVar, quantity, summary string) {
-	p.plan.Counts = append(p.plan.Counts, sqCount{Summary: summary, VariationID: v.ID, Quantity: quantity})
+func (p *planner) listStock(list sqItem, onMenu map[string]bool) {
+	var gone []sqVar
+	for _, v := range list.Vars {
+		if !onMenu[v.ID] {
+			gone = append(gone, v)
+			continue
+		}
+		if p.cat.Counts == nil {
+			continue
+		}
+		if n, _ := strconv.ParseFloat(p.cat.Counts[v.ID], 64); n <= 0 {
+			p.count(sqCount{VariationID: v.ID, Quantity: inStock,
+				Summary: fmt.Sprintf("%s: on the menu, so its %s is on sale online again", v.Name, list.Name)})
+		}
+	}
+	for i, v := range gone {
+		if i == len(gone)-1 && len(gone) == len(list.Vars) {
+			if n, _ := strconv.ParseFloat(p.cat.Counts[v.ID], 64); p.cat.Counts != nil && n > 0 {
+				p.count(sqCount{VariationID: v.ID, Quantity: soldOut,
+					Summary: fmt.Sprintf("%s: off the menu, so its %s shows sold out online (the last one, so kept)", v.Name, list.Name)})
+			}
+			continue
+		}
+		p.count(sqCount{VariationID: v.ID, Remove: true,
+			Summary: fmt.Sprintf("%s: off the menu, so taken out of %s online", v.Name, list.Name)})
+	}
+}
+
+func (p *planner) count(c sqCount) {
+	p.plan.Counts = append(p.plan.Counts, c)
 }
 
 // stocker sets online crowler counts at the one location they sell from.
@@ -122,11 +140,17 @@ func (s *stocker) counts(ctx context.Context, cat sqCatalog) (map[string]string,
 	return s.client.InventoryCounts(ctx, loc, ids)
 }
 
-// applyCounts sets each count the last look planned, one at a time so one
-// refusal does not hold up the rest.
+// applyCounts makes each listing change the last look planned, one at a
+// time so one refusal does not hold up the rest.
 func applyCounts(ctx context.Context, st *stocker, counts []sqCount) (done, failed []string) {
 	for _, c := range counts {
-		if err := st.set(ctx, c.VariationID, c.Quantity); err != nil {
+		var err error
+		if c.Remove {
+			_, err = st.client.BatchDeleteCatalog(ctx, []string{c.VariationID})
+		} else {
+			err = st.set(ctx, c.VariationID, c.Quantity)
+		}
+		if err != nil {
 			failed = append(failed, c.Summary+": "+err.Error())
 			continue
 		}

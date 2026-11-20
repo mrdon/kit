@@ -223,7 +223,7 @@ func (p *planner) askFlightPrice(beer string, mod sqMod, want, base int) {
 
 // crowlers lists every tap drink that sells a crowler in the online shop's
 // crowler item, at the crowler price its own item rings, and counts it in,
-// then marks the listings of drinks no longer on the menu sold out.
+// then takes the listings of drinks no longer on the menu off the shop.
 func (p *planner) crowlers() {
 	missingList := map[string]bool{}
 	onMenu := map[string]bool{}
