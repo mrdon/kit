@@ -11,7 +11,8 @@ import (
 type sqPlan struct {
 	Adds      []sqAdd
 	Questions []sqQuestion
-	// Counts take online crowlers off the shop or put them back on sale.
+	// Counts take online crowlers and kegs off the shop or put crowlers
+	// back on sale.
 	Counts []sqCount
 	// Notes are gaps the check saw and left, said in the preview.
 	Notes []string
@@ -82,6 +83,7 @@ func planSquare(rows []Beer, cat sqCatalog, fresh map[string]bool) sqPlan {
 	p.houseSizes()
 	p.flight()
 	p.crowlers()
+	p.kegs()
 	return p.plan
 }
 

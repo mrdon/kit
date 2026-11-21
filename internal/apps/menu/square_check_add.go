@@ -251,7 +251,7 @@ func (p *planner) crowlers() {
 		if listed, ok := list.variation(it.Name); ok {
 			onMenu[listed.ID] = true
 		}
-		p.crowler(b, it, own, list)
+		p.listing(b, it, own, list, "crowler", true)
 	}
 	for name := range missingList {
 		p.plan.Notes = append(p.plan.Notes, "no "+name+" item in Square, so its crowlers were not checked")
@@ -259,25 +259,32 @@ func (p *planner) crowlers() {
 	p.crowlerStock(onMenu)
 }
 
-func (p *planner) crowler(b Beer, it sqItem, own sqVar, list sqItem) {
+// listing puts a drink's to-go size (own) in an online list item at the
+// price its own item rings, counted in when stocked, and asks when the two
+// prices have come apart. what names the size in what admins read.
+func (p *planner) listing(b Beer, it sqItem, own sqVar, list sqItem, what string, stocked bool) {
 	listed, ok := list.variation(it.Name)
 	if !ok {
-		id := p.temp("crowler")
-		p.plan.Adds = append(p.plan.Adds, sqAdd{
-			Summary: fmt.Sprintf("%s: added to %s at %s, in stock", b.Name, list.Name, dollars(own.Cents)),
+		id := p.temp(what)
+		add := sqAdd{
+			Summary: fmt.Sprintf("%s: added to %s at %s", b.Name, list.Name, dollars(own.Cents)),
 			Objects: []map[string]any{newVariation(list, id, list.ID, it.Name, own.Cents)},
-			Stock:   []string{id},
-		})
+		}
+		if stocked {
+			add.Summary += ", in stock"
+			add.Stock = []string{id}
+		}
+		p.plan.Adds = append(p.plan.Adds, add)
 		return
 	}
 	if listed.Cents == own.Cents {
 		return
 	}
 	p.plan.Questions = append(p.plan.Questions, sqQuestion{
-		Key:   fmt.Sprintf("crowler|%s|%d|%d", listed.ID, listed.Cents, own.Cents),
-		Title: fmt.Sprintf("Sell the %s crowler online at %s?", b.Name, dollars(own.Cents)),
-		Body: fmt.Sprintf("At the bar a **%s** crowler rings **%s**, but online (%s) it is **%s**.",
-			b.Name, dollars(own.Cents), list.Name, dollars(max(listed.Cents, 0))),
+		Key:   fmt.Sprintf("%s|%s|%d|%d", what, listed.ID, listed.Cents, own.Cents),
+		Title: fmt.Sprintf("Sell the %s %s online at %s?", b.Name, what, dollars(own.Cents)),
+		Body: fmt.Sprintf("At the bar a **%s** %s rings **%s**, but online (%s) it is **%s**.",
+			b.Name, what, dollars(own.Cents), list.Name, dollars(max(listed.Cents, 0))),
 		Options: []sqOption{
 			{ID: "yes", Label: "Yes, match the bar", Fix: &sqFix{Kind: "price", ObjectID: listed.ID, Cents: own.Cents}},
 			{ID: "no", Label: "No, leave them different"},

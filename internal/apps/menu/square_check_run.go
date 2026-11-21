@@ -116,7 +116,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 	var b strings.Builder
 	if apply {
 		writeList(&b, "Added to Square", run.Done)
-		writeList(&b, "Online crowlers", run.Counted)
+		writeList(&b, "Online crowlers and kegs", run.Counted)
 		writeList(&b, "Failed", run.Failed)
 	} else {
 		var adds, counts []string
@@ -127,7 +127,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 			counts = append(counts, c.Summary)
 		}
 		writeList(&b, "Would add to Square", adds)
-		writeList(&b, "Would change online crowlers", counts)
+		writeList(&b, "Would change online crowlers and kegs", counts)
 	}
 	var qs []string
 	for _, q := range run.Plan.Questions {
