@@ -8,10 +8,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// tickInterval is how often the process checks for an expired deadline. A
-// countdown people are watching on a wall needs about a second; cron's floor
-// is a minute.
-const tickInterval = 500 * time.Millisecond
+// minWait floors the sleep so a deadline the database has not quite reached
+// yet cannot turn the loop into a spin.
+const minWait = 250 * time.Millisecond
+
+// retryWait is how long to back off after the next-deadline lookup fails.
+const retryWait = 5 * time.Second
 
 // SweepDue closes any phase of this game whose deadline has passed. THIS is
 // the correctness guarantee, not the ticker: every read and write path calls
@@ -34,34 +36,56 @@ func (s *Service) SweepDue(ctx context.Context, tenantID, gameID uuid.UUID) erro
 // "recurring work is declared with RegisterScheduledTask ... never a goroutine
 // ticker", and it exists so tenant-scoped business work has run history,
 // last_error and audit. The minute-granularity backstop DOES go in the
-// scheduler, in schedule.go, exactly as the rule requires. This 500ms loop
-// structurally cannot: cron is five-field, so one minute is its floor, and a
-// per-tick jobs row would be pure noise in a table meant for auditable work.
+// scheduler, in schedule.go, exactly as the rule requires. This loop exists
+// because a countdown people are watching on a wall needs to end within about
+// a second, and cron's floor is a minute.
 //
-// What makes the exception safe is that this goroutine owns nothing. All game
-// state is in Postgres; it stores no state, holds no locks, and issues the
-// same guarded conditional UPDATE every other path issues -- so two processes
-// both ticking is a no-op for the loser, and a crashed process leaves nothing
-// to reconstruct. Its failure mode costs latency, not correctness: without it
-// the game is still correct, just frozen until somebody touches it, because
-// SweepDue heals on the next request either way.
+// It is NOT a ticker. It sleeps until the earliest running clock anywhere
+// expires, and with no game live -- all week but an hour or so -- it sleeps
+// indefinitely and issues no queries at all. Any publish (local or relayed
+// from another process) wakes it to re-read the next deadline, because every
+// write that sets, shortens, extends, pauses or clears a deadline publishes.
+// A missed wake costs latency, not correctness: the minute backstop and
+// SweepDue on every read and write still close the phase.
 //
-// One shared ticker for the process, not one timer per game: one bounded
-// indexed query per tick regardless of how many games exist, no per-game
-// lifecycle to leak, and nothing to rebuild after a restart.
+// What makes it safe is that this goroutine owns nothing. All game state is
+// in Postgres; it holds no locks, and issues the same guarded conditional
+// UPDATE every other path issues -- so two processes both waking is a no-op
+// for the loser, and a crashed process leaves nothing to reconstruct.
 func (s *Service) StartSweeper(ctx context.Context) {
-	go func() {
-		t := time.NewTicker(tickInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				s.sweepAll(ctx)
-			}
+	go s.runSweeper(ctx)
+}
+
+func (s *Service) runSweeper(ctx context.Context) {
+	timer := time.NewTimer(0) // one sweep at boot heals anything that expired while down
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		case <-s.broker.Changed():
 		}
-	}()
+		s.sweepAll(ctx)
+		s.rearm(ctx, timer)
+	}
+}
+
+// rearm points the timer at the next deadline, or parks it when there is none.
+// Go 1.23+ timers need no drain before Stop/Reset.
+func (s *Service) rearm(ctx context.Context, timer *time.Timer) {
+	wait, ok, err := NextDeadlineIn(ctx, s.pool)
+	switch {
+	case err != nil:
+		if ctx.Err() == nil {
+			slog.Warn("trivia next-deadline lookup failed", "error", err)
+		}
+		timer.Reset(retryWait)
+	case !ok:
+		timer.Stop()
+	default:
+		timer.Reset(max(wait, minWait))
+	}
 }
 
 // sweepAll closes every expired phase anywhere and publishes the ones that

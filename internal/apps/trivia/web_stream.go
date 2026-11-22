@@ -54,7 +54,7 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, gameID, tenantI
 	defer cancel()
 
 	// Heal any expired phase before the first frame, so a screen that opened
-	// during a stale round does not paint the wrong thing for up to 500ms.
+	// during a stale round does not paint the wrong thing until the sweeper wakes.
 	if err := a.svc.SweepDue(r.Context(), tenantID, gameID); err != nil {
 		slog.Warn("sweeping trivia game on stream open", "game_id", gameID, "error", err)
 	}

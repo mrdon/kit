@@ -1,7 +1,7 @@
 // Package trivia: schedule.go declares the app's recurring work.
 //
 // There is exactly one scheduled task, and it is the BACKSTOP half of the
-// deadline sweep. The 500ms half is a process goroutine in sweeper.go, and
+// deadline sweep. The fast half is a deadline-driven goroutine in sweeper.go, and
 // the comment there explains why cron structurally cannot do that job: it is
 // five-field, so one minute is its floor, while a countdown the room is
 // watching needs about a second.

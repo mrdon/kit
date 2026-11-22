@@ -231,6 +231,26 @@ func DueGames(ctx context.Context, pool *pgxpool.Pool) ([]GameRef, error) {
 	return out, rows.Err()
 }
 
+// NextDeadlineIn reports how long until the earliest live deadline anywhere
+// becomes sweepable (deadline + grace), measured on the database's clock so
+// app/DB clock skew cannot make the sweeper wake early and find nothing. ok is
+// false when no game has a running clock -- the normal state six days a week.
+// Process-wide and not tenant-scoped, for the same reason as DueGames.
+func NextDeadlineIn(ctx context.Context, pool *pgxpool.Pool) (time.Duration, bool, error) {
+	var ms *int64
+	err := pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT (EXTRACT(EPOCH FROM (min(phase_deadline) + interval '%d milliseconds' - now())) * 1000)::bigint
+		  FROM app_trivia_games
+		 WHERE phase_deadline IS NOT NULL`, graceWindow.Milliseconds())).Scan(&ms)
+	if err != nil {
+		return 0, false, fmt.Errorf("querying next trivia deadline: %w", err)
+	}
+	if ms == nil {
+		return 0, false, nil
+	}
+	return time.Duration(*ms) * time.Millisecond, true, nil
+}
+
 // GameRef is the minimum the sweeper needs to act: which game, whose, and
 // what phase it is leaving.
 type GameRef struct {

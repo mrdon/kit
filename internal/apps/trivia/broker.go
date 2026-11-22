@@ -18,6 +18,11 @@ import (
 type Broker struct {
 	mu   sync.Mutex
 	subs map[uuid.UUID]map[*subscriber]struct{}
+	// changed is pinged (never blocking, capacity one) on every Publish, local
+	// or relayed, so the deadline sweeper can re-read the next clock. Every
+	// write that moves a deadline publishes, so this is the one place that
+	// sees them all.
+	changed chan struct{}
 }
 
 // subscriber is a latest-wins mailbox of capacity one, not a buffered channel
@@ -34,8 +39,15 @@ type subscriber struct {
 
 // NewBroker returns an empty broker.
 func NewBroker() *Broker {
-	return &Broker{subs: map[uuid.UUID]map[*subscriber]struct{}{}}
+	return &Broker{
+		subs:    map[uuid.UUID]map[*subscriber]struct{}{},
+		changed: make(chan struct{}, 1),
+	}
 }
+
+// Changed fires after any game publishes. Coalesced: a burst of publishes
+// with nobody reading leaves one pending signal, not a backlog.
+func (b *Broker) Changed() <-chan struct{} { return b.changed }
 
 // Subscribe registers a watcher for one game and returns its channel plus a
 // cancel func. The cancel is idempotent and MUST be deferred by the caller:
@@ -84,6 +96,10 @@ func (b *Broker) Publish(gameID uuid.UUID, snap *Snapshot) {
 	b.mu.Unlock()
 	for _, s := range subs {
 		b.offer(s, snap)
+	}
+	select {
+	case b.changed <- struct{}{}:
+	default: // a signal is already pending; one is all the sweeper needs
 	}
 }
 

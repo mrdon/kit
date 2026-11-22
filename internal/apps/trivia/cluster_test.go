@@ -9,7 +9,7 @@ import (
 )
 
 // These are the cluster tests: what happens when N instances all run the
-// 500ms sweeper against one database at the same moment.
+// deadline sweeper against one database at the same moment.
 //
 // The design claim is that the sweeper is safe BY CONSTRUCTION rather than by
 // coordination — no leader election, no advisory lock, no "only run this on
