@@ -17,7 +17,7 @@ export const HATS = [
   "none", "crown", "cowboy", "beanie", "party", "viking", "propeller",
   "tophat", "flower", "pint", "chef", "headband", "bucket", "antlers",
   "silver", "curls", "cap", "blonde", "wild", "black", "ponytail", "pm",
-  "helmet",
+  "helmet", "hacker",
 ];
 
 export function shade(hex, amt) {
@@ -221,6 +221,25 @@ export function hatSVG(hat, color) {
         L("M24 50.4 l0.4 2.6 M34 53.4 l0.2 2.6 M46 54.4 v2.6 M58 53.4 l-0.2 2.6 M68 50.4 l-0.4 2.6", 1.1, "#6b7480") +
         O("M61 6.6 L64.6 -0.6", "#b8c0c8", 1.2) + dot(65, -1.4, 1.9, "#e74c3c");
     }
+    case "hacker": {
+      // short brown hair on top, a mullet down the back, and a bushy brown
+      // mustache. Drawn in head coordinates (HAT_FIT puts it at 0,0) behind
+      // the eyes: the hair is the "black" crop's spot with the back let grow,
+      // and the mustache sits between the nostril and the mouth, clear of the
+      // eyes, so one under-eyes layer holds both.
+      const hair = "M-19.6 2 C-21 -4 -17 -11.6 -6 -12.8 C6 -13.6 16 -10.6 20.2 -4.6 C22.6 -1 23.2 4 23.4 9 L24.8 15.6 L21.8 13.8 L20.8 17.4 L18.4 14.2 L16 16.6 L15 10.6 C14.4 6.4 12.4 2.8 9 1 C3 0.4 -3 0.3 -8 0.6 C-12 -0.6 -15.6 0.2 -17.8 3.4 Z";
+      const stache = "M23.4 38 C24.4 34.6 28 33 31.4 34.4 C34.8 33 39 33.8 41 36.8 C38 37.8 34.6 37.6 31.6 36.4 C28.6 37.8 25.8 38.8 23.4 38 Z";
+      return `<g transform="translate(47.5 21.5) rotate(2)">` +
+        S(hair, "#7a4a24", { band: "#4e2e14", op: 0.95, w: 1.7 }) +
+        L("M-15 -8 l1.6 -1.8 M-9.6 -10.6 l1.6 -1.8 M-3.6 -11.8 l1.4 -1.8 M3 -12 l1.4 -1.6 M9 -10.8 l1.4 -1.4 M-11.6 -5 l1.4 -1.6 M-4.6 -7.6 l1.4 -1.6 M2.4 -8 l1.4 -1.5", 0.9, "#4e2e14") +
+        // the business in the back: long strands down to the flicked ends
+        L("M14.6 -6.4 C18 -3 19.4 2 19.6 8 L20.4 14.6 M17.6 -2 C20.6 1.6 21.4 6 21.8 11", 1.1, "#4e2e14") +
+        L("M-6 -10.6 C0 -11.6 6 -11 11 -9.2 M19.4 -1.6 C20.8 1 21.4 4 21.6 7", 1.3, "#c08a52") +
+        `</g>` +
+        S(stache, "#7a4a24", { band: "#4e2e14", op: 0.95, w: 1.5, bw: 1.8 }) +
+        L("M26.6 36.4 l1.2 -1.4 M29.4 35.8 l0.8 -1.4 M33.6 35.6 l-0.6 -1.4 M36.6 36.2 l-0.8 -1.2", 0.8, "#4e2e14") +
+        L("M26 35.2 C27.6 34.4 29.4 34.4 30.6 35", 1, "#c08a52");
+    }
     default:
       return "";
   }
@@ -261,6 +280,7 @@ export const HAT_FIT = {
   silver: [47.5, 21.5, 2, 1, true], curls: [47.5, 21.5, 2, 1, true], cap: [47.5, 20.8, 4, 1],
   blonde: [47.5, 21.5, 2, 1, true], wild: [47.5, 21.5, 2, 1, true], black: [47.5, 21.5, 2, 1, true],
   ponytail: [47.5, 21.5, 2, 1, true], pm: [0, 0, 0, 1], helmet: [0, 0, 0, 1],
+  hacker: [0, 0, 0, 1, true],
 };
 export function placedHat(hat, color, layer) {
   const f = HAT_FIT[hat]; if (!f || !!f[4] !== (layer === "under")) return "";

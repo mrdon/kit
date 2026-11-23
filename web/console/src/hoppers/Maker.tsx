@@ -10,8 +10,8 @@ const HAT_NAMES: Record<string, string> = {
   none: 'No hat', crown: 'Crown', cowboy: 'Cowboy hat', beanie: 'Beanie', party: 'Party hat', viking: 'Viking helmet',
   propeller: 'Propeller cap', tophat: 'Top hat', flower: 'Daisy', pint: 'Pint', chef: 'Chef hat', headband: 'Sweatband',
   bucket: 'Bucket hat', antlers: 'Antlers', silver: 'Parylene', curls: 'Appraiser', cap: 'COTY',
-  blonde: 'Cat herder', wild: 'Butler', black: 'Dreamer', ponytail: 'Welder', pm: 'PM guy',
-  helmet: 'Major Tom',
+  blonde: 'Cat herder', wild: 'Butler', black: 'Raven', ponytail: 'Welder', pm: 'PM guy',
+  helmet: 'Major Tom', hacker: 'Hacker',
 };
 
 const DRAFT_KEY = 'hoppers.frog';
