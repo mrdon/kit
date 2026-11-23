@@ -1,0 +1,31 @@
+# Chutes and ladders on the default cup's switchbacks. Specials are off by
+# default; this is how to turn them on.
+#
+# A special spot: a frog that lands on `at` (hopping either way) moves to
+# `to`, taking every frog riding on it, and lands on top of the stack there.
+#   kind: launch  -> to must be further along (a ladder)
+#   kind: chute   -> to must be further back (a slide)
+# Not on the start (0) or the tap (length); one per spot; `to` can't be
+# another special (no chains) and can't be the tap.
+levels:
+  - name: Bar Sprint
+    layout: straight
+    theme: bar
+    track: {length: 14}
+  - name: Lake Ladders
+    layout: switchback
+    theme: lake
+    track:
+      length: 20
+      specials:
+        - {at: 3, kind: launch, to: 8}
+        - {at: 7, kind: launch, to: 12}
+        - {at: 14, kind: chute, to: 9}
+        - {at: 17, kind: chute, to: 11}
+  - name: Bar Switchback
+    layout: switchback
+    theme: bar
+    track:
+      length: 20
+      # or let the game place them (from the night's seed) instead:
+      # random: {launches: 2, chutes: 2}

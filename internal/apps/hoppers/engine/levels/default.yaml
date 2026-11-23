@@ -1,0 +1,32 @@
+# A Hoppers night: the rules plus a cup of levels, one per round.
+#   go run . -config levels/default.yaml      (flags like -rounds still override)
+# Leave a field out and it keeps its default. Unknown fields are errors.
+# Without -config the server generates a random cup instead.
+rules:
+  rounds: 3            # round N races levels[N-1]; the cup repeats if it's shorter
+  heat_size: 10        # most people per race; more than this race in heats
+  min_frogs: 7         # bots fill a race up to this many frogs (0..8)
+  flick_timeout: 8s    # a frog hops by itself after this
+  flick_band: 0.12     # width of the phone's green "perfect" band (share of the meter)
+  max_roll: 3          # hops go 1..max_roll coasters
+  skill_cap: 4         # longest hop a perfect flick's +1 can make
+  slip_chance: 0.08    # chance per hop a frog turns around
+  turn_back: 0.5       # chance per hop a wrong-way frog turns back
+  place_points: [11, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+
+levels:
+  - name: Bar Sprint
+    layout: straight   # straight | switchback (how the TV draws it)
+    theme: bar         # art only; the TV decides what it looks like
+    track:
+      length: 14       # coasters from the start (0) to the tap
+  - name: Lake Loop
+    layout: switchback
+    theme: lake
+    track:
+      length: 20
+  - name: Bar Switchback
+    layout: switchback
+    theme: bar
+    track:
+      length: 20

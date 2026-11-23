@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean hopsim
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -164,6 +164,9 @@ test: up ## Run tests (requires Postgres via `make up`)
 
 trivia-e2e: up console-build ## Trivia chaos test: real TV/phone pages in Chrome over a faulty network (needs Node, Chrome, global playwright-core; minutes)
 	go test -tags e2e -race -count=1 -timeout 15m -run TestE2EChaos -v ./internal/apps/trivia/
+
+hopsim: ## Simulate Hoppers nights headless to tune rules, e.g. make hopsim ARGS="-fun -live -games 2000 -players 4,8,15"
+	go run ./cmd/hopsim $(ARGS)
 
 lint: ## Run linters (requires golangci-lint)
 	@echo "Running linters..."
