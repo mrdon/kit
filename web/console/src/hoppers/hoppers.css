@@ -143,7 +143,7 @@ body .fx-pop { font-family: var(--k-display); font-weight: 400; color: var(--k-c
   background: radial-gradient(circle, rgba(245, 196, 81, .7), rgba(245, 196, 81, 0) 65%); animation: sparkle 1.4s ease-out both; }
 @keyframes sparkle { 0% { transform: scale(.3); opacity: 0; } 25% { opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
 
-/* ---------- FLICK! : the word, your frog, the clock. Nothing else ---------- */
+/* ---------- FLICK! : the word, your frog, the power meter, the clock ---------- */
 #flick { position: fixed; inset: 0; padding: 0 16px; text-align: center; background: var(--k-stage); z-index: 20;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; touch-action: none; }
 #flick h1 { margin: 0; font: 400 64px/1 var(--k-display); color: var(--k-cream); }
@@ -152,6 +152,20 @@ body .fx-pop { font-family: var(--k-display); font-weight: 400; color: var(--k-c
 #flick .face.away { transform: translateY(-120vh) rotate(-20deg); transition: transform 0.6s ease-in; }
 #flick .bar { width: 70%; height: 10px; background: var(--k-fill-3); border-radius: 999px; overflow: hidden; }
 #flick .bar div { height: 100%; background: var(--accent); border-radius: inherit; }
+/* the power meter: fills with the thumb's speed, the green band is the bonus */
+.meter { position: relative; width: 84%; max-width: 380px; height: 34px; border-radius: 999px; background: var(--k-fill-3); border: 3px solid var(--line); overflow: hidden; }
+.meter .zone { position: absolute; top: 0; bottom: 0; background: var(--k-ok); opacity: .55; }
+.meter .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--k-cream); opacity: .85; transition: width 60ms linear; }
+.meter .ghost, .meter .needle { position: absolute; top: -3px; bottom: -3px; width: 4px; margin-left: -2px; }
+.meter .ghost { background: var(--dim); opacity: .8; }
+.meter .needle { width: 6px; margin-left: -3px; background: #fff; box-shadow: 0 0 8px #fff; }
+.meter.done .fill { transition: width .25s var(--k-ease-pop); }
+.meter.done.hit .fill { background: var(--gold); opacity: 1; }
+.meter.done.hit .zone { opacity: 1; }
+.mlabel { min-height: 1.2em; font: 800 26px/1.1 var(--k-body); color: var(--muted); }
+.mlabel.hit { font: 400 44px/1 var(--k-display); color: var(--gold); }
+#flick.hit { animation: hitflash .9s ease-out; }
+@keyframes hitflash { 0% { background: var(--gold); } 100% { background: var(--k-stage); } }
 @media (prefers-reduced-motion: reduce) { #flick h1 span, .hero.pop { animation: none; } }
 
 #toast { position: fixed; left: 50%; bottom: 4%; transform: translateX(-50%); z-index: 30; background: var(--accent); color: #fff;

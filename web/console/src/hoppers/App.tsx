@@ -5,7 +5,7 @@ import { useWakeLock } from '../live/useWakeLock';
 import { base, flick, join, reclaim, sendFeedback, type Frame, type FrogDraft } from './api';
 import { RateNight } from '../live/RateNight';
 import { Frog, Hero, HowToPlay, Standings, heroFor } from './screens';
-import { Flick, FLICK_AWAY_MS, myTurn } from './Flick';
+import { Flick, FLICK_HOLD_MS, myTurn } from './Flick';
 import { Maker, newDraft, saveDraft } from './Maker';
 import { useMoments } from './moments';
 import { buzz } from './buzz';
@@ -88,15 +88,19 @@ export default function App() {
     reopen();
   };
 
-  const onFlick = async (power: number, perfect: boolean) => {
+  // This phone's last flick, shown as a faint tick on the next turn's meter.
+  const [lastPower, setLastPower] = useState(-1);
+  const onFlick = async (power: number, perfect: boolean, swiped: boolean) => {
     setFlickedTurn(turnKey);
     setAway(true);
-    buzz(40);
-    flickHideAt.current = Date.now() + FLICK_AWAY_MS;
-    window.setTimeout(() => setAway(false), FLICK_AWAY_MS);
+    buzz(perfect ? [40, 30, 40, 30, 120] : 40);
+    if (swiped) setLastPower(power);
+    flickHideAt.current = Date.now() + FLICK_HOLD_MS;
+    window.setTimeout(() => setAway(false), FLICK_HOLD_MS);
     const res = await flick(power, perfect);
     if (res.ok && res.data) apply(res.data);
   };
+
 
   return (
     <>
@@ -110,7 +114,11 @@ export default function App() {
         <Main frame={frame} id={id} onEdit={() => mine && setMaking({ name: mine.name, color: mine.color, hat: mine.hat })} />
       )}
       {frame && flicking && mine && (
-        <Flick key={turnKey} frame={frame} color={mine.color} hat={mine.hat} msLeft={msLeft} onFlick={(p, x) => void onFlick(p, x)} />
+        <Flick
+          // Held on the turn that flicked while its meter is up: the server
+          // moves the turn on at once, and a new key would wipe the meter.
+          key={away ? flickedTurn : turnKey} frame={frame} color={mine.color} hat={mine.hat} msLeft={msLeft} lastPower={lastPower}
+          onFlick={(p, x, sw) => void onFlick(p, x, sw)} />
       )}
       {toast && <div id="toast" key={toast.n} className="show">{toast.msg}</div>}
     </>

@@ -16,7 +16,7 @@ export const COLORS = [
 export const HATS = [
   "none", "crown", "cowboy", "beanie", "party", "viking", "propeller",
   "tophat", "flower", "pint", "chef", "headband", "bucket", "antlers",
-  "silver", "curls", "cap",
+  "silver", "curls", "cap", "blonde", "wild", "black", "ponytail", "pm",
 ];
 
 export function shade(hex, amt) {
@@ -153,6 +153,58 @@ export function hatSVG(hat, color) {
         L("M-12 0.8 C-16.5 0.6 -21 1.4 -24 2.6", 0.9, "#6c7da3") +
         `<g transform="translate(-6.4 -6.8) rotate(-6)"><circle r="4.4" style="fill:#f2ede1;stroke:#1f1a17;stroke-width:1.1"/>${gravityLogoSVG(3.9)}</g>`;
     }
+    case "blonde": {
+      // long straight blonde hair: a side-swept fringe up front and a straight
+      // curtain down the back of the head, blunt-cut. Behind the eyes.
+      const back = "M-5 -12.8 C6 -13.4 16 -10.4 20.4 -4.6 C23 -1 23.6 7 23.8 15 L24.4 25 C20 26.2 15.5 26.2 11.4 25 L11.8 14 C12 8 11 4 8 1.4 C2 0.3 -4 0.1 -8.5 0.6 L-6.5 -6 Z";
+      const front = "M-5.6 -12.8 C-12.8 -13 -19 -9.4 -21 -3.4 C-21.8 -0.6 -21.4 2.6 -20.4 5 C-19 1 -16.4 -2.2 -12.8 -3.6 C-9.6 -4.8 -6.8 -7.6 -5.6 -12.8 Z";
+      return S(back, "#f6d365", { band: "#d4a017", op: 0.95, w: 1.7 }) +
+        L("M-2 -9.6 C5 -10.6 12 -9 16.6 -5 M14.6 1 L14.3 24.6 M18 -0.6 L18.2 25 M21.3 2 L21.5 24.6", 1.1, "#a87b12") +
+        S(front, "#fbe08a", { band: "#d4a017", op: 0.95, w: 1.7 }) +
+        L("M-8.4 -11.4 C-13 -10.8 -16.8 -8 -18.6 -3.8 M-8 -8.4 C-11.6 -7.6 -14.8 -5.6 -16.8 -2.4", 1.1, "#a87b12") +
+        L("M2 -11.2 C7 -11.2 11.5 -9.8 14.6 -7.4 M21.6 4 L21.8 12", 1.4, "#ffffff");
+    }
+    case "wild": {
+      // wild, longish, mostly grey hair: spiky tufts everywhere, longer at the back.
+      const mop = "M-19.5 3.5 L-23.5 -0.5 L-19.6 -3.6 L-23.2 -8.8 L-16.6 -9.6 L-17.2 -15.6 L-10.6 -12.6 L-7.2 -18.6 L-2.6 -13.6 L2.6 -19.2 L5 -13.2 L11.6 -17.2 L11.6 -11 L18.6 -12.6 L16.6 -6.6 L24 -6 L20 -1.2 L26 2.6 L21 4.6 L25.6 10 L19.6 9.6 L21.6 16.2 L15.6 12 L13 16.6 L11.6 8 C10 4 7 1.6 3 1 C-2 0.4 -6 0.4 -9 0.8 L-12.2 -1 L-15 3.6 Z";
+      return S(mop, "#c3c7cb", { band: "#7d848a", op: 0.92, w: 1.7 }) +
+        L("M-15 -8 C-9 -11 -3 -11.4 2 -10.2 M4 -9 C10 -9 15 -6 18.4 -1 M12.6 2 C15.6 5 17.4 9 18.2 12.6 M-9 -5 C-4.6 -7 1.4 -7.2 6 -5.2 M-18 -2 C-16 -4.6 -13.4 -6 -10.6 -6.6", 1.1, "#4f565c") +
+        // a few dark streaks left over from before the grey took over
+        L("M-12 -10.4 C-8 -12.6 -4 -13 -0.6 -12.4 M8 -6 C12 -5 15 -2.6 16.6 0.6 M14 7 C15.4 9 16 11 16.2 13", 1.6, "#5a4636") +
+        L("M-4 -14.6 C-1 -15.6 2 -15.4 4.4 -14.4 M14 -9.6 C16 -8.4 17.6 -6.8 18.6 -5", 1.3, "#ffffff");
+    }
+    case "black": {
+      // short, tidy black hair cropped close to the skull. Behind the eyes.
+      const crop = "M-19.6 2 C-21 -4 -17 -11.6 -6 -12.8 C6 -13.6 16 -10.6 20.2 -4.6 C22 -2 22.4 1.6 21.8 4.6 L19.4 3 C17 1.2 13 0.6 9 0.6 C3 0.4 -3 0.3 -8 0.6 C-12 -0.6 -15.6 0.2 -17.8 3.4 Z";
+      return S(crop, "#2b2b2e", { band: "#000000", op: 0.92, w: 1.7 }) +
+        L("M-15 -8 l1.6 -1.8 M-10 -10.6 l1.6 -1.8 M-4 -11.8 l1.4 -1.8 M3 -12 l1.4 -1.6 M9 -10.8 l1.4 -1.4 M14.6 -8 l1.3 -1.2 M-12 -5 l1.4 -1.6 M-5 -7.6 l1.4 -1.6 M2 -8 l1.4 -1.5 M9 -6.6 l1.3 -1.3 M15 -3.6 l1.2 -1.2", 0.9, "#6b7280") +
+        L("M-6 -10.6 C0 -11.6 6 -11 11 -9.2", 1.3, "#9aa4ad");
+    }
+    case "ponytail": {
+      // straight brown hair pulled back tight into a ponytail: a smooth cap
+      // combed back to a hair tie at the back of the head, and the tail
+      // swinging out behind and down. Behind the eyes.
+      const cap = "M-19.8 2.4 C-21.2 -4 -17 -11.8 -6 -13 C6 -13.8 15.6 -11 19.6 -6 C21.4 -3.6 21.8 -0.4 21.2 2.6 L18.8 1.4 C16 0.6 12.6 0.4 9 0.5 C3 0.3 -3 0.2 -8 0.6 C-12 -0.4 -15.8 0.4 -18 3.6 Z";
+      const tail = "M18.4 -9.6 C26 -12.4 33.6 -8.6 35.4 -1.4 C37 5 35.8 12.6 32.6 20 C31 14.6 29 9.6 26.2 5.6 C23.6 2 21 -1.4 18 -4 Z";
+      return S(tail, "#7a4a24", { band: "#4e2e14", op: 0.95, w: 1.7 }) +
+        L("M22 -9 C28.6 -8.6 32.6 -3.6 33 2.6 C33.2 8 32.4 12.6 31.2 16.6 M21 -5.6 C25 -3.6 28.4 0.6 29.6 6.2", 1.1, "#4e2e14") +
+        S(cap, "#8a5529", { band: "#4e2e14", op: 0.95, w: 1.7 }) +
+        // combed straight back toward the tie
+        L("M-16.6 -5.6 C-8 -10 6 -10.6 17.6 -7.4 M-15.4 -1.6 C-6 -6 6 -6.6 17.8 -5.2 M-10 0 C-2 -2.6 8 -2.6 18 -3.4", 1.1, "#4e2e14") +
+        L("M-8 -11.4 C0 -12.4 8 -11.6 14 -9.4", 1.4, "#c08a52") +
+        // the hair tie
+        S("M16.8 -10.4 C18.6 -11.4 20.8 -10.8 21.4 -9 L20.4 -3.4 C19.4 -2.4 17.6 -2.6 16.8 -3.8 Z", "#e74c3c", { band: "#a93226", op: 0.95, w: 1.4, bw: 1.6 });
+    }
+    case "pm": {
+      // bald with glasses: the frog's own bald head, plus rectangular specs
+      // across both eyes with an arm back to the ear. Drawn in head
+      // coordinates over the eyes (HAT_FIT puts it at 0,0).
+      const lens = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.2" style="fill:#dff3ff;fill-opacity:.15;stroke:#1f1a17;stroke-width:1.9"/>` +
+        L(`M${x + 1.6} ${y + h - 2} L${x + w * 0.45} ${y + 1.6}`, 0.9, "#ffffffcc");
+      return lens(31, 21.2, 14.2, 9.6) + lens(51.6, 21.6, 12.4, 8.8) +
+        L("M45.2 25.2 C47.4 23.8 49.6 23.8 51.6 25.4", 1.7, "#1f1a17") +
+        L("M64 24.6 C66.4 24.4 68.6 25 70.4 26.4", 1.7, "#1f1a17");
+    }
     default:
       return "";
   }
@@ -191,6 +243,8 @@ export const HAT_FIT = {
   chef: [47.5, 21.2, 5, 1], headband: [46, 24.5, 3, 1, true], bucket: [47.5, 21.2, 4, 1],
   antlers: [47.5, 21.5, 3, 1, true],
   silver: [47.5, 21.5, 2, 1, true], curls: [47.5, 21.5, 2, 1, true], cap: [47.5, 20.8, 4, 1],
+  blonde: [47.5, 21.5, 2, 1, true], wild: [47.5, 21.5, 2, 1, true], black: [47.5, 21.5, 2, 1, true],
+  ponytail: [47.5, 21.5, 2, 1, true], pm: [0, 0, 0, 1],
 };
 export function placedHat(hat, color, layer) {
   const f = HAT_FIT[hat]; if (!f || !!f[4] !== (layer === "under")) return "";

@@ -9,7 +9,8 @@ import type { Frame, FrogDraft } from './api';
 const HAT_NAMES: Record<string, string> = {
   none: 'No hat', crown: 'Crown', cowboy: 'Cowboy hat', beanie: 'Beanie', party: 'Party hat', viking: 'Viking helmet',
   propeller: 'Propeller cap', tophat: 'Top hat', flower: 'Daisy', pint: 'Pint', chef: 'Chef hat', headband: 'Sweatband',
-  bucket: 'Bucket hat', antlers: 'Antlers', silver: 'Bradley', curls: 'Appraiser', cap: 'COTY',
+  bucket: 'Bucket hat', antlers: 'Antlers', silver: 'Parylene', curls: 'Appraiser', cap: 'COTY',
+  blonde: 'Cat herder', wild: 'Butler', black: 'Dreamer', ponytail: 'Welder', pm: 'PM guy',
 };
 
 const DRAFT_KEY = 'hoppers.frog';

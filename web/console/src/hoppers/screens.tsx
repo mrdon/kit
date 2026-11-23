@@ -165,7 +165,7 @@ export function Standings({ s, id }: { s: Frame; id: string }) {
 export function HowToPlay() {
   return (
     <div className="how">
-      Flick your frog up when it's your turn. First to the finish wins.
+      Flick your frog up when it's your turn. Hit the green on the meter for a bonus hop. First to the finish wins.
       <br />
       Land on a frog and you ride it. Frogs sometimes turn around.
     </div>

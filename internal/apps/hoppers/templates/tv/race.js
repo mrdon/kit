@@ -20,7 +20,7 @@ function renderTrack() {
       let el = els[id], fresh = !el;
       if (!el) {
         el = document.createElement("div"); el.className = "frog";
-        el.innerHTML = `<div class="sway"><div class="body"></div></div><div class="flies"><div class="fly" style="--fd:2.1s"></div><div class="fly" style="--fd:2.9s;--fdl:-1.2s"></div><div class="fly" style="--fd:2.5s;--fdl:-0.6s"></div></div><div class="wrong"><span>Wrong way</span></div>`;
+        el.innerHTML = `<div class="sway"><div class="body"></div></div><div class="flies"><div class="fly" style="--fd:2.1s"></div><div class="fly" style="--fd:2.9s;--fdl:-1.2s"></div><div class="fly" style="--fd:2.5s;--fdl:-0.6s"></div></div>`;
         el.style.setProperty("--sd", (-Math.random() * 3) + "s");
         el.querySelectorAll('.fly').forEach(f => f.innerHTML = flySVG());
         tr.appendChild(el); els[id] = el;
@@ -214,11 +214,14 @@ function flyHop(hop, plan, flights, L) {
 
 // A ring of gold stars bursting out from (x, y), screen px.
 function fxSparkle(x, y, size) {
-  for (let i = 0; i < 10; i++) {
-    const d = document.createElement("div"), a = (i / 10) * Math.PI * 2, r = size * (0.55 + (i % 2) * 0.25);
+  const ring = document.createElement("div");
+  ring.className = "fx-ring"; ring.style.left = x + "px"; ring.style.top = y + "px"; ring.style.setProperty("--s", size * 2.6 + "px");
+  document.body.appendChild(ring); setTimeout(() => ring.remove(), 900);
+  for (let i = 0; i < 16; i++) {
+    const d = document.createElement("div"), a = (i / 16) * Math.PI * 2, r = size * (0.9 + (i % 2) * 0.5);
     d.className = "fx-spark"; d.textContent = "✦";
     d.style.left = x + "px"; d.style.top = y + "px";
-    d.style.setProperty("--s", size * (i % 2 ? 0.22 : 0.32) + "px");
+    d.style.setProperty("--s", size * (i % 2 ? 0.3 : 0.45) + "px");
     d.style.setProperty("--dx", Math.cos(a) * r + "px"); d.style.setProperty("--dy", Math.sin(a) * r + "px");
     document.body.appendChild(d); setTimeout(() => d.remove(), 950);
   }
@@ -233,7 +236,12 @@ function hopFX(hop, L, plan) {
   const GOLD = "#f5c451", amt = hop.back ? `-${hop.roll}` : `+${Math.max(1, hop.roll)}`;
   setTimeout(() => { const p = top(hop.from, fromSize); fxPuff(p.x, p.y, fw * 0.35, 6); }, plan.launch * 1000);
   // a perfect flick: one sparkle burst on the frog and "Perfect!" over it
-  if (perfect) { const p = top(hop.from, fromSize); fxSparkle(p.x, p.y - fw * 0.5, fw); fxPop(p.x, p.y - fw * 1.9, "Perfect!", fw * 0.46, GOLD); }
+  if (perfect) {
+    const p = top(hop.from, fromSize), el = els[hop.frog];
+    fxSparkle(p.x, p.y - fw * 0.5, fw); fxPop(p.x, Math.max(innerHeight * 0.14, p.y - fw * 1.9), "Perfect!", fw * 0.7, GOLD);
+    // the frog glows gold for the whole hop, so the room sees which hop got the bonus
+    if (el) { el.classList.remove("golden"); void el.offsetWidth; el.classList.add("golden"); setTimeout(() => el.classList.remove("golden"), plan.land * 1000 + 600); }
+  }
   // count the bounces out loud: 1… 2… then the big +3 on the last one
   for (let b = 0; b < plan.n - 1; b++) setTimeout(() => {
     const i = plan.via(b + 1), st = S.stacks[i] || [], p = top(i, st.length);
