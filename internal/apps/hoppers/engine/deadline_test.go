@@ -9,9 +9,15 @@ import (
 // nothing is due just before it, something always happens at it, and it is
 // zero only when the game waits on a command.
 func TestNextDeadlineMissesNothing(t *testing.T) {
-	for _, window := range []time.Duration{0, 25 * time.Second} {
+	// Quick: the seen window on (it adds the timeouts to every other due
+	// time) and the first golden night. Long: both windows, every night.
+	windows, cases := []time.Duration{25 * time.Second}, goldenCases[:1]
+	if longTests {
+		windows, cases = []time.Duration{0, 25 * time.Second}, goldenCases
+	}
+	for _, window := range windows {
 		opts := Options{SeenWindow: window}
-		for _, c := range goldenCases {
+		for _, c := range cases {
 			g := NewGameWith(c.cfg(), opts, c.seed)
 			s := newScripted(g, c.people)
 			now := t0

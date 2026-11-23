@@ -12,31 +12,57 @@ import (
 	"github.com/mrdon/kit/internal/apps/hoppers/engine"
 )
 
-// playToTheEnd runs a one-race night to its final standings, pressing the
-// host button whenever the engine offers it and keeping the people's phones
-// pinging so they auto-hop rather than drop out.
-func (f *fixture) playToTheEnd(game *Game, people ...*Player) {
+// playToTheEnd takes a night to its final standings. The racing is played
+// in memory on the pure engine (microseconds), up to the last race's
+// results; then the host's one press through the service finishes it, which
+// is the transition the history and the ratings hang off.
+func (f *fixture) playToTheEnd(game *Game) {
 	f.t.Helper()
-	for range 400 {
-		s := f.snap(game)
-		if s.TV.Phase == engine.PhaseFinal {
-			return
+	tx, err := f.pool.Begin(f.ctx)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(f.ctx) }()
+	row, err := lockGame(f.ctx, tx, f.tenant.ID, game.ID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	g, err := engine.RestoreWith(row.Engine, f.svc.options(row))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	now := g.Now()
+	for range 100000 {
+		s := g.View(engine.RoleHost, "")
+		if s.Phase == engine.PhaseRacing && s.Sub == engine.SubRaceEnd && s.RoundOver && s.LastRace {
+			break
 		}
 		if s.Host.CanAdvance {
-			f.advance(game)
+			_, _ = g.Apply(engine.Command{Type: engine.CmdHost}, now)
 			continue
 		}
-		f.wait(time.Second)
-		for _, p := range people {
-			if err := f.svc.Heard(f.ctx, f.tenant.ID, game.ID, p.ID, f.snap(game)); err != nil {
-				f.t.Fatal(err)
-			}
+		now = now.Add(time.Second)
+		for _, p := range s.Players { // every phone stays in the room
+			g.Seen(p.ID, now)
 		}
-		f.sweep(game)
+		g.Advance(now)
 	}
-	f.t.Fatalf("the night never finished: %s/%s", f.snap(game).TV.Phase, f.snap(game).TV.Sub)
+	if err := f.svc.store(f.ctx, tx, row, g); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := tx.Commit(f.ctx); err != nil {
+		f.t.Fatal(err)
+	}
+	f.svc.cache.Delete(game.ID)
+	f.mu.Lock()
+	f.clock = now
+	f.mu.Unlock()
+	if s := f.advance(game); s.TV.Phase != engine.PhaseFinal {
+		f.t.Fatalf("the last press left the night in %s", s.TV.Phase)
+	}
 }
 
+// shortNight is a one-race night.
 func (f *fixture) shortNight() *Game {
 	f.t.Helper()
 	g, err := f.svc.CreateGame(f.ctx, f.tenant.ID, nil, NewGame{Title: "Tuesday frogs", Pack: "default", Rules: RuleTweaks{Rounds: 1}})
@@ -51,8 +77,8 @@ func (f *fixture) shortNight() *Game {
 func TestAFinishedNightIsRecorded(t *testing.T) {
 	f := newFixture(t)
 	game := f.shortNight()
-	ann := f.join(game, "Ann")
-	f.playToTheEnd(game, ann)
+	f.join(game, "Ann")
+	f.playToTheEnd(game)
 
 	results, err := ListResults(f.ctx, f.pool, f.tenant.ID, 10)
 	if err != nil {
@@ -93,8 +119,7 @@ func TestFeedbackOnlyAtTheEnd(t *testing.T) {
 	if code := send(cookie); code != http.StatusConflict {
 		t.Fatalf("a rating mid-night got %d, want 409", code)
 	}
-	players, _ := ListPlayers(f.ctx, f.pool, f.tenant.ID, game.ID)
-	f.playToTheEnd(game, players...)
+	f.playToTheEnd(game)
 	if code := send(nil); code != http.StatusUnauthorized {
 		t.Fatalf("a spectator's rating got %d", code)
 	}

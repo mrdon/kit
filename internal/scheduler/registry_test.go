@@ -178,10 +178,9 @@ func TestRegistryReconcile_CronChangeRecomputes(t *testing.T) {
 	f := newRegistryFixture(t)
 	RegisterScheduledTask(ScheduledTask{
 		Key: "test.cron", Description: "Retimed",
-		DefaultCron: "0 4 * * *", Run: noopRun,
+		DefaultCron: "0 0 1 1 *", Run: noopRun, // yearly: months away
 	})
 	f.reconcile(t)
-	before := f.row(t, "test.cron")
 
 	RegisterScheduledTask(ScheduledTask{
 		Key: "test.cron", Description: "Retimed",
@@ -193,8 +192,17 @@ func TestRegistryReconcile_CronChangeRecomputes(t *testing.T) {
 	if after.CronExpr != "*/10 * * * *" {
 		t.Errorf("cron_expr = %q, want the new expression", after.CronExpr)
 	}
-	if !after.NextRunAt.Before(before.NextRunAt) {
-		t.Errorf("next_run_at should have moved earlier: %v -> %v", before.NextRunAt, after.NextRunAt)
+	// Recomputed from the new expression means no later than its first run
+	// as of now (startup grace included). The old schedule was yearly, so a
+	// next_run_at left over from it is months past that. (This used to
+	// compare against a daily 04:00, which every run between 03:50 and 04:00
+	// UTC failed: both schedules landed on 04:00.)
+	want, err := models.FirstRegistryRun(after.CronExpr, after.Timezone, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.NextRunAt.After(want) {
+		t.Errorf("next_run_at = %v, later than the new schedule's first run %v: not recomputed", after.NextRunAt, want)
 	}
 }
 

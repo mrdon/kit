@@ -52,8 +52,14 @@ func TestSaveRestorePlaysOnIdentically(t *testing.T) {
 		"final":     func(g *Game) bool { return g.phase == PhaseFinal },
 	}
 	forks := 0
-	for _, c := range goldenCases {
-		for _, seed := range []uint64{c.seed, c.seed + 1} {
+	// Quick: the random-specials night, which reaches most save points in
+	// under a second. Long: every golden night on two seeds.
+	cases, seeds, minForks := goldenCases[2:3], func(s uint64) []uint64 { return []uint64{s} }, 7
+	if longTests {
+		cases, seeds, minForks = goldenCases, func(s uint64) []uint64 { return []uint64{s, s + 1} }, 30
+	}
+	for _, c := range cases {
+		for _, seed := range seeds(c.seed) {
 			c.seed = seed
 			for name, at := range points {
 				for _, nth := range []int{2} {
@@ -67,7 +73,8 @@ func TestSaveRestorePlaysOnIdentically(t *testing.T) {
 			}
 		}
 	}
-	if forks < 30 {
+	t.Logf("%d save points checked", forks)
+	if forks < minForks {
 		t.Fatalf("only %d save points were reached; the script should hit more", forks)
 	}
 }

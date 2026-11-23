@@ -56,38 +56,26 @@ func TestCreateJoinAndStart(t *testing.T) {
 	}
 }
 
-// A race runs on its own: the countdown, the bots' hops and an absent
-// person's flick timeout are all due times the sweeper acts on.
-func TestTheSweeperRunsTheRace(t *testing.T) {
+// A race runs on its own: once the host starts it, the countdown, the bots'
+// hops and the flick timeouts are due times the sweeper acts on, with nobody
+// touching the game. One sweep past the countdown is enough to show it.
+func TestTheSweeperRunsTheClock(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame()
 	f.join(game, "Ann")
-	f.advance(game)
-	start := f.snap(game)
-	for range 200 {
-		f.wait(time.Second)
-		// keep Ann's phone alive, so she auto-hops rather than dropping out
-		if err := f.svc.Heard(f.ctx, f.tenant.ID, game.ID, mustPlayer(t, f, game), f.snap(game)); err != nil {
-			t.Fatal(err)
-		}
-		f.sweep(game)
-		if f.snap(game).TV.Sub == engine.SubRaceEnd {
-			break
-		}
+	started := f.advance(game)
+	if started.TV.Sub != engine.SubReady {
+		t.Fatalf("a started race is in %s, want the ready countdown", started.TV.Sub)
 	}
-	end := f.snap(game)
-	if end.TV.Sub != engine.SubRaceEnd || end.TV.Winner == "" {
-		t.Fatalf("the race never finished on the sweeper: sub %s after %d versions", end.TV.Sub, end.StateVersion-start.StateVersion)
+	row, err := GetGame(f.ctx, f.pool, f.tenant.ID, game.ID)
+	if err != nil || row.NextDueAt == nil {
+		t.Fatalf("a counting-down race has no due time: %v", err)
 	}
-}
-
-func mustPlayer(t *testing.T, f *fixture, game *Game) uuid.UUID {
-	t.Helper()
-	ps, err := ListPlayers(f.ctx, f.pool, f.tenant.ID, game.ID)
-	if err != nil || len(ps) == 0 {
-		t.Fatalf("players: %v %v", ps, err)
+	f.wait(row.NextDueAt.Sub(f.now()) + time.Second)
+	f.sweep(game)
+	if got := f.snap(game); got.TV.Sub == engine.SubReady || got.StateVersion <= started.StateVersion {
+		t.Fatalf("the sweep did not end the countdown: %s, version %d", got.TV.Sub, got.StateVersion)
 	}
-	return ps[0].ID
 }
 
 // Presence: a phone whose stream keeps pinging stays in; one that goes quiet

@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean hopsim hopcrowd
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean hopsim hopcrowd hoppers-long-test
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -167,6 +167,9 @@ trivia-e2e: up console-build ## Trivia chaos test: real TV/phone pages in Chrome
 
 hopsim: ## Simulate Hoppers nights headless to tune rules, e.g. make hopsim ARGS="-fun -live -games 2000 -players 4,8,15"
 	go run ./cmd/hopsim $(ARGS)
+
+hoppers-long-test: ## The exhaustive Hoppers engine checks CI samples (every golden night, every save point; slow)
+	HOPPERS_LONG_TESTS=1 go test -race -count=1 ./internal/apps/hoppers/engine/
 
 hopcrowd: ## Play a live Hoppers game with fake phones, e.g. make hopcrowd ARGS="-game https://.../hoppers/jumping-lion -players 10 -host -session <kit_session>"
 	go run ./cmd/hopcrowd $(ARGS)
