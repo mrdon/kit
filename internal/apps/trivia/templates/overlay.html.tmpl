@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }} overlay</title>
+<link rel="icon" href="data:,">
+<!-- The OBS overlay. See render_overlay.go. Everything outside the L is
+     transparent on purpose: OBS's browser source composites the broadcast
+     through it. -->
+<style>{{ .CSS }}</style>
+</head>
+<body>
+<div id="stagewrap"></div>
+<div id="fit">
+  <aside class="ov-left">
+    <div class="ov-title">{{ .Heading }}</div>
+    <div class="ov-practice" id="ov-practice">PRACTICE ROUND</div>
+    <div class="ov-join">
+      <div class="ov-label">SCAN TO JOIN</div>
+      <div class="ov-qr">{{ .QR }}</div>
+      <div class="ov-url">{{ .JoinHost }}</div>
+    </div>
+    <!-- The clock while something is timed, the topics the rest of the
+         time. overlay.js decides. -->
+    <div class="ov-timer" id="ov-timer">
+      <div class="ov-secs" id="ov-secs"></div>
+      <div class="ov-timer-sub" id="ov-timer-sub"></div>
+    </div>
+    <div class="ov-topics" id="ov-topics"></div>
+    <!-- The question again, under the clock, while the cards hold the
+         strip: somebody back from the bar needs to know what the numbers
+         are answering. -->
+    <div class="ov-aside" id="ov-aside"></div>
+    <div id="dot"></div>
+  </aside>
+  <section class="ov-bottom">
+    <div class="ov-main" id="ov-main"></div>
+  </section>
+  <!-- boot.js ticks a clock every second. The overlay has no room for one,
+       and the broadcast under it is proof enough the screen is alive. -->
+  <div id="clock" hidden></div>
+</div>
+<script>
+  window.__KIT_TRIVIA_STREAM__ = "{{ .StreamURL }}";
+  window.__KIT_TRIVIA_POLL__ = "{{ .PollURL }}";
+  window.__KIT_TRIVIA_GAME__ = "{{ .GameName }}";
+  window.__KIT_TRIVIA_VERSION__ = "{{ .Version }}";
+  window.__KIT_TRIVIA_VERSION_URL__ = "{{ .VersionURL }}";
+  window.__KIT_TRIVIA_OVERLAY__ = true;
+</script>
+<script>{{ .JS }}</script>
+</body>
+</html>

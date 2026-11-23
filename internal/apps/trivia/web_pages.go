@@ -36,7 +36,11 @@ func (a *App) writeDisplay(w http.ResponseWriter, r *http.Request, game *Game, s
 		// The lobby still works without its video; never blank the TV for it.
 		slog.Warn("loading trivia explainer link", "game_id", game.ID, "error", err)
 	}
-	html, err := RenderDisplay(a.baseURL, slug, game, followLatest, explainer)
+	render := RenderDisplay
+	if isOverlay(r) {
+		render = RenderOverlay
+	}
+	html, err := render(a.baseURL, slug, game, followLatest, explainer)
 	if err != nil {
 		serverError(w, "rendering trivia display", err)
 		return
@@ -47,7 +51,14 @@ func (a *App) writeDisplay(w http.ResponseWriter, r *http.Request, game *Game, s
 	if _, err := w.Write([]byte(html)); err != nil {
 		slog.Warn("writing trivia display", "game_id", game.ID, "error", err)
 	}
-	_ = r
+}
+
+// isOverlay reports whether the TV page was asked for as the OBS overlay
+// (?overlay=1): the same game and stream, drawn as an L with a transparent
+// hole for the broadcast. See render_overlay.go.
+func isOverlay(r *http.Request) bool {
+	v := r.URL.Query().Get("overlay")
+	return v != "" && v != "0" && v != "false"
 }
 
 // handleShortJoin turns a short code into the real join page.

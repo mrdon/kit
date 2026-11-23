@@ -263,6 +263,9 @@ function renderBanners() {
 
 function render(prev) {
   if (!state) { return; }
+  // The OBS overlay loads core.js without the screen files below and draws
+  // the frame itself. See overlay.js.
+  if (window.__KIT_TRIVIA_OVERLAY__) { renderOverlay(prev); return; }
   var key = state.phase + ':' + (state.round ? state.round.id : '');
   var phaseChanged = key !== lastPhaseKey;
   lastPhaseKey = key;

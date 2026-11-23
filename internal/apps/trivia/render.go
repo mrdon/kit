@@ -11,7 +11,7 @@ import (
 	"github.com/mrdon/kit/internal/web/qrcode"
 )
 
-//go:embed templates/display.html.tmpl templates/display*.css templates/tv/*.js
+//go:embed templates/display.html.tmpl templates/overlay.html.tmpl templates/display*.css templates/overlay.css templates/tv/*.js
 var templateFS embed.FS
 
 // tvSheets is the TV stylesheet, concatenated in order. display.css is the
@@ -32,10 +32,10 @@ var tvScripts = []string{
 
 // tvScript assembles the client. Everything is indented as it would be
 // inside the function body; the wrapper is the only thing added.
-func tvScript() ([]byte, error) {
+func tvScript(names []string) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString("(function () {\n  'use strict';\n\n")
-	for _, name := range tvScripts {
+	for _, name := range names {
 		src, err := templateFS.ReadFile("templates/tv/" + name)
 		if err != nil {
 			return nil, fmt.Errorf("reading tv/%s: %w", name, err)
@@ -171,14 +171,36 @@ type displayData struct {
 // URIs for the same reason -- a board that falls back to a system font loses
 // the size calibration the whole 1920x1080 layout is built around.
 func RenderDisplay(baseURL, slug string, game *Game, followLatest bool, explainerLink string) (string, error) {
-	css, err := stylesheet()
+	data, err := displayDataFor(baseURL, slug, game, followLatest, explainerLink)
 	if err != nil {
 		return "", err
 	}
-	js, err := tvScript()
+	return renderPage(displayTmpl, "display.html.tmpl", tvSheets, tvScripts, data)
+}
+
+// renderPage inlines a sheet list and a script list into one of the TV
+// templates. The full wall and the OBS overlay differ only in those three.
+func renderPage(tmpl *template.Template, name string, sheets, scripts []string, data displayData) (string, error) {
+	css, err := stylesheet(sheets)
 	if err != nil {
 		return "", err
 	}
+	js, err := tvScript(scripts)
+	if err != nil {
+		return "", err
+	}
+	data.CSS = template.CSS(css)
+	data.JS = template.JS(js) //nolint:gosec // embedded first-party script, no interpolation
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", fmt.Errorf("rendering trivia %s: %w", name, err)
+	}
+	return buf.String(), nil
+}
+
+// displayDataFor is everything a TV page knows about its game, minus the
+// inlined CSS and JS.
+func displayDataFor(baseURL, slug string, game *Game, followLatest bool, explainerLink string) (displayData, error) {
 	// The QR and the printed line both carry the SHORT link. It is the
 	// easiest thing to scan and also the easiest thing to type off a screen;
 	// the long /{slug}/trivia/{name} URL keeps working for anyone who has it.
@@ -188,9 +210,8 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool, explaine
 	}
 	qr, err := qrcode.RenderSVG(join, 640, "Join code")
 	if err != nil {
-		return "", err
+		return displayData{}, fmt.Errorf("drawing the trivia join code: %w", err)
 	}
-
 	title := game.Title
 	if title == "" {
 		title = "Trivia"
@@ -213,15 +234,11 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool, explaine
 	if followLatest {
 		versionURL = "/" + slug + "/trivia/tv.version"
 	}
-
-	var buf bytes.Buffer
-	err = displayTmpl.ExecuteTemplate(&buf, "display.html.tmpl", displayData{
+	return displayData{
 		Title:        title,
 		Heading:      heading,
 		JoinHost:     displayHost(join),
 		QR:           qr,
-		CSS:          template.CSS(css),
-		JS:           template.JS(js), //nolint:gosec // embedded first-party script, no interpolation
 		StreamURL:    template.URL(base + "/tv/stream"),
 		PollURL:      template.URL(base + "/tv/state"),
 		GameName:     game.Name,
@@ -229,11 +246,7 @@ func RenderDisplay(baseURL, slug string, game *Game, followLatest bool, explaine
 		Version:      displayVersion(game) + explainerStamp(explainerLink),
 		VersionURL:   template.URL(versionURL),
 		ExplainerURL: explainer,
-	})
-	if err != nil {
-		return "", fmt.Errorf("rendering trivia display: %w", err)
-	}
-	return buf.String(), nil
+	}, nil
 }
 
 // displayHost strips the scheme from the join URL. Somebody typing it into a
@@ -244,7 +257,7 @@ func displayHost(join string) string {
 }
 
 // stylesheet is the embedded CSS with the two @font-face rules prepended.
-func stylesheet() (string, error) {
+func stylesheet(sheets []string) (string, error) {
 	bungee, err := assetDataURI("assets/bungee.woff2")
 	if err != nil {
 		return "", err
@@ -258,7 +271,7 @@ func stylesheet() (string, error) {
 		"font-weight:400;font-style:normal;font-display:block}\n", bungee)
 	fmt.Fprintf(&b, "@font-face{font-family:exo2;src:url(%s) format(\"woff2\");"+
 		"font-weight:400 700;font-style:normal;font-display:block}\n", exo)
-	for _, name := range tvSheets {
+	for _, name := range sheets {
 		src, err := templateFS.ReadFile("templates/" + name)
 		if err != nil {
 			return "", fmt.Errorf("reading %s: %w", name, err)

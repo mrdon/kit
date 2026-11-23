@@ -1,0 +1,173 @@
+/* The OBS overlay: an L of trivia around a transparent 1440x810 hole at the
+   top right. Stage pixels on the same fixed 1920x1080 canvas as the wall
+   (core.js scales it), and the wall's palette, so the two read as one
+   product when both are up in the same room.
+
+   THE HOLE IS THE CONTRACT. The left column is 480 wide and the bottom strip
+   270 tall because 1440x810 is exactly 75% of 1080p: the broadcast scales to
+   75% in OBS, sits at x=480 y=0, and fits with nothing cropped.
+
+   The strip runs the FULL width, under the column rather than beside it.
+   The cards are the widest thing on the overlay and the column's bottom
+   corner was worth a third more card to them. */
+
+:root {
+  --navy: #1b2b38;
+  --navy-2: #14222d;
+  --navy-3: #0e1a23;
+  --accent: #e8543a;
+  --accent-hot: #ff7d5e;
+  --gold: #f5c451;
+  --muted: #b9c4cf;
+  --dim: #8ea2b3;
+  --cream: #f4efe7;
+  --line: rgba(255, 255, 255, .14);
+  --display: bungee, system-ui, sans-serif;
+  --body: exo2, system-ui, sans-serif;
+  --hole-h: 810px;
+  --side: 480px;
+}
+
+* { box-sizing: border-box; }
+/* Transparent all the way down. OBS's browser source only lets the
+   broadcast through where the page paints nothing. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: antialiased; }
+
+#stagewrap { position: absolute; inset: 0; }
+#fit {
+  width: 1920px; height: 1080px;
+  transform-origin: top left; position: absolute; top: 0; left: 0;
+  overflow: hidden; background: transparent;
+}
+
+.ov-left, .ov-bottom {
+  position: absolute;
+  background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 100%);
+}
+
+/* ---------- the left column ---------- */
+.ov-left {
+  left: 0; top: 0; width: var(--side); height: var(--hole-h);
+  padding: 26px 32px 20px;
+  display: flex; flex-direction: column; gap: 16px;
+  /* The seam against the hole, so the broadcast has an edge. */
+  border-right: 4px solid var(--accent);
+}
+.ov-title {
+  font: 400 30px/1.1 var(--display); color: var(--accent-hot);
+  letter-spacing: .06em; text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ov-practice {
+  display: none; align-self: flex-start; margin-top: -6px;
+  padding: 5px 14px; border-radius: 999px;
+  font: 400 20px/1 var(--display); letter-spacing: .06em;
+  background: var(--gold); color: var(--navy-3);
+}
+.ov-practice.on { display: block; }
+.ov-join { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ov-label { font: 400 22px/1 var(--display); color: var(--gold); letter-spacing: .08em; }
+.ov-qr {
+  width: 260px; height: 260px; padding: 12px;
+  background: var(--cream); border-radius: 16px;
+}
+.ov-qr svg { display: block; width: 100%; height: 100%; }
+.ov-url {
+  font: 700 26px/1.1 var(--body); color: var(--cream);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.ov-timer { display: none; flex-direction: column; align-items: center; }
+.ov-timer.on { display: flex; }
+.ov-timer.solo { flex: 1; justify-content: center; }
+.ov-secs {
+  font: 400 150px/1 var(--display); color: var(--cream);
+  font-variant-numeric: tabular-nums;
+}
+.ov-timer:not(.solo) .ov-secs { font-size: 96px; }
+.ov-secs.warn { color: var(--gold); }
+.ov-secs.hot { color: var(--accent-hot); }
+/* A pause replaces the numeral: the clock is what a pause stops, so the
+   clock is where the room looks for it. */
+.ov-secs.paused { font-size: 60px; color: var(--accent-hot); letter-spacing: .04em; }
+.ov-timer-sub {
+  margin-top: 8px;
+  font: 700 26px/1.1 var(--body); color: var(--muted);
+  letter-spacing: .06em; text-transform: uppercase; text-align: center;
+}
+
+.ov-aside {
+  display: none; flex: 1; min-height: 0; overflow: hidden;
+  padding-top: 14px; border-top: 2px solid var(--line);
+  font: 700 30px/1.2 var(--body); color: var(--cream);
+}
+.ov-aside.on { display: block; }
+.ov-aside .ans { font: 400 26px/1.1 var(--display); color: var(--gold); margin-bottom: 10px; }
+
+.ov-topics { display: none; flex: 1; flex-direction: column; gap: 10px; min-height: 0; }
+.ov-topics.on { display: flex; }
+.ov-topics h2 {
+  margin: 0; font: 400 22px/1 var(--display);
+  color: var(--gold); letter-spacing: .08em;
+}
+.ov-topic {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 8px 14px; border-radius: 10px; background: rgba(255, 255, 255, .06);
+  font: 700 28px/1.1 var(--body);
+}
+.ov-topic .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-topic .left { flex: none; font-size: 22px; color: var(--muted); }
+.ov-topic.spent { opacity: .35; text-decoration: line-through; }
+
+#dot {
+  position: absolute; bottom: 12px; right: 16px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent-hot); opacity: 0; transition: opacity .3s;
+}
+#dot.on { opacity: 1; }
+
+/* ---------- the bottom strip ---------- */
+.ov-bottom {
+  left: 0; top: var(--hole-h); width: 1920px; height: calc(1080px - var(--hole-h));
+  padding: 22px 36px 26px;
+  display: flex; flex-direction: column;
+  border-top: 4px solid var(--accent);
+}
+.ov-main { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+.ov-main.fade { animation: ov-in .35s ease-out; }
+@keyframes ov-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+.ov-line { font: 700 64px/1.15 var(--body); }
+.ov-line em { font-style: normal; color: var(--gold); }
+.ov-sub { margin-top: 8px; font: 700 32px/1.2 var(--body); color: var(--muted); }
+.ov-q { font: 700 72px/1.15 var(--body); overflow: hidden; }
+
+/* The answers on the table, in order. One row up to twelve, two past that.
+   Exo 2 rather than Bungee for the numerals: Bungee is roughly 1.7 times
+   as wide for the same height, and width is what a card runs out of. */
+.ov-cards { flex: 1; min-height: 0; display: grid; gap: 10px; }
+.ov-card {
+  min-width: 0; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 4px 8px; border-radius: 14px;
+  background: rgba(255, 255, 255, .08); border: 2px solid var(--line);
+}
+.ov-card .val {
+  font: 700 64px/1 var(--body); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ov-card.pseudo .val { font: 700 26px/1.05 var(--body); white-space: normal; text-align: center; color: var(--muted); }
+.ov-card .names, .ov-card .pot {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-top: 6px; font: 700 24px/1.15 var(--body); color: var(--muted);
+}
+.ov-card .pot { color: var(--gold); }
+.ov-cards.two .ov-card .names, .ov-cards.two .ov-card .pot { margin-top: 2px; font-size: 20px; }
+.ov-card.win { background: var(--gold); border-color: var(--gold); color: var(--navy-3); }
+.ov-card.win .names, .ov-card.win .pot, .ov-card.win.pseudo .val { color: var(--navy-3); }
+.ov-card.lose { opacity: .35; }
+
+.ov-scores { display: flex; gap: 36px; flex-wrap: wrap; margin-top: 14px; }
+.ov-score { font: 700 36px/1.1 var(--body); white-space: nowrap; }
+.ov-score b { font-family: var(--display); font-weight: 400; color: var(--gold); margin-right: 10px; }
