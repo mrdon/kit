@@ -104,6 +104,13 @@ func (s *Service) change(ctx context.Context, tenantID, gameID uuid.UUID,
 		return nil, cmdErr
 	}
 	before := row.StateVersion
+	// The night just ended: its standings go into the history in the same
+	// transaction, so the history and the game can never disagree.
+	if row.Phase != string(engine.PhaseFinal) && g.Phase() == engine.PhaseFinal {
+		if err := insertResult(ctx, tx, row, standingsOf(g.View(engine.RoleTV, ""))); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.store(ctx, tx, row, g); err != nil {
 		return nil, err
 	}

@@ -24,6 +24,11 @@ func (f *fixture) serveMux() *http.ServeMux {
 
 func (f *fixture) request(method, path string, body any, cookie *http.Cookie) *httptest.ResponseRecorder {
 	f.t.Helper()
+	return f.requestOn(f.serveMux(), method, path, body, cookie)
+}
+
+func (f *fixture) requestOn(mux *http.ServeMux, method, path string, body any, cookie *http.Cookie) *httptest.ResponseRecorder {
+	f.t.Helper()
 	raw := []byte(nil)
 	if body != nil {
 		raw, _ = json.Marshal(body)
@@ -33,7 +38,7 @@ func (f *fixture) request(method, path string, body any, cookie *http.Cookie) *h
 		req.AddCookie(cookie)
 	}
 	rec := httptest.NewRecorder()
-	f.serveMux().ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 	return rec
 }
 

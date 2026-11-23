@@ -13,12 +13,15 @@ package hoppers
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/crypto"
+	"github.com/mrdon/kit/internal/livegame"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -39,6 +42,10 @@ type App struct {
 	svc     *Service
 	signer  *auth.SessionSigner
 	baseURL string
+	// enc unlocks the workspace's bot token, for posting ratings and listing
+	// channels in Admin. feedback is nil without it, which posts nothing.
+	enc      *crypto.Encryptor
+	feedback livegame.FeedbackPoster
 }
 
 // Init records the pool. The service is built in Configure, once the base
@@ -47,15 +54,24 @@ func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 }
 
-// Configure wires the console session signer, the external base URL the
-// join link is built from, and the optional Redis client that relays live
-// snapshots between web processes (nil is fine at one process).
-func Configure(signer *auth.SessionSigner, baseURL string, rdb *redis.Client) {
+// Configure wires the encryptor that unlocks the bot token ratings are posted
+// with, the console session signer, the external base URL the join link is
+// built from, and the optional Redis client that relays live snapshots
+// between web processes (nil is fine at one process).
+func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner, baseURL string, rdb *redis.Client) {
 	if instance == nil || instance.pool == nil {
 		return
 	}
 	instance.signer = signer
 	instance.baseURL = baseURL
+	instance.enc = enc
+	if enc != nil {
+		pool := instance.pool
+		instance.feedback = &livegame.SlackFeedback{Pool: pool, Enc: enc,
+			Channel: func(ctx context.Context, tenantID uuid.UUID) (livegame.FeedbackChannel, error) {
+				return GetFeedbackChannel(ctx, pool, tenantID)
+			}}
+	}
 	instance.svc = NewService(instance.pool, baseURL)
 	instance.svc.ConfigureRelay(rdb)
 }

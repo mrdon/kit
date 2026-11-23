@@ -38,6 +38,7 @@ func registerPublicRoutes(mux apps.Mux, a *App) {
 	mux.Handle("POST /{slug}/hoppers/{game}/join", pub(a.handleJoin))
 	mux.Handle("POST /{slug}/hoppers/{game}/reclaim", pub(a.handleRedeemReclaim))
 	mux.Handle("POST /{slug}/hoppers/{game}/flick", pub(a.handleFlick))
+	mux.Handle("POST /{slug}/hoppers/{game}/feedback", pub(a.handleFeedback))
 	mux.Handle("GET /{slug}/hoppers/{game}/state", pub(a.handlePlayerState))
 	mux.Handle("GET /{slug}/hoppers/{game}/stream", pub(a.handlePlayerStream))
 

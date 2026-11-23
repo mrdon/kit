@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveStream } from '../live/liveStream';
 import { useFrameBuildReload } from '../live/useFrameBuildReload';
 import { useWakeLock } from '../live/useWakeLock';
-import { base, flick, join, reclaim, type Frame, type FrogDraft } from './api';
+import { base, flick, join, reclaim, sendFeedback, type Frame, type FrogDraft } from './api';
+import { RateNight } from '../live/RateNight';
 import { Frog, Hero, HowToPlay, Standings, heroFor } from './screens';
 import { Flick, FLICK_AWAY_MS, myTurn } from './Flick';
 import { Maker, newDraft, saveDraft } from './Maker';
@@ -140,6 +141,9 @@ function Main({ frame, id, onEdit }: { frame: Frame | null; id: string; onEdit: 
       <Hero spec={hero} />
       {frame.phase === HOP.phase.lobby && <HowToPlay />}
       {standings && <Standings s={frame} id={id} />}
+      {frame.phase === HOP.phase.final && (
+        <RateNight game={frame.game} storageKey="kit.hoppers.feedback" send={sendFeedback} />
+      )}
       {!racingNow && <button className="btn ghost" id="edit" onClick={onEdit}>Edit frog</button>}
     </div>
   );

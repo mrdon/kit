@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // fakePoster records what would have gone to Slack, or fails with err.
@@ -18,7 +20,7 @@ type fakePoster struct {
 	err   error
 }
 
-func (p *fakePoster) post(_ context.Context, _ uuid.UUID, text string) error {
+func (p *fakePoster) Post(_ context.Context, _ uuid.UUID, text string) error {
 	if p.err != nil {
 		return p.err
 	}
@@ -26,7 +28,7 @@ func (p *fakePoster) post(_ context.Context, _ uuid.UUID, text string) error {
 	return nil
 }
 
-func (f *fixture) feedbackRequest(game *Game, poster feedbackPoster, body any, cookie *http.Cookie) *httptest.ResponseRecorder {
+func (f *fixture) feedbackRequest(game *Game, poster livegame.FeedbackPoster, body any, cookie *http.Cookie) *httptest.ResponseRecorder {
 	f.t.Helper()
 	mux := http.NewServeMux()
 	registerPublicRoutes(mux, &App{pool: f.pool, svc: f.svc, baseURL: "http://localhost:8489", feedback: poster})
@@ -66,7 +68,7 @@ func TestFeedbackOnlyFromATableOnceTheGameEnds(t *testing.T) {
 			t.Fatalf("%d stars returned %d, want 400", stars, rec.Code)
 		}
 	}
-	long := strings.Repeat("x", maxFeedbackRunes+1)
+	long := strings.Repeat("x", livegame.MaxFeedbackRunes+1)
 	if rec := f.feedbackRequest(game, poster, feedbackRequest{Stars: 3, Comment: long}, cookie); rec.Code != http.StatusBadRequest {
 		t.Fatalf("an over-long comment returned %d, want 400", rec.Code)
 	}
@@ -106,7 +108,7 @@ func TestFeedbackSlackFailureIsHiddenFromThePhone(t *testing.T) {
 	cookie := f.joinOverHTTP(game, "Bar Flies")
 	game = f.toPodium(game)
 
-	for _, err := range []error{errors.New("slack is down"), errFeedbackOff} {
+	for _, err := range []error{errors.New("slack is down"), livegame.ErrFeedbackOff} {
 		poster := &fakePoster{err: err}
 		if rec := f.feedbackRequest(game, poster, feedbackRequest{Stars: 2}, cookie); rec.Code != http.StatusNoContent {
 			t.Fatalf("post failing with %q returned %d, want 204", err, rec.Code)
@@ -125,7 +127,7 @@ func TestFeedbackChannelHasNoDefault(t *testing.T) {
 	if !c.Off() {
 		t.Fatalf("a fresh workspace posts to %+v, want nowhere", c)
 	}
-	if err := SaveFeedbackChannel(f.ctx, f.pool, f.tenant.ID, FeedbackChannel{ID: "C9", Name: "quiz"}); err != nil {
+	if err := SaveFeedbackChannel(f.ctx, f.pool, f.tenant.ID, livegame.FeedbackChannel{ID: "C9", Name: "quiz"}); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ = GetFeedbackChannel(f.ctx, f.pool, f.tenant.ID); c.ID != "C9" || c.Name != "quiz" {
@@ -136,15 +138,17 @@ func TestFeedbackChannelHasNoDefault(t *testing.T) {
 		t.Fatalf("another workspace sees %+v", c)
 	}
 	// And with nothing picked, the real poster declines before touching Slack.
-	s := &slackFeedback{pool: other.pool}
-	if err := s.post(other.ctx, other.tenant.ID, "x"); !errors.Is(err, errFeedbackOff) {
-		t.Fatalf("posting with no channel returned %v, want errFeedbackOff", err)
+	s := &livegame.SlackFeedback{Pool: other.pool, Channel: func(ctx context.Context, id uuid.UUID) (livegame.FeedbackChannel, error) {
+		return GetFeedbackChannel(ctx, other.pool, id)
+	}}
+	if err := s.Post(other.ctx, other.tenant.ID, "x"); !errors.Is(err, livegame.ErrFeedbackOff) {
+		t.Fatalf("posting with no channel returned %v, want ErrFeedbackOff", err)
 	}
 }
 
 // Names and comments are typed by strangers; Slack markup arrives as text.
 func TestFeedbackTextEscapesSlackMarkup(t *testing.T) {
-	got := feedbackText("Tuesday <quiz>", "<!channel> & co", 1, "hi <@U123>")
+	got := livegame.FeedbackText("Tuesday <quiz>", "<!channel> & co", 1, "hi <@U123>")
 	for _, want := range []string{"★☆☆☆☆", "&lt;!channel&gt; &amp; co", "Tuesday &lt;quiz&gt;", "> hi &lt;@U123&gt;"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%q is missing %q", got, want)

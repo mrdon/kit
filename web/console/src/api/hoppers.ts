@@ -1,4 +1,5 @@
-import { apiDelete, apiGet, apiPost } from './client';
+import { apiDelete, apiGet, apiPost, apiPut } from './client';
+import type { TriviaFeedbackChannel } from './events.types';
 import type { Frame } from '../hoppers/api';
 
 // --- Hoppers ---
@@ -54,7 +55,19 @@ export interface HoppersStage {
   heat: number;
 }
 
+// A finished night, as the history keeps it.
+export interface HoppersResult {
+  id: string;
+  title: string;
+  finished_at: string;
+  standings: { name: string; rank: number; points: number; wins: number }[];
+}
+
 export const hoppersApi = {
+  hoppersResults: () => apiGet<{ results: HoppersResult[] }>('/hoppers/results'),
+  hoppersFeedbackChannel: () => apiGet<TriviaFeedbackChannel>('/hoppers/feedback-channel'),
+  saveHoppersFeedbackChannel: (channelId: string) =>
+    apiPut<TriviaFeedbackChannel>('/hoppers/feedback-channel', { channel_id: channelId }),
   hoppersPacks: () => apiGet<{ packs: HoppersPack[] }>('/hoppers/packs'),
   hoppersGames: () => apiGet<{ games: HoppersGame[] }>('/hoppers/games'),
   createHoppersGame: (body: { title: string; pack: string; rules: HoppersRules }) =>

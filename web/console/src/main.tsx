@@ -13,6 +13,7 @@ import TriviaLive from './pages/trivia/live';
 import TriviaQuestions from './pages/TriviaQuestions';
 import Hoppers from './pages/Hoppers';
 import HoppersLive from './pages/hoppers/live';
+import HoppersSettings from './pages/HoppersSettings';
 import Menu from './pages/Menu';
 import MenuPrintSettings from './pages/MenuPrintSettings';
 import MenuHappyHour from './pages/MenuHappyHour';
@@ -143,6 +144,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/cogs/queue" element={<CogsQueue />} />
           <Route path="/cogs/history" element={<CogsHistory />} />
           <Route path="/admin/trivia" element={<TriviaQuestions />} />
+          <Route path="/admin/hoppers" element={<HoppersSettings />} />
           <Route path="/admin/menu" element={<MenuPrintSettings />} />
           <Route path="/admin/happy-hour" element={<MenuHappyHour />} />
           <Route path="/admin/menu-86" element={<MenuEightySixChannel />} />

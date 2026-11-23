@@ -294,7 +294,7 @@ func main() {
 	// rather than the hour it takes without one.
 	trivia.ConfigureExplainer(cfg.GDriveAPIKey)
 	trivia.StartLive(ctx)
-	hoppers.Configure(sessionSigner, cfg.BaseURL, rdb)
+	hoppers.Configure(enc, sessionSigner, cfg.BaseURL, rdb)
 	hoppers.StartLive(ctx)
 
 	console.Configure(sessionSigner, enc)

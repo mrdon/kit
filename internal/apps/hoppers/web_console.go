@@ -34,6 +34,15 @@ func registerConsoleRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/hoppers/games/{id}/state", host(a.handleHostState))
 	mux.Handle("GET /{slug}/api/hoppers/games/{id}/stream", host(a.handleHostStream))
 	mux.Handle("POST /{slug}/api/hoppers/games/{id}/players/{playerID}/reclaim", host(a.handleReclaim))
+	mux.Handle("GET /{slug}/api/hoppers/results", host(a.handleResults))
+
+	// Where ratings go is a workspace setting, so for people it is
+	// admin-only; a device holding hoppers.host still passes.
+	admin := func(h http.HandlerFunc) http.Handler {
+		return console.RequireCapAdmin(a.pool, a.signer, auth.CapHoppersHost, h)
+	}
+	mux.Handle("GET /{slug}/api/hoppers/feedback-channel", admin(a.handleGetFeedbackChannel))
+	mux.Handle("PUT /{slug}/api/hoppers/feedback-channel", admin(a.handleSaveFeedbackChannel))
 }
 
 // packJSON is one choice on the setup screen.

@@ -27,6 +27,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/crypto"
+	"github.com/mrdon/kit/internal/livegame"
 	"github.com/mrdon/kit/internal/services"
 	"github.com/mrdon/kit/internal/tools"
 )
@@ -52,7 +53,7 @@ type App struct {
 	// enc decrypts the workspace's bot token, for posting ratings and listing
 	// channels in Admin. feedback is nil without it, which posts nothing.
 	enc      *crypto.Encryptor
-	feedback feedbackPoster
+	feedback livegame.FeedbackPoster
 	// explainer caches the lobby video fetched from Drive; see explainer.go.
 	explainer     *explainerCache
 	explainerOnce sync.Once
@@ -80,7 +81,11 @@ func Configure(enc *crypto.Encryptor, signer *auth.SessionSigner, baseURL string
 	instance.baseURL = baseURL
 	instance.enc = enc
 	if enc != nil && instance.pool != nil {
-		instance.feedback = &slackFeedback{pool: instance.pool, enc: enc}
+		pool := instance.pool
+		instance.feedback = &livegame.SlackFeedback{Pool: pool, Enc: enc,
+			Channel: func(ctx context.Context, tenantID uuid.UUID) (livegame.FeedbackChannel, error) {
+				return GetFeedbackChannel(ctx, pool, tenantID)
+			}}
 	}
 	if instance.svc != nil {
 		instance.svc.ConfigureRelay(rdb)

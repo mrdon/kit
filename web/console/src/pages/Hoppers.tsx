@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, type HoppersGame, type HoppersPack, type HoppersRules } from '../api';
+import { api, type HoppersGame, type HoppersPack, type HoppersResult, type HoppersRules } from '../api';
 import { useSetChatContext } from '../chatContext';
 import { SLUG } from '../workspace';
 import { NumberField } from './trivia/NumberField';
@@ -100,6 +100,37 @@ export default function Hoppers() {
               ) : (
                 <button className="btn btn-danger" disabled={busy} onClick={() => setConfirming(g.id)}>Delete</button>
               )}
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <PastNights />
+    </>
+  );
+}
+
+// PastNights is the history: every finished night with its podium, kept
+// even after the game itself is deleted.
+function PastNights() {
+  const [results, setResults] = useState<HoppersResult[] | null>(null);
+  useEffect(() => {
+    api.hoppersResults().then((r) => setResults(r.results)).catch(() => setResults([]));
+  }, []);
+  if (!results || results.length === 0) return null;
+  return (
+    <>
+      <h2>Past nights</h2>
+      <ul className="card-list">
+        {results.map((r) => (
+          <li key={r.id} className="card">
+            <div className="card-main">
+              <span className="card-title">{r.title}</span>
+              <span className="card-desc">
+                {new Date(r.finished_at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+                {` · ${r.standings.length} frog${r.standings.length === 1 ? '' : 's'}`}
+                {r.standings.length ? ' · ' + r.standings.slice(0, 3).map((s) => `${s.rank}. ${s.name} (${s.points})`).join(', ') : ''}
+              </span>
             </div>
           </li>
         ))}

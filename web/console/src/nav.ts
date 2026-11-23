@@ -101,6 +101,13 @@ export const SECTIONS: Section[] = [
     app: 'trivia',
   },
   {
+    to: '/admin/hoppers',
+    label: 'Hoppers ratings',
+    blurb: 'Choose the Slack channel the end-of-night frog race ratings go to.',
+    admin: true,
+    app: 'hoppers',
+  },
+  {
     to: '/admin/devices',
     label: 'Devices',
     blurb: 'Pair the trivia laptop or the bar iPad, and choose what each may do.',

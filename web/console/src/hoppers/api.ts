@@ -123,6 +123,7 @@ export async function post<T>(path: string, body: unknown): Promise<Posted<T>> {
       body: JSON.stringify(body),
     });
     if (!r.ok) return { ok: false, status: r.status, data: null, error: (await r.text()).trim() };
+    if (r.status === 204) return { ok: true, status: r.status, data: null, error: '' };
     return { ok: true, status: r.status, data: (await r.json()) as T, error: '' };
   } catch {
     return { ok: false, status: 0, data: null, error: '' };
@@ -132,3 +133,9 @@ export async function post<T>(path: string, body: unknown): Promise<Posted<T>> {
 export const join = (f: FrogDraft) => post<Me>('/join', f);
 export const reclaim = (playerId: string, code: string) => post<Me>('/reclaim', { playerId, code });
 export const flick = (power: number, perfect: boolean) => post<Frame>('/flick', { power, perfect });
+
+// sendFeedback throws on failure, which RateNight logs and otherwise ignores.
+export async function sendFeedback(stars: number, comment: string) {
+  const res = await post<unknown>('/feedback', { stars, comment });
+  if (!res.ok) throw new Error(res.error || `feedback: ${res.status}`);
+}
