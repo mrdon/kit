@@ -40,7 +40,7 @@ The host runs the night with one button, from a laptop or the bar's iPad: **Star
 ## Look and feel
 
 - **Art.** Hand-drawn "ink and marker" cartoon frogs with wobbly outlines, sleepy heavy-lidded eyes, warts and red-tipped toes. The frogs blink, breathe and bob their hats.
-- **Hats and looks.** Crown, cowboy hat, beanie, party hat, viking helmet, propeller cap, top hat, daisy, pint, chef hat, sweatband, bucket hat and antlers. There are also looks named after the regulars: Parylene, Appraiser, COTY, Cat herder, Butler, Dreamer, Welder and PM guy.
+- **Hats and looks.** Crown, cowboy hat, beanie, party hat, viking helmet, propeller cap, top hat, daisy, pint, chef hat, sweatband, bucket hat and antlers. There are also looks named after the regulars: Parylene, Appraiser, COTY, Cat herder, Butler, Dreamer, Welder and PM guy. And **Major Tom**: a fishbowl space helmet with an antenna.
 - **Scenes.**
   - **The bar:** a wooden bar top, a back bar of bottles, string lights, and windows looking out on the Colorado Front Range at golden hour.
   - **The lake:** lily pads at sunset, cattails, a dock to start from, and the mountains on the far shore.

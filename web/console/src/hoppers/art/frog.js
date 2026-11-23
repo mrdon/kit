@@ -17,6 +17,7 @@ export const HATS = [
   "none", "crown", "cowboy", "beanie", "party", "viking", "propeller",
   "tophat", "flower", "pint", "chef", "headband", "bucket", "antlers",
   "silver", "curls", "cap", "blonde", "wild", "black", "ponytail", "pm",
+  "helmet",
 ];
 
 export function shade(hex, amt) {
@@ -205,6 +206,21 @@ export function hatSVG(hat, color) {
         L("M45.2 25.2 C47.4 23.8 49.6 23.8 51.6 25.4", 1.7, "#1f1a17") +
         L("M64 24.6 C66.4 24.4 68.6 25 70.4 26.4", 1.7, "#1f1a17");
     }
+    case "helmet": {
+      // Major Tom: a fishbowl space helmet over the whole head, drawn in head
+      // coordinates like the PM guy's glasses (HAT_FIT puts it at 0,0). The
+      // glass is see-through -- no paper under it -- so the face shows, with
+      // a silver neck collar and a little antenna.
+      const dome = "M19 29 A27 24 0 1 0 73 29 A27 24 0 1 0 19 29 Z";
+      const collar = "M19.6 44.2 C30 52.4 62 52.4 72.4 44.2 L73.4 49.6 C62 58.4 30 58.4 18.6 49.6 Z";
+      return `<path d="${dome}" style="${st({ fill: "#cfeeff", "fill-opacity": 0.22, stroke: "none" })}"/>` +
+        `<path d="${dome}" transform="translate(0.8 1)" style="${st({ fill: "none", stroke: "#7fc8ee", "stroke-width": 2.6, opacity: 0.9 })}"/>` +
+        `<path d="${dome}" style="${st({ fill: "none", stroke: I, "stroke-width": 1.9 })}"/>` +
+        L("M30 10.4 C25 13.4 21.8 18.6 21.2 24.4", 2.4, "#ffffffdd") + L("M35.6 8 C34.4 8.4 33.2 8.9 32.2 9.5", 2.2, "#ffffffcc") +
+        S(collar, "#d6dbe0", { band: "#8a949c", op: 0.9, w: 1.8 }) +
+        L("M24 50.4 l0.4 2.6 M34 53.4 l0.2 2.6 M46 54.4 v2.6 M58 53.4 l-0.2 2.6 M68 50.4 l-0.4 2.6", 1.1, "#6b7480") +
+        O("M61 6.6 L64.6 -0.6", "#b8c0c8", 1.2) + dot(65, -1.4, 1.9, "#e74c3c");
+    }
     default:
       return "";
   }
@@ -244,7 +260,7 @@ export const HAT_FIT = {
   antlers: [47.5, 21.5, 3, 1, true],
   silver: [47.5, 21.5, 2, 1, true], curls: [47.5, 21.5, 2, 1, true], cap: [47.5, 20.8, 4, 1],
   blonde: [47.5, 21.5, 2, 1, true], wild: [47.5, 21.5, 2, 1, true], black: [47.5, 21.5, 2, 1, true],
-  ponytail: [47.5, 21.5, 2, 1, true], pm: [0, 0, 0, 1],
+  ponytail: [47.5, 21.5, 2, 1, true], pm: [0, 0, 0, 1], helmet: [0, 0, 0, 1],
 };
 export function placedHat(hat, color, layer) {
   const f = HAT_FIT[hat]; if (!f || !!f[4] !== (layer === "under")) return "";
