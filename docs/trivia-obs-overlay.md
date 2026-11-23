@@ -67,7 +67,7 @@ state over a fake football broadcast into `dist/trivia-obs-overlay/`, plus
 3. ~~Left column dead space~~ — standings fill it (not during the question
    phase, where the countdown stays solo and big).
 4. Countdown is only 96px when it shares the column with the question.
-5. Verify the phone shows the question during betting.
+5. ~~Phone shows the question during betting?~~ — yes, `play/betting.tsx`.
 6. Try it in real OBS against a live game.
 
 ## Code
