@@ -22,10 +22,10 @@ const graceWindow = 1500 * time.Millisecond
 
 // AdvancePhase is the one guarded transition every path in the app issues.
 //
-// Three layers close a timed phase -- the lazy sweep on every request, the
-// process ticker, and the scheduled backstop -- and they run concurrently by
-// design. What makes that safe is that all three issue exactly this
-// conditional UPDATE: it fires only if the game is still in `from` and (when
+// Two paths close a timed phase -- the sweeper, and the write guard
+// (SweepDue) every mutating request runs first -- and they can race, as can
+// the sweepers of two web processes. What makes that safe is that all of them
+// issue exactly this conditional UPDATE: it fires only if the game is still in `from` and (when
 // requireDeadline) the deadline plus the grace window has actually passed.
 // Zero rows updated means somebody already advanced, so the caller does
 // nothing and publishes nothing.
@@ -158,8 +158,8 @@ func pauseResult(g *Game, err error, doing string) (*Game, bool, error) {
 // the new deadline on every phone and the TV in the same frame, so the
 // countdown visibly drops to the grace instead of the phase simply vanishing
 // out from under whoever acted last. The close that follows is the ORDINARY
-// timer close -- the sweep, the ticker and the scheduled backstop all take it
-// as they always would -- so nothing new learned how to end a phase.
+// timer close -- the sweeper and the write guard take it as they always
+// would -- so nothing new learned how to end a phase.
 //
 // Two guards, both load-bearing. `phase = $3` is the usual one: a shorten
 // that lands just after the phase closed must do nothing rather than putting
@@ -257,27 +257,4 @@ type GameRef struct {
 	ID       uuid.UUID
 	TenantID uuid.UUID
 	Phase    Phase
-}
-
-// DueGamesForTenant is the scheduled backstop's version, scoped to the tenant
-// whose job row is running.
-func DueGamesForTenant(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]GameRef, error) {
-	rows, err := pool.Query(ctx, fmt.Sprintf(`
-		SELECT id, tenant_id, phase FROM app_trivia_games
-		 WHERE tenant_id = $1 AND phase_deadline IS NOT NULL
-		   AND phase_deadline + interval '%d milliseconds' <= now()`, graceWindow.Milliseconds()),
-		tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("querying due trivia games for tenant: %w", err)
-	}
-	defer rows.Close()
-	var out []GameRef
-	for rows.Next() {
-		var g GameRef
-		if err := rows.Scan(&g.ID, &g.TenantID, &g.Phase); err != nil {
-			return nil, fmt.Errorf("scanning due game: %w", err)
-		}
-		out = append(out, g)
-	}
-	return out, rows.Err()
 }

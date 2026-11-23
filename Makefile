@@ -162,6 +162,9 @@ test: up ## Run tests (requires Postgres via `make up`)
 		echo "✓ All $$PASSED packages passed"; \
 	fi
 
+trivia-e2e: up console-build ## Trivia chaos test: real TV/phone pages in Chrome over a faulty network (needs Node, Chrome, global playwright-core; minutes)
+	go test -tags e2e -race -count=1 -timeout 15m -run TestE2EChaos -v ./internal/apps/trivia/
+
 lint: ## Run linters (requires golangci-lint)
 	@echo "Running linters..."
 	@GOBIN=$$(go env GOPATH)/bin; \

@@ -67,8 +67,8 @@ const RETRY_MAX_MS = 15_000;
 //
 // This is the strongest signal the app has, and it is a far better one than
 // silence. When a phase carries a deadline the SERVER ends it -- the sweeper
-// runs process-wide every 500ms and every poll heals an expired phase on its
-// way past -- so a countdown sitting on zero with no newer version is not a
+// wakes at the deadline and publishes -- so a countdown sitting on zero with
+// no newer version is not a
 // quiet moment that might be fine. It is proof we are not hearing the server,
 // and it is exactly what a frozen phone looks like from the table: a clock at
 // 0:00 and nothing happening.
@@ -77,9 +77,8 @@ const RETRY_MAX_MS = 15_000;
 // no state looks perfectly healthy to a silence watchdog, and so does one
 // whose frames a proxy is eating. The clock knows better.
 //
-// Polling is also the CURE and not just the alarm: /state runs SweepDue
-// first, so a client noticing the stall is a client that ends the phase the
-// server should have ended. Which means this heals a wedged sweeper too.
+// Polling is the cure for a deaf socket, not for the server: /state only
+// reads. Ending the phase is the sweeper's job alone.
 const STALL_GRACE_MS = 1_500;
 const STALL_POLL_EVERY_MS = 1_000;
 const STALL_RECONNECT_AFTER_MS = 3_000;

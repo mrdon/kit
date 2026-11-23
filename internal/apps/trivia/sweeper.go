@@ -15,10 +15,19 @@ const minWait = 250 * time.Millisecond
 // retryWait is how long to back off after the next-deadline lookup fails.
 const retryWait = 5 * time.Second
 
-// SweepDue closes any phase of this game whose deadline has passed. THIS is
-// the correctness guarantee, not the ticker: every read and write path calls
-// it first, so phases advance correctly with no background machinery running
-// at all, and a process restarted mid-round heals on the next request.
+// SweepDue closes this game's phase if its deadline has passed, and
+// publishes when it did.
+//
+// Ending countdowns is the sweeper's job, not this one. This is the WRITE
+// GUARD: every path that changes a game (host action, join, answer, wager,
+// bet) calls it first, so an answer arriving in the instant between a clock
+// running out and the sweeper waking is judged against the phase the game is
+// really in, never the expired one. Read paths do not call it -- the sweeper
+// already has, to the millisecond.
+//
+// It publishes when it moves the game, because the caller may go on to reject
+// its own write (ErrClosed) and publish nothing, and the room -- and the
+// sweeper, which re-arms on publish -- must still hear the phase change.
 func (s *Service) SweepDue(ctx context.Context, tenantID, gameID uuid.UUID) error {
 	game, err := GetGame(ctx, s.pool, tenantID, gameID)
 	if err != nil {
@@ -27,7 +36,24 @@ func (s *Service) SweepDue(ctx context.Context, tenantID, gameID uuid.UUID) erro
 	if game.PhaseDeadline == nil || time.Now().UTC().Before(game.PhaseDeadline.Add(graceWindow)) {
 		return nil
 	}
-	return s.closePhase(ctx, game, game.Phase, true)
+	return s.closeExpired(ctx, game)
+}
+
+// closeExpired closes game's timed-out phase and publishes if the game moved.
+// A zero-row guarded UPDATE means somebody beat us to it, and closePhase
+// returns nil having done nothing -- so the check is "did the version
+// actually move", not "did we win".
+func (s *Service) closeExpired(ctx context.Context, game *Game) error {
+	before := game.StateVersion
+	if err := s.closePhase(ctx, game, game.Phase, true); err != nil {
+		return err
+	}
+	after, err := GetGame(ctx, s.pool, game.TenantID, game.ID)
+	if err != nil || after.StateVersion == before {
+		return nil // nothing moved: another process or another path got there
+	}
+	s.publish(ctx, game.TenantID, game.ID)
+	return nil
 }
 
 // StartSweeper runs the liveness loop.
@@ -35,18 +61,20 @@ func (s *Service) SweepDue(ctx context.Context, tenantID, gameID uuid.UUID) erro
 // CLAUDE.md CARVE-OUT, considered rather than overlooked. The rule is
 // "recurring work is declared with RegisterScheduledTask ... never a goroutine
 // ticker", and it exists so tenant-scoped business work has run history,
-// last_error and audit. The minute-granularity backstop DOES go in the
-// scheduler, in schedule.go, exactly as the rule requires. This loop exists
-// because a countdown people are watching on a wall needs to end within about
-// a second, and cron's floor is a minute.
+// last_error and audit. This loop exists because a countdown people are
+// watching on a wall needs to end within about a second, and cron's floor is
+// a minute. It is the ONE thing that ends countdowns: there is no scheduled
+// backstop (the process that would run it is this process), and reads do
+// not sweep.
 //
 // It is NOT a ticker. It sleeps until the earliest running clock anywhere
 // expires, and with no game live -- all week but an hour or so -- it sleeps
 // indefinitely and issues no queries at all. Any publish (local or relayed
 // from another process) wakes it to re-read the next deadline, because every
 // write that sets, shortens, extends, pauses or clears a deadline publishes.
-// A missed wake costs latency, not correctness: the minute backstop and
-// SweepDue on every read and write still close the phase.
+// It re-reads the deadline from the database on every wake, so it cannot
+// drift from what is stored; and SweepDue publishes when a write path closes
+// a phase first, so no deadline is ever set without a wake.
 //
 // What makes it safe is that this goroutine owns nothing. All game state is
 // in Postgres; it holds no locks, and issues the same guarded conditional
@@ -101,38 +129,16 @@ func (s *Service) sweepAll(ctx context.Context) {
 	}
 }
 
-// SweepTenant is the scheduled backstop's entry point, scoped to one tenant's
-// job row.
-func (s *Service) SweepTenant(ctx context.Context, tenantID uuid.UUID) error {
-	due, err := DueGamesForTenant(ctx, s.pool, tenantID)
-	if err != nil {
-		return err
-	}
-	for _, ref := range due {
-		s.sweepOne(ctx, ref)
-	}
-	return nil
-}
-
-// sweepOne closes one game's expired phase. A zero-row guarded UPDATE means
-// somebody beat us to it, and closePhase returns nil having done nothing --
-// so the check below is "did the version actually move", not "did we win".
+// sweepOne closes one due game's expired phase.
 func (s *Service) sweepOne(ctx context.Context, ref GameRef) {
 	game, err := GetGame(ctx, s.pool, ref.TenantID, ref.ID)
 	if err != nil {
 		return
 	}
-	before := game.StateVersion
-	if err := s.closePhase(ctx, game, game.Phase, true); err != nil {
+	if err := s.closeExpired(ctx, game); err != nil {
 		slog.Warn("trivia sweep failed to close phase",
 			"game_id", ref.ID, "phase", game.Phase, "error", err)
-		return
 	}
-	after, err := GetGame(ctx, s.pool, ref.TenantID, ref.ID)
-	if err != nil || after.StateVersion == before {
-		return // nothing moved: another process or another layer got there
-	}
-	s.publish(ctx, ref.TenantID, ref.ID)
 }
 
 // maybeCloseEarly cuts a phase short when there is nothing left to wait for:

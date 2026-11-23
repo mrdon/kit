@@ -61,8 +61,8 @@ func TestEveryoneAnsweringShortensTheClockInsteadOfClosing(t *testing.T) {
 		t.Fatal("the shortened clock did not bump state_version, so no surface repaints")
 	}
 
-	// And the ordinary timer path -- the same one the sweeper, the ticker and
-	// the scheduled backstop share -- is what actually ends it.
+	// And the ordinary timer path -- the one the sweeper and the write guard
+	// share -- is what actually ends it.
 	f.expire(t, game.ID)
 	if err := f.svc.SweepDue(f.ctx, f.tenant.ID, game.ID); err != nil {
 		t.Fatal(err)

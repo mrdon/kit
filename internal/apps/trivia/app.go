@@ -62,7 +62,6 @@ type App struct {
 func (a *App) Init(pool *pgxpool.Pool) {
 	a.pool = pool
 	a.svc = NewService(pool)
-	a.registerScheduledTasks()
 }
 
 // Configure wires the console session signer, the external base URL used to

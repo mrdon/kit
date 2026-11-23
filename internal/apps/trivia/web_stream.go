@@ -2,7 +2,6 @@ package trivia
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -53,11 +52,6 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, gameID, tenantI
 	ch, cancel := a.svc.Broker().Subscribe(gameID)
 	defer cancel()
 
-	// Heal any expired phase before the first frame, so a screen that opened
-	// during a stale round does not paint the wrong thing until the sweeper wakes.
-	if err := a.svc.SweepDue(r.Context(), tenantID, gameID); err != nil {
-		slog.Warn("sweeping trivia game on stream open", "game_id", gameID, "error", err)
-	}
 	snap, err := a.svc.Snapshot(r.Context(), tenantID, gameID)
 	if err != nil {
 		http.NotFound(w, r)
@@ -165,9 +159,6 @@ func (a *App) handleHostState(w http.ResponseWriter, r *http.Request) {
 // stateSince is the shared body of the three poll endpoints. It returns false
 // when it has already written the response (a 304 or an error).
 func (a *App) stateSince(w http.ResponseWriter, r *http.Request, gameID, tenantID uuid.UUID) (*Snapshot, bool) {
-	if err := a.svc.SweepDue(r.Context(), tenantID, gameID); err != nil {
-		slog.Warn("sweeping trivia game on poll", "game_id", gameID, "error", err)
-	}
 	snap, err := a.svc.Snapshot(r.Context(), tenantID, gameID)
 	if err != nil {
 		http.NotFound(w, r)

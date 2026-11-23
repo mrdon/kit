@@ -139,9 +139,8 @@ setInterval(function () {
    Silence alone cannot catch this: a socket delivering pings but no state
    looks perfectly healthy to the watchdog above. The clock knows better.
 
-   And the poll is the CURE as well as the alarm -- /state sweeps an expired
-   phase on its way past, so a screen noticing the stall is a screen that ends
-   the phase the server should have ended. */
+   The poll is the cure for a deaf socket: it fetches the state the stream
+   failed to deliver. It does not end phases -- that is the sweeper's job. */
 setInterval(function () {
   if (!state || !state.deadlineMs) { stallSince = 0; return; }
   var past = Date.now() + skew - state.deadlineMs;

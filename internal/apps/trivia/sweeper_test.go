@@ -83,3 +83,34 @@ func TestBrokerChangedCoalesces(t *testing.T) {
 	default:
 	}
 }
+
+// A write that arrives just after a clock ran out closes the phase itself
+// (SweepDue, the write guard) and must publish that, even when the write is
+// then rejected -- otherwise the room never hears the phase moved, and the
+// sweeper never re-arms for the next phase's clock.
+func TestWriteGuardPublishesThePhaseItCloses(t *testing.T) {
+	f := newFixture(t)
+	f.seedBank(topicSet(), 4)
+	game := f.newGame(defaultSettings(), topicSet())
+	f.join(game.ID, "Bar Flies")
+	f.join(game.ID, "Quiz Khalifa")
+	f.do(game.ID, ActionRequest{Action: ActionStart, FromPhase: PhaseLobby})
+	snap, _ := f.svc.Snapshot(f.ctx, f.tenant.ID, game.ID)
+	cellID := snap.Board[0].ID
+	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
+
+	ch, cancel := f.svc.Broker().Subscribe(game.ID)
+	defer cancel()
+	f.expire(t, game.ID)
+	if err := f.svc.SweepDue(f.ctx, f.tenant.ID, game.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-ch:
+		if got.Phase != PhaseReveal {
+			t.Fatalf("published phase = %s, want reveal", got.Phase)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SweepDue closed the phase but published nothing")
+	}
+}
