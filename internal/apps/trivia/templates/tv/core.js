@@ -20,23 +20,10 @@
         the server's clock; we derive a skew and tick at 100ms ourselves.
         Countdown ticks are never sent over the wire.
 */
-var STREAM = window.__KIT_TRIVIA_STREAM__;
-var POLL = window.__KIT_TRIVIA_POLL__;
 var state = null;
-var skew = 0;              // serverNow - Date.now(), latest sample
+var skew = 0;              // serverNow - Date.now(), latest sample (from KitLive)
 var timers = [];           // choreography timers, cancellable
 var lastPhaseKey = '';
-var lastVersion = -1;
-var es = null;
-/* Any traffic at all on the socket: a frame, a ping, or an open. Silence on
-   THIS is what the watchdog reads, and a connect ATTEMPT stamps it too, so a
-   socket that is still coming up is never mistaken for one that has died. */
-var lastFrameAt = Date.now();
-var retryMs = 1000;        /* reconnect backoff, reset on a healthy socket */
-var retryTimer = null;
-var connectingSince = 0;   /* when the current socket started dialling */
-var stallSince = 0;        /* when the countdown first sat past its deadline */
-var lastStallPoll = 0;
 
 /* ---------- stage scaling ---------- */
 function fit() {
@@ -51,145 +38,22 @@ function fit() {
 }
 window.addEventListener('resize', fit);
 
-/* ---------- transport ---------- */
-
-/* THIS IS A DELIBERATE MIRROR of web/console/src/liveStream.ts, which is the
-   one the phone and the host console share. It cannot import that module --
-   this file is inlined into a server-rendered page with no build step, on
-   purpose, so the wall paints from a cheap stick on flaky wifi -- so the two
-   are kept in step by hand and are meant to be changed together. Every rule
-   below has its reasoning written out over there. */
-function connect() {
-  /* NEVER tear down a socket that is still trying to come up. This is the
-     whole bug: the watchdog used to call connect() every 5s for as long as
-     the stream was silent, and connect() closed whatever was there first, so
-     a handshake needing six seconds on bad wifi was killed at five, every
-     five seconds, forever. The recovery path was what prevented recovery. */
-  /* ...but not FOREVER. A socket can latch in CONNECTING and never resolve,
-     and an unconditional pass meant nothing could replace it: the wall would
-     run on the fallback poll for the rest of the night with the dot red.
-     Past twice the silence window it has had every chance. */
-  if (es && es.readyState === 0 /* CONNECTING */ && Date.now() - connectingSince < 40000) { return; }
-  if (es) { es.close(); }
-  /* Give the new socket a full silence window to prove itself, or the
-     watchdog reads the OLD timestamp and kills it on the next tick. */
-  lastFrameAt = Date.now();
-  connectingSince = Date.now();
-  es = new EventSource(STREAM);
-  var alive = function () { lastFrameAt = Date.now(); retryMs = 1000; setDot(false); };
-  es.addEventListener('state', function (ev) {
-    alive();
-    try { apply(JSON.parse(ev.data)); } catch (e) { /* a malformed frame is not worth a blank wall */ }
-  });
-  es.addEventListener('open', alive);
-  /* The liveness beat — see web_stream.go. A break or an emptied board can
-     sit unchanged for minutes, and without this the watchdog below reads that
-     quiet as a dead socket and rebuilds the stream under the room. */
-  es.addEventListener('ping', alive);
-  es.addEventListener('error', function () {
-    setDot(true);
-    /* EventSource retries on its own while it can. CLOSED means the browser
-       has given up for good and nothing will ever arrive on it. */
-    if (es && es.readyState === 2 /* CLOSED */) { scheduleRetry(); }
-  });
-}
-
-/* Reconnect with backoff rather than on a fixed beat, so a stall cannot
-   become a teardown loop. */
-function scheduleRetry() {
-  if (retryTimer !== null) { return; }
-  var wait = retryMs;
-  retryMs = Math.min(retryMs * 2, 15000);
-  retryTimer = setTimeout(function () {
-    retryTimer = null;
-    connect();
-    poll();
-  }, wait);
-}
-
-/* Any recovery the browser hands us is worth taking at once, and it resets
-   the backoff: an access point coming back is new information, not another
-   failure. */
-function revive() {
-  retryMs = 1000;
-  if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
-  connect();
-  poll();
-}
-window.addEventListener('online', revive);
-window.addEventListener('pageshow', revive);
-
-/* A suspended EventSource frequently LOOKS open and is dead, so silence is
-   the signal rather than an error event: no frame and no ping for 20s means
-   reopen. The server beats every 8s, so this only fires on a real stall.
-   Looking often is free; it is the 20s that decides, and conflating the two
-   is what produced the teardown loop. */
-setInterval(function () {
-  var quiet = Date.now() - lastFrameAt;
-  if (quiet > 20000) { setDot(true); scheduleRetry(); }
-}, 2000);
-
-/* THE COUNTDOWN AS A LIVENESS CHECK.
-
-   When a phase carries a deadline the SERVER ends it, so a clock sitting on
-   zero with no newer version is not a quiet moment that might be fine -- it
-   is proof the wall is not hearing this game, and it is exactly what a frozen
-   screen looks like from the room.
-
-   Silence alone cannot catch this: a socket delivering pings but no state
-   looks perfectly healthy to the watchdog above. The clock knows better.
-
-   The poll is the cure for a deaf socket: it fetches the state the stream
-   failed to deliver. It does not end phases -- that is the sweeper's job. */
-setInterval(function () {
-  if (!state || !state.deadlineMs) { stallSince = 0; return; }
-  var past = Date.now() + skew - state.deadlineMs;
-  if (past < 1500) { stallSince = 0; return; }
-  if (stallSince === 0) { stallSince = Date.now(); }
-  var now = Date.now();
-  if (now - lastStallPoll >= 1000) { lastStallPoll = now; setDot(true); poll(); }
-  if (now - stallSince > 3000) { scheduleRetry(); }
-}, 500);
-
-/* Poll fallback. A captive portal or a proxy that eats SSE should cost a
-   few seconds of latency, not a frozen screen. */
-function poll() {
-  var url = POLL + (lastVersion >= 0 ? '?since=' + lastVersion : '');
-  fetch(url, { credentials: 'same-origin' }).then(function (r) {
-    if (r.status === 204) { return null; }
-    return r.json();
-  }).then(function (data) {
-    /* Deliberately does NOT stamp lastFrameAt. That clock means "the SOCKET
-       is alive", and a working poll used to refresh it -- which meant a dead
-       stream was never detected, never retried, and the wall ran on five
-       second polling for the rest of the night with the dot showing green. */
-    if (data) { apply(data); }
-  }).catch(function () { /* offline; the watchdog will try again */ });
-}
-/* Slow while the stream is healthy, fast while it is not, rescheduling
-   itself rather than sitting on one fixed beat. A screen with a dead socket
-   should be two seconds behind, never frozen -- while the socket is down the
-   poll IS the wall. */
-function schedulePoll() {
-  var down = Date.now() - lastFrameAt > 20000;
-  setTimeout(function () {
-    poll();
-    schedulePoll();
-  }, down ? 2000 : 5000);
-}
-schedulePoll();
-
+/* ---------- transport ----------
+   The connection itself -- EventSource, the silence watchdog, the stuck
+   countdown check, backoff, the poll fallback and the version reload -- is
+   KitLive (internal/livegame/tvlive.js), shared with every live game's TV and
+   inlined ahead of this script. boot.js opens it; apply() below is what it
+   hands each newer frame to. */
 function setDot(on) {
   var d = document.getElementById('dot');
   if (d) { d.classList.toggle('on', on); }
 }
 
 /* ---------- state ---------- */
-function apply(next) {
-  if (next.version <= lastVersion) { return; }   // a stale frame never repaints backwards
-  lastVersion = next.version;
-  skew = next.serverNow - Date.now();            // latest sample folds one-way delay in as a
-                                                 // conservative bias, so we run slightly ahead
+/* KitLive has already dropped any frame older than the last one seen, so a
+   stale frame never repaints backwards. */
+function apply(next, sampledSkew) {
+  skew = sampledSkew;
   var prev = state;
   state = next;
   clearTimers();                                 // the server always wins

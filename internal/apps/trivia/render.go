@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"strings"
 
+	"github.com/mrdon/kit/internal/livegame"
 	"github.com/mrdon/kit/internal/web/qrcode"
 )
 
@@ -30,11 +31,14 @@ var tvScripts = []string{
 	"wager.js", "question.js", "cards.js", "scoring.js", "podium.js", "boot.js",
 }
 
-// tvScript assembles the client. Everything is indented as it would be
-// inside the function body; the wrapper is the only thing added.
+// tvScript assembles the client: the shared KitLive connection first (it
+// defines one global the screens' boot opens), then trivia's own files.
+// Everything of trivia's is indented as it would be inside the function body;
+// the wrapper is the only thing added.
 func tvScript(names []string) ([]byte, error) {
 	var b bytes.Buffer
-	b.WriteString("(function () {\n  'use strict';\n\n")
+	b.Write(livegame.TVClientJS())
+	b.WriteString("\n(function () {\n  'use strict';\n\n")
 	for _, name := range names {
 		src, err := templateFS.ReadFile("templates/tv/" + name)
 		if err != nil {

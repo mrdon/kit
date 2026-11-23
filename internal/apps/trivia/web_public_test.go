@@ -12,6 +12,7 @@ import (
 
 	"github.com/mrdon/kit/internal/auth"
 	"github.com/mrdon/kit/internal/buildinfo"
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // serveMux builds a mux with the app's public routes, plus a stand-in for the
@@ -151,13 +152,13 @@ func TestAnotherTeamsCookieCannotActAsYou(t *testing.T) {
 	if len(answers) != 1 {
 		t.Fatalf("%d answers recorded, want 1", len(answers))
 	}
-	teamIDA, _, _ := ParseCookieValue(cookieA.Value)
+	teamIDA, _, _ := livegame.ParseCookieValue(cookieA.Value)
 	if answers[0].TeamID == teamIDA {
 		t.Fatal("B's cookie submitted an answer for A")
 	}
 
 	// A cookie whose token has been tampered with resolves to nobody.
-	tampered := &http.Cookie{Name: TeamCookieName, Value: CookieValue(teamIDA, "not-the-token")}
+	tampered := &http.Cookie{Name: TeamCookieName, Value: livegame.CookieValue(teamIDA, "not-the-token")}
 	if rec := f.request(http.MethodPost, f.gamePath(game)+"/answer",
 		answerRequest{Answer: "1"}, tampered); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("a forged cookie returned %d, want 401", rec.Code)
@@ -193,7 +194,7 @@ func TestHTTPAcceptsBothChipsOnOneAnswer(t *testing.T) {
 	cellID := snap.Board[0].ID
 	f.do(game.ID, ActionRequest{Action: ActionPickCell, FromPhase: PhaseBoard, CellID: &cellID})
 
-	teamID, _, _ := ParseCookieValue(cookie.Value)
+	teamID, _, _ := livegame.ParseCookieValue(cookie.Value)
 	_ = f.svc.SubmitAnswer(f.ctx, f.tenant.ID, game.ID, teamID, "10")
 	teams, _ := ListTeams(f.ctx, f.pool, f.tenant.ID, game.ID)
 	for _, t2 := range teams {
@@ -240,7 +241,7 @@ func TestHTTPWagerOnlyInsideTheWagerPhase(t *testing.T) {
 	game := f.newGame(oneCellSettings(), []string{"space"})
 	cookie := f.joinOverHTTP(game, "Bar Flies")
 	f.joinOverHTTP(game, "Quiz Khalifa")
-	teamID, _, _ := ParseCookieValue(cookie.Value)
+	teamID, _, _ := livegame.ParseCookieValue(cookie.Value)
 	teams, _ := ListTeams(f.ctx, f.pool, f.tenant.ID, game.ID)
 	var a, b *Team
 	for i := range teams {
@@ -371,7 +372,7 @@ func TestIdentityCookieIsScopedAndHttpOnly(t *testing.T) {
 	if c.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("SameSite = %v, want Lax — the phone arrives from a QR scan", c.SameSite)
 	}
-	teamID, token, ok := ParseCookieValue(c.Value)
+	teamID, token, ok := livegame.ParseCookieValue(c.Value)
 	if !ok || teamID == uuid.Nil || token == "" {
 		t.Fatalf("cookie value %q does not parse", c.Value)
 	}
@@ -385,7 +386,7 @@ func TestIdentityCookieIsScopedAndHttpOnly(t *testing.T) {
 	if stored == token {
 		t.Fatal("the raw token is stored in the database")
 	}
-	if stored != HashToken(token) {
+	if stored != livegame.HashToken(token) {
 		t.Fatal("the stored value is not the token's hash")
 	}
 }
@@ -427,9 +428,9 @@ func TestReclaimCodeWorksOnceAndRotatesTheIdentity(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame(defaultSettings(), nil)
 	old := f.joinOverHTTP(game, "Bar Flies")
-	teamID, _, _ := ParseCookieValue(old.Value)
+	teamID, _, _ := livegame.ParseCookieValue(old.Value)
 
-	code := ReclaimCode()
+	code := livegame.ReclaimCode()
 	if err := f.svc.IssueReclaim(f.ctx, f.tenant.ID, game.ID, teamID, code); err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +627,7 @@ func TestShortJoinLinkResolvesToTheGame(t *testing.T) {
 	if game.JoinCode == "" {
 		t.Fatal("a new game has no join code")
 	}
-	if !IsValidJoinCode(game.JoinCode) {
+	if !livegame.IsValidJoinCode(game.JoinCode) {
 		t.Fatalf("generated code %q does not validate", game.JoinCode)
 	}
 
@@ -663,23 +664,6 @@ func TestShortJoinLinkRejectsJunk(t *testing.T) {
 		mux.ServeHTTP(rec, req)
 		if rec.Code == http.StatusFound {
 			t.Errorf("%q resolved to a game", code)
-		}
-	}
-}
-
-// Codes are drawn from an alphabet with the characters that get misread
-// stripped out — a code is read aloud across a bar when a camera will not
-// focus, and "was that an i or a 1" is the failure that causes.
-func TestJoinCodesAvoidAmbiguousCharacters(t *testing.T) {
-	for range 200 {
-		code := NewJoinCode()
-		if len(code) != joinCodeLength {
-			t.Fatalf("code %q is not %d characters", code, joinCodeLength)
-		}
-		for _, bad := range []string{"i", "l", "o", "u"} {
-			if strings.Contains(code, bad) {
-				t.Fatalf("code %q contains the ambiguous character %q", code, bad)
-			}
 		}
 	}
 }

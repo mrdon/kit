@@ -1,4 +1,4 @@
-package trivia
+package livegame
 
 import (
 	"sync"
@@ -8,12 +8,19 @@ import (
 	"github.com/google/uuid"
 )
 
-func snapFor(gameID uuid.UUID, version int64) *Snapshot {
-	return &Snapshot{GameID: gameID, StateVersion: version, PublisherID: processID}
+// testFrame stands in for a game's snapshot type. The broker never looks
+// inside a frame; the version is only there for the tests to read back.
+type testFrame struct {
+	StateVersion int64
+	Name         string
+}
+
+func snapFor(_ uuid.UUID, version int64) *testFrame {
+	return &testFrame{StateVersion: version}
 }
 
 func TestBrokerDeliversToEverySubscriber(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker[*testFrame]()
 	game := uuid.New()
 	chA, cancelA := b.Subscribe(game)
 	defer cancelA()
@@ -22,7 +29,7 @@ func TestBrokerDeliversToEverySubscriber(t *testing.T) {
 
 	b.Publish(game, snapFor(game, 7))
 
-	for i, ch := range []<-chan *Snapshot{chA, chB} {
+	for i, ch := range []<-chan *testFrame{chA, chB} {
 		select {
 		case got := <-ch:
 			if got.StateVersion != 7 {
@@ -37,7 +44,7 @@ func TestBrokerDeliversToEverySubscriber(t *testing.T) {
 // A snapshot for one game must not reach a watcher of another. Two quiz
 // nights in one workspace on the same evening is not exotic.
 func TestBrokerDoesNotCrossGames(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker[*testFrame]()
 	a, other := uuid.New(), uuid.New()
 	ch, cancel := b.Subscribe(a)
 	defer cancel()
@@ -54,7 +61,7 @@ func TestBrokerDoesNotCrossGames(t *testing.T) {
 // subscriber that is behind does not want the frames it missed — it wants the
 // newest one — so "slow consumer" stops being a failure class.
 func TestBrokerCoalescesToTheNewestSnapshot(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker[*testFrame]()
 	game := uuid.New()
 	ch, cancel := b.Subscribe(game)
 	defer cancel()
@@ -80,7 +87,7 @@ func TestBrokerCoalescesToTheNewestSnapshot(t *testing.T) {
 // The property the whole design rests on: a phone that has stopped reading
 // must never be able to block the host's click.
 func TestBrokerPublisherNeverBlocksOnASilentSubscriber(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker[*testFrame]()
 	game := uuid.New()
 	_, cancel := b.Subscribe(game) // deliberately never read
 	defer cancel()
@@ -100,10 +107,10 @@ func TestBrokerPublisherNeverBlocksOnASilentSubscriber(t *testing.T) {
 }
 
 // Cancel is idempotent and emptying a game's set removes the map entry, so a
-// venue that has run four hundred quiz nights does not carry four hundred
+// venue that has run four hundred game nights does not carry four hundred
 // empty maps.
 func TestBrokerCleansUpAfterItself(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker[*testFrame]()
 	game := uuid.New()
 	_, cancel1 := b.Subscribe(game)
 	_, cancel2 := b.Subscribe(game)
@@ -124,7 +131,7 @@ func TestBrokerCleansUpAfterItself(t *testing.T) {
 // Unsubscribing while a publish is in flight is the one case that could panic
 // on send-to-closed-channel. Run under -race.
 func TestBrokerUnsubscribeRacingAPublish(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker[*testFrame]()
 	game := uuid.New()
 
 	var wg sync.WaitGroup
@@ -147,4 +154,21 @@ func TestBrokerUnsubscribeRacingAPublish(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestBrokerChangedCoalesces(t *testing.T) {
+	b := NewBroker[*testFrame]()
+	game := uuid.New()
+	b.Publish(game, snapFor(game, 1))
+	b.Publish(game, snapFor(game, 2)) // must not block with a signal already pending
+	select {
+	case <-b.Changed():
+	default:
+		t.Fatal("Publish did not signal Changed")
+	}
+	select {
+	case <-b.Changed():
+		t.Fatal("two publishes left two signals; want one")
+	default:
+	}
 }

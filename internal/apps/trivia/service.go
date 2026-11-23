@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // Service is the game engine's entry point. It owns the pool, the live
@@ -19,34 +21,32 @@ import (
 // already have been fanned out to the room.
 type Service struct {
 	pool   *pgxpool.Pool
-	broker *Broker
-	relay  *relay
+	broker *livegame.Broker[*Snapshot]
+	relay  *livegame.Relay[*Snapshot]
 }
+
+// relayPrefix namespaces trivia's channels on the cross-process relay.
+const relayPrefix = "trivia:"
 
 // NewService builds the engine.
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{pool: pool, broker: NewBroker()}
+	return &Service{pool: pool, broker: livegame.NewBroker[*Snapshot]()}
 }
 
 // Broker exposes the fan-out for the SSE handlers.
-func (s *Service) Broker() *Broker { return s.broker }
+func (s *Service) Broker() *livegame.Broker[*Snapshot] { return s.broker }
 
 // ConfigureRelay attaches the Redis relay. Safe to call with a nil client, in
 // which case fan-out stays per-process -- exactly correct at one web process,
 // and at two the clients' staleness watchdog plus the poll fallback keep the
 // game playable rather than frozen.
 func (s *Service) ConfigureRelay(rdb *redis.Client) {
-	if rdb == nil {
-		return
-	}
-	s.relay = newRelay(rdb, s.broker)
+	s.relay = livegame.NewRelay(rdb, s.broker, relayPrefix)
 }
 
 // StartRelay begins consuming relayed snapshots. No-op without Redis.
 func (s *Service) StartRelay(ctx context.Context) {
-	if s.relay != nil {
-		s.relay.start(ctx)
-	}
+	s.relay.Start(ctx)
 }
 
 // publish reads the committed snapshot and fans it out locally and, when a
@@ -57,9 +57,7 @@ func (s *Service) publish(ctx context.Context, tenantID, gameID uuid.UUID) {
 		return
 	}
 	s.broker.Publish(gameID, snap)
-	if s.relay != nil {
-		s.relay.publish(ctx, snap)
-	}
+	s.relay.Publish(ctx, gameID, snap)
 }
 
 // Snapshot assembles the complete state of one game.
@@ -130,8 +128,7 @@ func (s *Service) snapshotOf(ctx context.Context, game *Game) (*Snapshot, error)
 		BoardRows:  game.BoardRows, BoardCols: game.BoardColumns,
 		BoardRound: boardRound, BoardRounds: BoardRoundCount(cells),
 		PickerTeamID: game.PickerTeamID, PickerReason: game.PickerReason,
-		Standings:   map[uuid.UUID]int{},
-		PublisherID: processID,
+		Standings: map[uuid.UUID]int{},
 	}
 	for _, st := range standings {
 		snap.Standings[st.TeamID] = st.Total

@@ -6,14 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/mrdon/kit/internal/livegame"
 )
-
-// minWait floors the sleep so a deadline the database has not quite reached
-// yet cannot turn the loop into a spin.
-const minWait = 250 * time.Millisecond
-
-// retryWait is how long to back off after the next-deadline lookup fails.
-const retryWait = 5 * time.Second
 
 // SweepDue closes this game's phase if its deadline has passed, and
 // publishes when it did.
@@ -56,64 +51,19 @@ func (s *Service) closeExpired(ctx context.Context, game *Game) error {
 	return nil
 }
 
-// StartSweeper runs the liveness loop.
-//
-// CLAUDE.md CARVE-OUT, considered rather than overlooked. The rule is
-// "recurring work is declared with RegisterScheduledTask ... never a goroutine
-// ticker", and it exists so tenant-scoped business work has run history,
-// last_error and audit. This loop exists because a countdown people are
-// watching on a wall needs to end within about a second, and cron's floor is
-// a minute. It is the ONE thing that ends countdowns: there is no scheduled
-// backstop (the process that would run it is this process), and reads do
-// not sweep.
-//
-// It is NOT a ticker. It sleeps until the earliest running clock anywhere
-// expires, and with no game live -- all week but an hour or so -- it sleeps
-// indefinitely and issues no queries at all. Any publish (local or relayed
-// from another process) wakes it to re-read the next deadline, because every
-// write that sets, shortens, extends, pauses or clears a deadline publishes.
-// It re-reads the deadline from the database on every wake, so it cannot
-// drift from what is stored; and SweepDue publishes when a write path closes
-// a phase first, so no deadline is ever set without a wake.
-//
-// What makes it safe is that this goroutine owns nothing. All game state is
-// in Postgres; it holds no locks, and issues the same guarded conditional
-// UPDATE every other path issues -- so two processes both waking is a no-op
-// for the loser, and a crashed process leaves nothing to reconstruct.
+// StartSweeper runs the liveness loop: livegame.Sweeper, sleeping until the
+// earliest running clock anywhere expires and waking on every publish. It is
+// the ONE thing that ends countdowns: there is no scheduled backstop (the
+// process that would run it is this process), and reads do not sweep. See
+// livegame.Sweeper for why it is a carve-out from the no-ticker rule and why
+// two processes running it is safe.
 func (s *Service) StartSweeper(ctx context.Context) {
-	go s.runSweeper(ctx)
-}
-
-func (s *Service) runSweeper(ctx context.Context) {
-	timer := time.NewTimer(0) // one sweep at boot heals anything that expired while down
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-		case <-s.broker.Changed():
-		}
-		s.sweepAll(ctx)
-		s.rearm(ctx, timer)
-	}
-}
-
-// rearm points the timer at the next deadline, or parks it when there is none.
-// Go 1.23+ timers need no drain before Stop/Reset.
-func (s *Service) rearm(ctx context.Context, timer *time.Timer) {
-	wait, ok, err := NextDeadlineIn(ctx, s.pool)
-	switch {
-	case err != nil:
-		if ctx.Err() == nil {
-			slog.Warn("trivia next-deadline lookup failed", "error", err)
-		}
-		timer.Reset(retryWait)
-	case !ok:
-		timer.Stop()
-	default:
-		timer.Reset(max(wait, minWait))
-	}
+	livegame.Sweeper{
+		Name:  AppName,
+		Wake:  s.broker.Changed(),
+		Next:  func(ctx context.Context) (time.Duration, bool, error) { return NextDeadlineIn(ctx, s.pool) },
+		Sweep: s.sweepAll,
+	}.Start(ctx)
 }
 
 // sweepAll closes every expired phase anywhere and publishes the ones that

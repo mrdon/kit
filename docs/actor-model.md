@@ -323,8 +323,8 @@ deliberately unauthenticated URL halves.
 | Poster upload | `events/poster_upload.go:57-135` | person + event | opaque, Redis | 15 min, GETDEL |
 | Events feed token | `events/feed.go:332-441` | site build | plaintext setting, constant-time compare | until rotated |
 | Widget token | `models/widget_token.go`, `widget/service.go:58` | tenant + origin | sha256 | `revoked_at` |
-| Trivia team cookie | `trivia/token.go`, `web_public.go:111,238` | team | sha256 | 6 h, per-game path |
-| Trivia reclaim code | `trivia/token.go:83` | team | 4 digits, hashed | single use |
+| Trivia team cookie | `livegame/identity.go`, `trivia/web_public.go` | team | sha256 | 6 h, per-game path |
+| Trivia reclaim code | `livegame/identity.go` (`ReclaimCode`, `ReclaimSecret`) | team | 4 digits, hashed | single use |
 | Kiosk keys | `kiosk/web_public.go:24` | nothing | n/a | n/a |
 | Vault step-up | `vault/unlock.go:56-71` | person, second factor | password-derived hash | 5 min window |
 | CSRF headers | `X-Kit-Web`, `X-Kit-Chat`, `X-Kit-Vault` | request origin | n/a | n/a |

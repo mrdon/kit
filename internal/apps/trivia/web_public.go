@@ -10,6 +10,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // registerPublicRoutes mounts everything a phone or a TV touches.
@@ -114,11 +115,11 @@ func (a *App) callerTeam(r *http.Request, game *Game) uuid.UUID {
 	if err != nil || c.Value == "" {
 		return uuid.Nil
 	}
-	teamID, token, ok := ParseCookieValue(c.Value)
+	teamID, token, ok := livegame.ParseCookieValue(c.Value)
 	if !ok {
 		return uuid.Nil
 	}
-	team, err := FindTeamByToken(r.Context(), a.pool, game.TenantID, game.ID, teamID, HashToken(token))
+	team, err := FindTeamByToken(r.Context(), a.pool, game.TenantID, game.ID, teamID, livegame.HashToken(token))
 	if err != nil {
 		return uuid.Nil
 	}
@@ -229,22 +230,11 @@ func (a *App) handleRedeemReclaim(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"teamId": teamID.String()})
 }
 
-// setTeamCookie issues the per-game identity.
-//
+// setTeamCookie issues the per-game identity: the shared participant cookie,
 // Path-scoped to this game so one phone can hold identities for two games at
-// once; HttpOnly because nothing in the page needs to read it and a token in
-// JS is a token in a screenshot; SameSite=Lax because the phone arrives from
-// a QR scan, which is a top-level navigation.
+// once.
 func (a *App) setTeamCookie(w http.ResponseWriter, r *http.Request, slug, gameName string, teamID uuid.UUID, token string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     TeamCookieName,
-		Value:    CookieValue(teamID, token),
-		Path:     CookiePath(slug, gameName),
-		HttpOnly: true,
-		Secure:   r.TLS != nil || strings.HasPrefix(a.baseURL, "https://"),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   CookieMaxAge,
-	})
+	livegame.SetCookie(w, r, a.baseURL, TeamCookieName, CookiePath(slug, gameName), livegame.CookieValue(teamID, token))
 }
 
 // answerRequest carries no stake since 098 -- the wager is committed a phase

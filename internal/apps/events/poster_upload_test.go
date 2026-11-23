@@ -36,7 +36,7 @@ func testRedis(t *testing.T) *redis.Client {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := c.Ping(ctx).Err(); err != nil {
-		// Skip rather than fail, matching trivia's broker_redis_test. CI
+		// Skip rather than fail, matching livegame's relay_test. CI
 		// provisions Postgres but no Redis, so failing here turns every push
 		// red for a dependency the workflow never promised -- and a red main
 		// that everyone learns to ignore is worse than a test that announces

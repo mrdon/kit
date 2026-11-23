@@ -87,9 +87,7 @@ func (s *Service) Do(ctx context.Context, tenantID, gameID uuid.UUID, req Action
 		return nil, err
 	}
 	s.broker.Publish(gameID, snap)
-	if s.relay != nil {
-		s.relay.publish(ctx, snap)
-	}
+	s.relay.Publish(ctx, gameID, snap)
 	return snap, nil
 }
 

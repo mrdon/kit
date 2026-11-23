@@ -1,4 +1,4 @@
-package trivia
+package livegame
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func redisForTest(t *testing.T) *redis.Client {
 
 // waitFor reads one snapshot with a timeout, so a failure says "nothing
 // arrived" rather than hanging the suite.
-func waitFor(t *testing.T, ch <-chan *Snapshot, d time.Duration) *Snapshot {
+func waitFor(t *testing.T, ch <-chan *testFrame, d time.Duration) *testFrame {
 	t.Helper()
 	select {
 	case s := <-ch:
@@ -59,11 +59,14 @@ func TestRelayCarriesSnapshotsBetweenProcesses(t *testing.T) {
 	gameID := uuid.New()
 
 	// Two brokers standing in for two web processes, sharing one Redis.
-	brokerA := NewBroker()
-	relayA := newRelay(rdb, brokerA)
-	brokerB := NewBroker()
-	relayB := newRelay(rdb, brokerB)
-	relayB.start(ctx)
+	const prefix = "livegame-test:"
+	brokerA := NewBroker[*testFrame]()
+	relayA := NewRelay(rdb, brokerA, prefix)
+	relayA.self = "process-a"
+	brokerB := NewBroker[*testFrame]()
+	relayB := NewRelay(rdb, brokerB, prefix)
+	relayB.self = "process-b"
+	relayB.Start(ctx)
 	// PSUBSCRIBE is asynchronous; give it a moment to be live before
 	// publishing, or the test races the subscription rather than the relay.
 	time.Sleep(300 * time.Millisecond)
@@ -71,9 +74,9 @@ func TestRelayCarriesSnapshotsBetweenProcesses(t *testing.T) {
 	ch, cancelSub := brokerB.Subscribe(gameID)
 	defer cancelSub()
 
-	snap := &Snapshot{GameID: gameID, StateVersion: 42, Name: "brave-otter-lamp", PublisherID: "process-a"}
+	snap := &testFrame{StateVersion: 42, Name: "brave-otter-lamp"}
 	brokerA.Publish(gameID, snap)
-	relayA.publish(ctx, snap)
+	relayA.Publish(ctx, gameID, snap)
 
 	got := waitFor(t, ch, 3*time.Second)
 	if got == nil {
@@ -92,17 +95,15 @@ func TestRelayDoesNotRedeliverItsOwnMessage(t *testing.T) {
 	ctx := t.Context()
 
 	gameID := uuid.New()
-	broker := NewBroker()
-	r := newRelay(rdb, broker)
-	r.start(ctx)
+	broker := NewBroker[*testFrame]()
+	r := NewRelay(rdb, broker, "livegame-test-self:")
+	r.Start(ctx)
 	time.Sleep(300 * time.Millisecond)
 
 	ch, cancelSub := broker.Subscribe(gameID)
 	defer cancelSub()
 
-	// Stamped with THIS process's id, exactly as Service.publish stamps it.
-	snap := &Snapshot{GameID: gameID, StateVersion: 7, PublisherID: processID}
-	r.publish(ctx, snap)
+	r.Publish(ctx, gameID, &testFrame{StateVersion: 7})
 
 	if got := waitFor(t, ch, 1500*time.Millisecond); got != nil {
 		t.Fatalf("the process re-delivered its own relayed message: %+v", got)
@@ -111,19 +112,21 @@ func TestRelayDoesNotRedeliverItsOwnMessage(t *testing.T) {
 
 // Degradation is preserved: with no Redis configured the relay is simply
 // absent and fan-out is per-process, which is exactly correct at web=1.
-// Nothing in the app may require Redis to be up.
-func TestServiceWorksWithNoRelayConfigured(t *testing.T) {
-	svc := &Service{broker: NewBroker()}
-	svc.ConfigureRelay(nil)
-	if svc.relay != nil {
+// Nothing may require Redis to be up, so every method on the nil relay is a
+// no-op rather than a panic.
+func TestNilRelayIsANoOp(t *testing.T) {
+	broker := NewBroker[*testFrame]()
+	r := NewRelay(nil, broker, "livegame-test-nil:")
+	if r != nil {
 		t.Fatal("a nil redis client produced a relay")
 	}
-	svc.StartRelay(context.Background()) // must not panic
+	r.Start(context.Background())
+	r.Publish(context.Background(), uuid.New(), &testFrame{StateVersion: 1})
 
 	gameID := uuid.New()
-	ch, cancel := svc.Broker().Subscribe(gameID)
+	ch, cancel := broker.Subscribe(gameID)
 	defer cancel()
-	svc.broker.Publish(gameID, &Snapshot{GameID: gameID, StateVersion: 1})
+	broker.Publish(gameID, &testFrame{StateVersion: 1})
 	if got := waitFor(t, ch, time.Second); got == nil {
 		t.Fatal("local fan-out stopped working without redis")
 	}

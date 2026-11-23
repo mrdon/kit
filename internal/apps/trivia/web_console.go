@@ -12,6 +12,7 @@ import (
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/console"
 	"github.com/mrdon/kit/internal/auth"
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // registerConsoleRoutes wires the host's JSON API behind /{slug}/api/trivia.
@@ -268,7 +269,7 @@ func (a *App) handleReclaim(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	code := ReclaimCode()
+	code := livegame.ReclaimCode()
 	if err := a.svc.IssueReclaim(r.Context(), tenant.ID, game.ID, teamID, code); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			http.NotFound(w, r)

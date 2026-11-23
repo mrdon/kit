@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mrdon/kit/internal/livegame"
 	consoleweb "github.com/mrdon/kit/web/console"
 )
 
@@ -272,7 +273,7 @@ func newChaosRoom(t *testing.T) *harness {
 		}
 		h.teams = append(h.teams, team.ID)
 		pages = append(pages, obsPage{Name: name, Path: path, Cookie: &obsCookie{
-			Name: TeamCookieName, Value: CookieValue(team.ID, token), Path: path,
+			Name: TeamCookieName, Value: livegame.CookieValue(team.ID, token), Path: path,
 		}})
 	}
 	for _, p := range pages {

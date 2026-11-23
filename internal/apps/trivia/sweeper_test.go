@@ -67,23 +67,6 @@ func TestNextDeadlineInSeesARunningClock(t *testing.T) {
 	}
 }
 
-func TestBrokerChangedCoalesces(t *testing.T) {
-	b := NewBroker()
-	snap := &Snapshot{}
-	b.Publish(snap.GameID, snap)
-	b.Publish(snap.GameID, snap) // must not block with a signal already pending
-	select {
-	case <-b.Changed():
-	default:
-		t.Fatal("Publish did not signal Changed")
-	}
-	select {
-	case <-b.Changed():
-		t.Fatal("two publishes left two signals; want one")
-	default:
-	}
-}
-
 // A write that arrives just after a clock ran out closes the phase itself
 // (SweepDue, the write guard) and must publish that, even when the write is
 // then rejected -- otherwise the room never hears the phase moved, and the

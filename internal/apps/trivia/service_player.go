@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // ErrGameFull means the twenty-first team tried to join.
@@ -70,8 +72,8 @@ func (s *Service) Join(ctx context.Context, tenantID, gameID uuid.UUID, name str
 		return nil, "", err
 	}
 
-	token := NewTeamToken()
-	team, err := InsertTeam(ctx, s.pool, tenantID, gameID, name, HashToken(token), eligibleFrom)
+	token := livegame.NewToken()
+	team, err := InsertTeam(ctx, s.pool, tenantID, gameID, name, livegame.HashToken(token), eligibleFrom)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return nil, "", ErrNameTaken
@@ -397,27 +399,21 @@ func teamByID(ctx context.Context, q Querier, tenantID, gameID, teamID uuid.UUID
 // only because the trust boundary is a person standing in the room who can
 // see who is asking -- not because four digits are hard to guess.
 func (s *Service) IssueReclaim(ctx context.Context, tenantID, gameID, teamID uuid.UUID, code string) error {
-	return SetTeamToken(ctx, s.pool, tenantID, gameID, teamID, HashToken(reclaimSecret(gameID, teamID, code)))
+	return SetTeamToken(ctx, s.pool, tenantID, gameID, teamID, livegame.HashToken(livegame.ReclaimSecret(gameID, teamID, code)))
 }
 
 // RedeemReclaim exchanges a host-issued code for a fresh identity token.
 func (s *Service) RedeemReclaim(ctx context.Context, tenantID, gameID, teamID uuid.UUID, code string) (string, error) {
 	team, err := FindTeamByToken(ctx, s.pool, tenantID, gameID, teamID,
-		HashToken(reclaimSecret(gameID, teamID, code)))
+		livegame.HashToken(livegame.ReclaimSecret(gameID, teamID, code)))
 	if err != nil {
 		return "", err
 	}
 	// Burn the code on use: a four-digit secret read out loud must not stay
 	// live for the rest of the night.
-	token := NewTeamToken()
-	if err := SetTeamToken(ctx, s.pool, tenantID, gameID, team.ID, HashToken(token)); err != nil {
+	token := livegame.NewToken()
+	if err := SetTeamToken(ctx, s.pool, tenantID, gameID, team.ID, livegame.HashToken(token)); err != nil {
 		return "", err
 	}
 	return token, nil
-}
-
-// reclaimSecret binds a spoken code to one team in one game, so the same four
-// digits issued for another table are not interchangeable.
-func reclaimSecret(gameID, teamID uuid.UUID, code string) string {
-	return "reclaim:" + gameID.String() + ":" + teamID.String() + ":" + code
 }

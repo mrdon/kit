@@ -82,11 +82,6 @@ type Snapshot struct {
 	// earlier: they are read off frozen data, they cost four queries, and a
 	// half-played night has no honourable mentions in it.
 	Awards []Award
-
-	// PublisherID identifies the process that produced this snapshot, so a
-	// relayed message coming back around is recognised and dropped rather
-	// than re-fanned locally.
-	PublisherID string
 }
 
 // SnapTeam is one table as every surface sees it. Answered/Locked/ChipsPlaced

@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // Game is one quiz night.
@@ -148,7 +150,7 @@ func CreateGame(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, nam
 		RETURNING `+gameColumns,
 		tenantID, name, s.Title, s.BoardRows, s.BoardColumns, s.CellValues, s.TokenValues,
 		s.FinalWager, s.AnswerSeconds, s.RevealSeconds, s.BetSeconds, s.WagerSeconds,
-		s.GraceSeconds, createdBy, NewJoinCode(), s.RepeatQuestions, s.BoardRounds,
+		s.GraceSeconds, createdBy, livegame.NewJoinCode(), s.RepeatQuestions, s.BoardRounds,
 		s.BreakBeforeFinal))
 	if err != nil {
 		return nil, fmt.Errorf("inserting trivia game: %w", err)

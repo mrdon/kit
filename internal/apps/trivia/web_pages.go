@@ -6,11 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/auth"
-	"github.com/mrdon/kit/internal/buildinfo"
+	"github.com/mrdon/kit/internal/livegame"
 	consoleassets "github.com/mrdon/kit/web/console"
 )
 
@@ -45,12 +44,7 @@ func (a *App) writeDisplay(w http.ResponseWriter, r *http.Request, game *Game, s
 		serverError(w, "rendering trivia display", err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store, must-revalidate")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(html)); err != nil {
-		slog.Warn("writing trivia display", "game_id", game.ID, "error", err)
-	}
+	livegame.WriteHTML(w, []byte(html))
 }
 
 // isOverlay reports whether the TV page was asked for as the OBS overlay
@@ -69,7 +63,7 @@ func isOverlay(r *http.Request) bool {
 // that scope and unable to hold an identity at all.
 func (a *App) handleShortJoin(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
-	if !IsValidJoinCode(code) {
+	if !livegame.IsValidJoinCode(code) {
 		http.NotFound(w, r)
 		return
 	}
@@ -173,39 +167,15 @@ func (a *App) handleTVVersion(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// displayVersion stamps the rendered page, in the menu board's style: a short
-// readable token the screen compares against its own.
-//
-// CREATED_AT is the primary input, and it is the right one precisely because
-// it is IMMUTABLE. The game's updated_at bumps on every answer and every
-// chip, so stamping that would reload the TV several times a round; created_at
-// moves only when a genuinely different game becomes the newest, which is
-// exactly when a screen parked on the stable address needs to repaint.
-//
-// The title rides along because it is rendered into the HTML — renaming the
-// night has to reach the screen too — and it is the only other thing the
-// server-rendered page shows that a host can change mid-life.
-//
-// "empty" is a real value: a screen on the stable address with no game yet
-// must notice the first one.
-//
-// THE BUILD RIDES ALONG so a deploy reaches a wall that is already switched
-// on. Without it the token moved only when a new game was created, which
-// meant a fix shipped during a quiz could not reach the screen it was fixing
-// -- the one case where getting it there quickly is the whole point. The
-// reload costs a second of black and nothing else: every piece of game state
-// lives on the server and the screen repaints from the stream.
+// displayVersion stamps the rendered page (livegame.DisplayVersion): the
+// game's immutable created_at, its title, and the build. The game's
+// updated_at is deliberately left out -- it bumps on every answer and every
+// chip, and stamping it would reload the TV several times a round.
 func displayVersion(game *Game) string {
-	build := buildinfo.Token()
 	if game == nil {
-		return "empty-" + build
+		return livegame.DisplayVersion(nil, "")
 	}
-	v := strconv.FormatInt(game.CreatedAt.UnixNano(), 36)
-	if game.Title != "" {
-		sum := sha256.Sum256([]byte(game.Title))
-		v += "-" + hex.EncodeToString(sum[:3])
-	}
-	return v + "-" + build
+	return livegame.DisplayVersion(&game.CreatedAt, game.Title)
 }
 
 // explainerStamp adds the lobby video's link to the version, so adding,
@@ -226,46 +196,15 @@ func explainerStamp(link string) string {
 // broadcast in OBS, and an opaque "no game yet" card there would black out
 // the game for the whole bar until somebody created a night.
 func writeNoGamePlaceholder(w http.ResponseWriter, overlay bool) {
-	page := noGameHTML
+	page := livegame.NoGamePage("Trivia")
 	if overlay {
-		page = noGameOverlayHTML
+		page = []byte(noGameOverlayHTML)
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store, must-revalidate")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(page)); err != nil {
-		slog.Warn("writing trivia placeholder", "error", err)
-	}
+	livegame.WriteHTML(w, page)
 }
 
-// A meta refresh is safe HERE and nowhere else in this app: there is no SSE
-// stream on this page to tear down, and it is what lets a screen hung on the
-// wall pick up the first game without anyone rebooting it.
-const noGameHTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="15">
-<title>Trivia</title>
-<style>
-  html,body{height:100%;margin:0}
-  body{display:flex;align-items:center;justify-content:center;text-align:center;
-       background:linear-gradient(160deg,#1b2b38,#14222d);color:#b9c4cf;
-       font:400 1rem/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:2rem}
-  h1{font-size:clamp(2rem,6vw,4.5rem);margin:0 0 .5rem;color:#f4efe7}
-  p{margin:0;font-size:clamp(1rem,2.2vw,1.6rem);color:#8ea2b3}
-</style>
-</head>
-<body><div>
-  <h1>No game yet</h1>
-  <p>This screen is working. Create a game and it will appear here.</p>
-</div></body>
-</html>
-`
-
 // noGameOverlayHTML is the overlay's placeholder: transparent, and polling
-// for the first game the same way noGameHTML does.
+// for the first game the way livegame.NoGamePage does.
 const noGameOverlayHTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -299,10 +238,5 @@ func (a *App) handlePlayerPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Kit console not built. Run `make console-build`.", http.StatusServiceUnavailable)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store, must-revalidate")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(body); err != nil {
-		slog.Warn("writing trivia player page", "game_id", game.ID, "error", err)
-	}
+	livegame.WriteHTML(w, body)
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { join, me, money, PHASE, reclaim, type PlayerFrame } from './api';
-import { useStream, useWakeLock } from './useStream';
+import { useStream } from './useStream';
+import { useWakeLock } from '../live/useWakeLock';
 import { useBuildReload } from './useBuildReload';
 import { Answer, Wager, WagerWatching, Waiting } from './screens';
 import { Betting } from './betting';

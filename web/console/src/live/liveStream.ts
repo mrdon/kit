@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// THE live connection for every React surface of the trivia app: the host
-// console and the player's phone both use this, and neither keeps its own
-// copy of any of it.
+// THE live connection for every React surface of every live game: the host
+// consoles and the players' phones all use this, and none keeps its own copy
+// of any of it.
 //
 // They used to. Three copies of this logic existed -- phone, console, and the
 // TV's vanilla one -- and they drifted, in the way three copies always do:
 // the same two reconnect bugs were fixed in the phone's and left in the
 // console's, and the console then froze in a way the phone no longer could.
-// The TV's copy cannot import this (it is inlined into a server-rendered page
-// with no build step, on purpose) so it stays separate, but it is a
-// deliberate mirror of this file and the two are meant to be changed
-// together.
+// The TVs' copy cannot import this (it is inlined into a server-rendered page
+// with no build step, on purpose) so it stays separate as KitLive in
+// internal/livegame/tvlive.js, but it is a deliberate mirror of this file and
+// the two are meant to be changed together.
 //
 // EventSource rather than fetch streaming: these endpoints are GET, so it
 // gives browser reconnect for free and -- decisively -- sends cookies
@@ -45,7 +45,7 @@ export interface LiveStream<T> {
   reopen: () => void;
 }
 
-// The server beats every 8s (pingEvery in web_stream.go), so nothing at all
+// The server beats every 8s (livegame.PingEvery), so nothing at all
 // on the socket for two and a half beats means dead rather than quiet.
 const SILENCE_MS = 20_000;
 // How often the watchdog LOOKS. Looking often is free; it is SILENCE_MS that

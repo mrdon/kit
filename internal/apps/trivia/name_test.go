@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mrdon/kit/internal/livegame"
 )
 
 // The one hard requirement: somebody reads it off a TV across a loud room and
@@ -114,7 +116,7 @@ func TestRandomNameIsActuallyRandom(t *testing.T) {
 // The reclaim code is four digits, always, including when the draw is small.
 func TestReclaimCodeIsFourDigits(t *testing.T) {
 	for range 100 {
-		c := ReclaimCode()
+		c := livegame.ReclaimCode()
 		if len(c) != 4 {
 			t.Fatalf("code %q is not four characters", c)
 		}
