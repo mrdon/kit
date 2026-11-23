@@ -42,6 +42,9 @@ type CreateParams struct {
 	// in the event's own zone. The earliest of the combined set becomes
 	// StartsAt, so a caller may pass them in any order.
 	RepeatDates []string
+	// SkipDates are days the series does NOT happen, e.g. no trivia on
+	// Christmas Eve. Each must be a day the event would otherwise fall on.
+	SkipDates []string
 
 	Visibility  Visibility
 	Venue       Venue
@@ -124,6 +127,9 @@ func (s *Service) Create(ctx context.Context, tenantID uuid.UUID, p CreateParams
 		return nil, err
 	}
 	applyDates(e, extra)
+	if e.ExDates, err = resolveSkipDates(e, p.SkipDates); err != nil {
+		return nil, err
+	}
 
 	e.Prominence = ProminenceNormal
 	if p.Prominence != nil {
@@ -176,6 +182,10 @@ type UpdateParams struct {
 	// not tell those apart, and "the caller omitted this" versus "the caller
 	// removed every date" are opposite intents.
 	RepeatDates *[]string
+	// SkipDates replaces the upcoming skip list. Nil leaves it alone; an empty
+	// slice un-skips everything still ahead. Past skips are kept either way,
+	// so the calendar's history does not grow back nights that never ran.
+	SkipDates *[]string
 
 	Visibility  *Visibility
 	Venue       *Venue
@@ -265,6 +275,9 @@ func (s *Service) Update(ctx context.Context, tenantID, id uuid.UUID, p UpdatePa
 		return nil, err
 	}
 	if err := applyRepeatDates(e, p); err != nil {
+		return nil, err
+	}
+	if err := applySkipDates(e, p); err != nil {
 		return nil, err
 	}
 	if err := applySlug(ctx, s.pool, e, p); err != nil {
@@ -489,3 +502,25 @@ func firstNonEmptySpace(a, fallback SpaceImpact) SpaceImpact {
 // timeNow is the clock. A variable so tests can pin it if they ever need to;
 // production never reassigns it.
 var timeNow = time.Now
+
+// applySkipDates replaces the upcoming skips, keeping past ones. It runs after
+// the times and date list are settled, because whether a skip names a real
+// occurrence depends on both.
+func applySkipDates(e *Event, p UpdateParams) error {
+	if p.SkipDates == nil {
+		return nil
+	}
+	fresh, err := resolveSkipDates(e, *p.SkipDates)
+	if err != nil {
+		return err
+	}
+	today := time.Now().In(e.Loc()).Format(skipDayLayout)
+	var kept []time.Time
+	for _, d := range e.ExDates {
+		if d.In(e.Loc()).Format(skipDayLayout) < today {
+			kept = append(kept, d)
+		}
+	}
+	e.ExDates = append(kept, fresh...)
+	return nil
+}

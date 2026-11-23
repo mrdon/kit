@@ -81,6 +81,9 @@ func recurrenceLines(e *Event) []string {
 	if len(e.RDates) > 0 {
 		out = append(out, rdateLine(e.RDates, e.Loc(), e.Timezone))
 	}
+	if line := exdateLine(e); line != "" {
+		out = append(out, line)
+	}
 	return out
 }
 

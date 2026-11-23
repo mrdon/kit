@@ -293,7 +293,7 @@ func FormatOccurrences(e *Event, limit int) string {
 	for i, o := range occ {
 		parts[i] = o.Start.In(loc).Format("Mon 2 Jan")
 	}
-	return "  next: " + strings.Join(parts, ", ") + "\n"
+	return "  next: " + strings.Join(parts, ", ") + "\n" + formatSkips(e)
 }
 
 // FormatWarnings renders publish-time advice. Empty when there is none.

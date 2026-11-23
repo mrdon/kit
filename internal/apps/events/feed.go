@@ -112,6 +112,20 @@ type FeedItem struct {
 type Feed struct {
 	GeneratedAt string     `json:"generated_at"`
 	Events      []FeedItem `json:"events"`
+	// SpecialHours are holiday hours from today on, soonest first. Additive
+	// and omitted when empty, so a site that ignores it builds as before.
+	SpecialHours []FeedSpecialHours `json:"special_hours,omitempty"`
+}
+
+// FeedSpecialHours is one date's holiday hours. Times are 24-hour HH:MM in
+// the venue's zone; a closed day carries neither. The site formats them.
+type FeedSpecialHours struct {
+	Date   string `json:"date"`
+	Label  string `json:"label,omitempty"`
+	Closed bool   `json:"closed,omitempty"`
+	Opens  string `json:"opens,omitempty"`
+	Closes string `json:"closes,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 // feedItem projects one event onto the public wire contract.
@@ -227,6 +241,16 @@ func (s *Service) BuildFeed(ctx context.Context, tenantID uuid.UUID, posterBase 
 			item.ImageURL = strings.TrimSuffix(posterBase, "/") + "/events/" + entry.event.Slug + "/poster"
 		}
 		feed.Events = append(feed.Events, item)
+	}
+	hours, err := s.ListSpecialHours(ctx, tenantID)
+	if err != nil {
+		return Feed{}, err
+	}
+	for _, h := range hours {
+		feed.SpecialHours = append(feed.SpecialHours, FeedSpecialHours{
+			Date: h.DayString(), Label: h.Label, Closed: h.Closed,
+			Opens: h.Opens, Closes: h.Closes, Note: h.Note,
+		})
 	}
 	return feed, nil
 }

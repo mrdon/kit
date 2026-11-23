@@ -27,6 +27,9 @@ type Series struct {
 	Loc    *time.Location
 	Rule   *Rule
 	RDates []time.Time
+	// ExDates remove occurrences, matched by local calendar date in Loc. They
+	// win over both the rule and RDates, as EXDATE does in RFC 5545.
+	ExDates []time.Time
 }
 
 // Expand returns every occurrence starting within [from, to), from both the
@@ -56,7 +59,8 @@ func (s Series) Expand(from, to time.Time) []Occurrence {
 	slices.SortFunc(out, func(a, b Occurrence) int { return a.Start.Compare(b.Start) })
 	// Dedupe by instant: a date list that happens to name a day the rule
 	// already covers should yield one occurrence, not two stacked entries.
-	return slices.CompactFunc(out, func(a, b Occurrence) bool { return a.Start.Equal(b.Start) })
+	out = slices.CompactFunc(out, func(a, b Occurrence) bool { return a.Start.Equal(b.Start) })
+	return dropSkipped(out, s.ExDates, loc)
 }
 
 // Expand returns the rule's occurrences that start within [from, to).

@@ -191,6 +191,7 @@ func addVEvent(cal *ics.Calendar, e *Event, s Settings, stamp time.Time) {
 	if len(e.RDates) > 0 {
 		ev.SetProperty(ics.ComponentPropertyRdate, icsRDates(e, loc), ics.WithTZID(loc.String()))
 	}
+	setICSExDates(ev, e)
 
 	if body := icsDescription(e, s); body != "" {
 		ev.SetDescription(body)

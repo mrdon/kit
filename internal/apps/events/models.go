@@ -40,6 +40,11 @@ type Event struct {
 	// can express. StartsAt remains the first occurrence, so these are always
 	// strictly after it -- the service normalises the combined set on write.
 	RDates []time.Time `json:"rdates,omitempty"`
+	// ExDates are the dates a repeating event is skipped on -- RFC 5545's
+	// EXDATE. Stored as occurrence starts, matched by local calendar date in
+	// the event's zone, so a later time change does not un-skip them. See
+	// migration 135 and skips.go.
+	ExDates []time.Time `json:"exdates,omitempty"`
 
 	Location         string     `json:"location,omitempty"`
 	HeroAttachmentID *uuid.UUID `json:"hero_attachment_id,omitempty"`
@@ -120,11 +125,12 @@ func (e *Event) Rule() *Rule {
 // explicit extra dates.
 func (e *Event) Series() Series {
 	return Series{
-		Start:  e.StartsAt,
-		End:    e.End(),
-		Loc:    e.Loc(),
-		Rule:   e.Rule(),
-		RDates: e.RDates,
+		Start:   e.StartsAt,
+		End:     e.End(),
+		Loc:     e.Loc(),
+		Rule:    e.Rule(),
+		RDates:  e.RDates,
+		ExDates: e.ExDates,
 	}
 }
 
@@ -151,7 +157,7 @@ const eventColumns = `
 	price_cents, currency, capacity, expected_attendance,
 	registration_url, square_variation_id,
 	gcal_event_id, gcal_calendar_id, gcal_content_hash,
-	created_by, created_at, updated_at`
+	created_by, created_at, updated_at, exdates`
 
 func scanEvent(row pgx.Row) (*Event, error) {
 	var e Event
@@ -165,7 +171,7 @@ func scanEvent(row pgx.Row) (*Event, error) {
 		&e.PriceCents, &e.Currency, &e.Capacity, &e.ExpectedAttendance,
 		&registrationURL, &squareVariationID,
 		&e.GCalEventID, &e.GCalCalendarID, &e.GCalContentHash,
-		&e.CreatedBy, &e.CreatedAt, &e.UpdatedAt,
+		&e.CreatedBy, &e.CreatedAt, &e.UpdatedAt, &e.ExDates,
 	)
 	if err != nil {
 		return nil, err
@@ -221,7 +227,7 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			status, visibility, venue, space_impact, notify_food_partner, prominence,
 			labels,
 			price_cents, currency, capacity, expected_attendance,
-			registration_url, square_variation_id, created_by
+			registration_url, square_variation_id, created_by, exdates
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
@@ -229,7 +235,7 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			$15, $16, $17, $18, $19, $20,
 			$21,
 			$22, $23, $24, $25,
-			$26, $27, $28
+			$26, $27, $28, $29
 		)
 		RETURNING `+eventColumns,
 		e.TenantID, e.Title, e.Slug, e.Summary, e.Description, e.PrepNotes,
@@ -239,6 +245,7 @@ func insertEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		emptyIfNilStrings(e.Labels),
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID), e.CreatedBy,
+		emptyIfNil(e.ExDates),
 	)
 	out, err := scanEvent(row)
 	if err != nil {
@@ -261,6 +268,7 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 			notify_food_partner = $20, prominence = $21, labels = $22,
 			price_cents = $23, currency = $24, capacity = $25, expected_attendance = $26,
 			registration_url = $27, square_variation_id = $28,
+			exdates = $29,
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 		RETURNING `+eventColumns,
@@ -273,6 +281,7 @@ func updateEvent(ctx context.Context, pool *pgxpool.Pool, e *Event) (*Event, err
 		e.NotifyFoodPartner, e.Prominence, emptyIfNilStrings(e.Labels),
 		e.PriceCents, e.Currency, e.Capacity, e.ExpectedAttendance,
 		nilIfEmpty(e.RegistrationURL), nilIfEmpty(e.SquareVariationID),
+		emptyIfNil(e.ExDates),
 	)
 	out, err := scanEvent(row)
 	if errors.Is(err, pgx.ErrNoRows) {

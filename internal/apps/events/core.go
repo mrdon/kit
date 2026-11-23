@@ -20,6 +20,9 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 	if caller == nil {
 		return "", errors.New("events: no caller on context")
 	}
+	if out, ok, err := dispatchHours(ctx, caller, svc, name, raw); ok {
+		return out, err
+	}
 	switch name {
 	case "create_event":
 		return coreCreate(ctx, caller, svc, raw)
@@ -96,6 +99,8 @@ type eventInput struct {
 	// RepeatDates is a pointer so update can tell "not sent" from "cleared" --
 	// an empty list is a real instruction, meaning "back to a one-off".
 	RepeatDates *[]string `json:"repeat_dates"`
+	// SkipDates is a pointer for the same reason: an empty list un-skips.
+	SkipDates *[]string `json:"skip_dates"`
 
 	Visibility  *string `json:"visibility"`
 	Venue       *string `json:"venue"`
@@ -148,6 +153,7 @@ func coreCreate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		Timezone:           deref(in.Timezone),
 		RRule:              deref(in.RepeatRule),
 		RepeatDates:        derefSlice(in.RepeatDates),
+		SkipDates:          derefSlice(in.SkipDates),
 		Visibility:         Visibility(strings.ToLower(deref(in.Visibility))),
 		Venue:              Venue(strings.ToLower(deref(in.Venue))),
 		SpaceImpact:        SpaceImpact(strings.ToLower(deref(in.SpaceImpact))),
@@ -229,6 +235,7 @@ func coreUpdate(ctx context.Context, caller *services.Caller, svc *Service, raw 
 		StartsAt: in.StartsAt, EndsAt: in.EndsAt, AllDay: in.AllDay,
 		Timezone: in.Timezone, RRule: in.RepeatRule,
 		RepeatDates: in.RepeatDates,
+		SkipDates:   in.SkipDates,
 		PriceCents:  in.PriceCents, ClearPrice: in.ClearPrice,
 		Currency: in.Currency, Capacity: in.Capacity, ClearCapacity: in.ClearCapacity,
 		ExpectedAttendance: in.ExpectedAttendance,

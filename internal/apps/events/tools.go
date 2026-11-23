@@ -82,6 +82,9 @@ var eventsTools = []services.ToolMeta{
 					"Use this for a series with no pattern — dates picked around someone's availability, or a run " +
 					"with a gap over a holiday. One event, one web page, many dates; do not create one event per night. " +
 					"The earliest date given becomes the start."),
+			"skip_dates": stringList(
+				"Days a repeating event does NOT happen, e.g. ['2026-12-24']. Each must be a date the event " +
+					"would otherwise fall on."),
 			"price_cents":         services.Field("integer", "Ticket price in cents. Omit for a free event."),
 			"currency":            services.Field("string", "ISO currency code. Defaults to USD."),
 			"capacity":            services.Field("integer", "Hard seat limit, if any."),
@@ -121,6 +124,11 @@ var eventsTools = []services.ToolMeta{
 			"repeat_dates": stringList(
 				"Replaces the whole list of extra dates. Pass the full list you want, not just additions; " +
 					"an empty list turns the event back into a one-off."),
+			"skip_dates": stringList(
+				"Days a repeating event does NOT happen, e.g. ['2026-12-24'] for no trivia on Christmas Eve. " +
+					"Replaces the whole list of upcoming skips, so pass every skip you want kept (get_event shows " +
+					"them); an empty list un-skips them all. Each date must be one the event would otherwise fall on. " +
+					"Use this to drop one night of a series -- never end the rule and start a second event."),
 			"price_cents":         services.Field("integer", "New price in cents."),
 			"clear_price":         services.Field("boolean", "Make the event free."),
 			"capacity":            services.Field("integer", "New capacity."),
