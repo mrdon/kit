@@ -77,6 +77,12 @@ func IndexHTML(slug, title, manifest string) ([]byte, error) {
 	return bytes.ReplaceAll(out, []byte(manifestPlaceholder), []byte(manifest)), nil
 }
 
+// HoppersHTML returns the Hoppers phone entry point with the per-workspace
+// slug and title substituted in. Served at /{slug}/hoppers/{game}.
+func HoppersHTML(slug, title string) ([]byte, error) {
+	return entryHTML("hoppers.html", slug, title)
+}
+
 // PlayHTML returns the trivia player entry point with the per-workspace slug
 // and title substituted in, exactly as IndexHTML does for the console.
 //

@@ -1,4 +1,4 @@
-package trivia
+package livegame
 
 // The two word lists a game name is drawn from. A name is one of each,
 // hyphenated -- jumping-lion -- and its one hard requirement is that somebody

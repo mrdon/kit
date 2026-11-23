@@ -1,0 +1,267 @@
+/* Hoppers UI theme: the chrome (panels, text, buttons, lists, results, phone
+   screens, lobby) painted in kit's trivia ("Guesstronauts") style, so both
+   games read as one product in the bar.
+
+   Source of truth: internal/apps/trivia/templates/display*.css (TV) and
+   web/console/src/play/play.css (phone). Values below are copied from
+   there.
+
+   Scope: UI chrome only. The frog art (frog.js) and the race scenes (bar,
+   lake, coasters, lily pads) keep their own colours.
+
+   Dark only, every colour painted explicitly: this is a wall panel and a
+   phone in a dark bar, not a document.
+
+   Classes are prefixed k-. */
+
+/* Fonts (Bungee, Exo 2) come from livegame.FontFaceCSS, inlined ahead of this file. */
+
+:root {
+  /* ---------- colour (kit exact) ---------- */
+  --k-navy:   #1b2b38;   /* stage top / panel base */
+  --k-navy-2: #14222d;   /* page background */
+  --k-navy-3: #0e1a23;   /* text on gold/coral, deepest well */
+  --k-accent:     #e8543a; /* coral: primary action, live, borders that matter */
+  --k-accent-l:   #ffb4a3; /* light coral: section labels, secondary emphasis */
+  --k-accent-hot: #ff7d5e; /* live dot */
+  --k-gold:  #f5c451;    /* scores, winners, whose turn, values */
+  --k-cream: #f4efe7;    /* main text */
+  --k-muted: #b9c4cf;    /* secondary text */
+  --k-dim:   #8ea2b3;    /* tertiary text, labels, clock */
+  --k-ok:    #4ec9a5;    /* go / joined / up (phone) */
+  --k-warn:  #ff9d3a;    /* clock running low */
+  --k-hot:   #ff4b3a;    /* clock about to end */
+  --k-line:  rgba(255, 255, 255, .14); /* every border and divider */
+  --k-white: #fff;       /* text on coral; QR card */
+
+  /* translucent fills, kit's "glass on navy" */
+  --k-fill-1: rgba(255, 255, 255, .05);  /* list row */
+  --k-fill-2: rgba(255, 255, 255, .08);  /* pill / banner */
+  --k-fill-3: rgba(255, 255, 255, .10);  /* bar track */
+  --k-glass: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .04));
+  --k-glass-gold: linear-gradient(180deg, rgba(245, 196, 81, .34), rgba(245, 196, 81, .08));
+  --k-tint-accent: rgba(232, 84, 58, .16); /* "you" row, armed slot */
+  --k-tint-gold:   rgba(245, 196, 81, .16);
+  --k-tint-ok:     rgba(78, 201, 165, .16);
+  --k-shade: rgba(0, 0, 0, .42);           /* kit's rail / join corner */
+
+  /* Hoppers addition: kit's panels sit on plain navy. Ours sit on a busy
+     bar or lake scene, so the panel base is near-opaque navy under the same
+     glass gradient. */
+  --k-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02)), rgba(14, 26, 35, .90);
+
+  /* kit's stage background: coral glow top right, blue glow bottom left */
+  --k-stage:
+    radial-gradient(110vh 70vh at 82% -10%, rgba(232, 84, 58, .28), transparent 60%),
+    radial-gradient(90vh 70vh at -10% 110%, rgba(60, 120, 160, .22), transparent 60%),
+    linear-gradient(160deg, var(--k-navy) 0%, var(--k-navy-2) 100%);
+  --k-phone-bg: linear-gradient(170deg, var(--k-navy) 0%, var(--k-navy-2) 100%);
+
+  /* ---------- fonts ---------- */
+  --k-display: bungee, system-ui, sans-serif;     /* TV headings, numbers, names that shout */
+  --k-body: exo2, system-ui, sans-serif;           /* TV body, rows, announcer */
+  --k-phone: system-ui, -apple-system, "Segoe UI", sans-serif; /* kit's phone uses the system font */
+
+  /* ---------- TV type scale ----------
+     kit draws on a fixed 1920x1080 stage in px; Hoppers' chrome is in vh, so
+     these are kit's px / 10.8. 1vh = 10.8 stage px. */
+  --k-tv-floor: 2.6vh;    /*  28px  nothing on the wall smaller than this */
+  --k-tv-small: 2.8vh;    /*  30px  details, sub lines */
+  --k-tv-body: 3.1vh;     /*  34px  rows, labels */
+  --k-tv-row: 3.5vh;      /*  38px  standings row */
+  --k-tv-label: 4.1vh;    /*  44px  section heads (Bungee, letterspaced) */
+  --k-tv-head: 5vh;       /*  54px  screen titles */
+  --k-tv-big: 5.9vh;      /*  64px  whose pick / whose turn */
+  --k-tv-huge: 8.9vh;     /*  96px  question text, join title */
+  --k-tv-hero: 12vh;      /* 130px  break title, winner band */
+  --k-tv-count: 13.9vh;   /* 150px  countdown */
+
+  /* ---------- phone type scale (kit play.css, px) ---------- */
+  --k-ph-xs: 13px;   /* strips, small labels */
+  --k-ph-s: 15px;    /* sub text, rules */
+  --k-ph-body: 17px; /* body */
+  --k-ph-btn: 20px;  /* button */
+  --k-ph-h2: 21px;
+  --k-ph-val: 26px;  /* slot value */
+  --k-ph-h1: 30px;   /* game name / screen head */
+  --k-ph-big: 46px;  /* countdown, celebrate */
+  --k-ph-delta: 60px;
+  --k-ph-hero: 72px; /* rank hero */
+
+  /* ---------- shape ---------- */
+  --k-r-pill: 999px;
+  --k-r-tv-s: 1.3vh;   /* 14px */
+  --k-r-tv: 1.85vh;    /* 20px cards, cells, bands */
+  --k-r-tv-l: 2.2vh;   /* 24px big cards, plinths */
+  --k-r-ph-s: 12px;    /* list row, banner */
+  --k-r-ph: 16px;      /* button, slot, field */
+  --k-bw-tv: .28vh;    /* 3px border on the TV */
+  --k-bw-ph: 2px;      /* 2px border on the phone */
+
+  --k-shadow-lift: 0 2.2vh 5.5vh rgba(0, 0, 0, .55);  /* wheel / modal */
+  --k-shadow-toast: 0 1.3vh 4vh rgba(0, 0, 0, .45);
+  --k-glow-gold: 0 0 7.4vh rgba(245, 196, 81, .45);  /* winner card */
+  --k-text-lift: 0 2px 6px rgba(0, 0, 0, .6);         /* text over a scene */
+
+  /* ---------- spacing ---------- */
+  --k-tv-pad: 5.9vh;   /* 64px stage padding */
+  --k-tv-gap: 1.85vh;  /* 20px */
+  --k-ph-pad: 16px;
+  --k-ph-gap: 10px;
+
+  /* ---------- motion (kit's curves) ---------- */
+  --k-ease-land: cubic-bezier(.2, .9, .3, 1.1);  /* cards, awards, join corner */
+  --k-ease-slide: cubic-bezier(.2, .9, .2, 1);   /* rail, answer band, row reorder */
+  --k-ease-pop: cubic-bezier(.2, 1.4, .4, 1);    /* slam, celebrate */
+  --k-ease-chip: cubic-bezier(.3, 1.6, .5, 1);   /* chip drop */
+  --k-t-fast: .35s;
+  --k-t: .5s;
+  --k-t-slow: .6s;
+}
+
+/* ---------- page bases ---------- */
+.k-tv { background: var(--k-navy-2); color: var(--k-cream); font-family: var(--k-body); -webkit-font-smoothing: antialiased; }
+.k-stage { background: var(--k-stage); }
+.k-phone {
+  background: var(--k-phone-bg); background-attachment: fixed; color: var(--k-cream);
+  font: 400 var(--k-ph-body)/1.45 var(--k-phone); overscroll-behavior: none;
+}
+
+/* ---------- text ---------- */
+.k-display { font-family: var(--k-display); font-weight: 400; }
+.k-label {  /* kit: rail h2, wheel title, awards head */
+  font: 400 var(--k-tv-label)/1 var(--k-display); color: var(--k-accent-l);
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.k-kicker { /* kit: pick-why, wager-tag. Small caps line above a big one */
+  font: 700 var(--k-tv-small)/1 var(--k-body); color: var(--k-dim);
+  letter-spacing: .16em; text-transform: uppercase;
+}
+.k-gold { color: var(--k-gold); }
+.k-coral { color: var(--k-accent); }
+.k-muted { color: var(--k-muted); }
+.k-dim { color: var(--k-dim); }
+.k-num { font-variant-numeric: tabular-nums; }
+
+/* ---------- panel ---------- */
+/* kit: .card / .cell / .award. 3px line border, glass fill. */
+.k-panel {
+  background: var(--k-panel-bg); border: var(--k-bw-tv) solid var(--k-line);
+  border-radius: var(--k-r-tv-l); color: var(--k-cream);
+}
+.k-panel.is-live { border-color: var(--k-accent); }   /* kit: #flip, the thing happening now */
+.k-panel.is-win  { border-color: var(--k-gold); box-shadow: var(--k-glow-gold); } /* kit: .card.win */
+.k-panel.is-go   { border-color: var(--k-ok); }
+.k-rail { background: var(--k-shade); border-left: var(--k-bw-tv) solid var(--k-line); } /* kit: standings rail */
+
+/* ---------- big number ---------- */
+.k-big { font: 400 var(--k-tv-count)/1 var(--k-display); color: var(--k-cream); font-variant-numeric: tabular-nums; }
+.k-big.is-warn { color: var(--k-warn); }
+.k-big.is-hot { color: var(--k-hot); animation: k-hot 1s ease-in-out infinite; }
+.k-score { font: 400 1em/1 var(--k-display); color: var(--k-gold); font-variant-numeric: tabular-nums; }
+
+/* ---------- strip / banner (kit: PRACTICE ROUND, join toast) ---------- */
+.k-strip {
+  display: inline-block; padding: .9vh 2.6vh; border-radius: var(--k-r-pill);
+  font: 400 2.8vh/1 var(--k-display); letter-spacing: .06em; white-space: nowrap;
+  background: var(--k-gold); color: var(--k-navy-3);
+}
+.k-strip.is-coral { background: var(--k-accent); color: var(--k-white); }
+
+/* ---------- chip / badge ---------- */
+/* kit: .pill on the TV join screen */
+.k-chip {
+  display: inline-flex; align-items: center; gap: .6em;
+  padding: .55em .9em; border-radius: var(--k-r-pill);
+  background: var(--k-fill-2); border: 2px solid var(--k-line); color: var(--k-cream);
+  font: 700 1em/1 var(--k-body); white-space: nowrap;
+}
+.k-chip.is-ok { border-color: var(--k-ok); }
+.k-chip.is-live { background: var(--k-accent); border-color: var(--k-accent); color: var(--k-white); }
+.k-chip.is-gold { background: var(--k-gold); border-color: var(--k-gold); color: var(--k-navy-3); }
+.k-chip.is-off { opacity: .45; }
+/* kit phone: .badge-gold, outlined gold, caps */
+.k-badge {
+  display: inline-block; padding: .45em 1em; border-radius: var(--k-r-pill);
+  background: var(--k-tint-gold); border: 2px solid var(--k-gold); color: var(--k-gold);
+  font-weight: 800; font-size: .85em; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap;
+}
+.k-badge.is-ok { background: var(--k-tint-ok); border-color: var(--k-ok); color: var(--k-ok); }
+.k-badge.is-coral { background: var(--k-tint-accent); border-color: var(--k-accent); color: var(--k-accent-l); }
+
+/* ---------- button (kit phone .btn; TV host button is the same, in vh) ---------- */
+.k-btn {
+  display: block; width: 100%; min-height: 60px; padding: 20px; border: none; border-radius: var(--k-r-ph);
+  background: var(--k-accent); color: var(--k-white); font: 700 var(--k-ph-btn)/1 var(--k-phone);
+  cursor: pointer; touch-action: manipulation; transition: transform .08s, opacity .2s;
+}
+.k-btn:active { transform: scale(.98); }
+.k-btn:disabled { opacity: .4; }
+.k-btn.is-ghost { background: transparent; border: 2px solid var(--k-line); color: var(--k-cream); }
+.k-btn.is-gold { background: var(--k-gold); color: var(--k-navy-3); }
+.k-btn.is-tv {
+  display: inline-block; width: auto; min-height: 0; padding: 1.3vh 3.4vh; border-radius: var(--k-r-tv);
+  font: 400 var(--k-tv-body)/1 var(--k-display); letter-spacing: .04em;
+}
+
+/* ---------- list row ---------- */
+/* kit TV: .row in the standings rail. Name, score in gold, delta in light coral. */
+.k-row {
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 0 1.3vh;
+  padding: .9vh 1.5vh; border-radius: var(--k-r-tv-s);
+  background: var(--k-fill-1); border: var(--k-bw-tv) solid transparent;
+  font: 700 var(--k-tv-row)/1.1 var(--k-body); color: var(--k-cream);
+  transition: transform var(--k-t) var(--k-ease-slide);
+}
+.k-row .k-rank { min-width: 1.6em; text-align: right; color: var(--k-dim); font-variant-numeric: tabular-nums; }
+.k-row .k-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-row .k-pts { font: 400 1em/1 var(--k-display); color: var(--k-gold); font-variant-numeric: tabular-nums; text-align: right; }
+.k-row .k-delta { font-size: .68em; color: var(--k-accent-l); }
+.k-row .k-up { color: var(--k-ok); }
+.k-row .k-dn { color: var(--k-accent-l); }
+.k-row.is-first { background: var(--k-glass-gold); border-color: var(--k-gold); }
+.k-row.is-first .k-rank { color: var(--k-gold); }
+.k-row.is-you { background: var(--k-tint-accent); }
+.k-row.is-bot { opacity: .45; }
+.k-row.is-mover { animation: k-mover 1.5s ease-out both; }
+/* kit phone: .brow */
+.k-prow {
+  display: grid; grid-template-columns: 28px auto minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 8px 12px; border-radius: var(--k-r-ph-s); background: var(--k-fill-1);
+  font: 600 var(--k-ph-body)/1.2 var(--k-phone); font-variant-numeric: tabular-nums;
+}
+.k-prow .k-rank { color: var(--k-dim); font-weight: 700; text-align: right; }
+.k-prow .k-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-prow .k-pts { font-weight: 800; color: var(--k-gold); }
+.k-prow.is-you { background: var(--k-tint-accent); }
+
+/* ---------- motion ---------- */
+.k-in-land { animation: k-land var(--k-t) var(--k-ease-land) both; }
+.k-in-pop { animation: k-pop var(--k-t) var(--k-ease-pop) both; }
+.k-in-slam { animation: k-slam var(--k-t) var(--k-ease-pop) both; }
+@keyframes k-land { from { transform: translateY(4vh); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes k-pop { from { transform: scale(.55); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes k-slam { from { transform: scale(2.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes k-hot { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes k-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+@keyframes k-mover {
+  0%   { background: rgba(245, 196, 81, 0); box-shadow: inset 4px 0 0 rgba(245, 196, 81, 0); }
+  12%  { background: rgba(245, 196, 81, .44); box-shadow: inset 4px 0 0 var(--k-gold); }
+  100% { background: var(--k-fill-1); box-shadow: inset 4px 0 0 rgba(245, 196, 81, 0); }
+}
+/* ---------- Hoppers play layer ----------
+   Kit is calm; Hoppers is an action game, so it keeps playful motion. Rule:
+   motion lives on emphasis moments (title, a new turn, a winner, rows landing),
+   never as constant jitter on text people are reading. */
+.k-wiggle > span { display: inline-block; animation: k-wiggle 2.2s ease-in-out infinite; } /* title: one span per letter, stagger delay inline */
+.k-in-bounce { animation: k-bounce-in .55s var(--k-ease-pop) both; }   /* turn name on change, rows landing (stagger with animation-delay) */
+.k-wobble { display: inline-block; animation: k-wobble 1.2s ease-in-out infinite; transform-origin: 50% 90%; } /* winner frog / winner name */
+.k-cheer { animation: k-cheer .6s ease-in-out infinite; }               /* winner frog only, never text */
+@keyframes k-wiggle { 0%, 100% { transform: translateY(0) rotate(0); } 25% { transform: translateY(-.5vh) rotate(-4deg); } 75% { transform: translateY(.25vh) rotate(3deg); } }
+@keyframes k-bounce-in { 0% { transform: translateY(3vh) scale(.7); opacity: 0; } 60% { transform: translateY(-.6vh) scale(1.06); opacity: 1; } 100% { transform: none; } }
+@keyframes k-wobble { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg) scale(1.04); } }
+@keyframes k-cheer { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20%) rotate(6deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .k-in-land, .k-in-pop, .k-in-slam, .k-row.is-mover, .k-wiggle > span, .k-in-bounce, .k-wobble, .k-cheer { animation: none; }
+}

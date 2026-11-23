@@ -1,0 +1,213 @@
+/* The Hoppers TV: layout and chrome over the race scene. Tokens and k-
+   components are in theme.css; the TV is display-only (the host drives the
+   night from the console or the taproom iPad). */
+/* Chrome in kit's trivia style (static/theme.css, docs/style-kit-alignment.md): navy panels,
+   coral for live/primary, gold for names and scores, Bungee display + Exo 2 body.
+   The race scene (bar, lake, coasters, lily pads, frogs, flies) keeps its own art. */
+* { box-sizing: border-box; }
+:root { --jw: 27vw; } /* join box width: the host button sits just left of it */
+html, body { margin: 0; height: 100%; color: var(--k-cream); font-family: var(--k-body); overflow: hidden; background: var(--k-stage); background-color: var(--k-navy-2); }
+#app { position: relative; width: 100vw; height: 100vh; display: grid; grid-template-rows: auto 1fr 18vh; }
+
+/* string lights (bar theme) */
+#lights { position: absolute; left: 0; right: 0; top: 0; height: 9vh; pointer-events: none; z-index: 3; }
+body:not(.ambient) #lights { display: none; }
+#lights svg { width: 100%; height: 100%; }
+.bulb { animation: twinkle 3s ease-in-out infinite; }
+@keyframes twinkle { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+header { position: relative; z-index: 4; display: flex; align-items: center; gap: 1.2vw; padding: 1.4vh 1.5vw 0; pointer-events: none; }
+header .brand { display: flex; align-items: center; gap: 1.6vw; padding: 0.9vh 1.6vw; border-radius: var(--k-r-tv-l); }
+header .brand .info:empty { display: none; }
+.title { font: 400 4.6vh/1 var(--k-display); color: var(--k-cream); display: flex; letter-spacing: .02em; }
+/* the title only wiggles off-race: while a frog is up, only the frog moves */
+body.racing .title.k-wiggle > span { animation-play-state: paused; }
+header .info { font: 700 var(--k-tv-small)/1 var(--k-body); color: var(--k-muted); letter-spacing: .12em; text-transform: uppercase; }
+header .pay { margin-left: auto; }
+
+
+#ready { position: absolute; right: 2vw; top: 11%; max-width: 36vw; z-index: 7; text-align: center; display: none; padding: 1.6vh 3vw 2vh; }
+#ready { border-color: var(--k-ok); }
+#ready.final { border-color: var(--k-gold); box-shadow: var(--k-glow-gold); }
+#ready.show { display: block; animation: k-land var(--k-t) var(--k-ease-land) both; }
+#ready .kick { font: 700 var(--k-tv-small)/1.2 var(--k-body); color: var(--k-muted); letter-spacing: .12em; text-transform: uppercase; }
+#ready h3 { margin: 0.6vh 0 0; font: 400 var(--k-tv-head)/1.1 var(--k-display); color: var(--k-ok); }
+#ready .n { font: 400 var(--k-tv-count)/1 var(--k-display); color: var(--k-cream); display: inline-block; }
+#ready .n.tick { animation: k-pop .4s var(--k-ease-pop); }
+#ready p { margin: 0; font: 700 var(--k-tv-body)/1.2 var(--k-body); color: var(--k-cream); }
+#ready p b { color: var(--k-gold); }
+#ready.final { max-width: none; width: 50vw; left: 25vw; right: auto; top: 20vh; }
+#ready.final h3 { font-size: var(--k-tv-hero); color: var(--k-gold); animation: k-slam .6s var(--k-ease-pop) both; }
+
+/* the race is drawn in fixed 1920x1080 design pixels and scaled to the screen (see fitStage) */
+#track { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; z-index: 1; overflow: hidden; }
+#scene { position: absolute; left: 0; top: 0; }
+#decor { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+#decor .finish { position: absolute; }
+.roster { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; z-index: 800; pointer-events: none; }
+.roster span { font: 700 var(--rfs, 22px)/1.15 var(--k-body); white-space: nowrap; color: var(--k-muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  background: rgba(14, 26, 35, 0.72); border-radius: 8px; padding: 0 8px; }
+.roster span.h { color: var(--k-cream); border-left: 6px solid var(--c); }
+
+#spot { position: absolute; z-index: 1; top: 0; width: calc(var(--fw) * 2.2); transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 100%, rgba(255, 236, 170, 0.45), rgba(255, 236, 170, 0) 65%);
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); transition: left 0.5s ease, height 0.5s ease, opacity 0.4s; opacity: 0; pointer-events: none; }
+#spot.on { opacity: 1; }
+
+/* left/bottom only glide for camera pans and stack shuffles; real moves are JS-driven hops (see flyHop) */
+.frog { position: absolute; width: var(--fw); height: var(--fw); transform: translateX(-50%); z-index: 3;
+  transition: left 0.9s cubic-bezier(.45,.05,.4,1), bottom 0.5s cubic-bezier(.3,1.5,.5,1), width 0.9s, height 0.9s, opacity 0.4s; }
+.frog.flying { transition: width 0.9s, height 0.9s, opacity 0.4s; }
+.hopshadow { position: absolute; z-index: 2; height: calc(var(--fw) * 0.16); width: calc(var(--fw) * 0.75); border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0,0,0,0.45), rgba(0,0,0,0) 70%); transform: translateX(-50%); pointer-events: none; }
+/* stretch the rig's 0.9s hop flail to whatever one bounce lasts */
+.frog .body.hop .frogsvg :is(.rig-thigh, .rig-thigh-front, .rig-foot, .rig-armN, .rig-armF, .rig-head, .rig-throat) { animation-duration: var(--bd, 0.9s); }
+.frog .sway { width: 100%; height: 100%; transform-origin: 50% 100%; animation: sway 2.6s ease-in-out infinite; animation-delay: var(--sd); }
+@keyframes sway { 0%,100% { transform: rotate(calc(var(--amp) * -1)); } 50% { transform: rotate(var(--amp)); } }
+.frog .body { width: 100%; height: 100%; transform-origin: 50% 100%; }
+/* the art faces left; .faceL keeps it, otherwise it's mirrored to face right */
+.frog .body svg { width: 100%; height: 100%; transform: scaleX(-1); transition: transform 0.35s cubic-bezier(.3,1.6,.5,1); }
+.frog.faceL .body svg { transform: none; }
+.frog .wrong { position: absolute; left: -30%; right: -30%; top: -8%; display: none; text-align: center; z-index: 5; pointer-events: none; }
+.frog .wrong span { display: inline-block; font-weight: 700; color: #fff; background: var(--k-accent); border: 3px solid #fff; border-radius: 999px; padding: 0 0.6em;
+  font-size: max(16px, calc(var(--fw) * 0.13)); line-height: 1.3; box-shadow: 0 3px 0 var(--k-navy-3); white-space: nowrap; animation: talk 0.5s ease-in-out infinite alternate; }
+@keyframes talk { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(3deg) scale(1.08); } }
+.frog.backward .wrong { display: block; }
+.frog .body.squish { animation: squish 0.5s ease-out; }
+@keyframes squish { 0% { transform: none; } 30% { transform: scale(1.35, 0.6); } 60% { transform: scale(0.9, 1.1); } 100% { transform: none; } }
+.frog .body.cheer { animation: cheer 0.6s ease-in-out infinite; }
+@keyframes cheer { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-35%) rotate(6deg); } }
+.frog.current .body svg { filter: drop-shadow(0 0 1vh #fff6c8) drop-shadow(0 0 2.2vh var(--k-gold)); }
+/* the flies: the one "leading now" mark */
+.frog .flies { position: absolute; left: 20%; top: -10%; width: 60%; height: 60%; display: none; }
+.frog.leader .flies { display: block; }
+
+/* hop pops (fxPop lives in frog.js; the page sets its type) */
+body .fx-pop { font-family: var(--k-display); font-weight: 400; -webkit-text-stroke: 2px var(--k-navy-3); text-shadow: 0 4px 0 var(--k-navy-3); }
+/* a perfect flick: one sparkle burst on the frog */
+.fx-spark { position: fixed; pointer-events: none; z-index: 49; color: var(--k-gold); font-size: var(--s); line-height: 1; transform: translate(-50%, -50%);
+  text-shadow: 0 0 1vh #fff3c4; animation: fx-spark 0.9s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes fx-spark { 0% { transform: translate(-50%, -50%) scale(0.2); opacity: 1; }
+  70% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1) rotate(180deg); opacity: 0; } }
+
+footer { position: relative; z-index: 4; grid-row: 3; display: grid; grid-template-columns: 1fr auto auto; gap: 1.5vw; padding: 1.5vh 1.5vw; align-items: stretch; min-height: 0;
+  background: linear-gradient(180deg, rgba(20, 34, 45, 0), rgba(20, 34, 45, .85) 30%); }
+.panel { background: var(--k-panel-bg); border: var(--k-bw-tv) solid var(--k-line); border-radius: var(--k-r-tv-l); padding: 1.2vh 1.4vw; }
+/* the announcer is text-only (no audio in a loud bar): one current line, readable across the room */
+#announcer { font: 700 3.9vh/1.15 var(--k-body); display: flex; flex-direction: column; justify-content: center;
+  overflow: hidden; min-height: 0; border-color: var(--k-accent); }
+#announcer > div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#announcer .new { color: var(--k-cream); animation: k-land .45s var(--k-ease-land) both; }
+#announcer .new.long { font-size: 3.4vh; }
+#announcer.flash { animation: annflash 0.9s ease-out; }
+@keyframes annflash { 0% { border-color: var(--k-gold); box-shadow: 0 0 4vh rgba(245, 196, 81, .5); } }
+#turn { width: 34vw; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+/* whose turn it is: the biggest words on screen, so the bar knows who to yell at */
+#turn .who { font: 400 var(--wfs, 6.4vh)/1.1 var(--k-display); color: var(--k-gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#turn .what { font: 700 var(--k-tv-body)/1.2 var(--k-body); color: var(--k-accent-l); margin-top: 0.3vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#turn .what span { color: var(--k-muted); }
+#turn .what.perfect { color: var(--k-gold); }
+#turn .big { font: 400 var(--k-tv-head)/1.1 var(--k-display); color: var(--k-gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#turn .next { font: 700 var(--k-tv-body)/1.2 var(--k-body); color: var(--k-muted); margin-top: 0.4vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#turn .bar { height: 1.3vh; background: var(--k-fill-3); border-radius: 1vh; margin-top: 0.8vh; overflow: hidden; }
+#turn .bar div { height: 100%; background: var(--k-accent); width: 0; }
+#turn .bar div.warn { background: var(--k-warn); }
+#turn .bar div.hot { background: var(--k-hot); }
+#joinbox { width: var(--jw); display: flex; gap: 1vw; align-items: center; background: var(--k-shade); }
+#joinbox .qr svg { display: block; width: 13.5vh; height: 13.5vh; border-radius: 1vh; background: #fff; padding: 0.6vh; }
+#joinbox b { display: block; white-space: nowrap; font: 400 var(--k-tv-floor)/1.1 var(--k-display); color: var(--k-accent-l); letter-spacing: .06em; }
+#joinbox .url { font: 700 2.2vh/1.2 var(--k-body); color: var(--k-cream); white-space: nowrap; margin-top: 0.6vh; } /* the short link fits; never break it mid-code */
+
+.overlay { position: absolute; inset: 0; display: none; z-index: 10; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 4vh;
+  background: var(--k-stage); background-color: var(--k-navy-2); }
+.overlay.show { display: flex; }
+.overlay h2 { font: 400 var(--k-tv-huge)/1 var(--k-display); margin: 0; color: var(--k-cream); display: flex; justify-content: center; letter-spacing: .02em; }
+.overlay p { font: 700 var(--k-tv-body)/1.3 var(--k-body); color: var(--k-muted); margin: 1vh 0; }
+.lobby-row { display: flex; gap: 4vw; align-items: center; margin-top: 2vh; }
+.lobby-side { display: flex; flex-direction: column; align-items: center; gap: 1.6vh; }
+.qrcard { background: #fff; padding: 1.6vh; border-radius: var(--k-r-tv-l); }
+.qrcard svg { width: 36vh; height: 36vh; display: block; }
+.lobby-url { font: 700 var(--k-tv-body)/1 var(--k-body); color: var(--k-accent-l); }
+.lobby-count { font: 400 var(--k-tv-label)/1 var(--k-display); color: var(--k-accent); letter-spacing: .06em; }
+.lobby-lead { font: 700 var(--k-tv-big)/1.1 var(--k-body); color: var(--k-cream); margin: 1.4vh 0 0.6vh; }
+.rules { list-style: none; padding: 0; margin: 0; display: flex; gap: 2.4vw; font: 700 var(--k-tv-body)/1.2 var(--k-body); color: var(--k-cream); }
+.rules li::before { content: ""; display: inline-block; width: 1.4vh; height: 1.4vh; border-radius: 50%; background: var(--k-accent); margin-right: 0.8vw; vertical-align: 0.3vh; }
+.pond { position: relative; width: 56vw; height: 52vh; border-radius: 50%;
+  background: radial-gradient(ellipse at 45% 40%, #3f8fb0, #1f5f7d 70%, #174a61); box-shadow: inset 0 -2vh 4vh #0b2b3a, 0 0 0 1.2vh #2e5a22; }
+.pond .ripple { position: absolute; border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; animation: ripple 3.5s linear infinite; }
+@keyframes ripple { from { width: 0; height: 0; opacity: 1; } to { width: 14vh; height: 6vh; opacity: 0; margin: -3vh -7vh; } }
+.pond .pad { position: absolute; width: 13vh; transform: translate(-50%, -50%); text-align: center; animation: padbob 3s ease-in-out infinite; }
+.pond .pad::before { content: ""; position: absolute; left: 5%; right: 5%; bottom: 14%; height: 34%; border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #7bc95a, #3f8a2c); clip-path: polygon(0 0, 100% 0, 100% 100%, 55% 100%, 50% 45%, 45% 100%, 0 100%); }
+.pond .pad svg { position: relative; width: 8.5vh; height: 8.5vh; }
+.pond .pad .nm { position: relative; z-index: 2; font: 700 2vh/1.2 var(--k-body); background: rgba(14, 26, 35, 0.78); border-radius: 1vh; padding: 0 0.6vw; white-space: nowrap; }
+.pond .pad.off { opacity: 0.35; }
+.pond .pad.new { animation: plop 0.7s cubic-bezier(.2,1.6,.4,1), padbob 3s ease-in-out 0.7s infinite; }
+@keyframes padbob { 50% { transform: translate(-50%, -54%) rotate(2deg); } }
+@keyframes plop { from { transform: translate(-50%, -300%) scale(0.5); } }
+
+/* ---------- end of the night: the champion (most points) and the table ---------- */
+#champ { justify-content: flex-start; padding-top: 3vh; } /* top down, clear of the host button */
+#champ .kick { font: 400 var(--k-tv-label)/1 var(--k-display); color: var(--k-accent-l); letter-spacing: .1em; }
+.champ { display: flex; align-items: center; gap: 2vw; margin: 0.6vh 0 1.6vh; }
+.champ .hero svg { width: 15vh; height: 15vh; transform: scaleX(-1); }
+.champ .who { font: 400 10vh/1 var(--k-display); color: var(--k-gold); text-shadow: 0 0 5vh rgba(245, 196, 81, .45); white-space: nowrap; }
+.champ .pts { font: 700 var(--k-tv-big)/1.1 var(--k-body); color: var(--k-cream); text-align: left; }
+.standings { width: 50vw; display: flex; flex-direction: column; gap: 0.6vh; text-align: left; }
+.standings .k-row { padding: 0.4vh 1.5vh; font-size: var(--k-tv-row); }
+.standings .k-row svg { width: 5vh; height: 5vh; display: block; }
+
+/* ---------- results (#gp): this race's places, then the night's standings.
+   After a round's last race this is also the beer break: it holds until the host moves on. ---------- */
+#gp { position: absolute; left: 50%; top: 2.5vh; z-index: 72; display: none; transform: translateX(-50%); padding: 1.4vh 2vw 1.8vh;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02)), rgba(14, 26, 35, .97);
+  border: var(--k-bw-tv) solid var(--k-line); border-radius: var(--k-r-tv-l); box-shadow: var(--k-shadow-lift); }
+#gp.show { display: block; animation: gpin var(--k-t) var(--k-ease-land); }
+@keyframes gpin { from { transform: translateX(-50%) translateY(-6vh); opacity: 0; } }
+/* the finished race stays behind the results, dimmed so the panel reads (in and out with it) */
+#dim { position: absolute; inset: 0; z-index: 2000; pointer-events: none; opacity: 0; transition: opacity .6s ease;
+  background: radial-gradient(ellipse at 50% 40%, rgba(10, 18, 26, .5), rgba(6, 10, 16, .72)); backdrop-filter: saturate(.55); }
+body.gp-on #dim { opacity: 1; }
+#gp .gp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 2vw; margin-bottom: 1vh; }
+#gp h3 { margin: 0; font: 400 var(--k-tv-head)/1.05 var(--k-display); color: var(--k-accent-l); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+#gp h3.swap { animation: gpswap 0.35s ease-out; }
+@keyframes gpswap { from { transform: rotateX(90deg); opacity: 0; } }
+#gp .gp-sub { font: 700 var(--k-tv-small)/1 var(--k-body); color: var(--k-muted); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#gp .gp-foot { margin-top: 1.2vh; font: 700 var(--k-tv-body)/1.2 var(--k-body); color: var(--k-cream); }
+#gp .gp-foot:empty { display: none; }
+#gp .gp-foot b { font-family: var(--k-display); font-weight: 400; color: var(--k-gold); letter-spacing: .04em; }
+#gp .gp-body { position: relative; transition: width 0.35s ease, height 0.35s ease; }
+#gp .gp-row { position: absolute; left: 0; top: 0; height: var(--rh); padding-bottom: 0.6vh; }
+#gp .gp-body.moving .gp-row { transition-property: transform; transition-timing-function: var(--k-ease-slide); }
+#gp .gp-row.up { z-index: 2; }
+#gp .gp-card { display: flex; align-items: center; gap: 0.9vw; height: 100%; padding: 0 1.2vw 0 0.6vw; border-radius: var(--k-r-tv-s);
+  background: rgba(255, 255, 255, .06); border: var(--k-bw-tv) solid transparent; font: 700 calc(var(--rh) * 0.5)/1 var(--k-body); white-space: nowrap; }
+#gp .gp-card.in { animation: k-bounce-in .55s var(--k-ease-pop) backwards; }
+#gp .gp-card.fade { animation: gpfade 0.3s ease-out backwards; }
+@keyframes gpfade { from { opacity: 0; transform: scale(0.96); } }
+#gp .gp-card.win, #gp .gp-card.lead { background: var(--k-glass-gold); border-color: var(--k-gold); }
+#gp .gp-card.ran { background: rgba(255, 255, 255, .1); }
+#gp .gp-card.bot { opacity: 0.42; }
+#gp .rk { width: 2.3em; text-align: right; color: var(--k-dim); font-variant-numeric: tabular-nums; }
+#gp .win .rk, #gp .lead .rk { color: var(--k-gold); }
+#gp .mv { width: 1.9em; font-size: 0.62em; text-align: left; }
+#gp .mv.up { color: var(--k-ok); } #gp .mv.dn { color: var(--k-accent-l); }
+#gp .mv.pop { animation: gpbump 0.35s ease-out; }
+#gp .fr { display: flex; }
+#gp .fr svg { width: calc(var(--rh) * 1.02); height: calc(var(--rh) * 1.02); overflow: visible; }
+#gp .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#gp .win .nm { color: var(--k-gold); }
+#gp .pt, #gp .tot { font-family: var(--k-display); font-weight: 400; color: var(--k-gold); text-align: right; font-variant-numeric: tabular-nums; }
+#gp .bot .pt { color: var(--k-muted); font: 700 0.7em var(--k-body); }
+#gp .gain { min-width: 2.2em; text-align: right; color: var(--k-ok); font-size: 0.85em; transition: transform 0.45s ease-in, opacity 0.45s ease-in; }
+#gp .gain.gone { transform: translateX(2.4em) scale(0.5); opacity: 0; }
+#gp .tot { min-width: 2.1em; }
+#gp .tot.bump { animation: gpbump 0.3s ease-out; }
+@keyframes gpbump { 50% { transform: scale(1.3); } }
+
+/* a pill in the corner while the stream is down */
+#netdot { position: fixed; right: 1.2vw; bottom: 1.2vh; z-index: 200; display: none; }
+#netdot.on { display: inline-block; }
+@media (prefers-reduced-motion: reduce) {
+  .bulb, .pond .pad, .pond .ripple, .fx-spark, #ready.show, #ready .n.tick, #gp.show, #announcer .new { animation: none; }
+}

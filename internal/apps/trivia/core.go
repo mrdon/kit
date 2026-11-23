@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mrdon/kit/internal/livegame"
 	"github.com/mrdon/kit/internal/services"
 )
 
@@ -194,7 +195,7 @@ func roundRecap(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, gam
 // caller did not name one.
 func resolveGameForTool(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, name string) (*Game, error) {
 	if name != "" {
-		if !IsValidGameName(name) {
+		if !livegame.IsValidGameName(name) {
 			return nil, fmt.Errorf("%q is not a game name — they look like brave-otter-lamp", name)
 		}
 		return GetGameByName(ctx, pool, tenantID, name)

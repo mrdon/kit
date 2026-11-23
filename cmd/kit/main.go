@@ -28,6 +28,7 @@ import (
 	"github.com/mrdon/kit/internal/apps/email"
 	"github.com/mrdon/kit/internal/apps/events"
 	"github.com/mrdon/kit/internal/apps/googlecalendar"
+	"github.com/mrdon/kit/internal/apps/hoppers"
 	"github.com/mrdon/kit/internal/apps/integrations"
 	"github.com/mrdon/kit/internal/apps/kiosk"
 	"github.com/mrdon/kit/internal/apps/menu"
@@ -293,6 +294,8 @@ func main() {
 	// rather than the hour it takes without one.
 	trivia.ConfigureExplainer(cfg.GDriveAPIKey)
 	trivia.StartLive(ctx)
+	hoppers.Configure(sessionSigner, cfg.BaseURL, rdb)
+	hoppers.StartLive(ctx)
 
 	console.Configure(sessionSigner, enc)
 

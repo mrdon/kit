@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+<style>{{ .CSS }}</style>
+</head>
+<body class="k-tv">
+<div id="netdot" class="k-strip is-coral">Reconnecting…</div>
+<div id="lights"></div>
+<div id="app">
+  <header>
+    <div class="brand panel"><div class="title k-wiggle" id="title"></div><div class="info" id="info"></div></div>
+    <div class="pay" id="pay"></div>
+  </header>
+  <div id="track"><svg id="scene" viewBox="0 0 1920 1080" width="1920" height="1080" xmlns="http://www.w3.org/2000/svg"></svg><div id="decor"></div><div id="spot"></div><div id="rosters"></div><div id="dim"></div></div>
+  <footer>
+    <div class="panel" id="announcer"></div>
+    <div class="panel" id="turn"></div>
+    <div class="panel" id="joinbox"><div class="qr">{{ .QR }}</div><div><b>Scan to play</b><div class="url" id="url">{{ .JoinHost }}</div></div></div>
+  </footer>
+
+  <div id="gp"></div>
+  <div id="ready" class="panel"></div>
+
+  <div class="overlay" id="lobby">
+    <h2 class="k-wiggle" id="lobbyTitle"></h2>
+    <div class="lobby-lead">It's a frog race. Scan to make your frog.</div>
+    <ul class="rules"><li>Flick when it's your turn</li><li>First to the finish wins</li><li>Land on a frog to ride it</li><li>Frogs sometimes turn around</li></ul>
+    <div class="lobby-row">
+      <div class="lobby-side"><div class="qrcard">{{ .QR }}</div><div class="lobby-url" id="lobbyurl">{{ .JoinHost }}</div><div class="lobby-count" id="lobbyCount"></div></div>
+      <div class="pond" id="pond"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="champ"></div>
+</div>
+<script>
+  window.__HOP_STREAM__ = "{{ .StreamURL }}";
+  window.__HOP_POLL__ = "{{ .PollURL }}";
+  window.__HOP_VERSION__ = "{{ .Version }}";
+  window.__HOP_VERSION_URL__ = "{{ .VersionURL }}";
+</script>
+<script>{{ .JS }}</script>
+</body>
+</html>

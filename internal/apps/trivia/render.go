@@ -3,7 +3,6 @@ package trivia
 import (
 	"bytes"
 	"embed"
-	"encoding/base64"
 	"fmt"
 	"html/template"
 	"strings"
@@ -51,7 +50,7 @@ func tvScript(names []string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-//go:embed assets/bungee.woff2 assets/exo2.woff2 assets/wits-wagers-questions.csv
+//go:embed assets/wits-wagers-questions.csv
 var assetFS embed.FS
 
 // sampleRows is enough to show the format and the spread of answers without
@@ -241,7 +240,7 @@ func displayDataFor(baseURL, slug string, game *Game, followLatest bool, explain
 	return displayData{
 		Title:        title,
 		Heading:      heading,
-		JoinHost:     displayHost(join),
+		JoinHost:     livegame.DisplayHost(join),
 		QR:           qr,
 		StreamURL:    template.URL(base + "/tv/stream"),
 		PollURL:      template.URL(base + "/tv/state"),
@@ -253,28 +252,15 @@ func displayDataFor(baseURL, slug string, game *Game, followLatest bool, explain
 	}, nil
 }
 
-// displayHost strips the scheme from the join URL. Somebody typing it into a
-// phone does not type "https://", and the shorter string sets bigger.
-func displayHost(join string) string {
-	s := strings.TrimPrefix(join, "https://")
-	return strings.TrimPrefix(s, "http://")
-}
-
-// stylesheet is the embedded CSS with the two @font-face rules prepended.
+// stylesheet is the embedded CSS with the shared TV fonts' @font-face rules
+// prepended.
 func stylesheet(sheets []string) (string, error) {
-	bungee, err := assetDataURI("assets/bungee.woff2")
-	if err != nil {
-		return "", err
-	}
-	exo, err := assetDataURI("assets/exo2.woff2")
+	fonts, err := livegame.FontFaceCSS()
 	if err != nil {
 		return "", err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "@font-face{font-family:bungee;src:url(%s) format(\"woff2\");"+
-		"font-weight:400;font-style:normal;font-display:block}\n", bungee)
-	fmt.Fprintf(&b, "@font-face{font-family:exo2;src:url(%s) format(\"woff2\");"+
-		"font-weight:400 700;font-style:normal;font-display:block}\n", exo)
+	b.WriteString(fonts)
 	for _, name := range sheets {
 		src, err := templateFS.ReadFile("templates/" + name)
 		if err != nil {
@@ -284,12 +270,4 @@ func stylesheet(sheets []string) (string, error) {
 		b.WriteString("\n")
 	}
 	return b.String(), nil
-}
-
-func assetDataURI(name string) (string, error) {
-	raw, err := assetFS.ReadFile(name)
-	if err != nil {
-		return "", fmt.Errorf("reading embedded asset %s: %w", name, err)
-	}
-	return "data:font/woff2;base64," + base64.StdEncoding.EncodeToString(raw), nil
 }

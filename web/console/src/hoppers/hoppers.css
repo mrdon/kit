@@ -1,0 +1,160 @@
+/* The two display fonts, the same files the TVs inline (internal/livegame).
+   The phone uses Bungee for its few shouting words (FLICK!, the maker's
+   title); everything else is the system font, like trivia's phone. */
+@font-face { font-family: bungee; src: url(../../../../internal/livegame/assets/bungee.woff2) format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: exo2; src: url(../../../../internal/livegame/assets/exo2.woff2) format("woff2");
+  font-weight: 400 700; font-style: normal; font-display: swap; }
+
+/* The Hoppers phone, in kit's trivia look (theme.css): navy, coral, gold,
+   system font, glass cards. Four screens: Join (the maker), Wait, FLICK!,
+   Result. The frog art and the beer-mat stage are art. */
+:root { --ink: var(--k-cream); --muted: var(--k-muted); --dim: var(--k-dim); --accent: var(--k-accent); --gold: var(--k-gold);
+  --good: var(--k-ok); --bad: var(--k-accent); --panel: var(--k-fill-1); --line: var(--k-line); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100dvh; }
+body { padding: max(12px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto;
+  user-select: none; -webkit-user-select: none; }
+h2 { margin: 6px 0 8px; font-size: 21px; }
+.hidden { display: none !important; }
+button { font: inherit; cursor: pointer; }
+.btn { width: 100%; min-height: 56px; border: 0; border-radius: 16px; padding: 16px; font: 700 20px/1 var(--k-phone);
+  background: var(--accent); color: #fff; touch-action: manipulation; }
+.btn:active { transform: scale(.98); }
+.btn:disabled { opacity: .4; }
+.btn.ghost { background: transparent; color: var(--ink); border: 2px solid var(--line); font-size: 17px; min-height: 50px; padding: 12px; }
+/* the hop pops come from frog.js; paint them in kit colours */
+body .fx-pop { font-family: var(--k-display); font-weight: 400; color: var(--k-cream); -webkit-text-stroke: 2px var(--k-navy-3); text-shadow: 0 3px 0 var(--k-navy-3); }
+@keyframes picked { 40% { transform: scale(1.08) rotate(-2deg); } }
+
+/* ---------- Join / Edit: the frog maker on a beer-mat stage ---------- */
+#maker { display: flex; flex-direction: column; min-height: calc(100dvh - 52px); }
+#maker .mk-head { text-align: center; margin: 0 0 16px; line-height: 1; }
+#maker .mk-head h2 { margin: 4px 0 0; font: 400 26px/1.1 var(--k-display); color: var(--k-cream); letter-spacing: .02em; }
+#maker .stage { position: relative; height: 236px; margin: 2px -16px 0; display: flex; justify-content: center; align-items: flex-end;
+  background: radial-gradient(ellipse 52% 60% at 50% 58%, rgba(232, 84, 58, .16), transparent 70%); }
+#maker .stage::before { content: ""; position: absolute; left: 50%; bottom: 10px; width: 210px; height: 50px; transform: translateX(-50%);
+  border-radius: 50%; background: radial-gradient(ellipse at 50% 40%, #c98a4a, #8e5a2b 70%, #5e3a1c);
+  box-shadow: 0 6px 0 #3a2312, 0 10px 18px #0008, inset 0 0 0 5px #ffffff18, inset 0 0 0 7px #00000022; }
+#maker .stage::after { content: "HOPPERS · TAPROOM"; position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.3em; color: #3a2312aa; white-space: nowrap; }
+#maker .preview { position: relative; z-index: 1; width: 214px; height: 214px; margin-bottom: 8px; animation: idlehop 3.4s ease-in-out infinite; }
+#maker .preview svg { width: 100%; height: 100%; }
+/* the frog art is an HTML string in a wrapper span; let its <svg> size to the box */
+.frogart { display: contents; }
+#maker .preview.pop svg { animation: mpop 0.45s cubic-bezier(.2,1.6,.4,1); }
+#maker .preview.hop { animation: mkjump 0.9s ease-out; }
+@keyframes mpop { 0% { transform: scale(0.8) rotate(-6deg); } 60% { transform: scale(1.08) rotate(3deg); } }
+@keyframes idlehop { 0%,72%,100% { transform: translateY(0); } 80% { transform: translateY(-12px) scaleY(1.04); } 88% { transform: translateY(0) scaleY(0.95); } }
+@keyframes mkjump { 0% { transform: none; } 14% { transform: scale(1.06, 0.9); } 45% { transform: translateY(-46px) rotate(-6deg); }
+  78% { transform: translateY(0) scale(1.08, 0.9); } 100% { transform: none; } }
+
+#maker .lbl { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--dim); margin: 12px 2px 6px; }
+#maker .lbl em { font-style: normal; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--muted); }
+#maker .namebox { position: relative; display: flex; align-items: center; margin-top: 4px; }
+#maker input[type=text] { flex: 1; width: 100%; font: 700 22px/1.2 var(--k-phone); text-align: center; padding: 12px 56px; border-radius: 16px;
+  border: 2px solid var(--line); background: rgba(255,255,255,.07); color: var(--ink); min-width: 0; outline: none; }
+#maker input[type=text]:focus { border-color: var(--accent); }
+#maker input[type=text]::placeholder { color: var(--dim); }
+#maker .dice { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; border-radius: 12px;
+  background: var(--k-fill-2); font-size: 22px; line-height: 1; }
+#maker .dice:active { transform: translateY(-50%) scale(.92); }
+#maker .roll { animation: roll 0.5s cubic-bezier(.3,1.4,.5,1); }
+@keyframes roll { 0% { rotate: 0deg; } 100% { rotate: 360deg; } }
+
+#maker .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px 8px; padding: 0 4px; }
+#maker .swatch { position: relative; aspect-ratio: 1; border-radius: 46% 54% 50% 50% / 55% 45% 55% 45%; border: 2.5px solid #1f1a17;
+  box-shadow: inset -4px -5px 0 #0002, inset 4px 4px 0 #fff3; transition: transform .15s; }
+#maker .swatch:nth-child(even) { border-radius: 54% 46% 48% 52% / 45% 55% 45% 55%; }
+#maker .swatch:active { transform: scale(0.9); }
+#maker .swatch.on { transform: scale(1.12); outline: 3px solid var(--ink); outline-offset: 3px; }
+#maker .swatch.on::after { content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22px; font-weight: 800; text-shadow: 0 2px 0 #0007; }
+#maker .swatch.taken { opacity: 0.22; box-shadow: none; }
+#maker .swatch.taken::after { content: "✕"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; }
+
+#maker .hats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+#maker .hatbtn { position: relative; aspect-ratio: 1; padding: 6px; background: #f2ede1; border: 2px solid var(--line); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; transition: transform .15s; }
+#maker .hatbtn:active { transform: scale(.92); }
+#maker .hatbtn.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent); transform: translateY(-2px); }
+#maker .hatbtn svg { width: 100%; height: 100%; display: block; overflow: visible; filter: url(#ink0); }
+#maker .hatbtn svg path, #maker .hatbtn svg rect, #maker .hatbtn svg ellipse, #maker .hatbtn svg circle { stroke: #1f1a17; stroke-width: 1.8; stroke-linejoin: round; }
+#maker .hatbtn .no { font-size: 11px; font-weight: 800; color: #5e3a1c; line-height: 1; }
+#maker .picked { animation: picked 0.4s; }
+
+#maker .mk-go { margin-top: auto; padding-top: 16px; display: flex; gap: 10px; align-items: stretch; }
+#maker #randomAll { flex: 0 0 auto; width: auto; padding: 0 14px; font-size: 15px; line-height: 1.05; }
+#maker #randomAll span { display: block; font-size: 24px; }
+#maker #done { flex: 1; font-size: 22px; }
+@media (max-height: 700px) { #maker .stage { height: 170px; } #maker .preview { width: 150px; height: 150px; } }
+.reclaim { text-align: center; margin-top: 10px; }
+.reclaim .link { background: none; border: 0; color: var(--dim); text-decoration: underline; font-size: 15px; padding: 6px; }
+#reclaimForm { display: flex; gap: 8px; margin-top: 6px; }
+#reclaimForm input { flex: 1; min-width: 0; font: 700 22px/1.2 var(--k-phone); letter-spacing: 0.2em; text-align: center; border-radius: 12px;
+  border: 2px solid var(--line); background: rgba(255,255,255,.07); color: var(--ink); padding: 8px; outline: none; }
+#reclaimForm input:focus { border-color: var(--accent); }
+#reclaimForm .btn { width: auto; min-height: 0; font-size: 17px; padding: 10px 14px; }
+#reclaimForm select { flex: 1.4; min-width: 0; font: 700 17px/1.2 var(--k-phone); border-radius: 12px;
+  border: 2px solid var(--line); background: rgba(255,255,255,.07); color: var(--ink); padding: 8px; outline: none; }
+#reclaimForm input { flex: 1; letter-spacing: 0.15em; }
+
+/* ---------- Wait / Result ---------- */
+#main { display: flex; flex-direction: column; gap: 12px; }
+.me { display: flex; align-items: center; gap: 10px; }
+.me .face { position: relative; width: 56px; height: 56px; }
+.me .face svg { width: 100%; height: 100%; }
+.me .name { font-weight: 800; font-size: 20px; line-height: 1.1; color: var(--k-accent-l); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the one big card: what's happening to you now */
+.hero { border-radius: 16px; padding: 18px 14px; text-align: center; background: var(--k-fill-1); border: 2px solid var(--line); }
+.hero.pop { animation: heropop .45s var(--k-ease-pop) both; }
+@keyframes heropop { from { transform: scale(.9); opacity: .3; } to { transform: none; opacity: 1; } }
+.hero .k { font-size: 13px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.hero .big { font-size: 40px; font-weight: 800; line-height: 1.05; margin: 6px 0; overflow-wrap: anywhere; }
+.hero .sub { font-size: 17px; color: var(--muted); line-height: 1.35; }
+.hero .sub b { color: var(--ink); }
+.hero.go { border-color: var(--k-ok); }
+.hero.next { border-color: var(--accent); background: var(--k-tint-accent); }
+.hero.next .big { color: var(--ink); }
+.hero.wrong { border-color: var(--accent); }
+.hero.gold { border-color: var(--gold); background: var(--k-tint-gold); }
+.hero.gold .big, .hero.gold .place { color: var(--gold); }
+.place { font-size: 72px; font-weight: 800; line-height: 1; color: var(--gold); font-variant-numeric: tabular-nums; margin: 6px 0; }
+.place small { font-size: 22px; color: var(--dim); font-weight: 700; }
+.wrongway { color: var(--k-accent-l); font-weight: 800; font-size: 19px; margin-bottom: 4px; }
+.gain { display: inline-block; margin: 4px 0 8px; padding: 6px 16px; border-radius: 999px; font-size: 22px; font-weight: 800;
+  background: var(--k-tint-ok); border: 2px solid var(--k-ok); color: var(--k-ok); }
+.gain.zero { background: var(--k-fill-2); border-color: var(--line); color: var(--dim); }
+.card { border-radius: 16px; padding: 12px; background: var(--k-fill-1); border: 2px solid var(--line); }
+.card h3 { margin: 0 0 8px; display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 15px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.card h3 span { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 14px; }
+.rows { display: flex; flex-direction: column; gap: 6px; }
+.lrow { display: grid; grid-template-columns: 26px 34px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 6px 12px; border-radius: 12px; background: var(--k-fill-1); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lrow b { color: var(--dim); text-align: right; }
+.lrow svg { width: 34px; height: 34px; transform: scaleX(-1); }
+.lrow .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .pt { font-weight: 800; color: var(--gold); }
+.lrow.mine { background: var(--k-tint-accent); }
+.how { font-size: 15px; color: var(--muted); text-align: center; margin: 4px 6px; line-height: 1.45; }
+.me .face.sparkle::after { content: ""; position: absolute; inset: -30%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(245, 196, 81, .7), rgba(245, 196, 81, 0) 65%); animation: sparkle 1.4s ease-out both; }
+@keyframes sparkle { 0% { transform: scale(.3); opacity: 0; } 25% { opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+
+/* ---------- FLICK! : the word, your frog, the clock. Nothing else ---------- */
+#flick { position: fixed; inset: 0; padding: 0 16px; text-align: center; background: var(--k-stage); z-index: 20;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; touch-action: none; }
+#flick h1 { margin: 0; font: 400 64px/1 var(--k-display); color: var(--k-cream); }
+#flick h1 span { display: inline-block; animation: k-wiggle 2.2s ease-in-out infinite; }
+#flick .face { width: 64vw; max-width: 290px; transition: transform 0.25s; }
+#flick .face.away { transform: translateY(-120vh) rotate(-20deg); transition: transform 0.6s ease-in; }
+#flick .bar { width: 70%; height: 10px; background: var(--k-fill-3); border-radius: 999px; overflow: hidden; }
+#flick .bar div { height: 100%; background: var(--accent); border-radius: inherit; }
+@media (prefers-reduced-motion: reduce) { #flick h1 span, .hero.pop { animation: none; } }
+
+#toast { position: fixed; left: 50%; bottom: 4%; transform: translateX(-50%); z-index: 30; background: var(--accent); color: #fff;
+  border-radius: 16px; padding: 14px 22px; font-size: 19px; font-weight: 800; text-align: center; display: none; box-shadow: var(--k-shadow-toast); max-width: 90vw; }
+#toast.show { display: block; animation: pop 0.35s var(--k-ease-pop); }
+@keyframes pop { from { transform: translateX(-50%) scale(0.6); } to { transform: translateX(-50%) scale(1); } }

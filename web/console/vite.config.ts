@@ -31,6 +31,7 @@ export default defineConfig({
     // Two entries, one build, one hashed asset prefix:
     //   main — the authenticated console (index.html, served at /{slug}/web)
     //   play — the trivia player (play.html, served at /{slug}/trivia/{game})
+    //   hoppers — the Hoppers phone (hoppers.html, at /{slug}/hoppers/{game})
     //
     // The player is a separate entry rather than a route inside the console
     // because the two share nothing: the console is authenticated, desktop
@@ -41,6 +42,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         play: path.resolve(__dirname, 'play.html'),
+        hoppers: path.resolve(__dirname, 'hoppers.html'),
       },
     },
   },

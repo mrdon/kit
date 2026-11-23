@@ -136,7 +136,7 @@ func (a *App) handleTVVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	var game *Game
 	if name := r.PathValue("game"); name != "" {
-		if !IsValidGameName(name) {
+		if !livegame.IsValidGameName(name) {
 			http.NotFound(w, r)
 			return
 		}

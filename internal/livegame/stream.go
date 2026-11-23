@@ -51,6 +51,12 @@ type Stream[F any] struct {
 	// that is milliseconds old. The broker hands the SAME value to every
 	// subscriber, so Project must not mutate it -- stamp a copy.
 	Project func(F) any
+	// OnBeat, if set, runs once the stream is up and again on every ping,
+	// with the newest snapshot this stream has seen. It is a game's
+	// heartbeat for presence: a phone whose stream is open is a phone that
+	// is still in the room. It runs on the stream's goroutine, so it must be
+	// quick, and it must never write to the response.
+	OnBeat func(ctx context.Context, last F)
 }
 
 // Serve runs one SSE stream until the client goes away.
@@ -80,45 +86,61 @@ func Serve[F any](w http.ResponseWriter, r *http.Request, s Stream[F]) {
 	}
 	defer writer.Close()
 
-	sent := int64(-1)
-	emit := func(f F) bool {
-		// A stale frame arriving after a fresher one is dropped rather than
-		// repainting the room backwards.
-		v := s.Version(f)
-		if v <= sent {
-			return true
-		}
-		if err := writer.Emit(EventState, s.Project(f)); err != nil {
-			return false
-		}
-		sent = v
-		return true
-	}
-	if !emit(snap) {
+	st := &streamState[F]{s: s, w: writer, sent: -1, last: snap}
+	if !st.emit(snap) {
 		return
 	}
+	st.beat(r.Context())
 
-	beat := time.NewTicker(PingEvery)
-	defer beat.Stop()
+	ticker := time.NewTicker(PingEvery)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case next, ok := <-ch:
-			if !ok {
+			if !ok || !st.emit(next) {
 				return
 			}
-			if !emit(next) {
-				return
-			}
-		case <-beat.C:
+		case <-ticker.C:
 			// Nothing has changed and that is fine -- say so, rather than
 			// letting the room read the silence as a broken connection.
 			if err := writer.Emit(EventPing, struct{}{}); err != nil {
 				return
 			}
+			st.beat(r.Context())
 		}
+	}
+}
+
+// streamState is one stream's memory: the newest version it has sent and
+// the snapshot that carried it.
+type streamState[F any] struct {
+	s    Stream[F]
+	w    *sse.Writer
+	sent int64
+	last F
+}
+
+// emit sends f unless the client already has it or something newer: a stale
+// frame arriving after a fresher one is dropped rather than repainting the
+// room backwards. It reports false once the client has gone.
+func (st *streamState[F]) emit(f F) bool {
+	v := st.s.Version(f)
+	if v <= st.sent {
+		return true
+	}
+	if err := st.w.Emit(EventState, st.s.Project(f)); err != nil {
+		return false
+	}
+	st.sent, st.last = v, f
+	return true
+}
+
+func (st *streamState[F]) beat(ctx context.Context) {
+	if st.s.OnBeat != nil {
+		st.s.OnBeat(ctx, st.last)
 	}
 }
 

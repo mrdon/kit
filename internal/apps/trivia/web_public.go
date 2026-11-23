@@ -88,7 +88,7 @@ func (a *App) resolveGame(w http.ResponseWriter, r *http.Request) (*Game, string
 		return nil, "", false
 	}
 	name := r.PathValue("game")
-	if !IsValidGameName(name) {
+	if !livegame.IsValidGameName(name) {
 		http.NotFound(w, r)
 		return nil, "", false
 	}
