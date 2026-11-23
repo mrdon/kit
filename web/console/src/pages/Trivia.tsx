@@ -85,6 +85,10 @@ export default function Trivia() {
           <p className="page-sub">
             Point the TV at <code>{tvURL}</code> once and leave it. It follows the newest game.
           </p>
+          <p className="page-sub">
+            Showing a game too? <code>{tvURL}?overlay=1</code> is the same quiz as an OBS overlay
+            that leaves the top right clear for the broadcast.
+          </p>
         </div>
         <div className="page-head-actions">
           <button className="btn" onClick={() => void create()} disabled={busy}>

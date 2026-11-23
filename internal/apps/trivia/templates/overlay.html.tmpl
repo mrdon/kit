@@ -21,8 +21,8 @@
       <div class="ov-qr">{{ .QR }}</div>
       <div class="ov-url">{{ .JoinHost }}</div>
     </div>
-    <!-- The clock while something is timed, the topics the rest of the
-         time. overlay.js decides. -->
+    <!-- The clock while something is timed, the topics or the standings
+         the rest of the time. overlay.js decides. -->
     <div class="ov-timer" id="ov-timer">
       <div class="ov-secs" id="ov-secs"></div>
       <div class="ov-timer-sub" id="ov-timer-sub"></div>
@@ -32,6 +32,10 @@
          strip: somebody back from the bar needs to know what the numbers
          are answering. -->
     <div class="ov-aside" id="ov-aside"></div>
+    <!-- Whoever is in, and how they stand: what the room asks between
+         questions, and what fills the column once the clock and the
+         question have taken their share. As many rows as fit. -->
+    <div class="ov-standings" id="ov-standings"></div>
     <div id="dot"></div>
   </aside>
   <section class="ov-bottom">

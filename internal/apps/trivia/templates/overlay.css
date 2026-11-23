@@ -97,20 +97,35 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
   letter-spacing: .06em; text-transform: uppercase; text-align: center;
 }
 
+/* The question takes what it needs (shrinking only when the column runs
+   out) and the standings under it get the rest. */
 .ov-aside {
-  display: none; flex: 1; min-height: 0; overflow: hidden;
+  display: none; flex: 0 1 auto; min-height: 0; overflow: hidden;
   padding-top: 14px; border-top: 2px solid var(--line);
   font: 700 30px/1.2 var(--body); color: var(--cream);
 }
 .ov-aside.on { display: block; }
 .ov-aside .ans { font: 400 26px/1.1 var(--display); color: var(--gold); margin-bottom: 10px; }
 
-.ov-topics { display: none; flex: 1; flex-direction: column; gap: 10px; min-height: 0; }
-.ov-topics.on { display: flex; }
-.ov-topics h2 {
-  margin: 0; font: 400 22px/1 var(--display);
+.ov-standings { display: none; flex: 1 1 0; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; }
+.ov-standings.on { display: flex; }
+.ov-standings h2, .ov-topics h2 {
+  flex: none; margin: 0; font: 400 22px/1 var(--display);
   color: var(--gold); letter-spacing: .08em;
 }
+.ov-stand {
+  flex: none; display: flex; align-items: baseline; gap: 10px;
+  padding: 5px 12px; border-radius: 8px; background: rgba(255, 255, 255, .06);
+  font: 700 24px/1.15 var(--body);
+}
+.ov-stand b { flex: none; min-width: 1.2em; font: 400 20px/1 var(--display); color: var(--gold); }
+.ov-stand .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-stand .score { flex: none; color: var(--cream); font-variant-numeric: tabular-nums; }
+.ov-stand .delta { flex: none; font-size: 20px; color: var(--gold); }
+.ov-stand .delta.neg { color: var(--accent-hot); }
+
+.ov-topics { display: none; flex: 1; flex-direction: column; gap: 10px; min-height: 0; }
+.ov-topics.on { display: flex; }
 .ov-topic {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   padding: 8px 14px; border-radius: 10px; background: rgba(255, 255, 255, .06);
@@ -167,7 +182,3 @@ body { font-family: var(--body); color: var(--cream); -webkit-font-smoothing: an
 .ov-card.win { background: var(--gold); border-color: var(--gold); color: var(--navy-3); }
 .ov-card.win .names, .ov-card.win .pot, .ov-card.win.pseudo .val { color: var(--navy-3); }
 .ov-card.lose { opacity: .35; }
-
-.ov-scores { display: flex; gap: 36px; flex-wrap: wrap; margin-top: 14px; }
-.ov-score { font: 700 36px/1.1 var(--body); white-space: nowrap; }
-.ov-score b { font-family: var(--display); font-weight: 400; color: var(--gold); margin-right: 10px; }

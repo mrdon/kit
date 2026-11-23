@@ -43,11 +43,14 @@ function inCards() {
 
 /* ---------- the left column ----------
 
-   Under the join code it holds ONE of three things, by phase:
+   Under the join code, by phase:
      - the cards are up: the question they answer, with the clock above it
-       if there is one, and the answer once it is known;
+       if there is one, the answer once it is known, and the standings in
+       whatever room is left;
      - something else is timed: the clock alone, big;
-     - nothing is timed: the topics still on the board. */
+     - the board: the topics still on it;
+     - the lobby: the teams in so far;
+     - the break and the podium: the standings. */
 function renderOvLeft() {
   var timed = !!(state.deadlineMs || state.pausedMs);
   var cards = inCards();
@@ -69,8 +72,11 @@ function renderOvLeft() {
     shrinkToFit(q, 30, 20);
   }
 
+  var board = !timed && state.phase === PHASE.BOARD;
+  renderOvStandings(cards || (!timed && !board));
+
   var box = document.getElementById('ov-topics');
-  box.classList.toggle('on', !timed && !cards);
+  box.classList.toggle('on', board);
   box.innerHTML = '';
   var topics = boardTopics();
   if (!topics.length) { return; }
@@ -81,6 +87,36 @@ function renderOvLeft() {
     row.appendChild(el('span', 'left', t.left ? t.left + ' LEFT' : 'DONE'));
     box.appendChild(row);
   });
+}
+
+/* The teams, best first, with the points this round just moved at scoring.
+   In the lobby nobody has a score yet, so it is a roll call. Rows that do
+   not fit are dropped from the bottom -- the leaders matter most, and a
+   team further down has its own score on its phone. */
+function renderOvStandings(on) {
+  var box = document.getElementById('ov-standings');
+  box.innerHTML = '';
+  var lobby = state.phase === PHASE.LOBBY || state.phase === PHASE.SETUP;
+  var teams = lobby ? state.teams.slice() : sortedTeams();
+  box.classList.toggle('on', on && teams.length > 0);
+  if (!on || !teams.length) { return; }
+  box.appendChild(el('h2', '', lobby ? 'TEAMS IN' : 'STANDINGS'));
+  var deltas = state.phase === PHASE.SCORING && state.scoring ? state.scoring.deltas || {} : {};
+  teams.forEach(function (t, i) {
+    var row = el('div', 'ov-stand');
+    if (!lobby) { row.appendChild(el('b', '', i + 1)); }
+    row.appendChild(el('span', 'name', t.name));
+    var d = deltas[t.id];
+    if (d) { row.appendChild(el('span', 'delta' + (d < 0 ? ' neg' : ''), (d > 0 ? '+' : '−') + money(Math.abs(d)))); }
+    if (!lobby) { row.appendChild(el('span', 'score', money(t.score))); }
+    box.appendChild(row);
+  });
+  var rows = box.querySelectorAll('.ov-stand');
+  for (var i = rows.length - 1; i >= 0 && box.scrollHeight > box.clientHeight + 1; i--) {
+    box.removeChild(rows[i]);
+  }
+  // A heading over one squeezed row reads as a mistake; give the room back.
+  if (box.querySelectorAll('.ov-stand').length < 2) { box.classList.remove('on'); }
 }
 
 function boardTopics() {
@@ -153,8 +189,8 @@ function ovPickWhy(reason) {
 }
 
 function ovBreak(main) {
-  ovLine(main, ['Break, back soon']);
-  ovScores(main, 6);
+  var top = sortedTeams()[0];
+  ovLine(main, ['Break, back soon'], top ? top.name + ' leads with ' + money(top.score) : '');
 }
 
 function ovWager(main) {
@@ -172,23 +208,11 @@ function ovQuestion(main) {
 function ovPodium(main) {
   var top = sortedTeams()[0];
   if (!top) { ovLine(main, ['Thanks for playing']); return; }
-  ovLine(main, [{ em: top.name }, ' wins with ' + money(top.score)]);
-  ovScores(main, 5);
+  ovLine(main, [{ em: top.name }, ' wins with ' + money(top.score)], 'Thanks for playing');
 }
 
 function sortedTeams() {
   return state.teams.slice().sort(function (a, b) { return b.score - a.score; });
-}
-
-function ovScores(main, n) {
-  var box = el('div', 'ov-scores');
-  sortedTeams().slice(0, n).forEach(function (t, i) {
-    var s = el('div', 'ov-score');
-    s.appendChild(el('b', '', i + 1));
-    s.appendChild(document.createTextNode(t.name + ' ' + money(t.score)));
-    box.appendChild(s);
-  });
-  main.appendChild(box);
 }
 
 /* The answers on the table, and nothing else: the question is in the left
@@ -209,13 +233,14 @@ function ovCards(main) {
     if (win) { cls += s.id === win ? ' win' : ' lose'; }
     var card = el('div', cls);
     card.appendChild(el('div', 'val', s.label));
-    // Two rows leave room for one small line, and once chips are down the
-    // money on a card is what a table is deciding on; the names are for the
-    // reveal, and every phone already has them.
-    if (betting && s.pot) {
-      card.appendChild(el('div', 'pot', money(s.pot)));
-    } else if (!betting || rows === 1) {
-      card.appendChild(el('div', 'names', (s.teams || []).join(' & ')));
+    // Under the number: who wrote it at the reveal, the chips on it from
+    // betting on. Never a mix -- a row reading "$200, Bar Flies, $600"
+    // makes the room work out which is which. An empty pot keeps its line
+    // so the numerals stay level.
+    if (betting) {
+      card.appendChild(el('div', 'pot', s.pot ? money(s.pot) : '\u00a0'));
+    } else {
+      card.appendChild(el('div', 'names', (s.teams || []).join(' & ') || '\u00a0'));
     }
     grid.appendChild(card);
   });

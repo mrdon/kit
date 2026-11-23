@@ -1,7 +1,8 @@
-# Trivia OBS overlay — design notes (WIP)
+# Trivia OBS overlay — design notes
 
-Status: sketch on branch `trivia-obs-overlay`. Not wired into docs, not
-tested against a live game, not deployed. Picking this up on another box.
+Status: shipped behind `?overlay=1`, advertised on the console's Trivia,
+setup and live pages (`overlay_url`) and in the user guide. Not yet tried in
+real OBS against a live game.
 
 ## Goal
 
@@ -34,40 +35,48 @@ a transparent hole for the game.
 ## Layout by phase
 
 Left column (under title + QR + join URL):
-- cards phases: countdown (if timed) + question; answer at scoring
+- cards phases: countdown (if timed) + question; answer at scoring; then
+  STANDINGS in whatever room is left (rows dropped from the bottom, hidden
+  under 2 rows), with this round's +/- at scoring
 - other timed phases (question, wager): big countdown alone
-- untimed: TOPICS list with "N LEFT" / DONE
+- board: TOPICS list with "N LEFT" / DONE
+- lobby: TEAMS IN (names only)
+- break/podium: STANDINGS
 
 Bottom strip:
 - lobby: "Scan the code to join" / N teams in
 - board: "<Team> picks the next topic" / why
 - question: question text, fitted
 - wager: "Final category: X" / lock in your wager
-- reveal/betting/scoring: the guess cards (pot under each when betting,
-  winner gold + others dimmed at scoring)
-- break/podium: headline + top scores
+- reveal/betting/scoring: the guess cards. Under the number: who wrote it
+  at reveal, the pot from betting on (blank when empty, never a mix);
+  winner gold + others dimmed at scoring
+- break: "Break, back soon" / who leads
+- podium: "<Team> wins with $X" / thanks for playing
 
 ## Previews
 
-`docs/trivia-obs-overlay/*.png` — rendered over a fake football broadcast
-from fake state (betting with 9 and 21 cards, question, board, scoring).
+`node docs/trivia-obs-overlay/preview.mjs` renders every phase from fake
+state over a fake football broadcast into `dist/trivia-obs-overlay/`, plus
+`sheet.png` tiling them all.
 
 ## Open items seen in the previews
 
-1. Betting cards mix pot ($200) and team name under the number depending on
-   whether chips are down — pick one (leaning: pots only, blank if none).
+1. ~~Betting cards mix pot and team name~~ — pots only, blank if none.
 2. Question phase wastes the strip — bigger text or 2 lines at ~90px.
-3. Left column has dead space during betting/scoring/question — standings?
+3. ~~Left column dead space~~ — standings fill it (not during the question
+   phase, where the countdown stays solo and big).
 4. Countdown is only 96px when it shares the column with the question.
 5. Verify the phone shows the question during betting.
-6. Not done yet: tests (render + version stamp parity), user guide line,
-   try it in real OBS, check against a live game.
+6. Try it in real OBS against a live game.
 
 ## Code
 
 - `internal/apps/trivia/render_overlay.go` — `RenderOverlay`
 - `internal/apps/trivia/render.go` — shared `displayDataFor` / `renderPage`
-- `internal/apps/trivia/web_pages.go` — `isOverlay(r)` picks the page
+- `internal/apps/trivia/web_pages.go` — `isOverlay(r)` picks the page, and
+  a transparent placeholder before the first game
+- `internal/apps/trivia/web_overlay_test.go` — page, stamp parity, placeholder
 - `internal/apps/trivia/templates/overlay.html.tmpl`, `overlay.css`
 - `internal/apps/trivia/templates/tv/overlay.js` — the renderer
 - `internal/apps/trivia/templates/tv/core.js` — 3-line hook in `render()`
@@ -78,7 +87,8 @@ every 15s.
 
 ## Regenerating previews
 
-Dump the page with a throwaway test calling `RenderOverlay`, inject a stub
-`EventSource` that emits a fake `state` frame, put a fake "game" div behind
-`#fit`, then:
-`google-chrome --headless=new --window-size=1920,1080 --virtual-time-budget=1500 --screenshot=out.png file://page.html`
+`node docs/trivia-obs-overlay/preview.mjs [outdir] [phase...]` (needs
+google-chrome and ImageMagick). `TestDumpOverlayPreview` writes the page
+when `TRIVIA_OVERLAY_DUMP` is set; the script stubs `EventSource` with a
+fake `state` frame per phase and screenshots it. Headless Chrome's viewport
+is 87px shorter than its window, so it shoots at 1920x1167 and crops.

@@ -33,14 +33,18 @@ type gameJSON struct {
 	// it is what a host should put on the TV. TVURL pins one specific game
 	// and is the exception, useful for looking at an old night or running two
 	// rooms at once.
-	ScreenURL string    `json:"screen_url"`
-	TVURL     string    `json:"tv_url"`
-	Teams     int       `json:"teams"`
-	Cells     int       `json:"cells"`
-	Played    int       `json:"played"`
-	Leader    string    `json:"leader"`
-	CreatedAt time.Time `json:"created_at"`
-	Settings  Settings  `json:"settings"`
+	ScreenURL string `json:"screen_url"`
+	// OverlayURL is the stable address as the OBS overlay: the same game,
+	// drawn around a transparent hole for the broadcast. See
+	// render_overlay.go.
+	OverlayURL string    `json:"overlay_url"`
+	TVURL      string    `json:"tv_url"`
+	Teams      int       `json:"teams"`
+	Cells      int       `json:"cells"`
+	Played     int       `json:"played"`
+	Leader     string    `json:"leader"`
+	CreatedAt  time.Time `json:"created_at"`
+	Settings   Settings  `json:"settings"`
 	// BoardError is set when a settings change redrew the board and the
 	// bank could not fill the new shape; the board is empty until the host
 	// fixes the supply or the shape.
@@ -50,14 +54,20 @@ type gameJSON struct {
 func (a *App) gameToJSON(g *Game, slug string, teams, cells, played int, leader string) gameJSON {
 	return gameJSON{
 		ID: g.ID.String(), Name: g.Name, Title: g.Title, Phase: string(g.Phase),
-		JoinURL:   JoinURL(a.baseURL, slug, g.Name),
-		ShortURL:  shortURLOrLong(a.baseURL, slug, g),
-		ScreenURL: strings.TrimRight(a.baseURL, "/") + "/" + slug + "/trivia/tv",
-		TVURL:     JoinURL(a.baseURL, slug, g.Name) + "/tv",
-		Teams:     teams, Cells: cells, Played: played, Leader: leader,
+		JoinURL:    JoinURL(a.baseURL, slug, g.Name),
+		ShortURL:   shortURLOrLong(a.baseURL, slug, g),
+		ScreenURL:  screenURL(a.baseURL, slug),
+		OverlayURL: screenURL(a.baseURL, slug) + "?overlay=1",
+		TVURL:      JoinURL(a.baseURL, slug, g.Name) + "/tv",
+		Teams:      teams, Cells: cells, Played: played, Leader: leader,
 		CreatedAt: g.CreatedAt,
 		Settings:  SettingsOf(g),
 	}
+}
+
+// screenURL is the stable TV address, which always shows the newest game.
+func screenURL(baseURL, slug string) string {
+	return strings.TrimRight(baseURL, "/") + "/" + slug + "/trivia/tv"
 }
 
 // shortURLOrLong prefers the short link, falling back to the readable one for

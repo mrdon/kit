@@ -58,6 +58,10 @@ export default function TriviaSetup() {
             newest game. <a href={game.tv_url} target="_blank" rel="noreferrer">Open just this
             game&rsquo;s screen</a> if you need to pin one night.
           </p>
+          <p className="page-sub">
+            Game on in the bar? Add <code>{game.overlay_url}</code> to OBS as a 1920&times;1080
+            browser source over the broadcast, and scale the broadcast to 75% in the top right.
+          </p>
         </div>
         <Link className="btn" to={`/trivia/${game.id}/live`}>Run it</Link>
       </div>

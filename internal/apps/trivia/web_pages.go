@@ -114,7 +114,7 @@ func (a *App) handleLatestDisplay(w http.ResponseWriter, r *http.Request) {
 		// A 200 with a readable page beats a 404: the screen is working and
 		// correctly addressed, there is simply no game yet. It polls itself
 		// so the first game appears without anyone touching the TV.
-		writeNoGamePlaceholder(w)
+		writeNoGamePlaceholder(w, isOverlay(r))
 		return
 	}
 	a.writeDisplay(w, r, games[0], tenant.Slug, true)
@@ -221,11 +221,19 @@ func explainerStamp(link string) string {
 }
 
 // writeNoGamePlaceholder is the stable TV URL before any game exists.
-func writeNoGamePlaceholder(w http.ResponseWriter) {
+//
+// The overlay gets a page that paints NOTHING. It sits on top of the
+// broadcast in OBS, and an opaque "no game yet" card there would black out
+// the game for the whole bar until somebody created a night.
+func writeNoGamePlaceholder(w http.ResponseWriter, overlay bool) {
+	page := noGameHTML
+	if overlay {
+		page = noGameOverlayHTML
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, must-revalidate")
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(noGameHTML)); err != nil {
+	if _, err := w.Write([]byte(page)); err != nil {
 		slog.Warn("writing trivia placeholder", "error", err)
 	}
 }
@@ -253,6 +261,20 @@ const noGameHTML = `<!doctype html>
   <h1>No game yet</h1>
   <p>This screen is working. Create a game and it will appear here.</p>
 </div></body>
+</html>
+`
+
+// noGameOverlayHTML is the overlay's placeholder: transparent, and polling
+// for the first game the same way noGameHTML does.
+const noGameOverlayHTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="15">
+<title>Trivia overlay</title>
+<style>html,body{margin:0;background:transparent}</style>
+</head>
+<body></body>
 </html>
 `
 

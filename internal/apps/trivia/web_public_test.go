@@ -611,6 +611,9 @@ func TestGameJSONCarriesTheStableScreenURL(t *testing.T) {
 	if !strings.HasSuffix(j.TVURL, "/trivia/"+game.Name+"/tv") {
 		t.Fatalf("tv_url = %q, want it to pin this game", j.TVURL)
 	}
+	if j.OverlayURL != want+"?overlay=1" {
+		t.Fatalf("overlay_url = %q, want the stable address as the overlay", j.OverlayURL)
+	}
 }
 
 // The short join link. It exists to make the QR scannable from across a room,

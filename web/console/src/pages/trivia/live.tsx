@@ -90,6 +90,9 @@ export default function TriviaLive() {
             (<a href={game.tv_url} target="_blank" rel="noreferrer">just this game</a>)
           </p>
           <p className="page-sub">
+            OBS overlay: <code>{game.overlay_url}</code>
+          </p>
+          <p className="page-sub">
             Players: <code>{game.short_url}</code>
           </p>
         </div>
