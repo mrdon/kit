@@ -11,6 +11,8 @@ import Trivia from './pages/Trivia';
 import TriviaSetup from './pages/trivia/setup';
 import TriviaLive from './pages/trivia/live';
 import TriviaQuestions from './pages/TriviaQuestions';
+import Hoppers from './pages/Hoppers';
+import HoppersLive from './pages/hoppers/live';
 import Menu from './pages/Menu';
 import MenuPrintSettings from './pages/MenuPrintSettings';
 import MenuHappyHour from './pages/MenuHappyHour';
@@ -70,6 +72,7 @@ import './styles/skills-jobs.css';
 import './styles/events.css';
 import './styles/screens.css';
 import './styles/trivia.css';
+import './styles/hoppers.css';
 import './styles/event-labels.css';
 import './styles/devices.css';
 import './styles/posters.css';
@@ -109,6 +112,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/trivia" element={<Trivia />} />
           <Route path="/trivia/:id" element={<TriviaSetup />} />
           <Route path="/trivia/:id/live" element={<TriviaLive />} />
+          <Route path="/hoppers" element={<Hoppers />} />
+          <Route path="/hoppers/:id/live" element={<HoppersLive />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<Jobs />} />
           <Route path="/connect" element={<Connect />} />

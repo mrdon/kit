@@ -92,3 +92,13 @@ func (f *fixture) sweep(game *Game) {
 		f.t.Fatalf("sweep: %v", err)
 	}
 }
+
+// advance presses the host button from wherever the game is now.
+func (f *fixture) advance(game *Game) *Snapshot {
+	f.t.Helper()
+	snap, err := f.svc.HostAdvance(f.ctx, f.tenant.ID, game.ID, stageOf(f.snap(game).TV))
+	if err != nil {
+		f.t.Fatalf("host advance: %v", err)
+	}
+	return snap
+}

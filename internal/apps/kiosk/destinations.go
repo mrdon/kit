@@ -8,6 +8,7 @@ import (
 
 	"github.com/mrdon/kit/internal/apps"
 	"github.com/mrdon/kit/internal/apps/events"
+	"github.com/mrdon/kit/internal/apps/hoppers"
 	"github.com/mrdon/kit/internal/apps/menu"
 	"github.com/mrdon/kit/internal/apps/trivia"
 )
@@ -31,6 +32,7 @@ var destinationSpecs = []struct {
 	{menu.AppName, "Menu", "/menu"},
 	{events.AppName, "Events", "/events/screen"},
 	{trivia.AppName, "Trivia", "/trivia/tv"},
+	{hoppers.AppName, "Hoppers", "/hoppers/tv"},
 }
 
 // Destinations returns the screen pages enabled for a tenant, as absolute

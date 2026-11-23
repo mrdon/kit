@@ -31,6 +31,11 @@ const EventState sse.EventType = "state"
 // named event with no payload for exactly that reason.
 const EventPing sse.EventType = "ping"
 
+// EventReset tells a client the identity its stream was opened with is no
+// longer valid. The client reopens from scratch, version floor cleared, as
+// whoever its cookies now say it is (see Stream.OnBeat).
+const EventReset sse.EventType = "reset"
+
 // PingEvery is well inside the client's 20s silence watchdog, with room for
 // one to be lost.
 const PingEvery = 8 * time.Second
@@ -54,9 +59,12 @@ type Stream[F any] struct {
 	// OnBeat, if set, runs once the stream is up and again on every ping,
 	// with the newest snapshot this stream has seen. It is a game's
 	// heartbeat for presence: a phone whose stream is open is a phone that
-	// is still in the room. It runs on the stream's goroutine, so it must be
-	// quick, and it must never write to the response.
-	OnBeat func(ctx context.Context, last F)
+	// is still in the room. Returning false ends the stream with an
+	// EventReset: the identity it was opened with is no longer valid (a host
+	// moved the frog to another phone), and the client reopens as whoever it
+	// is now. It runs on the stream's goroutine, so it must be quick, and it
+	// must never write to the response.
+	OnBeat func(ctx context.Context, last F) bool
 }
 
 // Serve runs one SSE stream until the client goes away.
@@ -90,7 +98,10 @@ func Serve[F any](w http.ResponseWriter, r *http.Request, s Stream[F]) {
 	if !st.emit(snap) {
 		return
 	}
-	st.beat(r.Context())
+	if !st.beat(r.Context()) {
+		_ = writer.Emit(EventReset, struct{}{})
+		return
+	}
 
 	ticker := time.NewTicker(PingEvery)
 	defer ticker.Stop()
@@ -109,7 +120,10 @@ func Serve[F any](w http.ResponseWriter, r *http.Request, s Stream[F]) {
 			if err := writer.Emit(EventPing, struct{}{}); err != nil {
 				return
 			}
-			st.beat(r.Context())
+			if !st.beat(r.Context()) {
+				_ = writer.Emit(EventReset, struct{}{})
+				return
+			}
 		}
 	}
 }
@@ -138,10 +152,8 @@ func (st *streamState[F]) emit(f F) bool {
 	return true
 }
 
-func (st *streamState[F]) beat(ctx context.Context) {
-	if st.s.OnBeat != nil {
-		st.s.OnBeat(ctx, st.last)
-	}
+func (st *streamState[F]) beat(ctx context.Context) bool {
+	return st.s.OnBeat == nil || st.s.OnBeat(ctx, st.last)
 }
 
 // Unchanged is the poll fallback's cursor check. Every stream has a poll

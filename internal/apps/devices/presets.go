@@ -19,7 +19,7 @@ var presets = []Preset{
 	{Key: "trivia", Label: "Trivia driver", Capabilities: []string{auth.CapTriviaHost}},
 	{Key: "brewhouse", Label: "Brewhouse iPad", Capabilities: []string{auth.CapCogsLog}},
 	{Key: "taproom", Label: "Taproom admin", Capabilities: []string{
-		auth.CapMenuHappyHour, auth.CapMenuPrint, auth.CapMenuGlutenReduced, auth.CapEventsTopper, auth.CapKioskRepoint, auth.CapKitChat,
+		auth.CapMenuHappyHour, auth.CapMenuPrint, auth.CapMenuGlutenReduced, auth.CapEventsTopper, auth.CapKioskRepoint, auth.CapKitChat, auth.CapHoppersHost,
 	}},
 }
 

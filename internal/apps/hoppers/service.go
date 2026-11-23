@@ -191,12 +191,6 @@ func (s *Service) Command(ctx context.Context, tenantID, gameID uuid.UUID, c eng
 	})
 }
 
-// HostAdvance is the host's one button: start, next heat, next round, final
-// scores, new game -- whatever the engine says it does right now.
-func (s *Service) HostAdvance(ctx context.Context, tenantID, gameID uuid.UUID) (*Snapshot, error) {
-	return s.Command(ctx, tenantID, gameID, engine.Command{Type: engine.CmdHost})
-}
-
 // Sweep runs a game's due timers.
 func (s *Service) Sweep(ctx context.Context, tenantID, gameID uuid.UUID) error {
 	_, err := s.change(ctx, tenantID, gameID, func(pgx.Tx, *engine.Game, time.Time) error { return nil })

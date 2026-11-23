@@ -61,6 +61,12 @@ export const SECTIONS: Section[] = [
     app: 'trivia',
   },
   {
+    to: '/hoppers',
+    label: 'Hoppers',
+    blurb: 'Run a frog race on the TV, with everyone flicking their frog from their phone.',
+    app: 'hoppers',
+  },
+  {
     to: '/vault',
     label: 'Vault',
     blurb: 'Shared team secrets, end-to-end encrypted in your browser.',

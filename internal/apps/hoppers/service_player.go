@@ -2,11 +2,8 @@ package hoppers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	mrand "math/rand/v2"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -110,79 +107,4 @@ func (s *Service) RedeemReclaim(ctx context.Context, tenantID, gameID, playerID 
 		return "", err
 	}
 	return token, nil
-}
-
-// PackGenerated is the default night: a fresh cup drawn from the built-in
-// levels, the way the standalone server always ran.
-const PackGenerated = "generated"
-
-// NewGame is what a host picks when creating a night.
-type NewGame struct {
-	Title string `json:"title"`
-	// Pack is a built-in pack (engine.BuiltinPacks) or PackGenerated.
-	Pack string `json:"pack"`
-}
-
-// CreateGame makes a night in the lobby.
-func (s *Service) CreateGame(ctx context.Context, tenantID uuid.UUID, createdBy *uuid.UUID, req NewGame) (*Game, error) {
-	seed := randomSeed()
-	cfg, err := packConfig(req.Pack, seed)
-	if err != nil {
-		return nil, err
-	}
-	g := engine.NewGameWith(cfg, engine.Options{SeenWindow: engine.DefaultSeenWindow, Speed: s.speed}, seed)
-	g.Advance(s.now().UTC())
-	blob, err := g.Save()
-	if err != nil {
-		return nil, fmt.Errorf("saving new hoppers game: %w", err)
-	}
-	name, err := livegame.UniqueName(func(n string) (bool, error) { return nameTaken(ctx, s.pool, tenantID, n) })
-	if err != nil {
-		return nil, err
-	}
-	pack := req.Pack
-	if pack == "" {
-		pack = PackGenerated
-	}
-	row := &Game{
-		TenantID: tenantID, Name: name, Title: strings.TrimSpace(req.Title), Pack: pack,
-		Engine: blob, StateVersion: int64(g.Version()), Phase: string(g.Phase()), CreatedBy: createdBy,
-	}
-	var out *Game
-	_, err = livegame.AssignJoinCode(func(code string) error {
-		row.JoinCode = code
-		var err error
-		out, err = insertGame(ctx, s.pool, row)
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("hoppers: %w", err)
-	}
-	return out, nil
-}
-
-// packConfig is the night a pack name stands for.
-func packConfig(pack string, seed uint64) (engine.GameConfig, error) {
-	if pack == "" || pack == PackGenerated {
-		cfg, err := engine.Generate(mrand.New(mrand.NewPCG(seed, 0xc0b)), engine.DefaultPreferences(), nil)
-		if err != nil {
-			return cfg, fmt.Errorf("generating a hoppers cup: %w", err)
-		}
-		return cfg, nil
-	}
-	cfg, err := engine.BuiltinPack(pack)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: %w", ErrBadRequest, err)
-	}
-	return cfg, nil
-}
-
-// randomSeed seeds a night's engine. crypto/rand so two games created in the
-// same instant (or by two processes) never race the same way.
-func randomSeed() uint64 {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return uint64(time.Now().UnixNano())
-	}
-	return binary.LittleEndian.Uint64(b[:])
 }

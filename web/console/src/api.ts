@@ -3,6 +3,7 @@ export * from './api/core';
 export * from './api/devices';
 export * from './api/menu';
 export * from './api/trivia';
+export * from './api/hoppers';
 export * from './api/events.types';
 export * from './api/events';
 export * from './api/posters.types';
@@ -13,6 +14,7 @@ import { coreApi } from './api/core';
 import { devicesApi } from './api/devices';
 import { menuApi } from './api/menu';
 import { triviaApi } from './api/trivia';
+import { hoppersApi } from './api/hoppers';
 import { eventsApi } from './api/events';
 import { postersApi } from './api/posters';
 import { cogsApi } from './api/cogs';
@@ -24,6 +26,7 @@ export const api = {
   ...devicesApi,
   ...menuApi,
   ...triviaApi,
+  ...hoppersApi,
   ...eventsApi,
   ...postersApi,
   ...cogsApi,

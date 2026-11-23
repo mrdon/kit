@@ -1,6 +1,7 @@
 package hoppers
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -39,10 +40,7 @@ func TestCreateJoinAndStart(t *testing.T) {
 	f.join(game, "Bob")
 	before := f.snap(game).StateVersion
 
-	snap, err := f.svc.HostAdvance(f.ctx, f.tenant.ID, game.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	snap := f.advance(game)
 	if snap.TV.Phase != engine.PhaseRacing || snap.StateVersion <= before {
 		t.Fatalf("after start: phase %s, version %d (was %d)", snap.TV.Phase, snap.StateVersion, before)
 	}
@@ -64,9 +62,7 @@ func TestTheSweeperRunsTheRace(t *testing.T) {
 	f := newFixture(t)
 	game := f.newGame()
 	f.join(game, "Ann")
-	if _, err := f.svc.HostAdvance(f.ctx, f.tenant.ID, game.ID); err != nil {
-		t.Fatal(err)
-	}
+	f.advance(game)
 	start := f.snap(game)
 	for range 200 {
 		f.wait(time.Second)
@@ -202,5 +198,44 @@ func TestConcurrentChangesSerialise(t *testing.T) {
 	}
 	if people != n {
 		t.Fatalf("%d of %d concurrent joins survived", people, n)
+	}
+}
+
+// A host's press carries the stage it was made from, so a double tap starts
+// the night once rather than skipping straight past the first race.
+func TestADoubleTapAdvancesOnce(t *testing.T) {
+	f := newFixture(t)
+	game := f.newGame()
+	f.join(game, "Ann")
+	from := stageOf(f.snap(game).TV)
+	if _, err := f.svc.HostAdvance(f.ctx, f.tenant.ID, game.ID, from); err != nil {
+		t.Fatal(err)
+	}
+	after := f.snap(game)
+	if _, err := f.svc.HostAdvance(f.ctx, f.tenant.ID, game.ID, from); !errors.Is(err, ErrConflict) {
+		t.Fatalf("the second press from the lobby got %v, want ErrConflict", err)
+	}
+	if got := f.snap(game); stageOf(got.TV) != stageOf(after.TV) {
+		t.Fatalf("the refused press moved the game: %+v -> %+v", stageOf(after.TV), stageOf(got.TV))
+	}
+}
+
+func TestRuleTweaksApplyAndAreValidated(t *testing.T) {
+	f := newFixture(t)
+	g, err := f.svc.CreateGame(f.ctx, f.tenant.ID, nil, NewGame{Pack: PackGenerated, Rules: RuleTweaks{Rounds: 5, HeatSize: 6, MinFrogs: 4, FlickSeconds: 12}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := f.snap(g).Host.Config
+	if cfg.Rounds != 5 || cfg.HeatSize != 6 || cfg.MinFrogs != 4 || cfg.FlickTimeoutMs != 12000 || len(cfg.Levels) != 5 {
+		t.Fatalf("tweaks not applied: %+v", cfg)
+	}
+	if g.Title == "" {
+		t.Fatal("a game with no title has no name for the wall")
+	}
+	for _, bad := range []NewGame{{Pack: "no-such-pack"}, {Rules: RuleTweaks{MinFrogs: 99}}} {
+		if _, err := f.svc.CreateGame(f.ctx, f.tenant.ID, nil, bad); !errors.Is(err, ErrBadRequest) {
+			t.Errorf("%+v: got %v, want ErrBadRequest", bad, err)
+		}
 	}
 }

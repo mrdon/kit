@@ -20,6 +20,7 @@ const (
 	CapMenuEightySix     = "menu.eighty_six"
 	CapKioskRepoint      = "kiosk.repoint"
 	CapTriviaHost        = "trivia.host"
+	CapHoppersHost       = "hoppers.host"
 	CapEventsTopper      = "events.topper"
 	CapKitChat           = "kit.chat"
 	CapCogsLog           = "cogs.log"
@@ -54,6 +55,7 @@ var Capabilities = []Capability{
 	{Name: CapEventsTopper, Label: "Print the table topper and entrance sign", Human: HumanMember},
 	{Name: CapKioskRepoint, Label: "Repoint wall screens", Human: HumanMember},
 	{Name: CapTriviaHost, Label: "Host trivia", Human: HumanMember},
+	{Name: CapHoppersHost, Label: "Host Hoppers", Human: HumanMember},
 	{Name: CapKitChat, Label: "Ask Kit questions, typed or spoken", Human: HumanMember},
 	{Name: CapCogsLog, Label: "Log brewing: tanks, packaging and counts", Human: HumanMember},
 }

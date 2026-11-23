@@ -88,6 +88,9 @@ var KitLive = (function () {
          minutes, and without this the watchdog reads that quiet as a dead
          socket and rebuilds the stream under the room. */
       es.addEventListener('ping', alive);
+      /* livegame.EventReset: the stream's identity is gone. A TV has none,
+         so this only keeps the mirror honest: start over, floor cleared. */
+      es.addEventListener('reset', function () { lastVersion = -1; if (es) { es.close(); es = null; } connect(); poll(); });
       es.addEventListener('error', function () {
         onHealth(true);
         /* EventSource retries on its own while it can. CLOSED means the

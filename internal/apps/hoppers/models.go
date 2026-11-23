@@ -209,3 +209,11 @@ func GameByJoinCode(ctx context.Context, q Querier, code string) (*Game, string,
 	}
 	return &g, slug, nil
 }
+
+// DeleteGame removes a night and, by cascade, its players.
+func DeleteGame(ctx context.Context, q Querier, tenantID, id uuid.UUID) error {
+	if _, err := q.Exec(ctx, `DELETE FROM app_hoppers_games WHERE tenant_id = $1 AND id = $2`, tenantID, id); err != nil {
+		return fmt.Errorf("deleting hoppers game: %w", err)
+	}
+	return nil
+}

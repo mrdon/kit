@@ -18,7 +18,7 @@ interface DeviceTile {
 }
 
 // One tile per job, each behind a capability. A device holding every taproom capability plus
-// trivia shows all five; the trivia laptop shows one.
+// trivia and Hoppers shows them all; the trivia laptop shows one.
 const DEVICE_TILES: DeviceTile[] = [
   {
     cap: 'menu.happy_hour',
@@ -73,6 +73,12 @@ const DEVICE_TILES: DeviceTile[] = [
     to: '/trivia',
     title: 'Host trivia',
     blurb: 'Run tonight’s quiz: the board, the timer, the scores.',
+  },
+  {
+    cap: 'hoppers.host',
+    to: '/hoppers',
+    title: 'Host Hoppers',
+    blurb: 'Start the frog race and move it on between races.',
   },
 ];
 

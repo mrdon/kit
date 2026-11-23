@@ -90,6 +90,7 @@ export interface Frame extends LiveFrame {
   roundOver: boolean;
   lastRace: boolean;
   lastHop: WireHop | null;
+  events: { seq: number; text: string }[] | null;
   you?: WireYou;
 }
 

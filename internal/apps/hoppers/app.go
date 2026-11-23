@@ -83,12 +83,14 @@ func (a *App) Description() string {
 // run from the host screen, not through chat.
 func (a *App) SystemPrompt() string { return "" }
 
-// RegisterRoutes mounts the public surfaces. Every pattern but the short
-// join link carries {slug}, so the enablement gate covers them.
+// RegisterRoutes mounts the host's console API and the public surfaces.
+// Every pattern but the short join link carries {slug}, so the enablement
+// gate covers them.
 func (a *App) RegisterRoutes(mux apps.Mux) {
-	if a.pool == nil || a.svc == nil {
+	if a.pool == nil || a.svc == nil || a.signer == nil {
 		return
 	}
+	registerConsoleRoutes(mux, a)
 	registerPublicRoutes(mux, a)
 }
 

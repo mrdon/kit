@@ -202,6 +202,11 @@ export function useLiveStream<T extends LiveFrame>({ streamUrl, stateUrl }: Live
       // The server's liveness beat. It carries nothing and is not a frame --
       // it exists so a quiet game is distinguishable from a dead socket.
       es.addEventListener('ping', alive);
+      // The identity this stream was opened with is gone (a host moved the
+      // frog or table to another phone). Start over as whoever we are now,
+      // with the version floor cleared: the spectator's frames carry the
+      // same version the old identity's did, and would otherwise be dropped.
+      es.addEventListener('reset', () => reopenRef.current());
       es.addEventListener('state', (ev) => {
         alive();
         try {

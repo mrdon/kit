@@ -12,9 +12,10 @@ import (
 
 // streamGame serves one surface's SSE stream through livegame.Serve.
 // project builds the surface's frame at send time; beat, if set, is the
-// phone's heartbeat on open and on every ping.
+// phone's heartbeat on open and on every ping, and ends the stream by
+// returning false.
 func (a *App) streamGame(w http.ResponseWriter, r *http.Request, game *Game,
-	project func(*Snapshot, time.Time) any, beat func(*http.Request, *Snapshot),
+	project func(*Snapshot, time.Time) any, beat func(*http.Request, *Snapshot) bool,
 ) {
 	stream := livegame.Stream[*Snapshot]{
 		Broker: a.svc.Broker(),
@@ -26,7 +27,7 @@ func (a *App) streamGame(w http.ResponseWriter, r *http.Request, game *Game,
 		Project: func(s *Snapshot) any { return project(s, time.Now()) },
 	}
 	if beat != nil {
-		stream.OnBeat = func(_ context.Context, last *Snapshot) { beat(r, last) }
+		stream.OnBeat = func(_ context.Context, last *Snapshot) bool { return beat(r, last) }
 	}
 	livegame.Serve(w, r, stream)
 }

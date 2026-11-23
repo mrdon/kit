@@ -235,9 +235,18 @@ func (a *App) handlePlayerStream(w http.ResponseWriter, r *http.Request) {
 	}
 	id := a.callerPlayer(r, game)
 	key := playerKey(id)
-	var beat func(r *http.Request, last *Snapshot)
+	var beat func(r *http.Request, last *Snapshot) bool
 	if id != uuid.Nil {
-		beat = func(r *http.Request, last *Snapshot) { a.heard(r, game, id, last) }
+		beat = func(r *http.Request, last *Snapshot) bool {
+			// A host-issued reclaim code replaces this phone's token: the
+			// frog has moved to another phone, and this one is now a
+			// spectator. End the stream so it reconnects as one.
+			if a.callerPlayer(r, game) != id {
+				return false
+			}
+			a.heard(r, game, id, last)
+			return true
+		}
 	}
 	a.streamGame(w, r, game, func(s *Snapshot, now time.Time) any { return ProjectPlayer(s, key, now) }, beat)
 }
