@@ -13,7 +13,7 @@ import (
 )
 
 // Stock photos are a per-workspace choice twice over: an admin turns the
-// switch on in Posters settings, and connects Pixabay on the Integrations
+// switch on in Admin → Posters, and connects Pixabay on the Integrations
 // page, where every other external key lives. The key is stored by the
 // integrations app, encrypted, and read back here. A server-wide
 // PIXABAY_API_KEY, when the operator set one, stands in for workspaces
@@ -30,7 +30,7 @@ func stockTypeSpec() integrations.TypeSpec {
 		Provider:    stockProvider,
 		AuthType:    stockAuthType,
 		DisplayName: "Pixabay (stock photos)",
-		Description: "Lets Posters use a stock photo when your own library has nothing that fits. Free key from a Pixabay account; the Pixabay Content License allows commercial use without attribution. Turn stock photos on in Posters settings once connected.",
+		Description: "Lets Posters use a stock photo when your own library has nothing that fits. Free key from a Pixabay account; the Pixabay Content License allows commercial use without attribution. Turn stock photos on in Admin → Posters once connected.",
 		Scope:       integrations.ScopeTenant,
 		Fields: []integrations.FieldSpec{
 			{Name: "api_key", Label: "API key", InputType: "password", Target: integrations.TargetPrimaryToken, Required: true,

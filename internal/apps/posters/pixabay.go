@@ -95,7 +95,7 @@ func toStock(h pixabayHit) StockPhoto {
 // whose key made the call, so the cache is shared.
 func (p *pixabayClient) query(ctx context.Context, key, cacheKey string, params url.Values) ([]StockPhoto, error) {
 	if key == "" {
-		return nil, errors.New("stock photos need a Pixabay API key; an admin adds one in Posters settings")
+		return nil, errors.New("stock photos need a Pixabay API key; an admin adds one in Admin → Posters")
 	}
 	if p.rdb != nil {
 		if b, err := p.rdb.Get(ctx, cacheKey).Bytes(); err == nil {

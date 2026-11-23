@@ -109,7 +109,7 @@ export default function PosterPhotos() {
       {data && data.photos.length === 0 && (
         <p className="empty">
           No photos here. An admin sets the Drive folder under{' '}
-          <Link to="/admin/posters">Posters settings</Link> and syncs it, or a harness runs sync_poster_photos.
+          <Link to="/admin/posters">Admin → Posters</Link> and syncs it, or a harness runs sync_poster_photos.
         </p>
       )}
 

@@ -46,7 +46,7 @@ func (a *App) coreStockPhotos(ctx context.Context, caller *services.Caller, raw 
 		return nil, err
 	}
 	if !a.stockAllowed(ctx, caller) {
-		return nil, invalid("stock photos are not allowed in this workspace; an admin can turn them on in Posters settings")
+		return nil, invalid("stock photos are not allowed in this workspace; an admin can turn them on in Admin → Posters")
 	}
 	key, err := a.pixabayKey(ctx, caller.TenantID)
 	if err != nil {
@@ -95,7 +95,7 @@ func (a *App) coreAskForPhoto(ctx context.Context, caller *services.Caller, raw 
 	if err != nil {
 		return nil, err
 	}
-	folder := "the shared photo folder (an admin sets it in Posters settings)"
+	folder := "the shared photo folder (an admin sets it in Admin → Posters)"
 	if s.PhotoFolderID != "" {
 		folder = "https://drive.google.com/drive/folders/" + s.PhotoFolderID
 	}

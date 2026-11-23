@@ -13,7 +13,7 @@ import { FeedbackChannelPanel } from './trivia/feedback_channel';
 // still there next December. Only the choice of which sets a game draws from
 // is per game, and that stays on the setup page next to the board.
 export default function TriviaQuestions() {
-  useSetChatContext('the Trivia questions page');
+  useSetChatContext('the admin Trivia page');
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [packs, setPacks] = useState<BuiltinPack[]>([]);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -72,9 +72,9 @@ export default function TriviaQuestions() {
 
   return (
     <>
-      <div className="crumbs"><Link to="/admin">Admin</Link> / Trivia questions</div>
+      <div className="crumbs"><Link to="/admin">Admin</Link> / Trivia</div>
       <div className="page-head">
-        <h1>Trivia questions</h1>
+        <h1>Trivia</h1>
         <p className="page-sub">
           A set is a named group of questions. Games draw their board from whichever sets they
           pick, which is how a Christmas quiz stays separate from an ordinary Tuesday.

@@ -223,7 +223,7 @@ func (a *App) templateChatSuffix(ctx context.Context, caller *services.Caller, i
 	return mustRender("system_template_chat.tmpl", data), nil
 }
 
-// guidance is the admin's own instruction from Posters settings; a
+// guidance is the admin's own instruction from Admin → Posters; a
 // settings read failure leaves it out rather than failing the chat.
 func (a *App) guidance(ctx context.Context, tenantID uuid.UUID) string {
 	s, err := getSettings(ctx, a.pool, tenantID)

@@ -18,7 +18,7 @@ import PosterGuidanceField from './PosterGuidanceField';
 // form: to change the brand, edit the skill.
 
 export default function PostersSettings() {
-  useSetChatContext('the admin Posters settings page');
+  useSetChatContext('the admin Posters page');
   const [st, setSt] = useState<Payload | null>(null);
   const [photoFolder, setPhotoFolder] = useState('');
   const [logoFolder, setLogoFolder] = useState('');
@@ -128,9 +128,9 @@ export default function PostersSettings() {
           <span className="crumb-sep">/</span>
           <Link to="/admin">Admin</Link>
           <span className="crumb-sep">/</span>
-          <span>Posters settings</span>
+          <span>Posters</span>
         </nav>
-        <h1>Posters settings</h1>
+        <h1>Posters</h1>
         <p className="page-sub">
           Where the photos and logos live, and the brand Kit works from. Posters themselves
           are made from an event, or on the <Link to="/posters">Posters</Link> page.
