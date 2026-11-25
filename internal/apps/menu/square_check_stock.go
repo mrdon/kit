@@ -21,13 +21,14 @@ import (
 // to take it off the shop. A listing on the menu but counted out, by hand or
 // by an older run, is counted back in.
 
-// sqCount changes one online crowler listing: sets its stock to Quantity,
-// or deletes it when Remove is set.
+// sqCount changes one online crowler listing (sets its stock to Quantity),
+// or deletes a crowler or keg listing or a flight option when Remove is set.
+// ObjectID is the variation or modifier it changes.
 type sqCount struct {
-	Summary     string
-	VariationID string
-	Quantity    string
-	Remove      bool
+	Summary  string
+	ObjectID string
+	Quantity string
+	Remove   bool
 }
 
 // soldOut is the count that shows a listing sold out online. Only an item's
@@ -35,47 +36,49 @@ type sqCount struct {
 // variations.
 const soldOut = "0"
 
-// crowlerStock brings each crowler listing in line with the menu. onMenu
-// holds the listings of every tap drink the menu shows.
-func (p *planner) crowlerStock(onMenu map[string]bool) {
-	if len(onMenu) == 0 {
-		// A menu with no crowlers on it is a sync gone wrong far more often
-		// than a brewery with nothing on tap.
-		p.plan.Notes = append(p.plan.Notes, "no crowler on the menu matches Square, so none were taken off the online shop")
-		return
-	}
+// crowlerStock brings each crowler listing in line with the menu: off tap
+// is deleted, on tap but counted out is counted back in. One guard covers
+// both crowler items, so a bar pouring no soda still loses its soda
+// crowlers.
+func (p *planner) crowlerStock() {
+	var lists []sqItem
+	keep := map[string]bool{}
 	for _, name := range []string{beerCrowlerItem, sodaCrowlerItem} {
 		if list, ok := p.cat.item(name); ok {
-			p.listStock(list, onMenu)
+			lists = append(lists, list)
+			p.onTapEntries(varEntries(list.Vars), isTap, crowlerVariation, keep)
+		}
+	}
+	if p.nothingOnTap(keep, "crowler listing") {
+		return
+	}
+	for _, list := range lists {
+		p.restock(list, keep)
+		p.delist(list.Name+" online", varEntries(list.Vars), keep, p.countOutLast(list.Name))
+	}
+}
+
+// restock counts back in each listing on tap that is counted out.
+func (p *planner) restock(list sqItem, keep map[string]bool) {
+	if p.cat.Counts == nil {
+		return
+	}
+	for _, v := range list.Vars {
+		if n, _ := strconv.ParseFloat(p.cat.Counts[v.ID], 64); keep[v.ID] && n <= 0 {
+			p.count(sqCount{ObjectID: v.ID, Quantity: inStock,
+				Summary: fmt.Sprintf("%s: on the menu, so its %s is on sale online again", v.Name, list.Name)})
 		}
 	}
 }
 
-func (p *planner) listStock(list sqItem, onMenu map[string]bool) {
-	var gone []sqVar
-	for _, v := range list.Vars {
-		if !onMenu[v.ID] {
-			gone = append(gone, v)
-			continue
+// countOutLast is the last crowler listing's fate: it stays, shown sold
+// out online.
+func (p *planner) countOutLast(listName string) func(sqEntry) {
+	return func(e sqEntry) {
+		if n, _ := strconv.ParseFloat(p.cat.Counts[e.ID], 64); p.cat.Counts != nil && n > 0 {
+			p.count(sqCount{ObjectID: e.ID, Quantity: soldOut,
+				Summary: fmt.Sprintf("%s: off the menu, so its %s shows sold out online (the last one, so kept)", e.Name, listName)})
 		}
-		if p.cat.Counts == nil {
-			continue
-		}
-		if n, _ := strconv.ParseFloat(p.cat.Counts[v.ID], 64); n <= 0 {
-			p.count(sqCount{VariationID: v.ID, Quantity: inStock,
-				Summary: fmt.Sprintf("%s: on the menu, so its %s is on sale online again", v.Name, list.Name)})
-		}
-	}
-	for i, v := range gone {
-		if i == len(gone)-1 && len(gone) == len(list.Vars) {
-			if n, _ := strconv.ParseFloat(p.cat.Counts[v.ID], 64); p.cat.Counts != nil && n > 0 {
-				p.count(sqCount{VariationID: v.ID, Quantity: soldOut,
-					Summary: fmt.Sprintf("%s: off the menu, so its %s shows sold out online (the last one, so kept)", v.Name, list.Name)})
-			}
-			continue
-		}
-		p.count(sqCount{VariationID: v.ID, Remove: true,
-			Summary: fmt.Sprintf("%s: off the menu, so taken out of %s online", v.Name, list.Name)})
 	}
 }
 
@@ -146,9 +149,9 @@ func applyCounts(ctx context.Context, st *stocker, counts []sqCount) (done, fail
 	for _, c := range counts {
 		var err error
 		if c.Remove {
-			_, err = st.client.BatchDeleteCatalog(ctx, []string{c.VariationID})
+			_, err = st.client.BatchDeleteCatalog(ctx, []string{c.ObjectID})
 		} else {
-			err = st.set(ctx, c.VariationID, c.Quantity)
+			err = st.set(ctx, c.ObjectID, c.Quantity)
 		}
 		if err != nil {
 			failed = append(failed, c.Summary+": "+err.Error())

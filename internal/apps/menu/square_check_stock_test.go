@@ -25,9 +25,9 @@ func changes(p sqPlan) map[string]string {
 	out := map[string]string{}
 	for _, c := range p.Counts {
 		if c.Remove {
-			out[c.VariationID] = "delete"
+			out[c.ObjectID] = "delete"
 		} else {
-			out[c.VariationID] = c.Quantity
+			out[c.ObjectID] = c.Quantity
 		}
 	}
 	return out

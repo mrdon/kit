@@ -115,7 +115,7 @@ func (a *App) briefAdds(ctx context.Context, tenantID uuid.UUID, done, counted [
 			strings.Join(done, "\n- "))
 	}
 	if len(counted) > 0 {
-		parts = append(parts, "It kept the online crowlers and kegs in step with the menu:\n\n- "+
+		parts = append(parts, "It kept the online crowlers and kegs, and the flight picker, in step with the menu:\n\n- "+
 			strings.Join(counted, "\n- "))
 	}
 	return a.cards.CreateBriefing(ctx, tenantID, "Square updated from the menu", strings.Join(parts, "\n\n"), squareCardRoles)

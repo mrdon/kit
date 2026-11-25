@@ -88,3 +88,14 @@ func TestPlanSquareKegNeedsABarSixtel(t *testing.T) {
 		t.Errorf("want the listing left, got %v", got)
 	}
 }
+
+// A beer still on tap whose sixtel was taken off its item loses its online
+// keg listing.
+func TestPlanSquareKegListingGoesWithItsSize(t *testing.T) {
+	rows := []Beer{beer("Little Dipper", "7", "2.50"), beer("Pumpkin Little Dipper", "8", "3")}
+	pumpkin := rawItem("PLD", "Pumpkin Little Dipper", rawVar("PLD-16", "16oz", 800), rawVar("PLD-4", "4oz", 300))
+	cat := kegCatalog(kegList(rawVar("KTG-L", "Little Dipper", 13000), rawVar("KTG-P", "Pumpkin Little Dipper", 13000)), pumpkin)
+	if got := changes(planSquare(rows, cat, map[string]bool{})); got["KTG-P"] != "delete" || got["KTG-L"] != "" {
+		t.Fatalf("want only the Pumpkin keg listing deleted, got %v", got)
+	}
+}

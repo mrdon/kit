@@ -28,9 +28,9 @@ type squareRun struct {
 // checkSquare compares the menu with Square. Without apply it only looks.
 // With apply it adds what has a right answer, re-reading Square after each
 // round so a new item's flight option and crowler follow it, takes the
-// crowlers of drinks no longer on the menu off the online shop, then files a
-// decision card for each question not asked before and a briefing of what
-// it added.
+// crowlers, kegs and flight options of drinks no longer on the menu off,
+// then files a decision card for each question not asked before and a
+// briefing of what it changed.
 func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (squareRun, error) {
 	var run squareRun
 	rows, _, err := a.menuRows(ctx, tenantID)
@@ -116,7 +116,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 	var b strings.Builder
 	if apply {
 		writeList(&b, "Added to Square", run.Done)
-		writeList(&b, "Online crowlers and kegs", run.Counted)
+		writeList(&b, "Online crowlers, kegs and flight options", run.Counted)
 		writeList(&b, "Failed", run.Failed)
 	} else {
 		var adds, counts []string
@@ -127,7 +127,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 			counts = append(counts, c.Summary)
 		}
 		writeList(&b, "Would add to Square", adds)
-		writeList(&b, "Would change online crowlers and kegs", counts)
+		writeList(&b, "Would change online crowlers, kegs and flight options", counts)
 	}
 	var qs []string
 	for _, q := range run.Plan.Questions {

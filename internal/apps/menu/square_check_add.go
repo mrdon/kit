@@ -143,9 +143,10 @@ func abbreviation(name string) string {
 	return string(out)
 }
 
-// flight offers every tap drink with a taster in the flight picker. Each
-// option's upcharge is its own taster price over the cheapest taster on the
-// menu, which is how the picker has always been priced.
+// flight offers every tap drink with a taster in the flight picker, and
+// takes out the options of drinks no longer on tap. Each option's upcharge
+// is its own taster price over the cheapest taster on the menu, which is
+// how the picker has always been priced.
 func (p *planner) flight() {
 	if p.cat.Flight == nil {
 		p.plan.Notes = append(p.plan.Notes, "no "+flightListName+" list in Square, so the flight was not checked")
@@ -191,6 +192,18 @@ func (p *planner) flight() {
 			p.askFlightPrice(t.row.Name, mod, want, base)
 		}
 	}
+	p.flightStock()
+}
+
+// flightStock takes out of the picker the options of drinks off tap.
+func (p *planner) flightStock() {
+	entries := modEntries(p.cat.Flight.Mods)
+	keep := map[string]bool{}
+	p.onTapEntries(entries, Beer.OnTap, tasterPour, keep)
+	if p.nothingOnTap(keep, "flight option") {
+		return
+	}
+	p.delist(flightListName, entries, keep, p.keepLast(flightListName))
 }
 
 func (p *planner) newFlightOption(name string, cents, ordinal int) map[string]any {
@@ -226,7 +239,6 @@ func (p *planner) askFlightPrice(beer string, mod sqMod, want, base int) {
 // then takes the listings of drinks no longer on the menu off the shop.
 func (p *planner) crowlers() {
 	missingList := map[string]bool{}
-	onMenu := map[string]bool{}
 	for _, b := range p.rows {
 		if !isTap(b) {
 			continue
@@ -248,15 +260,12 @@ func (p *planner) crowlers() {
 			missingList[listName] = true
 			continue
 		}
-		if listed, ok := list.variation(it.Name); ok {
-			onMenu[listed.ID] = true
-		}
 		p.listing(b, it, own, list, "crowler", true)
 	}
 	for name := range missingList {
 		p.plan.Notes = append(p.plan.Notes, "no "+name+" item in Square, so its crowlers were not checked")
 	}
-	p.crowlerStock(onMenu)
+	p.crowlerStock()
 }
 
 // listing puts a drink's to-go size (own) in an online list item at the
