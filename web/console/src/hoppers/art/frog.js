@@ -8,6 +8,8 @@
 // const` and `export let` at the top level, imports only between these art
 // files, and no `export default` or `export { ... }`. A test holds the line.
 
+import { lookSVG } from './looks.js';
+
 export const COLORS = [
   "#2ecc71", "#e84393", "#e67e22", "#3498db", "#9b59b6", "#f1c40f",
   "#1abc9c", "#e74c3c", "#8e5a2b", "#fd79a8", "#00cec9", "#636e72",
@@ -17,7 +19,7 @@ export const HATS = [
   "none", "crown", "cowboy", "beanie", "party", "viking", "propeller",
   "tophat", "flower", "pint", "chef", "headband", "bucket", "antlers",
   "silver", "curls", "cap", "blonde", "wild", "black", "ponytail", "pm",
-  "helmet", "hacker",
+  "helmet", "hacker", "finance", "construction", "baron", "growler", "garage",
 ];
 
 export function shade(hex, amt) {
@@ -241,7 +243,8 @@ export function hatSVG(hat, color) {
         L("M26 35.2 C27.6 34.4 29.4 34.4 30.6 35", 1, "#c08a52");
     }
     default:
-      return "";
+      // the newer looks live in looks.js
+      return lookSVG(hat, color, { st, S, L, O, dot });
   }
 }
 
@@ -281,6 +284,8 @@ export const HAT_FIT = {
   blonde: [47.5, 21.5, 2, 1, true], wild: [47.5, 21.5, 2, 1, true], black: [47.5, 21.5, 2, 1, true],
   ponytail: [47.5, 21.5, 2, 1, true], pm: [0, 0, 0, 1], helmet: [0, 0, 0, 1],
   hacker: [0, 0, 0, 1, true],
+  finance: [47.5, 21.6, 5, 1], construction: [47.5, 20.8, 4, 1], baron: [0, 0, 0, 1],
+  growler: [47.8, 22, 3, 1], garage: [47.5, 21.4, 3, 1],
 };
 export function placedHat(hat, color, layer) {
   const f = HAT_FIT[hat]; if (!f || !!f[4] !== (layer === "under")) return "";

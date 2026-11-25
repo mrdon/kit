@@ -11,7 +11,8 @@ const HAT_NAMES: Record<string, string> = {
   propeller: 'Propeller cap', tophat: 'Top hat', flower: 'Daisy', pint: 'Pint', chef: 'Chef hat', headband: 'Sweatband',
   bucket: 'Bucket hat', antlers: 'Antlers', silver: 'Parylene', curls: 'Appraiser', cap: 'COTY',
   blonde: 'Cat herder', wild: 'Butler', black: 'Raven', ponytail: 'Welder', pm: 'PM guy',
-  helmet: 'Major Tom', hacker: 'Hacker',
+  helmet: 'Major Tom', hacker: 'Hacker', finance: 'Finance', construction: 'Construction',
+  baron: 'Property baron', growler: 'Mr 2:58', garage: 'Man cave',
 };
 
 const DRAFT_KEY = 'hoppers.frog';

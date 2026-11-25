@@ -20,7 +20,7 @@ var displayTmpl = template.Must(template.ParseFS(templateFS, "templates/display.
 
 // sharedScripts are the files the TV shares with the phone, in dependency
 // order. They are ES modules in web/console/src/hoppers/, flattened here.
-var sharedScripts = []string{"consts.js", "art/frog.js", "art/fx.js", "art/scenery.js"}
+var sharedScripts = []string{"consts.js", "art/frog.js", "art/looks.js", "art/fx.js", "art/scenery.js"}
 
 // tvScripts are the TV's own files. core first (the shared vars), boot last
 // (the statements that start it).
