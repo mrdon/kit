@@ -86,9 +86,36 @@ git diff --stat origin/main...HEAD   # after committing
   it's noise from a build: `git checkout web/package-lock.json` and don't
   commit it.
 
-## 5. Send it to Don
+## 5. Commit and get a second opinion
 
-Commit with a short message saying what changed, in plain words. Then:
+Commit with a short message saying what changed, in plain words. Then have
+a fresh reviewer read the change. It runs on this session's plan, and it
+reads the code without your reasoning, which is the point: it catches what
+you talked yourself into.
+
+Launch one subagent with the Agent tool (a fresh agent, not a fork) and
+give it only this, not your own view of the change:
+
+> Review the changes on this branch: `git diff origin/main...HEAD` (run
+> `git fetch origin` first). The app's rules are in its `CLAUDE.md` (e.g.
+> `internal/apps/cogs/CLAUDE.md`) and the repo's in the root `CLAUDE.md`.
+> The person asked for: <their request, in their words>. Look for real
+> problems only: bugs, breaking one of the app's rules, a query missing
+> `tenant_id`, a test that doesn't check what it claims, changes outside
+> the app, anything a brewer or bar staff would hit. For each, give the
+> file and line, what goes wrong, and how sure you are. Skip style nits. Say
+> "nothing found" if that's the honest answer. Don't change any files.
+
+Then:
+
+- Check each finding yourself before acting on it. Fix the real ones, run
+  `make prepush` again, and commit the fixes.
+- Don't argue a finding away to save time. If it's real but needs Don
+  (shared code, a rule change), leave it and list it in the PR.
+- Tell the person in one or two plain sentences what the review caught,
+  or that it found nothing.
+
+## 6. Send it to Don
 
 ```bash
 git push -u origin HEAD
@@ -102,11 +129,13 @@ Write the pull request body for Don, kept short:
 - **How to check:** the screen and steps to see it working.
 - **Outside the app:** any shared files touched and why, or "none".
 - **Database:** any new migration file, or "none".
+- **Review:** what the second-opinion review found and what was fixed, plus
+  anything left open for Don, or "nothing found".
 
 If `git push` or `gh` is refused for permissions, stop and tell the person
 to ask Don for access. Don't work around it.
 
-## 6. Tell them what happens next
+## 7. Tell them what happens next
 
 Give them the pull request link. Explain: tests run automatically on GitHub,
 Don reviews it, and once he merges and deploys, it's live. If Don asks for
