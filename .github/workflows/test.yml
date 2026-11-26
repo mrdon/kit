@@ -78,3 +78,38 @@ jobs:
 
       - name: Build
         run: make build
+
+  # Deploys main to Dokku once the tests pass. The SSH key lives in the
+  # "production" environment, which only main may use, so a workflow on a
+  # PR branch can't read it. Dokku's /health startup check (app.json) keeps
+  # the old container serving if the new one fails to boot.
+  deploy:
+    name: Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    # One deploy at a time, in order; never cancel one mid-build.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Dokku refuses pushes from a shallow clone.
+          fetch-depth: 0
+
+      - name: Push to Dokku
+        env:
+          DOKKU_SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
+          DOKKU_KNOWN_HOSTS: ${{ vars.DOKKU_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DOKKU_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DOKKU_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git push dokku@apps.twdata.org:kit "$GITHUB_SHA:refs/heads/main"

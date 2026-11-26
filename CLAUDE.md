@@ -27,13 +27,20 @@ make db-reset    # Wipe and restart Postgres
 
 ## Deploying
 
-- **Only Don commits to `main` and deploys.** Anyone else changing Kit uses the
-  `/kit-change` skill: a branch and a pull request that Don reviews, merges and
-  deploys.
+- **Only Don commits to `main`.** Anyone else changing Kit uses the
+  `/kit-change` skill: a branch and a pull request that Don reviews and merges.
 - For Don, this project does **not** use pull requests — commits land directly on `main`.
-- `git push origin main` — push to GitHub
-- `git push dokku main` — deploy to Dokku (apps.twdata.org)
-- Always push to both origin and dokku when deploying.
+- **Every push to `main` on GitHub deploys.** `git push origin main` runs the
+  Test workflow; when it passes, its Deploy job pushes that commit to Dokku
+  (apps.twdata.org). Merging a PR deploys it the same way. Don't
+  `git push dokku main` by hand: it skips the tests.
+- Watch a deploy: `gh run watch` (or `gh run list --workflow Test`).
+- Roll back by reverting the commit on `main` and pushing; it redeploys
+  through the tests. Emergency only: push a known-good commit straight to
+  the `dokku` remote.
+- Migrations must be additive (new tables, columns, indexes). They run at
+  boot, before the `/health` check, so a rename or drop can't be undone by
+  Dokku keeping the old container. Anything else needs Don.
 - Logs: `ssh dokku@apps.twdata.org 'dokku logs kit --num 100'`
 
 ## Tech Stack
