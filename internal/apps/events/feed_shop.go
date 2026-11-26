@@ -54,6 +54,43 @@ type ShopFeedVariation struct {
 	PriceCents *int   `json:"price_cents,omitempty"`
 	Currency   string `json:"currency,omitempty"`
 	SoldOut    bool   `json:"sold_out,omitempty"`
+	// Sale is the price from an automatic Square pricing rule, present while
+	// the rule is running or still to come. The site shows it only between
+	// starts_at and ends_at; either may be absent (already on / no end).
+	Sale *ShopFeedSale `json:"sale,omitempty"`
+	// Pour is the bar's glass of the beer this variation is named after
+	// (a keg of Little Dipper -> a 16oz pour at $6.50), so the site can show
+	// what a keg works out to per glass. Absent when no beer matches.
+	Pour *ShopFeedPour `json:"pour,omitempty"`
+}
+
+// ShopFeedPour is a beer's house pour at the bar.
+type ShopFeedPour struct {
+	Ounces     int `json:"ounces"`
+	PriceCents int `json:"price_cents"`
+}
+
+// ShopFeedSale is one variation's sale price and when it applies, as RFC 3339
+// timestamps in the venue's zone.
+type ShopFeedSale struct {
+	Name       string `json:"name,omitempty"`
+	PriceCents int    `json:"price_cents"`
+	StartsAt   string `json:"starts_at,omitempty"`
+	EndsAt     string `json:"ends_at,omitempty"`
+}
+
+func shopFeedSale(s *square.ShopSale) *ShopFeedSale {
+	if s == nil {
+		return nil
+	}
+	out := &ShopFeedSale{Name: s.Name, PriceCents: s.PriceCents}
+	if !s.StartsAt.IsZero() {
+		out.StartsAt = s.StartsAt.Format(time.RFC3339)
+	}
+	if !s.EndsAt.IsZero() {
+		out.EndsAt = s.EndsAt.Format(time.RFC3339)
+	}
+	return out
 }
 
 // shopFeed projects the catalog's sections onto the wire contract.
@@ -65,7 +102,10 @@ func shopFeed(sections []square.ShopSection, now time.Time) ShopFeed {
 			item := ShopFeedItem{ID: it.ID, Name: it.Name, Description: it.Description,
 				ImageURL: it.ImageURL, Variations: []ShopFeedVariation{}}
 			for _, v := range it.Variations {
-				fv := ShopFeedVariation{ID: v.ID, Name: v.Name, SoldOut: v.SoldOut}
+				fv := ShopFeedVariation{ID: v.ID, Name: v.Name, SoldOut: v.SoldOut, Sale: shopFeedSale(v.Sale)}
+				if v.Pour != nil {
+					fv.Pour = &ShopFeedPour{Ounces: v.Pour.Ounces, PriceCents: v.Pour.PriceCents}
+				}
 				if v.PriceCents >= 0 {
 					price := v.PriceCents
 					fv.PriceCents, fv.Currency = &price, v.Currency
@@ -123,7 +163,7 @@ func (a *App) handleShopFeed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	sections, err := client.ShopCatalog(ctx)
+	sections, err := client.ShopCatalog(ctx, settings.Loc(), timeNow())
 	if err != nil {
 		slog.Error("shop feed: reading catalog", "tenant_id", tenant.ID, "error", err)
 		http.Error(w, "upstream error", http.StatusBadGateway)

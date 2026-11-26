@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The online shop, as the catalog describes it.
@@ -29,6 +30,8 @@ type ShopVariation struct {
 	PriceCents int // -1 when the variation has no fixed price
 	Currency   string
 	SoldOut    bool
+	Sale       *ShopSale // nil when no pricing rule lowers the price
+	Pour       *ShopPour // the bar's pour of the beer this is named after
 }
 
 // ShopItem is one product card.
@@ -49,10 +52,13 @@ type ShopSection struct {
 
 // shopObject is the subset of a catalog object the shop reads.
 type shopObject struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`
-	IsDeleted bool   `json:"is_deleted"`
-	ImageData *struct {
+	Type            string           `json:"type"`
+	ID              string           `json:"id"`
+	IsDeleted       bool             `json:"is_deleted"`
+	DiscountData    *shopDiscount    `json:"discount_data"`
+	PricingRuleData *shopPricingRule `json:"pricing_rule_data"`
+	ProductSetData  *shopProductSet  `json:"product_set_data"`
+	ImageData       *struct {
 		URL string `json:"url"`
 	} `json:"image_data"`
 	CategoryData *struct {
@@ -90,14 +96,16 @@ type shopObject struct {
 	} `json:"item_data"`
 }
 
-// ShopCatalog reads the catalog and returns the shop's sections. Needs
-// ITEMS_READ. An account with no "Online Shop" category returns no sections
-// rather than an error: an empty shop is a valid state of the catalog.
-func (c *Client) ShopCatalog(ctx context.Context) ([]ShopSection, error) {
+// ShopCatalog reads the catalog and returns the shop's sections, with sale
+// prices from pricing rules that have not ended by now. loc is the seller's
+// zone, which Square's rule dates are in. Needs ITEMS_READ. An account with no
+// "Online Shop" category returns no sections rather than an error: an empty
+// shop is a valid state of the catalog.
+func (c *Client) ShopCatalog(ctx context.Context, loc *time.Location, now time.Time) ([]ShopSection, error) {
 	var objects []shopObject
 	cursor := ""
 	for {
-		q := url.Values{"types": {"ITEM,IMAGE,CATEGORY"}}
+		q := url.Values{"types": {"ITEM,IMAGE,CATEGORY,DISCOUNT,PRICING_RULE,PRODUCT_SET"}}
 		if cursor != "" {
 			q.Set("cursor", cursor)
 		}
@@ -110,7 +118,7 @@ func (c *Client) ShopCatalog(ctx context.Context) ([]ShopSection, error) {
 		}
 		objects = append(objects, resp.Objects...)
 		if resp.Cursor == "" {
-			return buildShop(objects), nil
+			return buildShop(objects, loc, now), nil
 		}
 		cursor = resp.Cursor
 	}
@@ -118,11 +126,13 @@ func (c *Client) ShopCatalog(ctx context.Context) ([]ShopSection, error) {
 
 // buildShop groups items into the shop's sections. Pure, so the grouping and
 // ordering rules are testable without Square.
-func buildShop(objects []shopObject) []ShopSection {
+func buildShop(objects []shopObject, loc *time.Location, now time.Time) []ShopSection {
 	images, sections, order := shopIndex(objects)
 	if len(sections) == 0 {
 		return nil
 	}
+	rules := shopRules(objects, loc, now)
+	pours := shopPours(objects)
 	type placed struct {
 		ordinal int64
 		item    ShopItem
@@ -137,7 +147,7 @@ func buildShop(objects []shopObject) []ShopSection {
 		if !ok {
 			continue
 		}
-		item, ok := shopItem(o, images)
+		item, ok := shopItem(o, images, rules, pours)
 		if !ok {
 			continue
 		}
@@ -213,7 +223,7 @@ func shopSectionOf(o *shopObject, sections map[string]string) (string, int64, bo
 
 // shopItem projects a catalog item onto a shop card. An item with no sellable
 // variation is dropped: a card with nothing to buy is noise.
-func shopItem(o *shopObject, images map[string]string) (ShopItem, bool) {
+func shopItem(o *shopObject, images map[string]string, rules []shopRule, pours map[string]ShopPour) (ShopItem, bool) {
 	d := o.ItemData
 	item := ShopItem{ID: o.ID, Name: d.Name, Description: strings.TrimSpace(d.Description)}
 	for _, id := range d.ImageIDs {
@@ -231,6 +241,14 @@ func shopItem(o *shopObject, images map[string]string) (ShopItem, bool) {
 		sv := ShopVariation{ID: v.ID, Name: v.Data.Name, PriceCents: -1}
 		if v.Data.PriceMoney != nil {
 			sv.PriceCents, sv.Currency = v.Data.PriceMoney.Amount, v.Data.PriceMoney.Currency
+		}
+		ids := []string{v.ID, o.ID}
+		for _, c := range d.Categories {
+			ids = append(ids, c.ID)
+		}
+		sv.Sale = bestSale(rules, sv.PriceCents, ids...)
+		if p, ok := pours[strings.ToLower(strings.TrimSpace(v.Data.Name))]; ok {
+			sv.Pour = &p
 		}
 		for _, lo := range v.Data.LocationOverrides {
 			if lo.SoldOut {

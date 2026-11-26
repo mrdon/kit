@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // A trimmed copy of the shape Square returns, covering every rule buildShop
@@ -44,7 +45,7 @@ func shopFixtureObjects(t *testing.T) []shopObject {
 }
 
 func TestBuildShopGroupsAndOrders(t *testing.T) {
-	got := buildShop(shopFixtureObjects(t))
+	got := buildShop(shopFixtureObjects(t), time.UTC, time.Now())
 
 	// Kegs is dropped: its only item is archived. Bar is not a shop section.
 	if len(got) != 2 || got[0].Name != "Crowlers" || got[1].Name != "Gift Cards" {
@@ -81,7 +82,7 @@ func TestBuildShopWithoutRootIsEmpty(t *testing.T) {
 			objs[i].CategoryData.Name = "Renamed"
 		}
 	}
-	if got := buildShop(objs); len(got) != 0 {
+	if got := buildShop(objs, time.UTC, time.Now()); len(got) != 0 {
 		t.Fatalf("sections = %+v, want none when no Online Shop category exists", got)
 	}
 }
@@ -102,7 +103,7 @@ func TestShopCatalogFollowsCursor(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{apiBase: srv.URL, accessToken: "tok"}
-	got, err := c.ShopCatalog(t.Context())
+	got, err := c.ShopCatalog(t.Context(), time.UTC, time.Now())
 	if err != nil {
 		t.Fatalf("ShopCatalog: %v", err)
 	}
