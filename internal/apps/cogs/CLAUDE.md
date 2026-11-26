@@ -97,7 +97,8 @@ make prepush                         # everything; must pass before shipping
 open: a sign-in link (`.../dev-brewery/dev-login?user=U_DEV`), then the COGS
 pages at `.../dev-brewery/web/cogs`. The port is `PORT` in `.env`. You're
 signed in as an admin, so both the brewer and admin screens work.
-`make serve` doesn't reload: stop it and run it again after a change.
+`make serve` doesn't reload: stop it and run it again after a change. It
+rebuilds first, so give it a minute before the links answer.
 
 Expected noise in the `make serve` log, safe to ignore: warnings that Slack
 credentials aren't set, and errors from the poster renderer. Neither affects

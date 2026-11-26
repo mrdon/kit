@@ -68,13 +68,16 @@ Fix failures in the code you changed. If something fails in code you didn't
 touch, stop: tell the person it looks like an existing problem and don't
 try to fix it.
 
-Then check how far the change reached. Use three dots: this lists only what
-this branch changed, not what landed on main since it started.
+Then check how far the change reached. Before committing, `git status
+--short` is the list of changed files. After committing (step 5), check
+again with three dots, which lists only what this branch changed, not what
+landed on main since it started; empty output here before a commit doesn't
+mean nothing changed.
 
 ```bash
+git status --short                   # before committing
 git fetch origin
-git status --short
-git diff --stat origin/main...HEAD
+git diff --stat origin/main...HEAD   # after committing
 ```
 
 - Anything outside the app's folder, its migrations, its frontend pages and

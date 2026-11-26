@@ -85,7 +85,7 @@ func seedCogsFormats(ctx context.Context, svc *cogs.Service, admin *services.Cal
 	return ids, nil
 }
 
-// seedCogsHistory leaves FV-1 dry hopped, FV-2 freshly brewed, FV-3 empty
+// seedCogsHistory leaves B-1 aging for 45 days, FV-1 dry hopped, FV-2 freshly brewed, FV-3 empty
 // and dirty after moving to the brite, and BT-1 part packaged.
 func seedCogsHistory(ctx context.Context, svc *cogs.Service, admin *services.Caller,
 	v, f, b map[string]uuid.UUID,
@@ -98,6 +98,8 @@ func seedCogsHistory(ctx context.Context, svc *cogs.Service, admin *services.Cal
 	ref := func(m map[string]uuid.UUID, k string) *uuid.UUID { id := m[k]; return &id }
 
 	steps := []cogs.ActionInput{
+		{Kind: cogs.EvBrew, Date: day(60), VesselID: ref(v, "FV-2"), BeerID: ref(b, "Comet Tail Stout"), VolumeBBL: 1.7},
+		{Kind: "barrel_fill", Date: day(45), VesselID: ref(v, "FV-2"), ToVessels: []uuid.UUID{v["B-1"]}},
 		{Kind: cogs.EvBrew, Date: day(20), VesselID: ref(v, "FV-3"), BeerID: ref(b, "Moon Dust Lager"), VolumeBBL: 10},
 		{Kind: cogs.EvBrew, Date: day(12), VesselID: ref(v, "FV-1"), BeerID: ref(b, "Galactic Orbit"), VolumeBBL: 10},
 		{Kind: cogs.EvDryHop, Date: day(5), VesselID: ref(v, "FV-1")},
