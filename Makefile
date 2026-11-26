@@ -1,4 +1,4 @@
-.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean hopsim hopcrowd hoppers-long-test
+.PHONY: help build test lint format clean up down db db-reset dev run stop restart prepush postpull init docker-build app-init app-dev app-build app-clean console-init console-dev console-build console-clean kiosk-reload renderer-init renderer-node renderer-build renderer-test renderer-typecheck renderer-clean hopsim hopcrowd hoppers-long-test dev-setup serve
 
 # Load .env so PG_PORT, REDIS_PORT, DATABASE_URL etc. are available to
 # both Make recipes and child processes (go test reads DATABASE_URL).
@@ -242,6 +242,19 @@ run: up build ## Start Postgres, tunnel, and the app
 		echo ""; \
 	fi
 	@$(BUILD_DIR)/$(BINARY_NAME) & echo $$! > /tmp/kit-app.pid; wait $$!
+
+dev-setup: ## One-time local setup: .env, a dev workspace to sign in to, and sample data
+	@if [ ! -f .env ]; then \
+		sed "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$$(openssl rand -hex 32)|" .env.example > .env; \
+		echo "KIT_ENV=dev" >> .env; \
+		echo "Created .env"; \
+	fi
+	@grep -q '^KIT_ENV=dev' .env || (echo "Add KIT_ENV=dev to .env first" && exit 1)
+	@$(MAKE) --no-print-directory up
+	@go run ./cmd/kit-seed
+
+serve: build ## Build and run Kit locally, no tunnel (run make dev-setup once first)
+	@$(BUILD_DIR)/$(BINARY_NAME)
 
 stop: ## Stop the app and tunnel
 	@if [ -f /tmp/kit-app.pid ]; then kill $$(cat /tmp/kit-app.pid) 2>/dev/null; rm -f /tmp/kit-app.pid; fi

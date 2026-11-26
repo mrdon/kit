@@ -80,14 +80,22 @@ Adding a field the brewer enters, for example:
 ## Running and testing
 
 ```bash
-make up                              # start local Postgres (Docker)
+make dev-setup                       # once: .env, local Postgres, a dev brewery with sample tanks
+make serve                           # build and run Kit at http://localhost:8488
 go test -race ./internal/apps/cogs/  # just the COGS tests, fast
 make prepush                         # everything; must pass before shipping
 ```
 
-Seeing screens locally is not easy yet: it needs a local workspace and a
-dev login (`KIT_ENV=dev`, then `/<slug>/dev-login`). If you get stuck here,
-ask Don rather than working around auth.
+To see the screens, run `make serve`, then open the sign-in link that
+`make dev-setup` prints (`http://localhost:8488/dev-brewery/dev-login?user=U_DEV`),
+then `http://localhost:8488/dev-brewery/web/cogs`. You're signed in as an
+admin, so both the brewer screens and the admin screens work. `make serve`
+doesn't reload: stop it and run it again after a change.
+
+The sample brewery comes from `cmd/kit-seed/cogs.go`. Running
+`make dev-setup` again is safe and won't duplicate data; `make db-reset`
+followed by `make dev-setup` starts over from scratch. If sign-in or the
+local setup fails, ask Don rather than working around auth.
 
 ## Working with a non-developer
 
