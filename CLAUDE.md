@@ -25,7 +25,10 @@ make db-reset    # Wipe and restart Postgres
 
 ## Deploying
 
-- This project does **not** use pull requests — commits land directly on `main`.
+- **Only Don commits to `main` and deploys.** Anyone else changing Kit uses the
+  `/kit-change` skill: a branch and a pull request that Don reviews, merges and
+  deploys.
+- For Don, this project does **not** use pull requests — commits land directly on `main`.
 - `git push origin main` — push to GitHub
 - `git push dokku main` — deploy to Dokku (apps.twdata.org)
 - Always push to both origin and dokku when deploying.
