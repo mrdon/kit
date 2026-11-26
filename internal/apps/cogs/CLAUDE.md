@@ -64,7 +64,12 @@ changing behaviour.
 
 ## How a typical change flows
 
-Adding a field the brewer enters, for example:
+**Showing something new** (a number on a tile, a label on a screen) usually
+needs no database change. Work it out in the `view_*.go` read model, add the
+field to `api/cogs.ts`, display it in the page, and test the read model in
+`service_test.go`.
+
+**Adding a field the brewer enters** goes all the way down:
 
 1. **Schema:** a *new* migration file, numbered one past the highest in
    `internal/database/migrations/` (e.g. `137_app_cogs_add_x.sql`). Never edit
@@ -79,23 +84,31 @@ Adding a field the brewer enters, for example:
 
 ## Running and testing
 
+Needs Go, Node (with npm) and Docker installed.
+
 ```bash
-make dev-setup                       # once: .env, local Postgres, a dev brewery with sample tanks
-make serve                           # build and run Kit at http://localhost:8488
+make dev-setup                       # once: .env, local Postgres, build, a dev brewery with sample tanks
+make serve                           # build and run Kit locally
 go test -race ./internal/apps/cogs/  # just the COGS tests, fast
 make prepush                         # everything; must pass before shipping
 ```
 
-To see the screens, run `make serve`, then open the sign-in link that
-`make dev-setup` prints (`http://localhost:8488/dev-brewery/dev-login?user=U_DEV`),
-then `http://localhost:8488/dev-brewery/web/cogs`. You're signed in as an
-admin, so both the brewer screens and the admin screens work. `make serve`
-doesn't reload: stop it and run it again after a change.
+`make dev-setup` picks ports nothing else is using and prints the links to
+open: a sign-in link (`.../dev-brewery/dev-login?user=U_DEV`), then the COGS
+pages at `.../dev-brewery/web/cogs`. The port is `PORT` in `.env`. You're
+signed in as an admin, so both the brewer and admin screens work.
+`make serve` doesn't reload: stop it and run it again after a change.
+
+Expected noise in the `make serve` log, safe to ignore: warnings that Slack
+credentials aren't set, and errors from the poster renderer. Neither affects
+COGS.
 
 The sample brewery comes from `cmd/kit-seed/cogs.go`. Running
-`make dev-setup` again is safe and won't duplicate data; `make db-reset`
-followed by `make dev-setup` starts over from scratch. If sign-in or the
-local setup fails, ask Don rather than working around auth.
+`make dev-setup` again is safe and won't duplicate data. `make db-reset` then
+`make dev-setup` starts over, and wipes everything in the local database.
+
+If setup still fails, re-run `make dev-setup` once (it's safe), then ask Don.
+Never work around sign-in or auth to get a page to load.
 
 ## Working with a non-developer
 

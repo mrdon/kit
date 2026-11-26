@@ -51,7 +51,7 @@ APP_DIR=web/app
 CONSOLE_DIR=web/console
 
 $(WEB_DIR)/node_modules:
-	@cd $(WEB_DIR) && npm install
+	@cd $(WEB_DIR) && npm ci
 
 app-init: ## Install all frontend deps (npm workspaces)
 	@echo "Installing frontend deps..."
@@ -199,7 +199,8 @@ clean: ## Clean build artifacts
 up: ## Start Postgres via Docker Compose
 	@docker compose up -d
 	@echo "Waiting for Postgres..."
-	@docker compose exec postgres pg_isready -U kit -q --timeout=30 || (echo "Postgres not ready" && exit 1)
+	@for i in $$(seq 1 30); do docker compose exec postgres pg_isready -U kit -q && exit 0; sleep 1; done; \
+		echo "Postgres not ready after 30s (see: docker compose logs postgres)"; exit 1
 	@echo "Postgres is ready"
 
 down: ## Stop Docker Compose services
@@ -244,13 +245,9 @@ run: up build ## Start Postgres, tunnel, and the app
 	@$(BUILD_DIR)/$(BINARY_NAME) & echo $$! > /tmp/kit-app.pid; wait $$!
 
 dev-setup: ## One-time local setup: .env, a dev workspace to sign in to, and sample data
-	@if [ ! -f .env ]; then \
-		sed "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$$(openssl rand -hex 32)|" .env.example > .env; \
-		echo "KIT_ENV=dev" >> .env; \
-		echo "Created .env"; \
-	fi
-	@grep -q '^KIT_ENV=dev' .env || (echo "Add KIT_ENV=dev to .env first" && exit 1)
-	@$(MAKE) --no-print-directory up
+	@./scripts/dev-env.sh
+	@grep -q '^KIT_ENV=dev' .env || (echo "Your .env is missing KIT_ENV=dev. Add that line and run make dev-setup again." && exit 1)
+	@$(MAKE) --no-print-directory up build
 	@go run ./cmd/kit-seed
 
 serve: build ## Build and run Kit locally, no tunnel (run make dev-setup once first)

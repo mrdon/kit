@@ -20,13 +20,18 @@ git status --short
 git branch --show-current
 ```
 
+Name branches `<name>/<short-topic>`, where `<name>` is the first word of
+`git config user.name`, lowercased (e.g. `sam/tank-fill-numbers`).
+
 - On `main` with no local changes: fetch and branch off the latest main.
   ```bash
   git fetch origin
-  git switch -c <their-first-name>/<short-topic> origin/main
+  git switch -c <name>/<short-topic> origin/main
   ```
-- Already on a non-main branch: this is probably a change in progress.
-  Ask whether to keep going on it or start fresh.
+- On a branch named `worktree-...`: Claude Code made a fresh worktree for
+  this session. Treat it like `main`: run the two commands above.
+- On another non-main branch: this is probably a change in progress. Ask
+  whether to keep going on it or start fresh.
 - Uncommitted changes on `main`: don't discard them. Ask what they are, then
   move them onto a new branch (`git switch -c ...` keeps them).
 
@@ -46,7 +51,11 @@ git branch --show-current
 - Keep it inside the app's files. If you find you need to change shared Kit
   code, stop and explain why: that part goes to Don.
 - Add or update a test that does what the person described and checks the
-  result.
+  result. Tests are Go only: for a screen change, put the logic (the label,
+  the number, the rule) in the Go view code and test it there, and keep the
+  React side to displaying it.
+- To see it, run `make serve` (after `make dev-setup` once) and open the
+  links `make dev-setup` printed. Restart `make serve` after each change.
 
 ## 4. Check it
 
@@ -59,14 +68,20 @@ Fix failures in the code you changed. If something fails in code you didn't
 touch, stop: tell the person it looks like an existing problem and don't
 try to fix it.
 
-Then check how far the change reached:
+Then check how far the change reached. Use three dots: this lists only what
+this branch changed, not what landed on main since it started.
 
 ```bash
-git diff --stat origin/main
+git fetch origin
+git status --short
+git diff --stat origin/main...HEAD
 ```
 
-Anything outside the app's folder, its migrations, its frontend pages and
-its API client should be explained in the pull request.
+- Anything outside the app's folder, its migrations, its frontend pages and
+  its API client should be explained in the pull request.
+- If `web/package-lock.json` shows up and the change didn't add a package,
+  it's noise from a build: `git checkout web/package-lock.json` and don't
+  commit it.
 
 ## 5. Send it to Don
 

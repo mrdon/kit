@@ -12,6 +12,8 @@ Tasks are role-owned and optionally assignable. Every task lives inside exactly 
 
 ```bash
 make up          # Start Postgres via Docker Compose
+make dev-setup   # Once: .env with free ports, Postgres, build, dev workspace + sample data
+make serve       # Build and run Kit locally; sign in via the dev-login link dev-setup prints
 make dev         # Start Postgres + hot reload (requires air)
 make build       # Build binary to ./dist/kit
 make test        # Run tests with race detection
