@@ -42,7 +42,7 @@ type topperGrant struct {
 func registerTopperLibraryRoutes(mux apps.Mux, a *App) {
 	mux.Handle("GET /{slug}/api/events/topper-library",
 		console.RequireCap(a.pool, a.signer, auth.CapEventsTopper, a.handleTopperLibrary))
-	mux.Handle("GET /{slug}/events/topper-library/{id}",
+	mux.Handle("GET /{slug}/events/topper-library/{id}/pdf",
 		console.RequireCapPage(a.pool, a.signer, auth.CapEventsTopper, a.handleTopperLibraryPDF))
 	mux.Handle("POST /{slug}/api/events/topper-library/upload",
 		auth.TenantFromPath(a.pool)(http.HandlerFunc(a.handleTopperUpload)))

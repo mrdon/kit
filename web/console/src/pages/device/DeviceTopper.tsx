@@ -15,7 +15,7 @@ type Pick = { kind: 'week'; week: 'this' | 'next' } | { kind: 'library'; topper:
 function pickSrc(pick: Pick): string {
   if (pick.kind === 'week') return `/${SLUG}/events/topper.pdf?week=${pick.week}`;
   // updated_at in the URL so a replaced file is never served from a stale viewer cache.
-  return `/${SLUG}/events/topper-library/${pick.topper.id}?v=${encodeURIComponent(pick.topper.updated_at)}`;
+  return `/${SLUG}/events/topper-library/${pick.topper.id}/pdf?v=${encodeURIComponent(pick.topper.updated_at)}`;
 }
 
 function pickTitle(pick: Pick): string {
