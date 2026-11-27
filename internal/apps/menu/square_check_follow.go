@@ -42,7 +42,8 @@ func modEntries(ms []sqMod) []sqEntry {
 }
 
 // onTapEntries marks, in keep, the entries whose drink is on tap and whose
-// item rings size. tap says which menu rows the list is for. An entry
+// item rings size, or every such drink when size is empty. tap says which
+// menu rows the list is for. An entry
 // answers to the row's own name, the row's name without its vintage, or the
 // name of the item it rings as.
 func (p *planner) onTapEntries(entries []sqEntry, tap func(Beer) bool, size string, keep map[string]bool) {
@@ -55,7 +56,7 @@ func (p *planner) onTapEntries(entries []sqEntry, tap func(Beer) bool, size stri
 		if !ok {
 			continue
 		}
-		if v, ok := it.variation(size); !ok || v.Cents < 0 {
+		if v, ok := it.variation(size); size != "" && (!ok || v.Cents < 0) {
 			continue
 		}
 		names[nameKey(it.Name)] = true

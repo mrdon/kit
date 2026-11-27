@@ -11,9 +11,8 @@ import (
 )
 
 // maxSquarePasses bounds how many times one check re-reads Square after
-// adding to it. A new drink takes three: the item, then the sizes and
-// flight option that need the item, then the crowler listing that needs its
-// crowler size.
+// adding to it. A new drink takes two: the item, then the pitcher, flight
+// option and crowler listing that need the item.
 const maxSquarePasses = 4
 
 // squareRun is what one check did.

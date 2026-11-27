@@ -185,8 +185,7 @@ func addSize(ctx context.Context, client *square.Client, f sqFix) (string, error
 		if _, err := client.BatchUpsertCatalog(ctx, uuid.NewString(), []map[string]any{v}); err != nil {
 			return "", fmt.Errorf("adding %s to %s: %w", f.Name, it.Name, err)
 		}
-		return fmt.Sprintf("Added %s to %s at %s. Tonight's check lists it online if it is a crowler.",
-			f.Name, it.Name, dollars(f.Cents)), nil
+		return fmt.Sprintf("Added %s to %s at %s.", f.Name, it.Name, dollars(f.Cents)), nil
 	}
 	return "", fmt.Errorf("%w: no item %s in Square any more", ErrPayloadInvalid, f.ObjectID)
 }

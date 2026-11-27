@@ -46,7 +46,7 @@ func (p *planner) crowlerStock() {
 	for _, name := range []string{beerCrowlerItem, sodaCrowlerItem} {
 		if list, ok := p.cat.item(name); ok {
 			lists = append(lists, list)
-			p.onTapEntries(varEntries(list.Vars), isTap, crowlerVariation, keep)
+			p.onTapEntries(varEntries(list.Vars), isTap, "", keep)
 		}
 	}
 	if p.nothingOnTap(keep, "crowler listing") {

@@ -325,9 +325,10 @@ func (p *planner) template(b Beer) (sqItem, bool) {
 	return sqItem{}, false
 }
 
-// houseSizes adds the sizes the menu does not price but the house always
-// sells: a crowler of every tap drink, and a pitcher of every beer up to
-// maxPitcherABV. Nothing else: a size the menu leaves off is not sold.
+// houseSizes adds the size the menu does not price but the house always
+// sells: a pitcher of every beer up to maxPitcherABV. Nothing else: a size
+// the menu leaves off is not sold, and a crowler is not a size of the drink
+// at all but a variation of its crowler item (see crowlers).
 func (p *planner) houseSizes() {
 	for _, b := range p.rows {
 		if !isTap(b) {
@@ -352,11 +353,10 @@ const maxPitcherABV = 8.0
 const pitcherVariation = "Pitcher"
 
 func houseSizeNames(b Beer) []string {
-	out := []string{crowlerVariation}
 	if abv, ok := abvOf(b); ok && abv <= maxPitcherABV {
-		out = append(out, pitcherVariation)
+		return []string{pitcherVariation}
 	}
-	return out
+	return nil
 }
 
 // abvOf reads "6.2%". Sodas have none.
@@ -393,10 +393,7 @@ func (p *planner) houseSize(b Beer, it sqItem, name string) {
 		p.addVariation(it, name, cents, fmt.Sprintf("%s: added %s at %s, the price every other one has", b.Name, name, dollars(cents)))
 		return
 	}
-	why := "We sell a crowler of everything on tap"
-	if name == pitcherVariation {
-		why = fmt.Sprintf("We sell a pitcher of every beer up to %g%%", maxPitcherABV)
-	}
+	why := fmt.Sprintf("We sell a pitcher of every beer up to %g%%", maxPitcherABV)
 	p.plan.Questions = append(p.plan.Questions, sqQuestion{
 		Key:   fmt.Sprintf("house|%s|%s|%d", it.ID, nameKey(name), cents),
 		Title: fmt.Sprintf("Add a %s of %s at %s?", name, b.Name, dollars(cents)),
@@ -414,6 +411,16 @@ func (p *planner) houseSize(b Beer, it sqItem, name string) {
 // largest glass costs nearest per ounce, and whether every such drink
 // charges the same.
 func (p *planner) sizePrice(b Beer, name string) (near string, cents int, same, ok bool) {
+	return p.nearestPrice(b, func(it sqItem) (int, bool) {
+		v, has := it.variation(name)
+		return v.Cents, has && v.Cents >= 0
+	})
+}
+
+// nearestPrice is what priceOf says for the drink of the same kind whose
+// largest glass costs nearest per ounce, and whether every such drink it
+// prices charges the same.
+func (p *planner) nearestPrice(b Beer, priceOf func(sqItem) (int, bool)) (near string, cents int, same, ok bool) {
 	want, _ := perOunce(b)
 	best := -1.0
 	prices := map[int]bool{}
@@ -425,14 +432,14 @@ func (p *planner) sizePrice(b Beer, name string) (near string, cents int, same, 
 		if !found {
 			continue
 		}
-		v, has := it.variation(name)
-		if !has || v.Cents < 0 {
+		c, has := priceOf(it)
+		if !has {
 			continue
 		}
-		prices[v.Cents] = true
+		prices[c] = true
 		po, _ := perOunce(other)
 		if d := math.Abs(po - want); best < 0 || d < best {
-			best, near, cents = d, other.Name, v.Cents
+			best, near, cents = d, other.Name, c
 		}
 	}
 	return near, cents, len(prices) == 1, best >= 0

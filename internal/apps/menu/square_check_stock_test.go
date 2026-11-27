@@ -89,3 +89,16 @@ func TestPlanSquareCrowlerStockNeedsAMenu(t *testing.T) {
 		t.Errorf("no crowler on the menu, want no change, got %v", p.Counts)
 	}
 }
+
+// A crowler listing follows the drink being on tap, not a 32oz Crowler size
+// on the drink's own item: the crowler items are where a crowler rings now,
+// so a drink set up after them has no such size and keeps its listing.
+func TestPlanSquareCrowlerKeptWithoutOwnSize(t *testing.T) {
+	rows := []Beer{beer("Little Dipper", "7", "2.50")}
+	cat := dipperCatalog(map[string]string{"CTG-L": "0", "CTG-S": "97"})
+	cat.Items[0] = rawItem("LD", "Little Dipper", rawVar("LD-16", "16oz", 700), rawVar("LD-4", "4oz", 250))
+	got := changes(planSquare(rows, cat, map[string]bool{}))
+	if got["CTG-L"] != inStock || got["CTG-S"] != "delete" || len(got) != 2 {
+		t.Fatalf("want Little Dipper counted in and Snickers Tsar deleted, got %v", got)
+	}
+}

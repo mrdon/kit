@@ -64,8 +64,9 @@ func summaries(p sqPlan) string {
 	return strings.Join(s, "\n")
 }
 
-// A new soda is created like the soda beside it, then gets its crowler size,
-// its flight option and its online crowler listing as the passes see it.
+// A new soda is created like the soda beside it, then gets its flight option
+// and its crowler listing, priced like its neighbour's, with no crowler size
+// on its own item.
 func TestPlanSquareNewSodaFollowsItsNeighbour(t *testing.T) {
 	rows := []Beer{soda("Graviton Grapefruit Soda"), soda("Gaia Green Soda")}
 	crowlers := rawItem("CSC", sodaCrowlerItem, rawVar("CSC-G", "Graviton Grapefruit Soda", 800))
@@ -96,23 +97,43 @@ func TestPlanSquareNewSodaFollowsItsNeighbour(t *testing.T) {
 	cat.Items = append(cat.Items, gaia)
 	second := planSquare(rows, cat, map[string]bool{"gaia green soda": true})
 	got := summaries(second)
-	for _, want := range []string{"added 32oz Crowler at $8.00", "added to Flight pours at +$0.00"} {
+	for _, want := range []string{"added to Craft Soda Crowler at $8.00, in stock", "added to Flight pours at +$0.00"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("second pass missing %q:\n%s", want, got)
 		}
 	}
+	if strings.Contains(got, crowlerVariation) || len(second.Questions) != 0 {
+		t.Errorf("want no crowler size and no questions, got:\n%s\n%+v", got, second.Questions)
+	}
 
-	// Third pass: the crowler size exists, so it is listed online and counted in.
-	gaia = rawItem("GAIA", "Gaia Green Soda", rawVar("GAIA-R", "Regular", 450), rawVar("GAIA-4", "4oz", 300),
-		rawVar("GAIA-C", "32oz Crowler", 800))
-	cat.Items[len(cat.Items)-1] = gaia
+	// Third pass: listed and in the flight, so nothing is left to do.
+	cat.Items[1] = rawItem("CSC", sodaCrowlerItem, rawVar("CSC-G", "Graviton Grapefruit Soda", 800),
+		rawVar("CSC-GA", "Gaia Green Soda", 800))
 	cat.Flight.Mods = append(cat.Flight.Mods, sqMod{ID: "M2", Name: "Gaia Green Soda", Cents: 0})
 	third := planSquare(rows, cat, map[string]bool{"gaia green soda": true})
-	if len(third.Adds) != 1 || len(third.Adds[0].Stock) != 1 || !strings.Contains(third.Adds[0].Summary, sodaCrowlerItem) {
-		t.Fatalf("want the online crowler listing, stocked, got:\n%s", summaries(third))
+	if len(third.Adds) != 0 || len(third.Questions) != 0 {
+		t.Errorf("want nothing to do, got:\n%s\n%+v", summaries(third), third.Questions)
 	}
-	if len(third.Questions) != 0 {
-		t.Errorf("nothing to ask about, got %v", third.Questions)
+}
+
+// A crowler listing is the crowler's price, at the bar and online: a 32oz
+// Crowler size left on a drink's own item prices a missing listing, but is
+// never compared with one that exists.
+func TestPlanSquareCrowlerListingIsThePrice(t *testing.T) {
+	rows := []Beer{beer("Newtonian", "6.50", "3"), beer("Cherry Bomba", "8", "4")}
+	cat := sqCatalog{Items: []sqItem{
+		rawItem("NEW", "Newtonian", rawVar("N16", "16oz", 650), rawVar("N4", "4oz", 300), rawVar("NP", "Pitcher", 2200),
+			rawVar("NC", "32oz Crowler", 1100)),
+		rawItem("CB", "Cherry Bomba", rawVar("C16", "16oz", 800), rawVar("C4", "4oz", 400), rawVar("CP", "Pitcher", 2600),
+			rawVar("CC", "32oz Crowler", 1900)),
+		rawItem("CTG", beerCrowlerItem, rawVar("CTG-N", "Newtonian", 1200)),
+	}}
+	plan := planSquare(rows, cat, map[string]bool{})
+	if got := summaries(plan); got != "Cherry Bomba: added to Crowler To Go at $19.00, in stock" {
+		t.Errorf("adds:\n%s", got)
+	}
+	if len(plan.Questions) != 0 {
+		t.Errorf("compared a listing with an old crowler size: %+v", plan.Questions)
 	}
 }
 
@@ -162,27 +183,32 @@ func TestPlanSquareArchivedAsks(t *testing.T) {
 	}
 }
 
-// On an item that already existed, a missing size might be deliberate, so
+// On an item that already existed, a missing crowler might be deliberate, so
 // even a price every other drink shares is asked, not copied.
-func TestPlanSquareHouseSizeOnOldItemAsks(t *testing.T) {
+func TestPlanSquareCrowlerOnOldItemAsks(t *testing.T) {
 	rows := []Beer{soda("Graviton Grapefruit Soda"), soda("Regulus Root Beer"), soda("Gaia Green Soda")}
 	cat := sqCatalog{Items: []sqItem{
-		graviton(),
-		rawItem("REG", "Regulus Root Beer", rawVar("REG-R", "Regular", 450), rawVar("REG-4", "4oz", 300), rawVar("REG-C", "32oz Crowler", 800)),
+		rawItem("GRAV", "Graviton Grapefruit Soda", rawVar("GRAV-R", "Regular", 450), rawVar("GRAV-4", "4oz", 300)),
+		rawItem("REG", "Regulus Root Beer", rawVar("REG-R", "Regular", 450), rawVar("REG-4", "4oz", 300)),
 		rawItem("GAIA", "Gaia Green Soda", rawVar("GAIA-R", "Regular", 450), rawVar("GAIA-4", "4oz", 300)),
+		rawItem("CSC", sodaCrowlerItem, rawVar("CSC-G", "Graviton Grapefruit Soda", 800), rawVar("CSC-R", "Regulus Root Beer", 800)),
 	}}
 	plan := planSquare(rows, cat, map[string]bool{})
-	if strings.Contains(summaries(plan), "Crowler") {
-		t.Fatalf("filled in a size on an existing item:\n%s", summaries(plan))
+	if len(plan.Adds) != 0 {
+		t.Fatalf("filled in a crowler on an existing item:\n%s", summaries(plan))
 	}
-	if len(plan.Questions) != 1 || plan.Questions[0].Options[0].Fix.Cents != 800 {
-		t.Fatalf("want one yes/no crowler question at $8.00, got %+v", plan.Questions)
+	if len(plan.Questions) != 1 {
+		t.Fatalf("want one crowler question, got %+v", plan.Questions)
+	}
+	fix := plan.Questions[0].Options[0].Fix
+	if fix.Kind != "variation" || fix.ObjectID != "CSC" || fix.Name != "Gaia Green Soda" || fix.Cents != 800 {
+		t.Errorf("want Gaia added to %s at $8.00, got %+v", sodaCrowlerItem, fix)
 	}
 }
 
-// The house sizes are a crowler of everything on tap and a pitcher of beer
-// up to 8%. A size the menu leaves off, like a 16oz of a strong beer, is
-// never asked about, however many other beers sell one.
+// The house size is a pitcher of beer up to 8%, and a drink missing from the
+// crowler item is offered in it. A size the menu leaves off, like a 16oz of
+// a strong beer, is never asked about, however many other beers sell one.
 func TestPlanSquareHouseSizesFollowTheRules(t *testing.T) {
 	full := func(id, name string) sqItem {
 		return rawItem(id, name, rawVar(id+"16", "16oz", 650), rawVar(id+"4", "4oz", 300),
@@ -195,6 +221,7 @@ func TestPlanSquareHouseSizesFollowTheRules(t *testing.T) {
 		full("NEW", "Newtonian"), full("CER", "Cerveza"),
 		rawItem("LD", "Little Dipper", rawVar("LD16", "16oz", 650), rawVar("LD4", "4oz", 300)),
 		rawItem("TB", "Tsar Bomba", rawVar("TB9", "9oz", 800), rawVar("TB4", "4oz", 400)),
+		rawItem("CTG", beerCrowlerItem, rawVar("CTG-N", "Newtonian", 1200), rawVar("CTG-C", "Cerveza", 1200)),
 	}}
 	plan := planSquare(rows, cat, map[string]bool{})
 	var titles []string
@@ -205,9 +232,9 @@ func TestPlanSquareHouseSizesFollowTheRules(t *testing.T) {
 		}
 	}
 	got := strings.Join(titles, "\n")
-	want := "Add a 32oz Crowler of Little Dipper at $12.00?\n" +
-		"Add a Pitcher of Little Dipper at $22.00?\n" +
-		"Add a 32oz Crowler of Tsar Bomba at $12.00?"
+	want := "Add a Pitcher of Little Dipper at $22.00?\n" +
+		"Sell a crowler of Little Dipper at $12.00?\n" +
+		"Sell a crowler of Tsar Bomba at $12.00?"
 	if got != want {
 		t.Errorf("questions:\n%s\nwant:\n%s", got, want)
 	}
