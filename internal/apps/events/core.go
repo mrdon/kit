@@ -73,6 +73,9 @@ func dispatchCore(ctx context.Context, caller *services.Caller, svc *Service, na
 	case "events_promo_list":
 		return corePromoList(ctx, caller, svc)
 	default:
+		if out, ok, err := dispatchTopperLibrary(ctx, caller, name, raw); ok {
+			return out, err
+		}
 		return "", fmt.Errorf("events: unknown tool %q", name)
 	}
 }

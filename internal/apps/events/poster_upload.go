@@ -63,7 +63,7 @@ const posterUploadKeyPrefix = "kit:events:poster-upload:"
 // errUploadsUnconfigured is returned when Redis is absent. Surfaced to the
 // caller verbatim: a tool that quietly returns no link reads as a bug, while
 // this names the missing piece.
-var errUploadsUnconfigured = errors.New("one-time poster upload links need Redis (set REDIS_URL)")
+var errUploadsUnconfigured = errors.New("one-time upload links need Redis (set REDIS_URL)")
 
 // posterGrant is what a token stands for. The event is bound at mint time, so
 // redeeming a token cannot be redirected at a different event by changing the
@@ -77,54 +77,70 @@ type posterGrant struct {
 // mintPosterUpload stores a grant and returns the token. The caller must
 // already have established that this user may edit this event.
 func (a *App) mintPosterUpload(ctx context.Context, g posterGrant) (string, error) {
+	return a.mintUploadGrant(ctx, posterUploadKeyPrefix, g)
+}
+
+// redeemPosterUpload consumes a token and returns its grant.
+func (a *App) redeemPosterUpload(ctx context.Context, token string) (*posterGrant, error) {
+	var g posterGrant
+	if err := a.redeemUploadGrant(ctx, posterUploadKeyPrefix, token, &g); err != nil {
+		return nil, err
+	}
+	return &g, nil
+}
+
+// mintUploadGrant stores a grant under a fresh token and returns the token.
+// Shared by every one-time upload link the events app hands out; the prefix
+// keeps one kind of grant from being redeemed as another.
+func (a *App) mintUploadGrant(ctx context.Context, prefix string, g any) (string, error) {
 	if a.redis == nil {
 		return "", errUploadsUnconfigured
 	}
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
-		return "", fmt.Errorf("poster upload token: %w", err)
+		return "", fmt.Errorf("upload token: %w", err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw[:])
 	body, err := json.Marshal(g)
 	if err != nil {
-		return "", fmt.Errorf("poster upload grant: %w", err)
+		return "", fmt.Errorf("upload grant: %w", err)
 	}
 	// NX rather than a plain set: a token collision is not credible at 32
 	// bytes, but silently overwriting someone else's live grant is the one
 	// outcome worth refusing outright rather than making
 	// impossible-by-assumption. A refused write comes back as redis.Nil.
-	err = a.redis.SetArgs(ctx, posterUploadKeyPrefix+token, body, redis.SetArgs{
+	err = a.redis.SetArgs(ctx, prefix+token, body, redis.SetArgs{
 		Mode: "NX",
 		TTL:  posterUploadTTL,
 	}).Err()
 	if errors.Is(err, redis.Nil) {
-		return "", errors.New("poster upload token collision")
+		return "", errors.New("upload token collision")
 	}
 	if err != nil {
-		return "", fmt.Errorf("storing poster upload grant: %w", err)
+		return "", fmt.Errorf("storing upload grant: %w", err)
 	}
 	return token, nil
 }
 
-// redeemPosterUpload consumes a token and returns its grant. GETDEL is atomic,
-// so exactly one of two racing redemptions gets the grant and the other gets
-// ErrNotFound -- which is what makes "single use" true rather than aspirational.
-func (a *App) redeemPosterUpload(ctx context.Context, token string) (*posterGrant, error) {
+// redeemUploadGrant consumes a token and decodes its grant into out. GETDEL is
+// atomic, so exactly one of two racing redemptions gets the grant and the other
+// gets redis.Nil -- which is what makes "single use" true rather than
+// aspirational.
+func (a *App) redeemUploadGrant(ctx context.Context, prefix, token string, out any) error {
 	if a.redis == nil {
-		return nil, errUploadsUnconfigured
+		return errUploadsUnconfigured
 	}
 	if token == "" {
-		return nil, redis.Nil
+		return redis.Nil
 	}
-	body, err := a.redis.GetDel(ctx, posterUploadKeyPrefix+token).Bytes()
+	body, err := a.redis.GetDel(ctx, prefix+token).Bytes()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var g posterGrant
-	if err := json.Unmarshal(body, &g); err != nil {
-		return nil, fmt.Errorf("decoding poster upload grant: %w", err)
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decoding upload grant: %w", err)
 	}
-	return &g, nil
+	return nil
 }
 
 // PosterUploadURL is the address a minted token is redeemed at. The event id

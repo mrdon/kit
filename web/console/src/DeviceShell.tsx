@@ -42,7 +42,7 @@ const DEVICE_TILES: DeviceTile[] = [
     cap: 'events.topper',
     to: '/device/topper',
     title: 'Table topper',
-    blurb: 'Print this week’s or next week’s events card.',
+    blurb: 'Print the week’s events card, or a ready-made one like happy hour.',
   },
   {
     cap: 'events.topper',

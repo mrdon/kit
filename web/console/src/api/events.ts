@@ -11,6 +11,7 @@ import type {
   EventsSettingsSummary,
   EventsSiteStatus,
   EventsStaff,
+  LibraryTopper,
   PromoPayload,
   SignChoice,
 } from './events.types';
@@ -66,6 +67,7 @@ export const eventsApi = {
     apiPost<{ event: EventRecord }>(`/events/${encodeURIComponent(id)}/reopen`),
 
   eventsSettings: () => apiGet<EventsSettings>('/events/settings'),
+  eventsTopperLibrary: () => apiGet<{ toppers: LibraryTopper[] }>('/events/topper-library'),
   eventsSign: (day: 'today' | 'tomorrow') =>
     apiGet<{ date: string; events: SignChoice[] }>(`/events/sign?day=${day}`),
   saveEventsSettings: (body: {

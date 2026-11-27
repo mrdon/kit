@@ -163,6 +163,7 @@ func (a *App) RegisterRoutes(mux apps.Mux) {
 	registerScreenRoutes(mux, a)
 	registerConsoleRoutes(mux, a)
 	registerPosterUploadRoutes(mux, a)
+	registerTopperLibraryRoutes(mux, a)
 	registerSettingsRoutes(mux, a)
 	registerStaffRoutes(mux, a)
 	registerPromoRoutes(mux, a)

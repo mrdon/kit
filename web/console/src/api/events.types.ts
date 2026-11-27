@@ -375,6 +375,13 @@ export interface EventsReconcilePlan {
 }
 
 // One of the day's events, as the entrance sign page offers it.
+// A ready-made table topper in the library the bar iPad prints from.
+export interface LibraryTopper {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
 export interface SignChoice {
   id: string;
   title: string;
