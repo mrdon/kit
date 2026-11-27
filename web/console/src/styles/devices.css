@@ -234,6 +234,23 @@
   flex-wrap: wrap;
 }
 
+/* A set of buttons that grows over time (the topper library) goes in equal
+   tiles, as many across as the screen fits, so the tenth reads as easily as
+   the first. Long titles wrap inside their tile. */
+.device-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  align-items: stretch;
+}
+
+.device-actions-grid .device-btn {
+  width: 100%;
+  min-height: 5.5rem;
+  padding: 1rem 1.2rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* A page with more than one group of buttons (the entrance sign's day, then
    what to print) labels each and keeps them apart, so one group does not
    read as part of the next. */

@@ -53,7 +53,7 @@ export default function DeviceTopper() {
       {err && <p className="banner banner-error">{err}</p>}
       <div className="device-group">
         <p className="device-group-label">The week’s events</p>
-        <section className="device-actions device-actions-row">
+        <section className="device-actions device-actions-grid">
           {(['this', 'next'] as const).map((w) => (
             <button
               key={w}
@@ -69,7 +69,7 @@ export default function DeviceTopper() {
       {library.length > 0 && (
         <div className="device-group">
           <p className="device-group-label">Ready to print</p>
-          <section className="device-actions">
+          <section className="device-actions device-actions-grid">
             {library.map((t) => (
               <button
                 key={t.id}
