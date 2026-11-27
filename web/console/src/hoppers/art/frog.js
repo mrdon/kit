@@ -20,6 +20,7 @@ export const HATS = [
   "tophat", "flower", "pint", "chef", "headband", "bucket", "antlers",
   "silver", "curls", "cap", "blonde", "wild", "black", "ponytail", "pm",
   "helmet", "hacker", "finance", "construction", "baron", "growler", "garage",
+  "tractor",
 ];
 
 export function shade(hex, amt) {
@@ -286,6 +287,7 @@ export const HAT_FIT = {
   hacker: [0, 0, 0, 1, true],
   finance: [47.5, 21.6, 5, 1], construction: [47.5, 20.8, 4, 1], baron: [0, 0, 0, 1],
   growler: [47.8, 22, 3, 1], garage: [47.5, 21.4, 3, 1],
+  tractor: [47.5, 21.4, 3, 0.95],
 };
 export function placedHat(hat, color, layer) {
   const f = HAT_FIT[hat]; if (!f || !!f[4] !== (layer === "under")) return "";

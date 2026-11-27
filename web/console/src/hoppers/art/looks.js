@@ -92,6 +92,21 @@ export function lookSVG(hat, color, k) {
         S("M-3 -20.6 L3 -20.6 L3 -16.2 L-3 -16.2 Z", "#ffd76a", { band: false, op: 0.95, w: 1.3 }) +
         L("M0 -20.6 v4.4 M-3 -18.4 h6", 0.8);
     }
+    case "tractor": {
+      // a green farm tractor facing the way the frog does: long hood and
+      // exhaust stack up front, cab over a big yellow-hubbed rear wheel.
+      const G = "#367c2b", GD = "#1f4d18", Y = "#ffde00", T = "#2d3436";
+      return S("M-1.6 -10 L-1.6 -23.6 L12.4 -23.6 L12.4 -10 Z", G, { band: GD }) +
+        S("M0.4 -21.8 L5.2 -21.8 L5.2 -14 L0.4 -14 Z M6.8 -21.8 L10.6 -21.8 L10.6 -14 L6.8 -14 Z", "#bfe3f2", { band: false, op: 0.9, w: 1.2 }) +
+        S("M-3.4 -23.2 L14 -23.6 L14.2 -26.2 C8 -27.2 1.6 -27.2 -3.2 -26 Z", G, { band: GD, w: 1.6, bw: 1.8 }) +
+        S("M-15.2 -5.8 L-15.6 -12.4 C-15.6 -13.8 -14.6 -14.4 -13 -14.4 L0.4 -14.6 L0.6 -5.6 C-5 -4.8 -10 -4.8 -15.2 -5.8 Z", G, { band: GD }) +
+        L("M-14.6 -9.8 C-9 -10.2 -4 -10.2 0.2 -10", 1.5, Y) +
+        L("M-14.2 -12.8 v5.6 M-12.6 -13.2 v6.2", 0.8, GD) +
+        O("M-8.4 -14.4 L-8.6 -20.6", T, 1.6) +
+        dot(6.8, -8.2, 8, T) + dot(6.8, -8.2, 4.4, Y) + dot(6.8, -8.2, 1.4, T) +
+        L("M2.6 -15.4 l1 1.4 M12.4 -13.2 l-1.4 0.6 M11.8 -2.4 l-1.2 -0.8 M1.4 -2.8 l1.4 -0.4", 1.4, "#636e72") +
+        dot(-10.2, -4.2, 4.2, T) + dot(-10.2, -4.2, 2.2, Y);
+    }
     default:
       return "";
   }
