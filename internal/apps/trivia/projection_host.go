@@ -86,7 +86,7 @@ func ProjectHost(s *Snapshot) HostFrame {
 	// every phase.
 	f.Slots = allSlots(s)
 	if s.Round != nil {
-		f.Answer = &wireAnswer{Value: s.Round.CorrectValue, Text: s.Round.CorrectText}
+		f.Answer = &wireAnswer{Value: s.Round.CorrectValue, Text: DisplayAnswer(s.Round.CorrectText, s.Round.CorrectValue)}
 	}
 	for _, c := range s.Board {
 		f.Progress.CellsTotal++
@@ -117,7 +117,7 @@ func hostLastRound(s *Snapshot) *wireLastRound {
 	lr := s.LastRound
 	w := &wireLastRound{
 		Ordinal: lr.Ordinal, IsFinal: lr.IsFinal, Points: lr.Points, Text: lr.Prompt,
-		CorrectValue: lr.AnswerValue, CorrectText: lr.AnswerText,
+		CorrectValue: lr.AnswerValue, CorrectText: DisplayAnswer(lr.AnswerText, lr.AnswerValue),
 		WinningLabel: lr.WinningLabel,
 		Winners:      append([]string{}, lr.WinnerNames...),
 		WinnerIDs:    make([]string, 0, len(lr.WinnerIDs)),

@@ -118,7 +118,7 @@ func TestHostProjectionAlwaysCarriesTheAnswer(t *testing.T) {
 	for _, phase := range []Phase{PhaseQuestion, PhaseReveal, PhaseBetting} {
 		snap, _ := snapshotIn(phase, false)
 		frame := ProjectHost(snap)
-		if frame.Answer == nil || frame.Answer.Text != "867530" {
+		if frame.Answer == nil || frame.Answer.Text != "867,530" {
 			t.Fatalf("%s: host frame answer = %+v", phase, frame.Answer)
 		}
 	}
@@ -168,7 +168,7 @@ func TestHostFrameRemembersTheLastScoredRound(t *testing.T) {
 		host.LastRound.BetDeltas[teamA.String()] != 200 {
 		t.Fatalf("last round deltas = %+v", host.LastRound)
 	}
-	if host.LastRound.CorrectText != "867530" {
+	if host.LastRound.CorrectText != "867,530" {
 		t.Fatalf("the host cannot read back the answer: %+v", host.LastRound)
 	}
 

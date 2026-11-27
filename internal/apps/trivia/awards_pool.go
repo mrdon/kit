@@ -305,8 +305,5 @@ func evalWildest(in AwardInput, q qualifier) map[uuid.UUID]awardScore {
 
 // answerTextOf prefers the spelling a human wrote ("$1,200") over %g output.
 func answerTextOf(r AwardRound) string {
-	if r.CorrectText != "" {
-		return r.CorrectText
-	}
-	return FormatValue(r.Correct)
+	return DisplayAnswer(r.CorrectText, r.Correct)
 }

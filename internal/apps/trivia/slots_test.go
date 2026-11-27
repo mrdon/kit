@@ -98,10 +98,10 @@ func TestBuildSlotsLabelsUseWhatWasTyped(t *testing.T) {
 func TestBuildSlotsKeepsTheFirstSpelling(t *testing.T) {
 	ids := teamIDs(2)
 	slots := BuildSlots([]TeamAnswer{
-		{TeamID: ids[0], Value: 1200, Raw: "1200"},
-		{TeamID: ids[1], Value: 1200, Raw: "$1,200"},
+		{TeamID: ids[0], Value: 1200, Raw: "$1200"},
+		{TeamID: ids[1], Value: 1200, Raw: "1,200"},
 	})
-	if slots[1].Label != "1200" {
+	if slots[1].Label != "$1,200" {
 		t.Fatalf("label = %q, want the first spelling", slots[1].Label)
 	}
 }

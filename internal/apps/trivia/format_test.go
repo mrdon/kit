@@ -32,3 +32,28 @@ func TestFormatMoney(t *testing.T) {
 		}
 	}
 }
+
+// A pack's answer column and a phone's guess both arrive as typed; the wall
+// adds the commas the typist left out and keeps everything else they wrote.
+func TestDisplayAnswer(t *testing.T) {
+	cases := []struct {
+		raw  string
+		v    float64
+		want string
+	}{
+		{"867530", 867530, "867,530"},
+		{"$1200", 1200, "$1,200"},
+		{"45000%", 45000, "45,000%"},
+		{"1,200", 1200, "1,200"},
+		{"1200.5", 1200.5, "1,200.5"},
+		{"-12000", -12000, "-12,000"},
+		{"999", 999, "999"},
+		{"", 3000000, "3,000,000"},
+		{"1 200", 1200, "1 200"},
+	}
+	for _, c := range cases {
+		if got := DisplayAnswer(c.raw, c.v); got != c.want {
+			t.Errorf("DisplayAnswer(%q) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+}

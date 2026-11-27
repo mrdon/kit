@@ -403,7 +403,7 @@ func publicScoring(s *Snapshot) *wireScoring {
 		return nil
 	}
 	w := &wireScoring{
-		CorrectValue: s.Scoring.CorrectValue, CorrectText: s.Scoring.CorrectText,
+		CorrectValue: s.Scoring.CorrectValue, CorrectText: DisplayAnswer(s.Scoring.CorrectText, s.Scoring.CorrectValue),
 		Deltas: map[string]int{}, BoardPoints: map[string]int{}, BetDeltas: map[string]int{},
 	}
 	if s.Scoring.WinningSlotID != nil {

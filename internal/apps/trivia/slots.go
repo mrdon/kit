@@ -60,10 +60,7 @@ func BuildSlots(answers []TeamAnswer) []Slot {
 	slots := []Slot{{Position: 0, Label: PseudoSlotLabel, Odds: 1}}
 	for i, v := range values {
 		value := v
-		label := labelFor[v]
-		if label == "" {
-			label = FormatValue(v)
-		}
+		label := DisplayAnswer(labelFor[v], v)
 		slots = append(slots, Slot{
 			Position: i + 1,
 			Value:    &value,

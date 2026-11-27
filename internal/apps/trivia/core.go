@@ -166,10 +166,7 @@ func roundRecap(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, gam
 		}
 		// The round's own copy, so a recap of a night from last month still
 		// reads correctly after the dataset behind it was deleted.
-		answer := r.AnswerText
-		if answer == "" {
-			answer = FormatValue(r.AnswerValue)
-		}
+		answer := DisplayAnswer(r.AnswerText, r.AnswerValue)
 		fmt.Fprintf(&b, "%s %s — %s", label, r.Prompt, answer)
 		var took []string
 		for _, s := range byRound[r.ID] {
