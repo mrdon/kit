@@ -145,7 +145,7 @@ func flattenModule(src string) (string, error) {
 	out := importLine.ReplaceAllString(src, "")
 	out = exportDecl.ReplaceAllString(out, "$1 ")
 	if loc := exportAny.FindStringIndex(out); loc != nil {
-		line := strings.SplitN(out[loc[0]:], "\n", 2)[0]
+		line, _, _ := strings.Cut(out[loc[0]:], "\n")
 		return "", fmt.Errorf("unsupported module syntax: %q", strings.TrimSpace(line))
 	}
 	return out, nil

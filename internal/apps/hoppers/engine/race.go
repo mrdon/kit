@@ -142,9 +142,9 @@ func (g *Game) position(id string) (space, idx int) {
 }
 
 func (g *Game) leader() string {
-	for s := len(g.stacks) - 1; s >= 0; s-- {
-		if n := len(g.stacks[s]); n > 0 {
-			return g.stacks[s][n-1]
+	for _, st := range slices.Backward(g.stacks) {
+		if n := len(st); n > 0 {
+			return st[n-1]
 		}
 	}
 	return ""
@@ -154,10 +154,9 @@ func (g *Game) leader() string {
 // first, and on a shared coaster the top of the stack ahead of those below.
 func (g *Game) ranking() []string {
 	var r []string
-	for s := len(g.stacks) - 1; s >= 0; s-- {
-		st := g.stacks[s]
-		for i := len(st) - 1; i >= 0; i-- {
-			r = append(r, st[i])
+	for _, st := range slices.Backward(g.stacks) {
+		for _, frog := range slices.Backward(st) {
+			r = append(r, frog)
 		}
 	}
 	return r
