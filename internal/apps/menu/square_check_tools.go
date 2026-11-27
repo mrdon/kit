@@ -22,7 +22,8 @@ func squareCheckToolMetas() []services.ToolMeta {
 		{
 			Name: checkSquareTool,
 			Description: "Check that Square can sell everything on the menu (the same menu the wall and the " +
-				"printed page show): every drink and pour as an item at the menu's price, every tap drink " +
+				"printed page show): every drink and pour as an item at the menu's price with a button on the register " +
+				"(put back on its screen if it has none) and not marked sold out (told, since Kit cannot clear that), every tap drink " +
 				"with a taster in the Flight pours picker, and every crowler in the online crowler items, " +
 				"in stock, and every tap beer's sixtel in the online keg item, with the crowlers and kegs of drinks no longer on the menu taken off the online shop and their flight options out of the picker. Without apply it previews and changes nothing. With apply=true it does what Kit " +
 				"does every night: adds what has a right answer (copying how similar drinks are set up, at " +

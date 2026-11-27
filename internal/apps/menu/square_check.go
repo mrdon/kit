@@ -85,6 +85,9 @@ type sqCatalog struct {
 	// Counts is the stock of each online crowler listing by variation id;
 	// nil when it was not read, which leaves stock alone.
 	Counts map[string]string
+	// MenuCats names the menu categories (register screens) by id; nil
+	// leaves buttons alone.
+	MenuCats map[string]string
 }
 
 // loadSquareCatalog reads every item and the flight picker.
@@ -96,6 +99,16 @@ func loadSquareCatalog(ctx context.Context, client *square.Client) (sqCatalog, e
 	}
 	for _, o := range items {
 		cat.Items = append(cat.Items, parseSqItem(o))
+	}
+	cats, err := client.ListCatalogObjects(ctx, "CATEGORY")
+	if err != nil {
+		return cat, fmt.Errorf("listing Square categories: %w", err)
+	}
+	cat.MenuCats = map[string]string{}
+	for _, o := range cats {
+		if data := obj(o, "category_data"); str(data, "category_type") == "MENU_CATEGORY" {
+			cat.MenuCats[str(o, "id")] = str(data, "name")
+		}
 	}
 	lists, err := client.ListCatalogObjects(ctx, "MODIFIER_LIST")
 	if err != nil {

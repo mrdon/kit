@@ -162,6 +162,8 @@ func (p *planner) row(b Beer) {
 		p.missingItem(b)
 		return
 	}
+	p.button(b, it)
+	p.soldOut(b, it)
 	for _, pr := range pricedPours(b) {
 		p.pour(b, it, pr)
 	}
