@@ -26,7 +26,7 @@ func squareCheckToolMetas() []services.ToolMeta {
 				"(put back on its screen if it has none) and not marked sold out (told, since Kit cannot clear that), every tap drink " +
 				"with a taster in the Flight pours picker, and every tap drink in its to-go items, in stock: a crowler of everything, " +
 				"and a growler, sixtel and half barrel of every beer. Crowlers and growlers of drinks no longer on the menu are taken off, " +
-				"their kegs shown sold out, and their flight options taken out of the picker. Without apply it previews and changes nothing. With apply=true it does what Kit " +
+				"their kegs hidden (and shown again when they return), and their flight options taken out of the picker. Without apply it previews and changes nothing. With apply=true it does what Kit " +
 				"does every night: adds what has a right answer (copying how similar drinks are set up, at " +
 				"the menu's or Square's own prices), and files a decision card for anything that needs a " +
 				"person, such as a price that disagrees. It never removes or reprices without a card, except a " +

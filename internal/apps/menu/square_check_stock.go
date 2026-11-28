@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"time"
 
@@ -27,6 +28,10 @@ type sqCount struct {
 	ObjectID string
 	Quantity string
 	Remove   bool
+	// Sellable, when set, shows or hides the variation (Raw, as Square
+	// sent it) before any count is set.
+	Sellable *bool
+	Raw      map[string]any
 }
 
 // soldOut is the count that shows a listing sold out online. Only an item's
@@ -130,9 +135,15 @@ func (s *stocker) counts(ctx context.Context, cat sqCatalog) (map[string]string,
 func applyCounts(ctx context.Context, st *stocker, counts []sqCount) (done, failed []string) {
 	for _, c := range counts {
 		var err error
-		if c.Remove {
+		switch {
+		case c.Remove:
 			_, err = st.client.BatchDeleteCatalog(ctx, []string{c.ObjectID})
-		} else {
+		case c.Sellable != nil:
+			err = setSellable(ctx, st.client, c.Raw, *c.Sellable)
+			if err == nil && c.Quantity != "" {
+				err = st.set(ctx, c.ObjectID, c.Quantity)
+			}
+		default:
 			err = st.set(ctx, c.ObjectID, c.Quantity)
 		}
 		if err != nil {
@@ -142,4 +153,17 @@ func applyCounts(ctx context.Context, st *stocker, counts []sqCount) (done, fail
 		done = append(done, c.Summary)
 	}
 	return done, failed
+}
+
+// setSellable writes one variation back with its sellable flag changed and
+// nothing else, at the version the check read.
+func setSellable(ctx context.Context, client *square.Client, raw map[string]any, on bool) error {
+	o := writable(raw)
+	data := maps.Clone(obj(o, "item_variation_data"))
+	data["sellable"] = on
+	o["item_variation_data"] = data
+	if _, err := client.BatchUpsertCatalog(ctx, uuid.NewString(), []map[string]any{o}); err != nil {
+		return fmt.Errorf("setting sellable: %w", err)
+	}
+	return nil
 }

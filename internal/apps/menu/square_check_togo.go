@@ -30,9 +30,13 @@ import (
 //
 // When a drink leaves the menu its crowler and growler listings are deleted,
 // because they are filled from the tap and Square cannot hide one variation
-// from a channel through the API. Kegs are counted out instead: they are
-// filled to order, sell for a hundred dollars and more, and a price someone
-// set by hand should still be there when the beer comes back.
+// from a channel through the API. Kegs are made unsellable instead, which
+// hides them from the register and the website's shop alike: they sell for
+// a hundred dollars and more, and a price someone set by hand should still
+// be there when the beer comes back. A keg's stock is left to staff: one
+// marked sold out because there is not enough beer to fill it stays sold out
+// while its beer is on tap. It is counted back in only when its beer
+// returns to the menu.
 
 // toGo is one item a format is sold from.
 type toGo struct {
@@ -49,8 +53,8 @@ type toGo struct {
 	Oz float64
 	// For says which tap rows are sold this way.
 	For func(Beer) bool
-	// Keep counts a listing out when its drink is off the menu, rather than
-	// deleting it.
+	// Keep hides a listing when its drink is off the menu, rather than
+	// deleting it, and leaves its stock count to staff.
 	Keep bool
 }
 
@@ -243,9 +247,9 @@ func (p *planner) addListing(g toGo, b Beer, it, list sqItem, cents int, how str
 }
 
 // toGoStock brings each listing in line with the menu: on tap but counted
-// out is counted back in; off tap is deleted, or counted out for an item
-// that keeps its listings. One guard covers every item, so a bar pouring no
-// soda still loses its soda crowlers.
+// out is counted back in, off tap is deleted; an item that keeps its
+// listings hides and shows them instead. One guard covers every item, so a
+// bar pouring no soda still loses its soda crowlers.
 func (p *planner) toGoStock() {
 	type held struct {
 		g    toGo
@@ -263,22 +267,36 @@ func (p *planner) toGoStock() {
 		return
 	}
 	for _, h := range lists {
-		p.restock(h.list, keep)
 		if h.g.Keep {
-			p.countOut(h.list, keep)
+			p.hideOffTap(h.list, keep)
 			continue
 		}
+		p.restock(h.list, keep)
 		p.delist(h.list.Name+" online", varEntries(h.list.Vars), keep, p.countOutLast(h.list.Name))
 	}
 }
 
-// countOut shows each listing off tap sold out, leaving it and its price
-// for when the drink is back.
-func (p *planner) countOut(list sqItem, keep map[string]bool) {
+// hideOffTap makes each listing off tap unsellable and each one back on tap
+// sellable again, counted in. A listing on tap and already sellable is left
+// alone, whatever its stock: sold out there is a staff decision.
+func (p *planner) hideOffTap(list sqItem, keep map[string]bool) {
 	for _, v := range list.Vars {
-		if !keep[v.ID] && p.counted(v.ID) {
-			p.count(sqCount{ObjectID: v.ID, Quantity: soldOut,
-				Summary: fmt.Sprintf("%s: off the menu, so its %s shows sold out", v.Name, list.Name)})
+		switch on, shown := keep[v.ID], sellable(v); {
+		case !on && shown:
+			p.count(sqCount{ObjectID: v.ID, Sellable: boolPtr(false), Raw: v.Raw,
+				Summary: fmt.Sprintf("%s: off the menu, so its %s is hidden", v.Name, list.Name)})
+		case on && !shown:
+			p.count(sqCount{ObjectID: v.ID, Sellable: boolPtr(true), Raw: v.Raw, Quantity: inStock,
+				Summary: fmt.Sprintf("%s: back on the menu, so its %s is on sale again", v.Name, list.Name)})
 		}
 	}
 }
+
+// sellable reports a variation Square lets anyone ring or show; absent
+// means yes.
+func sellable(v sqVar) bool {
+	s, ok := obj(v.Raw, "item_variation_data")["sellable"].(bool)
+	return !ok || s
+}
+
+func boolPtr(b bool) *bool { return &b }

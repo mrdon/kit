@@ -1,6 +1,7 @@
 package menu
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -72,15 +73,38 @@ func TestPlanSquareKegPricedLikeNeighbour(t *testing.T) {
 	}
 }
 
-// A keg whose beer left the menu is shown sold out, never deleted, and is
-// counted back in when the beer returns.
-func TestPlanSquareOffMenuKegCountedOut(t *testing.T) {
-	rows := []Beer{beer("Little Dipper", "7", "2.50")}
-	counts := map[string]string{"CTG-L": "99", "CTG-S": "99", "KTG-L": "0", "KTG-S": "99"}
-	cat := togoCatalog(counts, sixtels(trackedVar("KTG-L", "Little Dipper", 13000), trackedVar("KTG-S", "Snickers Tsar", 14500)))
-	got := changes(planSquare(rows, cat, map[string]bool{}))
-	if got["KTG-S"] != soldOut || got["KTG-L"] != inStock || got["CTG-S"] != "delete" {
-		t.Fatalf("want the Snickers keg sold out, the Dipper keg back in, the Snickers crowler deleted; got %v", got)
+func hiddenVar(id, name string, cents int) map[string]any {
+	v := trackedVar(id, name, cents)
+	obj(v, "item_variation_data")["sellable"] = false
+	return v
+}
+
+func sellableChanges(p sqPlan) map[string]string {
+	out := map[string]string{}
+	for _, c := range p.Counts {
+		if c.Sellable != nil {
+			out[c.ObjectID] = fmt.Sprintf("sellable=%v count=%s", *c.Sellable, c.Quantity)
+		}
+	}
+	return out
+}
+
+// A keg whose beer left the menu is hidden, never deleted or counted out; one
+// whose beer is back is shown and counted in; one on tap that staff marked
+// sold out is left sold out.
+func TestPlanSquareKegsHideAndShowWithTheTap(t *testing.T) {
+	rows := []Beer{beer("Little Dipper", "7", "2.50"), beer("Mars Water", "7", "2.50")}
+	mars := rawItem("MW", "Mars Water", rawVar("MW-16", "16oz", 700), rawVar("MW-4", "4oz", 250))
+	counts := map[string]string{"CTG-L": "99", "CTG-S": "99", "KTG-L": "99", "KTG-M": "0", "KTG-S": "99"}
+	cat := togoCatalog(counts, mars, sixtels(hiddenVar("KTG-L", "Little Dipper", 13000),
+		trackedVar("KTG-M", "Mars Water", 13000), trackedVar("KTG-S", "Snickers Tsar", 14500)))
+	p := planSquare(rows, cat, map[string]bool{})
+	got := sellableChanges(p)
+	if got["KTG-S"] != "sellable=false count=" || got["KTG-L"] != "sellable=true count="+inStock {
+		t.Fatalf("want Snickers hidden and Little Dipper shown and counted in, got %v", got)
+	}
+	if c := changes(p); c["KTG-M"] != "" || c["KTG-S"] == "delete" || c["CTG-S"] != "delete" {
+		t.Fatalf("want Mars Water left sold out, no keg deleted, the Snickers crowler deleted; got %v", c)
 	}
 }
 
