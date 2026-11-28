@@ -11,8 +11,8 @@ import (
 type sqPlan struct {
 	Adds      []sqAdd
 	Questions []sqQuestion
-	// Counts take online crowlers and kegs off the shop, put crowlers
-	// back on sale, and take flight options off the picker.
+	// Counts take to-go listings off the shop or show them sold out, put
+	// them back on sale, and take flight options off the picker.
 	Counts []sqCount
 	// Notes are gaps the check saw and left, said in the preview.
 	Notes []string
@@ -82,8 +82,7 @@ func planSquare(rows []Beer, cat sqCatalog, fresh map[string]bool) sqPlan {
 	}
 	p.houseSizes()
 	p.flight()
-	p.crowlers()
-	p.kegs()
+	p.toGo()
 	return p.plan
 }
 
@@ -97,6 +96,18 @@ func pricedPours(b Beer) []Pour {
 	var out []Pour
 	for _, pr := range b.Pours {
 		if _, ok := pourCents(pr.Price); ok && pr.Price != "" {
+			out = append(out, pr)
+		}
+	}
+	return out
+}
+
+// itemPours is every priced pour the drink's own item rings: all but the
+// to-go ones, which ring from their to-go items.
+func itemPours(b Beer) []Pour {
+	var out []Pour
+	for _, pr := range pricedPours(b) {
+		if !isToGoPour(pr) {
 			out = append(out, pr)
 		}
 	}
@@ -145,7 +156,7 @@ func pourVariation(b Beer, it sqItem, pr Pour) (sqVar, bool) {
 // glassCount is how many sizes other than the taster the row is sold in.
 func glassCount(b Beer) int {
 	n := 0
-	for _, pr := range pricedPours(b) {
+	for _, pr := range itemPours(b) {
 		if pr.Size != tasterPour {
 			n++
 		}
@@ -154,7 +165,7 @@ func glassCount(b Beer) int {
 }
 
 func (p *planner) row(b Beer) {
-	if len(pricedPours(b)) == 0 {
+	if len(itemPours(b)) == 0 {
 		return
 	}
 	it, ok := p.cat.match(b.Name)
@@ -164,7 +175,7 @@ func (p *planner) row(b Beer) {
 	}
 	p.button(b, it)
 	p.soldOut(b, it)
-	for _, pr := range pricedPours(b) {
+	for _, pr := range itemPours(b) {
 		p.pour(b, it, pr)
 	}
 	// A bigger glass the menu lists is on purpose (Mendacious pours a
@@ -312,7 +323,7 @@ func (p *planner) template(b Beer) (sqItem, bool) {
 			continue
 		}
 		all := true
-		for _, pr := range pricedPours(b) {
+		for _, pr := range itemPours(b) {
 			if _, ok := pourVariation(b, it, pr); !ok {
 				all = false
 				break
@@ -327,8 +338,8 @@ func (p *planner) template(b Beer) (sqItem, bool) {
 
 // houseSizes adds the size the menu does not price but the house always
 // sells: a pitcher of every beer up to maxPitcherABV. Nothing else: a size
-// the menu leaves off is not sold, and a crowler is not a size of the drink
-// at all but a variation of its crowler item (see crowlers).
+// the menu leaves off is not sold, and crowlers, growlers and kegs are not
+// sizes of the drink at all but variations of their to-go items (see toGo).
 func (p *planner) houseSizes() {
 	for _, b := range p.rows {
 		if !isTap(b) {
@@ -368,7 +379,7 @@ func abvOf(b Beer) (float64, bool) {
 // menuSize reports whether a size is one the menu prices for this row, which
 // pour() has already dealt with.
 func (p *planner) menuSize(b Beer, it sqItem, name string) bool {
-	for _, pr := range pricedPours(b) {
+	for _, pr := range itemPours(b) {
 		if nameKey(variationName(pr)) == nameKey(name) || nameKey(pr.Size) == nameKey(name) {
 			return true
 		}

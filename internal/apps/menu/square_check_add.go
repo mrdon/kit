@@ -83,7 +83,8 @@ var itemFields = []string{
 // createItem sets up a menu row as a new item, like the drink of its kind
 // that rings every pour it has. Its sizes are the menu's pours at the menu's
 // prices; a pitcher follows on the next pass through houseSizes, and its
-// crowler on the next pass through crowlers, once the item exists.
+// to-go listings on the next pass through toGo, once the item exists. A
+// to-go pour the menu prices (a growler) is not a size of the item.
 func (p *planner) createItem(b Beer) (sqAdd, bool) {
 	tpl, ok := p.template(b)
 	if !ok {
@@ -103,7 +104,7 @@ func (p *planner) createItem(b Beer) (sqAdd, bool) {
 	}
 	var vars []any
 	var sizes []string
-	for i, pr := range pricedPours(b) {
+	for i, pr := range itemPours(b) {
 		v, _ := pourVariation(b, tpl, pr)
 		cents, _ := pourCents(pr.Price)
 		nv := newVariation(sqItem{Vars: []sqVar{v}}, p.temp("var"), id, v.Name, cents)
@@ -229,110 +230,6 @@ func (p *planner) askFlightPrice(beer string, mod sqMod, want, base int) {
 		Options: []sqOption{
 			{ID: "yes", Label: "Yes, charge +" + dollars(want), Fix: &sqFix{Kind: "flight_price", ObjectID: mod.ID, Cents: want}},
 			{ID: "no", Label: "No, keep +" + dollars(max(mod.Cents, 0))},
-		},
-		Recommended: "yes",
-	})
-}
-
-// crowlers lists every tap drink that sells a crowler in the online shop's
-// crowler item and counts it in, then takes the listings of drinks no longer
-// on the menu off the shop. The crowler items ring at the bar as well as
-// online, so a listing's price is the crowler's price: once listed, nothing
-// else is compared with it.
-func (p *planner) crowlers() {
-	missingList := map[string]bool{}
-	for _, b := range p.rows {
-		if !isTap(b) {
-			continue
-		}
-		it, ok := p.cat.match(b.Name)
-		if !ok {
-			continue
-		}
-		listName := beerCrowlerItem
-		if isSoda(b) {
-			listName = sodaCrowlerItem
-		}
-		list, ok := p.cat.item(listName)
-		if !ok {
-			missingList[listName] = true
-			continue
-		}
-		if _, ok := list.variation(it.Name); ok {
-			continue
-		}
-		p.listCrowler(b, it, list)
-	}
-	for name := range missingList {
-		p.plan.Notes = append(p.plan.Notes, "no "+name+" item in Square, so its crowlers were not checked")
-	}
-	p.crowlerStock()
-}
-
-// listCrowler adds a tap drink missing from its crowler item. A 32oz Crowler
-// size left on the drink's own item, from before the crowler items rang at
-// the bar, sets the price. Otherwise it is priced like the listed drink
-// nearest it per ounce: without asking for a drink this run created when
-// every listed drink of its kind charges the same, on a yes/no card if not.
-func (p *planner) listCrowler(b Beer, it, list sqItem) {
-	if own, ok := it.variation(crowlerVariation); ok && own.Cents >= 0 {
-		p.listing(b, it, own, list, "crowler", true)
-		return
-	}
-	near, cents, same, ok := p.nearestPrice(b, func(other sqItem) (int, bool) {
-		v, has := list.variation(other.Name)
-		return v.Cents, has && v.Cents >= 0
-	})
-	if !ok {
-		p.plan.Notes = append(p.plan.Notes, fmt.Sprintf("%s: not in %s, and no drink like it is to price it from", b.Name, list.Name))
-		return
-	}
-	if same && p.fresh[nameKey(b.Name)] {
-		p.listing(b, it, sqVar{Cents: cents}, list, "crowler", true)
-		return
-	}
-	p.plan.Questions = append(p.plan.Questions, sqQuestion{
-		Key:   fmt.Sprintf("crowler|%s|%s|%d", list.ID, nameKey(it.Name), cents),
-		Title: fmt.Sprintf("Sell a crowler of %s at %s?", b.Name, dollars(cents)),
-		Body: fmt.Sprintf("We sell a crowler of everything on tap, and **%s** is not in %s. %s is priced like **%s**, "+
-			"which pours at a similar price per ounce.", b.Name, list.Name, dollars(cents), near),
-		Options: []sqOption{
-			{ID: "yes", Label: "Yes, add it at " + dollars(cents), Fix: &sqFix{Kind: "variation", ObjectID: list.ID, Name: it.Name, Cents: cents}},
-			{ID: "no", Label: "No, I'll set it up in Square"},
-		},
-		Recommended: "yes",
-	})
-}
-
-// listing puts a drink's to-go size (own) in an online list item at the
-// price its own item rings, counted in when stocked, and asks when the two
-// prices have come apart. what names the size in what admins read.
-func (p *planner) listing(b Beer, it sqItem, own sqVar, list sqItem, what string, stocked bool) {
-	listed, ok := list.variation(it.Name)
-	if !ok {
-		id := p.temp(what)
-		add := sqAdd{
-			Summary: fmt.Sprintf("%s: added to %s at %s", b.Name, list.Name, dollars(own.Cents)),
-			Objects: []map[string]any{newVariation(list, id, list.ID, it.Name, own.Cents)},
-		}
-		if stocked {
-			add.Summary += ", in stock"
-			add.Stock = []string{id}
-		}
-		p.plan.Adds = append(p.plan.Adds, add)
-		return
-	}
-	if listed.Cents == own.Cents {
-		return
-	}
-	p.plan.Questions = append(p.plan.Questions, sqQuestion{
-		Key:   fmt.Sprintf("%s|%s|%d|%d", what, listed.ID, listed.Cents, own.Cents),
-		Title: fmt.Sprintf("Sell the %s %s online at %s?", b.Name, what, dollars(own.Cents)),
-		Body: fmt.Sprintf("At the bar a **%s** %s rings **%s**, but online (%s) it is **%s**.",
-			b.Name, what, dollars(own.Cents), list.Name, dollars(max(listed.Cents, 0))),
-		Options: []sqOption{
-			{ID: "yes", Label: "Yes, match the bar", Fix: &sqFix{Kind: "price", ObjectID: listed.ID, Cents: own.Cents}},
-			{ID: "no", Label: "No, leave them different"},
 		},
 		Recommended: "yes",
 	})

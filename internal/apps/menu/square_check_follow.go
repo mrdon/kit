@@ -2,21 +2,18 @@ package menu
 
 import "fmt"
 
-// Three Square lists follow the taps: the online crowler items, the online
-// keg item and the flight picker. Each holds one entry per drink, named as
-// the drink's Square item, and the check treats all three alike:
+// Square lists that follow the taps: the to-go items (crowlers, growlers,
+// kegs) and the flight picker. Each holds one entry per drink, named as the
+// drink's Square item, and the check treats them alike:
 //
-//   - every tap drink that can be sold that way gets an entry, at the price
-//     its own item rings, added when missing and asked about on a card when
-//     the two prices disagree (listing, for crowlers and kegs; flight, whose
-//     price is the taster's upcharge);
+//   - every tap drink that can be sold that way gets an entry, added when
+//     missing (toGo, for the to-go items; flight, whose price is the
+//     taster's upcharge);
 //   - the entries of drinks no longer on tap (or 86'd in Kit) are deleted,
-//     so Square stops offering them at all, and the add pass puts them back
-//     when the drink returns (delist, below).
+//     or shown sold out for kegs, and put back when the drink returns.
 //
-// An entry stays only while its drink is on tap and its own item still
-// sells the size the list is for (a crowler, a sixtel, a 4oz taster), so
-// taking a size off a drink in Square takes it off the list too.
+// A flight option stays only while its drink's own item still sells a 4oz
+// taster, so taking the taster off a drink takes it out of the picker too.
 
 // sqEntry is one drink's entry in a list that follows the taps: a variation
 // of an online item, or an option in the flight picker.
@@ -43,8 +40,7 @@ func modEntries(ms []sqMod) []sqEntry {
 
 // onTapEntries marks, in keep, the entries whose drink is on tap and whose
 // item rings size, or every such drink when size is empty. tap says which
-// menu rows the list is for. An entry
-// answers to the row's own name, the row's name without its vintage, or the
+// menu rows the list is for. An entry answers to the row's own name, the row's name without its vintage, or the
 // name of the item it rings as.
 func (p *planner) onTapEntries(entries []sqEntry, tap func(Beer) bool, size string, keep map[string]bool) {
 	names := map[string]bool{}

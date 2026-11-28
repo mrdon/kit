@@ -77,7 +77,7 @@ func (p *planner) button(b Beer, it sqItem) {
 // location, which Kit cannot undo.
 func (p *planner) soldOut(b Beer, it sqItem) {
 	var sizes, versions []string
-	for _, pr := range pricedPours(b) {
+	for _, pr := range itemPours(b) {
 		v, ok := pourVariation(b, it, pr)
 		if !ok || !markedSoldOut(v) {
 			continue

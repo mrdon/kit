@@ -223,6 +223,8 @@ func TestPlanSquareHouseSizesFollowTheRules(t *testing.T) {
 		rawItem("TB", "Tsar Bomba", rawVar("TB9", "9oz", 800), rawVar("TB4", "4oz", 400)),
 		rawItem("CTG", beerCrowlerItem, rawVar("CTG-N", "Newtonian", 1200), rawVar("CTG-C", "Cerveza", 1200)),
 	}}
+	// A crowler is priced by the ounce: Tsar Bomba pours at $8 for 9oz, and
+	// the listed crowlers charge 92% of their draft price per ounce.
 	plan := planSquare(rows, cat, map[string]bool{})
 	var titles []string
 	for _, q := range plan.Questions {
@@ -234,7 +236,7 @@ func TestPlanSquareHouseSizesFollowTheRules(t *testing.T) {
 	got := strings.Join(titles, "\n")
 	want := "Add a Pitcher of Little Dipper at $22.00?\n" +
 		"Sell a crowler of Little Dipper at $12.00?\n" +
-		"Sell a crowler of Tsar Bomba at $12.00?"
+		"Sell a crowler of Tsar Bomba at $26.00?"
 	if got != want {
 		t.Errorf("questions:\n%s\nwant:\n%s", got, want)
 	}

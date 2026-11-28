@@ -24,12 +24,13 @@ func squareCheckToolMetas() []services.ToolMeta {
 			Description: "Check that Square can sell everything on the menu (the same menu the wall and the " +
 				"printed page show): every drink and pour as an item at the menu's price with a button on the register " +
 				"(put back on its screen if it has none) and not marked sold out (told, since Kit cannot clear that), every tap drink " +
-				"with a taster in the Flight pours picker, and every crowler in the online crowler items, " +
-				"in stock, and every tap beer's sixtel in the online keg item, with the crowlers and kegs of drinks no longer on the menu taken off the online shop and their flight options out of the picker. Without apply it previews and changes nothing. With apply=true it does what Kit " +
+				"with a taster in the Flight pours picker, and every tap drink in its to-go items, in stock: a crowler of everything, " +
+				"and a growler, sixtel and half barrel of every beer. Crowlers and growlers of drinks no longer on the menu are taken off, " +
+				"their kegs shown sold out, and their flight options taken out of the picker. Without apply it previews and changes nothing. With apply=true it does what Kit " +
 				"does every night: adds what has a right answer (copying how similar drinks are set up, at " +
 				"the menu's or Square's own prices), and files a decision card for anything that needs a " +
-				"person, such as a price that disagrees. It never removes or reprices without a card, except an " +
-				"online crowler or keg listing or a flight option, which it deletes when its drink leaves the menu and adds back when it returns.",
+				"person, such as a price that disagrees. It never removes or reprices without a card, except a " +
+				"crowler or growler listing or a flight option, which it deletes when its drink leaves the menu and adds back when it returns.",
 			AdminOnly: true,
 			Schema: services.Props(map[string]any{
 				"apply": services.Field("boolean", "true to add to Square and file decision cards now; false or absent to preview."),

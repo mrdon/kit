@@ -11,8 +11,8 @@ import (
 )
 
 // The Square check: every drink on the menu should be something the register
-// can ring, the flight picker can offer, and the online shop can sell as a
-// crowler. A new soda went up on Untappd, onto the wall and onto paper, and
+// can ring, the flight picker can offer, and the to-go items can sell as a
+// crowler, growler or keg (see square_check_togo.go). A new soda went up on Untappd, onto the wall and onto paper, and
 // nobody had put it in Square; this is the job that notices.
 //
 // It reads the menu the printed page reads (menuRows) and nothing else, so it
@@ -28,21 +28,18 @@ import (
 // existing item, or a size whose price differs from beer to beer has no
 // right answer to copy, so it becomes a decision card for an admin. Nothing
 // is ever removed or repriced without one: a beer off the wall for a day is
-// still a beer we pour. Its online crowler is the one exception, taken off
-// the shop until it is back (see square_check_stock.go), because a crowler
-// is filled from the tap.
+// still a beer we pour. Its to-go listings are the one exception, taken off
+// or shown sold out until it is back (see square_check_togo.go), because
+// they are filled from the tap.
 
 // The Square objects the check knows by name. A workspace without one of
 // them simply skips that part of the check.
 const (
-	flightListName   = "Flight pours"
-	beerCrowlerItem  = "Crowler To Go"
-	sodaCrowlerItem  = "Craft Soda Crowler"
-	crowlerVariation = "32oz Crowler"
+	flightListName = "Flight pours"
 	// regularVariation is how Square names the one glass of a drink sold in
 	// a single size, such as a craft soda.
 	regularVariation = "Regular"
-	// inStock is the count that makes an online crowler orderable; 0 is how
+	// inStock is the count that makes a to-go listing orderable; 0 is how
 	// staff mark one sold out.
 	inStock = "99"
 )
@@ -82,7 +79,7 @@ type sqModList struct {
 type sqCatalog struct {
 	Items  []sqItem
 	Flight *sqModList // nil when the workspace has no flight picker
-	// Counts is the stock of each online crowler listing by variation id;
+	// Counts is the stock of each to-go listing by variation id;
 	// nil when it was not read, which leaves stock alone.
 	Counts map[string]string
 	// MenuCats names the menu categories (register screens) by id; nil
@@ -185,7 +182,7 @@ func squareName(name string) string {
 	return names[len(names)-1]
 }
 
-// item finds a catalog item by its own name, for the crowler listings.
+// item finds a catalog item by its own name, for the to-go items.
 func (c sqCatalog) item(name string) (sqItem, bool) {
 	for _, it := range c.Items {
 		if !it.Archived && nameKey(it.Name) == nameKey(name) {

@@ -12,17 +12,15 @@ import (
 	"github.com/mrdon/kit/internal/apps/square"
 )
 
-// An online crowler is filled from the tap on pickup day, so it can be sold
-// only while its drink is on the menu. A listing whose drink comes off the
-// menu (or is 86'd in Kit) is deleted, so the online shop stops offering it
-// at all rather than showing it struck through, and the crowler pass adds
-// it back, in stock, when the drink returns. Square cannot hide one
-// variation from a channel through the API, so deleting it is the only way
-// to take it off the shop. A listing on the menu but counted out, by hand or
-// by an older run, is counted back in.
+// A to-go listing is sold only while its drink is on the menu (see
+// square_check_togo.go). Its stock count is how it shows sold out, at the
+// bar and online, and deleting it is the only way to take it off the shop:
+// Square cannot hide one variation from a channel through the API. A
+// listing on the menu but counted out, by hand or by an older run, is
+// counted back in.
 
-// sqCount changes one online crowler listing (sets its stock to Quantity),
-// or deletes a crowler or keg listing or a flight option when Remove is set.
+// sqCount changes one to-go listing (sets its stock to Quantity), or
+// deletes a crowler or growler listing or a flight option when Remove is set.
 // ObjectID is the variation or modifier it changes.
 type sqCount struct {
 	Summary  string
@@ -35,28 +33,6 @@ type sqCount struct {
 // last listing is left this way: Square will not keep an item with no
 // variations.
 const soldOut = "0"
-
-// crowlerStock brings each crowler listing in line with the menu: off tap
-// is deleted, on tap but counted out is counted back in. One guard covers
-// both crowler items, so a bar pouring no soda still loses its soda
-// crowlers.
-func (p *planner) crowlerStock() {
-	var lists []sqItem
-	keep := map[string]bool{}
-	for _, name := range []string{beerCrowlerItem, sodaCrowlerItem} {
-		if list, ok := p.cat.item(name); ok {
-			lists = append(lists, list)
-			p.onTapEntries(varEntries(list.Vars), isTap, "", keep)
-		}
-	}
-	if p.nothingOnTap(keep, "crowler listing") {
-		return
-	}
-	for _, list := range lists {
-		p.restock(list, keep)
-		p.delist(list.Name+" online", varEntries(list.Vars), keep, p.countOutLast(list.Name))
-	}
-}
 
 // restock counts back in each listing on tap that is counted out.
 func (p *planner) restock(list sqItem, keep map[string]bool) {
@@ -71,11 +47,17 @@ func (p *planner) restock(list sqItem, keep map[string]bool) {
 	}
 }
 
-// countOutLast is the last crowler listing's fate: it stays, shown sold
+// counted reports a listing whose stock was read and is above zero.
+func (p *planner) counted(id string) bool {
+	n, _ := strconv.ParseFloat(p.cat.Counts[id], 64)
+	return p.cat.Counts != nil && n > 0
+}
+
+// countOutLast is the last deletable listing's fate: it stays, shown sold
 // out online.
 func (p *planner) countOutLast(listName string) func(sqEntry) {
 	return func(e sqEntry) {
-		if n, _ := strconv.ParseFloat(p.cat.Counts[e.ID], 64); p.cat.Counts != nil && n > 0 {
+		if p.counted(e.ID) {
 			p.count(sqCount{ObjectID: e.ID, Quantity: soldOut,
 				Summary: fmt.Sprintf("%s: off the menu, so its %s shows sold out online (the last one, so kept)", e.Name, listName)})
 		}
@@ -86,7 +68,7 @@ func (p *planner) count(c sqCount) {
 	p.plan.Counts = append(p.plan.Counts, c)
 }
 
-// stocker sets online crowler counts at the one location they sell from.
+// stocker sets to-go listing counts at the one location they sell from.
 type stocker struct {
 	client   *square.Client
 	location string
@@ -125,12 +107,12 @@ func (s *stocker) set(ctx context.Context, variationID, quantity string) error {
 	return s.client.SetInventoryCount(ctx, uuid.NewString(), loc, variationID, quantity, at)
 }
 
-// counts reads the stock of every online crowler listing. A variation
-// Square has never counted is absent, which reads as 0.
+// counts reads the stock of every to-go listing. A variation Square has
+// never counted is absent, which reads as 0.
 func (s *stocker) counts(ctx context.Context, cat sqCatalog) (map[string]string, error) {
 	var ids []string
-	for _, name := range []string{beerCrowlerItem, sodaCrowlerItem} {
-		if list, ok := cat.item(name); ok {
+	for _, g := range toGos {
+		if list, ok := cat.item(g.Item); ok {
 			for _, v := range list.Vars {
 				ids = append(ids, v.ID)
 			}

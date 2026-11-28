@@ -12,22 +12,22 @@ import (
 
 // maxSquarePasses bounds how many times one check re-reads Square after
 // adding to it. A new drink takes two: the item, then the pitcher, flight
-// option and crowler listing that need the item.
+// option and to-go listings that need the item.
 const maxSquarePasses = 4
 
 // squareRun is what one check did.
 type squareRun struct {
 	Plan    sqPlan // the last look, after everything it added
 	Done    []string
-	Counted []string // online crowlers taken off the shop or back on sale
+	Counted []string // to-go listings taken off, sold out or back on sale
 	Failed  []string
 	Filed   int
 }
 
 // checkSquare compares the menu with Square. Without apply it only looks.
 // With apply it adds what has a right answer, re-reading Square after each
-// round so a new item's flight option and crowler follow it, takes the
-// crowlers, kegs and flight options of drinks no longer on the menu off,
+// round so a new item's flight option and to-go listings follow it, takes
+// the to-go listings and flight options of drinks no longer on the menu off,
 // then files a decision card for each question not asked before and a
 // briefing of what it changed.
 func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (squareRun, error) {
@@ -63,7 +63,7 @@ func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (
 		}
 	}
 	if countErr != nil {
-		run.Plan.Notes = append(run.Plan.Notes, "online crowler stock not read, so none were counted back in: "+countErr.Error())
+		run.Plan.Notes = append(run.Plan.Notes, "to-go stock not read, so none were counted in or out: "+countErr.Error())
 	}
 	if !apply {
 		return run, nil
@@ -84,7 +84,7 @@ func (a *App) checkSquare(ctx context.Context, tenantID uuid.UUID, apply bool) (
 }
 
 // applyAdds writes each add in its own batch, so one Square refuses does
-// not hold up the rest, and counts new crowlers in.
+// not hold up the rest, and counts new to-go listings in.
 func (a *App) applyAdds(ctx context.Context, client *square.Client, st *stocker, adds []sqAdd, fresh map[string]bool) (done, failed []string) {
 	for _, add := range adds {
 		ids, err := client.BatchUpsertCatalog(ctx, uuid.NewString(), add.Objects)
@@ -102,7 +102,7 @@ func (a *App) applyAdds(ctx context.Context, client *square.Client, st *stocker,
 			}
 		}
 		if len(unstocked) > 0 {
-			done = append(done, add.Summary+" (but not counted in, so it shows sold out online: "+strings.Join(unstocked, "; ")+")")
+			done = append(done, add.Summary+" (but not counted in, so it shows sold out: "+strings.Join(unstocked, "; ")+")")
 			continue
 		}
 		done = append(done, add.Summary)
@@ -115,7 +115,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 	var b strings.Builder
 	if apply {
 		writeList(&b, "Added to Square", run.Done)
-		writeList(&b, "Online crowlers, kegs and flight options", run.Counted)
+		writeList(&b, "To-go listings and flight options", run.Counted)
 		writeList(&b, "Failed", run.Failed)
 	} else {
 		var adds, counts []string
@@ -126,7 +126,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 			counts = append(counts, c.Summary)
 		}
 		writeList(&b, "Would add to Square", adds)
-		writeList(&b, "Would change online crowlers, kegs and flight options", counts)
+		writeList(&b, "Would change to-go listings and flight options", counts)
 	}
 	var qs []string
 	for _, q := range run.Plan.Questions {
@@ -143,7 +143,7 @@ func describeSquareRun(run squareRun, apply bool, asked map[string]bool) string 
 	writeList(&b, label, qs)
 	writeList(&b, "Not checked", run.Plan.Notes)
 	if b.Len() == 0 {
-		return "Square has everything on the menu: every pour, flight option and crowler."
+		return "Square has everything on the menu: every pour, flight option, crowler, growler and keg."
 	}
 	return strings.TrimSpace(b.String())
 }
